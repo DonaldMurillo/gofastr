@@ -98,9 +98,9 @@ func TestEveryScreenRendersDesignSystemMarkup(t *testing.T) {
 	screens := []struct{ path, want string }{
 		{"/", "data-cui-comp"},
 		{"/tasks", "Markup probe"},
-		{"/tasks/new", "New Task"},
+		{"/tasks/create", "New Task"},
 		{"/tasks/" + id, "Markup probe"},
-		{"/tasks/" + id + "/edit", "Markup probe"},
+		{"/tasks/" + id + "?tab=focus", `data-focus-start="` + id + `"`},
 		{"/history", "No sessions yet"},
 		{"/settings", "Work minutes"},
 		{"/widget", "data-cui-window-drag"},
@@ -116,6 +116,22 @@ func TestEveryScreenRendersDesignSystemMarkup(t *testing.T) {
 		if strings.Contains(body, "<script>") {
 			t.Fatalf("%s carries an inline script", s.path)
 		}
+	}
+
+	// The record page's default tab is the editor: the form prefilled
+	// with the stored title, saving to the task's own REST route.
+	record := ta.Get("/tasks/"+id).AssertStatus(t, http.StatusOK).Body()
+	for _, want := range []string{
+		`value="Markup probe"`,
+		`data-cui-rpc="/api/tasks/` + id + `"`,
+	} {
+		if !strings.Contains(record, want) {
+			t.Fatalf("record page missing %q", want)
+		}
+	}
+	// The engine-owned counter draws read-only, never as an input.
+	if strings.Contains(record, `name="completed_pomodoros"`) {
+		t.Fatal("completed_pomodoros renders as a submitted input; Display locks it read-only")
 	}
 
 	// The external script is referenced by its hash-versioned URL,

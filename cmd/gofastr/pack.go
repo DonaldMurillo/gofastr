@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
+	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 	"github.com/DonaldMurillo/gofastr/kiln/freeze"
@@ -277,6 +278,12 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 		m["exposure"] = exposure
 	}
 	putStrs(m, "search_fields", e.SearchFields)
+	if e.Display != nil {
+		m["display"] = displayToMap(e.Display)
+	}
+	if e.States != nil {
+		m["states"] = statesToMap(e.States)
+	}
 	if e.Timestamps != nil {
 		m["timestamps"] = *e.Timestamps
 	}
@@ -411,10 +418,9 @@ func blockToMap(b BlueprintBlock) map[string]any {
 	putInt(m, "level", b.Level)
 	putStr(m, "entity", b.Entity)
 	putStrs(m, "fields", b.Fields)
-	putStr(m, "search", b.Search)
-	putStrs(m, "filters", b.Filters)
 	putInt(m, "limit", b.Limit)
 	putBool(m, "create", b.Create)
+	putBool(m, "bulk", b.Bulk)
 	putStr(m, "empty_text", b.EmptyText)
 	putStr(m, "class", b.Class)
 	putStr(m, "href", b.Href)
@@ -433,18 +439,6 @@ func blockToMap(b BlueprintBlock) map[string]any {
 			acts[i] = actionToMap(a)
 		}
 		m["actions"] = acts
-	}
-	if len(b.Transitions) > 0 {
-		ts := make([]any, len(b.Transitions))
-		for i, t := range b.Transitions {
-			tm := map[string]any{}
-			putStr(tm, "label", t.Label)
-			putStr(tm, "status", t.Status)
-			putStr(tm, "variant", t.Variant)
-			putStr(tm, "stamp", t.Stamp)
-			ts[i] = tm
-		}
-		m["transitions"] = ts
 	}
 	return m
 }
@@ -477,6 +471,140 @@ func actionToMap(a BlueprintAction) map[string]any {
 // "belongs_to", ...), via the shared relationKinds table.
 func relationTypeToString(t framework.RelationType) string {
 	return relationKindFor(t).yaml
+}
+
+// displayToMap and statesToMap serialize the entity's display and states
+// groups back into their YAML shape. Keys are the snake_case names the
+// decoder reads; a form item keeps its three shapes (bare field string,
+// row list, section map).
+func displayToMap(d *fwentity.DisplayConfig) map[string]any {
+	m := map[string]any{}
+	putStr(m, "singular", d.Singular)
+	putStr(m, "plural", d.Plural)
+	putStrs(m, "title_fields", d.TitleFields)
+	putStr(m, "description", d.Description)
+	putStrs(m, "columns", d.Columns)
+	if d.Nav != nil {
+		nav := map[string]any{}
+		putStr(nav, "group", d.Nav.Group)
+		putStr(nav, "icon", d.Nav.Icon)
+		putInt(nav, "order", d.Nav.Order)
+		putBool(nav, "hide", d.Nav.Hide)
+		putBool(nav, "hide_count", d.Nav.HideCount)
+		m["nav"] = nav
+	}
+	if len(d.Views) > 0 {
+		views := make([]any, len(d.Views))
+		for i, v := range d.Views {
+			vm := map[string]any{}
+			putStr(vm, "key", v.Key)
+			putStr(vm, "label", v.Label)
+			putStr(vm, "where", v.Where)
+			putStr(vm, "sort", v.Sort)
+			putStr(vm, "as", v.As)
+			putBool(vm, "default", v.Default)
+			views[i] = vm
+		}
+		m["views"] = views
+	}
+	putStrs(m, "facets", d.Facets)
+	if d.Form != nil && (len(d.Form.Main) > 0 || len(d.Form.Side) > 0) {
+		form := map[string]any{}
+		if len(d.Form.Main) > 0 {
+			form["main"] = formItemsToAny(d.Form.Main)
+		}
+		if len(d.Form.Side) > 0 {
+			form["side"] = formItemsToAny(d.Form.Side)
+		}
+		m["form"] = form
+	}
+	if d.Card != nil {
+		card := map[string]any{}
+		putStr(card, "title", d.Card.Title)
+		putStr(card, "subtitle", d.Card.Subtitle)
+		putStr(card, "badge", d.Card.Badge)
+		putStrs(card, "meta", d.Card.Meta)
+		m["card"] = card
+	}
+	if len(d.Fields) > 0 {
+		fields := make(map[string]any, len(d.Fields))
+		for name, h := range d.Fields {
+			hm := map[string]any{}
+			putStr(hm, "label", h.Label)
+			putStr(hm, "help", h.Help)
+			putStr(hm, "placeholder", h.Placeholder)
+			putBool(hm, "locked", h.Locked)
+			putBool(hm, "omit", h.Omit)
+			putStr(hm, "show_when", h.ShowWhen)
+			putStr(hm, "input", h.Input)
+			fields[name] = hm
+		}
+		m["fields"] = fields
+	}
+	if len(d.PageSizes) > 0 {
+		sizes := make([]any, len(d.PageSizes))
+		for i, n := range d.PageSizes {
+			sizes[i] = n
+		}
+		m["page_sizes"] = sizes
+	}
+	putBool(m, "no_duplicate", d.NoDuplicate)
+	putBool(m, "no_bulk", d.NoBulk)
+	return m
+}
+
+func formItemsToAny(items []fwentity.FormItem) []any {
+	out := make([]any, len(items))
+	for i, it := range items {
+		switch {
+		case it.Field != "":
+			out[i] = it.Field
+		case len(it.Row) > 0:
+			out[i] = map[string]any{"row": strsToAny(it.Row)}
+		default:
+			im := map[string]any{}
+			putStr(im, "section", it.Section)
+			putStr(im, "help", it.Help)
+			putBool(im, "collapsed", it.Collapsed)
+			if len(it.Items) > 0 {
+				im["items"] = formItemsToAny(it.Items)
+			}
+			out[i] = im
+		}
+	}
+	return out
+}
+
+func strsToAny(values []string) []any {
+	out := make([]any, len(values))
+	for i, v := range values {
+		out[i] = v
+	}
+	return out
+}
+
+func statesToMap(st *fwentity.StatesConfig) map[string]any {
+	m := map[string]any{}
+	putStr(m, "field", st.Field)
+	putStrs(m, "initial", st.Initial)
+	if len(st.Transitions) > 0 {
+		moves := make([]any, len(st.Transitions))
+		for i, tr := range st.Transitions {
+			tm := map[string]any{}
+			putStr(tm, "key", tr.Key)
+			putStr(tm, "label", tr.Label)
+			putStrs(tm, "from", tr.From)
+			putStr(tm, "to", tr.To)
+			putStr(tm, "stamp", tr.Stamp)
+			putStr(tm, "variant", tr.Variant)
+			putStr(tm, "permission", tr.Permission)
+			putBool(tm, "system", tr.System)
+			moves[i] = tm
+		}
+		m["transitions"] = moves
+	}
+	putBool(m, "advisory", st.Advisory)
+	return m
 }
 
 // anyMap deep-copies a map[string]any so list/map children are []any/map[string]any
@@ -850,26 +978,25 @@ var (
 	// order the blueprint docs present these keys in. A key the serializer
 	// emits but this list omits ships unsorted, which
 	// TestPackSerializerCoversEveryBlueprintField catches.
-	topLevelOrder   = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "hooks", "middleware", "plugins", "helpers"}
-	appOrder        = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md"}
-	entityOrder     = []string{"name", "table", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations"}
-	fieldOrder      = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
-	screenOrder     = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
-	blockOrder      = []string{"kind", "type", "text", "level", "entity", "fields", "search", "filters", "limit", "create", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions", "transitions"}
-	relationOrder   = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target", "on_delete", "cascade_write"}
-	indexOrder      = []string{"name", "columns", "unique"}
-	navOrder        = []string{"label", "href", "icon", "role", "items"}
-	accessOrder     = []string{"auth", "role", "read", "create", "update", "delete"}
-	readScopeOrder  = []string{"unrestricted", "filter"}
-	predicateOrder  = []string{"field", "op", "value", "values"}
-	dbOrder         = []string{"driver", "url"}
-	authOrder       = []string{"enabled", "dev_mode", "base_path", "jwt_secret"}
-	adminOrder      = []string{"path", "role", "enabled", "login_path", "seed_email", "seed_password"}
-	endpointOrder   = []string{"name", "method", "path", "entity", "handler", "description", "mcp"}
-	actionOrder     = []string{"name", "event", "client_js"}
-	transitionOrder = []string{"label", "status", "variant", "stamp"}
-	stubOrder       = []string{"name", "description"}
-	seedOrder       = []string{"entity", "count", "weights", "rows"}
+	topLevelOrder  = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "hooks", "middleware", "plugins", "helpers"}
+	appOrder       = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md"}
+	entityOrder    = []string{"name", "table", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations", "display", "states"}
+	fieldOrder     = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
+	screenOrder    = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
+	blockOrder     = []string{"kind", "type", "text", "level", "entity", "fields", "limit", "create", "bulk", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions"}
+	relationOrder  = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target", "on_delete", "cascade_write"}
+	indexOrder     = []string{"name", "columns", "unique"}
+	navOrder       = []string{"label", "href", "icon", "role", "items"}
+	accessOrder    = []string{"auth", "role", "read", "create", "update", "delete"}
+	readScopeOrder = []string{"unrestricted", "filter"}
+	predicateOrder = []string{"field", "op", "value", "values"}
+	dbOrder        = []string{"driver", "url"}
+	authOrder      = []string{"enabled", "dev_mode", "base_path", "jwt_secret"}
+	adminOrder     = []string{"path", "role", "enabled", "login_path", "seed_email", "seed_password"}
+	endpointOrder  = []string{"name", "method", "path", "entity", "handler", "description", "mcp"}
+	actionOrder    = []string{"name", "event", "client_js"}
+	stubOrder      = []string{"name", "description"}
+	seedOrder      = []string{"entity", "count", "weights", "rows"}
 )
 
 func orderFor(key string) []string {
@@ -906,8 +1033,6 @@ func orderFor(key string) []string {
 		return endpointOrder
 	case "actions":
 		return actionOrder
-	case "transitions":
-		return transitionOrder
 	case "seed":
 		return seedOrder
 	case "middleware", "plugins", "helpers":
@@ -1184,8 +1309,8 @@ func packReadPerEntityFiles(root *os.Root, entRel string) ([]framework.EntityDec
 	// Fixed package files that never hold an entity registration.
 	skip := map[string]bool{"register.go": true, "shared.go": true, "doc.go": true}
 	type ordered struct {
-		order int
 		decl  framework.EntityDeclaration
+		order int
 	}
 	var found []ordered
 	for _, entry := range entries {
@@ -1284,6 +1409,160 @@ func packEntityOrder(file *ast.File) int {
 	return order
 }
 
+// packDisplayFromExpr reverses the Display literal the entity emitter
+// writes (renderDisplayLiteral): &framework.DisplayConfig{...} with the
+// form's three item shapes. Returns nil for a value that holds nothing.
+func packDisplayFromExpr(e ast.Expr) *fwentity.DisplayConfig {
+	d := fieldVals(e)
+	out := &fwentity.DisplayConfig{
+		Singular:    astString(d["Singular"]),
+		Plural:      astString(d["Plural"]),
+		TitleFields: astStringSlice(d["TitleFields"]),
+		Description: astString(d["Description"]),
+		Columns:     astStringSlice(d["Columns"]),
+		Facets:      astStringSlice(d["Facets"]),
+		NoDuplicate: astBool(d["NoDuplicate"]),
+		NoBulk:      astBool(d["NoBulk"]),
+	}
+	if v, ok := d["PageSizes"]; ok {
+		if cl, ok := unwrapPtr(v).(*ast.CompositeLit); ok {
+			for _, elt := range cl.Elts {
+				if n, ok := astInt(elt); ok {
+					out.PageSizes = append(out.PageSizes, n)
+				}
+			}
+		}
+	}
+	if v, ok := d["Nav"]; ok {
+		n := fieldVals(v)
+		nav := &fwentity.EntityNav{
+			Group: astString(n["Group"]), Icon: astString(n["Icon"]), Hide: astBool(n["Hide"]),
+			HideCount: astBool(n["HideCount"]),
+		}
+		if order, ok := astInt(n["Order"]); ok {
+			nav.Order = order
+		}
+		out.Nav = nav
+	}
+	if v, ok := d["Views"]; ok {
+		if cl, ok := unwrapPtr(v).(*ast.CompositeLit); ok {
+			for _, elt := range cl.Elts {
+				m := fieldVals(elt)
+				out.Views = append(out.Views, fwentity.ListView{
+					Key: astString(m["Key"]), Label: astString(m["Label"]),
+					Where: astString(m["Where"]), Sort: astString(m["Sort"]),
+					As: astString(m["As"]), Default: astBool(m["Default"]),
+				})
+			}
+		}
+	}
+	if v, ok := d["Form"]; ok {
+		f := fieldVals(v)
+		out.Form = &fwentity.EntityForm{
+			Main: packFormItems(f["Main"]), Side: packFormItems(f["Side"]),
+		}
+	}
+	if v, ok := d["Card"]; ok {
+		c := fieldVals(v)
+		out.Card = &fwentity.CardFields{
+			Title: astString(c["Title"]), Subtitle: astString(c["Subtitle"]),
+			Badge: astString(c["Badge"]), Meta: astStringSlice(c["Meta"]),
+		}
+	}
+	if v, ok := d["Fields"]; ok {
+		if cl, ok := unwrapPtr(v).(*ast.CompositeLit); ok {
+			out.Fields = map[string]fwentity.FieldDisplay{}
+			for _, elt := range cl.Elts {
+				kv, ok := elt.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				h := fieldVals(kv.Value)
+				out.Fields[astString(kv.Key)] = fwentity.FieldDisplay{
+					Label: astString(h["Label"]), Help: astString(h["Help"]),
+					Placeholder: astString(h["Placeholder"]), Locked: astBool(h["Locked"]),
+					Omit: astBool(h["Omit"]), ShowWhen: astString(h["ShowWhen"]),
+					Input: astString(h["Input"]),
+				}
+			}
+		}
+	}
+	if displayIsEmpty(out) {
+		return nil
+	}
+	return out
+}
+
+// packFormItems reverses a []framework.FormItem literal: {Field: "x"},
+// {Row: [...]}, {Section: ..., Items: ...}.
+func packFormItems(e ast.Expr) []fwentity.FormItem {
+	cl, ok := unwrapPtr(e).(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	var out []fwentity.FormItem
+	for _, elt := range cl.Elts {
+		m := fieldVals(elt)
+		item := fwentity.FormItem{
+			Field:     astString(m["Field"]),
+			Row:       astStringSlice(m["Row"]),
+			Section:   astString(m["Section"]),
+			Help:      astString(m["Help"]),
+			Collapsed: astBool(m["Collapsed"]),
+			Items:     packFormItems(m["Items"]),
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+// packStatesFromExpr reverses the States literal (renderStatesLiteral).
+func packStatesFromExpr(e ast.Expr) *fwentity.StatesConfig {
+	s := fieldVals(e)
+	out := &fwentity.StatesConfig{
+		Field:    astString(s["Field"]),
+		Initial:  astStringSlice(s["Initial"]),
+		Advisory: astBool(s["Advisory"]),
+	}
+	if v, ok := s["Transitions"]; ok {
+		if cl, ok := unwrapPtr(v).(*ast.CompositeLit); ok {
+			for _, elt := range cl.Elts {
+				m := fieldVals(elt)
+				out.Transitions = append(out.Transitions, fwentity.Transition{
+					Key: astString(m["Key"]), Label: astString(m["Label"]),
+					From: astStringSlice(m["From"]), To: astString(m["To"]),
+					Stamp: astString(m["Stamp"]), Variant: astString(m["Variant"]),
+					Permission: astString(m["Permission"]), System: astBool(m["System"]),
+				})
+			}
+		}
+	}
+	if out.Field == "" {
+		return nil
+	}
+	return out
+}
+
+// unwrapPtr returns the expression inside a &T{...} unary composite (or the
+// expression itself when it is not one), so the readers can walk a pointer
+// literal's elements.
+func unwrapPtr(e ast.Expr) ast.Expr {
+	if u, ok := e.(*ast.UnaryExpr); ok && u.Op == token.AND {
+		return u.X
+	}
+	return e
+}
+
+// displayIsEmpty reports whether a decoded DisplayConfig holds nothing, the
+// same rule the emitter's only-non-zero-fields output implies: a literal
+// that decodes to all-zero packed as no display block at all.
+func displayIsEmpty(d *fwentity.DisplayConfig) bool {
+	return d.Singular == "" && d.Plural == "" && len(d.TitleFields) == 0 && d.Description == "" &&
+		len(d.Columns) == 0 && len(d.Views) == 0 && len(d.Facets) == 0 && len(d.Fields) == 0 &&
+		len(d.PageSizes) == 0 && !d.NoDuplicate && !d.NoBulk &&
+		d.Nav == nil && d.Form == nil && d.Card == nil
+}
+
 // packEntityDeclFromCall rebuilds an EntityDeclaration from an
 // app.Entity(name, config) call expression.
 func packEntityDeclFromCall(call *ast.CallExpr) (framework.EntityDeclaration, error) {
@@ -1321,6 +1600,16 @@ func packEntityDeclFromCall(call *ast.CallExpr) (framework.EntityDeclaration, er
 	}
 	if v, ok := cfg["SearchFields"]; ok {
 		decl.SearchFields = astStringSlice(v)
+	}
+	if v, ok := cfg["Display"]; ok {
+		if d := packDisplayFromExpr(v); d != nil {
+			decl.Display = d
+		}
+	}
+	if v, ok := cfg["States"]; ok {
+		if st := packStatesFromExpr(v); st != nil {
+			decl.States = st
+		}
 	}
 	// Timestamps is emitted as a .WithTimestamps(bool) builder call, not a
 	// struct field — recover it from the unwrapped builder args. (Fall back
@@ -2109,7 +2398,7 @@ func packScreenRegistrarsFromFile(file *ast.File, fnDecls map[string]*ast.FuncDe
 			case "RegisterScreen":
 				if len(call.Args) == 2 {
 					r.layout = layoutVarToName(call.Args[1])
-					packWalkScreenChain(call.Args[0], &r)
+					packWalkScreenChain(screenArg(call.Args[0], fn), &r)
 				}
 			default:
 				continue
@@ -2122,6 +2411,27 @@ func packScreenRegistrarsFromFile(file *ast.File, fnDecls map[string]*ast.FuncDe
 		return false
 	})
 	return out
+}
+
+// screenArg resolves a RegisterScreen argument that names a local variable
+// holding the screen: the generator's drawer-intercept mount builds the
+// screen, sets its Intercept field, then registers the variable. Anything
+// else is the expression itself.
+func screenArg(e ast.Expr, fn *ast.FuncDecl) ast.Expr {
+	id, ok := e.(*ast.Ident)
+	if !ok || fn.Body == nil {
+		return e
+	}
+	for _, stmt := range fn.Body.List {
+		as, ok := stmt.(*ast.AssignStmt)
+		if !ok || len(as.Lhs) != 1 || len(as.Rhs) != 1 {
+			continue
+		}
+		if lhs, ok := as.Lhs[0].(*ast.Ident); ok && lhs.Name == id.Name {
+			return as.Rhs[0]
+		}
+	}
+	return e
 }
 
 // packReadLegacyScreens reads the pre-per-screen aggregated layout: screen
@@ -2382,12 +2692,14 @@ func isSynthesizedBody(body []BlueprintBlock) bool {
 // into a shared helper (screen + island endpoint reusing one config) still
 // reverses.
 //
-// Two root shapes are accepted. The generator emits
-// `html.Div(html.DivConfig{…}, children…)`, the design system's 1:1 tag
-// primitive. Apps generated before that switch (and hand-written screens
-// that never moved) use `render.Tag("div", attrs, children…)`. pack has to
-// read both or it silently returns no blocks for the other one, which is
-// how a round-trip loses screens.
+// Three root shapes are accepted. The generator emits the screen stack,
+// `ui.Stack(ui.StackConfig{Gap: ui.GapXL}, children…)`, for a screen with
+// blocks, wrapped in `html.Div(html.DivConfig{…data-component…}, stack)`
+// when the screen has actions. Apps generated before that used
+// `html.Div(html.DivConfig{…}, children…)`, and older ones (and
+// hand-written screens that never moved) `render.Tag("div", attrs,
+// children…)`. pack has to read all three or it silently returns no
+// blocks for the others, which is how a round-trip loses screens.
 func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []BlueprintBlock {
 	if fn.Body == nil {
 		return nil
@@ -2402,7 +2714,7 @@ func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []Blueprin
 			continue
 		}
 		// Index of the first child argument: render.Tag takes (tag, attrs)
-		// first, html.Div takes a single config.
+		// first, html.Div and ui.Stack take a single config.
 		firstChild := -1
 		switch callSel(call) {
 		case "render.Tag":
@@ -2413,9 +2725,22 @@ func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []Blueprin
 			if len(call.Args) >= 1 {
 				firstChild = 1
 			}
+		case "ui.Stack":
+			// Only the generator's own screen stack: a hand-written root
+			// stack with its own Align or Justify would lose them.
+			if isScreenStack(call) {
+				firstChild = 1
+			}
 		}
 		if firstChild < 0 {
 			continue
+		}
+		// An html.Div whose one child is the screen stack is the actions
+		// wrapper: the blocks are the stack's children.
+		if callSel(call) == "html.Div" && len(call.Args) == 2 {
+			if inner, ok := call.Args[1].(*ast.CallExpr); ok && isScreenStack(inner) {
+				call, firstChild = inner, 1
+			}
 		}
 		var out []BlueprintBlock
 		for _, arg := range call.Args[firstChild:] {
@@ -2426,6 +2751,29 @@ func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []Blueprin
 		return out
 	}
 	return nil
+}
+
+// isScreenStack reports whether call is the generator's screen stack,
+// `ui.Stack(ui.StackConfig{Gap: ui.GapXL}, …)` (blueprintScreenStackOpen),
+// as opposed to a stack block an author placed on the screen.
+func isScreenStack(call *ast.CallExpr) bool {
+	if callSel(call) != "ui.Stack" || len(call.Args) < 1 {
+		return false
+	}
+	lit, ok := call.Args[0].(*ast.CompositeLit)
+	if !ok || len(lit.Elts) != 1 {
+		return false
+	}
+	kv, ok := lit.Elts[0].(*ast.KeyValueExpr)
+	if !ok {
+		return false
+	}
+	key, ok := kv.Key.(*ast.Ident)
+	if !ok || key.Name != "Gap" {
+		return false
+	}
+	sel, ok := kv.Value.(*ast.SelectorExpr)
+	return ok && sel.Sel.Name == "GapXL"
 }
 
 // packHelperReturns indexes top-level zero-arg functions with a single
@@ -2467,7 +2815,14 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, bool
 	if !ok {
 		return BlueprintBlock{}, false
 	}
-	// Entity resource chains (appResources["x"]…List/Detail/Form(ctx)).
+	// Entity builder chains (appUI.List("x")…): the entityui spelling the
+	// generator emits now. The older appResources chains are read by
+	// reverseEntityResource for apps generated before entityui.
+	if b, ok := reverseEntityUI(e, helpers); ok {
+		return b, true
+	}
+	// Entity resource chains (appResources["x"]…List/Detail/Form(ctx)):
+	// the pre-entityui spelling, still read for apps generated then.
 	if b, ok := reverseEntityResource(call, helpers); ok {
 		return b, true
 	}
@@ -2559,10 +2914,12 @@ func reverseLayoutBlock(kind string, call *ast.CallExpr, helpers map[string]ast.
 		b.Props["gap"] = gap
 	}
 	if kind == "stack" || kind == "cluster" {
-		if align := reverseAlign(astSelName(cfg["Align"])); align != "" && align != "start" {
+		// The generator emits Align/Justify only when the block set them,
+		// so a present field is a prop, start included.
+		if align := reverseAlign(astSelName(cfg["Align"])); align != "" {
 			b.Props["align"] = align
 		}
-		if justify := reverseJustify(astSelName(cfg["Justify"])); justify != "" && justify != "start" {
+		if justify := reverseJustify(astSelName(cfg["Justify"])); justify != "" {
 			b.Props["justify"] = justify
 		}
 	}
@@ -2652,16 +3009,6 @@ func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (Blu
 			for _, a := range c.Args {
 				b.Fields = append(b.Fields, astString(a))
 			}
-		case "WithSearch":
-			if len(c.Args) == 1 {
-				b.Search = astString(c.Args[0])
-			}
-		case "WithFilters":
-			for _, a := range c.Args {
-				if key := astString(fieldVals(a)["Key"]); key != "" {
-					b.Filters = append(b.Filters, key)
-				}
-			}
 		case "WithLimit":
 			if len(c.Args) == 1 {
 				if n, ok := astInt(c.Args[0]); ok {
@@ -2677,16 +3024,6 @@ func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (Blu
 		case "WithEmpty":
 			if len(c.Args) == 1 {
 				b.EmptyText = astString(c.Args[0])
-			}
-		case "WithTransitions":
-			for _, a := range c.Args {
-				tv := fieldVals(a)
-				b.Transitions = append(b.Transitions, BlueprintTransition{
-					Label:   astString(tv["Label"]),
-					Status:  astString(tv["Status"]),
-					Variant: astString(tv["Variant"]),
-					Stamp:   astString(tv["Stamp"]),
-				})
 			}
 		case "WithEdit":
 			// detail-only affordance; not a list flag
@@ -2707,6 +3044,100 @@ func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (Blu
 		}
 	}
 	return b, true
+}
+
+// reverseEntityUI turns one appUI.List/Record/Create builder chain back
+// into its BlueprintBlock: Columns→fields, PageSize→limit, As→mode,
+// Heading→text, Empty→empty_text, Bulk→bulk, and a list without NoCreate
+// is create:true (the builder's default). Key, Base, Delete and Duplicate
+// are structural and do not round-trip. Returns false for anything that is
+// not an appUI chain.
+func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, bool) {
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		return BlueprintBlock{}, false
+	}
+	b := BlueprintBlock{}
+	noCreate := false
+	node := ast.Expr(call)
+	hops := 0
+	for {
+		// Same hop bound as reverseEntityResource: a self-referential or
+		// mutually recursive helper must break the walk, not loop forever.
+		if hops > 32 {
+			return BlueprintBlock{}, false
+		}
+		c, ok := node.(*ast.CallExpr)
+		if !ok {
+			return BlueprintBlock{}, false
+		}
+		s, ok := c.Fun.(*ast.SelectorExpr)
+		if !ok {
+			if id, isIdent := c.Fun.(*ast.Ident); isIdent && len(c.Args) == 0 {
+				if body, found := helpers[id.Name]; found {
+					hops++
+					node = body
+					continue
+				}
+			}
+			return BlueprintBlock{}, false
+		}
+		if identName(s.X) == "appUI" {
+			switch s.Sel.Name {
+			case "List":
+				b.Kind = "entity_list"
+				b.Create = !noCreate
+			case "Record":
+				b.Kind = "entity_detail"
+			case "Create":
+				// synthesized create screen: marked so pack can drop it.
+				b.Kind = "entity_create"
+			default:
+				return BlueprintBlock{}, false
+			}
+			if len(c.Args) < 1 {
+				return BlueprintBlock{}, false
+			}
+			b.Entity = astString(c.Args[0])
+			return b, true
+		}
+		switch s.Sel.Name {
+		case "Columns":
+			for _, a := range c.Args {
+				b.Fields = append(b.Fields, astString(a))
+			}
+		case "As":
+			if len(c.Args) == 1 {
+				b.Mode = astString(c.Args[0])
+			}
+		case "PageSize":
+			if len(c.Args) == 1 {
+				if n, ok := astInt(c.Args[0]); ok {
+					b.Limit = n
+				}
+			}
+		case "NoCreate":
+			noCreate = true
+		case "Bulk":
+			b.Bulk = true
+		case "Heading":
+			if len(c.Args) >= 1 {
+				b.Text = astString(c.Args[0])
+			}
+		case "Empty":
+			if len(c.Args) == 1 {
+				b.EmptyText = astString(c.Args[0])
+			}
+		case "Key", "Base", "Delete", "Duplicate", "RenderCtx", "Actions", "Related", "RelatedAt":
+			// structural: no blueprint key (RenderCtx turns the builder
+			// into the HTML the screen's stack takes; Actions, Related and
+			// RelatedAt are app-side extensions pack does not declare)
+		default:
+			return BlueprintBlock{}, false
+		}
+		node = s.X
+		hops++
+	}
 }
 
 func reverseHero(call *ast.CallExpr) BlueprintBlock {
@@ -2760,9 +3191,12 @@ func reverseStatCard(call *ast.CallExpr) BlueprintBlock {
 	c := cfgOf(call, 0)
 	p := map[string]any{}
 	putStr(p, "label", astString(c["Label"]))
-	// Value: statValue(ctx, entity, agg, field, filter, format).
-	if vc, ok := c["Value"].(*ast.CallExpr); ok && callSel(vc) == "" {
-		if id, ok := vc.Fun.(*ast.Ident); ok && id.Name == "statValue" && len(vc.Args) == 6 {
+	// Value: statValue(ctx, entity, agg, field, filter, format) — the
+	// app-local helper a hand-maintained app kept — or the generator's
+	// appUI.StatValue spelling; both take the same six args.
+	if vc, ok := c["Value"].(*ast.CallExpr); ok && len(vc.Args) == 6 {
+		bare, _ := vc.Fun.(*ast.Ident)
+		if (bare != nil && bare.Name == "statValue" && callSel(vc) == "") || callSel(vc) == "appUI.StatValue" {
 			src := map[string]any{}
 			putStr(src, "entity", astString(vc.Args[1]))
 			putStr(src, "agg", astString(vc.Args[2]))

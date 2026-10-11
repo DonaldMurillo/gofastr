@@ -1,0 +1,167 @@
+package entityui
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
+)
+
+// param namespaces a list's query param by its key: "sort" for an unkeyed
+// list, "due_sort" for .Key("due").
+func param(key, name string) string {
+	if key == "" {
+		return name
+	}
+	return key + "_" + name
+}
+
+// cell is a value's text form.
+func cell(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return ""
+	case string:
+		return t
+	case bool:
+		if t {
+			return "true"
+		}
+		return "false"
+	case time.Time:
+		if t.IsZero() {
+			return ""
+		}
+		return t.Format(time.RFC3339)
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+func truthy(s string) bool {
+	switch strings.ToLower(s) {
+	case "true", "1", "yes", "on", "t":
+		return true
+	}
+	return false
+}
+
+// dateLayout and timestampLayout are how every screen prints a Date and
+// a Timestamp: list cells, plain-text cells and a record's read-only
+// fields alike.
+const (
+	dateLayout      = "Jan 2, 2006"
+	timestampLayout = "Jan 2, 2006 3:04 PM"
+)
+
+// formatDate renders a date or timestamp. Drivers hand dates back as
+// time.Time or as one of a few string layouts; anything else prints as is.
+func formatDate(raw any, layout string) string {
+	if t, ok := raw.(time.Time); ok && t.IsZero() {
+		return ""
+	}
+	if t, ok := parseTime(raw); ok {
+		return t.Format(layout)
+	}
+	return cell(raw)
+}
+
+// parseTime reads a date or timestamp in any of the shapes drivers hand
+// back: a time.Time or one of a few string layouts.
+func parseTime(raw any) (time.Time, bool) {
+	if t, ok := raw.(time.Time); ok {
+		return t, !t.IsZero()
+	}
+	val := cell(raw)
+	for _, l := range []string{
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+		"2006-01-02 15:04:05 -0700 MST",
+		"2006-01-02 15:04:05",
+		time.DateOnly,
+	} {
+		if parsed, err := time.Parse(l, val); err == nil {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// formatNumber prints a float without trailing zeros on whole values and
+// with thousands grouping.
+func formatNumber(f float64, decimals int) string {
+	return groupDigits(strconv.FormatFloat(f, 'f', decimals, 64))
+}
+
+// groupDigits puts thousands separators into a plain decimal string
+// ("-1234567.50" reads "-1,234,567.50").
+func groupDigits(s string) string {
+	s, neg := strings.CutPrefix(s, "-")
+	whole, frac, _ := strings.Cut(s, ".")
+	var grp []string
+	for len(whole) > 3 {
+		grp = append([]string{whole[len(whole)-3:]}, grp...)
+		whole = whole[:len(whole)-3]
+	}
+	out := strings.Join(append([]string{whole}, grp...), ",")
+	if frac != "" {
+		out += "." + frac
+	}
+	if neg {
+		out = "-" + out
+	}
+	return out
+}
+
+// decimal prints a Decimal or Float value with two places and grouping.
+// A currency is drawn only where the field names the money kind.
+func decimal(val string) string {
+	f, err := strconv.ParseFloat(val, 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+		return val
+	}
+	return formatNumber(f, 2)
+}
+
+// enumVariant picks a badge colour for common status words: settled is
+// success, in flight is information, needing attention is a warning, a
+// failure is danger, and a closed or unstarted record is neutral.
+// Anything else is neutral information.
+func enumVariant(v string) ui.StatusVariant {
+	switch strings.ToLower(v) {
+	case "active", "paid", "succeeded", "completed", "done", "published", "approved":
+		return ui.StatusSuccess
+	case "open", "trialing", "running", "review":
+		return ui.StatusInfo
+	case "past_due", "pending", "refunded":
+		return ui.StatusWarning
+	case "failed", "rejected":
+		return ui.StatusDanger
+	case "canceled", "cancelled", "void", "draft", "inactive", "archived":
+		return ui.StatusNeutral
+	}
+	return ui.StatusInfo
+}
+
+func muted() render.HTML { return ui.EmptyValue() }
+
+// money prints an amount as the catalog's currency symbol and two
+// grouped places: $1,234.00, and -$5.00 for a negative one. Text that
+// is not a number prints as stored.
+func money(ctx context.Context, val string) string {
+	sym := i18nui.T(ctx, i18nui.KeyEntityCurrency)
+	if _, err := strconv.ParseFloat(val, 64); err != nil {
+		return val
+	}
+	s := decimal(val)
+	if rest, ok := strings.CutPrefix(s, "-"); ok {
+		return "-" + sym + rest
+	}
+	return sym + s
+}

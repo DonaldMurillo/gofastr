@@ -363,6 +363,12 @@ func MustEmbedLoaderJS() string {
 // Apps that ship a theme toggle call
 // `window.__gofastr_colorScheme.set('auto'|'light'|'dark')` to
 // override the OS preference.
+//
+// The same script applies the page theme ui.ThemePicker stored in
+// localStorage("gofastr.theme"): one cui-theme-<hex> override class,
+// added to <html> before first paint, and set through
+// `window.__gofastr_theme.set(class)`; an empty class returns to the
+// app's own theme.
 func ColorSchemeJS() (string, error) {
 	data, err := fs.ReadFile(colorSchemeFS, "colorscheme.js")
 	if err != nil {

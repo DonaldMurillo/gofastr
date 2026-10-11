@@ -11,10 +11,14 @@ package i18nui
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"strings"
 	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
 
 // Key is a translation key for framework UI surfaces.
@@ -50,6 +54,9 @@ const (
 	KeyDialogClose   Key = "ui.dialog.close"
 	KeyDialogSave    Key = "ui.dialog.save"
 	KeyDialogDelete  Key = "ui.dialog.delete"
+	// KeyDialogConfirmTitle titles the confirm dialog a
+	// data-cui-confirm control opens when it names no title.
+	KeyDialogConfirmTitle Key = "ui.dialog.confirmTitle"
 
 	// Toast
 	KeyToastSuccess Key = "ui.toast.success"
@@ -115,14 +122,29 @@ const (
 	// DataTable extras
 	KeyTableEmptyDesc Key = "ui.table.emptyDescription"
 	KeyTableSortBy    Key = "ui.table.sortBy"
+	KeyTableSelectAll Key = "ui.table.selectAll"
 
 	// FilterToolbar
-	KeyFilterToolbarLabel Key = "ui.filterToolbar.label"
-	KeyFilterApply        Key = "ui.filterToolbar.apply"
-	KeyFilterReset        Key = "ui.filterToolbar.reset"
-	KeyFilterAll          Key = "ui.filterToolbar.all" // "All {label}"
-	KeyFilterAllPlain     Key = "ui.filterToolbar.allPlain"
-	KeyFilterSortBy       Key = "ui.filterToolbar.sortBy"
+	KeyFilterToolbarLabel  Key = "ui.filterToolbar.label"
+	KeyFilterApply         Key = "ui.filterToolbar.apply"
+	KeyFilterReset         Key = "ui.filterToolbar.reset"
+	KeyShortcutSheetTitle  Key = "ui.shortcutSheet.title"  // "Keyboard shortcuts"
+	KeyTextAreaInvalidJSON Key = "ui.textArea.invalidJSON" // "Enter valid JSON"
+	KeyInlineEditSave      Key = "ui.inlineEdit.save"      // "Save"
+	KeyInlineEditSaved     Key = "ui.inlineEdit.saved"     // "Saved"
+	KeySelectionCount      Key = "ui.selection.count"      // "{n} selected"
+	KeySelectionClear      Key = "ui.selection.clear"      // "Clear selection"
+	KeySelectionCopy       Key = "ui.selection.copy"       // "Copy CSV"
+	KeySelectionCopied     Key = "ui.selection.copied"     // "Copied {n} rows as CSV"
+	KeySelectionCopyFailed Key = "ui.selection.copyFailed" // "The rows could not be copied."
+	// ColumnPicker's link names.
+	KeyColumnShow     Key = "ui.columnPicker.show"     // "Show {column}"
+	KeyColumnHide     Key = "ui.columnPicker.hide"     // "Hide {column}"
+	KeyColumnMoveUp   Key = "ui.columnPicker.moveUp"   // "Move {column} earlier"
+	KeyColumnMoveDown Key = "ui.columnPicker.moveDown" // "Move {column} later"
+	KeyFilterAll      Key = "ui.filterToolbar.all"     // "All {label}"
+	KeyFilterAllPlain Key = "ui.filterToolbar.allPlain"
+	KeyFilterSortBy   Key = "ui.filterToolbar.sortBy"
 	// FilterChipBar
 	KeyFilterClearAll   Key = "ui.filterChipBar.clearAll"
 	KeyFilterChipRemove Key = "ui.filterChipBar.removeFilter" // "Remove filter {label}"
@@ -191,6 +213,22 @@ const (
 	KeyCopyCopy        Key = "ui.copy.copy"
 	KeyCopyCopied      Key = "ui.copy.copied"
 	KeyCopyToClipboard Key = "ui.copy.toClipboard"
+	KeyCopyLink        Key = "ui.copy.link"
+	KeyDrawerOpenPage  Key = "ui.drawer.open_page"
+	KeyDrawerOpenPanel Key = "ui.drawer.open_panel"
+	KeyDrawerPrev      Key = "ui.drawer.prev"
+	KeyDrawerNext      Key = "ui.drawer.next"
+
+	// Ago: how long before now, the way an activity feed says it.
+	KeyAgoNow     Key = "ui.ago.now"     // "just now"
+	KeyAgoMinutes Key = "ui.ago.minutes" // "{n}m ago"
+	KeyAgoHours   Key = "ui.ago.hours"   // "{n}h ago"
+	KeyAgoDays    Key = "ui.ago.days"    // "{n}d ago"
+
+	// ChangeList: the visually hidden words before an edit's old and
+	// new value.
+	KeyChangeFrom Key = "ui.change.from" // "from"
+	KeyChangeTo   Key = "ui.change.to"   // "to"
 
 	// ProgressSteps
 	KeyProgressLabel Key = "ui.progress.label"
@@ -211,6 +249,10 @@ const (
 	KeyThemeDark        Key = "ui.themeToggle.dark"
 	KeyThemeAuto        Key = "ui.themeToggle.auto"
 	KeyThemeColorScheme Key = "ui.themeToggle.colorScheme"
+
+	// ThemePicker
+	KeyThemePicker  Key = "ui.themePicker.label"
+	KeyThemeDefault Key = "ui.themePicker.default"
 
 	// Site navigation (an app's own header package)
 	KeyNavPrimary       Key = "ui.nav.primary"
@@ -277,6 +319,7 @@ const (
 	KeyHuiComboboxResultsLabel      Key = "ui.combobox.resultsLabel"      // "results"                 // "On this page"
 	KeyHuiSidebarCollapse           Key = "ui.sidebar.collapse"           // "Collapse navigation"
 	KeyHuiSidebarExpand             Key = "ui.sidebar.expand"             // "Expand navigation"
+	KeyHuiSidebarCollapseText       Key = "ui.sidebar.collapseText"       // "Collapse"
 	KeyHuiBreadcrumbsLabel          Key = "ui.breadcrumbs.label"          // "Breadcrumb"
 	KeyHuiSortableItemRole          Key = "ui.sortable.itemRole"          // "sortable item"
 	KeyHuiSortableDragLabel         Key = "ui.sortable.dragLabel"         // "Drag %s"
@@ -315,11 +358,12 @@ var Defaults = map[Key]string{
 	KeyEmptyStateTitle: "Nothing here yet",
 	KeyEmptyStateDesc:  "No items to display.",
 
-	KeyDialogConfirm: "Confirm",
-	KeyDialogCancel:  "Cancel",
-	KeyDialogClose:   "Close",
-	KeyDialogSave:    "Save",
-	KeyDialogDelete:  "Delete",
+	KeyDialogConfirm:      "Confirm",
+	KeyDialogCancel:       "Cancel",
+	KeyDialogClose:        "Close",
+	KeyDialogSave:         "Save",
+	KeyDialogDelete:       "Delete",
+	KeyDialogConfirmTitle: "Are you sure?",
 
 	KeyToastSuccess: "Success",
 	KeyToastError:   "Error",
@@ -373,15 +417,29 @@ var Defaults = map[Key]string{
 
 	KeyTableEmptyDesc: "Adjust your filters or add new entries.",
 	KeyTableSortBy:    "Sort by {column}",
+	KeyTableSelectAll: "Select all rows",
 
-	KeyFilterToolbarLabel: "Filters",
-	KeyFilterApply:        "Apply",
-	KeyFilterSortBy:       "Sort by",
-	KeyFilterClearAll:     "Clear all",
-	KeyFilterChipRemove:   "Remove filter {label}",
-	KeyFilterReset:        "Reset",
-	KeyFilterAll:          "All {label}",
-	KeyFilterAllPlain:     "All",
+	KeyFilterToolbarLabel:  "Filters",
+	KeyFilterApply:         "Apply",
+	KeyFilterSortBy:        "Sort by",
+	KeyFilterClearAll:      "Clear all",
+	KeyFilterChipRemove:    "Remove filter {label}",
+	KeyFilterReset:         "Reset",
+	KeyShortcutSheetTitle:  "Keyboard shortcuts",
+	KeyTextAreaInvalidJSON: "Enter valid JSON",
+	KeyInlineEditSave:      "Save",
+	KeyInlineEditSaved:     "Saved",
+	KeySelectionCount:      "{n} selected",
+	KeySelectionClear:      "Clear selection",
+	KeySelectionCopy:       "Copy CSV",
+	KeySelectionCopied:     "Copied {n} rows as CSV",
+	KeySelectionCopyFailed: "The rows could not be copied.",
+	KeyColumnShow:          "Show {column}",
+	KeyColumnHide:          "Hide {column}",
+	KeyColumnMoveUp:        "Move {column} earlier",
+	KeyColumnMoveDown:      "Move {column} later",
+	KeyFilterAll:           "All {label}",
+	KeyFilterAllPlain:      "All",
 
 	KeySearchInputPlaceholder: "Search...",
 	KeySearchLabel:            "Search",
@@ -433,6 +491,19 @@ var Defaults = map[Key]string{
 	KeyCopyCopy:        "Copy",
 	KeyCopyCopied:      "Copied",
 	KeyCopyToClipboard: "Copy to clipboard",
+	KeyCopyLink:        "Copy link",
+	KeyDrawerOpenPage:  "Open as page",
+	KeyDrawerOpenPanel: "Open in panel",
+	KeyDrawerPrev:      "Previous record",
+	KeyDrawerNext:      "Next record",
+
+	KeyAgoNow:     "just now",
+	KeyAgoMinutes: "{n}m ago",
+	KeyAgoHours:   "{n}h ago",
+	KeyAgoDays:    "{n}d ago",
+
+	KeyChangeFrom: "from",
+	KeyChangeTo:   "to",
 
 	KeyProgressLabel: "Progress",
 
@@ -448,6 +519,9 @@ var Defaults = map[Key]string{
 	KeyThemeDark:        "Dark",
 	KeyThemeAuto:        "Auto",
 	KeyThemeColorScheme: "Color scheme",
+
+	KeyThemePicker:  "Theme",
+	KeyThemeDefault: "Default",
 
 	KeyNavPrimary:       "Primary",
 	KeyNavMobilePrimary: "Mobile primary",
@@ -507,6 +581,7 @@ var Defaults = map[Key]string{
 	KeyHuiComboboxResultsLabel:      "results",
 	KeyHuiSidebarCollapse:           "Collapse navigation",
 	KeyHuiSidebarExpand:             "Expand navigation",
+	KeyHuiSidebarCollapseText:       "Collapse",
 	KeyHuiBreadcrumbsLabel:          "Breadcrumb",
 	KeyHuiSortableItemRole:          "sortable item",
 	KeyHuiSortableDragLabel:         "Drag %s",
@@ -598,6 +673,38 @@ func TVars(ctx context.Context, key Key, vars map[string]string) string {
 	return s
 }
 
+// TVarsHTML is TVars for a line that carries markup: an activity line
+// with a bold actor and the record as a link. The translated text is
+// escaped and each {name} becomes vars[name] as given, in one pass, so
+// a value holding "{verb}" stays as written. A placeholder vars does not
+// name is left as text. The caller escapes what it builds each value
+// from.
+func TVarsHTML(ctx context.Context, key Key, vars map[string]render.HTML) render.HTML {
+	s := resolve(ctx, key)
+	var b strings.Builder
+	for {
+		open := strings.IndexByte(s, '{')
+		if open < 0 {
+			break
+		}
+		end := strings.IndexByte(s[open:], '}')
+		if end < 0 {
+			break
+		}
+		v, ok := vars[s[open+1:open+end]]
+		if !ok {
+			b.WriteString(string(render.Text(s[:open+1])))
+			s = s[open+1:]
+			continue
+		}
+		b.WriteString(string(render.Text(s[:open])))
+		b.WriteString(string(v))
+		s = s[open+end+1:]
+	}
+	b.WriteString(string(render.Text(s)))
+	return render.HTML(b.String())
+}
+
 // TranslateValidation returns a translated validation error message
 // for the given validator type, with optional template variables. ctx
 // carries the per-request locale; tr may be nil to use English
@@ -620,32 +727,219 @@ func TranslateValidation(ctx context.Context, tr *i18n.Translator, validator str
 	return msg
 }
 
-// LabelForField returns the display label for an entity field. If a
-// translation key "entity.<entity>.field.<field>" exists in the
-// translator's catalog for the ctx locale, it's used. Otherwise the
-// field name is humanized.
-func LabelForField(ctx context.Context, tr *i18n.Translator, entityName, fieldName string) string {
+// Entity display label helpers resolve the strings an entity's Display
+// config names: its singular and plural names, its description, a field's
+// label, help text and enum values, a view, transition or form-section key,
+// and a nav group. Every one resolves the same way:
+//
+//  1. the catalog key for the locale (the ctx translator is consulted when
+//     the tr argument is nil, the same fallback T uses),
+//  2. the Display value the caller passes, when it is set,
+//  3. a fallback derived from the key itself.
+//
+// Nothing in Display is itself a translation: the key, title-cased, is the
+// English fallback, and a catalog entry under the key wins when it exists.
+// The last-resort fallback for prose with no natural derived text (a
+// description, a help line) is the empty string.
+
+// EntitySingular returns the entity's singular name for headings, buttons
+// and breadcrumbs: entity.<entity>.singular, else the Display singular,
+// else the entity name singularized and title-cased. The singularization
+// matters: entity names are usually plurals ("invoices"), and a heading
+// that read "New Invoices" for ONE record is the bug the derived
+// fallback exists to avoid. Words the shared singularizer leaves alone
+// (irregulars like "people") come back title-cased, same as before.
+func EntitySingular(ctx context.Context, tr *i18n.Translator, entityName, display string) string {
+	return displayLabel(ctx, tr, "entity."+entityName+".singular", display, inflect.Singular(entityName))
+}
+
+// EntityPlural returns the entity's plural name for nav and list headings:
+// entity.<entity>.plural, else the Display plural, else the entity name
+// title-cased.
+func EntityPlural(ctx context.Context, tr *i18n.Translator, entityName, display string) string {
+	return displayLabel(ctx, tr, "entity."+entityName+".plural", display, entityName)
+}
+
+// EntityNoun returns the entity's name for use inside a sentence (the
+// "11 customers" count): the plural or singular catalog entry as written,
+// since the translator owns its casing, else the Display name or the
+// derived name with each word that is capitalized only at its start
+// lowercased. A word with any other capital keeps it ("API keys").
+func EntityNoun(ctx context.Context, tr *i18n.Translator, entityName, display string, plural bool) string {
+	key, slug := "entity."+entityName+".singular", inflect.Singular(entityName)
+	if plural {
+		key, slug = "entity."+entityName+".plural", entityName
+	}
+	if got, ok := catalogString(ctx, tr, key); ok {
+		return got
+	}
+	name := display
+	if name == "" {
+		name = titleCase(slug)
+	}
+	words := strings.Fields(name)
+	for i, w := range words {
+		runes := []rune(w)
+		plain := true
+		for _, r := range runes[1:] {
+			if unicode.IsUpper(r) {
+				plain = false
+				break
+			}
+		}
+		if plain {
+			runes[0] = unicode.ToLower(runes[0])
+			words[i] = string(runes)
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// EntityDescription returns the one-line description shown under a list
+// heading: entity.<entity>.description, else the Display description, else
+// the empty string (prose with no derived fallback).
+func EntityDescription(ctx context.Context, tr *i18n.Translator, entityName, display string) string {
+	return displayLabel(ctx, tr, "entity."+entityName+".description", display, "")
+}
+
+// FieldLabel returns a field's label: entity.<entity>.fields.<field>.label,
+// else the Display label (pass "" when there is none), else the humanized
+// field name.
+func FieldLabel(ctx context.Context, tr *i18n.Translator, entityName, fieldName, display string) string {
+	key := "entity." + entityName + ".fields." + fieldName + ".label"
+	if got, ok := catalogString(ctx, tr, key); ok {
+		return got
+	}
+	if display != "" {
+		return display
+	}
+	return humanize(fieldName)
+}
+
+// RelationLabel is FieldLabel for a Relation field. Its humanized
+// fallback drops a trailing "_id", "Id" or "ID": the field names the
+// record it points at, so customer_id labels as "Customer". The catalog
+// key keeps the real field name.
+func RelationLabel(ctx context.Context, tr *i18n.Translator, entityName, fieldName, display string) string {
+	if display == "" {
+		display = humanize(trimIDSuffix(fieldName))
+	}
+	return FieldLabel(ctx, tr, entityName, fieldName, display)
+}
+
+func trimIDSuffix(name string) string {
+	for _, suf := range []string{"_id", "Id", "ID"} {
+		if len(name) > len(suf) && strings.HasSuffix(name, suf) {
+			return strings.TrimSuffix(name, suf)
+		}
+	}
+	return name
+}
+
+// FieldHelp returns the help line under a field's input:
+// entity.<entity>.fields.<field>.help, else the Display help, else the
+// empty string.
+func FieldHelp(ctx context.Context, tr *i18n.Translator, entityName, fieldName, display string) string {
+	return displayLabel(ctx, tr, "entity."+entityName+".fields."+fieldName+".help", display, "")
+}
+
+// FieldValueLabel returns the label for one value of an Enum field:
+// entity.<entity>.fields.<field>.values.<value>, else the value
+// title-cased ("past_due" -> "Past due").
+func FieldValueLabel(ctx context.Context, tr *i18n.Translator, entityName, fieldName, value string) string {
+	return displayLabel(ctx, tr, "entity."+entityName+".fields."+fieldName+".values."+value, "", value)
+}
+
+// ViewLabel returns a list view's tab label: entity.<entity>.views.<key>,
+// else the view's Display label, else the key title-cased.
+func ViewLabel(ctx context.Context, tr *i18n.Translator, entityName, key, display string) string {
+	return displayLabel(ctx, tr, "entity."+entityName+".views."+key, display, key)
+}
+
+// TransitionLabel returns a state move's button label:
+// entity.<entity>.transitions.<key>, else the transition's Display label,
+// else the key title-cased ("mark_paid" -> "Mark paid").
+func TransitionLabel(ctx context.Context, tr *i18n.Translator, entityName, key, display string) string {
+	return displayLabel(ctx, tr, "entity."+entityName+".transitions."+key, display, key)
+}
+
+// SectionLabel returns a form section's heading:
+// entity.<entity>.sections.<key>, else the passed label, else the key
+// title-cased. A form section declares Help (prose under the heading), not
+// a label of its own, so callers pass the empty string for now.
+func SectionLabel(ctx context.Context, tr *i18n.Translator, entityName, key, display string) string {
+	return displayLabel(ctx, tr, "entity."+entityName+".sections."+key, display, key)
+}
+
+// NavGroupLabel returns a sidebar group's heading: nav.groups.<key>, else
+// the group's Display label, else the key title-cased ("billing" ->
+// "Billing").
+func NavGroupLabel(ctx context.Context, tr *i18n.Translator, key, display string) string {
+	return displayLabel(ctx, tr, "nav.groups."+key, display, key)
+}
+
+// displayLabel resolves one Display string: catalog first, then the Display
+// value, then slug title-cased. An empty slug means prose with no derived
+// fallback (a description, a help line), which resolves to "".
+func displayLabel(ctx context.Context, tr *i18n.Translator, key, display, slug string) string {
+	if got, ok := catalogString(ctx, tr, key); ok {
+		return got
+	}
+	if display != "" {
+		return display
+	}
+	return titleCase(slug)
+}
+
+// catalogString returns the catalog text for key and true when the catalog
+// holds it. A miss returns the bare key from Translator.T, which is
+// indistinguishable from a catalog that maps the key to itself; that shape
+// is refused: it reads as a miss.
+func catalogString(ctx context.Context, tr *i18n.Translator, key string) (string, bool) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	key := "entity." + entityName + ".field." + fieldName
-	if tr != nil {
-		if val := tr.T(ctx, key); val != "" && val != key {
-			return val
-		}
+	if tr == nil {
+		tr = translatorFromContext(ctx)
 	}
-	return humanize(fieldName)
+	if tr == nil {
+		return "", false
+	}
+	if val := tr.T(ctx, key); val != "" && val != key {
+		return val, true
+	}
+	return "", false
+}
+
+// titleCase turns a lowercase slug into its English fallback label:
+// underscores and hyphens become spaces and the first letter is
+// capitalized ("past_due" -> "Past due"). Unlike humanize, later words
+// stay lowercase, which reads as a sentence: the label of a key, not a
+// title of a column.
+func titleCase(slug string) string {
+	if slug == "" {
+		return ""
+	}
+	s := strings.NewReplacer("_", " ", "-", " ").Replace(slug)
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
 }
 
 // AllKeys returns every translation Key constant declared by this
 // package. Used by completeness tests to assert that adding a new Key
 // without a matching Defaults entry is a build-breaking error.
 //
+// The per-entity families (entity.<entity>.* and nav.groups.<key>) are NOT
+// here: their keys name app data, so no constant or Defaults entry can hold
+// them. The Entity* label helpers build them, and the package test walks
+// every helper against a catalog to pin each key's shape.
+//
 // Keep this in sync with the const block above. The
 // TestAllKeysCoversAllPackageConstants test cross-checks against the
 // Defaults map so stale entries here are caught at test time.
 func AllKeys() []Key {
-	return []Key{
+	keys := []Key{
 		KeyPaginationPrevious, KeyPaginationNext, KeyPaginationPage,
 		KeyPaginationOf, KeyPaginationShowing, KeyPaginationResults,
 		KeyPaginationLabel,
@@ -654,12 +948,12 @@ func AllKeys() []Key {
 		KeyValidationPattern, KeyValidationUnique,
 		KeyEmptyStateTitle, KeyEmptyStateDesc,
 		KeyDialogConfirm, KeyDialogCancel, KeyDialogClose,
-		KeyDialogSave, KeyDialogDelete,
+		KeyDialogSave, KeyDialogDelete, KeyDialogConfirmTitle,
 		KeyToastSuccess, KeyToastError, KeyToastWarning, KeyToastInfo,
 		KeyBannerDismiss,
 		KeyTableSortAsc, KeyTableSortDesc, KeyTableNoSort,
 		KeyTableFilter, KeyTableNoResults, KeyTableLoading,
-		KeyTableEmptyDesc, KeyTableSortBy,
+		KeyTableEmptyDesc, KeyTableSortBy, KeyTableSelectAll,
 		KeyFilterToolbarLabel, KeyFilterApply, KeyFilterReset,
 		KeyFilterAll, KeyFilterAllPlain, KeyFilterSortBy,
 		KeyFilterClearAll, KeyFilterChipRemove,
@@ -685,7 +979,10 @@ func AllKeys() []Key {
 		KeyAuthEmail, KeyAuthPassword, KeyAuthRememberMe,
 		KeyNotificationDismiss, KeyNotificationEmpty,
 		KeyPollingLive,
-		KeyCopyCopy, KeyCopyCopied, KeyCopyToClipboard,
+		KeyCopyCopy, KeyCopyCopied, KeyCopyToClipboard, KeyCopyLink,
+		KeyDrawerOpenPage, KeyDrawerOpenPanel, KeyDrawerPrev, KeyDrawerNext,
+		KeyAgoNow, KeyAgoMinutes, KeyAgoHours, KeyAgoDays,
+		KeyChangeFrom, KeyChangeTo,
 		KeyProgressLabel, KeyTagRemove,
 		KeyRepeaterAdd, KeyRepeaterRemove, KeyRepeaterRemoveItem,
 		KeyPasswordInputShow, KeyPasswordInputHide,
@@ -695,6 +992,13 @@ func AllKeys() []Key {
 		KeySectionLabel,
 		KeyThemeToggle, KeyThemeLight, KeyThemeDark,
 		KeyThemeAuto, KeyThemeColorScheme,
+		KeyThemePicker, KeyThemeDefault,
+		KeyShortcutSheetTitle, KeyTextAreaInvalidJSON,
+		KeyInlineEditSave, KeyInlineEditSaved,
+		KeySelectionCount, KeySelectionClear,
+		KeySelectionCopy, KeySelectionCopied, KeySelectionCopyFailed,
+		KeyColumnShow, KeyColumnHide,
+		KeyColumnMoveUp, KeyColumnMoveDown,
 		KeyNavPrimary, KeyNavMobilePrimary, KeyNavToggle,
 		KeyDismissTitled, KeyTagRemoveLabelled, KeyActionFailed,
 		KeyColorPick, KeyPasswordRevealShow, KeyPasswordRevealHide,
@@ -715,12 +1019,17 @@ func AllKeys() []Key {
 		KeyHuiJSONEmptyArr, KeyHuiJSONTruncated,
 		KeyHuiComboboxLoading, KeyHuiComboboxNoResults,
 		KeyHuiComboboxResultCount, KeyHuiComboboxResultsLabel,
-		KeyHuiSidebarCollapse, KeyHuiSidebarExpand, KeyHuiBreadcrumbsLabel, KeyHuiSortableItemRole,
+		KeyHuiSidebarCollapse, KeyHuiSidebarExpand, KeyHuiSidebarCollapseText, KeyHuiBreadcrumbsLabel, KeyHuiSortableItemRole,
 		KeyHuiSortableDragLabel, KeyHuiSortableGrabbed, KeyHuiSortablePosition, KeyHuiSortableMoved,
 		KeyHuiSortableSaved, KeyHuiSortableReverted, KeyHuiSortableCancelled, KeyHuiSortableConflictReverted,
 		KeyHuiSortableConflictRefreshed, KeyHuiMultiSelectPlaceholder,
 		KeyHuiMultiSelectRemoveLabel,
 	}
+	// The entity screens keep their keys in one block per area.
+	for _, block := range entityKeyBlocks {
+		keys = append(keys, slices.Sorted(maps.Keys(block))...)
+	}
+	return keys
 }
 
 // humanize converts snake_case or camelCase to "Title Case".

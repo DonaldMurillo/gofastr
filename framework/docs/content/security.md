@@ -325,8 +325,8 @@ storage restriction covers requests with an `Authorization` header,
 NOT cookie-authenticated ones — this framework's default session
 auth — so every authenticated 2xx body suppresses storage itself.
 CRUD responses, the auth battery's token and account listings, A2A
-POST responses, uihost pages (`no-store` plus `Vary: Cookie`), the
-resource `TableHandler`, kiln's JSON GETs, and the harness REST
+POST responses, uihost pages (`no-store` plus `Vary: Cookie`), kiln's
+JSON GETs, and the harness REST
 surface all stamp `Cache-Control: no-store` unless the handler set
 its own Cache-Control. The `nostore` analyzer holds the family: a
 handler that resolves a principal and writes a 2xx body with no
@@ -335,7 +335,7 @@ Cache-Control on the path fires it.
 ## OpenAPI coverage for auth endpoints
 
 Auth endpoints registered by `AuthManager.RegisterRoutes` (login,
-register, logout, /auth/me, /auth/2fa/*, /auth/oauth/*, magic-link,
+register, logout, /auth/me, /auth/password, /auth/2fa/*, /auth/oauth/*, magic-link,
 verify-email, forgot-password, reset-password, /auth/accounts,
 /auth/unlink/{provider}) are **not** currently part of the
 auto-generated OpenAPI spec.
@@ -344,7 +344,9 @@ auto-generated OpenAPI spec.
 schemas for entity CRUD routes; the app passes its route predicate so
 the served spec never documents CRUD paths registration did not mount
 (no DB, or `Exposure.CRUD=false` — declared custom endpoints stay
-documented either way). Plugin-registered HTTP handlers go
+documented either way). `EntityOpenAPIWithBulk` takes a second
+predicate and also documents the `_bulk`, `_export.csv` and `_pick` routes
+`App.EntityUI` mounts; the served spec passes it. Plugin-registered HTTP handlers go
 through `router.Post / router.Get / …` directly and don't carry
 schema metadata that the spec generator can consume. There is no
 plugin → OpenAPI extension hook today.
@@ -488,8 +490,9 @@ accepts a caller-built condition on a `NoQuery` column and returns the
 stored value, because read-modify-write, seed lookups, and aggregates
 all need the real row; the server cannot tell those apart from a
 rendered list. Where rows reach an end user, pass
-`crud.WithReadHooks(ctx)` so the same `AfterList`/`AfterGet` chain the
-HTTP surface runs applies (see `hooks-and-transactions.md`).
+`crud.WithReadHooks(ctx)` so the read hooks the HTTP surface runs apply:
+the `BeforeList`/`BeforeGet` scopes and the `AfterList`/`AfterGet` masks
+(see `hooks-and-transactions.md`).
 
 A nested `?rel.field=` filter needs the target entity's schema to run
 that check, so an unresolvable target refuses the filter rather than
@@ -556,9 +559,11 @@ behaviour for BelongsTo now; a hook is only needed for has-many
 retargeting or business rules beyond scope.
 
 Blueprint screens are checked at generate time, because several of them
-reach the database without passing through the HTTP filter parser: an
-`entity_list` `search:` or `filters:`, a `stat_card` `source.filter` or
-summed `source.field`, and a chart's `group_by`. The chart is the
+reach the database without passing through the HTTP filter parser: a
+`stat_card` `source.filter` or summed `source.field`, and a chart's
+`group_by`. (The screen-level `search:`/`filters:` keys are gone; the
+entity's `search_fields:` and `display: facets:` are checked at entity
+registration instead.) The chart is the
 sharpest of these: `group_by` renders each distinct stored value as a
 bar or slice LABEL, so a masked column would print in full on a page
 whose table shows the mask.

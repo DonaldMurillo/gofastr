@@ -183,13 +183,35 @@ func buildValueIndex(tokens map[string]string) map[string][]string {
 		if strings.Contains(k, ".") || bareKeyword(v) {
 			continue
 		}
-		lv := strings.ToLower(v)
+		lv := normalizeNumber(strings.ToLower(v))
 		out[lv] = append(out[lv], k)
 	}
 	for _, names := range out {
 		slices.Sort(names)
 	}
 	return out
+}
+
+// reNumberLiteral is one CSS number with an optional unit.
+var reNumberLiteral = regexp.MustCompile(`^([+-]?)(\d*\.?\d+)([a-z%]*)$`)
+
+// normalizeNumber spells a single number the one way: .6, 0.60 and
+// +0.6 are all 0.6, and -.01em is -0.01em, so a value the browser
+// reads as a token's is found whatever its spelling. Anything that is
+// not one number comes back unchanged.
+func normalizeNumber(v string) string {
+	m := reNumberLiteral.FindStringSubmatch(v)
+	if m == nil {
+		return v
+	}
+	n, err := strconv.ParseFloat(m[2], 64)
+	if err != nil {
+		return v
+	}
+	if m[1] == "-" && n != 0 {
+		n = -n
+	}
+	return strconv.FormatFloat(n, 'f', -1, 64) + m[3]
 }
 
 // bareKeyword reports whether v is a single CSS identifier and nothing
@@ -223,10 +245,22 @@ func tokenCategory(key string) string { return style.TokenCategory(key) }
 var PropTokenCategories = map[string][]string{
 	"font-size":     {"text"},
 	"border-radius": {"radii"},
-	"padding":       {"spacing"}, "padding-top": {"spacing"}, "padding-bottom": {"spacing"},
+	"border-width":  {"stroke"}, "border-top-width": {"stroke"}, "border-right-width": {"stroke"},
+	"border-bottom-width": {"stroke"}, "border-left-width": {"stroke"},
+	"border-inline-width": {"stroke"}, "border-block-width": {"stroke"},
+	"border-inline-start-width": {"stroke"}, "border-inline-end-width": {"stroke"},
+	"border-block-start-width": {"stroke"}, "border-block-end-width": {"stroke"},
+	"outline-width": {"stroke"}, "outline-offset": {"stroke"}, "column-rule-width": {"stroke"},
+	"padding": {"spacing"}, "padding-top": {"spacing"}, "padding-bottom": {"spacing"},
 	"padding-left": {"spacing"}, "padding-right": {"spacing"},
 	"margin": {"spacing"}, "margin-top": {"spacing"}, "margin-bottom": {"spacing"},
 	"margin-left": {"spacing"}, "margin-right": {"spacing"},
+	"padding-inline": {"spacing"}, "padding-block": {"spacing"},
+	"padding-inline-start": {"spacing"}, "padding-inline-end": {"spacing"},
+	"padding-block-start": {"spacing"}, "padding-block-end": {"spacing"},
+	"margin-inline": {"spacing"}, "margin-block": {"spacing"},
+	"margin-inline-start": {"spacing"}, "margin-inline-end": {"spacing"},
+	"margin-block-start": {"spacing"}, "margin-block-end": {"spacing"},
 	"gap": {"spacing"}, "row-gap": {"spacing"}, "column-gap": {"spacing"},
 	"color": {"color", "tk"}, "background": {"color", "tk"}, "background-color": {"color", "tk"},
 	"border-color": {"color", "tk"}, "outline-color": {"color", "tk"},
@@ -239,7 +273,8 @@ var PropTokenCategories = map[string][]string{
 	"animation-timing-function": {"easing"},
 	"z-index":                   {"z"},
 	"font-weight":               {"font-weight"},
-	"width":                     {"size"}, "min-width": {"size"}, "max-width": {"size"},
+	"line-height":               {"leading"}, "letter-spacing": {"tracking"}, "opacity": {"opacity"},
+	"width": {"size"}, "min-width": {"size"}, "max-width": {"size"},
 	"height": {"size"}, "min-height": {"size"}, "max-height": {"size"},
 	"inline-size": {"size"}, "min-inline-size": {"size"}, "max-inline-size": {"size"},
 	"block-size": {"size"}, "min-block-size": {"size"}, "max-block-size": {"size"},
@@ -253,7 +288,7 @@ var propTokenCategories = PropTokenCategories
 // whose values are lengths or times, where a fallback either restates
 // the token or teaches a scale the theme does not declare. Colour and
 // font fallbacks stay out: they are degraded-mode choices on purpose.
-var driftCategories = map[string]bool{"spacing": true, "radii": true, "text": true, "duration": true}
+var driftCategories = map[string]bool{"spacing": true, "radii": true, "stroke": true, "leading": true, "tracking": true, "opacity": true, "text": true, "duration": true}
 
 // collectDeclaredCustomProperties gathers every custom property the
 // sheet declares (in rule blocks, not in @supports conditions, which
@@ -760,7 +795,7 @@ func (c *checker) checkHardcodedValue(d *Decl) {
 		allowed[cat] = true
 	}
 	var toks []string
-	for _, k := range c.valueIndex[strings.ToLower(val)] {
+	for _, k := range c.valueIndex[normalizeNumber(strings.ToLower(val))] {
 		if allowed[tokenCategory(k)] {
 			toks = append(toks, k)
 		}

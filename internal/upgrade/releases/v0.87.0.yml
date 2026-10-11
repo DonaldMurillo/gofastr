@@ -1,5 +1,5 @@
 version: v0.87.0
-title: Layer prefixes, headless form and toast hooks, docs tools opt-in
+title: Theme reskin and tokens, entity Display and States, framework/entityui, the admin rebuilt on entityui, cui-* kernel prefixes, docs tools opt-in
 notes:
   - change: "the framework_docs_list / framework_docs_get / framework_docs_search MCP tools moved out of framework.WithMCPIntrospection into framework/docs/mcptools, registered through the new framework.WithMCPTools option; package framework no longer imports the docs corpus"
     breaking: true
@@ -65,6 +65,39 @@ notes:
       uses:
         - gofastr/framework/ui.CopyButtonConfig.Target
     guidance: "Give Target the id of the element to copy (the headless copy module has resolved it with getElementById since v0.86.0, where a selector silently copied nothing); a Target such as \".snippet pre\" now panics at render, so put an id on that element."
+  - change: "style.ShadowSet gains an XS token (--shadow-xs) and Validate requires it like the other shadow steps: a theme that builds its ShadowSet field by field instead of starting from style.DefaultTheme() is refused at boot with \"Theme.Shadows.XS: Shadow.Value is empty (Name=\\\"xs\\\")\" (the theme.go that gofastr theme init and theme edit write names it through style.AutoFillNames), or \"Theme.Shadows.XS: Shadow.Name is empty\" when nothing names it"
+    breaking: true
+    hits: review
+    find:
+      fields:
+        - field: gofastr/core-ui/style.ShadowSet.SM
+    guidance: "Where a ShadowSet is built field by field (every theme.go an earlier gofastr theme init or theme edit wrote is), add XS: style.Shadow{Name: \"xs\", Value: \"0 1px 2px 0 rgba(0,0,0,0.05)\"} (or copy style.DefaultTheme().Shadows.XS). A ShadowSet literal that already sets XS, and a theme that starts from style.DefaultTheme() and overrides single steps, need nothing."
+  - change: "the owned-style check (gofastr gen styles, gofastr verify) reads border-width, outline-width, outline-offset and column-rule-width against the new --stroke-* tokens: a .style.css declaration such as outline-offset: 2px or border-width: 1px, which every siteheader, sitefooter and docpage sheet the blueprint wrote carries, is a GOFASTR1807 error and stops that sheet's Go being generated"
+    breaking: true
+    hits: edit
+    find:
+      css:
+        declarations:
+          - properties: [outline-offset, outline-width, column-rule-width, border-width, border-top-width, border-right-width, border-bottom-width, border-left-width, border-inline-width, border-block-width, border-inline-start-width, border-inline-end-width, border-block-start-width, border-block-end-width]
+            value: '^\+?0*[12](?:\.0*)?px$'
+            glob: "**/*.style.css"
+    guidance: "The hit is a line of an owned <name>.style.css sheet. Write outline-offset: var(--stroke-focus-offset), a 1px width as var(--stroke-thin) and a 2px border width as var(--stroke-thick) (an outline: 2px solid … reads var(--stroke-focus) solid …), then re-run gofastr gen styles. A 1px solid border shorthand passes the check, but reading var(--stroke-thin) solid lets a theme's line weight reach it."
+  - change: "the owned-style check (gofastr gen styles, gofastr verify) reads line-height, letter-spacing and opacity against the new --leading-*, --tracking-* and --opacity-* tokens: a .style.css declaration whose value is one of theirs, such as line-height: 1.6 or letter-spacing: -0.01em, which the sitefooter and siteheader sheets the blueprint wrote carry, is a GOFASTR1807 error and stops that sheet's Go being generated"
+    breaking: true
+    hits: edit
+    find:
+      css:
+        declarations:
+          - properties: [line-height]
+            value: '^\+?0*1\.[2456]0*$'
+            glob: "**/*.style.css"
+          - properties: [letter-spacing]
+            value: '^(?:-0*\.0[123]|\+?0*\.0[48])0*em$'
+            glob: "**/*.style.css"
+          - properties: [opacity]
+            value: '^\+?0*\.[256]0*$'
+            glob: "**/*.style.css"
+    guidance: "The hit is a line of an owned <name>.style.css sheet. Write line-height 1.2 / 1.4 / 1.5 / 1.6 as var(--leading-tight) / var(--leading-snug) / var(--leading-normal) / var(--leading-relaxed), letter-spacing -0.03em / -0.02em / -0.01em / 0.04em / 0.08em as var(--tracking-tighter) / var(--tracking-tight) / var(--tracking-snug) / var(--tracking-wide) / var(--tracking-wider), and opacity 0.2 / 0.5 / 0.6 as var(--opacity-faint) / var(--opacity-disabled) / var(--opacity-muted), then re-run gofastr gen styles. Other values pass the check."
   - change: "EntityUserStore records email_verified (FALSE for every existing row). A magic link or a completed password reset on an unverified account claims it: OAuth links, API tokens and sessions are removed, and a magic link also clears the password. OAuth auto-links a new provider only into a verified account (409 otherwise). A magic link on an existing account answers 500 when the user store does not implement EmailVerifiedChecker"
     breaking: true
     hits: review
@@ -149,3 +182,133 @@ notes:
       uses:
         - gofastr/battery/auth.UserEntityConfig
     guidance: "Expose what clients need from such an entity through a custom route or a projection entity; in-process reads (ListAll, GetOne, EagerLoad) are unaffected."
+  - change: "style.DefaultTheme() and theme.Default() are reskinned to neutral zinc (primary #18181B, was indigo #4F46E5; radii 6/8/10/14px, were 4/8/12/16), and three tokens change role as well as shade: --color-secondary is a light fill #F4F4F5 under a near-black --color-secondary-fg (was grey #6B7280 under white), --color-border-strong is #D4D4D8 (was #A1A1AA), a hover edge rather than a 3:1 control edge, and --color-accent is blue #2563EB (was violet #7C3AED in style.DefaultTheme(), cyan #0891B2 in theme.Default())"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/core-ui/style.DefaultTheme
+        - gofastr/framework/ui/theme.Default
+      strings:
+        properties: [--color-secondary, --color-secondary-fg]
+      css:
+        properties: [--color-secondary, --color-secondary-fg]
+    guidance: "A theme built on these defaults draws the new look: check its pages, and set the old values on the theme where the brand needs them. Text or an icon drawn in var(--color-secondary) is now near-invisible on a white page: draw it in var(--color-text-muted), or put var(--color-secondary-fg) on a var(--color-secondary) fill. A control border drawn in var(--color-border-strong) falls below 3:1: move it to var(--color-text-subtle); a hover edge needs nothing. Look at var(--color-accent) only where the old violet or cyan hue mattered."
+  - change: "the owned-style check (gofastr gen styles, gofastr verify) reads padding-inline, padding-block, margin-inline, margin-block and their -start and -end sides against the --spacing-* tokens, and reads a number the way the browser does (16.0px is 16px, .6 is 0.6): a .style.css declaration such as padding-inline: 16px is a GOFASTR1807 error and stops that sheet's Go being generated"
+    breaking: true
+    hits: edit
+    find:
+      css:
+        declarations:
+          - properties: [padding-inline, padding-block, padding-inline-start, padding-inline-end, padding-block-start, padding-block-end, margin-inline, margin-block, margin-inline-start, margin-inline-end, margin-block-start, margin-block-end]
+            value: '^\+?0*(?:2|4|8|16|24|32|48)(?:\.0*)?px$'
+            glob: "**/*.style.css"
+    guidance: "The hit is a line of an owned <name>.style.css sheet. Write 2 / 4 / 8 / 16 / 24 / 32 / 48px as var(--spacing-xs) / var(--spacing-sm) / var(--spacing-md) / var(--spacing-lg) / var(--spacing-xl) / var(--spacing-2xl) / var(--spacing-3xl), then re-run gofastr gen styles. A two-value shorthand (padding-inline: 8px 16px) passes the check."
+  - change: "i18nui.LabelForField is removed; i18nui.FieldLabel(ctx, tr, entity, field, display) replaces it and reads the catalog key entity.<entity>.fields.<field>.label, so the old entity.<entity>.field.<field> key no longer translates a field label"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/framework/i18nui.LabelForField
+    guidance: "Call i18nui.FieldLabel(ctx, tr, entityName, fieldName, label), where label is the field's Display label string (\"\" where the field has none — the argument is the label text, not the Display config), and move each catalog entry from entity.<entity>.field.<field> to entity.<entity>.fields.<field>.label."
+  - change: "a filter operator must suit the field's type: like (?field_like=, like in ?where=) works only on a String, Text, Enum or UUID column and gt / gte / lt / lte are refused on a Bool or JSON column, on flat params, ?where=, relation filters (?rel.field_like=), include-scoped filters and Go-built predicates alike"
+    breaking: true
+    nodetect: "the operators arrive in request query strings and stored client links, which no source scan can find"
+    guidance: "Requests that sent like against a number, date or Bool column, or a range operator against a Bool or JSON column, now answer 400: send eq / in for those columns instead."
+  - change: "crud.ListOptions.Filters (ListAll / CountAll) is validated like the ?field_<op>= parser: a filter naming an unknown, Hidden or NoQuery column, or an operator the column's type refuses, returns an error instead of reaching SQL, and a WireName resolves to its column"
+    breaking: true
+    hits: review
+    find:
+      fields:
+        - field: gofastr/framework/crud.ListOptions.Filters
+    guidance: "Where a hand-built Filters slice reaches ListAll or CountAll, check every entry names a queryable column (not Hidden, not NoQuery) and an operator its type accepts (no like on a number, no range on a Bool or JSON column); use crud.ListOptions.Where with a filter.Predicate to keep the shape the ?where= parser accepts."
+  - change: "ui.WorkbenchConfig.RailWidth is a ui.WorkbenchRailWidth (WorkbenchRailNarrow 240px, the default 320px, WorkbenchRailWide 480px) instead of a free-form CSS length; any other value panics at render"
+    breaking: true
+    hits: edit
+    find:
+      fields:
+        - field: gofastr/framework/ui.WorkbenchConfig.RailWidth
+    guidance: "Replace the length with the nearest named width (ui.WorkbenchRailNarrow, ui.WorkbenchRailWide, or leave it unset for 320px). A theme that needs another size sets --ui-workbench-rail-narrow or --ui-workbench-rail-wide. The old length was written as an inline style attribute that the default CSP strips, so on a strict host it never applied."
+  - change: "the blueprint's screen-level filters:, transitions:, search:, island: and widget: keys are removed (the decoder names the replacement for each), the entity_create and entity_edit block kinds are gone, and the synthesized create screen moved from <list>/new to <list>/create with no <detail>/edit screen behind it: generated apps draw entity screens through framework/entityui, and an entity detail screen must sit at <list route>/{id} under one of the entity's list screens"
+    breaking: true
+    hits: edit
+    find:
+      text:
+        - glob: "**/gofastr.yml"
+          match: '^ {8,}(filters|transitions|search|island|widget):'
+        - glob: "**/gofastr.yml"
+          match: '^\s*(-\s+)?kind:\s*["'']?entity_(create|edit)["'']?\s*(#.*)?$'
+    guidance: "In gofastr.yml: move an entity_list filters: list to that entity's display: facets:, move search: to the entity's search_fields:, drop island:/widget: (lists are query-param pages now), and move an entity_detail transitions: list to the entity's states: block — an old screen transition names no From, so write advisory: true on the states block and give each move a from: list of the statuses it may leave, then drop advisory: to let the CRUD handler enforce it. Point create links at <list>/create; the record page now holds the edit form, so delete the <detail>/edit route. Replace an entity_create block with create: true on the entity's entity_list (the create screen is synthesized at <list>/create), and delete an entity_edit block's screen: its entity_detail screen edits the record. A detail screen whose route is not <list route>/{id} under one of the entity's list screens is refused at validate time with the expected route in the error. Then regenerate the app (gofastr generate --force) to move its screens onto appUI."
+  - change: "App.WithAuditLog (through EnsureAuditTable) adds a nullable reason TEXT column to an existing audit table at boot, for the reason a crud.WithStateOverride write records; a database role without ALTER TABLE on that table fails startup"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/framework.App.WithAuditLog
+        - gofastr/framework.EnsureAuditTable
+    guidance: "Nothing to do where the app's database role may alter the audit table: the column is added at boot, and replicas booting together all succeed. Where the runtime role cannot ALTER, add the column first with a migration role: ALTER TABLE audit_log ADD COLUMN reason TEXT (Postgres can say ADD COLUMN IF NOT EXISTS; name your own table if AuditConfig.Table sets one)."
+  - change: "framework/ui/resource is removed: its Config / Registry screens, island routes and PublicIsland policy are gone, and framework/entityui draws entity screens with no islands"
+    breaking: true
+    hits: edit
+    find:
+      imports:
+        - gofastr/framework/ui/resource
+    guidance: "Build the app's one UI after every entity registers, appUI := fwApp.EntityUI(entityui.Extensions{}) (import github.com/DonaldMurillo/gofastr/framework/entityui; a second EntityUI call panics), and render appUI.List(entity), appUI.Record(entity, id) and appUI.Create(entity) where resource screens rendered. Move the resource Config's labels, columns, filters and field hints to the entity's Display, its transitions to the entity's States, and a custom DataSource to an Extensions.Entities List or Record override. Stats and charts are appUI.StatValue, GroupBars, GroupSlices and LineChart. Drop PublicIsland: there are no island routes to open. A generated app regenerates with gofastr generate --force."
+  - change: "battery/admin's Config.Theme, Config.FontFaceCSS, Config.EntityListLimit and Config.Secret are removed, and so are Battery.RegisterRoutes and SortDirOf: the admin ships no CSS, takes the app's theme through the UI host, and pages its lists by each entity's Display.PageSizes"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/battery/admin.Config.Theme
+        - gofastr/battery/admin.Config.FontFaceCSS
+        - gofastr/battery/admin.Config.EntityListLimit
+        - gofastr/battery/admin.Config.Secret
+        - gofastr/battery/admin.Battery.RegisterRoutes
+        - gofastr/battery/admin.SortDirOf
+    guidance: "Replace admin.SortDirOf(v) with an inline check (v == \"desc\"); the admin's lists now sort through entityui and read no exported helper. Delete the Theme and FontFaceCSS fields: pass the theme and fonts to the UI host (framework.NewUIHostApp or uihost.New) and the admin draws with them. Replace EntityListLimit with display: page_sizes on the entity (entity.DisplayConfig.PageSizes in Go). Delete Secret: the admin signs no form flash, and an ops post answers with a ?result= name instead. Delete a RegisterRoutes call: app.RegisterBattery(admin.New(cfg)) mounts every admin route."
+  - change: "battery/admin draws entity screens through framework/entityui: they moved from /admin/e/<entity> (/new, /view/<id>, /edit/<id>) to /admin/entities/<entity> (/create, /<id>), writes post to /admin/api/<entity>, and Config.UI is required when the admin exposes any entity"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/battery/admin.New
+      strings:
+        match: '/admin/e/'
+    guidance: "Set Config.UI to the app's one entity UI, built after every entity registers: appUI := fwApp.EntityUI(entityui.Extensions{}) (import github.com/DonaldMurillo/gofastr/framework/entityui). Without it, Init fails naming the exposed entities. Point links and tests at /admin/entities/<entity>, /admin/entities/<entity>/create and /admin/entities/<entity>/<id>, which replace the /new, /view/<id> and /edit/<id> screens; the record page holds the edit form. Move the admin's column and label choices to the entity's Display."
+  - change: "battery/admin's Roles page is a permission grid saved by one POST /admin/rbac/_permissions, which grants and revokes only what changed; POST /admin/rbac/_revoke is removed (_grant stays, for the Add a role form)"
+    breaking: true
+    hits: edit
+    find:
+      strings:
+        match: '/rbac/_revoke'
+    guidance: "A script or client that posted to <PathPrefix>/rbac/_revoke now gets 404. Post the whole grid to <PathPrefix>/rbac/_permissions instead (repeated role and permission fields name the grid, and one grant=<role index>:<permission index> per checked box; see admin.md, Roles), or revoke through your GrantStore in Go."
+  - change: "battery/admin renders every page through the app's UI host: Init fails on an app without one, a queue- or audit-only admin included, and the admin's own stylesheet at /admin/admin.css is gone"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/battery/admin.New
+      strings:
+        match: '/admin/admin.css'
+    guidance: "Build the app with framework.NewUIHostApp(uihost.New(site), ...) or mount a uihost.New host before app.RegisterBattery(admin.New(cfg)); without one, Init fails with \"admin: every admin page renders through the app's UI host\". The admin draws with the host's theme and ships no stylesheet: remove links to /admin/admin.css and any CSS written against the old admin markup."
+  - change: "app.App.RenderOverlayResult takes the origin the overlay opens over, between the path and the presentation, so the screen can read it with app.OverlayOriginFromContext"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/core-ui/app.App.RenderOverlayResult
+    guidance: "Pass the location the overlay opens over as the third argument: a.RenderOverlayResult(ctx, path, r.Header.Get(\"X-Gofastr-From\"), as) in a host, or \"\" where there is none (a test). The screen reads its path with app.OverlayOriginFromContext(ctx)."
+  - change: "queue.Browsable.ListJobs takes an offset after the limit, so a caller can page past the newest jobs; the DB, memory and Redis queues implement it"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/battery/queue.Browsable.ListJobs
+          type: '^func\(\w+ context\.Context, status string, limit int\) \(\[\]queue\.Job, error\)$'
+        - symbol: gofastr/battery/queue.DBQueue.ListJobs
+          type: '^func\(\w+ context\.Context, status string, limit int\) \(\[\]queue\.Job, error\)$'
+        - symbol: gofastr/battery/queue.MemoryQueue.ListJobs
+          type: '^func\(\w+ context\.Context, status string, limit int\) \(\[\]queue\.Job, error\)$'
+        - symbol: gofastr/battery/queue.RedisQueue.ListJobs
+          type: '^func\(\w+ context\.Context, status string, limit int\) \(\[\]queue\.Job, error\)$'
+    guidance: "Pass 0 as the new last argument to keep the first page: q.ListJobs(ctx, status, limit, 0). A type of your own that implements Browsable takes the offset too, ListJobs(ctx, status string, limit, offset int), skipping the newest offset jobs and reading a negative offset as zero; a type assertion to queue.Browsable fails quietly until it does."

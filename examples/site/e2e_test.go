@@ -715,18 +715,18 @@ func TestE2E_TabsSwitchPanels(t *testing.T) {
 		t.Fatalf("navigate: %v", err)
 	}
 
-	// First tab should be active, the highlight is driven by the
-	// wrapper's data-active, so the first button's bottom border is the
-	// accent colour while the second button's is transparent.
-	var firstBorder, secondBorderInitial string
+	// First tab should be active. The highlight is driven by the
+	// wrapper's data-active: the active button is a raised segment with
+	// the surface fill, and the others are transparent.
+	var firstFill, secondFillInitial string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[0]).borderBottomColor`, &firstBorder),
-		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[1]).borderBottomColor`, &secondBorderInitial),
+		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[0]).backgroundColor`, &firstFill),
+		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[1]).backgroundColor`, &secondFillInitial),
 	); err != nil {
-		t.Fatalf("read initial borders: %v", err)
+		t.Fatalf("read initial fills: %v", err)
 	}
-	if firstBorder == secondBorderInitial {
-		t.Fatalf("first tab should be visually active initially; both borders = %q", firstBorder)
+	if firstFill == secondFillInitial {
+		t.Fatalf("first tab should be visually active initially; both fills = %q", firstFill)
 	}
 
 	// Click the second tab.
@@ -760,19 +760,19 @@ func TestE2E_TabsSwitchPanels(t *testing.T) {
 	}
 
 	// Regression (frozen-highlight bug): the active indicator must MOVE to
-	// the second button, its bottom border now matches the original
-	// first-tab accent, and the first button no longer does.
+	// the second button: its fill now matches the original first-tab
+	// fill, and the first button's no longer does.
 	var firstAfter, secondAfter string
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[0]).borderBottomColor`, &firstAfter),
-		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[1]).borderBottomColor`, &secondAfter),
+		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[0]).backgroundColor`, &firstAfter),
+		chromedp.Evaluate(`getComputedStyle(document.querySelectorAll('.fui-tab')[1]).backgroundColor`, &secondAfter),
 	); err != nil {
-		t.Fatalf("read borders after click: %v", err)
+		t.Fatalf("read fills after click: %v", err)
 	}
-	if secondAfter != firstBorder {
-		t.Fatalf("active highlight did not move to second tab: got %q, want %q", secondAfter, firstBorder)
+	if secondAfter != firstFill {
+		t.Fatalf("active highlight did not move to second tab: got %q, want %q", secondAfter, firstFill)
 	}
-	if firstAfter == firstBorder {
+	if firstAfter == firstFill {
 		t.Fatalf("first tab still shows the active highlight after switching (frozen highlight): %q", firstAfter)
 	}
 }

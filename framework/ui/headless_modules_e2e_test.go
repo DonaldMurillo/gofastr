@@ -42,9 +42,16 @@ func moduleTestCtxMux(t *testing.T, body string, extra func(mux *http.ServeMux),
 		adds = append(adds, extra)
 	}
 	srv := themeToggleTestPage(t, body, adds...)
+	return moduleTestCtxURL(t, srv.URL, pre...)
+}
+
+// moduleTestCtxURL opens a page some other harness serves and waits
+// for its #ready marker.
+func moduleTestCtxURL(t *testing.T, url string, pre ...chromedp.Action) context.Context {
+	t.Helper()
 	ctx := chromedptest.Context(t)
 	actions := append(append([]chromedp.Action{}, pre...),
-		chromedp.Navigate(srv.URL),
+		chromedp.Navigate(url),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 	)
 	if err := chromedp.Run(ctx, actions...); err != nil {
@@ -101,6 +108,32 @@ func TestCopyButtonToastOnCopyShowsAToast(t *testing.T) {
 	if !pollJS(ctx, `(function(){var t=document.querySelector('[data-cui-toast-stack] [data-hui-toast-id] [data-hui-toast-title]');`+
 		`return !!t && t.textContent==='Copied it';})()`) {
 		t.Fatalf("no toast after a ToastOnCopy click; the stack holds:\n%s",
+			evalString(ctx, `(document.querySelector('[data-cui-toast-stack]')||{}).innerHTML||''`))
+	}
+}
+
+// A menu's copy row is the copy wrapper itself, so the toast config
+// rides the row: the feedback module must read it there, not only from
+// an element under the wrapper.
+func TestMenuCopyRowShowsAToast(t *testing.T) {
+	body := `<span id="row-url">/notes/n1</span>` +
+		string(ui.Menu(ui.MenuConfig{Label: "Row", Items: []ui.MenuItem{
+			{Label: "Copy link", Copy: &ui.MenuCopy{Target: "row-url", Toast: "Link copied"}},
+		}})) +
+		string(preset.ToastSlotHTML(context.Background(), "toasts"))
+	ctx := moduleTestCtx(t, body)
+	if !pollJS(ctx, moduleLoaded("headless-feedback")) {
+		t.Fatal("the copy row never loaded headless-feedback")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.querySelector('[data-cui-comp="ui-menu"] > summary').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-hui-copy]').click()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !pollJS(ctx, `(function(){var t=document.querySelector('[data-cui-toast-stack] [data-hui-toast-id] [data-hui-toast-title]');`+
+		`return !!t && t.textContent==='Link copied';})()`) {
+		t.Fatalf("no toast after a copy row click; the stack holds:\n%s",
 			evalString(ctx, `(document.querySelector('[data-cui-toast-stack]')||{}).innerHTML||''`))
 	}
 }
@@ -239,8 +272,8 @@ func TestBellLabelFollowsUnreadSignal(t *testing.T) {
 	trigger, _ := ui.NotificationBell(ui.NotificationBellConfig{Name: "bell", Href: "/notifications",
 		Label: "Notifications", UnreadCount: 2, SignalUnread: "unread", ID: "bell"})
 	ctx := moduleTestCtx(t, string(trigger))
-	if !pollJS(ctx, moduleLoaded("headless-feedback")) {
-		t.Fatal("the bell marker never loaded headless-feedback")
+	if !pollJS(ctx, moduleLoaded("headless-bell")) {
+		t.Fatal("the bell marker never loaded headless-bell")
 	}
 	if got := evalString(ctx, `document.getElementById('bell').getAttribute('aria-label')`); got != "2 unread notifications" {
 		t.Fatalf("SSR aria-label = %q, want \"2 unread notifications\"", got)

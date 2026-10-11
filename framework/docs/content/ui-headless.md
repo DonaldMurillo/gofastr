@@ -245,7 +245,8 @@ keeps only the thumbnail strip for itself — a styling concern with no
 headless counterpart, bound by framework/ui's own `filedropzone`
 module; `ui.ConditionalField` is `headless.ConditionalField`, a region
 rendered VISIBLE and hidden by the module until the watched field
-matches (a field only a script can reveal is a field a scriptless
+matches — one value or any of a list, both spellings one condition per
+region (a field only a script can reveal is a field a scriptless
 reader never reaches — the module also disables what it hides, so
 nothing hidden submits); `ui.TextArea` is `headless.Field` +
 `headless.Textarea` the way `ui.Select` is, with `Autogrow` reaching
@@ -350,7 +351,7 @@ Button, Field, FieldRow, ConditionalField, Input, Textarea, Select,
 Password, Color, Choice, Switch, Group, Form, InputGroup, FileUpload,
 Fieldset, ValidationSummary, Card, Stack, Cluster, Grid, Container,
 Section, Divider, Spacer, Spinner, Skeleton, Alert, SystemBanner,
-Badge, Tag, Toolbar, ToolbarGroup, ToolbarSpacer, ToolbarSearch,
+Badge, Tag, Selection, Toolbar, ToolbarGroup, ToolbarSpacer, ToolbarSearch,
 Pagination, Table, Steps, Timeline, PageHeader, EmptyState, StatCard,
 DetailList, OptimisticAction and ToggleAction, plus the stateful
 family: Counter, NumberInput, Slider, RangeSlider, Rating, TagInput,
@@ -366,7 +367,13 @@ The parts the navigation members draw beyond the shared vocabulary:
   `carousel-prev`, `carousel-next`.
 - **Combobox**: `combobox-form` (the no-script GET form),
   `combobox-input`, `combobox-listbox`, `combobox-option`,
-  `combobox-status`.
+  `combobox-status`. `Pick` makes it a picker inside a host form: a
+  hidden input (`data-hui-combobox-value`) submits the picked option's
+  `Value`, the search input names a form that does not exist so the
+  host form never submits the query, `Options` are the first rows of
+  the island listbox, and `NoScriptAction` is refused (its form would
+  nest). `Control` hands the input to a host `Field`, whose label and
+  description name it. `ComboboxRows` renders an island answer's rows.
 - **JSONTree**: under each value's shared parts, one part per JSON
   scalar kind so a class map can colour a string without colouring a
   number: `json-colon`, `json-type`, `json-count`, `json-str`,
@@ -391,11 +398,16 @@ the module `headless` at `/__gofastr/runtime/headless.js`, and the
 kernel loads it when one of its markers is on the page. The markers
 are `[data-hui-reveal]`, `[data-hui-color]`, `[data-hui-when]`,
 `[data-hui-form-errors]`, `[data-hui-action]`, `[data-hui-drop]`,
-`[data-hui-system]` and `[data-hui-table]`: one per behaviour, the
-root hook of each.
+`[data-hui-system]`, `[data-hui-table]` and `[data-hui-selection]`:
+one per behaviour, the root hook of each.
 
 What it does, one line per behaviour:
 
+- **selection** writes how many of a floating `Selection`'s rows are
+  checked into its `data-hui-selection-count` slot on every change, on
+  a form reset and on each scan; a select-all box is not a row. A CSS
+  counter cannot do it: a table is a size container, and the style
+  containment that brings walls the counter in.
 - **reveal** retypes the password input, swaps the button's text and
   accessible name from the `data-hui-show-*` and `data-hui-hide-*`
   attributes, and keeps focus and the caret where the reader left
@@ -404,9 +416,14 @@ What it does, one line per behaviour:
   directions, and marks the shell `data-invalid` when the text holds a
   non-empty value that is neither `#rgb` nor `#rrggbb`.
 - **when** hides a `data-hui-when` region whose watched field does not
-  carry `data-hui-when-value`, disabling its controls under the
-  runtime-owned `data-hui-when-off` mark so only those re-enable.
-  The watched control is looked up in the region's own form first,
+  carry the value `data-hui-when-value` names — or, when the region
+  carries `data-hui-when-in`, any of the values its JSON list holds —
+  disabling its controls under the runtime-owned `data-hui-when-off`
+  mark so only those re-enable. The list is JSON in one attribute, so
+  a member value containing a comma, a quote or a bracket stays one
+  member; a list that cannot be parsed matches nothing and the region
+  hides, the same posture as a value that never arrives. The watched
+  control is looked up in the region's own form first,
   and only then in the document — preferring controls no form owns,
   else the first in document order — so two forms with a same-named
   control cannot decide a region that belongs to neither. Regions
@@ -454,6 +471,10 @@ What it does, one line per behaviour:
   the `data-hui-table-status` span. A failed answer leaves focus and
   status where they were. A plain table's status and announcement
   render for the pager's later use; this module fills neither.
+  A `data-hui-table-select-all` header checkbox (a `Column.SelectAll`)
+  checks or clears every enabled checkbox in its own table whose name
+  matches the attribute, firing a change event on each it moves, and
+  shows checked, clear or indeterminate as the rows change.
 
 Three more modules of this package ship beside it, each registered the
 same way and each owning one family of the stateful controls:
@@ -492,12 +513,11 @@ One is `headless-navigation`'s: `data-hui-back-to-top-visible`. Two are
 after a successful copy, and `data-hui-toast-leaving` on a toast item
 the moment it is dismissed; the kit's sheets style both.
 
-Two more modules of this package own the feedback and page-control
+Three more modules of this package own the feedback and page-control
 families:
 
 - **headless-feedback** (`[data-hui-copy]`, `[data-hui-toast-stack]`
-  and `[data-cui-toast-stack]`, `[data-hui-notification-bell]`,
-  `[data-hui-network-retry]`): the copy control (no clipboard mutation
+  and `[data-cui-toast-stack]`, `[data-hui-network-retry]`): the copy control (no clipboard mutation
   without script — the words travel on the wrapper from `Strings`),
   the toast stack runtime (`NS.toast`, `_initToasts`, `_dismissToast`,
   `_toastTimers`, `_toastSeq` — the API the kernel's `X-Gofastr-Toast`
@@ -505,11 +525,17 @@ families:
   this module now; a row is cloned from the stack's `ToastTemplate` and
   the module names no class and mounts no stack — with no stack on the
   page it returns `null` and the kernel's fallback region takes the
-  toast), the bell's spoken count re-said when a signal changes it
-  (the module watches the badge's text, which the `UnreadBind` signal
-  writes, and re-formats the anchor's `aria-label` from it),
-  and the offline banner's retry link. It replaced the retired `copy`,
-  `toasts` and `networkretrybanner` runtime modules.
+  toast) and the offline banner's retry link. It replaced the retired
+  `copy`, `toasts` and `networkretrybanner` runtime modules.
+- **headless-bell** (`[data-hui-notification-bell]`): the bell's spoken
+  count re-said when a signal changes it (the module watches the
+  badge's text, which the `UnreadBind` signal writes, and re-formats
+  the anchor's `aria-label` from it).
+- **headless-selection-copy** (`[data-hui-selection-copy]`): a
+  selection's Copy control fetches its same-origin URL with one `_id`
+  per checked row and writes the CSV answer to the clipboard, then
+  toasts. Its own module so pages without a bulk bar's Copy never load
+  it.
 - **headless-navigation** (`[data-hui-back-to-top]`,
   `[data-hui-theme-toggle]`): the back-to-top link (one sentinel for
   the document, the visibility mark, the focus return) and the theme

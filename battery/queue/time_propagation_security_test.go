@@ -24,7 +24,7 @@ func TestQueueReadsPropagateInvalidTime(t *testing.T) {
 	if _, err := db.Exec("UPDATE " + q.qt() + " SET created_at='not-a-time' WHERE id='bad-time'"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := q.ListJobs(context.Background(), "", 10); err == nil {
+	if _, err := q.ListJobs(context.Background(), "", 10, 0); err == nil {
 		t.Fatal("ListJobs hid malformed created_at")
 	}
 }

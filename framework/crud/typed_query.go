@@ -134,6 +134,14 @@ func (q *TypedQuery[T]) findRaw(ctx context.Context) ([]map[string]any, *http.Re
 	if err != nil {
 		return nil, nil, err
 	}
+	req := syntheticRequest(ctx, http.MethodGet, "/")
+	hookWheres, err := q.handler.runBeforeList(ctx, req)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, c := range hookWheres {
+		qb.Where(c.SQL, c.Args...)
+	}
 	sqlStr, args := qb.Build()
 	rows, err := q.handler.DB.QueryContext(ctx, sqlStr, args...)
 	if err != nil {
@@ -158,7 +166,7 @@ func (q *TypedQuery[T]) findRaw(ctx context.Context) ([]map[string]any, *http.Re
 			return nil, nil, fmt.Errorf("include: %w", err)
 		}
 	}
-	return raw, syntheticRequest(ctx, http.MethodGet, "/"), nil
+	return raw, req, nil
 }
 
 // decodeRows converts scanned row maps into []*T.
@@ -254,6 +262,13 @@ func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
 	q.handler.ApplyOwnerScopeCount(cb, req)
 	q.handler.ApplyReadScopeCount(cb, req)
 	q.handler.ApplySoftDeleteFilterCount(cb, req)
+	hookWheres, err := q.handler.runBeforeList(ctx, req)
+	if err != nil {
+		return 0, err
+	}
+	for _, c := range hookWheres {
+		cb.Where(c.SQL, c.Args...)
+	}
 	sqlStr, args := cb.Build()
 	var n int
 	if err := q.handler.DB.QueryRowContext(ctx, sqlStr, args...).Scan(&n); err != nil {
@@ -344,6 +359,10 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	}
 	// Normalize incoming keys (e.g. camelCase wire shapes) to canonical DB column names.
 	body := q.handler.unconvertMapKeys(fields)
+	// The state field and stamps move per record (states.go).
+	if err := q.handler.checkStateBulk(body); err != nil {
+		return 0, err
+	}
 
 	if err := q.handler.validateMediaURLs(body); err != nil {
 		return 0, err
@@ -358,7 +377,7 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	// Same integer-exactness gate as the HTTP update path: a host map
 	// carrying a float64 (decoded elsewhere from JSON) must not silently
 	// round an Int column above 2^53.
-	if err := q.handler.coerceIntColumnValues(body); err != nil {
+	if err := q.handler.coerceNumberColumnValues(body); err != nil {
 		return 0, err
 	}
 

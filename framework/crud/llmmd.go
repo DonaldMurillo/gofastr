@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 // LLMMDOptions controls what EntityLLMMD documents. The zero value keeps
@@ -182,17 +183,22 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		}
 	}
 	if len(visibleFields) > 0 {
-		b.WriteString("**Filter operators** (append to any filterable field name):\n\n")
-		b.WriteString("| Suffix | Operator | Example |\n")
-		b.WriteString("|--------|----------|----------|\n")
-		sampleField := visibleFields[0].Name
-		fmt.Fprintf(&b, "| (none) | equals | `%s=active` |\n", sampleField)
-		fmt.Fprintf(&b, "| `_gt` | greater than | `%s_gt=100` |\n", sampleField)
-		fmt.Fprintf(&b, "| `_gte` | greater than or equal | `%s_gte=100` |\n", sampleField)
-		fmt.Fprintf(&b, "| `_lt` | less than | `%s_lt=100` |\n", sampleField)
-		fmt.Fprintf(&b, "| `_lte` | less than or equal | `%s_lte=100` |\n", sampleField)
-		fmt.Fprintf(&b, "| `_like` | LIKE (contains) | `%s_like=%%search%%` |\n", sampleField)
-		fmt.Fprintf(&b, "| `_in` | IN (comma-separated) | `%s_in=a,b,c` |\n", sampleField)
+		b.WriteString("**Filter operators** (append one to a filterable field; the parser refuses it on a type it does not suit, with a 400):\n\n")
+		b.WriteString("| Suffix | Operator | Applies to | Example |\n")
+		b.WriteString("|--------|----------|------------|----------|\n")
+		// Every row comes from filter.FilterSuffixes and every "applies
+		// to" cell from filter.OpSuitsType — the same predicate the
+		// parser applies — so the table cannot document an operator the
+		// parser refuses, nor hide one it accepts, nor name a type
+		// wrongly. The example names the first visible field whose type
+		// suits the operator, so it is always a filter a caller can
+		// actually send against THIS entity; with no such field the
+		// placeholder names none.
+		writeLLMOpRow(&b, "", filter.OpEq, "equals", "active", visibleFields)
+		for _, s := range filter.FilterSuffixes {
+			label, sample := llmOpLabelSample(s.Op)
+			writeLLMOpRow(&b, s.Suffix, s.Op, label, sample, visibleFields)
+		}
 		b.WriteString("\n")
 	}
 
@@ -294,6 +300,33 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString("    { \"index\": 1, \"error\": \"validation: ...\", \"fields\": { \"name\": [\"is required\"] } }\n")
 		b.WriteString("  ]\n")
 		b.WriteString("}\n```\n\n")
+
+		// States: the moves are write routes this mount registers (the
+		// transition route mounts with the write set), so the section
+		// lives inside the !ReadOnly guard with them. System moves have
+		// no route and stay unlisted.
+		if st := ent.Config.States; st != nil && len(RoutableTransitions(st)) > 0 {
+			b.WriteString("## States\n\n")
+			fmt.Fprintf(&b, "`%s` starts at one of: %s.\n\n", st.Field, quoteValues(st.InitialValues(fields)))
+			b.WriteString("| Move | Route | From → To | Stamp |\n")
+			b.WriteString("|------|-------|-----------|-------|\n")
+			for _, t := range RoutableTransitions(st) {
+				move := "`" + t.Key + "`"
+				if t.Label != "" {
+					move += " (" + t.Label + ")"
+				}
+				stamp := "—"
+				if t.Stamp != "" {
+					stamp = "`" + t.Stamp + "`"
+				}
+				fmt.Fprintf(&b, "| %s | `POST %s/{id}/transitions/%s` | `%s` → `%s` | %s |\n",
+					move, resourcePath, t.Key, strings.Join(t.From, "`, `"), t.To, stamp)
+			}
+			b.WriteString("\n")
+			if !st.Advisory {
+				fmt.Fprintf(&b, "`%s` and every stamp change only through these moves: a create may start at an initial value, and an update that sends the stored value back is not a change (any other write answers 422).\n\n", st.Field)
+			}
+		}
 	}
 
 	// SSE
@@ -564,6 +597,15 @@ func sanitizeDefault(v any) string {
 	}
 }
 
+// quoteValues renders each value in backticks for the markdown tables.
+func quoteValues(values []string) string {
+	quoted := make([]string, len(values))
+	for i, v := range values {
+		quoted[i] = "`" + v + "`"
+	}
+	return strings.Join(quoted, ", ")
+}
+
 // relationTypeLabel returns a human-readable label for a relation type.
 func relationTypeLabel(t entity.RelationType) string {
 	switch t {
@@ -578,4 +620,61 @@ func relationTypeLabel(t entity.RelationType) string {
 	default:
 		return "unknown"
 	}
+}
+
+// llmOpLabelSample pairs one operator with the label and the sample
+// value its example row shows. The _like sample is a PLAIN SUBSTRING:
+// the server escapes LIKE wildcards (filter.EscapeLikePattern) and adds
+// the surrounding % itself, so `%` in the value matches a literal
+// percent sign — an example shaped `%search%` is a filter for the
+// literal text "%search%".
+func llmOpLabelSample(op filter.FilterOp) (label, sample string) {
+	switch op {
+	case filter.OpNe:
+		return "not equal", "active"
+	case filter.OpGt:
+		return "greater than", "100"
+	case filter.OpGte:
+		return "greater than or equal", "100"
+	case filter.OpLt:
+		return "less than", "100"
+	case filter.OpLte:
+		return "less than or equal", "100"
+	case filter.OpLike:
+		return "LIKE (contains)", "search"
+	case filter.OpIn:
+		return "IN (comma-separated)", "a,b,c"
+	}
+	return "equals", "active"
+}
+
+// llmAllFieldTypes is every schema.FieldType, for deriving an
+// operator's "applies to" cell from filter.OpSuitsType instead of
+// hand-writing a type list that can drift from the predicate.
+var llmAllFieldTypes = []schema.FieldType{
+	schema.String, schema.Text, schema.Int, schema.Float, schema.Decimal,
+	schema.Bool, schema.Enum, schema.UUID, schema.Timestamp, schema.Date,
+	schema.JSON, schema.Relation, schema.Image, schema.File,
+}
+
+// writeLLMOpRow emits one operator row of llm.md's filter table. The
+// example names the first visible field whose type suits the operator
+// (a filter a caller can send against this entity); with none, the
+// <field> placeholder names no column of it.
+func writeLLMOpRow(b *strings.Builder, suffix string, op filter.FilterOp, label, sample string, visible []schema.Field) {
+	var applies []string
+	for _, t := range llmAllFieldTypes {
+		if filter.OpSuitsType(op, t) {
+			applies = append(applies, schema.FieldTypeLabel(t, false))
+		}
+	}
+	field := "<field>"
+	for _, f := range visible {
+		if filter.OpSuitsType(op, f.Type) {
+			field = f.Name
+			break
+		}
+	}
+	fmt.Fprintf(b, "| `%s` | %s | %s | `%s%s=%s` |\n",
+		suffix, label, strings.Join(applies, ", "), field, suffix, sample)
 }

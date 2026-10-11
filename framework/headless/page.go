@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -248,6 +249,7 @@ func init() {
 const (
 	PartStatValue Part = "stat-value"
 	PartStatTrend Part = "stat-trend"
+	PartStatLink  Part = "stat-link"
 )
 
 // StatCardProps is one metric held up for the page: a labelled value,
@@ -266,6 +268,18 @@ type StatCardProps struct {
 	// reader who cannot see the colour, which is why Direction is a
 	// variant hint and never the only carrier of meaning.
 	Direction string
+
+	// Href links the label to the place the number is about (a
+	// dashboard's count to its list). The link is the label's text, so
+	// the card's name is also its destination's name.
+	Href string
+	// Icon is a decorative glyph drawn in the card's head, hidden from
+	// assistive technology: the label already names the card.
+	Icon render.HTML
+	// Action is a control drawn in the card's head, after the icon (a
+	// dashboard card's New). It sits outside the label's link, so the
+	// card never nests one interactive element in another.
+	Action render.HTML
 
 	ID         string
 	ExtraAttrs html.Attrs
@@ -304,10 +318,31 @@ func StatCard(p StatCardProps, s Classes) render.HTML {
 			trendAttrs["class"] = cls
 		}
 	}
-	kids := []render.HTML{
-		b.El("p", PartLabel, Internal(nil), render.Text(p.Label)),
-		b.El("p", PartStatValue, Internal(nil), render.Text(p.Value)),
+	label := render.Text(p.Label)
+	if p.Href != "" {
+		href := urlsafe.CleanAnchor(p.Href)
+		if href == "" {
+			panic("headless: StatCard Href " + strconv.Quote(p.Href) + " is not a URL the anchor policy allows")
+		}
+		label = b.El("a", PartStatLink, html.Attrs{"href": href}, label)
 	}
+	labelEl := b.El("p", PartLabel, Internal(nil), label)
+	var kids []render.HTML
+	if p.Icon != "" || p.Action != "" {
+		// The head is one row: icon, label, action, in reading order. It
+		// holds the caller's icon and action, so neither it nor the
+		// icon's span is marked internal: content passed in stays in its
+		// owner's reach.
+		var head []render.HTML
+		if p.Icon != "" {
+			head = append(head, b.El("span", PartIcon, html.Attrs{"aria-hidden": "true"}, p.Icon))
+		}
+		head = append(head, labelEl, p.Action)
+		kids = append(kids, b.El("div", PartHeader, nil, head...))
+	} else {
+		kids = append(kids, labelEl)
+	}
+	kids = append(kids, b.El("p", PartStatValue, Internal(nil), render.Text(p.Value)))
 	if p.Trend != "" {
 		kids = append(kids, b.El("p", PartStatTrend, Internal(trendAttrs), render.Text(p.Trend)))
 	}
@@ -321,7 +356,7 @@ func init() {
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return StatCard(StatCardProps{Label: "Builds", Value: "12", Parts: parts}, s)
 		},
-		Anatomy: []Part{PartRoot, PartLabel, PartStatValue, PartStatTrend},
+		Anatomy: []Part{PartRoot, PartHeader, PartIcon, PartLabel, PartStatLink, PartStatValue, PartStatTrend},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			return []Case{{
@@ -333,6 +368,12 @@ func init() {
 				Name: "the number alone",
 				Why:  "a card with no trend renders without one, and the label still arrives before the value it names",
 				HTML: StatCard(StatCardProps{Label: "Queued builds", Value: "2"}, s),
+			}, {
+				Name: "linked, with an icon and an action",
+				Why:  "the label links to what it counts, the icon is hidden from assistive technology, and the action sits in the head outside the link so no interactive element nests in another",
+				HTML: StatCard(StatCardProps{Label: "Invoices", Value: "75", Href: "/admin/entities/invoices",
+					Icon:   SpecimenGlyph,
+					Action: Button(ButtonProps{Label: "New", Variant: "secondary"}, k.For("Button"))}, s),
 			}}
 		},
 	})

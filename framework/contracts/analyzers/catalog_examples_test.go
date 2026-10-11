@@ -173,6 +173,7 @@ var examplesNeedingMoreContext = map[string]string{
 	contracts.RuleTokenCustomProperty:    "fires on a *.style.css; its example is CSS, which no Go snippet can carry",
 	contracts.RuleDuplicateTokenValue:    "fires on a *.tokens.css; its example is CSS, which no Go snippet can carry",
 	contracts.RuleRepeatedLiteral:        "needs two *.style.css files",
+	contracts.RuleBareThemeLiteral:       "fires only inside the design-system trees, like GOFASTR1807; an app-root snippet is GOFASTR1801's finding",
 }
 
 // The other half: a rule whose bad example does NOT produce it has either

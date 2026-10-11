@@ -4,6 +4,7 @@ import (
 	"context"
 	"maps"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -105,6 +106,22 @@ type FilterSearch struct {
 	Placeholder string
 	// Label overrides the accessible name (default "Search").
 	Label string
+	// Shortcut is a chord ("/") that focuses the search from anywhere
+	// on the page outside a text field; a chip beside the input shows it.
+	Shortcut string
+}
+
+// HiddenField is one hidden input a GET toolbar form carries beside its
+// controls: request state the form does not own (the view a search must
+// not reset, another region's params on the same URL) that a submit
+// would otherwise drop.
+type HiddenField struct {
+	// Name is the form field name, the URL query key it round-trips.
+	// Required, and it must not collide with one of the form's own
+	// controls: the control must win, not race a stale hidden copy.
+	Name string
+	// Value is the current value carried through.
+	Value string
 }
 
 // FilterToolbarConfig configures a FilterToolbar.
@@ -118,6 +135,10 @@ type FilterToolbarConfig struct {
 
 	// Search, when non-nil, renders a search field.
 	Search *FilterSearch
+
+	// Hidden carries request state the form does not own; see
+	// HiddenField. Rendered as hidden inputs inside the form.
+	Hidden []HiddenField
 
 	// Sort, when non-empty, renders a labelled sort <select>.
 	Sort []SortOption
@@ -138,6 +159,24 @@ type FilterToolbarConfig struct {
 	// Compact keeps search and actions on one row in narrow record lists.
 	// Below 18rem the controls still stack so none are clipped.
 	Compact bool
+
+	// Dropdown moves the facets, the sort, Extra and the Apply/Reset
+	// pair into a "Filters" ui.Dropdown, so the row is the search field
+	// (--ui-filter-toolbar-search-width wide), the Filters button and
+	// the Tools. The button's badge counts the facets set plus Applied. Every control stays in the one
+	// form: Enter in the search submits the panel's fields too, open or
+	// closed.
+	Dropdown bool
+	// Extra are more controls of the same form, drawn after the facets
+	// (a typed filter expression).
+	Extra []render.HTML
+	// Applied adds the filters Extra holds to the Filters badge.
+	Applied int
+	// Tools are drawn at the row's end, after the filters: links and
+	// link menus such as a Columns menu or a layout switch. They render
+	// inside the form, so a tool holding a <form> panics: a nested form
+	// is invalid HTML and the browser drops it.
+	Tools []render.HTML
 
 	// Label is the toolbar's accessible name (search landmark
 	// aria-label). Default "Filters".
@@ -163,11 +202,22 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if cfg.Compact {
 		cfg.Class = cls(cfg.Class, "fui-filter-toolbar--compact")
 	}
+	if cfg.Dropdown {
+		cfg.Class = cls(cfg.Class, "fui-filter-toolbar--dropdown")
+	}
 	if cfg.Action == "" {
 		panic("ui: FilterToolbar requires Action")
 	}
-	if len(cfg.Facets) == 0 && cfg.Search == nil && len(cfg.Sort) == 0 {
-		panic("ui: FilterToolbar requires at least one of Facets, Search, or Sort")
+	if len(cfg.Facets) == 0 && cfg.Search == nil && len(cfg.Sort) == 0 && len(cfg.Extra) == 0 {
+		panic("ui: FilterToolbar requires at least one of Facets, Search, Sort or Extra")
+	}
+	for _, t := range cfg.Tools {
+		if strings.Contains(strings.ToLower(string(t)), "<form") {
+			panic("ui: FilterToolbar Tools must not hold a <form>: they render inside the toolbar's form, and a nested form is dropped")
+		}
+	}
+	if cfg.Applied < 0 {
+		panic("ui: FilterToolbar Applied must not be negative")
 	}
 	ctx := cfg.Ctx
 	if ctx == nil {
@@ -188,7 +238,8 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		label = i18nui.T(ctx, i18nui.KeyFilterToolbarLabel)
 	}
 
-	controls := make([]render.HTML, 0, len(cfg.Facets)+3)
+	controls := make([]render.HTML, 0, len(cfg.Facets)+len(cfg.Extra)+3)
+	applied := cfg.Applied
 
 	for _, f := range cfg.Facets {
 		if f.Name == "" {
@@ -200,6 +251,9 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		if len(f.Options) == 0 {
 			panic("ui: FilterToolbar Facet requires at least one Option")
 		}
+		if f.Value != "" {
+			applied++
+		}
 		if f.Kind == FacetPills {
 			controls = append(controls, renderPillFacet(ctx, f))
 		} else {
@@ -207,15 +261,24 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 		}
 	}
 
+	var search render.HTML
 	if cfg.Search != nil {
 		if cfg.Search.Name == "" {
 			panic("ui: FilterToolbar Search requires Name")
 		}
-		controls = append(controls, renderSearchFacet(ctx, *cfg.Search))
+		search = renderSearchFacet(ctx, *cfg.Search)
+		if !cfg.Dropdown {
+			controls = append(controls, search)
+		}
 	}
 
 	if len(cfg.Sort) > 0 {
 		controls = append(controls, renderSortFacet(ctx, cfg))
+	}
+	// The Extra and Tools wrappers hold caller content, so they stay
+	// unmarked: kit internals stop at a slot.
+	for _, x := range cfg.Extra {
+		controls = append(controls, html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet"}, x))
 	}
 
 	// Apply (submit) + Reset (link to the bare action → clears params).
@@ -243,10 +306,63 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 			Class:   "fui-filter-toolbar__reset",
 		}))
 	}
-	controls = append(controls, html.Div(html.DivConfig{
+	// Hidden inputs first: carried state, not controls. A name shared
+	// with a control would submit twice and the browser's last-value
+	// order would decide, so it is refused here where both are known.
+	owned := map[string]bool{}
+	if cfg.Search != nil {
+		owned[cfg.Search.Name] = true
+	}
+	if len(cfg.Sort) > 0 {
+		owned[cfg.SortName] = true
+	}
+	for _, f := range cfg.Facets {
+		owned[f.Name] = true
+	}
+	var hidden []render.HTML
+	for _, h := range cfg.Hidden {
+		if h.Name == "" {
+			panic("ui: FilterToolbar HiddenField requires Name")
+		}
+		if owned[h.Name] {
+			panic("ui: FilterToolbar Hidden name " + h.Name + " collides with one of the form's controls; the control owns the key")
+		}
+		hidden = append(hidden, html.Input(html.InputConfig{Type: "hidden", Name: h.Name, Value: h.Value, ExtraAttrs: html.Attrs{"data-cui-internal": ""}}))
+	}
+	actions := html.Div(html.DivConfig{
 		Class:      "fui-filter-toolbar__actions",
 		ExtraAttrs: html.Attrs{"data-cui-internal": ""},
-	}, actionsKids...))
+	}, actionsKids...)
+	var row []render.HTML
+	if cfg.Dropdown {
+		// The row is the search, the Filters button and the tools; a
+		// toolbar with nothing to put in the panel draws no button, and
+		// the search submits on Enter.
+		row = append(hidden, search)
+		if len(controls) > 0 {
+			id := ""
+			if cfg.ID != "" {
+				id = cfg.ID + "-filters"
+			}
+			row = append(row, Dropdown(DropdownConfig{
+				Label: label,
+				Icon:  "filter",
+				Count: applied,
+				ID:    id,
+				Class: "fui-filter-toolbar__filters",
+				Content: html.Div(html.DivConfig{
+					Class:      "fui-filter-toolbar__panel",
+					ExtraAttrs: html.Attrs{"data-cui-internal": ""},
+				}, append(controls, actions)...),
+			}))
+		}
+	} else {
+		row = append(hidden, controls...)
+		row = append(row, actions)
+	}
+	if len(cfg.Tools) > 0 {
+		row = append(row, html.Div(html.DivConfig{Class: "fui-filter-toolbar__tools"}, cfg.Tools...))
+	}
 
 	formAttrs := html.Attrs{
 		"class":      cls("fui-filter-toolbar", cfg.Class),
@@ -265,7 +381,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	// live). Re-assert after the merge so the sanitizer is not reversible.
 	formAttrs["action"] = action
 
-	return filterToolbarStyle.WrapHTML(render.Tag("form", flattenAttrs(formAttrs), controls...))
+	return filterToolbarStyle.WrapHTML(render.Tag("form", flattenAttrs(formAttrs), row...))
 }
 
 // renderSelectFacet composes ui.Select for a facet, prepending an
@@ -321,14 +437,21 @@ func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 	if s.Label != "" {
 		extra["aria-label"] = s.Label
 	}
+	id := "filter-search-" + slug(s.Name)
+	wrap := html.Attrs{"data-cui-internal": ""}
+	kids := []render.HTML{SearchInput(SearchInputConfig{
+		Name:        s.Name,
+		ID:          id,
+		Placeholder: placeholder,
+		ExtraAttrs:  extra,
+	})}
+	if s.Shortcut != "" {
+		wrap["data-hui-shortcut-focus"] = s.Shortcut
+		wrap["data-hui-shortcut-target"] = "#" + id
+		kids = append(kids, ShortcutHint(ShortcutHintConfig{Chord: s.Shortcut, Class: "fui-filter-toolbar__search-key"}))
+	}
 	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet fui-filter-toolbar__search",
-		ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
-		SearchInput(SearchInputConfig{
-			Name:        s.Name,
-			ID:          "filter-search-" + slug(s.Name),
-			Placeholder: placeholder,
-			ExtraAttrs:  extra,
-		}))
+		ExtraAttrs: wrap}, kids...)
 }
 
 // renderPillFacet renders a facet as a wrapping radio-pill group inside
@@ -434,6 +557,23 @@ func filterToolbarCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__search {
   flex: 2 1 14rem;
+  position: relative;
+}
+/* The search's shortcut chip sits at the input's end while it is empty;
+   typed text (and the clear button with it) takes the place. Pointer
+   input has no use for it. */
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__search-key {
+  position: absolute;
+  inset-inline-end: var(--spacing-md, 8px);
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__search:has(input:not(:placeholder-shown)) .fui-filter-toolbar__search-key {
+  display: none;
+}
+@media (pointer: coarse) {
+  [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__search-key { display: none; }
 }
 /* Pill facets prefer their natural one-line width: max-content basis
    (no grow) so a group never fragments its pills inside a cramped cell
@@ -468,15 +608,24 @@ func filterToolbarCSS(_ style.Theme) string {
 /* Pill facet — fieldset reset + legend as a field label. */
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__legend {
   padding: 0;
-  margin-block-end: var(--spacing-xs, 2px);
+  /* The same label-to-control gap a Field row uses, so the legend
+     lines up with the Status and Sort labels beside it. */
+  margin-block-end: var(--fui-density-gap, var(--spacing-md, 8px));
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #18181B);
 }
+/* Segmented control: the options sit in one soft track whose outer
+   height is the 44px control height, so the group lines up with the
+   search field and the Apply button beside it; the checked option is a
+   raised surface chip inside the track. */
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill-group {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-xs, 2px);
+  padding: var(--spacing-sm, 4px);
+  border-radius: var(--radii-lg, 10px);
+  background: var(--color-surface-soft, #F4F4F5);
 }
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill {
   display: inline-flex;
@@ -485,22 +634,19 @@ func filterToolbarCSS(_ style.Theme) string {
   /* nowrap: a multi-word label stays on one line — pills wrap between
      themselves, never mid-label (the "Waiting On Customer" → 3 lines bug). */
   white-space: nowrap;
-  min-block-size: var(--spacing-touch-target, 44px);
+  min-block-size: calc(var(--spacing-touch-target, 44px) - 2 * var(--spacing-sm, 4px));
   padding: 0 var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: 999px;
-  background: var(--color-surface, #FFFFFF);
+  border-radius: var(--radii-md, 8px);
+  background: transparent;
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   user-select: none;
-  transition: background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
-              color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
-              border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
+  transition: background-color var(--duration-fast, 150ms), color var(--duration-fast, 150ms);
 }
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:hover {
-  color: var(--color-text, #18181B);
-  border-color: var(--color-text-muted, #a1a1aa);
+  color: var(--color-text, #09090B);
 }
 /* Visually hide the radio; the pill label is the visible control. */
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill-input {
@@ -515,14 +661,13 @@ func filterToolbarCSS(_ style.Theme) string {
   border: 0;
 }
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:has(.fui-filter-toolbar__pill-input:checked) {
-  background: var(--color-primary, #4F46E5);
-  border-color: var(--color-primary, #4F46E5);
-  color: var(--color-primary-fg, #FFFFFF);
-  font-weight: var(--font-weight-semibold);
+  background: var(--color-surface, #FFFFFF);
+  color: var(--color-text, #09090B);
+  box-shadow: var(--shadow-xs);
 }
 [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill:has(.fui-filter-toolbar__pill-input:focus-visible) {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 
 /* Single-column stack when the toolbar itself (not the viewport) is
@@ -545,6 +690,47 @@ func filterToolbarCSS(_ style.Theme) string {
   [data-cui-comp="ui-filter-toolbar"].fui-filter-toolbar--compact .fui-filter-toolbar__actions .fui-filter-toolbar__apply { flex: 0 0 auto; }
 }
 
+/* Dropdown mode: the search takes a fixed share of the row
+   (--ui-filter-toolbar-search-width) with the Filters button and the
+   tools beside it at their natural width; on a narrow row the search
+   goes full width and they wrap under it. Inside the panel the
+   controls stack full width, Apply/Reset last. */
+[data-cui-comp="ui-filter-toolbar"].fui-filter-toolbar--dropdown .fui-filter-toolbar__search {
+  flex: 0 1 var(--ui-filter-toolbar-search-width, 22.5rem);
+}
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__filters,
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__tools {
+  flex: none;
+}
+/* The tools keep their natural width but never more than the row's,
+   so on a narrow screen they wrap among themselves instead of pushing
+   the page sideways. */
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__tools {
+  display: flex;
+  flex-wrap: wrap;
+  max-inline-size: 100%;
+  align-items: center;
+  gap: var(--spacing-md, 8px);
+}
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__filters {
+  --ui-dropdown-min-width: var(--ui-filter-toolbar-panel-width, 20rem);
+}
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg, 16px);
+  padding: var(--spacing-sm, 4px);
+}
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__panel .fui-filter-toolbar__facet,
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__panel .fui-filter-toolbar__actions {
+  flex: none;
+  margin-inline-start: 0;
+}
+[data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__panel .fui-filter-toolbar__actions {
+  justify-content: flex-end;
+  padding-block-start: var(--spacing-md, 8px);
+  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+}
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-filter-toolbar"] .fui-filter-toolbar__pill { transition: none; }
 }`

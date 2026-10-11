@@ -357,6 +357,69 @@ the wrapper element and nothing else, because policy, params, `Load`, and
 content are identical on both paths. The origin is compared by resolved
 screen, so `/products?page=2&sort=name` still counts as the list.
 
+Related records stack. An intercepted link clicked inside an open
+drawer opens its target as a new drawer over the current one — declare
+it the same way, with the screen below as the origin:
+
+```go
+site.Register("/customers/{id}", &CustomerScreen{}, nil,
+    app.InterceptFrom("/invoices/{id}", app.ScreenDrawer))
+```
+
+At most four drawers sit on top of each other, each a step narrower
+than the one under it so the lower ones show as a dimmed strip; a fifth
+open is refused with a toast and changes nothing. Lower drawers keep
+their DOM — unsaved edits survive — and go inert; Back,
+Escape and the close button close only the top one and hand focus back
+to the control that opened it. A link that changes only the drawer's
+own query (`?sort=…&page=…`) re-renders inside the drawer instead of
+navigating the page under it.
+
+A screen can open over more than one page. Patterns after the
+presentation are more origins (`Intercept.AlsoFrom`); a create form that
+opens over its list and over the customer whose Related tab adds to it:
+
+```go
+site.Register("/invoices/create", &CreateInvoice{}, nil,
+    app.InterceptFrom("/invoices", app.ScreenDrawer, "/customers/{id}"))
+```
+
+Inside an overlay render, `app.OverlayOriginFromContext(ctx)` returns
+the path of the page the drawer opened over ("" on the full page). Make
+it the form's success navigation and the save returns there: the drawer
+closes, the page under it re-renders with the new row, and Back walks
+history as it was before the drawer opened. A save whose navigation
+names the drawer's own path keeps the drawer and refreshes it. Any other
+destination navigates as usual.
+
+`app.OverlayOriginQueryFromContext(ctx)` returns that page's query, as
+`url.Values` (nil on the full page or when there is none): the list's
+sort and filter a drawer opened over. The client names it, so treat it
+as the list treats its own URL, never as trusted input.
+
+```go
+dest := "/invoices"
+if o := app.OverlayOriginFromContext(ctx); o != "" {
+    dest = o
+}
+attrs := interactive.Post("/api/invoices").OnSuccess(interactive.Navigate(dest)).Attrs()
+```
+
+Put `data-hui-leave-guard` on a form whose unsaved edits should ask
+before the user leaves them (the record form is the usual case): while
+the form is changed, following a link away from it, going Back past
+it, closing its drawer with Escape, and reloading the page all ask
+first. Opening a related record in a drawer over it does not ask: the
+form stays where it was, edits included. The form cleans itself on
+a successful submit or a reset. The question opens in the kit's
+confirm dialog: Cancel keeps the edits, Discard drops them and makes
+the move. `data-hui-leave-guard-message` carries its words (the
+default is "You have unsaved changes."), and
+`data-hui-leave-guard-title` and `data-hui-leave-guard-accept` its
+title and accept label (`ui.FormConfig.LeaveGuard`, `LeaveGuardTitle`
+and `LeaveGuardAccept` write all three). A page without the kit's
+dialog asks with the browser's own prompt.
+
 Overlay chrome ships with the framework (`app.InterceptOverlayCSS`, injected
 only when some route declares an intercept), and the runtime module loads
 only when the route manifest contains one; an app with no intercepting
@@ -533,6 +596,9 @@ the example website:
   spatial wrappers covering vertical stacking, horizontal flow, CSS
   grid, centring, flex filler, and padded surface. `Cluster` wraps by default;
   set `ClusterConfig.NoWrap` only for compact chrome guaranteed to fit.
+  `ClusterConfig.Shrink` lets a no-wrap row narrow below its content,
+  its last child taking the squeeze (a breadcrumb trail beside a menu
+  button).
 - `Card`: labelled `<section>` with header / body / footer slots
   and elevated / outlined / flat / interactive variants.
 - `OptimizedImage`: responsive `<picture>` with `srcset`, lazy

@@ -19,6 +19,8 @@ func invoicesCommands() []command {
 		{name: "invoices batch-update", summary: "patch up to 100 records atomically (--json array)", run: runInvoicesBatchUpdate},
 		{name: "invoices batch-delete", summary: "delete ids atomically (positional ids)", run: runInvoicesBatchDelete},
 		{name: "invoices watch", summary: "stream live create/update/delete events (SSE)", run: runInvoicesWatch},
+		{name: "invoices mark_paid", summary: "move status from draft or open or past_due to paid, stamps paid_on", run: runInvoicesMarkPaid},
+		{name: "invoices void", summary: "move status from draft or open or past_due to void", run: runInvoicesVoid},
 	}
 }
 
@@ -28,30 +30,51 @@ func invoicesCommands() []command {
 // invoicesListFilters is the filter-flag table behind `invoices list`: one entry
 // per flag, in help order, each bound to the query param it sets.
 var invoicesListFilters = []filterFlag{
+	{flag: "q", param: "q", help: "free-text search over the declared search fields"},
 	{flag: "customer-id", param: "customer_id", help: "filter: customer_id equals (comma list = IN)"},
+	{flag: "customer-id-gte", param: "customer_id_gte", help: "filter: customer_id greater than or equal"},
+	{flag: "customer-id-lte", param: "customer_id_lte", help: "filter: customer_id less than or equal"},
+	{flag: "customer-id-gt", param: "customer_id_gt", help: "filter: customer_id greater than"},
+	{flag: "customer-id-lt", param: "customer_id_lt", help: "filter: customer_id less than"},
+	{flag: "customer-id-ne", param: "customer_id_ne", help: "filter: customer_id not equal"},
 	{flag: "number", param: "number", help: "filter: number equals (comma list = IN)"},
+	{flag: "number-gte", param: "number_gte", help: "filter: number greater than or equal"},
+	{flag: "number-lte", param: "number_lte", help: "filter: number less than or equal"},
+	{flag: "number-gt", param: "number_gt", help: "filter: number greater than"},
+	{flag: "number-lt", param: "number_lt", help: "filter: number less than"},
 	{flag: "number-like", param: "number_like", help: "filter: number contains"},
+	{flag: "number-ne", param: "number_ne", help: "filter: number not equal"},
 	{flag: "amount", param: "amount", help: "filter: amount equals (comma list = IN)"},
-	{flag: "amount-gt", param: "amount_gt", help: "filter: amount gt"},
-	{flag: "amount-gte", param: "amount_gte", help: "filter: amount gte"},
-	{flag: "amount-lt", param: "amount_lt", help: "filter: amount lt"},
-	{flag: "amount-lte", param: "amount_lte", help: "filter: amount lte"},
+	{flag: "amount-gte", param: "amount_gte", help: "filter: amount greater than or equal"},
+	{flag: "amount-lte", param: "amount_lte", help: "filter: amount less than or equal"},
+	{flag: "amount-gt", param: "amount_gt", help: "filter: amount greater than"},
+	{flag: "amount-lt", param: "amount_lt", help: "filter: amount less than"},
+	{flag: "amount-ne", param: "amount_ne", help: "filter: amount not equal"},
 	{flag: "status", param: "status", help: "filter: status equals (comma list = IN) [draft|open|paid|past_due|void]"},
+	{flag: "status-gte", param: "status_gte", help: "filter: status greater than or equal"},
+	{flag: "status-lte", param: "status_lte", help: "filter: status less than or equal"},
+	{flag: "status-gt", param: "status_gt", help: "filter: status greater than"},
+	{flag: "status-lt", param: "status_lt", help: "filter: status less than"},
+	{flag: "status-like", param: "status_like", help: "filter: status contains"},
+	{flag: "status-ne", param: "status_ne", help: "filter: status not equal"},
 	{flag: "issued-on", param: "issued_on", help: "filter: issued_on equals (comma list = IN)"},
-	{flag: "issued-on-gt", param: "issued_on_gt", help: "filter: issued_on gt"},
-	{flag: "issued-on-gte", param: "issued_on_gte", help: "filter: issued_on gte"},
-	{flag: "issued-on-lt", param: "issued_on_lt", help: "filter: issued_on lt"},
-	{flag: "issued-on-lte", param: "issued_on_lte", help: "filter: issued_on lte"},
+	{flag: "issued-on-gte", param: "issued_on_gte", help: "filter: issued_on greater than or equal"},
+	{flag: "issued-on-lte", param: "issued_on_lte", help: "filter: issued_on less than or equal"},
+	{flag: "issued-on-gt", param: "issued_on_gt", help: "filter: issued_on greater than"},
+	{flag: "issued-on-lt", param: "issued_on_lt", help: "filter: issued_on less than"},
+	{flag: "issued-on-ne", param: "issued_on_ne", help: "filter: issued_on not equal"},
 	{flag: "due-on", param: "due_on", help: "filter: due_on equals (comma list = IN)"},
-	{flag: "due-on-gt", param: "due_on_gt", help: "filter: due_on gt"},
-	{flag: "due-on-gte", param: "due_on_gte", help: "filter: due_on gte"},
-	{flag: "due-on-lt", param: "due_on_lt", help: "filter: due_on lt"},
-	{flag: "due-on-lte", param: "due_on_lte", help: "filter: due_on lte"},
+	{flag: "due-on-gte", param: "due_on_gte", help: "filter: due_on greater than or equal"},
+	{flag: "due-on-lte", param: "due_on_lte", help: "filter: due_on less than or equal"},
+	{flag: "due-on-gt", param: "due_on_gt", help: "filter: due_on greater than"},
+	{flag: "due-on-lt", param: "due_on_lt", help: "filter: due_on less than"},
+	{flag: "due-on-ne", param: "due_on_ne", help: "filter: due_on not equal"},
 	{flag: "paid-on", param: "paid_on", help: "filter: paid_on equals (comma list = IN)"},
-	{flag: "paid-on-gt", param: "paid_on_gt", help: "filter: paid_on gt"},
-	{flag: "paid-on-gte", param: "paid_on_gte", help: "filter: paid_on gte"},
-	{flag: "paid-on-lt", param: "paid_on_lt", help: "filter: paid_on lt"},
-	{flag: "paid-on-lte", param: "paid_on_lte", help: "filter: paid_on lte"},
+	{flag: "paid-on-gte", param: "paid_on_gte", help: "filter: paid_on greater than or equal"},
+	{flag: "paid-on-lte", param: "paid_on_lte", help: "filter: paid_on less than or equal"},
+	{flag: "paid-on-gt", param: "paid_on_gt", help: "filter: paid_on greater than"},
+	{flag: "paid-on-lt", param: "paid_on_lt", help: "filter: paid_on less than"},
+	{flag: "paid-on-ne", param: "paid_on_ne", help: "filter: paid_on not equal"},
 }
 
 // Table columns for `invoices list -o table`: invoicesListHeaders are the display
@@ -111,4 +134,12 @@ func runInvoicesBatchDelete(args []string) int {
 
 func runInvoicesWatch(args []string) int {
 	return runWatchVerb("invoices watch", (*client.Client).WatchInvoices, args)
+}
+
+func runInvoicesMarkPaid(args []string) int {
+	return runTransitionVerb("invoices mark_paid", "/invoices", "mark_paid", args)
+}
+
+func runInvoicesVoid(args []string) int {
+	return runTransitionVerb("invoices void", "/invoices", "void", args)
 }

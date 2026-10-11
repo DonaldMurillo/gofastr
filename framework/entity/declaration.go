@@ -26,6 +26,15 @@ type EntityDeclaration struct {
 	Indices      []Index                `json:"indices,omitempty"`
 	Properties   map[string]any         `json:"properties,omitempty"`
 	Renames      map[string]string      `json:"renames,omitempty"`
+	// Display is the declaration mirror of EntityConfig.Display, spelled
+	// `display` under an entity with the snake_case keys documented on
+	// DisplayConfig. Unlike the other groups it has no flat shorthand:
+	// every key lives under display. Unknown keys inside it are refused.
+	Display *DisplayConfig `json:"display,omitempty"`
+	// States is the declaration mirror of EntityConfig.States, spelled
+	// `states` with the keys documented on StatesConfig. Unknown keys
+	// inside it are refused.
+	States *StatesConfig `json:"states,omitempty"`
 }
 
 // UnmarshalJSON accepts grouped declarations and the documented flat
@@ -334,6 +343,11 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 		Indices:      d.Indices,
 		Properties:   d.Properties,
 		Renames:      d.Renames,
+		// Passed as a pointer; Define deep-copies it the way it copies the
+		// groups above, so the declaration and the config never share
+		// backing arrays.
+		Display: d.Display,
+		States:  d.States,
 	}
 	return cfg, nil
 }

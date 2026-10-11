@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -153,6 +155,13 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 	ch.ApplyOwnerScope(qb, req)
 	ch.ApplyReadScope(qb, req)
 	ch.ApplySoftDeleteFilter(qb, req)
+	hookWheres, err := ch.runBeforeGet(ctx, req, id)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range hookWheres {
+		qb.Where(c.SQL, c.Args...)
+	}
 
 	sqlStr, args := qb.Build()
 	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
@@ -183,59 +192,75 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 
 // ListOptions controls ListAll.
 type ListOptions struct {
+	// Filters are flat field/op/value conditions ANDed into the query,
+	// the in-process equivalent of ?field_<op>=. Hand-built entries pass
+	// the same rule the URL parser applies: each field must name a real,
+	// non-Hidden, non-NoQuery column (under its column name or WireName)
+	// and its operator must suit that column's type, so a `like` on an
+	// Int column is refused here exactly as ?amount_like= is there.
 	Filters []filter.ParsedFilter
 	// NestedFilters express relation-scoped predicates (the in-process
 	// equivalent of HTTP ?author.name=alice). Applied as EXISTS subqueries
 	// to both ListAll and CountAll, mirroring the HTTP List handler.
 	NestedFilters []NestedFilter
 	Sorts         []filter.ParsedSort
-	Limit         int
-	Offset        int
-	Includes      []string
+	// Where is a boolean predicate tree (filter.Predicate) ANDed with
+	// everything else ListAll and CountAll apply: the flat Filters,
+	// nested filters, search, and the owner, tenant, soft-delete and
+	// read scopes. It is compiled as ONE parenthesized clause, so an OR
+	// inside it can never widen past a scope. The tree is re-validated
+	// with filter.ValidatePredicate before use — a caller may have built
+	// it by hand — and the SQL is built from the resolved copy that
+	// check returns, so a tree shared across goroutines (a parsed
+	// Display view) is never written to. A refusal names the offending
+	// leaf.
+	//
+	// Build one with dsl.ParsePredicate (text such as
+	// `status = "open" and amount >= 10000`) or filter.ParseWhere (the
+	// ?where= JSON shape); both return a validated tree.
+	Where *filter.Predicate
+	// Fields limits the columns read to the named subset plus the primary
+	// key (always included). Unknown and Hidden names are refused with an
+	// error, never silently dropped. NoQuery columns may be read: NoQuery
+	// keeps a field out of filters and sorts, not out of the row. Masking still
+	// applies: AfterList/AfterGet hooks run on whatever columns the read
+	// returned. Empty means every visible column.
+	Fields   []string
+	Limit    int
+	Offset   int
+	Includes []string
 	// Search carries a free-text ?q= term for in-process parity with the
 	// HTTP List handler. When non-empty AND the entity declares
 	// SearchFields, it produces AND-composed LOWER(col) LIKE conditions.
 	// Returns an error when set on an entity without SearchFields (fail
 	// loud, matching unknown-sort policy).
 	Search string
+	// Deleted lists only soft-deleted rows, the trash view a list draws
+	// beside its live one: it inverts the soft-delete filter (the read
+	// answers deleted_at IS NOT NULL) while every other scope — owner,
+	// tenant, read scope, Where, Filters, Search — applies unchanged, so
+	// the trashed rows a caller sees are the trashed rows they own. An
+	// entity without Scope.SoftDelete answers ErrNoSoftDelete, the same
+	// sentinel RestoreOne and PurgeOne use, before any SQL runs. Applies
+	// to ListAll and CountAll alike.
+	Deleted bool
 }
 
 // ListAll runs a list query with optional filters/sort/limit/offset/includes
 // and returns the matching rows. Caller is responsible for paging if the
 // result set is large.
 func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[string]any, error) {
-	if err := ch.requireOwnerContext(ctx); err != nil {
-		return nil, err
+	cols := ch.visibleFields()
+	if len(opts.Fields) > 0 {
+		var err error
+		cols, err = ch.projectListFields(opts.Fields)
+		if err != nil {
+			return nil, fmt.Errorf("ListAll: %w", err)
+		}
 	}
-	if err := ch.requireTenantContext(ctx); err != nil {
-		return nil, err
-	}
-	nested, err := resolveNestedFilters(ch.Entity, ch.Registry, opts.NestedFilters)
+	qb, req, err := ch.scopedSelect(ctx, "ListAll", opts, cols)
 	if err != nil {
 		return nil, err
-	}
-	if err := ch.scopeNestedFiltersInProcess(ctx, nested); err != nil {
-		return nil, err
-	}
-	// Search: fail loud when Search is set on an entity without SearchFields.
-	if opts.Search != "" && len(ch.Entity.Config.SearchFields) == 0 {
-		return nil, fmt.Errorf("ListAll: Search set on entity %q without SearchFields", ch.Entity.GetName())
-	}
-	searchConds := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
-	cols := ch.visibleFields()
-	qb := query.Select(cols...).From(ch.Entity.GetTable())
-	filter.ApplyToQuery(qb, opts.Filters)
-	req := syntheticRequest(ctx, http.MethodGet, "/")
-	ch.ApplyTenantScope(qb, req)
-	ch.ApplyOwnerScope(qb, req)
-	ch.ApplyReadScope(qb, req)
-	ch.ApplySoftDeleteFilter(qb, req)
-	applyNestedFilters(
-		func(sql string, args ...any) { qb.Where(sql, args...) },
-		ch.Entity.GetTable(), ch.PrimaryKey, nested,
-	)
-	for _, c := range searchConds {
-		qb.Where(c.SQL, c.Args...)
 	}
 	filter.ApplySortToQuery(qb, opts.Sorts)
 	if opts.Limit > 0 {
@@ -270,6 +295,84 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	// reads through here, so skipping it meant the app's own grid printed
 	// what the API masked.
 	return ch.runAfterList(ctx, req, results)
+}
+
+// scopedSelect builds SELECT cols FROM the entity's table under every
+// scope a list read runs: opts' Where, Filters, nested filters and
+// Search, then the tenant, owner, read and soft-delete scopes and the
+// BeforeList clauses. ListAll adds sort and paging; the aggregates wrap
+// it. op names the caller in refusals.
+func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOptions, cols []string) (*query.QueryBuilder, *http.Request, error) {
+	if err := ch.requireOwnerContext(ctx); err != nil {
+		return nil, nil, err
+	}
+	if err := ch.requireTenantContext(ctx); err != nil {
+		return nil, nil, err
+	}
+	// The trash view is refused on an entity that never declared it,
+	// before any SQL could name a deleted_at column the table lacks.
+	if opts.Deleted && !ch.Entity.Config.Scope.SoftDelete {
+		return nil, nil, ErrNoSoftDelete
+	}
+	nested, err := resolveNestedFilters(ch.Entity, ch.Registry, opts.NestedFilters)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := ch.scopeNestedFiltersInProcess(ctx, nested); err != nil {
+		return nil, nil, err
+	}
+	// Search: fail loud when Search is set on an entity without SearchFields.
+	if opts.Search != "" && len(ch.Entity.Config.SearchFields) == 0 {
+		return nil, nil, fmt.Errorf("%s: Search set on entity %q without SearchFields", op, ch.Entity.GetName())
+	}
+	// Where: a hand-built tree is re-validated before it reaches SQL, and
+	// the SQL is built from the resolved copy the check returns — the
+	// caller's tree is never written to (it may be shared across
+	// goroutines: a parsed Display view). Filters get the same
+	// operator/type rule ParseFilters applies to ?field_<op>=.
+	where, err := ch.validateWherePredicate(opts.Where)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", op, err)
+	}
+	filters, err := ch.validateFilters(opts.Filters)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", op, err)
+	}
+	searchConds := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
+	qb := query.Select(cols...).From(ch.Entity.GetTable())
+	filter.ApplyToQuery(qb, filters)
+	// Where joins the caller filters as one parenthesized clause; the
+	// scopes below each wrap in their own parens, so an OR inside Where
+	// cannot widen past them.
+	if c := filter.BuildPredicate(where); c.SQL != "" {
+		qb.Where(c.SQL, c.Args...)
+	}
+	req := syntheticRequest(ctx, http.MethodGet, "/")
+	ch.ApplyTenantScope(qb, req)
+	ch.ApplyOwnerScope(qb, req)
+	ch.ApplyReadScope(qb, req)
+	// The soft-delete term: the ordinary deleted_at IS NULL filter, or
+	// the trash view's inversion — only soft-deleted rows.
+	if opts.Deleted {
+		qb.Where("deleted_at IS NOT NULL")
+	} else {
+		ch.ApplySoftDeleteFilter(qb, req)
+	}
+	applyNestedFilters(
+		func(sql string, args ...any) { qb.Where(sql, args...) },
+		ch.Entity.GetTable(), ch.PrimaryKey, nested,
+	)
+	for _, c := range searchConds {
+		qb.Where(c.SQL, c.Args...)
+	}
+	hookWheres, err := ch.runBeforeList(ctx, req)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, c := range hookWheres {
+		qb.Where(c.SQL, c.Args...)
+	}
+	return qb, req, nil
 }
 
 // BatchCreateMany runs CreateOne for each body in a single transaction.
@@ -381,6 +484,11 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return 0, err
 	}
+	// The trash view is refused on an entity that never declared it,
+	// before any SQL could name a deleted_at column the table lacks.
+	if opts.Deleted && !ch.Entity.Config.Scope.SoftDelete {
+		return 0, ErrNoSoftDelete
+	}
 	nested, err := resolveNestedFilters(ch.Entity, ch.Registry, opts.NestedFilters)
 	if err != nil {
 		return 0, err
@@ -392,19 +500,53 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	if opts.Search != "" && len(ch.Entity.Config.SearchFields) == 0 {
 		return 0, fmt.Errorf("CountAll: Search set on entity %q without SearchFields", ch.Entity.GetName())
 	}
+	// Where and Filters are validated exactly as ListAll validates them,
+	// so a page count can never accept a list call's refusal (or silently
+	// ignore a filter or projection the list would reject). Fields shapes
+	// no columns here — COUNT(*) reads none — the check is for parity of
+	// refusals.
+	where, err := ch.validateWherePredicate(opts.Where)
+	if err != nil {
+		return 0, fmt.Errorf("CountAll: %w", err)
+	}
+	filters, err := ch.validateFilters(opts.Filters)
+	if err != nil {
+		return 0, fmt.Errorf("CountAll: %w", err)
+	}
+	if len(opts.Fields) > 0 {
+		if _, err := ch.projectListFields(opts.Fields); err != nil {
+			return 0, fmt.Errorf("CountAll: %w", err)
+		}
+	}
 	searchConds := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
 	cb := query.Count(ch.Entity.GetTable())
-	filter.ApplyToCountQuery(cb, opts.Filters)
+	filter.ApplyToCountQuery(cb, filters)
+	if c := filter.BuildPredicate(where); c.SQL != "" {
+		cb.Where(c.SQL, c.Args...)
+	}
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScopeCount(cb, req)
 	ch.ApplyOwnerScopeCount(cb, req)
 	ch.ApplyReadScopeCount(cb, req)
-	ch.ApplySoftDeleteFilterCount(cb, req)
+	// The soft-delete term: the ordinary deleted_at IS NULL filter, or
+	// the trash view's inversion — only soft-deleted rows.
+	if opts.Deleted {
+		cb.Where("deleted_at IS NOT NULL")
+	} else {
+		ch.ApplySoftDeleteFilterCount(cb, req)
+	}
 	applyNestedFilters(
 		func(sql string, args ...any) { cb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
 	)
 	for _, c := range searchConds {
+		cb.Where(c.SQL, c.Args...)
+	}
+	hookWheres, err := ch.runBeforeList(ctx, req)
+	if err != nil {
+		return 0, err
+	}
+	for _, c := range hookWheres {
 		cb.Where(c.SQL, c.Args...)
 	}
 	sqlStr, args := cb.Build()
@@ -413,6 +555,68 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 		return 0, err
 	}
 	return total, nil
+}
+
+// validateWherePredicate runs filter.ValidatePredicate over a ListOptions
+// Where tree against the handler's field snapshot and returns the
+// RESOLVED copy it produced. ListOptions.Where is documented as taking a
+// validated tree, but a caller may have built one by hand, and field
+// names in a predicate are spliced into SQL by BuildPredicate, so the
+// same checks ParseWhere applies to URL input run here too, before any
+// SQL exists. The caller's tree is never written to — it may be shared
+// across goroutines — so the SQL is built from the returned copy, where
+// wire aliases are resolved to columns and Bool leaves carry their
+// coercion marker.
+func (ch *CrudHandler) validateWherePredicate(p *filter.Predicate) (*filter.Predicate, error) {
+	return filter.ValidatePredicate(p, ch.snapshotFields())
+}
+
+// validateFilters runs the operator/type rule over hand-built
+// ListOptions.Filters: each filter's field must name a real, non-Hidden,
+// non-NoQuery column (under its column name or its WireName, the two
+// spellings ParseFilters accepts) and its operator must suit that
+// column's type — the same CheckOpType every URL filter surface applies,
+// so a `like` on an Int is refused here exactly as ?field_like= is there.
+// It returns a copy with each WireName resolved to its column, since the
+// SQL names the column; the caller's slice is never written to.
+func (ch *CrudHandler) validateFilters(filters []filter.ParsedFilter) ([]filter.ParsedFilter, error) {
+	if len(filters) == 0 {
+		return nil, nil
+	}
+	fields := ch.snapshotFields()
+	col := make(map[string]schema.Field, 2*len(fields))
+	for _, f := range fields {
+		if f.Hidden || f.NoQuery {
+			continue
+		}
+		col[f.Name] = f
+		if f.WireName != "" && f.WireName != f.Name {
+			col[f.WireName] = f
+		}
+	}
+	out := make([]filter.ParsedFilter, len(filters))
+	for i, pf := range filters {
+		f, ok := col[pf.Field]
+		if !ok {
+			return nil, fmt.Errorf("filter: unknown filter field %q", pf.Field)
+		}
+		if err := filter.CheckOpType(pf.Field, pf.Op, f.Type); err != nil {
+			return nil, fmt.Errorf("filter: %w", err)
+		}
+		pf.Field = f.Name
+		out[i] = pf
+	}
+	return out, nil
+}
+
+// projectListFields resolves a ListOptions.Fields projection to the
+// columns ListAll reads through projectFromRequestQ, the ?fields= parser:
+// the unknown/Hidden refusal, the JSON-cased name mapping and the
+// always-included primary key are that parser's, so the in-process list
+// and the HTTP list project the same way.
+func (ch *CrudHandler) projectListFields(names []string) ([]string, error) {
+	q := url.Values{"fields": {joinNonEmpty(names, ",")}}
+	return ch.projectFromRequestQ(q)
 }
 
 // buildIncludeNodesFromNames takes a flat list of include names (possibly

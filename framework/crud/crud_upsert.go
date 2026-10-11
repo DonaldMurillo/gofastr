@@ -97,11 +97,11 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			}
 		}
 		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeCreate, body); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.BeforeCreate, body); err != nil {
 				return &beforeHookError{err: err}
 			}
 		}
-		if err := ch.coerceIntColumnValues(body); err != nil {
+		if err := ch.coerceNumberColumnValues(body); err != nil {
 			return err
 		}
 		vr := schema.ValidateAll(ch.entitySchema(), body)
@@ -137,6 +137,12 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err := ch.checkBelongsToScope(ctx, body); err != nil {
 			return err
 		}
+		// The state check, as an update of the existing row or a create
+		// (states.go).
+		var err error
+		if ctx, err = ch.checkStateUpsert(ctx, req, body); err != nil {
+			return err
+		}
 
 		// Build the column + value lists, same shape Create uses: auto-gen
 		// fields are always included (the body has the generated value);
@@ -148,6 +154,10 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// WithServerWrites(ctx).
 		var cols []string
 		var vals []any
+		// sent holds the columns the body carried, before a Default fills
+		// an omitted one: DO UPDATE SET may name a guarded column only when
+		// the caller sent it.
+		sent := map[string]bool{}
 		for _, f := range ch.Entity.GetFields() {
 			if f.AutoGenerate == schema.AutoIncrement {
 				// Omit when no real pk was supplied: the DB assigns it
@@ -179,11 +189,12 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				continue
 			}
 			if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.Scope.OwnerField {
-				if !serverWrites(ctx) {
+				if !serverWrites(ctx) && !ch.stateOverrideColumn(ctx, f.Name) {
 					continue
 				}
 			}
 			val, ok := body[f.Name]
+			sent[f.Name] = ok
 			if !ok {
 				if f.Default != nil {
 					val = f.Default
@@ -209,6 +220,11 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				continue
 			}
 			if isAutoField(ch.Entity, c) {
+				continue
+			}
+			// A stored state stays put on conflict unless the caller sent
+			// the column under a state override (states.go).
+			if !ch.upsertSetsGuarded(ctx, c, sent[c]) {
 				continue
 			}
 			setParts = append(setParts, fmt.Sprintf("%s = EXCLUDED.%s", c, c))
@@ -292,7 +308,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		result = res
 
 		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterCreate, result); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.AfterCreate, result); err != nil {
 				return fmt.Errorf("after-create hook: %w", err)
 			}
 		}

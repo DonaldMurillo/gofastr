@@ -39,6 +39,9 @@ func TestComponentGalleryCoversUI(t *testing.T) {
 		"SiteFooter":           "page chrome; shown on every site page",
 		"SignOut":              "auth action button; needs an auth session to demo",
 		"Control":              "builder half of FormField; cannot render outside a field's Input closure (its wiring comes from the field), shown via every typed-field and FormField tile",
+		"InlineEdit":           "a table cell's editor: it posts to a record route, shown in context in the admin's entity lists",
+		"Picker":               "searches a server endpoint for its rows, shown in context as the admin's relation fields",
+		"ShortcutSheet":        "returns a (trigger, *widget.Builder) pair mounted once per app, shown in context as the admin's ? sheet",
 		"SortableListItems":    "the rows-only fragment a 409 reconciliation returns; not a tile (shown via the sortablelist kanban demo's conflict path)",
 	}
 

@@ -36,6 +36,9 @@ type ThemeToggleConfig struct {
 	// Variant selects the visual style.
 	// Defaults to ThemeToggleIcon when empty.
 	Variant ThemeToggleVariant
+	// Fill stretches the pill across its container, the options sharing
+	// the width (a panel's full-width switch). Pill only.
+	Fill bool
 
 	// ID is an optional id for the root element.
 	ID string
@@ -167,7 +170,7 @@ func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
 	if rootAttrs == nil {
 		rootAttrs = map[string]string{}
 	}
-	rootAttrs["class"] = "fui-theme-toggle fui-theme-toggle--pill " + cfg.Class
+	rootAttrs["class"] = "fui-theme-toggle fui-theme-toggle--pill " + modifierClass("fui-theme-toggle--fill", cfg.Fill) + " " + cfg.Class
 	rootAttrs["data-hui-theme-toggle"] = ""
 	rootAttrs["role"] = "radiogroup"
 	rootAttrs["aria-label"] = i18nui.T(ctx, i18nui.KeyThemeColorScheme)
@@ -175,12 +178,20 @@ func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
 		rootAttrs["id"] = cfg.ID
 	}
 
+	// Auto ships checked and is the one Tab stop, the first-visit
+	// state; the runtime re-checks from the stored scheme.
 	optBtn := func(label, opt string) render.HTML {
+		checked, tab := "false", "-1"
+		if opt == "auto" {
+			checked, tab = "true", "0"
+		}
 		return render.Tag("button", map[string]string{
 			"type":                  "button",
 			"class":                 "fui-theme-toggle__option",
+			"data-cui-internal":     "",
 			"data-hui-theme-option": opt,
-			"aria-checked":          "false",
+			"aria-checked":          checked,
+			"tabindex":              tab,
 			"role":                  "radio",
 		}, render.Text(label))
 	}

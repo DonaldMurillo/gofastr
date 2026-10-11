@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sync/atomic"
 	"time"
 )
@@ -604,16 +605,23 @@ func (q *RedisQueue) Replay(ctx context.Context, jobID string) error {
 // job state accessible without a scan of the full main/processing lists is
 // the dead-letter queue, so this returns dead jobs for status "failed" (or
 // an empty/"all" status) and nothing for any other status value. Jobs are
-// returned newest-first (head of the Redis list) up to limit entries.
-// limit <= 0 defaults to 100.
-func (q *RedisQueue) ListJobs(ctx context.Context, status string, limit int) ([]Job, error) {
+// returned newest-first (head of the Redis list) up to limit entries,
+// after skipping offset of them. limit <= 0 defaults to 100; a negative
+// offset reads as zero.
+func (q *RedisQueue) ListJobs(ctx context.Context, status string, limit, offset int) ([]Job, error) {
 	if status != "" && status != "failed" {
 		return nil, nil
 	}
 	if limit <= 0 {
 		limit = 100
 	}
-	entries, err := q.client.LRange(ctx, q.deadLetterQueue, 0, int64(limit-1))
+	start := int64(max(offset, 0))
+	if start > math.MaxInt64-int64(limit) {
+		// Past any list Redis can hold; the stop index would wrap
+		// negative, which LRANGE reads as counting from the tail.
+		return nil, nil
+	}
+	entries, err := q.client.LRange(ctx, q.deadLetterQueue, start, start+int64(limit)-1)
 	if err != nil {
 		return nil, fmt.Errorf("listjobs: read dead-letter queue: %w", err)
 	}

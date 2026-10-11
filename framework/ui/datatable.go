@@ -39,6 +39,34 @@ type Column struct {
 	// markup as the column's variant, so the class map names the
 	// alignment class for the header and the cell.
 	Align string
+
+	// Wrap lets the column's cells wrap, for prose such as a note or a
+	// description. Every other cell holds its value on one line, so a
+	// table wider than its box scrolls sideways rather than breaking a
+	// date at its hyphens. A wrapping cell keeps
+	// --ui-data-table-wrap-width (16rem) as its minimum width.
+	Wrap bool
+
+	// Fit narrows the column to its content, leaving the table's spare
+	// width to the data columns: a selection checkbox, a row menu. A
+	// column cannot both Fit and Wrap.
+	Fit bool
+
+	// Truncate holds a long value to one line of at most
+	// --ui-data-table-truncate-width (20rem), cut with an ellipsis: an
+	// error message, a URL. A column cannot Truncate and Wrap or Fit.
+	Truncate bool
+
+	// SelectAll makes the header a checkbox that checks or clears the
+	// row checkboxes named SelectAll in this table, and shows mixed
+	// when only some are checked. Header, when set, is its accessible
+	// name. A select-all column cannot sort. An empty table draws no
+	// box: there is nothing to select.
+	SelectAll string
+
+	// Phone places the column's cells in the compact phone row of a
+	// ResponsiveRows table. Ignored in every other mode.
+	Phone PhoneSlot
 }
 
 // Row is a single rendered table row. Cells map column Key → HTML.
@@ -75,8 +103,33 @@ const (
 	// ResponsiveCards collapses each row into a labeled card stack
 	// (header → value pairs) when the container is narrower than
 	// ~640px. Column headers travel with each cell via data-label,
-	// which the primitive renders for every headered column.
+	// which the primitive renders for every headered column, and each
+	// cell's value is one .fui-data-table__value element, so a value
+	// of several parts stays together on its card line.
 	ResponsiveCards ResponsiveMode = "cards"
+
+	// ResponsiveRows collapses each row into a compact two-line row
+	// when the container is narrower than 720px: the PhoneTitle cell
+	// over the PhoneSubtitle cell, the PhoneMeta cell over the
+	// PhoneDetail cell at the end, the PhoneLead cell (a selection box)
+	// before them and the PhoneEnd cell (a row menu) after. Cells of a
+	// column with no Phone slot are not drawn on a phone. One column
+	// must be the PhoneTitle.
+	ResponsiveRows ResponsiveMode = "rows"
+)
+
+// PhoneSlot places a column's cells in a ResponsiveRows row on a
+// phone. The zero value leaves the column off the phone row.
+type PhoneSlot string
+
+const (
+	PhoneNone     PhoneSlot = ""
+	PhoneLead     PhoneSlot = "lead"
+	PhoneTitle    PhoneSlot = "title"
+	PhoneSubtitle PhoneSlot = "subtitle"
+	PhoneMeta     PhoneSlot = "meta"
+	PhoneDetail   PhoneSlot = "detail"
+	PhoneEnd      PhoneSlot = "end"
 )
 
 // DataTableConfig configures a DataTable.
@@ -114,9 +167,10 @@ type DataTableConfig struct {
 	// SortDir is the active sort direction (asc/desc).
 	SortDir SortDir
 	// Summary is a sentence about the result window the caller owns,
-	// e.g. "Showing 8 of 10". Appended to the sort sentence the
-	// table's announcement carries after a sort swap: the table knows
-	// the sort, and only the caller knows the window.
+	// e.g. "1–25 of 40". It shows under the rows on the left, and is
+	// appended to the sort sentence the table's announcement carries
+	// after a sort swap: the table knows the sort, and only the caller
+	// knows the window.
 	Summary string
 
 	// Path is the screen's own path: each sort href is it plus the
@@ -160,8 +214,20 @@ type DataTableConfig struct {
 
 	// Responsive selects how the table behaves when its container is
 	// narrow. Default keeps horizontal scroll; ResponsiveCards
-	// collapses rows into labeled cards via container queries.
+	// collapses rows into labeled cards and ResponsiveRows into compact
+	// two-line rows, both via container queries.
 	Responsive ResponsiveMode
+
+	// Flush drops the table's frame (border, corners, fill): rows that
+	// sit inside a card, whose frame is the card's.
+	Flush bool
+
+	// FooterTools sit under the rows on the right, before the pager:
+	// a rows-per-page menu.
+	FooterTools render.HTML
+	// Note is a short line of small print under the rows: how to use
+	// them ("Select a value to edit it in place.").
+	Note string
 
 	// Ctx carries the per-request context used to resolve i18n
 	// strings (empty-state labels, sort aria-labels, pagination
@@ -193,18 +259,82 @@ var dataTableClasses = headless.Classes{
 	headless.PartTable:   "fui-data-table__table",
 	headless.PartCaption: "fui-data-table__caption",
 	headless.PartSort:    "fui-data-table__sort",
+	headless.PartEmpty:   "fui-data-table__empty",
 	headless.PartStatus:  "fui-visually-hidden",
+	// The select-all header draws the kit's checkbox.
+	headless.PartTableSelect: "fui-choice--checkbox fui-data-table__select",
+	headless.PartControl:     "fui-choice__input",
 
-	"header--center": "is-align-center",
-	"header--end":    "is-align-end",
-	"cell--center":   "is-align-center",
-	"cell--end":      "is-align-end",
+	"header--fit":          "is-fit",
+	"header--center-fit":   "is-align-center is-fit",
+	"header--end-fit":      "is-align-end is-fit",
+	"cell--fit":            "is-fit",
+	"cell--center-fit":     "is-align-center is-fit",
+	"cell--end-fit":        "is-align-end is-fit",
+	"header--center":       "is-align-center",
+	"header--end":          "is-align-end",
+	"header--center-wrap":  "is-align-center",
+	"header--end-wrap":     "is-align-end",
+	"cell--center":         "is-align-center",
+	"cell--end":            "is-align-end",
+	"cell--wrap":           "is-wrap",
+	"cell--center-wrap":    "is-align-center is-wrap",
+	"cell--end-wrap":       "is-align-end is-wrap",
+	"cell--truncate":       "is-truncate",
+	"header--end-truncate": "is-align-end",
+	"cell--end-truncate":   "is-align-end is-truncate",
+}
+
+// phoneSlots are the ResponsiveRows slots a column can name.
+var phoneSlots = []PhoneSlot{PhoneLead, PhoneTitle, PhoneSubtitle, PhoneMeta, PhoneDetail, PhoneEnd}
+
+// The phone slot is the variant's last part: every alignment variant
+// gains one entry per slot, the cell adding is-phone-<slot> and the
+// header keeping its alignment.
+func init() {
+	base := map[headless.Part]string{"header--": "", "cell--": ""}
+	for k, v := range dataTableClasses {
+		if strings.HasPrefix(string(k), "header--") || strings.HasPrefix(string(k), "cell--") {
+			base[k+"-"] = v
+		}
+	}
+	for k, v := range base {
+		for _, slot := range phoneSlots {
+			key := k + "phone-" + headless.Part(slot)
+			if strings.HasPrefix(string(k), "cell--") {
+				dataTableClasses[key] = strings.TrimSpace(v + " is-phone-" + string(slot))
+			} else if v != "" {
+				dataTableClasses[key] = v
+			}
+		}
+	}
 }
 
 // DataTable renders the table: the headless primitive's structure,
 // roles and sort anchors under this package's class map, the styled
 // EmptyState in the primitive's empty slot, and the typed pager in
 // a footer div of its own outside the scroll region.
+// cardValues wraps each cell of a cards-mode row in one value element,
+// so a card line holds two parts, the column's label and the value. A
+// value made of text and inline parts ("Role · billing") would otherwise
+// spread across the line, one flex item per part.
+func cardValues(cells map[string]render.HTML) map[string]render.HTML {
+	out := make(map[string]render.HTML, len(cells))
+	for k, v := range cells {
+		out[k] = render.Tag("span", map[string]string{"class": "fui-data-table__value"}, v)
+	}
+	return out
+}
+
+func hasPhoneTitle(cols []Column) bool {
+	for _, c := range cols {
+		if c.Phone == PhoneTitle {
+			return true
+		}
+	}
+	return false
+}
+
 func DataTable(cfg DataTableConfig) render.HTML {
 	if len(cfg.Columns) == 0 {
 		panic("ui: DataTable requires at least one Column")
@@ -235,11 +365,42 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		case "center", "end":
 			variant = c.Align
 		}
-		cols[i] = headless.Column{Key: c.Key, Header: c.Header, Sortable: c.Sortable, Variant: variant}
+		if c.Wrap && c.Fit {
+			panic("ui: DataTable Column " + c.Key + " sets Fit and Wrap; a fitted column holds one line")
+		}
+		if c.Truncate && (c.Wrap || c.Fit) {
+			panic("ui: DataTable Column " + c.Key + " sets Truncate with Wrap or Fit; a truncated column is one capped line")
+		}
+		if c.Truncate {
+			variant = strings.TrimPrefix(variant+"-truncate", "-")
+		}
+		if c.Wrap {
+			variant = strings.TrimPrefix(variant+"-wrap", "-")
+		}
+		if c.Fit {
+			variant = strings.TrimPrefix(variant+"-fit", "-")
+		}
+		selectAll := c.SelectAll
+		if len(cfg.Rows) == 0 {
+			selectAll = ""
+		}
+		cols[i] = headless.Column{Key: c.Key, Header: c.Header, Sortable: c.Sortable, SelectAll: selectAll, Variant: variant}
+		if cfg.Responsive == ResponsiveRows && c.Phone != PhoneNone {
+			// The slot rides the variant, so the class map names it
+			// beside the column's alignment.
+			cols[i].Variant = strings.TrimPrefix(cols[i].Variant+"-phone-"+string(c.Phone), "-")
+		}
+	}
+	if cfg.Responsive == ResponsiveRows && !hasPhoneTitle(cfg.Columns) {
+		panic("ui: DataTable ResponsiveRows needs one Column with Phone: PhoneTitle; the phone row has no line that names the record")
 	}
 	rows := make([]headless.Row, len(cfg.Rows))
 	for i, r := range cfg.Rows {
-		rows[i] = headless.Row{ID: r.ID, Cells: r.Cells}
+		cells := r.Cells
+		if cfg.Responsive == ResponsiveCards {
+			cells = cardValues(r.Cells)
+		}
+		rows[i] = headless.Row{ID: r.ID, Cells: cells}
 	}
 
 	var empty render.HTML
@@ -254,7 +415,7 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		empty = EmptyState(e)
 	}
 
-	var footer render.HTML
+	var footer, pager render.HTML
 	if cfg.Pagination != nil {
 		// In island mode, the pagination inherits the DataTable's
 		// endpoint and signal so sort and page hit the same handler.
@@ -270,17 +431,40 @@ func DataTable(cfg DataTableConfig) render.HTML {
 		// it are this component's own, so the boundary sits on the
 		// wrapper (Pagination also marks its own list; a mark nested
 		// inside an already-marked wrapper is fine).
-		footer = html.Div(html.DivConfig{
-			Class:      "fui-data-table__footer",
-			ExtraAttrs: html.Attrs{"data-cui-internal": ""},
-		}, Pagination(pag))
+		pager = Pagination(pag)
+	}
+	if pager != "" || cfg.Summary != "" || cfg.FooterTools != "" {
+		// The summary and the pager are this component's own; the
+		// tools are the caller's, so a footer holding them is not
+		// marked as a whole.
+		var summary render.HTML
+		if cfg.Summary != "" {
+			summary = html.Span(html.TextConfig{Class: "fui-data-table__summary", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, render.Text(cfg.Summary))
+		}
+		attrs := html.Attrs{}
+		if cfg.FooterTools == "" {
+			attrs["data-cui-internal"] = ""
+		} else if pager != "" {
+			pager = headless.Own(pager)
+		}
+		footer = html.Div(html.DivConfig{Class: "fui-data-table__footer", ExtraAttrs: attrs},
+			summary, cfg.FooterTools, pager)
+	}
+	if cfg.Note != "" {
+		footer = render.Join(footer, render.Tag("p", map[string]string{"class": "fui-data-table__note", "data-cui-internal": ""}, render.Text(cfg.Note)))
 	}
 
 	// The root's modifier classes travel as part attrs, which append
 	// to the class map's own root class rather than replacing it.
 	rootClass := cfg.Class
-	if cfg.Responsive == ResponsiveCards {
+	switch cfg.Responsive {
+	case ResponsiveCards:
 		rootClass = "fui-data-table--responsive-cards " + rootClass
+	case ResponsiveRows:
+		rootClass = "fui-data-table--responsive-rows " + rootClass
+	}
+	if cfg.Flush {
+		rootClass = "fui-data-table--flush " + rootClass
 	}
 	if len(cfg.Rows) == 0 {
 		rootClass = "is-empty " + rootClass

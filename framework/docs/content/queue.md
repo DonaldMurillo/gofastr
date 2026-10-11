@@ -259,19 +259,35 @@ All three backends implement `Browsable`:
 
 ```go
 if b, ok := q.(queue.Browsable); ok {
-    jobs, _ := b.ListJobs(ctx, "failed", 50)
+    jobs, _ := b.ListJobs(ctx, "failed", 50, 0)
     stats, _ := b.Stats(ctx)
     fmt.Println("failed:", stats["failed"])
 }
 ```
 
 `ListJobs` accepts a status string (`"pending"`, `"failed"`, `""` for
-all) and a limit. Jobs are returned newest-first. `Stats` returns a
-`JobStats` map (status → count).
+all), a limit and an offset. Jobs are returned newest-first, after
+skipping the newest `offset` of them, so `ListJobs(ctx, "failed", 50,
+50)` is the second page of 50; a negative offset reads as zero.
+`Stats` returns a `JobStats` map (status → count), which gives a
+pager its total.
 
 MemoryQueue and RedisQueue can only enumerate their dead-letter store,
 so only `"failed"` (or `""`) returns results. DBQueue can enumerate any
-status.
+status: `"pending"`, `"claimed"` (running), `"failed"`, and `"done"`
+with `WithDoneRetention`.
+
+A job DBQueue lists carries `Status`, `UpdatedAt` (when its state last
+changed: enqueue, claim, retry, failure, replay or completion) and
+`LastError`, the error its last failed attempt returned through the
+worker, with control bytes scrubbed and cut to 500 runes. A replay
+keeps `LastError`.
+
+By default `Ack` deletes a finished job. `queue.WithDoneRetention(d)`
+keeps it as `"done"` for `d` instead, so an admin can list what ran;
+the claim loop deletes done jobs older than `d`, at most once a minute.
+A kept job still holds its ID, so enqueuing the same ID again fails
+until the retention has passed.
 
 ## Crash safety and auto-reclaim
 

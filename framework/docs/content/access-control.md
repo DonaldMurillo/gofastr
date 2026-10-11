@@ -412,23 +412,23 @@ specific row, which matters when a resource-aware `Decider` allows the listing
 and denies one record; the collection-level predicate would render a row the
 read-one route refuses.
 
-A custom `DataSource` that implements neither predicate is ungated: the
-interface guarantees only the three read methods, so a computed report or
-search index has no posture to consult. A custom source fronting real entity
-rows must implement `CanReadScoped` itself.
+`framework/entityui` (the list, record and create screens generated apps
+and the admin draw) calls these for you, so a screen inherits the check:
+`List` runs `CanReadScoped` before any read, `Record` runs
+`CanReadScoped` and `CanReadRecordScoped`, and every read of a DIFFERENT
+entity — relation cell labels, the create form's relation picker, a
+relation facet's options, the Related tab's lists, and the stats and
+charts — passes that entity's own gate first.
 
-`framework/ui/resource` calls these for you, so generated screens
-inherit the check: on `List`, `Table`, `Detail`, and the pre-filled edit
-`Form` for the screen's own entity, and separately on the RELATED entity
-behind relation labels, reverse-relation sections, and dashboard aggregates.
-A relation to an entity the caller may not read renders muted (an em dash),
-never the raw foreign key. A bare id is useless to a reader and discloses an
-internal identifier. A reverse-relation section the caller may not read is
-omitted entirely rather than replaced with a notice, because a notice on a
-public page tells every visitor which entities exist.
+A relation to an entity the caller may not read renders muted (an em
+dash), never the raw foreign key. A bare id is useless to a reader and
+discloses an internal identifier. A relation facet whose entity is
+refused draws no options, so the facet is absent rather than an empty
+control. A related list the caller may not read draws the same
+"not available" notice its own list would, never its rows.
 
-`battery/admin` does not go through `ui/resource`; it enforces its own admin
-gate.
+`battery/admin` does not draw entity screens through your app's builders;
+it enforces its own admin gate.
 
 ## Common mistakes
 
@@ -648,6 +648,12 @@ type Decider func(ctx context.Context, roles []string, capability Permission, re
 `access.Can` itself is untouched: there is no wildcard or resource-segment
 logic in the hot path. The resource-aware path is a separate entrypoint you opt
 into; with no decider installed, `CanResource` answers byte-identically to `Can`.
+
+`access.CanResourceExact(ctx, capability, resource)` asks the `Decider` the
+same way, but on abstain passes only when the caller's roles hold `capability`
+by name: a role granted the Wildcard does not satisfy it. A state move's
+`Permission` is checked this way, so a superuser role does not pick up every
+narrow capability an app declares.
 
 The seam binds **every** permission gate, not only resource-scoped ones:
 `access.RequirePermission` consults it too, passing the zero `Ref` (a

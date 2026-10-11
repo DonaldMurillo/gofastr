@@ -41,21 +41,48 @@ func TestWorkbenchPaneFillsAnIframe(t *testing.T) {
 	}
 }
 
-// The rail width is configurable, and must arrive as a custom property rather
-// than an inline width: a strict-CSP host rejects style attributes the design
-// system did not account for.
-func TestWorkbenchRailWidthIsACustomProperty(t *testing.T) {
-	out := string(Workbench(WorkbenchConfig{
-		RailWidth: "480px",
-		Rail:      render.Text("rail"),
-		Pane:      render.Text("pane"),
-	}))
-	if !strings.Contains(out, "--ui-workbench-rail: 480px") {
-		t.Fatalf("RailWidth did not reach the markup as a custom property:\n%s", out)
+// The rail width is a named modifier class, never an inline style: a
+// strict-CSP host strips style attributes, which left the old free-form
+// length inert.
+func TestWorkbenchRailWidthIsANamedModifier(t *testing.T) {
+	for _, tc := range []struct {
+		width WorkbenchRailWidth
+		class string
+	}{
+		{WorkbenchRailDefault, `class="fui-workbench"`},
+		{WorkbenchRailNarrow, `class="fui-workbench fui-workbench--rail-narrow"`},
+		{WorkbenchRailWide, `class="fui-workbench fui-workbench--rail-wide"`},
+	} {
+		out := string(Workbench(WorkbenchConfig{
+			RailWidth: tc.width,
+			Rail:      render.Text("rail"),
+			Pane:      render.Text("pane"),
+		}))
+		root := out[:strings.Index(out, ">")+1]
+		if !strings.Contains(root, tc.class) {
+			t.Errorf("RailWidth %q: root missing %s:\n%s", tc.width, tc.class, root)
+		}
+		if strings.Contains(root, "style=") {
+			t.Errorf("RailWidth %q wrote an inline style:\n%s", tc.width, root)
+		}
 	}
-	if strings.Contains(out, "width:") || strings.Contains(out, "inline-size:") {
-		t.Fatalf("RailWidth was written as a direct style property:\n%s", out)
+	css := workbenchCSS(style.Theme{})
+	for _, want := range []string{"var(--ui-workbench-rail-narrow, 240px)", "var(--ui-workbench-rail-wide, 480px)"} {
+		if !strings.Contains(css, want) {
+			t.Errorf("workbench CSS missing %q", want)
+		}
 	}
+}
+
+// An unknown width is a programming error, refused loudly rather than
+// rendered at the default.
+func TestWorkbenchUnknownRailWidthPanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("unknown RailWidth rendered instead of panicking")
+		}
+	}()
+	Workbench(WorkbenchConfig{RailWidth: "480px"})
 }
 
 // Both regions render, in rail-then-pane order, with the component marker the
@@ -110,61 +137,26 @@ func sectionOf(t *testing.T, css, selector string) string {
 }
 
 // ExtraAttrs land on the root element but never override what the
-// component owns (#262): the style attribute belongs to RailWidth
-// (a CSP-safe custom property), so callers cannot swap in arbitrary
-// inline styles.
+// component owns (#262): class, id, data-cui-* and style.
 func TestWorkbenchExtraAttrsCannotOverrideOwned(t *testing.T) {
 	h := string(Workbench(WorkbenchConfig{
-		RailWidth: "480px", Class: "mine",
+		RailWidth: WorkbenchRailWide, Class: "mine",
 		Rail: render.Text("rail"), Pane: render.Text("pane"),
 		ExtraAttrs: map[string]string{
 			"data-test": "hook", "style": "evil", "Class": "evil", "data-cui-comp": "spoof",
 		},
 	}))
 	root := h[:strings.Index(h, ">")+1]
-	for _, banned := range []string{"evil", "spoof"} {
+	for _, banned := range []string{"evil", "spoof", "style="} {
 		if strings.Contains(root, banned) {
 			t.Errorf("owned attr overridden by ExtraAttrs (%q):\n%s", banned, root)
 		}
 	}
 	for _, want := range []string{
-		`data-test="hook"`, `style="--ui-workbench-rail: 480px"`, `class="fui-workbench mine"`,
+		`data-test="hook"`, `class="fui-workbench fui-workbench--rail-wide mine"`,
 	} {
 		if !strings.Contains(root, want) {
 			t.Errorf("root missing %q:\n%s", want, root)
-		}
-	}
-}
-
-// TestWorkbenchRailWidthIsOneCSSLength pins the sibling of the carousel
-// placeholder-height finding: RailWidth lands inside the root's inline
-// style attribute (as the --ui-workbench-rail custom property), so a
-// declaration list in the config value must not ship as live page CSS —
-// the same cssLengthOr gate carousel's VirtualPlaceholderHeight uses.
-// A rejected value drops the style attribute and the CSS default (320px)
-// applies.
-func TestWorkbenchRailWidthIsOneCSSLength(t *testing.T) {
-	malicious := "320px;background:url(//evil.example/x);position:fixed"
-	for _, v := range []string{malicious, "var(--rail", "480px;color:red"} {
-		h := string(Workbench(WorkbenchConfig{
-			RailWidth: v,
-			Rail:      render.Text("rail"), Pane: render.Text("pane"),
-		}))
-		root := h[:strings.Index(h, ">")+1]
-		if strings.Contains(root, "background:url(") || strings.Contains(root, "color:red") ||
-			strings.Contains(root, "style=") {
-			t.Errorf("SECURITY: [workbench-rail-injection] RailWidth %q reached the page as inline CSS: %s", v, root)
-		}
-	}
-	// Happy path: a plain length and a bare var() token still render.
-	for _, ok := range []string{"480px", "32rem", "var(--app-rail)"} {
-		h := string(Workbench(WorkbenchConfig{
-			RailWidth: ok,
-			Rail:      render.Text("rail"), Pane: render.Text("pane"),
-		}))
-		root := h[:strings.Index(h, ">")+1]
-		if !strings.Contains(root, `style="--ui-workbench-rail: `+ok+`"`) {
-			t.Errorf("plain CSS length %q must keep the custom property:\n%s", ok, root)
 		}
 	}
 }

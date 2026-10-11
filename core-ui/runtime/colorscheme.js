@@ -1,4 +1,4 @@
-// GoFastr color-scheme bootstrap.
+// GoFastr color-scheme and page-theme bootstrap.
 //
 // Runs synchronously at the TOP of <head>, before any CSS parses, so
 // dark-mode tokens take effect during the same first paint. Reads,
@@ -15,6 +15,44 @@
 //
 // Listens for OS preference changes when the stored mode is "auto"
 // or unset.
+//
+// Also applies the page theme a ui.ThemePicker chose:
+// localStorage["gofastr.theme"] names one registered override class
+// (cui-theme-<hex>), added to <html> here so a themed page never paints
+// in the default first. Anything else stored there is ignored.
+(() => {
+  'use strict';
+  try {
+    const KEY = 'gofastr.theme';
+    const VALID = /^cui-theme-[0-9a-f]{1,64}$/;
+    const root = document.documentElement;
+    let stored = '';
+    try { stored = localStorage.getItem(KEY) || ''; } catch (_) {}
+    if (VALID.test(stored)) root.classList.add(stored);
+    // Public API: window.__gofastr_theme.set(cls) puts one override
+    // class on <html> and persists it; set('') returns to the app's
+    // own theme. A value that is not one override class is refused.
+    window.__gofastr_theme = {
+      get: () => {
+        try {
+          const v = localStorage.getItem(KEY) || '';
+          return VALID.test(v) ? v : '';
+        } catch (_) { return ''; }
+      },
+      set: (cls) => {
+        if (cls !== '' && !VALID.test(cls)) return;
+        for (const c of Array.prototype.slice.call(root.classList)) {
+          if (c.indexOf('cui-theme-') === 0) root.classList.remove(c);
+        }
+        if (cls) root.classList.add(cls);
+        try {
+          if (cls) localStorage.setItem(KEY, cls);
+          else localStorage.removeItem(KEY);
+        } catch (_) {}
+      },
+    };
+  } catch (_) { /* SSR / non-browser */ }
+})();
 (() => {
   'use strict';
   try {

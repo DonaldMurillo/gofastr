@@ -481,6 +481,21 @@ func TestEmptyStateHeadingLevel(t *testing.T) {
 	}
 }
 
+// Compact puts its class on the root beside the caller's, and the
+// sheet styles it.
+func TestEmptyStateCompact(t *testing.T) {
+	h := string(EmptyState(EmptyStateConfig{Title: "x", Compact: true, Class: "mine"}))
+	if !strings.Contains(h, `class="fui-empty-state fui-empty-state--compact mine"`) {
+		t.Fatalf("Compact did not mark the root: %s", h)
+	}
+	if h := string(EmptyState(EmptyStateConfig{Title: "x"})); strings.Contains(h, "--compact") {
+		t.Fatalf("a plain empty state is compact: %s", h)
+	}
+	if !strings.Contains(emptyStateCSS(style.Theme{}), ".fui-empty-state--compact") {
+		t.Fatal("emptyStateCSS does not style the compact state")
+	}
+}
+
 // ─── Callout ───
 // TestCalloutRejectsUnknownVariant mirrors Button/StatusBadge. Typo
 // must panic instead of silently emitting an unmatched class.
@@ -556,6 +571,32 @@ func TestStatCardTrendDirection(t *testing.T) {
 	// Boundary form: the variant token follows the base trend class.
 	mustContain(t, h, ` fui-stat-card__trend--up"`)
 	mustContain(t, h, `data-direction="up"`)
+}
+
+func TestStatCardLinksLabelAndHoldsAction(t *testing.T) {
+	h := StatCard(StatCardConfig{Label: "Invoices", Value: "75", Href: "/admin/entities/invoices",
+		Icon: "receipt", Action: LinkButton(LinkButtonConfig{Label: "New", Href: "/admin/entities/invoices/create"})})
+	mustContain(t, h, `<a class="fui-stat-card__link" href="/admin/entities/invoices">Invoices</a>`)
+	mustContain(t, h, `<span aria-hidden="true" class="fui-stat-card__icon">`)
+	mustContain(t, h, `href="/admin/entities/invoices/create"`)
+	// The head is one row, icon then label then action, and the label's
+	// paragraph closes before the action opens: the action is never
+	// inside the label's link.
+	s := string(h)
+	head, label, action := strings.Index(s, `fui-stat-card__head`), strings.Index(s, `Invoices</a></p>`), strings.Index(s, "/create")
+	if head < 0 || head > label || label > action {
+		t.Fatalf("want head, then the closed label, then the action:\n%s", h)
+	}
+	mustContain(t, h, `New</a></div><p class="fui-stat-card__value"`)
+}
+
+func TestStatCardRefusesUnsafeHref(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("a javascript: href rendered")
+		}
+	}()
+	StatCard(StatCardConfig{Label: "x", Value: "1", Href: "javascript:alert(1)"})
 }
 
 // ─── Avatar ───
@@ -886,7 +927,7 @@ func TestButtonExtraAttrsCarriesWiring(t *testing.T) {
 	// Button is the documented carrier for interactive wiring
 	// (interactive-patterns.md attaches Action.Attrs() via ExtraAttrs):
 	// data-cui-* must pass through, unlike components that own their
-	// own wiring. framework/ui/resource and battery/admin depend on it.
+	// own wiring. framework/entityui and battery/admin depend on it.
 	h := Button(ButtonConfig{Label: "Delete", ExtraAttrs: map[string]string{
 		"data-cui-rpc":        "/api/items/42",
 		"data-cui-rpc-method": "DELETE",

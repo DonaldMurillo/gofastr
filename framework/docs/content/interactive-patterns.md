@@ -138,7 +138,8 @@ content. Triggered by the `data-cui-autogrow` attribute.
 ### Toast notifications
 
 `core-ui/widget/preset.ToastStack` renders a slide-in notification
-stack. The feedback module (`headless-feedback`) owns the pure
+stack in the bottom-right corner, clear of a page's header actions;
+`.Mount` moves it. The feedback module (`headless-feedback`) owns the pure
 client-side toast runtime. Toasts
 auto-dismiss with a TTL, pause on hover/focus, and can be dismissed
 by clicking the close button.
@@ -149,6 +150,9 @@ by clicking the close button.
 navigation module (`headless-navigation`, through the
 `data-hui-theme-*` hooks) persists the preference in `localStorage`
 and toggles the `color-scheme` meta + root attribute.
+`framework/ui.ThemePicker` is its sibling for whole-page themes: the
+same module puts a registered override's class on `<html>` and
+persists it (theming → "Page themes: `ui.ThemePicker`").
 
 ### Scroll spy
 
@@ -271,18 +275,43 @@ never re-renders the visible page. Selector rules and scope are in
 ### Confirm (pre-flight confirmation dialog)
 
 `Action.WithConfirm(message)` gates the action behind a **pre-flight**
-`window.confirm` dialog. The gate runs *before* the request is dispatched.
-Cancelling aborts it, so the RPC never fires. Use for destructive actions
-(delete, revoke, bulk operations).
+confirmation. The gate runs *before* the request is dispatched: the runtime
+opens the kit's confirm dialog, and cancelling (the Cancel button, Escape or
+a click on the backdrop) aborts, so the RPC never fires.
 
 ```go
-interactive.OnClick(deleteBtn,
-    interactive.Delete("/api/items/42").
-        WithConfirm("Delete this item? This cannot be undone."),
+interactive.OnClick(publishBtn,
+    interactive.Post("/api/items/42/publish").
+        WithConfirm("Publish this item to every customer?"),
 )
 ```
 
 Attribute injected: `data-cui-confirm="message"`.
+
+For a destructive action (delete, revoke, purge), spell the dialog in full
+with `Action.WithConfirmDialog`: a title, the message, the accept button's
+label, and `Danger`, which draws the accept button in the danger variant.
+
+```go
+interactive.Delete("/api/invoices/42").
+    WithConfirmDialog(interactive.Confirm{
+        Title:   "Delete this invoice?",
+        Message: "This cannot be undone.",
+        Accept:  "Delete",
+        Danger:  true,
+    })
+```
+
+Attributes injected: `data-cui-confirm`, `data-cui-confirm-title`,
+`data-cui-confirm-accept` and `data-cui-confirm-tone="danger"`. An empty
+`Title` or `Accept` keeps the dialog's own ("Are you sure?", "Confirm");
+an empty `Message` panics.
+
+The dialog is `framework/ui`'s, registered as a template the host renders
+once per page, so it wears the theme in light and dark with no CSS of
+yours. Cancel takes focus when it opens: Enter on an open confirm never
+answers yes. A page with no kit imported falls back to `window.confirm`,
+so the gate never opens.
 
 The runtime honors the attribute on any form submit (native POST, SPA, or
 RPC) and on RPC triggers; on a form, a submit button's message takes
@@ -293,12 +322,9 @@ emits `data-cui-confirm` alongside the item's RPC wiring (ignored on
 non-RPC items — the gate covers form submits and RPC triggers, and a
 plain menu link is neither).
 
-`window.confirm` is native, unthemed, and **blocks browser automation**
-(headless tests can't dismiss it without a dialog handler). For a
-design-system-styled confirmation that matches the rest of your app and is
-drivable by tests, use [`ui.ConfirmAction`](#themed-confirmation-uiconfirmaction)
-instead. Native confirm remains the lightweight default; the themed dialog is
-the opt-in upgrade.
+A confirmation that needs more than a title and a sentence (a form field,
+a list of what goes) is a modal of its own:
+[`ui.ConfirmAction`](#themed-confirmation-uiconfirmaction).
 
 ### OnErrorToast (say why a request was refused)
 
@@ -319,6 +345,47 @@ Attribute injected: `data-cui-rpc-error-toast="title"`. An empty title
 falls back to `Request failed (<status>)`. The resource detail page's
 Delete and state-transition buttons carry it, so a `409` from a record
 that other records still reference reaches the user.
+
+### OnSuccessToast and OnSuccessToastAction (say what happened, offer Undo)
+
+`Action.OnSuccessToast(title)` shows a success toast on a 2xx answer,
+before any `OnSuccess(Navigate(…))` runs: the toast stack sits outside
+the swapped region, so the toast outlives the navigation.
+`OnSuccessToastAction(label, next)` puts one button on that toast (and
+panics without one); pressing it runs `next`, with next's own toasts and navigation. A toast
+with a button stays up ten seconds instead of six, paused while hovered
+or focused.
+
+```go
+interactive.Delete("/api/invoices/42").
+    OnSuccessToast("Invoice deleted").
+    OnSuccess(interactive.Navigate("/invoices")).
+    OnSuccessToastAction("Undo", interactive.Post("/api/invoices/42/_restore").
+        WithBody(`{}`).
+        OnSuccessToast("Invoice restored"))
+```
+
+Attributes injected: `data-cui-rpc-success-toast="title"` and
+`data-cui-rpc-success-action` (JSON: the label and next's attributes).
+The button carries next's `data-cui-rpc*` wiring and nothing else:
+`OnSuccessToastAction` panics on a confirm, a signal or any other key,
+and the runtime drops any such key from the JSON it reads. entityui's
+`Undo()` on a soft delete is built on it.
+
+A server answer offers the same button: `interactive.NewToastAction(label,
+next)` builds it under the same rules, and `ui.ToastTrigger.Action`
+carries it in the `X-Gofastr-Toast` header. entityui's bulk delete
+answers its Undo this way. `ui.AddToast` drops a toast whose action
+carries a control byte, as it does for the title.
+
+```go
+ui.AddToast(w, ui.ToastTrigger{
+    Variant: ui.StatusSuccess, Title: "3 deleted",
+    Action: interactive.NewToastAction("Undo",
+        interactive.Post("/api/notes/_bulk").WithBody(body).
+            OnSuccess(interactive.Navigate("/notes"))),
+})
+```
 
 ### AfterText (one-shot button label swap on success)
 
@@ -641,10 +708,10 @@ check that it uses `{id}`, not `:id`.
 
 ## Themed confirmation (`ui.ConfirmAction`)
 
-`Action.WithConfirm` (above) uses native `window.confirm`, fine for
-admin/internal tools but unthemed and unautomatable. For a destructive
-action in an app your users interact with directly, `framework/ui.ConfirmAction` renders a
-design-system **alertdialog** instead: a modal that matches your theme
+`Action.WithConfirm` and `WithConfirmDialog` (above) ask in the kit's
+confirm dialog, which holds a title, one sentence and two buttons. When the
+confirmation needs more, `framework/ui.ConfirmAction` renders a widget
+**alertdialog** with a body of its own: a modal that matches your theme
 (light + dark, via tokens, zero bespoke CSS), traps focus, closes on Escape,
 and is drivable by tests.
 
@@ -743,6 +810,43 @@ own runtime modules for client-side behavior.
 | Network Retry Banner | `headless-feedback` (offline SystemBanner) | Shows on the framework's lost-connection report, retry link probes health |
 | Animated Counter | `headless-controls` | Number tick animation toward the SSR text, reduced-motion aware |
 | Banner | `headless` (SystemBanner) | Dismissible, session-persisted dismissal memory |
+
+### Command palette
+
+`ui.CommandPalette` returns a trigger and a modal component. The
+trigger is a link to `FallbackHref` that opens the modal with script
+and binds `Shortcut` (default `Meta+K`). By default it is visually
+hidden, for chrome that draws its own search button. Set
+`Trigger: ui.PaletteTriggerField` to draw a search field instead: a
+magnifier, `TriggerText` (default: the placeholder) and the shortcut's
+keycaps (`⌘K`). Below 48rem it shrinks to a 44px icon button. The knob
+`--ui-cmd-trigger-width` (default 16rem) sets the field's width.
+
+A palette with `RPCPath` searches on the server. The endpoint reads `q`
+from the form body and answers option rows built by
+`ui.PaletteResults(ctx, name, cmds, empty)`, where `name` is the
+palette's `Name`. Each row navigates to its command's `Href` on pick;
+an href that is not a safe link (a `javascript:` URL) renders no
+navigation. With no commands it answers one disabled row reading
+`empty`, or the localized "No matches" when `empty` is `""`.
+
+```go
+trigger, palette := ui.CommandPalette(ui.CommandPaletteConfig{
+    Name: "admin-palette", RPCPath: "/admin/_palette",
+    FallbackHref: "/admin/search", Trigger: ui.PaletteTriggerField,
+})
+
+func search(w http.ResponseWriter, r *http.Request) {
+    r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+    if err := r.ParseForm(); err != nil {
+        http.Error(w, "bad form", http.StatusBadRequest)
+        return
+    }
+    cmds := find(r.Context(), r.FormValue("q")) // []ui.PaletteCommand
+    w.Header().Set("Content-Type", "text/html; charset=utf-8")
+    w.Write([]byte(ui.PaletteResults(r.Context(), "admin-palette", cmds, "")))
+}
+```
 
 ---
 
@@ -875,9 +979,11 @@ listRegion := interactive.BindHTML(html.Div(html.DivConfig{}, list), "items")
   body off each control's **`name`**, not its `id`. `curl` testing hides the
   mismatch; only a real browser exposes it. Same section, rule 2.
 - **Turning in-page state changes into routes.** Sort, paginate,
-  expand, tab-switch: these are islands (RPC swaps one fragment), not
-  navigations. Adding a route (or `location.href = …`) for them is the
-  architecture's named failure mode #1.
+  expand, tab-switch stay on their route: an embedded region is an island
+  (RPC swaps one fragment), and a list screen's own sort and page live in
+  its query string as intercepted navigations. Adding a new route (or
+  `location.href = …`) for them is the architecture's named failure
+  mode #1.
 - **Re-implementing pagination/sort/filter math in JS.** The server
   owns that logic; the client's job is to fire the RPC and swap the
   returned HTML. Duplicated math drifts from the server's the first

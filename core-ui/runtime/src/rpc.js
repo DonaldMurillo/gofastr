@@ -63,6 +63,14 @@
     await _kilnPost(node, body);
   }
 
+
+  // formResult tells one shared "changed" state (headless-leaveguard's
+  // data-hui-leave-guard hook) whether a form submit committed: ok on a
+  // 2xx, ok:false on a refusal, so a refused save puts the dirt back.
+  const formResult = (form, ok) => {
+    if (form) { try { form.dispatchEvent(new CustomEvent('gofastr:formresult', { bubbles: true, detail: { ok } })); } catch (_) {} }
+  };
+
   async function _dispatchPlainForm(form) {
     const action = form.getAttribute('action');
     // Re-check in the module even though core checks before preventing the
@@ -109,6 +117,9 @@
         redirect: 'follow',
         credentials: 'same-origin',
       });
+      // Reported before the redirect below: a committed form must be
+      // clean by the time the page unloads.
+      formResult(form, resp.ok);
       if (resp.redirected && resp.url) {
         // A hard navigation preserves the original form contract: the target
         // may not be in the SPA route table, and rebuilding also resets SSE.
@@ -117,12 +128,14 @@
     } catch (err) {
       // The write may have committed. Surface the failure so the user does not
       // press submit again and duplicate it.
+      formResult(form, false);
       console.error('[gofastr] form submit could not complete', err);
       if (typeof NS.toast === 'function') {
         NS.toast({ variant: 'error', title: 'Could not complete that submission.', ttl: 6000 });
       }
     }
   }
+
 
   async function _dispatchRPC(node, opts) {
     const path = node.getAttribute('data-cui-rpc');
@@ -131,14 +144,15 @@
     const closeOnSuccess = node.hasAttribute('data-cui-rpc-close');
     const resetOnSuccess = node.hasAttribute('data-cui-rpc-reset') && node.tagName === 'FORM';
     const errToast = node.getAttribute('data-cui-rpc-error-toast');
+    const successToast = node.getAttribute('data-cui-rpc-success-toast');
 
     // Confirm before touching abort state. Canceling must not abort an older
     // request or leave an unused controller in the per-signal map.
     // opts.confirmed === true means the caller (a submit bridge) already ran
     // the gate on this submit; skip so the user is not prompted twice.
-    const confirmMsg = node.getAttribute('data-cui-confirm');
-    if (confirmMsg && !(opts && opts.confirmed === true) && typeof window.confirm === 'function') {
-      if (!window.confirm(confirmMsg)) return;
+    if (node.getAttribute('data-cui-confirm') && !(opts && opts.confirmed === true)) {
+      await NS.loadModule('confirm');
+      if (!(await NS.ask(node))) return;
     }
 
     if (responseSignal) {
@@ -239,6 +253,7 @@
         // module renders the server's validation envelope into the
         // fields (demand-loaded; the happy path never pays for it).
         if (formSource) {
+          formResult(formSource, false);
           NS.loadModule('formerrors')
             .then(() => NS._formErrors.report(formSource, r.status, txt))
             .catch(() => {});
@@ -254,6 +269,7 @@
         }
         return;
       }
+      formResult(formSource, true);
       // A form the server rendered with errors (aria-invalid) clears
       // them on success too, loading the module if no refusal has yet.
       if (formSource && formSource.querySelector('[aria-invalid="true"]')) {
@@ -324,9 +340,20 @@
           NS.openWidget(openWidgetName);
         }).catch(() => {});
       }
-
+      // A success toast fires BEFORE the navigate below: the stack lives
+      // outside the swapped region, so the toast outlives the navigation
+      // its RPC triggered — a save that lands on the record page still
+      // says "Saved". _toastOrFallback keeps it reachable when the
+      // feedback module cannot load.
+      // Its action (Undo) passes through as the attribute's JSON: the
+      // feedback module parses it and puts it on the toast's button.
+      if (successToast !== null) {
+        NS._toastOrFallback?.({ variant: 'success', title: successToast || 'Done', ttl: 6000, action: node.getAttribute('data-cui-rpc-success-action') });
+      }
       const navigatePath = node.getAttribute('data-cui-rpc-navigate');
-      if (navigatePath) {
+      // A save inside an intercept layer returns to the layer (or the
+      // page under the stack) it names instead of leaving the stack.
+      if (navigatePath && !NS._interceptReturn?.(navigatePath, node)) {
         try { NS.navigate(navigatePath, { force: true }); }
         catch (_) {}
       }

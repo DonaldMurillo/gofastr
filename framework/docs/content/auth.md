@@ -89,11 +89,37 @@ Production mode still requires a non-empty `JWTSecret`: a previous-only
 configuration (`JWTPreviousSecrets` set, `JWTSecret` empty) is rejected at
 `Init`, because a verify-only setup cannot sign new tokens.
 
+## Changing the password
+
+`POST /auth/password` takes `{"current_password": "…", "password": "…"}`
+(JSON only) from a signed-in user and replaces their password. A form
+also sends `confirm_password`, which must equal `password`. It
+refuses:
+
+- a request with no session (401), an API token or an embed grant
+  (401): only the interactive session behind the cookie changes it;
+- a session still owed its second factor (403), whether pending or
+  minted before the user enrolled one;
+- a cross-site form post (`rejectCrossSiteForm`);
+- a wrong current password, a new one shorter than
+  `RecommendedMinPasswordBytes` or longer than 128 bytes, and a new one
+  equal to the current one, and a confirmation that differs. These answer 422 with the form-errors
+  envelope, `{"error", "fields": {<field>: [message]}}`, so a form draws the message beside its field.
+
+On success the user's other sessions are revoked (`session.revoked`,
+`reason=password_change`), their outstanding reset links are spent
+(`reset_tokens.purged`), and `password.changed` is emitted. The caller
+gets a fresh session cookie that keeps the second factor the old
+session had passed; the response is `{"updated": true}`. API tokens
+stay: the user minted them on purpose and revokes them under
+`/auth/tokens`. A failed current-password check emits
+`password.change_failed`.
+
 ## The plugins
 
 | Plugin | Routes | Notes |
 |---|---|---|
-| `CorePlugin` | `POST /auth/{login,register,logout}`, `GET /auth/me` | The base. Always register first. Mints a `PendingTwoFactor` session if any registered plugin reports the user has 2FA enabled. |
+| `CorePlugin` | `POST /auth/{login,register,logout,password}`, `GET /auth/me` | The base. Always register first. Mints a `PendingTwoFactor` session if any registered plugin reports the user has 2FA enabled. `POST /auth/password` is a signed-in user's own password change (see [Changing the password](#changing-the-password)). |
 | `MagicLinkPlugin` | `POST /auth/magic-link/send`, `GET /auth/magic-link/verify` | Passwordless email-link sign-in. Auto-creates users on first verify and marks them verified. On an existing account whose address is unverified it claims the account first (see [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account)). Needs `EmailVerifiedChecker` on the store for existing accounts. Refuses to operate without `EmailSender` unless `DevMode` is explicitly set. |
 | `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback` | OAuth 2.0 (Google + GitHub built in). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does); it fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. See [OAuth identity linking](#oauth-identity-linking). |
 | `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
@@ -158,6 +184,7 @@ safe-but-reduced path.
 | `PasswordChecker` | `AccountsPlugin` | Refuse unlink-of-last-credential correctly. Without this, the unlink check falls back to "must leave at least one linked OAuth account remaining"; fine when the user has linked accounts, less accurate when they only have a password. |
 | `AtomicUnlinker` | `AccountsPlugin` | Decide and apply the last-credential guard in ONE store operation, so the refuse-the-last invariant holds when two unlinks race (two concurrent DELETEs of a two-method OAuth-only account cannot both win). `EntityUserStore` implements it (FOR UPDATE transaction on Postgres, single conditional DELETE on SQLite); stores without it keep the check-then-act fallback, which holds per request but not across concurrent ones. |
 | `TwoFactorChecker` | `CorePlugin` | Plugin-side signal: this user has 2FA enabled. `TwoFAPlugin` implements it. Custom plugins (WebAuthn, SMS) can implement it too. |
+| `NameStore` | Host code (the admin's account page and menu) | Keep an optional display name: `UserName` reads it ("" when none) and `SetUserName` stores it after `auth.CleanName` (trimmed, valid UTF-8, at most `MaxNameRunes` runes, no control, bidi or zero-width characters; `ErrInvalidName` otherwise; "" clears it). `EntityUserStore` implements it over a `name` column (`UserFieldMap.Name`) that `EnsureSchema` adds to an existing table as `''`. |
 | `UserLister` | Host code (`AuthManager.ListUsers`) | Enumerate accounts for a back-office. Returns `ErrListUsersUnsupported` when absent, so a missing implementation fails loudly instead of returning an empty list. See [Listing users](#listing-users). |
 
 The `EntityUserStore`, `EntitySessionStore`, and `EntityTwoFAStore`
@@ -987,6 +1014,10 @@ auth.TwoFAConfig{ RateLimit: &auth.RateLimiterConfig{...} }     // per-IP on /2f
 auth.PasswordResetConfig{ RateLimit: &auth.RateLimiterConfig{...} } // per-IP on forgot/reset
 auth.EmailVerificationConfig{ RateLimit: &auth.RateLimiterConfig{...} } // per-IP on send-verification
 ```
+
+`POST /auth/password` spends the login limiters (per IP, and per
+account on the key login uses), so a stolen session guesses the current
+password no faster there than at the login form.
 
 Login (per-IP + per-account) **and** register (per-IP) carry defaults
 even when you set nothing: credential stuffing and account-table

@@ -118,6 +118,7 @@ type FilterOp string
 
 const (
 	OpEq   FilterOp = "eq"
+	OpNe   FilterOp = "ne"
 	OpGt   FilterOp = "gt"
 	OpLt   FilterOp = "lt"
 	OpGte  FilterOp = "gte"
@@ -251,18 +252,19 @@ type FilterSuffixOp struct {
 }
 
 // FilterSuffixes is the canonical operator-suffix table for the equality,
-// comparison, LIKE, and IN operators. Order matters: longer suffixes MUST
-// be tested before their shorter prefixes (e.g. `_gte` before `_gt`,
-// otherwise `?score_gte=5` matches `_gt` and leaves an `e=` field-name
-// fragment). The table is a pure function of the operator set, so it is
-// hoisted to a package var. ParseFilters/ParseSort no longer rebuild it
-// per call.
+// not-equal, comparison, LIKE, and IN operators. Order matters: longer
+// suffixes MUST be tested before their shorter prefixes (e.g. `_gte`
+// before `_gt`, otherwise `?score_gte=5` matches `_gt` and leaves an
+// `e=` field-name fragment). The table is a pure function of the
+// operator set, so it is hoisted to a package var. ParseFilters/ParseSort
+// no longer rebuild it per call.
 var FilterSuffixes = [...]FilterSuffixOp{
 	{"_gte", OpGte},
 	{"_lte", OpLte},
 	{"_gt", OpGt},
 	{"_lt", OpLt},
 	{"_like", OpLike},
+	{"_ne", OpNe},
 	{"_in", OpIn},
 }
 
@@ -270,12 +272,17 @@ var FilterSuffixes = [...]FilterSuffixOp{
 // Supported patterns:
 //
 //	?field=value        → equals
+//	?field_ne=value     → not equals
 //	?field_gt=value     → greater than
 //	?field_lt=value     → less than
 //	?field_gte=value    → greater than or equal
 //	?field_lte=value    → less than or equal
 //	?field_like=value   → LIKE (contains)
 //	?field_in=v1,v2,v3  → IN
+//
+// `?field_ne=` follows OpEq's NULL semantics rather than SQL three-valued
+// intuition: a row whose column is NULL matches neither `=` nor `!=`, no
+// `OR field IS NULL` arm is added.
 //
 // Only fields present in the schema are accepted. Hidden fields are
 // excluded from the allow-list (mirroring ParseSort): building a WHERE
@@ -336,6 +343,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	// boolField records Bool-typed columns so value coercion (true/false
 	// → bool) happens once, here, instead of per-dialect in SQL.
 	boolField := make(map[string]bool, len(fields))
+	colType := make(map[string]schema.FieldType, len(fields))
 	for _, f := range fields {
 		if f.Hidden {
 			continue
@@ -357,6 +365,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 		}
 		fieldSet[f.Name] = true
 		names = append(names, f.Name)
+		colType[f.Name] = f.Type
 		if f.Type == schema.Bool {
 			boolField[f.Name] = true
 		}
@@ -391,6 +400,10 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	// mirroring parseScopedFilters' cap on the include path.
 	overCapField := ""
 	overCapCount := 0
+
+	// mistyped records the lexically-smallest key whose operator does not
+	// suit its column's type (CheckOpType), for the same determinism reason.
+	mistyped, mistypedErr := "", error(nil)
 
 	for key, values := range q {
 		if len(values) == 0 {
@@ -434,6 +447,13 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 				}
 			}
 			consumed[col] = true
+			if err := CheckOpType(fieldName, s.Op, colType[col]); err != nil {
+				if !o.lenient && (mistyped == "" || key < mistyped) {
+					mistyped, mistypedErr = key, err
+				}
+				matched = true
+				break
+			}
 			if s.Op == OpIn {
 				parts, total := SplitINValuesBounded(values, MaxINListEntries)
 				if total > MaxINListEntries {
@@ -505,6 +525,9 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	}
 	if unknown != "" {
 		return nil, unknownFilterError(unknown, names)
+	}
+	if mistypedErr != nil {
+		return nil, mistypedErr
 	}
 	// An over-cap ?field_in= list narrows results silently; fail closed
 	// with a message shaped like the include path's scoped-IN cap.
@@ -730,6 +753,8 @@ func applyFilters[B interface{ Where(string, ...any) B }](b B, filters []ParsedF
 		switch f.Op {
 		case OpEq:
 			b.Where(f.Field+" = $1", f.BindValue())
+		case OpNe:
+			b.Where(f.Field+" != $1", f.BindValue())
 		case OpGt:
 			b.Where(f.Field+" > $1", f.BindValue())
 		case OpLt:

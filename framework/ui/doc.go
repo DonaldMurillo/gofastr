@@ -29,6 +29,7 @@
 // Component inventory (alphabetical; kept complete by
 // TestDocGoInventoryComplete in inventory_test.go):
 //
+//	ActionList:           a list of link and button rows in a menu row's look, for a mixed panel
 //	AnchoredRail:         sticky in-page nav rail with scrollspy wiring
 //	AnimatedCounter:      scroll-triggered number tick animation
 //	AspectRatioComponent: CLS-safe aspect-ratio wrapper (alias: AspectRatio)
@@ -52,6 +53,8 @@
 //	Combobox:            input owning a listbox of suggestions (static or island-backed)
 //	CodeTabs:             one snippet in several languages behind a zero-JS tab strip
 //	Collapsible:          styled <details> disclosure with summary
+//	Dropdown:             trigger button with a floating panel for a small form or controls
+//	ChangeList:           field-by-field "from → to" list of what an edit changed
 //	ColorField:           colour swatch beside a text input, one control
 //	ColorPicker:          styled native <input type=color>
 //	CommandPalette:       ⌘K modal + combobox composition
@@ -60,12 +63,15 @@
 //	Container:            max-width page wrapper with breakpoint padding
 //	ContentRow:           nav column + main + optional context aside row
 //	CopyButton:           clipboard button with SR-announced confirmation
+//	ShortID:              a long identifier's first characters and a copy button for all of it
 //	Counter:              signal-driven counter with +/− buttons
 //	DataTable:            sortable/paginated table (island-friendly)
 //	DateField:            typed labelled native date field with bounds
+//	DateTimeField:        typed labelled native date-and-time field with bounds and step
 //	DetailList:           label/value description list for record detail
 //	DiffViewer:           unified or split diff renderer
 //	Divider:              <hr> for plain horizontal; role="separator" otherwise
+//	DrawerBar:            close / path / copy-link bar atop an intercepted drawer
 //	EmptyState:           title/description/action block for no-data screens
 //	FactBox:              labelled tile (label-first OR value-first KPI)
 //	FileDropzone:         hero file-drop surface with image previews
@@ -74,6 +80,7 @@
 //	FilterToolbar:        URL-driven filter/sort/search control strip
 //	Form:                 opinionated <form> wrapper with submit + errors
 //	FormField:            labelled input with required + help + error states
+//	FormFrame:            two-column record-form frame, side rail dropping under on its own width
 //	FormRepeater:         dynamic list of repeating field groups
 //	FormSection:          grouped fields with heading + description
 //	Gallery:              Grid/Strip/Masonry thumbnail surface
@@ -108,6 +115,12 @@
 //	Pagination:           numeric page pager over a list (typed query props, optional island)
 //	PieChart:             SVG ratio chart (donut variant via InnerRadius)
 //	PipelineImage:        multi-format <picture> consuming framework/image
+//	Picker:               form field picking one record from a server-searched list
+//	FilterRows:           field / operator / value rows inside a list's filter form
+//	ColumnPicker:         a list's Columns dropdown: show, hide and move columns by link
+//	ShortcutSheet:        keyboard help modal opened by "?", and ShortcutList for its rows
+//	SegmentedLinks:       a segmented strip of links, one current (a list's Table / Cards switch)
+//	InlineEdit:           a value edited where it is shown: a popup one-field form saved over RPC
 //	                       VariantSet output (typed sources + a stacked
 //	                       low-fidelity placeholder from a data: URI)
 //	PollingIndicator:     pulsing dot confirming a polling RPC is firing
@@ -117,6 +130,7 @@
 //	Radio:                labelled radio with FieldErrors wiring
 //	RadioGroup:           <fieldset> of radios with shared label + errors
 //	RangeSlider:          dual-thumb range with cross-clamp
+//	Rating:               read-only score as a row of glyphs (role=img)
 //	RatingInput:          1-N star/heart rating input
 //	RecordSummary:        dominant record/event summary with bounded support rail
 //	Repeater:             dynamic add/remove item list with min/max limits
@@ -125,9 +139,11 @@
 //	Section:              labelled content section with heading + description
 //	SegmentedControl:     radio-group styled as a sliding pill bar
 //	Select:               labelled native <select> with help/error/placeholder
+//	Selection:            bulk bar over selectable rows, shown while a row is checked
 //	ShortcutHint:         OS-aware keyboard chord chips
 //	Sidebar:              responsive primary navigation (inline/drawer)
 //	SidebarBody:          nav content only, for a mirroring drawer slot
+//	SidebarBrand:         logo tile, name and muted sub-line for a sidebar head
 //	SidebarDrawerTrigger: the drawer hamburger standalone, for host chrome
 //	SignalToggle:         role=switch bound to a boolean signal
 //	SignOut:              logout form POSTing the auth sign-out endpoint
@@ -144,6 +160,7 @@
 //	Spinner:              inline role="status" loading indicator
 //	Stack:                vertical layout with gap
 //	StatCard:             metric tile with label/value/trend
+//	StatStrip:            one frame around a row of figures, divided by hairlines
 //	StatusBadge:          small status pill (success/warning/danger/info/neutral)
 //	StatusPill:           compact status pill with optional leading dot
 //	StepRail:             sticky numbered nav for multi-step pages
@@ -151,6 +168,7 @@
 //	Sticky:               theme-token sticky wrapper (top/bottom pinning)
 //	Switch:               iOS-style toggle switch with role=switch
 //	TableOfContents:      auto-built sticky nav from <h2>/<h3>
+//	TabNav:              navigation strip of links, one current
 //	Tabs:                 signal-driven tab strip
 //	Tag:                  interactive pill (filter link or × dismiss)
 //	TagInput:             free-form chips, Enter/comma to commit
@@ -159,7 +177,9 @@
 //	Control:              styled native input for a FormField builder
 //	TextField:            typed labelled native text field
 //	Themed:               wraps a subtree in a registered theme override
+//	ThemePicker:          whole-page switch between registered theme overrides
 //	ThemeToggle:          dark/light/auto toggle persisting color-scheme
+//	Thumbnail:            square lazily loaded image preview (sm/md/lg)
 //	Timeline:             vertical event rail
 //	TimePicker:           styled native <input type=time>
 //	ToggleAction:         three-state commit/untoggle button with mutex groups

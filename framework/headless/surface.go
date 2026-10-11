@@ -13,6 +13,7 @@ const (
 	PartCardHeader Part = "card-header"
 	PartCardBody   Part = "card-body"
 	PartCardInner  Part = "card-inner"
+	PartCardAction Part = "card-action"
 )
 
 // CardProps configures a card.
@@ -42,6 +43,12 @@ type CardProps struct {
 	// the developer's mistake, not a link to render dead.
 	Href   string
 	Footer render.HTML
+	// Action is a control at the header's end, beside the title: the
+	// "View all" link of a feed, a card's own menu. It is the one control
+	// a header takes without filling the whole part. A card with Href is
+	// already one link, so Action and Href together panic: a control
+	// inside an anchor is a nested interactive element.
+	Action render.HTML
 
 	ID         string
 	ExtraAttrs html.Attrs
@@ -68,23 +75,33 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 	// The one fillable part, the same list the spec declares: a text
 	// Bind may replace what a Slot may (box.go), and nothing else in
 	// a card may have its content rewritten.
+	if p.Action != "" && p.Href != "" {
+		panic("headless: Card Action and Href together nest a control inside the card's link")
+	}
 	b := p.Parts.Box(s, PartCardHeader)
+	// A linked card marks its inner wrapper; without the link each part
+	// holding only the component's own markup is marked itself.
+	mark := p.Href == ""
 	kids := make([]render.HTML, 0, 3)
-	if p.Title != "" || p.Desc != "" || b.Filled(PartCardHeader) {
-		head := make([]render.HTML, 0, 2)
+	if p.Title != "" || p.Desc != "" || p.Action != "" || b.Filled(PartCardHeader) {
+		head := make([]render.HTML, 0, 3)
 		if p.Title != "" {
 			tag := orDefault(p.TitleTag, "h3")
 			if len(tag) != 2 || tag[0] != 'h' || tag[1] < '1' || tag[1] > '6' {
 				panic("headless: Card TitleTag must be h1 to h6, not " + strconv.Quote(tag))
 			}
-			head = append(head, b.El(tag, PartTitle, nil, render.Text(p.Title)))
+			head = append(head, b.El(tag, PartTitle, internalIf(mark && p.Action != "", nil), render.Text(p.Title)))
 		}
 		if p.Desc != "" {
-			head = append(head, b.El("p", PartDesc, nil, render.Text(p.Desc)))
+			head = append(head, b.El("p", PartDesc, internalIf(mark && p.Action != "", nil), render.Text(p.Desc)))
 		}
-		kids = append(kids, b.El("div", PartCardHeader, nil, b.Fill(PartCardHeader, group(head...))))
+		if p.Action != "" {
+			head = append(head, b.El("div", PartCardAction, nil, p.Action))
+		}
+		headOwn := internalIf(mark && p.Action == "" && !b.Filled(PartCardHeader), nil)
+		kids = append(kids, b.El("div", PartCardHeader, headOwn, b.Fill(PartCardHeader, group(head...))))
 	}
-	kids = append(kids, b.El("div", PartCardBody, nil, body...))
+	kids = append(kids, b.El("div", PartCardBody, internalIf(mark && len(body) == 0, nil), body...))
 	if p.Footer != "" {
 		kids = append(kids, b.El("div", PartFooter, nil, p.Footer))
 	}
@@ -112,7 +129,7 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 func init() {
 	Register(Spec{
 		Name:     "Card",
-		Anatomy:  []Part{PartRoot, PartTitle, PartDesc, PartCardHeader, PartCardBody, PartCardInner, PartFooter},
+		Anatomy:  []Part{PartRoot, PartTitle, PartDesc, PartCardHeader, PartCardAction, PartCardBody, PartCardInner, PartFooter},
 		Fillable: []Part{PartCardHeader},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Card(CardProps{Title: "Deployments", Parts: parts}, s, render.Text("body"))
@@ -133,6 +150,11 @@ func init() {
 				Why:  "the footer is where the actions that apply to the whole card live",
 				HTML: Card(CardProps{Title: "Restart policy", Footer: Button(ButtonProps{Label: "Save", Variant: "primary"}, k.For("Button"))}, s,
 					render.HTML("<p>On failure, up to 3 times.</p>")),
+			}, {
+				Name: "with a header action",
+				Why:  "a feed's way to its full list sits at the header's end, beside the title it belongs to, not in a footer under the last row",
+				HTML: Card(CardProps{Title: "Recent activity", Action: Button(ButtonProps{Label: "Audit log", Href: "/audit", Variant: "ghost"}, k.For("Button"))}, s,
+					render.HTML("<p>Ada created INV-1.</p>")),
 			}, {
 				Name: "the whole card is the link",
 				Why:  "an href on the card makes the surface itself the affordance — one focusable link wrapping what the div showed, so the click target is the card a reader can see rather than a Read more crammed into the footer",

@@ -47,7 +47,8 @@ type NamedConfig struct {
 //
 // The projection covers exactly what changes a generated client's surface:
 // name, table (route path), Public, SoftDelete (trashed listing), sorted
-// SearchFields (?q=), relations (?include=), and every non-Hidden field's
+// SearchFields (?q=), relations (?include=), the states block (guarded
+// columns and one call per move), and every non-Hidden field's
 // name, type, required/unique/readonly/auto flags, enum values, and
 // default. Hidden fields never appear on the wire, so flipping one is
 // invisible to SDKs and deliberately does not change the hash. Field order
@@ -77,6 +78,22 @@ func SchemaHash(named []NamedConfig) string {
 		ForeignKey string `json:"foreignKey,omitempty"`
 		Through    string `json:"through,omitempty"`
 	}
+	type hashTransition struct {
+		Key        string   `json:"key"`
+		Label      string   `json:"label,omitempty"`
+		From       []string `json:"from"`
+		To         string   `json:"to"`
+		Stamp      string   `json:"stamp,omitempty"`
+		Variant    string   `json:"variant,omitempty"`
+		Permission string   `json:"permission,omitempty"`
+		System     bool     `json:"system,omitempty"`
+	}
+	type hashStates struct {
+		Field       string           `json:"field"`
+		Initial     []string         `json:"initial,omitempty"`
+		Transitions []hashTransition `json:"transitions,omitempty"`
+		Advisory    bool             `json:"advisory,omitempty"`
+	}
 	type hashEntity struct {
 		Name         string         `json:"name"`
 		Table        string         `json:"table"`
@@ -85,6 +102,12 @@ func SchemaHash(named []NamedConfig) string {
 		SearchFields []string       `json:"searchFields,omitempty"`
 		Fields       []hashField    `json:"fields"`
 		Relations    []hashRelation `json:"relations,omitempty"`
+		// States is in the projection because it changes what writes a
+		// client may send: the guarded columns drop out of create/update
+		// payloads and each non-system move becomes a call. The whole
+		// config participates, Advisory included (an Advisory flip
+		// reopens the field to direct writes).
+		States *hashStates `json:"states,omitempty"`
 	}
 
 	entities := make([]hashEntity, 0, len(named))
@@ -150,6 +173,28 @@ func SchemaHash(named []NamedConfig) string {
 			})
 		}
 		sort.Slice(he.Relations, func(i, j int) bool { return he.Relations[i].Name < he.Relations[j].Name })
+
+		if cfg.States != nil {
+			hs := hashStates{
+				Field:       cfg.States.Field,
+				Initial:     append([]string(nil), cfg.States.Initial...),
+				Advisory:    cfg.States.Advisory,
+				Transitions: make([]hashTransition, 0, len(cfg.States.Transitions)),
+			}
+			for _, t := range cfg.States.Transitions {
+				hs.Transitions = append(hs.Transitions, hashTransition{
+					Key:        t.Key,
+					Label:      t.Label,
+					From:       append([]string(nil), t.From...),
+					To:         t.To,
+					Stamp:      t.Stamp,
+					Variant:    t.Variant,
+					Permission: t.Permission,
+					System:     t.System,
+				})
+			}
+			he.States = &hs
+		}
 
 		entities = append(entities, he)
 	}

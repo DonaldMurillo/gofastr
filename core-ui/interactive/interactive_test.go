@@ -1,7 +1,9 @@
 package interactive
 
 import (
+	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
 	"strings"
 	"testing"
@@ -675,6 +677,52 @@ func TestOnErrorToastEmitsAttr(t *testing.T) {
 	}
 	if _, ok := Delete("/api/item/1").Attrs()["data-cui-rpc-error-toast"]; ok {
 		t.Fatal("an action without OnErrorToast must not carry the hook")
+	}
+}
+
+func TestOnSuccessToastEmitsAttr(t *testing.T) {
+	attrs := Put("/api/item/1").
+		OnSuccessToast("Saved").
+		OnSuccess(Navigate("/items/1")).Attrs()
+	if got := attrs["data-cui-rpc-success-toast"]; got != "Saved" {
+		t.Fatalf("OnSuccessToast attr = %q, want the title: %v", got, attrs)
+	}
+	if _, ok := Put("/api/item/1").Attrs()["data-cui-rpc-success-toast"]; ok {
+		t.Fatal("an action without OnSuccessToast must not carry the hook")
+	}
+}
+
+// The toast's action rides as JSON: its label and the next action's RPC
+// attributes. A confirm on the next action, no label, or no success
+// toast to ride is refused.
+func TestSuccessToastActionEmitsAttr(t *testing.T) {
+	attrs := Delete("/api/item/1").OnSuccessToast("Deleted").
+		OnSuccessToastAction("Undo", Post("/api/item/1/_restore").WithBody(`{}`).OnSuccessToast("Restored")).Attrs()
+	var got ToastAction
+	if err := json.Unmarshal([]byte(attrs["data-cui-rpc-success-action"]), &got); err != nil {
+		t.Fatalf("success action is not JSON: %v (%v)", err, attrs)
+	}
+	want := map[string]string{"data-cui-rpc": "/api/item/1/_restore", "data-cui-rpc-method": "POST",
+		"data-cui-rpc-body": "{}", "data-cui-rpc-success-toast": "Restored"}
+	if got.Label != "Undo" || !maps.Equal(got.Attrs, want) {
+		t.Fatalf("success action = %+v, want Undo over %v", got, want)
+	}
+	if _, ok := Delete("/api/item/1").Attrs()["data-cui-rpc-success-action"]; ok {
+		t.Fatal("an action without OnSuccessToastAction must not carry the hook")
+	}
+	for name, f := range map[string]func(){
+		"confirm":  func() { Delete("/x").OnSuccessToastAction("Undo", Post("/y").WithConfirm("Sure?")) },
+		"no label": func() { Delete("/x").OnSuccessToastAction("", Post("/y")) },
+		"no toast": func() { Delete("/x").OnSuccessToastAction("Undo", Post("/y")).Attrs() },
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s: OnSuccessToastAction did not refuse", name)
+				}
+			}()
+			f()
+		}()
 	}
 }
 

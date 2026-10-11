@@ -126,6 +126,11 @@ type SectionConfig struct {
 	ID    string
 	// Compact removes outer margins when a parent Stack owns section spacing.
 	Compact bool
+	// Overline draws the heading as a group label: small, upper case
+	// and muted, over a run of cards rather than a page band (a
+	// dashboard's "Billing" above its count cards). It is still the
+	// section's <h2>.
+	Overline bool
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the section's root <section> element.
@@ -152,6 +157,9 @@ var sectionClasses = headless.Classes{
 func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	if cfg.Compact {
 		cfg.Class += " fui-section--compact"
+	}
+	if cfg.Overline {
+		cfg.Class += " fui-section--overline"
 	}
 	sectionID := cfg.ID
 	if sectionID == "" && cfg.Heading != "" {
@@ -344,6 +352,23 @@ type ButtonConfig struct {
 	ExtraAttrs html.Attrs
 	ID         string
 	Class      string
+	// Icon, when set, renders the named registered icon (see
+	// RegisterIcon / Icon) before the label.
+	Icon string
+	// IconOnly draws the icon alone in a square button; Label becomes
+	// the accessible name. It needs a registered Icon.
+	IconOnly bool
+	// Shortcut is a keyboard chord ("Mod+S") that clicks this button,
+	// drawn after the label as ShortcutHint chips. It needs ID: the
+	// chord names the button by it. The chord reaches assistive tech
+	// through aria-keyshortcuts; the accessible name stays the label.
+	Shortcut string
+	// QuietUntilDirty draws the button in the secondary look until the
+	// form it submits (the one it sits in, or the one its form
+	// attribute names) holds unsaved edits: the leave guard's dirty
+	// state, so that form needs FormConfig.LeaveGuard. It stays
+	// clickable and keeps its shortcut either way.
+	QuietUntilDirty bool
 }
 
 // Button renders a semantic button with a typed variant, through the
@@ -366,13 +391,32 @@ func Button(cfg ButtonConfig) render.HTML {
 	checkButtonVariant("Button", v)
 	checkButtonSize("Button", cfg.Size)
 	action, extra := splitButtonAttrs(cfg.ExtraAttrs)
+	aria := cfg.AriaLabel
+	label, icon := buttonIcon("Button", cfg.Label, cfg.Icon, cfg.IconOnly, &aria)
+	var suffix render.HTML
+	if cfg.Shortcut != "" {
+		if cfg.ID == "" {
+			panic("ui: Button Shortcut needs ID — the chord clicks the button it names")
+		}
+		suffix = headless.Own(ShortcutHint(ShortcutHintConfig{Chord: cfg.Shortcut, BindTarget: "#" + cfg.ID}))
+		if aria == "" {
+			aria = cfg.Label
+		}
+		extra["aria-keyshortcuts"] = ariaKeyShortcuts(cfg.Shortcut)
+	}
+	cls := cfg.Class
+	if cfg.QuietUntilDirty {
+		cls = strings.TrimSpace("fui-button--until-dirty " + cls)
+	}
 	// All variants share the single canonical ui-button marker; the
 	// .fui-button--<variant> class on the same element drives the
 	// visual delta via buttonCSS's variant rules. No legacy per-
 	// variant marker / sheet.
 	return buttonStyle.WrapHTML(headless.Button(headless.ButtonProps{
-		Label:      cfg.Label,
-		AriaLabel:  cfg.AriaLabel,
+		Label:      label,
+		AriaLabel:  aria,
+		Icon:       icon,
+		Suffix:     suffix,
 		Variant:    string(v),
 		Size:       string(cfg.Size),
 		Type:       cfg.Type,
@@ -380,7 +424,7 @@ func Button(cfg ButtonConfig) render.HTML {
 		ID:         cfg.ID,
 		Action:     action,
 		ExtraAttrs: extra,
-		Parts:      rootClassParts(cfg.Class),
+		Parts:      rootClassParts(cls),
 	}, buttonClasses))
 }
 
@@ -405,13 +449,18 @@ type LinkButtonConfig struct {
 	// Icon, when set, renders the named registered icon (see
 	// RegisterIcon / Icon) before the label. The button's inline-flex
 	// gap handles spacing. Unknown names render the label alone.
-	Icon  string
-	ID    string
-	Class string
+	Icon string
+	// IconOnly draws the icon alone in a square button; Label becomes
+	// the accessible name. It needs a registered Icon.
+	IconOnly bool
+	ID       string
+	Class    string
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the rendered <a>. The
-	// four data-cui-* keys that make sense on a link (push-state,
-	// prefetch, open, deeplink) go through the typed Action seam;
+	// data-cui-* keys that make sense on a link (push-state, prefetch,
+	// open, deeplink, intercept-page, intercept-swap, intercept-panel)
+	// go through the typed
+	// Action seam;
 	// every other data-cui-* key is refused, as it always was — a
 	// link navigates, a button acts. Keys the component owns are
 	// dropped: class and id (use Class / ID) and href (use Href).
@@ -457,12 +506,11 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 	checkButtonVariant("LinkButton", v)
 	checkButtonSize("LinkButton", cfg.Size)
 	action, extra := splitLinkAttrs(cfg.ExtraAttrs)
-	var icon render.HTML
-	if cfg.Icon != "" && IconRegistered(cfg.Icon) {
-		icon = Icon(cfg.Icon, IconConfig{Size: "18"})
-	}
+	aria := ""
+	label, icon := buttonIcon("LinkButton", cfg.Label, cfg.Icon, cfg.IconOnly, &aria)
 	return buttonStyle.WrapHTML(headless.Button(headless.ButtonProps{
-		Label:      cfg.Label,
+		Label:      label,
+		AriaLabel:  aria,
 		Href:       cfg.Href,
 		External:   cfg.External,
 		Variant:    string(v),
@@ -473,6 +521,26 @@ func LinkButton(cfg LinkButtonConfig) render.HTML {
 		ExtraAttrs: extra,
 		Parts:      rootClassParts(cfg.Class),
 	}, buttonClasses))
+}
+
+// buttonIcon resolves a button's icon and visible label. An unknown
+// icon name draws the label alone; IconOnly moves the label into the
+// accessible name (unless one is set) and needs an icon to draw.
+func buttonIcon(comp, label, name string, only bool, aria *string) (string, render.HTML) {
+	var icon render.HTML
+	if name != "" && IconRegistered(name) {
+		icon = Icon(name, IconConfig{Size: "18"})
+	}
+	if !only {
+		return label, icon
+	}
+	if icon == "" {
+		panic("ui: " + comp + " IconOnly needs a registered Icon, got " + strconv.Quote(name))
+	}
+	if *aria == "" {
+		*aria = label
+	}
+	return "", icon
 }
 
 // rootClassParts carries a caller's Class onto the root part, where
@@ -540,7 +608,9 @@ func splitLinkAttrs(extra html.Attrs) (action, plain html.Attrs) {
 		}
 		switch {
 		case lk == "data-cui-push-state", lk == "data-cui-prefetch",
-			lk == "data-cui-open", lk == "data-cui-deeplink":
+			lk == "data-cui-open", lk == "data-cui-deeplink",
+			lk == "data-cui-intercept-page", lk == "data-cui-intercept-swap",
+			lk == "data-cui-intercept-panel":
 			action[lk] = v
 		case strings.HasPrefix(lk, "data-cui-"), strings.HasPrefix(lk, "data-fui-"):
 			// Refused, as before the seam existed.
@@ -624,8 +694,12 @@ const (
 type StatusBadgeConfig struct {
 	Label   string        // required visible text
 	Variant StatusVariant // defaults to Neutral
-	ID      string
-	Class   string
+	// Dot draws a filled circle in the badge's tone before the label,
+	// the shape a status column reads at a glance. Decoration: the
+	// label stays the whole of what a screen reader hears.
+	Dot   bool
+	ID    string
+	Class string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the pill's root <span>.
@@ -646,7 +720,11 @@ func StatusBadge(cfg StatusBadgeConfig) render.HTML {
 		v = StatusNeutral
 	}
 	checkStatusVariant("StatusBadge", v)
-	cls := joinNonEmpty("fui-badge--"+string(v), cfg.Class)
+	cls := "fui-badge--" + string(v)
+	if cfg.Dot {
+		cls += " fui-badge--dot"
+	}
+	cls = joinNonEmpty(cls, cfg.Class)
 	return statusBadgeStyle.WrapHTML(headless.Badge(headless.BadgeProps{
 		Label:      cfg.Label,
 		ID:         cfg.ID,
@@ -669,6 +747,10 @@ type EmptyStateConfig struct {
 	Action      render.HTML // optional CTA (e.g. a button or link)
 	ID          string
 	Class       string
+	// Compact draws one quiet line in a small panel, for an empty list
+	// inside another screen (a record's related list), where the
+	// section's own header carries the call to action.
+	Compact bool
 
 	// HeadingLevel overrides the title's heading level (1–6). Zero defaults
 	// to 3 (h3), preserving the gallery/demo behaviour where the empty state
@@ -697,6 +779,9 @@ var emptyStateClasses = headless.Classes{
 // region named by its own heading, so "no results" is a findable
 // place with a way out.
 func EmptyState(cfg EmptyStateConfig) render.HTML {
+	if cfg.Compact {
+		cfg.Class = cls("fui-empty-state--compact", cfg.Class)
+	}
 	return emptyStateStyle.WrapHTML(headless.EmptyState(headless.EmptyStateProps{
 		Title:       cfg.Title,
 		Level:       cfg.HeadingLevel,
@@ -791,6 +876,27 @@ type StatCardConfig struct {
 	// Direction colors the trend pill. Defaults to flat.
 	Direction TrendDirection
 
+	// Href links the label to what the number counts (a dashboard
+	// count to its list).
+	Href string
+
+	// Icon names a registered icon (see Icon) drawn in the card's head.
+	// An unknown name draws no icon, as on LinkButton.
+	Icon string
+
+	// Action is a control in the card's head (a LinkButton to create
+	// one more), outside the label's link.
+	Action render.HTML
+
+	// Plain draws no frame (border, fill, shadow, corners): a figure
+	// inside a StatStrip, whose frame is the strip's.
+	Plain bool
+
+	// Tile draws the Icon in a tinted square tile on the head's first
+	// line with the Action at its end, and the label on the line under
+	// them: a dashboard's entity cards.
+	Tile bool
+
 	ID    string
 	Class string
 
@@ -804,9 +910,12 @@ type StatCardConfig struct {
 // statCardClasses dresses headless.StatCard's parts.
 var statCardClasses = headless.Classes{
 	headless.PartRoot:      "fui-stat-card",
+	headless.PartHeader:    "fui-stat-card__head",
+	headless.PartIcon:      "fui-stat-card__icon",
 	headless.PartLabel:     "fui-stat-card__label",
 	headless.PartStatValue: "fui-stat-card__value",
 	headless.PartStatTrend: "fui-stat-card__trend",
+	headless.PartStatLink:  "fui-stat-card__link",
 
 	headless.Part("stat-trend--up"):   "fui-stat-card__trend--up",
 	headless.Part("stat-trend--down"): "fui-stat-card__trend--down",
@@ -827,14 +936,22 @@ func StatCard(cfg StatCardConfig) render.HTML {
 	if dir == "" {
 		dir = TrendFlat
 	}
+	var icon render.HTML
+	if cfg.Icon != "" && IconRegistered(cfg.Icon) {
+		icon = Icon(cfg.Icon, IconConfig{})
+	}
 	return statCardStyle.WrapHTML(headless.StatCard(headless.StatCardProps{
 		Label:      cfg.Label,
 		Value:      cfg.Value,
 		Trend:      cfg.Trend,
 		Direction:  string(dir),
+		Href:       cfg.Href,
+		Icon:       icon,
+		Action:     cfg.Action,
 		ID:         cfg.ID,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id"),
-		Parts:      rootClassParts(cfg.Class),
+		Parts: rootClassParts(strings.TrimSpace(modifierClass("fui-stat-card--plain", cfg.Plain) + " " +
+			modifierClass("fui-stat-card--tile", cfg.Tile) + " " + cfg.Class)),
 	}, statCardClasses))
 }
 
@@ -875,6 +992,10 @@ type AvatarConfig struct {
 	Name string
 	Src  string     // optional image URL; falls back to initials when empty
 	Size AvatarSize // sm | "" (default md) | lg | xl
+	// Square draws a rounded square instead of a circle: a logo or
+	// workspace tile beside a product name, where a circle reads as a
+	// person.
+	Square bool
 
 	// Status draws a presence dot in the lower corner (online / away /
 	// busy / offline). Empty renders no dot.
@@ -902,6 +1023,9 @@ func Avatar(cfg AvatarConfig) render.HTML {
 	cls := "fui-avatar"
 	if cfg.Size != AvatarMd {
 		cls += " fui-avatar--" + string(cfg.Size)
+	}
+	if cfg.Square {
+		cls += " fui-avatar--square"
 	}
 	if cfg.Status != AvatarStatusNone {
 		cls += " fui-avatar--has-status"

@@ -107,6 +107,28 @@ func TestSelectExtraAttrsCannotOverrideOwned(t *testing.T) {
 	}
 }
 
+// Action draws the caller's control after the select on one row, left
+// reachable (no internal mark); with no Action there is no row.
+func TestSelectActionSitsOnTheRow(t *testing.T) {
+	h := string(Select(SelectConfig{
+		Name: "owner", Label: "Owner",
+		Options: []SelectOption{{Value: "1", Text: "One"}},
+		Action:  `<a href="/users/1" id="open">Open</a>`,
+	}))
+	row := strings.Index(h, `<div class="fui-select__row">`)
+	sel := strings.Index(h, "<select")
+	act := strings.Index(h, `<a href="/users/1" id="open">`)
+	if row < 0 || sel < row || act < sel {
+		t.Fatalf("the action is not after the select on its row:\n%s", h)
+	}
+	if !strings.Contains(selectCSS(style.Theme{}), ".fui-select__row") {
+		t.Fatal("selectCSS does not lay out the row")
+	}
+	if plain := requiredSelect(); strings.Contains(plain, "fui-select__row") {
+		t.Fatalf("a select with no action drew the row:\n%s", plain)
+	}
+}
+
 // Help and error are both visible when both are set, the error first,
 // and both ids ride the control's described-by — the field family's
 // contract, which Select inherits from headless.Field.
@@ -129,5 +151,21 @@ func TestSelectHelpAndErrorBothVisible(t *testing.T) {
 	}
 	if errAt > hintAt {
 		t.Errorf("the error must be drawn before the hint:\n%s", h)
+	}
+}
+
+// LabelHidden keeps the label for assistive tech and hides it from view:
+// the field root carries the modifier the field sheet hides it by.
+func TestSelectLabelHidden(t *testing.T) {
+	h := string(Select(SelectConfig{Name: "scope", Label: "Apply to", LabelHidden: true,
+		Options: []SelectOption{{Value: "a", Text: "A"}}}))
+	if !strings.Contains(h, "fui-field--label-hidden") || !strings.Contains(h, ">Apply to</label>") {
+		t.Errorf("no hidden-label modifier, or the label is gone:\n%s", h)
+	}
+	if strings.Contains(string(Select(SelectConfig{Name: "s", Label: "S", Options: []SelectOption{{Value: "a", Text: "A"}}})), "label-hidden") {
+		t.Error("a plain select carries the hidden-label modifier")
+	}
+	if css := formFieldCSS(style.DefaultTheme()); !strings.Contains(css, ".fui-field--label-hidden > .fui-field__label") {
+		t.Errorf("the field sheet does not hide the label:\n%s", css)
 	}
 }

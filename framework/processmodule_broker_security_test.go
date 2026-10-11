@@ -47,7 +47,7 @@ func TestBrokerFilterCannotSetControlKeys(t *testing.T) {
 		"include":"author","trashed":true,"where":"x","limit":1,
 		"page":2,"sort":"id","fields":"id","q":"pw","offset":3,
 		"cursor":"c","direction":"asc","stream":1,"per_page":5,
-		"status":"open","created_at_gte":"2026-01-01",
+		"status":"open","created_at_gte":"2026-01-01","status_ne":"void",
 		"ssn":"111-22-3333","secret":"x","bogus":"y"
 	}`)
 
@@ -79,8 +79,11 @@ func TestBrokerFilterCannotSetControlKeys(t *testing.T) {
 	if m["created_at_gte"] != "2026-01-01" {
 		t.Errorf("suffixed field %q was dropped: got %v", "created_at_gte", m["created_at_gte"])
 	}
-	if len(m) != 2 {
-		t.Errorf("sanitizeFilter left %d keys, want exactly 2: %v", len(m), m)
+	if m["status_ne"] != "void" {
+		t.Errorf("suffixed field %q was dropped: got %v", "status_ne", m["status_ne"])
+	}
+	if len(m) != 3 {
+		t.Errorf("sanitizeFilter left %d keys, want exactly 3: %v", len(m), m)
 	}
 }
 

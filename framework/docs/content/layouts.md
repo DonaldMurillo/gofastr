@@ -238,6 +238,11 @@ The fn receives the resolved `app.Match` (`m.Path()`, `m.Param("id")`,
 is readable. Areas are not filled by screens: nothing targets them, and
 every build runs on every render.
 
+An area's cell is a `div`. `AreaSpec{Inline: true}` makes it a `span`,
+so the area fits inside phrasing content: the admin gives each sidebar
+link's record count its own inline area (`ui.SidebarItem.Count`), and
+the count follows every navigation while the sidebar stays put.
+
 **The mistake it prevents:** reading the match once in the static chrome
 — the first navigation leaves stale breadcrumbs and a stale
 current-article mark forever.
@@ -556,8 +561,10 @@ fwApp.Mount(uihost.New(site)) // the host ships the layout's transition CSS
 Presets: `app.Slide(app.Right, d)` is the master-detail move (the
 back direction mirrors automatically), `app.Crossfade(d)` fades both
 legs, `app.FadeThrough(d)` runs the legs sequentially — for regions
-whose two states carry text that must not ghost over itself
-(breadcrumbs). `Transition{Name: "..."}` assigns a snapshot name without
+whose two states carry text that must not ghost over itself.
+`app.Instant()` swaps the region in one frame while the page
+transitions around it: the fit for a breadcrumb trail, whose root is
+the same on every page and would blink under any fade. Nor does it dim while a slow navigation is in flight, as other busy regions do; it keeps `aria-busy` for screen readers. `Transition{Name: "..."}` assigns a snapshot name without
 generating keyframes; use a framework preset when the region needs a move.
 The host collects every registered layout's generated
 `Layout.TransitionCSS()` into app.css; there is nothing to wire. app.css
@@ -745,17 +752,36 @@ width and stacks below main on phones. An empty outlet in `Aside` takes
 no space; a later navigation can fill it again.
 
 `ContentRowConfig.Toolbar` places an existing `ui.Toolbar` above main
-beside the sidebar. It does not create another toolbar component.
+beside the sidebar. It does not create another toolbar component. The
+row is a `<section>` landmark named by `ToolbarLabel` ("Toolbar" by
+default), so controls placed there sit inside a landmark.
 `Viewport: true` confines desktop scrolling to main, sidebar and aside.
 Below the breakpoint it returns to document flow, without hiding either
 pane — and it reads the header band's height from
 `--size-header-height` (`Theme.Layout.HeaderHeight`), so recipes pair it with a page-tall
 `ui.Stack{Screen: true}` and an app bar whose height is that token.
+`Sticky: true` is the frame for a shell with no header band (the
+admin's): the window still scrolls the page, the nav column sticks to
+the top at one viewport tall and scrolls its own overflow, and the
+`Toolbar` row sticks to the top at every width, painted over the
+content beneath it. The client router's scroll restore and fragment
+jumps keep working because the window stays the scroller. Sticky and
+Viewport are two scroll models; setting both panics.
 `PhoneNavFlush: true` drops the nav column's phone separator below the
 breakpoint — set it when the sidebar's phone navigation lives outside
 the column (a `NativeMobile` sidebar whose drawer trigger,
 `ui.SidebarDrawerTrigger`, the app bar hosts), so an empty column
 draws no rule.
+`Dense: true` gives the page the compact density on a fine pointer (a
+mouse or trackpad), declared on the document root so the drawers,
+dialogs and menus mounted outside the row follow: buttons, fields, the toolbar's controls and table
+rows take the 36px control height (44px table rows), the smaller gap,
+and the small step as the `--ui-control-padding-y` inset. The root also
+gets `--spacing-touch-target` at 36px, so search fields, checkboxes,
+menus and icon buttons sized from that token follow. A touch
+screen keeps the theme's density, so a phone holds its 44px targets.
+It is for operator consoles (the admin sets it); a `ui.Themed` scope
+inside the row redeclares its own density.
 List/detail panes (`ui.ListDetail`) fill whatever column the row's
 build gives them, so the frame decides their width. A sidebar and an
 aside are two fixed columns beside that content: with both present the

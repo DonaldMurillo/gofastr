@@ -158,6 +158,7 @@ func Tag(cfg TagConfig) render.HTML {
 var tagClasses = headless.Classes{
 	headless.PartRoot:         "fui-tag",
 	headless.PartIcon:         "fui-tag__icon",
+	headless.PartLabel:        "fui-tag__label",
 	headless.PartBadgeDismiss: "fui-tag__dismiss",
 }
 

@@ -7,6 +7,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
+// compactControlHeight and compactGap are the compact density's values:
+// the theme option declares them at a theme boundary, and a Dense
+// ContentRow declares them on a fine pointer.
+const (
+	compactControlHeight = "36px"
+	compactGap           = "var(--spacing-sm)"
+)
+
+// buttonEdge is the border the filled and soft treatments draw: the
+// --ui-button-edge knob, transparent when no theme sets it.
+const buttonEdge = "var(--ui-button-edge, transparent)"
+
 // The component-options compiler: the one function that turns a
 // theme's flattened Components map into the custom properties
 // component stylesheets consume. core-ui/style stores, hashes and
@@ -82,8 +94,8 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 		)
 	case theme.Compact:
 		decls = append(decls,
-			style.Declaration{Name: "--fui-density-control-h", Value: "36px"},
-			style.Declaration{Name: "--fui-density-gap", Value: "var(--spacing-sm)"},
+			style.Declaration{Name: "--fui-density-control-h", Value: compactControlHeight},
+			style.Declaration{Name: "--fui-density-gap", Value: compactGap},
 		)
 	case theme.DensityUnset:
 		// Inherit: nothing to declare.
@@ -94,7 +106,7 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 	case theme.Square:
 		decls = append(decls, style.Declaration{Name: "--fui-button-radius", Value: "0"})
 	case theme.Pill:
-		decls = append(decls, style.Declaration{Name: "--fui-button-radius", Value: "9999px"})
+		decls = append(decls, style.Declaration{Name: "--fui-button-radius", Value: "var(--radii-full)"})
 	case theme.RadiusUnset:
 	}
 	// Field: the columns variable is the layout (stacked is one full
@@ -134,13 +146,19 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 	// inherited an unreadable filled danger button from the pairing.
 	// Secondary and ghost read no treatment: they are drawn, not
 	// treated.
+	//
+	// The filled and soft treatments draw no edge of their own; their
+	// border reads the --ui-button-edge knob, transparent unless a
+	// theme sets it (Knobs{"ui-button-edge": "var(--color-border-strong)"}
+	// gives every filled button an ink outline). Outline draws its
+	// colour and ignores the knob.
 	variantTrio := func(prefix, colour, fg string) {
 		switch opts.Button.Treatment {
 		case theme.Filled:
 			decls = append(decls,
 				style.Declaration{Name: prefix + "-bg", Value: colour},
 				style.Declaration{Name: prefix + "-fg", Value: fg},
-				style.Declaration{Name: prefix + "-border", Value: "transparent"},
+				style.Declaration{Name: prefix + "-border", Value: buttonEdge},
 			)
 		case theme.Outline:
 			decls = append(decls,
@@ -152,7 +170,7 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 			decls = append(decls,
 				style.Declaration{Name: prefix + "-bg", Value: "color-mix(in srgb, " + colour + " 15%, transparent)"},
 				style.Declaration{Name: prefix + "-fg", Value: colour},
-				style.Declaration{Name: prefix + "-border", Value: "transparent"},
+				style.Declaration{Name: prefix + "-border", Value: buttonEdge},
 			)
 		case theme.TreatmentUnset:
 		}

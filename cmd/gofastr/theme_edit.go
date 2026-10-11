@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -640,9 +641,12 @@ func (g *galleryPreviewScreen) Render() render.HTML {
 			if gallery.IsNoteOnly(entry.Slug) || entry.Demo == nil {
 				continue
 			}
+			// The demo sits in a block box, as on the docs site: a demo
+			// that returns a lone button keeps the button's own width
+			// instead of being stretched across the stack's column.
 			demos = append(demos, ui.Stack(ui.StackConfig{Gap: ui.GapSM},
 				ui.Muted(render.Text(entry.Name)),
-				entry.Demo(),
+				html.Div(html.DivConfig{}, entry.Demo()),
 			))
 		}
 		if len(demos) == 0 {

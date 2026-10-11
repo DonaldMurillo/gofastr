@@ -1,6 +1,7 @@
 // headless-navigation: the behaviour module for the page-level
-// controls — the back-to-top link and the theme (colour-scheme)
-// control group. Loaded by the kernel on one of its markers.
+// controls — the back-to-top link, the theme (colour-scheme) control
+// group and the page-theme picker. Loaded by the kernel on one of its
+// markers.
 //
 // The back-to-top link is a real anchor whose href is the no-script
 // destination; the module adds the threshold, the scroll, and the
@@ -103,6 +104,26 @@
 
   // ─── theme ───────────────────────────────────────────────────────
 
+  // markRadios checks the option of one radio group whose attr equals
+  // value, or the option whose attr is '' when none does (a stored
+  // ThemePicker class that no option names any more draws the app's
+  // own theme, so Default is the honest answer). The checked option is
+  // the group's one Tab stop; with nothing checked it is the first.
+  const RADIO_SEL = {
+    'data-hui-theme-pick': '[data-hui-theme-pick]',
+    'data-hui-theme-option': '[data-hui-theme-option]',
+  };
+
+  function markRadios(group, attr, value) {
+    const opts = Array.prototype.slice.call(group.querySelectorAll(RADIO_SEL[attr]));
+    let hit = opts.find(function (o) { return o.getAttribute(attr) === value; });
+    if (!hit) hit = opts.find(function (o) { return o.getAttribute(attr) === ''; });
+    for (const o of opts) {
+      o.setAttribute('aria-checked', o === hit ? 'true' : 'false');
+      o.setAttribute('tabindex', o === hit || (!hit && o === opts[0]) ? '0' : '-1');
+    }
+  }
+
   function currentScheme() {
     let s = '';
     try { s = localStorage.getItem(THEME_KEY) || ''; } catch (_) { return 'auto'; }
@@ -137,13 +158,63 @@
       document.documentElement.setAttribute('data-color-scheme', resolveScheme(scheme));
     }
     const scope = root && root.querySelectorAll ? root : document;
-    for (const opt of scope.querySelectorAll('[data-hui-theme-option]')) {
-      opt.setAttribute('aria-checked', opt.getAttribute('data-hui-theme-option') === scheme ? 'true' : 'false');
+    for (const group of within(scope, '[data-hui-theme-toggle]')) markRadios(group, 'data-hui-theme-option', scheme);
+  }
+
+  // ─── page theme ──────────────────────────────────────────────────
+  //
+  // A ThemePicker option names one registered override class (or ''
+  // for the app's own theme). The bootstrap's window.__gofastr_theme
+  // owns the <html> class and the storage key it re-applies before
+  // first paint; a page without the bootstrap gets the same writes
+  // here.
+
+  const PAGE_THEME_KEY = 'gofastr.theme';
+  const PAGE_THEME_RE = /^cui-theme-[0-9a-f]{1,64}$/;
+
+  function currentPageTheme() {
+    const api = window.__gofastr_theme;
+    if (api && typeof api.get === 'function') {
+      try { return api.get(); } catch (_) { return ''; }
     }
+    let v = '';
+    try { v = localStorage.getItem(PAGE_THEME_KEY) || ''; } catch (_) { return ''; }
+    return PAGE_THEME_RE.test(v) ? v : '';
+  }
+
+  function markPageTheme(scope, cls) {
+    for (const group of within(scope, '[data-hui-theme-picker]')) markRadios(group, 'data-hui-theme-pick', cls);
+  }
+
+  function applyPageTheme(cls) {
+    if (cls !== '' && !PAGE_THEME_RE.test(cls)) return;
+    const api = window.__gofastr_theme;
+    let done = false;
+    if (api && typeof api.set === 'function') {
+      try { api.set(cls); done = true; } catch (_) {}
+    }
+    if (!done) {
+      const root = document.documentElement;
+      for (const c of Array.prototype.slice.call(root.classList)) {
+        if (c.indexOf('cui-theme-') === 0) root.classList.remove(c);
+      }
+      if (cls) root.classList.add(cls);
+      try {
+        if (cls) localStorage.setItem(PAGE_THEME_KEY, cls);
+        else localStorage.removeItem(PAGE_THEME_KEY);
+      } catch (_) {}
+    }
+    // Every picker on the page shows the same choice.
+    markPageTheme(document, cls);
   }
 
   document.addEventListener('click', function (e) {
     const t = e.target;
+    const pick = t && t.closest && t.closest('[data-hui-theme-pick]');
+    if (pick && pick.closest('[data-hui-theme-picker]')) {
+      applyPageTheme(pick.getAttribute('data-hui-theme-pick') || '');
+      return;
+    }
     const opt = t && t.closest && t.closest('[data-hui-theme-option]');
     if (opt) {
       const scheme = opt.getAttribute('data-hui-theme-option');
@@ -172,6 +243,31 @@
     }
   });
 
+  // Arrow keys move through a theme radio group the way a native radio
+  // set does: the next option takes focus and is chosen, wrapping at
+  // either end; Home and End jump to the first and last.
+  document.addEventListener('keydown', function (e) {
+    if (e.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
+    const t = e.target;
+    const opt = t && t.closest && t.closest('[data-hui-theme-pick],[data-hui-theme-option]');
+    const group = opt && opt.closest('[data-hui-theme-picker],[data-hui-theme-toggle][role="radiogroup"]');
+    if (!group) return;
+    const attr = opt.hasAttribute('data-hui-theme-pick') ? 'data-hui-theme-pick' : 'data-hui-theme-option';
+    const opts = Array.prototype.slice.call(group.querySelectorAll(RADIO_SEL[attr]));
+    const i = opts.indexOf(opt);
+    let j;
+    switch (e.key) {
+      case 'ArrowRight': case 'ArrowDown': j = (i + 1) % opts.length; break;
+      case 'ArrowLeft': case 'ArrowUp': j = (i - 1 + opts.length) % opts.length; break;
+      case 'Home': j = 0; break;
+      case 'End': j = opts.length - 1; break;
+      default: return;
+    }
+    e.preventDefault();
+    opts[j].focus();
+    opts[j].click();
+  });
+
   // ─── shortcuts ───────────────────────────────────────────────────
   //
   // One document-level keydown for every chord on the page, the
@@ -179,7 +275,8 @@
   // listeners (remounted widgets need no rebinding, detached elements
   // can never fire), composing events ignored (an IME confirmation is
   // not a hotkey), and the first CONNECTED match wins so a stale SSR
-  // duplicate cannot steal the chord. data-hui-shortcut-target lets a
+  // duplicate cannot steal the chord, and an element inside an inert
+  // subtree never matches. data-hui-shortcut-target lets a
   // non-focusable wrapper carry the chord while focus lands on (or the
   // click lands in) the element its selector names — the styled search
   // bar wrapping the input is the shape it exists for.
@@ -229,7 +326,9 @@
     if (e.isComposing) return;
     const els = document.querySelectorAll('[data-hui-shortcut-focus],[data-hui-shortcut-click]');
     for (const el of els) {
-      if (!el.isConnected) continue;
+      // An inert subtree takes no input: a drawer under the top layer
+      // keeps its own Save chord, and the top layer's must win.
+      if (!el.isConnected || el.closest('[inert]')) continue;
       const focusCombo = el.getAttribute('data-hui-shortcut-focus');
       if (focusCombo && chordMatches(e, focusCombo)) {
         e.preventDefault();
@@ -258,12 +357,8 @@
     // within(), not scope.querySelector: the kernel hands scan() one
     // inserted subtree, and a subtree whose root IS the toggle group
     // is missed by a descendants-only lookup.
-    for (const group of within(scope, '[data-hui-theme-toggle]')) {
-      const scheme = currentScheme();
-      for (const opt of group.querySelectorAll('[data-hui-theme-option]')) {
-        opt.setAttribute('aria-checked', opt.getAttribute('data-hui-theme-option') === scheme ? 'true' : 'false');
-      }
-    }
+    for (const group of within(scope, '[data-hui-theme-toggle]')) markRadios(group, 'data-hui-theme-option', currentScheme());
+    markPageTheme(scope, currentPageTheme());
   }
 
   scan(document);

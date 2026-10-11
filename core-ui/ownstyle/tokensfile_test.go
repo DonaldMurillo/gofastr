@@ -173,3 +173,22 @@ func TestDuplicateTokenValues(t *testing.T) {
 		t.Errorf("want 2 findings, got %d:\n%s", len(got), joined)
 	}
 }
+
+// An app can declare its own line width the way it declares a size.
+func TestTokensFileStroke(t *testing.T) {
+	src := `@property --stroke-heavy { syntax: "<length>"; inherits: true; initial-value: 4px; }` + "\n"
+	f, diags := ParseTokens(src)
+	if len(diags) != 0 {
+		t.Fatalf("diagnostics: %v", diags)
+	}
+	if len(f.Tokens) != 1 || f.Tokens[0].Value != (style.Stroke{Name: "heavy", Value: "4px"}) {
+		t.Fatalf("tokens = %#v", f.Tokens)
+	}
+	out, err := GenerateTokensFile("acme", src, f, "acme", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `Heavy: style.Stroke{Name: "heavy", Value: "4px"},`; !strings.Contains(out, want) {
+		t.Errorf("generated file is missing %q\n%s", want, out)
+	}
+}

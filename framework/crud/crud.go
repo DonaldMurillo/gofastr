@@ -45,6 +45,15 @@ type beforeHookError struct{ err error }
 func (e *beforeHookError) Error() string { return e.err.Error() }
 func (e *beforeHookError) Unwrap() error { return e.err }
 
+// IsHookRefusal reports whether err is a BeforeCreate, BeforeUpdate or
+// BeforeDelete hook's rejection, the error the HTTP handlers answer 400.
+// An in-process caller that serves its own HTTP answer uses it to tell a
+// refusal from a failure.
+func IsHookRefusal(err error) bool {
+	_, ok := errors.AsType[*beforeHookError](err)
+	return ok
+}
+
 // tenantMissingError signals a Create attempt against a MultiTenant
 // entity with no tenant in the request context. Surfaces as 400 in
 // the HTTP handler so an orphan row can never be written.
@@ -603,7 +612,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// both paths inherit the same scope.
 		listPayload := &hook.ListPayload{Request: r}
 		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeList, listPayload); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.BeforeList, listPayload); err != nil {
 				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -768,7 +777,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// AfterList hook, host can redact / transform / drop rows.
 		if ch.Hooks != nil {
 			listPayload.Results = results
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterList, listPayload); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.AfterList, listPayload); err != nil {
 				log.Printf("crud: after-list hook failed: %v", err)
 				writeJSONError(w, http.StatusInternalServerError, "internal server error")
 				return
@@ -910,7 +919,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 
 		getPayload := &hook.GetPayload{Request: r, ID: id}
 		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeGet, getPayload); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.BeforeGet, getPayload); err != nil {
 				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -956,7 +965,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 
 		if ch.Hooks != nil {
 			getPayload.Result = result
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterGet, getPayload); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.AfterGet, getPayload); err != nil {
 				log.Printf("crud: after-get hook failed: %v", err)
 				writeJSONError(w, http.StatusInternalServerError, "internal server error")
 				return
@@ -1012,6 +1021,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 
 		var result map[string]any
 		var hidden bool
+		sent := sentKeys(body)
 		// The keys this request's multipart parse saved are the only
 		// storage keys it may write (media_provenance.go).
 		err = ch.inTx(WithUploadedKeys(WithAuditRequest(r.Context(), r), savedFiles...), func(ctx context.Context, ch *CrudHandler) error {
@@ -1031,7 +1041,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			// a caller who can repeat the failure). A successful
 			// write keeps every key.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
-			writeCRUDError(w, err)
+			writeCRUDError(w, ch.withConstraintFields(err, sent))
 			return
 		}
 
@@ -1107,6 +1117,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 
 		var result map[string]any
 		var hidden bool
+		sent := sentKeys(body)
 		err = ch.inTx(WithUploadedKeys(WithAuditRequest(r.Context(), r), savedFiles...), func(ctx context.Context, ch *CrudHandler) error {
 			res, err := ch.doUpdate(ctx, r, id, body)
 			if err != nil {
@@ -1123,34 +1134,37 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			// missing id strands the files unless they are deleted
 			// here.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
-			writeCRUDError(w, err)
+			writeCRUDError(w, ch.withConstraintFields(err, sent))
 			return
 		}
 
 		ch.EmitEvent(r.Context(), event.EntityUpdated, result)
-
-		// AfterGet over the response body. See the note on Create. A partial
-		// PUT/PATCH otherwise returns stored values for every field the
-		// caller did not send.
-		// A hook error degrades to the id, not a 500, the update is already
-		// committed. See identityOnly.
-		// A row the caller's ReadScope hides (GET answers 404) comes back as
-		// its id only: the write stands, the read-back does not leak it.
-		var resp map[string]any
-		if hidden {
-			resp = ch.identityOnly(result)
-		} else {
-			var hookErr error
-			resp, hookErr = ch.runResponseHooks(r, result)
-			if hookErr != nil {
-				log.Printf("crud: after-get hook failed on update response, returning id only: %v", hookErr)
-				resp = ch.identityOnly(result)
-			}
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(singleResponse{Data: resp})
+		ch.writeUpdated(w, r, result, hidden)
 	}
+}
+
+// writeUpdated writes a committed update's response: the row through the
+// AfterGet hooks (see the note on Create; a partial PUT/PATCH otherwise
+// returns stored values for every field the caller did not send). A hook
+// error degrades to the id, not a 500, the update is already committed.
+// See identityOnly. A row the caller's ReadScope hides (GET answers 404)
+// comes back as its id only: the write stands, the read-back does not
+// leak it.
+func (ch *CrudHandler) writeUpdated(w http.ResponseWriter, r *http.Request, result map[string]any, hidden bool) {
+	var resp map[string]any
+	if hidden {
+		resp = ch.identityOnly(result)
+	} else {
+		var hookErr error
+		resp, hookErr = ch.runResponseHooks(r, result)
+		if hookErr != nil {
+			log.Printf("crud: after-get hook failed on update response, returning id only: %v", hookErr)
+			resp = ch.identityOnly(result)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(singleResponse{Data: resp})
 }
 
 // Delete returns an http.HandlerFunc that deletes an entity by ID. If the
@@ -1226,6 +1240,12 @@ var (
 // Sentinel and typed errors are translated to specific status codes; anything
 // else becomes a 500.
 func writeCRUDError(w http.ResponseWriter, err error) {
+	// Ahead of the hook arm: a hook that hands back a reentrant move's
+	// refusal fails its write with the conflict, not a 400.
+	if errors.Is(err, ErrReentrantMove) {
+		writeJSONError(w, http.StatusConflict, "conflict")
+		return
+	}
 	if bhe, ok := errors.AsType[*beforeHookError](err); ok {
 		writeJSONError(w, http.StatusBadRequest, bhe.Error())
 		return
@@ -1238,6 +1258,39 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 			"success": false,
 			"fields":  ve.Fields(),
 		})
+		return
+	}
+	if se, ok := errors.AsType[*StateError](err); ok {
+		// 422: the body is well-formed, but the state field changes only
+		// through a move. Field errors in the validation shape, so a form
+		// shows the message in place, plus the moves the caller can run.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":   se.Error(),
+			"success": false,
+			"fields":  map[string][]string{se.Field: {se.Error()}},
+			"moves":   nonNil(se.Moves),
+		})
+		return
+	}
+	if tce, ok := errors.AsType[*TransitionConflictError](err); ok {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":   tce.Error(),
+			"success": false,
+			"current": tce.Current,
+			"moves":   nonNil(tce.Moves),
+		})
+		return
+	}
+	if tde, ok := errors.AsType[*transitionDeniedError](err); ok {
+		writeJSONError(w, http.StatusForbidden, tde.Error())
+		return
+	}
+	if errors.Is(err, ErrUnknownTransition) {
+		writeJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
 	if tme, ok := errors.AsType[*tenantMissingError](err); ok {
@@ -1255,10 +1308,9 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 	if isUniqueViolation(err) {
 		// Map UNIQUE-constraint failures to 409 Conflict so callers can
 		// distinguish duplicate-key errors from a real server fault.
-		// The error message itself is generic, we deliberately don't
-		// echo the violated column to avoid leaking schema details to
-		// an enumeration probe.
-		writeJSONError(w, http.StatusConflict, "conflict")
+		// The driver's text never reaches the body; the declared fields
+		// the caller sent do (conflict_fields.go).
+		writeConflict(w, err, "conflict")
 		return
 	}
 	if isForeignKeyViolation(err) {
@@ -1266,7 +1318,19 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		// other rows still point at, is a state conflict the caller can
 		// resolve, not a server fault. Same no-leak posture as above:
 		// the constraint and table names stay in the server log.
-		writeJSONError(w, http.StatusConflict, "conflict: the record is referenced by, or references, another record")
+		writeConflict(w, err, "conflict: the record is referenced by, or references, another record")
+		return
+	}
+	if cf, ok := errors.AsType[*constraintFieldsError](err); ok && isNotNullViolation(err) {
+		// A NOT NULL refusal on a declared field is the caller's to
+		// fix: the validation shape, naming it (conflict_fields.go).
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":   "validation failed",
+			"success": false,
+			"fields":  cf.fields,
+		})
 		return
 	}
 	// Unrecognised error → 500 with a generic message. Returning

@@ -242,6 +242,28 @@ func runDeleteVerb(cmd, base string, args []string) int {
 	return 0
 }
 
+// runTransitionVerb is the shared move body: take the positional id,
+// POST base/{id}/transitions/{key}, print the moved record. The route
+// takes no payload but requires the JSON content type (its cross-site
+// gate), so the request carries an empty JSON body.
+func runTransitionVerb(cmd, base, key string, args []string) int {
+	id, rest, ok := takeID(cmd, args)
+	if !ok {
+		return 2
+	}
+	fs := newFlagSet(cmd)
+	g, code := parseGlobals(fs, rest)
+	if g == nil {
+		return code
+	}
+	var out singleResponse
+	path := base + "/" + url.PathEscape(id) + "/transitions/" + url.PathEscape(key)
+	if err := g.client.Do(g.ctx, http.MethodPost, path, map[string]any{}, &out); err != nil {
+		return apiFail(err)
+	}
+	return printJSON(out.Data)
+}
+
 // runBatchJSONVerb is the shared batch-create/batch-update body: send a
 // --json array through the atomic _batch route wrapped into the
 // {items: [...]} envelope. A rolled-back batch prints its

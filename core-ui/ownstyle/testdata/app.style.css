@@ -1,7 +1,7 @@
 /* The tracker's own vocabulary. Owned by the app: these apply
    on every page, inside every layout, screen and component. */
 /* Figures that line up in tables, stats and prices. */
-.figure { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.figure { font-variant-numeric: tabular-nums; letter-spacing: var(--tracking-snug); }
 /* One line, ellipsis: long issue titles in lists and crumbs. */
 .one-line { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }
 /* The issue key everywhere it appears: BIL-42. */

@@ -7,9 +7,13 @@ import (
 
 func TestIcon_BuiltInsRegistered(t *testing.T) {
 	for _, name := range []string{
-		"check", "close", "menu", "chevron-up", "chevron-down",
+		"check", "close", "menu", "search", "chevron-up", "chevron-down",
 		"chevron-left", "chevron-right",
 		"info", "warning", "danger", "success",
+		"home", "user", "users", "file", "receipt", "card", "box", "layers",
+		"activity", "shield", "key", "lock", "sliders", "chart", "calendar",
+		"clock", "plus", "list", "grid", "database", "inbox", "folder", "tag",
+		"mail", "bell", "globe", "repeat", "cpu", "star",
 	} {
 		if !IconRegistered(name) {
 			t.Errorf("expected built-in icon %q to be registered", name)

@@ -147,7 +147,9 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 			}
 		}
 		input := render.Tag("input", flattenAttrs(inputAttrs))
-		labelHTML := html.Span(html.TextConfig{Class: "fui-segmented__label"}, render.Text(o.Label))
+		// data-label feeds the hidden bold copy that reserves the
+		// checked weight's width (see segmentedCSS).
+		labelHTML := html.Span(html.TextConfig{Class: "fui-segmented__label", ExtraAttrs: html.Attrs{"data-label": o.Label}}, render.Text(o.Label))
 		// Position index for sliding indicator CSS. Every option comes
 		// from SegmentedControlConfig's Options (label/value strings),
 		// never from caller markup, so each label is a topmost internal
@@ -179,6 +181,11 @@ func segmentedCSS(_ style.Theme) string {
 	// sliding indicator is sized to one column via the data-count
 	// attribute on the wrapper, then translated by translateX(100% *
 	// position). Math works because every column is the same width.
+	//
+	// Knobs: --ui-segmented-min-width-2…-6 (16/22/26/30/34rem, the
+	// per-count minimum widths), --ui-segmented-indicator-shadow (the
+	// sliding pill's two-layer shadow). The indicator's insets and
+	// width follow the wrapper's --spacing-sm padding.
 	return `[data-cui-comp="ui-segmented"] {
   position: relative;
   display: inline-grid;
@@ -188,16 +195,22 @@ func segmentedCSS(_ style.Theme) string {
   gap: 0;
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, #f1f1f3);
-  border: 1px solid var(--color-border, #e5e7eb);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #e5e7eb);
   font-size: var(--text-sm, 0.875rem);
   vertical-align: middle;
   isolation: isolate;
+  /* Inline-grid alone does not hold: a stack or section body stretches
+     its items, and a billing toggle spanned the column. A definite
+     width is never stretched; each count's minimum gives way to a
+     narrower column, since a minimum beats the 100% cap. */
+  inline-size: fit-content;
+  max-inline-size: 100%;
 }
-:where([data-cui-comp="ui-segmented"])[data-count="2"] { min-inline-size: 16rem; }
-:where([data-cui-comp="ui-segmented"])[data-count="3"] { min-inline-size: 22rem; }
-:where([data-cui-comp="ui-segmented"])[data-count="4"] { min-inline-size: 26rem; }
-:where([data-cui-comp="ui-segmented"])[data-count="5"] { min-inline-size: 30rem; }
-:where([data-cui-comp="ui-segmented"])[data-count="6"] { min-inline-size: 34rem; }
+:where([data-cui-comp="ui-segmented"])[data-count="2"] { min-inline-size: min(var(--ui-segmented-min-width-2, 16rem), 100%); }
+:where([data-cui-comp="ui-segmented"])[data-count="3"] { min-inline-size: min(var(--ui-segmented-min-width-3, 22rem), 100%); }
+:where([data-cui-comp="ui-segmented"])[data-count="4"] { min-inline-size: min(var(--ui-segmented-min-width-4, 26rem), 100%); }
+:where([data-cui-comp="ui-segmented"])[data-count="5"] { min-inline-size: min(var(--ui-segmented-min-width-5, 30rem), 100%); }
+:where([data-cui-comp="ui-segmented"])[data-count="6"] { min-inline-size: min(var(--ui-segmented-min-width-6, 34rem), 100%); }
 
 [data-cui-comp="ui-segmented"] .fui-segmented__option {
   position: relative;
@@ -210,7 +223,7 @@ func segmentedCSS(_ style.Theme) string {
   border-radius: calc(var(--radii-md, 8px) - 4px);
   cursor: pointer;
   color: var(--color-text-muted, #6b7280);
-  transition: color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
+  transition: color var(--duration-fast, 150ms) var(--easing-ease-out, ease);
   user-select: none;
   text-align: center;
   white-space: nowrap;
@@ -231,13 +244,33 @@ func segmentedCSS(_ style.Theme) string {
   color: var(--color-text, #111);
   font-weight: var(--font-weight-semibold);
 }
+/* The checked option sets its label in the semibold weight, and every
+   column is as wide as the widest label, so without a reservation the
+   control grows and shrinks as the selection moves (a heavy theme
+   weight makes it plain). A hidden, zero-height semibold copy of the
+   label shares the label's one grid column and holds it at the checked
+   width in every state. visibility: hidden keeps the copy out of the
+   accessibility tree. */
+[data-cui-comp="ui-segmented"] .fui-segmented__label {
+  display: inline-grid;
+  justify-items: center;
+}
+[data-cui-comp="ui-segmented"] .fui-segmented__label::after {
+  content: attr(data-label);
+  font-weight: var(--font-weight-semibold);
+  visibility: hidden;
+  block-size: 0;
+  overflow: hidden;
+  user-select: none;
+  pointer-events: none;
+}
 [data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:focus-visible) {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:disabled) {
   cursor: not-allowed;
-  opacity: 0.45;
+  opacity: var(--opacity-disabled, 0.5);
 }
 
 /* Sliding pill indicator. Sized to one column width via the data-count
@@ -246,22 +279,22 @@ func segmentedCSS(_ style.Theme) string {
 [data-cui-comp="ui-segmented"] .fui-segmented__indicator {
   position: absolute;
   z-index: 0;
-  top: 4px;
-  bottom: 4px;
-  left: 4px;
-  inline-size: calc((100% - 8px) / 2);
+  top: var(--spacing-sm, 4px);
+  bottom: var(--spacing-sm, 4px);
+  left: var(--spacing-sm, 4px);
+  inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 2);
   border-radius: calc(var(--radii-md, 8px) - 4px);
   background: var(--color-surface, #fff);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.08),
-              0 0 0 1px rgba(0,0,0,0.05);
+  box-shadow: var(--ui-segmented-indicator-shadow, 0 1px 2px rgba(0,0,0,0.08),
+              0 0 0 var(--stroke-thin, 1px) rgba(0,0,0,0.05));
   transition: transform var(--duration-normal, 250ms) var(--easing-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1));
   pointer-events: none;
 }
-[data-cui-comp="ui-segmented"][data-count="2"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 2); }
-[data-cui-comp="ui-segmented"][data-count="3"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 3); }
-[data-cui-comp="ui-segmented"][data-count="4"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 4); }
-[data-cui-comp="ui-segmented"][data-count="5"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 5); }
-[data-cui-comp="ui-segmented"][data-count="6"] .fui-segmented__indicator { inline-size: calc((100% - 8px) / 6); }
+[data-cui-comp="ui-segmented"][data-count="2"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 2); }
+[data-cui-comp="ui-segmented"][data-count="3"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 3); }
+[data-cui-comp="ui-segmented"][data-count="4"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 4); }
+[data-cui-comp="ui-segmented"][data-count="5"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 5); }
+[data-cui-comp="ui-segmented"][data-count="6"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 6); }
 
 [data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="0"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(0); }
 [data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="1"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(100%); }

@@ -55,6 +55,7 @@ const (
 // defaults to equality.
 var whereOps = map[string]FilterOp{
 	"eq":   OpEq,
+	"ne":   OpNe,
 	"gt":   OpGt,
 	"lt":   OpLt,
 	"gte":  OpGte,
@@ -88,57 +89,24 @@ func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
 		return nil, nil
 	}
 	// Accept a field's wire key as well as its column name, matching
-	// ParseFiltersValues, ParseSortValues and ?fields= projection. A client
-	// told to call the field "writer" must be able to use that name on every
-	// read path; resolving it in three of four places splits the contract.
-	// Hidden fields are skipped before either name is registered, so a hidden
-	// column stays unreachable under its column name AND its alias.
-	allow := make(map[string]bool, len(fields))
-	var noQuery map[string]bool
-	alias := make(map[string]string, len(fields))
-	// Bool-typed columns, keyed by column name (leaves resolve aliases
-	// to columns before the type lookup matters).
-	boolCol := make(map[string]bool, len(fields))
-	for _, f := range fields {
-		if f.Hidden {
-			continue
-		}
-		if f.NoQuery {
-			if noQuery == nil {
-				noQuery = make(map[string]bool)
-			}
-			noQuery[f.Name] = true
-			// And under the wire key, which is the name clients are given.
-			// Registering only the column would let the alias fall through to
-			// "unknown field", or, worse, past the refusal if it ever
-			// reached allow.
-			if f.WireName != "" && f.WireName != f.Name {
-				noQuery[f.WireName] = true
-			}
-			continue
-		}
-		allow[f.Name] = true
-		if f.Type == schema.Bool {
-			boolCol[f.Name] = true
-		}
-		if f.WireName != "" && f.WireName != f.Name {
-			allow[f.WireName] = true
-			alias[f.WireName] = f.Name
-		}
-	}
+	// ParseFiltersValues, ParseSortValues and ?fields= projection; see
+	// newPredicateFieldIndex for the Hidden/NoQuery/alias rules, which
+	// ValidatePredicate shares so the URL surface and the Go surface
+	// cannot drift.
+	idx := newPredicateFieldIndex(fields)
 	var msg json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
 		return nil, fmt.Errorf("where: invalid JSON: %w", err)
 	}
 	count := 0
-	p, err := parseNode(msg, allow, noQuery, alias, boolCol, 1, &count)
+	p, err := parseNode(msg, idx, 1, &count)
 	if err != nil {
 		return nil, err
 	}
 	return &p, nil
 }
 
-func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, alias map[string]string, boolCol map[string]bool, depth int, count *int) (Predicate, error) {
+func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) (Predicate, error) {
 	if depth > maxPredicateDepth {
 		return Predicate{}, fmt.Errorf("where: nesting exceeds max depth %d", maxPredicateDepth)
 	}
@@ -165,7 +133,7 @@ func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, alias map[st
 		}
 		children := make([]Predicate, 0, len(kids))
 		for _, k := range kids {
-			c, err := parseNode(k, allow, noQuery, alias, boolCol, depth+1, count)
+			c, err := parseNode(k, idx, depth+1, count)
 			if err != nil {
 				return Predicate{}, err
 			}
@@ -174,21 +142,9 @@ func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, alias map[st
 		return Predicate{Or: or, Children: children}, nil
 	}
 
-	// Leaf.
-	if noQuery[rp.Field] {
-		// Visible in responses but barred from the query surface, so the
-		// field can be named without disclosing anything new.
-		return Predicate{}, fmt.Errorf("where: field %q cannot be filtered", rp.Field)
-	}
-	if !allow[rp.Field] {
-		// Unknown or Hidden field, never build a predicate on it.
-		return Predicate{}, fmt.Errorf("where: unknown filter field %q", rp.Field)
-	}
-	// Resolve an alias to its column: Predicate.Field reaches the WHERE
-	// clause, so a wire name would name a column that does not exist.
-	if col, ok := alias[rp.Field]; ok {
-		rp.Field = col
-	}
+	// Leaf. The field/operator/type checks live in validateLeaf, shared
+	// with ValidatePredicate so the URL surface and the Go-built surface
+	// answer identically.
 	opTok := rp.Op
 	if opTok == "" {
 		opTok = "eq"
@@ -197,7 +153,7 @@ func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, alias map[st
 	if !ok {
 		return Predicate{}, fmt.Errorf("where: unknown operator %q", rp.Op)
 	}
-	leaf := Predicate{Field: rp.Field, Op: op, isBool: boolCol[rp.Field]}
+	leaf := Predicate{Field: rp.Field, Op: op}
 	if op == OpIn {
 		vals := rp.Values
 		if len(vals) == 0 && rp.Value != "" {
@@ -210,15 +166,12 @@ func parseNode(msg json.RawMessage, allow, noQuery map[string]bool, alias map[st
 			}
 			vals = strings.Split(rp.Value, ",")
 		}
-		if len(vals) == 0 {
-			return Predicate{}, fmt.Errorf("where: %q with op in requires values", rp.Field)
-		}
-		if len(vals) > MaxINListEntries {
-			return Predicate{}, fmt.Errorf("where: in-list exceeds %d entries", MaxINListEntries)
-		}
 		leaf.Values = vals
 	} else {
 		leaf.Value = rp.Value
+	}
+	if err := validateLeaf(&leaf, idx); err != nil {
+		return Predicate{}, err
 	}
 	return leaf, nil
 }
@@ -279,6 +232,8 @@ func buildPredSQL(p Predicate, args *[]any) string {
 // LIKE are handled inline in buildPredSQL; this covers the rest.
 func sqlOp(op FilterOp) string {
 	switch op {
+	case OpNe:
+		return "!="
 	case OpGt:
 		return ">"
 	case OpLt:

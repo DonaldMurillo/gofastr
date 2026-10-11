@@ -120,9 +120,25 @@
     if (inc) step(inc, 1);
   });
 
+  // ─── JSON text ───────────────────────────────────────────────────
+
+  // A JSON control's text is parsed as it changes: an invalid value
+  // takes the control's own sentence as its custom validity (the submit
+  // stops on it) and reads aria-invalid; a valid or empty one clears
+  // both. Empty is Required's to judge.
+  function checkJSON(el) {
+    const v = el.value.trim();
+    let msg = '';
+    if (v) { try { JSON.parse(v); } catch (_) { msg = el.getAttribute('data-hui-json') || 'Invalid JSON'; } }
+    el.setCustomValidity(msg);
+    if (msg) el.setAttribute('aria-invalid', 'true');
+    else el.removeAttribute('aria-invalid');
+  }
+
   document.addEventListener('input', function (e) {
     const t = e.target;
     if (!t || !t.closest) return;
+    if (t.matches('[data-hui-json]')) { checkJSON(t); return; }
     if (t.matches('input[type="range"][data-hui-range-slider-low],input[type="range"][data-hui-range-slider-high]')) {
       const root = t.closest('[data-hui-range-slider]');
       if (root) syncPair(root, t);
@@ -141,6 +157,7 @@
       const range = input && input.querySelector('input[type="range"]');
       if (range) el.textContent = range.value;
     }
+    for (const el of within(scope, '[data-hui-json]')) if (el.value.trim()) checkJSON(el);
     const seen = new Set();
     for (const el of within(scope, '[data-hui-range-slider]')) {
       if (seen.has(el)) continue;

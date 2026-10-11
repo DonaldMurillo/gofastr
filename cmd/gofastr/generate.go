@@ -7,11 +7,14 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -1239,6 +1242,17 @@ func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderO
 			return nil, fmt.Errorf("entity %q: code generation does not support endpoints: endpoints require Go handlers and must be wired in code (use app.Entity with EntityConfig.Endpoints)", decl.Name)
 		}
 	}
+	// renderClient emits move methods and their doc comments straight from
+	// these declarations, so its input must have passed the states boot check
+	// (the reserved-name and grammar refusals live there, one implementation
+	// in framework/entity): the Config() call above checks shape, not states,
+	// and a hand-edited declaration could carry a key or an enum value no
+	// emitter may render.
+	for _, decl := range decls {
+		if err := validateDeclarationStates(decl); err != nil {
+			return nil, fmt.Errorf("entity %q: %w", decl.Name, err)
+		}
+	}
 	files := []generatedFile{
 		{name: "register.go", content: renderRegisterSeam()},
 		// Event helpers are entity-independent: one fixed seam file instead
@@ -1257,6 +1271,9 @@ func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderO
 			return nil, fmt.Errorf("entity %q: %w", decl.Name, err)
 		}
 		files = append(files, generatedFile{name: entityFileName(decl.Name), content: content})
+	}
+	if err := refuseDuplicateDecls(files); err != nil {
+		return nil, err
 	}
 	return files, nil
 }
@@ -1446,6 +1463,12 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 		}
 		sb.WriteString("\t\t},\n")
 	}
+	if literal := renderStatesLiteral(decl.States); literal != "" {
+		sb.WriteString("\t\tStates: " + literal + ",\n")
+	}
+	if literal := renderDisplayLiteral(decl.Display); literal != "" {
+		sb.WriteString("\t\tDisplay: " + literal + ",\n")
+	}
 	if len(decl.Properties) > 0 {
 		literal, err := renderGoLiteral(decl.Properties)
 		if err != nil {
@@ -1460,6 +1483,293 @@ func renderEntityRegistration(decl framework.EntityDeclaration) (string, error) 
 	sb.WriteString(")\n")
 	sb.WriteString(fmt.Sprintf("\t_ = %s{}\n", structName))
 	return sb.String(), nil
+}
+
+// renderDisplayLiteral emits the Display group of an entity registration:
+// every YAML-settable field, strings quoted, only non-zero fields, map keys
+// sorted so the emitted Go is byte-stable. Empty string when the declaration
+// carries no display config.
+func renderDisplayLiteral(d *fwentity.DisplayConfig) string {
+	if d == nil {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("&framework.DisplayConfig{")
+	first := true
+	str := func(name, v string) {
+		if v == "" {
+			return
+		}
+		if !first {
+			sb.WriteString(", ")
+		}
+		first = false
+		fmt.Fprintf(&sb, "%s: %q", name, v)
+	}
+	str("Singular", d.Singular)
+	str("Plural", d.Plural)
+	if len(d.TitleFields) > 0 {
+		if !first {
+			sb.WriteString(", ")
+		}
+		first = false
+		sb.WriteString("TitleFields: []string{" + stringSliceLiteral(d.TitleFields) + "}")
+	}
+	str("Description", d.Description)
+	if len(d.Columns) > 0 {
+		if !first {
+			sb.WriteString(", ")
+		}
+		first = false
+		sb.WriteString("Columns: []string{" + stringSliceLiteral(d.Columns) + "}")
+	}
+	if d.Nav != nil && *d.Nav != (fwentity.EntityNav{}) {
+		if !first {
+			sb.WriteString(", ")
+		}
+		first = false
+		sb.WriteString("Nav: &framework.EntityNav{")
+		var parts []string
+		if d.Nav.Group != "" {
+			parts = append(parts, fmt.Sprintf("Group: %q", d.Nav.Group))
+		}
+		if d.Nav.Icon != "" {
+			parts = append(parts, fmt.Sprintf("Icon: %q", d.Nav.Icon))
+		}
+		if d.Nav.Order != 0 {
+			parts = append(parts, fmt.Sprintf("Order: %d", d.Nav.Order))
+		}
+		if d.Nav.Hide {
+			parts = append(parts, "Hide: true")
+		}
+		if d.Nav.HideCount {
+			parts = append(parts, "HideCount: true")
+		}
+		sb.WriteString(strings.Join(parts, ", "))
+		sb.WriteString("}")
+	}
+	if len(d.Views) > 0 {
+		if !first {
+			sb.WriteString(", ")
+		}
+		first = false
+		var parts []string
+		for _, v := range d.Views {
+			var fields []string
+			fields = append(fields, fmt.Sprintf("Key: %q", v.Key))
+			if v.Label != "" {
+				fields = append(fields, fmt.Sprintf("Label: %q", v.Label))
+			}
+			if v.Where != "" {
+				fields = append(fields, fmt.Sprintf("Where: %q", v.Where))
+			}
+			if v.Sort != "" {
+				fields = append(fields, fmt.Sprintf("Sort: %q", v.Sort))
+			}
+			if v.As != "" {
+				fields = append(fields, fmt.Sprintf("As: %q", v.As))
+			}
+			if v.Default {
+				fields = append(fields, "Default: true")
+			}
+			parts = append(parts, "{"+strings.Join(fields, ", ")+"}")
+		}
+		sb.WriteString("Views: []framework.ListView{" + strings.Join(parts, ", ") + "}")
+	}
+	if len(d.Facets) > 0 {
+		if !first {
+			sb.WriteString(", ")
+		}
+		first = false
+		sb.WriteString("Facets: []string{" + stringSliceLiteral(d.Facets) + "}")
+	}
+	if d.Form != nil && (len(d.Form.Main) > 0 || len(d.Form.Side) > 0) {
+		if !first {
+			sb.WriteString(", ")
+		}
+		first = false
+		sb.WriteString("Form: &framework.EntityForm{")
+		var parts []string
+		if len(d.Form.Main) > 0 {
+			parts = append(parts, "Main: "+formItemsLiteral(d.Form.Main))
+		}
+		if len(d.Form.Side) > 0 {
+			parts = append(parts, "Side: "+formItemsLiteral(d.Form.Side))
+		}
+		sb.WriteString(strings.Join(parts, ", "))
+		sb.WriteString("}")
+	}
+	if d.Card != nil && (d.Card.Title != "" || d.Card.Subtitle != "" || d.Card.Badge != "" || len(d.Card.Meta) > 0) {
+		if !first {
+			sb.WriteString(", ")
+		}
+		first = false
+		var parts []string
+		if d.Card.Title != "" {
+			parts = append(parts, fmt.Sprintf("Title: %q", d.Card.Title))
+		}
+		if d.Card.Subtitle != "" {
+			parts = append(parts, fmt.Sprintf("Subtitle: %q", d.Card.Subtitle))
+		}
+		if d.Card.Badge != "" {
+			parts = append(parts, fmt.Sprintf("Badge: %q", d.Card.Badge))
+		}
+		if len(d.Card.Meta) > 0 {
+			parts = append(parts, "Meta: []string{"+stringSliceLiteral(d.Card.Meta)+"}")
+		}
+		sb.WriteString("Card: &framework.CardFields{" + strings.Join(parts, ", ") + "}")
+	}
+	if len(d.Fields) > 0 {
+		if !first {
+			sb.WriteString(", ")
+		}
+		first = false
+		var parts []string
+		for _, name := range slices.Sorted(maps.Keys(d.Fields)) {
+			h := d.Fields[name]
+			var fields []string
+			if h.Label != "" {
+				fields = append(fields, fmt.Sprintf("Label: %q", h.Label))
+			}
+			if h.Help != "" {
+				fields = append(fields, fmt.Sprintf("Help: %q", h.Help))
+			}
+			if h.Placeholder != "" {
+				fields = append(fields, fmt.Sprintf("Placeholder: %q", h.Placeholder))
+			}
+			if h.Locked {
+				fields = append(fields, "Locked: true")
+			}
+			if h.Omit {
+				fields = append(fields, "Omit: true")
+			}
+			if h.ShowWhen != "" {
+				fields = append(fields, fmt.Sprintf("ShowWhen: %q", h.ShowWhen))
+			}
+			if h.Input != "" {
+				fields = append(fields, fmt.Sprintf("Input: %q", h.Input))
+			}
+			parts = append(parts, fmt.Sprintf("%q: {%s}", name, strings.Join(fields, ", ")))
+		}
+		sb.WriteString("Fields: map[string]framework.FieldDisplay{" + strings.Join(parts, ", ") + "}")
+	}
+	if len(d.PageSizes) > 0 {
+		if !first {
+			sb.WriteString(", ")
+		}
+		first = false
+		fmt.Fprintf(&sb, "PageSizes: []int{%s}", intsLiteral(d.PageSizes))
+	}
+	if d.NoDuplicate {
+		if !first {
+			sb.WriteString(", ")
+		}
+		first = false
+		sb.WriteString("NoDuplicate: true")
+	}
+	if d.NoBulk {
+		if !first {
+			sb.WriteString(", ")
+		}
+		first = false
+		sb.WriteString("NoBulk: true")
+	}
+	sb.WriteString("}")
+	return sb.String()
+}
+
+// formItemsLiteral emits a []framework.FormItem literal: a field item as
+// {Field: "x"}, a row as {Row: [...]}, a section with its nested items.
+func formItemsLiteral(items []fwentity.FormItem) string {
+	var parts []string
+	for _, it := range items {
+		switch {
+		case it.Field != "":
+			parts = append(parts, fmt.Sprintf("{Field: %q}", it.Field))
+		case len(it.Row) > 0:
+			parts = append(parts, "{Row: []string{"+stringSliceLiteral(it.Row)+"}}")
+		case it.Section != "":
+			var fields []string
+			fields = append(fields, fmt.Sprintf("Section: %q", it.Section))
+			if it.Help != "" {
+				fields = append(fields, fmt.Sprintf("Help: %q", it.Help))
+			}
+			if it.Collapsed {
+				fields = append(fields, "Collapsed: true")
+			}
+			if len(it.Items) > 0 {
+				fields = append(fields, "Items: "+formItemsLiteral(it.Items))
+			}
+			parts = append(parts, "{"+strings.Join(fields, ", ")+"}")
+		}
+	}
+	return "[]framework.FormItem{" + strings.Join(parts, ", ") + "}"
+}
+
+// renderStatesLiteral emits the States group of an entity registration, the
+// same only-non-zero-fields rule as Display. Empty string when the
+// declaration declares no states.
+func renderStatesLiteral(s *fwentity.StatesConfig) string {
+	if s == nil {
+		return ""
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "&framework.StatesConfig{Field: %q", s.Field)
+	if len(s.Initial) > 0 {
+		sb.WriteString(", Initial: []string{" + stringSliceLiteral(s.Initial) + "}")
+	}
+	if len(s.Transitions) > 0 {
+		var parts []string
+		for _, tr := range s.Transitions {
+			var fields []string
+			fields = append(fields, fmt.Sprintf("Key: %q", tr.Key))
+			if tr.Label != "" {
+				fields = append(fields, fmt.Sprintf("Label: %q", tr.Label))
+			}
+			if len(tr.From) > 0 {
+				fields = append(fields, "From: []string{"+stringSliceLiteral(tr.From)+"}")
+			}
+			if tr.To != "" {
+				fields = append(fields, fmt.Sprintf("To: %q", tr.To))
+			}
+			if tr.Stamp != "" {
+				fields = append(fields, fmt.Sprintf("Stamp: %q", tr.Stamp))
+			}
+			if tr.Variant != "" {
+				fields = append(fields, fmt.Sprintf("Variant: %q", tr.Variant))
+			}
+			if tr.Permission != "" {
+				fields = append(fields, fmt.Sprintf("Permission: %q", tr.Permission))
+			}
+			if tr.System {
+				fields = append(fields, "System: true")
+			}
+			parts = append(parts, "{"+strings.Join(fields, ", ")+"}")
+		}
+		sb.WriteString(", Transitions: []framework.Transition{" + strings.Join(parts, ", ") + "}")
+	}
+	if s.Advisory {
+		sb.WriteString(", Advisory: true")
+	}
+	sb.WriteString("}")
+	return sb.String()
+}
+
+// stringSliceLiteral emits {"a", "b"} for a string slice, in order.
+func stringSliceLiteral(values []string) string {
+	quoted := make([]string, len(values))
+	for i, v := range values {
+		quoted[i] = fmt.Sprintf("%q", v)
+	}
+	return strings.Join(quoted, ", ")
+}
+
+func intsLiteral(values []int) string {
+	parts := make([]string, len(values))
+	for i, v := range values {
+		parts[i] = strconv.Itoa(v)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // scopeDeclHasContent, exposureDeclHasContent, and paginationDeclHasContent

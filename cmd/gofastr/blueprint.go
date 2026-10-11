@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"hash/fnv"
 	"image"
@@ -18,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -155,36 +157,24 @@ type BlueprintAccess struct {
 }
 
 type BlueprintBlock struct {
-	Type        string
-	Kind        string
-	Text        string
-	Level       int
-	Class       string
-	Href        string
-	Entity      string
-	Fields      []string
-	Limit       int
-	EmptyText   string
-	Mode        string   // "create", "edit" for entity_form
-	Search      string   // entity_list LIKE-search field
-	Filters     []string // entity_list: facet-filter columns (enum, bool, or relation)
-	Create      bool     // entity_list: show "New" + mount a create form screen
-	Props       map[string]any
-	Children    []BlueprintBlock
-	Actions     []BlueprintAction
-	Transitions []BlueprintTransition // entity_detail: status-transition workflow buttons
-	Island      string
-	Widget      string
-}
-
-// BlueprintTransition is a status-change workflow action shown on a detail page:
-// a button that sets the entity's status field to Status (e.g. "Mark paid"),
-// optionally stamping a date field (Stamp, e.g. paid_on) with today.
-type BlueprintTransition struct {
-	Label   string
-	Status  string
-	Variant string
-	Stamp   string // optional date field stamped with today on transition
+	Type      string
+	Kind      string
+	Text      string
+	Level     int
+	Class     string
+	Href      string
+	Entity    string
+	Fields    []string
+	Limit     int
+	EmptyText string
+	Mode      string // "create", "edit" for entity_form; "table", "cards" for entity_list
+	Create    bool   // entity_list: show "New" + mount a create screen at <list>/create
+	Bulk      bool   // entity_list: row selection, the bulk bar and Export CSV
+	Props     map[string]any
+	Children  []BlueprintBlock
+	Actions   []BlueprintAction
+	Island    string
+	Widget    string
 }
 
 type BlueprintAction struct {
@@ -516,7 +506,60 @@ func decodeBlueprint(node *coreyaml.Node) (Blueprint, error) {
 		}
 		bp.Helpers = stubs
 	}
+	normalizeStatFilters(&bp)
 	return bp, nil
+}
+
+// normalizeStatFilters rewrites a stat_card source.filter authored in the
+// legacy `column=value` spelling into the query DSL the emitted
+// appUI.StatValue parses (`column = "value"`). entityui.StatValue hands
+// the string to dsl.ParsePredicate, which refuses bare words; the
+// blueprint's filter spelling predates that engine. Both spellings carry
+// the same equality, and a filter already written in the DSL (spaces,
+// quotes) passes through untouched. Normalizing at decode (not at emit)
+// keeps pack exact: parse(yml) and parse(pack(yml)) both see the
+// normalized form, so the round-trip invariant holds without a second
+// translation on the way back.
+func normalizeStatFilters(bp *Blueprint) {
+	var walk func(blocks []BlueprintBlock)
+	walk = func(blocks []BlueprintBlock) {
+		for i := range blocks {
+			walk(blocks[i].Children)
+			if !strings.EqualFold(strings.TrimSpace(blocks[i].Kind), "stat_card") {
+				continue
+			}
+			if src, ok := blocks[i].Props["source"].(map[string]any); ok {
+				if f, ok := src["filter"].(string); ok {
+					if dsl, changed := statFilterDSL(f); changed {
+						src["filter"] = dsl
+					}
+				}
+			}
+		}
+	}
+	for i := range bp.Screens {
+		walk(bp.Screens[i].Body)
+	}
+}
+
+// statFilterWord matches one bare word of the legacy filter spelling:
+// a column name or an enum-ish value.
+var statFilterWord = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// statFilterDSL converts `column=value` to `column = "value"` when the
+// filter is exactly that shape: one "=", no spaces, no quotes, bare
+// words on both sides. Anything else is DSL already and returns
+// unchanged.
+func statFilterDSL(f string) (string, bool) {
+	f = strings.TrimSpace(f)
+	if f == "" || strings.ContainsAny(f, ` "`) || strings.Count(f, "=") != 1 {
+		return f, false
+	}
+	col, val, ok := strings.Cut(f, "=")
+	if !ok || !statFilterWord.MatchString(col) || !statFilterWord.MatchString(val) {
+		return f, false
+	}
+	return col + ` = "` + val + `"`, true
 }
 
 func decodeBlueprintApp(node *coreyaml.Node) (BlueprintApp, error) {
@@ -748,6 +791,7 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			"mcp": true, "cursor_field": true, "cursor_fields": true,
 			"max_list_limit": true, "indices": true, "properties": true,
 			"renames": true, "read_scope": true,
+			"display": true, "states": true,
 		}
 		if err := rejectUnknownKeys(m, allowed, context); err != nil {
 			return nil, nil, err
@@ -896,6 +940,16 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 			return nil, nil, err
 		}
 		decl.Indices = indices
+		display, err := decodeDisplayDeclaration(m["display"], context+".display")
+		if err != nil {
+			return nil, nil, err
+		}
+		decl.Display = display
+		states, err := decodeStatesDeclaration(m["states"], context+".states")
+		if err != nil {
+			return nil, nil, err
+		}
+		decl.States = states
 		endpoints, stubs, err := decodeEntityEndpoints(decl.Name, m["endpoints"])
 		if err != nil {
 			return nil, nil, err
@@ -905,6 +959,42 @@ func decodeBlueprintEntities(node *coreyaml.Node) ([]framework.EntityDeclaration
 		out = append(out, decl)
 	}
 	return out, endpointStubs, nil
+}
+
+// decodeDisplayDeclaration decodes an entity's display: group through the
+// declaration's own strict JSON shape, so the blueprint refuses exactly the
+// keys the entity package refuses, with its error wrapped in the yaml
+// position. A present-but-empty block is a non-nil zero config, matching
+// how the scope and exposure groups decode.
+func decodeDisplayDeclaration(node *coreyaml.Node, context string) (*fwentity.DisplayConfig, error) {
+	if node == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(codegen.AnyValue(node))
+	if err != nil {
+		return nil, fmt.Errorf("blueprint: %s: %w", context, err)
+	}
+	var d fwentity.DisplayConfig
+	if err := json.Unmarshal(data, &d); err != nil {
+		return nil, fmt.Errorf("blueprint: %s: %w", context, err)
+	}
+	return &d, nil
+}
+
+// decodeStatesDeclaration is decodeDisplayDeclaration's twin for states:.
+func decodeStatesDeclaration(node *coreyaml.Node, context string) (*fwentity.StatesConfig, error) {
+	if node == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(codegen.AnyValue(node))
+	if err != nil {
+		return nil, fmt.Errorf("blueprint: %s: %w", context, err)
+	}
+	var s fwentity.StatesConfig
+	if err := json.Unmarshal(data, &s); err != nil {
+		return nil, fmt.Errorf("blueprint: %s: %w", context, err)
+	}
+	return &s, nil
 }
 
 func mergeEntityScopeDeclaration(
@@ -2122,7 +2212,27 @@ func decodeBlocks(node *coreyaml.Node) ([]BlueprintBlock, error) {
 		if err != nil {
 			return nil, err
 		}
-		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "mode": true, "search": true, "filters": true, "create": true, "props": true, "children": true, "actions": true, "transitions": true, "island": true, "widget": true}
+		kind := strings.ToLower(strings.TrimSpace(stringValue(m["kind"])))
+		if kind == "" {
+			kind = strings.ToLower(strings.TrimSpace(stringValue(m["type"])))
+		}
+		switch kind {
+		case "entity_create", "entity_edit":
+			what := "entity_detail (the record page holds the edit form)"
+			if kind == "entity_create" {
+				what = "the list's create: (a create screen is synthesized at <list>/create)"
+			}
+			return nil, fmt.Errorf("blueprint: body[%d]: %s is no longer a block kind; use %s", i, kind, what)
+		}
+		// The screen keys the entityui screens replaced are refused by
+		// name, with the error naming where the setting moved, so an
+		// author holding an old blueprint hears the fix rather than
+		// "unknown key". island:/widget: keep their meaning on node
+		// blocks; on an entity screen they name a model that is gone.
+		if err := refuseReplacedBlockKeys(m, kind, fmt.Sprintf("body[%d]", i)); err != nil {
+			return nil, err
+		}
+		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "mode": true, "create": true, "bulk": true, "props": true, "children": true, "actions": true, "island": true, "widget": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("body[%d]", i)); err != nil {
 			return nil, err
 		}
@@ -2134,61 +2244,59 @@ func decodeBlocks(node *coreyaml.Node) ([]BlueprintBlock, error) {
 		if err != nil {
 			return nil, err
 		}
-		transitions, err := decodeTransitions(m["transitions"])
-		if err != nil {
-			return nil, err
-		}
 		out = append(out, BlueprintBlock{
-			Type:        stringValue(m["type"]),
-			Kind:        stringValue(m["kind"]),
-			Text:        stringValue(m["text"]),
-			Level:       intValue(m["level"]),
-			Class:       stringValue(m["class"]),
-			Href:        stringValue(m["href"]),
-			Entity:      stringValue(m["entity"]),
-			Fields:      stringListValue(m["fields"]),
-			Limit:       intValue(m["limit"]),
-			EmptyText:   stringValue(m["empty_text"]),
-			Mode:        stringValue(m["mode"]),
-			Search:      stringValue(m["search"]),
-			Filters:     stringListValue(m["filters"]),
-			Create:      boolValue(m["create"]),
-			Props:       mapValue(m["props"]),
-			Children:    children,
-			Actions:     actions,
-			Transitions: transitions,
-			Island:      stringValue(m["island"]),
-			Widget:      stringValue(m["widget"]),
+			Type:      stringValue(m["type"]),
+			Kind:      stringValue(m["kind"]),
+			Text:      stringValue(m["text"]),
+			Level:     intValue(m["level"]),
+			Class:     stringValue(m["class"]),
+			Href:      stringValue(m["href"]),
+			Entity:    stringValue(m["entity"]),
+			Fields:    stringListValue(m["fields"]),
+			Limit:     intValue(m["limit"]),
+			EmptyText: stringValue(m["empty_text"]),
+			Mode:      stringValue(m["mode"]),
+			Create:    boolValue(m["create"]),
+			Bulk:      boolValue(m["bulk"]),
+			Props:     mapValue(m["props"]),
+			Children:  children,
+			Actions:   actions,
+			Island:    stringValue(m["island"]),
+			Widget:    stringValue(m["widget"]),
 		})
 	}
 	return out, nil
 }
 
-func decodeTransitions(node *coreyaml.Node) ([]BlueprintTransition, error) {
-	if node == nil {
-		return nil, nil
-	}
-	list, err := expectList(node, "transitions")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]BlueprintTransition, 0, len(list))
-	for i, item := range list {
-		m, err := expectMap(item, fmt.Sprintf("transitions[%d]", i))
-		if err != nil {
-			return nil, err
+// refuseReplacedBlockKeys refuses the entity-block keys the entityui
+// screens replaced, naming the replacement for each: filters moved to the
+// entity's display.facets, transitions to the entity's states, search to
+// the entity's search_fields, and island/widget have no replacement
+// because entity lists are query-param pages now. The three data keys are
+// refused wherever they appear (no other block kind ever read them);
+// island/widget only on the entity screens.
+func refuseReplacedBlockKeys(m map[string]*coreyaml.Node, kind, context string) error {
+	entityBlock := kind == "entity_list" || kind == "entity_detail" || kind == "entity_form" ||
+		kind == "entity_create" || kind == "entity_edit"
+	for _, key := range []struct {
+		name string
+		why  string
+	}{
+		{"filters", "the entity's display: facets:"},
+		{"transitions", "the entity's states:"},
+		{"search", "the entity's search_fields:"},
+		{"island", "lists are query-param pages, no island"},
+		{"widget", "lists are query-param pages, no island"},
+	} {
+		if m[key.name] == nil {
+			continue
 		}
-		if err := rejectUnknownKeys(m, map[string]bool{"label": true, "status": true, "variant": true, "stamp": true}, fmt.Sprintf("transitions[%d]", i)); err != nil {
-			return nil, err
+		if (key.name == "island" || key.name == "widget") && !entityBlock {
+			continue
 		}
-		out = append(out, BlueprintTransition{
-			Label:   stringValue(m["label"]),
-			Status:  stringValue(m["status"]),
-			Variant: stringValue(m["variant"]),
-			Stamp:   stringValue(m["stamp"]),
-		})
+		return fmt.Errorf("blueprint: %s: %s is no longer a block key; use %s", context, key.name, key.why)
 	}
-	return out, nil
+	return nil
 }
 
 func decodeActions(node *coreyaml.Node) ([]BlueprintAction, error) {
@@ -2294,34 +2402,34 @@ func decodeNamedStubs(node *coreyaml.Node, label string) ([]BlueprintNamedStub, 
 	return out, nil
 }
 
-// validateIslandPathsAreDistinct refuses a blueprint whose list screens
-// would derive a shared island endpoint. See the call site for why a
-// collision cannot be resolved silently.
-func validateIslandPathsAreDistinct(bp Blueprint) error {
-	type owner struct {
-		screen string
-		blocks int
-	}
-	seen := map[string]*owner{}
-	for _, decl := range bp.Entities {
-		entity := decl.Name
-		for _, p := range entityListPlacements(bp, entity) {
-			path := blueprintIslandPath(blueprintAPIBase(bp.App.APIPrefix), p.screen, entity)
-			prev, ok := seen[path]
-			if !ok {
-				seen[path] = &owner{screen: p.screen.Name, blocks: 1}
-				continue
+// validateDetailRoutes holds every entity_detail screen to the route shape
+// entityui links records at: <list route>/{id} under one of the entity's
+// list screens, which becomes its home (blueprintEntityListScreen). Every
+// list's record links point there, so a detail screen anywhere else
+// renders fine but is unreachable. An entity with no list screen keeps
+// only the {id} requirement its own screen needs.
+func validateDetailRoutes(bp Blueprint) error {
+	var errs schemaErrors
+	for _, s := range bp.Screens {
+		for _, entity := range entityDetailsOn(s.Body) {
+			base := strings.TrimRight(s.Route, "/")
+			base = strings.TrimSuffix(base, "/{id}")
+			base = strings.TrimSuffix(base, "/:id")
+			var listRoutes []string
+			underList := false
+			for _, ls := range bp.Screens {
+				if found, _ := entityListOn(ls.Body, entity); found {
+					route := strings.TrimRight(ls.Route, "/")
+					listRoutes = append(listRoutes, route)
+					underList = underList || route == base
+				}
 			}
-			if prev.screen == p.screen.Name {
-				prev.blocks++
-				return fmt.Errorf("blueprint: screen %q lists entity %q more than once, and both lists would share the island endpoint %s: sorting or paging either table would rewrite both from the first list's columns. Split them onto separate screens, or render one of them as a different block kind",
-					p.screen.Name, entity, path)
+			if len(listRoutes) > 0 && !underList {
+				errs.add(fmt.Errorf("blueprint: screen %q shows entity %q at route %q, but no list of it lives at %q: the detail screen must sit at %q/{id}, where the list's record links point", s.Name, entity, s.Route, base, listRoutes[0]))
 			}
-			return fmt.Errorf("blueprint: screens %q and %q both derive the island endpoint %s for entity %q: only one mount would be emitted, silently discarding the other screen's columns, filters and access policy. Rename one screen so the two differ by more than case or punctuation",
-				prev.screen, p.screen.Name, path, entity)
 		}
 	}
-	return nil
+	return errs.err()
 }
 
 // schemaErrors accumulates validation findings so one pass reports every
@@ -2372,17 +2480,31 @@ func validateBlueprint(bp Blueprint) error {
 			errs.add(fmt.Errorf("blueprint: entity %q sets multi_tenant: true, but the generator cannot emit a tenant resolver (the strategy, subdomain, JWT claim, user's org, is app-specific). A generated app with none reads empty and stamps an empty tenant on every write. Wire tenant.TenantMiddleware + SetTenantID in your own main (see `gofastr docs multi-tenant`) and drop multi_tenant from the blueprint, or use owner_field for per-user scoping", decl.Name))
 		}
 	}
-	// Island endpoints are keyed by toSnakeCase(screen name) + entity, so
-	// two screens whose names normalize to the same slug would derive the
-	// same endpoint. The generator would then emit ONE mount and silently
-	// discard the other screen's refined config and its policy. The second
-	// screen ends up pointing at a table it does not own, gated by a rule it
-	// never declared. Reject it here rather than generate that.
-	//
-	// The same collapse happens when one screen lists the same entity twice:
-	// both blocks derive one endpoint and one signal, so sorting either table
-	// rewrites both from the first block's columns.
-	errs.add(validateIslandPathsAreDistinct(bp))
+	// One screen cannot list the same entity twice: both lists would share
+	// the entity's one query-param namespace, so sorting either table
+	// rewrites both from the first block's columns. Two lists of DIFFERENT
+	// entities on one screen are fine; each carries its own key.
+	for _, s := range bp.Screens {
+		seen := map[string]bool{}
+		var walk func(blocks []BlueprintBlock)
+		walk = func(blocks []BlueprintBlock) {
+			for _, b := range blocks {
+				if isEntityListBlock(b) {
+					e := strings.Trim(b.Entity, "/")
+					if seen[e] {
+						errs.add(fmt.Errorf("blueprint: screen %q lists entity %q more than once: two lists of one entity share its query params, so sorting either rewrites both; split them across screens", s.Name, e))
+					}
+					seen[e] = true
+				}
+				walk(b.Children)
+			}
+		}
+		walk(s.Body)
+	}
+	// entityui links a record at <base>/<id> with <base> the list's route,
+	// so a detail screen must sit exactly at <list route>/{id} when the
+	// entity also has a list screen. Anything else strands the links.
+	errs.add(validateDetailRoutes(bp))
 	if bp.App.PWA.Enabled {
 		switch bp.App.PWA.Display {
 		case "", "standalone", "fullscreen", "minimal-ui", "browser":
@@ -2576,6 +2698,7 @@ func validateBlueprint(bp Blueprint) error {
 	errs.add(validateBlueprintSeedTypes(bp, entitiesByName))
 	errs.add(validateBlueprintSeedStructure(bp, entitiesByName))
 	routes := map[string]bool{}
+	screenFiles := map[string]string{} // file name → declaring screen
 	for _, screen := range bp.Screens {
 		if screen.Name == "" {
 			errs.add(fmt.Errorf("blueprint: screen name is required"))
@@ -2594,6 +2717,16 @@ func validateBlueprint(bp Blueprint) error {
 			continue
 		}
 		routes[screen.Route] = true
+		// Two screens whose names normalize to the same file name would
+		// emit one screen_<snake>.go twice; the second write silently
+		// replaces the first and its route never mounts.
+		if file := screenFileName(screen.Name); file != "" {
+			if prev, dup := screenFiles[file]; dup {
+				errs.add(fmt.Errorf("blueprint: screens %q and %q both normalize to the screen file %s: the second write would replace the first and its route would never mount; rename one", prev, screen.Name, file))
+			} else {
+				screenFiles[file] = screen.Name
+			}
+		}
 		if _, err := screenTypeConst(screen.Type); err != nil {
 			errs.add(err)
 		}
@@ -3162,6 +3295,9 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 	if kind == "" {
 		kind = block.Type
 	}
+	if block.Bulk && strings.ToLower(strings.TrimSpace(kind)) != "entity_list" {
+		return fmt.Errorf("blueprint: screen %q bulk applies only to an entity_list block, not %q", screenName, kind)
+	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "", "text", "p", "paragraph", "section", "div", "article", "main", "header", "footer", "nav", "aside", "span", "strong", "em", "code", "pre", "small", "blockquote", "button", "input", "label", "form", "select", "option", "textarea", "fieldset", "image", "img", "list", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "raw":
 	case "heading", "h1", "h2", "h3", "h4", "h5", "h6":
@@ -3212,65 +3348,12 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if block.Limit < 0 {
 			return fmt.Errorf("blueprint: screen %q entity_list limit must be >= 0", screenName)
 		}
-		// search: the column the screen's quick-search box runs LIKE against.
-		// It reaches ListAll directly (the generated resource builds the
-		// ParsedFilter by hand, bypassing ParseFilters), so the checks the
-		// HTTP filter parser would apply have to happen here instead. A
-		// Hidden or NoQuery column would make the rendered row set and count
-		// a value oracle for a column the caller may not read in full.
-		if block.Search != "" {
-			// blueprintColumn covers the columns the framework adds that are
-			// never in decl.Fields: id, the timestamps:/soft_delete: stamps,
-			// and relations:-declared FKs. Every one of them was a working
-			// search column before this check existed.
-			found, ok := blueprintColumn(decl, block.Search)
-			switch {
-			case !ok:
-				return fmt.Errorf("blueprint: screen %q entity_list search %q is not defined on entity %q", screenName, block.Search, block.Entity)
-			case found == nil:
-				// framework-managed column: exists, and cannot carry a Hidden
-				// or no_query flag of its own.
-			case found.Hidden:
-				return fmt.Errorf("blueprint: screen %q entity_list search %q is hidden (search would disclose its values)", screenName, block.Search)
-			case found.NoQuery:
-				return fmt.Errorf("blueprint: screen %q entity_list search %q is no_query (search would match on the stored value)", screenName, block.Search)
-			}
-		}
-		// filters: each must be a defined column of a facetable type: enum,
-		// bool, or relation. Explicit only (no auto-derivation): an omitted
-		// filters: list renders exactly as before, no facet toolbar.
-		if len(block.Filters) > 0 {
-			rels := blueprintEntityRelations(decl) // fk column -> target entity
-			typeOf := map[string]string{}
-			for _, field := range decl.Fields {
-				typeOf[field.Name] = strings.ToLower(strings.TrimSpace(field.Type))
-			}
-			barred := map[string]string{}
-			for _, field := range decl.Fields {
-				if field.Hidden {
-					barred[field.Name] = "hidden"
-				} else if field.NoQuery {
-					barred[field.Name] = "no_query"
-				}
-			}
-			for _, col := range block.Filters {
-				t, defined := typeOf[col]
-				_, isRel := rels[col]
-				if !defined && !isRel {
-					return fmt.Errorf("blueprint: screen %q entity_list filter %q is not defined on entity %q", screenName, col, block.Entity)
-				}
-				// Facet values become an OpEq filter handed straight to
-				// ListAll, so the same query-surface bar applies here.
-				if why := barred[col]; why != "" {
-					return fmt.Errorf("blueprint: screen %q entity_list filter %q is %s and cannot be faceted", screenName, col, why)
-				}
-				switch {
-				case t == "enum", t == "bool", t == "boolean", t == "relation", isRel:
-					// facetable
-				default:
-					return fmt.Errorf("blueprint: screen %q entity_list filter %q has type %q; only enum, bool, and relation columns can be faceted", screenName, col, t)
-				}
-			}
+		// mode picks how rows are drawn; the list builder accepts exactly
+		// these presentations, so refuse the rest here, naming the two.
+		switch strings.ToLower(strings.TrimSpace(block.Mode)) {
+		case "", "table", "cards":
+		default:
+			return fmt.Errorf("blueprint: screen %q entity_list mode %q is not a presentation; use table or cards", screenName, block.Mode)
 		}
 	case "entity_form":
 		if block.Entity == "" {
@@ -3298,6 +3381,10 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if !entityDeclarationCRUDEnabled(decl) {
 			return fmt.Errorf("blueprint: screen %q entity_detail target %q must enable crud", screenName, block.Entity)
 		}
+	case "entity_create":
+		return fmt.Errorf("blueprint: screen %q uses entity_create, which is no longer a block kind: the list's create: synthesizes the create screen at <list>/create", screenName)
+	case "entity_edit":
+		return fmt.Errorf("blueprint: screen %q uses entity_edit, which is no longer a block kind: entity_detail's record page holds the edit form", screenName)
 	case "login_form", "signup_form":
 		// Static HTML auth form posting to the auth battery.
 		if v, ok := block.Props["action"]; ok {
@@ -3351,10 +3438,8 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 		if !entityDeclarationCRUDEnabled(decl) {
 			return fmt.Errorf("blueprint: screen %q %s source entity %q must enable crud (the chart reads its rows via the CRUD handler)", screenName, kind, srcEntity)
 		}
-		// group_by is the chart's LABEL, not an aggregate: groupCounts reads
-		// rows raw (no WithReadHooks; the dashboard aggregates are meant to
-		// compute over stored values) and prints each distinct value as a bar
-		// or slice label. Pointed at a masked column that renders the stored
+		// group_by is the chart's LABEL, not an aggregate: groupCounts
+		// prints each distinct stored value as a bar or slice label. Pointed at a masked column that renders the stored
 		// value verbatim on the page while the API masks it: the full value
 		// set, not the one-bit oracle the stat_card filter guard below closes.
 		// Masking groupCounts instead would collapse every row into a single
@@ -3403,16 +3488,23 @@ func validateBlueprintBlock(screenName string, entities map[string]framework.Ent
 					break
 				}
 			}
-			// agg: sum reads the same raw rows and renders the total of the
-			// named column. At one row that total IS the stored value, so the
-			// masked-column bar applies here too.
-			if agg, _ := src["agg"].(string); strings.EqualFold(strings.TrimSpace(agg), "sum") {
-				if f, _ := src["field"].(string); f != "" {
-					if err := requireGroupableColumn(screenName, "stat_card", "source.field", f,
-						"the card renders the total of the stored values, which at one row is the value itself", decl); err != nil {
-						return err
-					}
+			// agg is StatValue's exact spelling: count (or empty) or sum. sum
+			// renders the total of a numeric column. At one row that total IS
+			// the stored value, so the masked-column bar applies here too.
+			agg, _ := src["agg"].(string)
+			switch agg {
+			case "", "count":
+			case "sum":
+				f, _ := src["field"].(string)
+				if err := requireGroupableColumn(screenName, "stat_card", "source.field", f,
+					"the card renders the total of the stored values, which at one row is the value itself", decl); err != nil {
+					return err
 				}
+				if col, _ := blueprintColumn(decl, f); col == nil || !blueprintNumericType(col.Type) {
+					return fmt.Errorf("blueprint: screen %q stat_card sums source.field %q, which is not an int, float or decimal field", screenName, f)
+				}
+			default:
+				return fmt.Errorf("blueprint: screen %q stat_card source agg %q is not count or sum", screenName, agg)
 			}
 		}
 	case "stack", "cluster", "grid", "stat_grid":
@@ -3601,12 +3693,13 @@ var validHTTPMethods = map[string]bool{
 	http.MethodPatch: true, http.MethodDelete: true, http.MethodOptions: true,
 }
 
-// blueprintSynthesizeCRUDScreens appends the form screens that make app-side
-// entity screens writable: a /new create form for every entity_list flagged
-// `create: true`, and a /{id}/edit form for every entity_detail. The synthesized
-// screens render through the resource engine's Form(ctx, id), inherit the source
-// screen's layout + access, and are NOT added to nav. List "New" / detail "Edit"
-// + "Delete" affordances are wired separately (WithCreate / CanEdit).
+// blueprintSynthesizeCRUDScreens appends the create screen that makes an
+// app-side list writable: <home list>/create for every entity with an
+// entity_list flagged `create: true`, where the home list is the one every
+// list's New links to (blueprintEntityListScreen). The synthesized screen
+// renders appUI.Create(entity), it inherits the home screen's layout +
+// access, and it is not added to nav.
+// The record page holds the edit form, so no edit screen is synthesized.
 func blueprintSynthesizeCRUDScreens(bp Blueprint) Blueprint {
 	existing := map[string]bool{}
 	for _, s := range bp.Screens {
@@ -3621,31 +3714,21 @@ func blueprintSynthesizeCRUDScreens(bp Blueprint) Blueprint {
 		extra = append(extra, s)
 	}
 	for _, s := range bp.Screens {
-		for _, b := range s.Body {
+		for _, b := range blueprintBlocksDeep(s.Body) {
 			e := strings.Trim(b.Entity, "/")
 			if e == "" {
 				continue
 			}
-			singular := singularize(toDisplayName(e))
-			switch {
-			case isEntityListBlock(b) && b.Create:
+			if isEntityListBlock(b) && b.Create {
+				home := blueprintEntityListScreen(bp, e)
+				singular := singularize(toDisplayName(e))
 				add(BlueprintScreen{
-					Name:   e + "_new",
-					Route:  strings.TrimRight(s.Route, "/") + "/new",
-					Layout: s.Layout,
-					Access: s.Access,
+					Name:   e + "_create",
+					Route:  strings.TrimRight(home.Route, "/") + "/create",
+					Layout: home.Layout,
+					Access: home.Access,
 					Title:  "New " + singular,
 					Body:   []BlueprintBlock{{Kind: "entity_create", Entity: e}},
-				})
-			case isEntityDetailBlock(b):
-				// Detail route carries the {id}; the edit form sits beneath it.
-				add(BlueprintScreen{
-					Name:   e + "_edit",
-					Route:  strings.TrimRight(s.Route, "/") + "/edit",
-					Layout: s.Layout,
-					Access: s.Access,
-					Title:  "Edit " + singular,
-					Body:   []BlueprintBlock{{Kind: "entity_edit", Entity: e}},
 				})
 			}
 		}
@@ -3692,7 +3775,7 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 	}
 	emitsApp := bp.App.Name != "" || bp.App.Module != "" || bp.App.DBDriver != "" || bp.App.DBURL != "" || bp.App.StaticDir != "" || bp.App.OutputDir != "" || blueprintHasTheme(bp.App) || len(bp.Screens) > 0 || len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0
 	// Per-screen layout: the fixed screens_register.go seam + one file per
-	// authored screen + one per-entity crud file (screens + appResources).
+	// authored screen + one per-entity crud file (list/record/create screens).
 	files = append(files, blueprintScreenFiles(bp, screenOrderOffset)...)
 	if len(bp.Screens) == 0 && emitsApp {
 		// Same additive-readiness for screens: app.go calls mountGenerated
@@ -3733,8 +3816,14 @@ func renderBlueprintFilesWithOrder(bp Blueprint, entityOrderOffset, screenOrderO
 			}
 		}
 	}
-	if blueprintNeedsResource(bp) {
-		files = append(files, generatedFile{name: "resource.go", content: blueprintResourceGo})
+	// The entityui seam ships beside app.go even with zero entities: the
+	// appUI wiring in app.go references it, and a later `--add` entity
+	// screen needs no edit to any owned file.
+	if emitsApp {
+		files = append(files, generatedFile{name: "extensions.go", content: blueprintExtensionsGo})
+	}
+	if blueprintNeedsAuthHooks(bp) {
+		files = append(files, generatedFile{name: "auth_hooks.go", content: blueprintAuthHooksGo})
 	}
 	if bp.App.Module != "" && len(bp.Screens) > 0 {
 		files = append(files, generatedFile{name: "e2e_test.go", content: renderBlueprintE2ETest(bp)})
@@ -3937,16 +4026,16 @@ func blueprintE2EScreenRoutes(bp Blueprint) (public, gated []string) {
 type blueprintCRUDTarget struct {
 	entity      string
 	apiPath     string // /api/<entity>
-	newRoute    string // /app/<entity>/new
+	newRoute    string // /app/<entity>/create
 	detailBase  string // /app/<entity>  (detail = detailBase + "/" + id), "" if no detail screen
 	createJSON  string // a valid create payload
 	updateJSON  string // a payload mutating one field
-	probe       string // a value present in the created record (to find in detail/edit HTML)
+	probe       string // a value present in the created record (to find in record HTML)
 	accessGated bool   // entity is access- or owner-scoped → anonymous writes must be refused
 }
 
 // blueprintE2EWritableTarget picks an entity to lifecycle-test: one whose list
-// is `create: true` (so a /new form exists) and whose required fields are all
+// is `create: true` (so a /create form exists) and whose required fields are all
 // simple scalars (no required relation), so a valid body can be synthesized.
 func blueprintE2EWritableTarget(bp Blueprint) (blueprintCRUDTarget, bool) {
 	entityMap := make(map[string]framework.EntityDeclaration, len(bp.Entities))
@@ -3956,10 +4045,10 @@ func blueprintE2EWritableTarget(bp Blueprint) (blueprintCRUDTarget, bool) {
 	createOf := map[string]string{}
 	detailOf := map[string]string{}
 	for _, s := range bp.Screens {
-		for _, b := range s.Body {
+		for _, b := range blueprintBlocksDeep(s.Body) {
 			e := strings.Trim(b.Entity, "/")
 			if isEntityListBlock(b) && b.Create {
-				createOf[e] = s.Route
+				createOf[e] = blueprintEntityListScreen(bp, e).Route
 			}
 			if isEntityDetailBlock(b) {
 				detailOf[e] = s.Route
@@ -3980,7 +4069,7 @@ func blueprintE2EWritableTarget(bp Blueprint) (blueprintCRUDTarget, bool) {
 		createJSON, updateJSON, probe := blueprintE2ECreateBody(decl)
 		t := blueprintCRUDTarget{
 			entity: e, apiPath: apiBase + "/" + e,
-			newRoute:    strings.TrimRight(createOf[e], "/") + "/new",
+			newRoute:    strings.TrimRight(createOf[e], "/") + "/create",
 			createJSON:  createJSON,
 			updateJSON:  updateJSON,
 			probe:       probe,
@@ -4009,7 +4098,7 @@ func blueprintHasRequiredRelation(decl framework.EntityDeclaration) bool {
 
 // blueprintE2ECreateBody synthesizes a valid create payload (JSON literal) for
 // decl, plus an update payload mutating one string field, and a probe value that
-// the created record will contain (for asserting detail/edit HTML). To stay valid
+// the created record will contain (for asserting record HTML). To stay valid
 // across any schema it sends only the entity's REQUIRED fields (best-effort per
 // type). Optional fields with exotic validators (json, image, file) are left
 // out; the screens still exercise all-field rendering.
@@ -4562,11 +4651,6 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 			} else {
 				b.WriteString("\t}\n")
 			}
-			if target.probe != "" {
-				b.WriteString(fmt.Sprintf("\tif code, body := e2eDo(t, client, \"GET\", base+%q+\"/\"+id+\"/edit\", \"\"); code != http.StatusOK || !strings.Contains(body, %q) {\n", target.detailBase, target.probe))
-				b.WriteString(fmt.Sprintf("\t\tt.Errorf(\"edit form %s = %%d, prefilled? %%v\", code, strings.Contains(body, %q))\n", target.entity, target.probe))
-				b.WriteString("\t}\n")
-			}
 		}
 		b.WriteString(fmt.Sprintf("\tif code, body := e2eDo(t, client, \"PUT\", base+%q+\"/\"+id, %q); code/100 != 2 {\n", target.apiPath, target.updateJSON))
 		b.WriteString(fmt.Sprintf("\t\tt.Errorf(\"update %s = %%d: %%s\", code, body)\n", target.entity))
@@ -4661,49 +4745,27 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 	return b.String()
 }
 
-// blueprintNeedsResource reports whether generated screens need the thin
-// appResources/auth hook seam.
-func blueprintNeedsResource(bp Blueprint) bool {
-	if len(blueprintSourceEntities(bp)) > 0 {
-		return true
-	}
-	var any func([]BlueprintBlock) bool
-	any = func(blocks []BlueprintBlock) bool {
-		for _, b := range blocks {
-			if isEntityListBlock(b) || isEntityDetailBlock(b) || isEntityFormBlock(b) || isLoginFormBlock(b) || isSignupFormBlock(b) {
-				return true
-			}
-			if any(b.Children) {
-				return true
-			}
-		}
-		return false
-	}
+// blueprintNeedsAuthHooks reports whether generated screens render an auth
+// form, whose error copy lives in the owned auth_hooks.go seam.
+func blueprintNeedsAuthHooks(bp Blueprint) bool {
 	for _, s := range bp.Screens {
-		if any(s.Body) {
+		if screenHasAuthForm(s) {
 			return true
 		}
 	}
 	return false
 }
 
-// blueprintResourceGo is the thin owned seam emitted for apps with entity
-// resources, dashboard data sources, or auth forms. Generic resource behavior
-// lives in framework/ui/resource; the app keeps its registry and auth copy hook.
-const blueprintResourceGo = `package main
+// blueprintAuthHooksGo is the thin owned seam for the auth screens' error
+// copy. Edit the hook when the app needs different copy or extra codes.
+const blueprintAuthHooksGo = `package main
 
 import (
 	"context"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 )
-
-// appResources holds the app's resource configs. Per-entity generated files
-// populate it without changing this owned seam, so generate --add stays
-// additive.
-var appResources = resource.Registry{}
 
 // authError maps auth redirect codes to the alert rendered by generated auth
 // screens. Edit this hook when the app needs different copy or extra codes.
@@ -4723,6 +4785,32 @@ func authError(ctx context.Context) render.HTML {
 		return render.Text("Sorry, something went wrong. Please try again.")
 	}
 }
+`
+
+// blueprintExtensionsGo is the owned seam for the app's entityui code:
+// field kinds, view funcs, record tabs and actions. The entity says what
+// to show (display:, states:); this file is where code that draws or acts
+// goes. app.go builds the app's UI from it once at boot.
+const blueprintExtensionsGo = `package main
+
+import "github.com/DonaldMurillo/gofastr/framework/entityui"
+
+// appExtensions holds the entityui extensions this app adds beside its
+// screens. Everything starts empty: a view whose filter depends on the
+// caller, a field kind, a record tab or an action each lands here, keyed
+// by entity. See 'gofastr docs blueprints' ("Extending the screens") and
+// the framework/entityui package doc for each extension point.
+//
+//	var appExtensions = entityui.Extensions{
+//		Entities: map[string]entityui.Extension{
+//			"invoices": {
+//				Views: map[string]entityui.ViewFunc{
+//					"overdue": {Filter: overdueFilter},
+//				},
+//			},
+//		},
+//	}
+var appExtensions = entityui.Extensions{}
 `
 
 // blueprintSiteDescription resolves the generated app's site-level meta
@@ -4777,6 +4865,16 @@ func joinNaturalList(words []string) string {
 	default:
 		return strings.Join(words[:len(words)-1], ", ") + ", and " + words[len(words)-1]
 	}
+}
+
+// blueprintHasStatesEntity reports whether any entity declares states.
+func blueprintHasStatesEntity(bp Blueprint) bool {
+	for _, decl := range bp.Entities {
+		if decl.States != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func renderBlueprintMain(bp Blueprint) string {
@@ -4916,6 +5014,21 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\t}\n")
 	}
 	sb.WriteString("\tentities.RegisterAll(fwApp)\n")
+	switch {
+	case hasSeed && blueprintHasStatesEntity(bp):
+		sb.WriteString("\t// An entity declares states and the seed writes rows: seeded rows may\n")
+		sb.WriteString("\t// start at any state under the audited state override below, and an\n")
+		sb.WriteString("\t// override is refused on an entity with no audit log, so enable it\n")
+		sb.WriteString("\t// here (WithAuditLog creates audit_log when it does not exist).\n")
+		sb.WriteString("\tfwApp.WithAuditLog(framework.AuditConfig{})\n")
+	case bp.App.Admin.Enabled:
+		// The admin writes under elevation and its Audit log page and
+		// dashboard read audit_log: every entity write leaves a row.
+		sb.WriteString("\t// The admin writes entities under elevation, and its Audit log page and\n")
+		sb.WriteString("\t// dashboard read audit_log: record every entity write there\n")
+		sb.WriteString("\t// (WithAuditLog creates audit_log when it does not exist).\n")
+		sb.WriteString("\tif db != nil {\n\t\tfwApp.WithAuditLog(framework.AuditConfig{})\n\t}\n")
+	}
 	for _, hook := range bp.Hooks {
 		handler := strings.TrimSpace(hook.Handler)
 		lifecycle, known := blueprintHookTypes[hook.When]
@@ -4942,6 +5055,10 @@ func renderBlueprintMain(bp Blueprint) string {
 		// row that fails aborts startup, because the CountAll gate would
 		// mark the entity seeded and the dropped row would never retry.
 		sb.WriteString("\tfwApp.WithSeed(func(ctx context.Context) error {\n")
+		// Seeded rows may start at any state (a demo invoice already
+		// paid): the override is the one trusted-write path, and it is
+		// audited per row.
+		sb.WriteString("\t\tctx = framework.WithStateOverride(ctx, \"seed\")\n")
 		if ownerSeed {
 			sb.WriteString("\t\t// Resolve the bootstrap admin (created by the earlier-registered\n")
 			sb.WriteString("\t\t// admin seed hook) so the demo rows are owned by them; a fresh\n")
@@ -5026,24 +5143,13 @@ func renderBlueprintMain(bp Blueprint) string {
 		if adminRole == "" {
 			adminRole = "admin"
 		}
-		themeArg := ""
-		if blueprintHasTheme(bp.App) {
-			// Hand the admin back-office the same theme tokens AND @font-face
-			// rules the UI host uses, so the back-office renders coherently
-			// with the rest of the app. Same colors, same fonts.
-			themeArg = ", Theme: appTheme(), FontFaceCSS: fontFaceCSS"
-		}
-		// The admin battery reads audit_log for its audit page and appends
-		// to it on RBAC and module changes, but nothing else creates the
-		// table: ensure it here (idempotent, dialect-aware).
-		sb.WriteString("\t// The admin audit page reads audit_log and the admin's own RBAC and\n")
-		sb.WriteString("\t// module changes append to it: create it if it does not exist.\n")
-		sb.WriteString("\tif db != nil {\n\t\tif err := framework.EnsureAuditTable(db, \"audit_log\"); err != nil {\n\t\t\tlog.Fatalf(\"audit table: %v\", err)\n\t\t}\n\t}\n")
 		// Build the base admin config, then route it through the
 		// adminBatteryConfigurators seam (admin_register.go) so a new file
-		// can wire Policy/GrantStore/Auth additively, no edits here.
-		sb.WriteString(fmt.Sprintf("\tadminCfg := admin.Config{PathPrefix: %q, Title: appName, AdminRole: %q, LoginPath: %q, DB: db, AuditTable: \"audit_log\", AllEntities: true%s}\n",
-			adminPath, adminRole, bp.App.Admin.LoginPath, themeArg))
+		// can wire Policy/GrantStore/Auth additively, no edits here. The
+		// admin draws through the app's UI host and its entity screens
+		// through appUI, so it inherits the app's theme and fonts.
+		sb.WriteString(fmt.Sprintf("\tadminCfg := admin.Config{PathPrefix: %q, Title: appName, AdminRole: %q, LoginPath: %q, UI: appUI, DB: db, AuditTable: \"audit_log\", AllEntities: true, SavedViews: true}\n",
+			adminPath, adminRole, bp.App.Admin.LoginPath))
 		sb.WriteString("\tapplyAdminBatteryConfigurators(&adminCfg)\n")
 		sb.WriteString("\tfwApp.RegisterBattery(admin.New(adminCfg))\n")
 	}
@@ -5218,16 +5324,19 @@ func renderBlueprintScreens(bp Blueprint) string {
 	apiBase := blueprintAPIBase(bp.App.APIPrefix)
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
+	var bodies strings.Builder
+	for _, screen := range bp.Screens {
+		bodies.WriteString(blueprintScreenBody(bp, screen, entityMap, apiBase))
+	}
 	needs := blueprintScreenImports(bp)
+	needs.html = emitsHTMLRef(bodies.String())
 	anyCtx := screensNeedCtx(bp.Screens)
 	writeScreenImportBlock(&sb, needs, anyCtx, false, true)
 	if needs.node {
 		sb.WriteString("type nodeComponent struct { node uinode.Node }\n\n")
 		sb.WriteString("func (c nodeComponent) Render() render.HTML { return noderender.RenderTrustedNode(c.node) }\n\n")
 	}
-	for _, screen := range bp.Screens {
-		sb.WriteString(blueprintScreenBody(bp, screen, entityMap, apiBase))
-	}
+	sb.WriteString(bodies.String())
 	return sb.String()
 }
 
@@ -5242,6 +5351,44 @@ func screensNeedCtx(screens []BlueprintScreen) bool {
 	return false
 }
 
+// blueprintScreenStackOpen opens the ui.Stack a screen's blocks sit in.
+// pack recognises this exact call (config included) as the screen
+// stack, so the two must stay one spelling.
+const blueprintScreenStackOpen = "ui.Stack(ui.StackConfig{Gap: ui.GapXL},"
+
+// emitsHTMLRef reports whether emitted screen code calls the core-ui/html
+// package (an `html` identifier selecting an exported name). The import is
+// read off the code itself because each block emitter decides on its own
+// whether it reaches for html.*: a hand-kept predicate per block kind
+// missed the auth form's hidden html.Input and the node screens once the
+// screen root stopped being an html.Div that pulled the import in for
+// everyone. The code is tokenized, so a string literal or comment that
+// mentions html.Div (a callout's copy) does not count as a call.
+func emitsHTMLRef(code string) bool {
+	type tokLit struct {
+		tok token.Token
+		lit string
+	}
+	fset := token.NewFileSet()
+	var sc scanner.Scanner
+	sc.Init(fset.AddFile("", fset.Base(), len(code)), []byte(code), nil, 0)
+	// The last three tokens before the current one: `html` must open its
+	// selector (not follow a dot, as in x.html.Div) and select an
+	// exported name.
+	var last [3]tokLit
+	for {
+		_, tok, lit := sc.Scan()
+		if tok == token.EOF {
+			return false
+		}
+		if last[0].tok != token.PERIOD && last[1].tok == token.IDENT && last[1].lit == "html" &&
+			last[2].tok == token.PERIOD && tok == token.IDENT && lit[0] >= 'A' && lit[0] <= 'Z' {
+			return true
+		}
+		last = [3]tokLit{last[1], last[2], {tok, lit}}
+	}
+}
+
 // writeScreenImportBlock writes the shared import block for a set of screens.
 // When withMount is true, database/sql + framework are added (per-screen files
 // carry a mount func with that signature); the aggregated test-facing emitter
@@ -5253,9 +5400,6 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 	}
 	if withMount {
 		sb.WriteString("\t\"database/sql\"\n")
-	}
-	if needs.nethttp {
-		sb.WriteString("\t\"net/http\"\n")
 	}
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/app\"\n")
 	if hasScreens && (needs.component || anyCtx) {
@@ -5278,9 +5422,6 @@ func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx
 	}
 	if hasScreens && needs.headless {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/headless\"\n")
-	}
-	if needs.resource {
-		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/ui/resource\"\n")
 	}
 	if hasScreens && needs.uihost {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/uihost\"\n")
@@ -5351,34 +5492,42 @@ func blueprintScreenBody(bp Blueprint, screen BlueprintScreen, entityMap map[str
 		renderMethod = "RenderCtx(ctx context.Context) render.HTML"
 	}
 	sb.WriteString(fmt.Sprintf("func (s *%s) %s {\n", typeName, renderMethod))
-	// Screen root goes through core-ui/html, the design system's 1:1 tag
-	// primitive, rather than raw render.Tag, CLAUDE.md's rule for markup
-	// that maps directly to an element. Output is byte-identical.
-	rootCfg := "html.DivConfig{}"
+	// A screen with blocks stacks them in a ui.Stack at the xl gap, so a
+	// page header, a stat grid, a chart card and a table get the design
+	// system's vertical rhythm instead of touching (a bare div gave them
+	// none). The action marker is runtime wiring that headless refuses
+	// from ExtraAttrs, so a screen with actions carries it on an html.Div
+	// (core-ui/html, the 1:1 tag primitive) around the stack; an empty
+	// screen's root is that div too.
+	divCfg := "html.DivConfig{}"
 	if hasActions {
-		rootCfg = "html.DivConfig{ExtraAttrs: html.Attrs{\"data-component\": s.ComponentID()}}"
+		divCfg = "html.DivConfig{ExtraAttrs: html.Attrs{\"data-component\": s.ComponentID()}}"
 	}
 	if len(screen.Body) == 0 {
-		sb.WriteString(fmt.Sprintf("\treturn html.Div(%s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%q)))\n", rootCfg, screen.TitleOrName()))
+		sb.WriteString(fmt.Sprintf("\treturn html.Div(%s, html.Heading(html.HeadingConfig{Level: 1}, render.Text(%q)))\n", divCfg, screen.TitleOrName()))
 	} else {
-		sb.WriteString(fmt.Sprintf("\treturn html.Div(%s,\n", rootCfg))
+		closer := "\t)\n"
+		if hasActions {
+			sb.WriteString(fmt.Sprintf("\treturn html.Div(%s, %s\n", divCfg, blueprintScreenStackOpen))
+			closer = "\t))\n"
+		} else {
+			sb.WriteString(fmt.Sprintf("\treturn %s\n", blueprintScreenStackOpen))
+		}
 		for i, block := range screen.Body {
 			var expr string
 			switch {
-			case ctxScreen && isEntityListBlock(block):
-				expr = blueprintEntityListResourceExpr(bp, screen, block, entityMap, apiBase)
-			case ctxScreen && isEntityDetailBlock(block):
+			case isEntityListBlock(block):
+				expr = blueprintEntityListExpr(bp, screen, block)
+			case isEntityDetailBlock(block):
 				expr = blueprintDetailExpr(block)
-			case ctxScreen && isEntityCreateBlock(block):
-				expr = fmt.Sprintf("appResources[%q].Form(ctx, \"\")", strings.Trim(block.Entity, "/"))
-			case ctxScreen && isEntityEditBlock(block):
-				expr = fmt.Sprintf("appResources[%q].Form(ctx, s.id)", strings.Trim(block.Entity, "/"))
+			case isEntityCreateBlock(block):
+				expr = blueprintCreateExpr(bp, block)
 			default:
 				expr = renderBlueprintBlockForScreen(bp, screen, block, []int{i}, entityMap, apiBase)
 			}
 			sb.WriteString("\t\t" + expr + ",\n")
 		}
-		sb.WriteString("\t)\n")
+		sb.WriteString(closer)
 	}
 	sb.WriteString("}\n\n")
 	return sb.String()
@@ -5415,7 +5564,7 @@ var screenRegistrars []screenRegistrar
 // mountGenerated mounts every generated screen with site, in declaration
 // order. This file never holds a screen or entity name: add a screen by
 // dropping in a new screen_<name>.go that appends to screenRegistrars in
-// init(). Entity resource wiring (appResources) lives in the per-entity
+// init(). Entity screens render through the appUI builders, so the wiring
 // screen_<entity>_crud.go files, never here.
 func mountGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	sort.SliceStable(screenRegistrars, func(i, j int) bool {
@@ -5509,12 +5658,12 @@ func screenFileName(base string) string {
 // (marketing, dashboards, auth forms) return ("", false) and land in their
 // own screen_<snake>.go.
 func screenEntityRef(s BlueprintScreen) (entity string, isCrud bool) {
-	for _, b := range s.Body {
+	for _, b := range blueprintBlocksDeep(s.Body) {
 		e := strings.Trim(b.Entity, "/")
 		if e == "" {
 			continue
 		}
-		if isEntityListBlock(b) || isEntityDetailBlock(b) || isEntityCreateBlock(b) || isEntityEditBlock(b) {
+		if isEntityListBlock(b) || isEntityDetailBlock(b) || isEntityCreateBlock(b) {
 			return e, true
 		}
 	}
@@ -5542,9 +5691,13 @@ func blueprintScreenLayoutExpr(screen BlueprintScreen, bp Blueprint) string {
 	}
 }
 
-// blueprintScreenMountStmt emits the site.Register / site.RegisterScreen call
-// for one screen. Policies (authPolicy/guestPolicy) and layouts
-// (appLayout/marketingLayout) are package-level identifiers declared in app.go.
+// blueprintScreenMountStmt emits the site.Register / site.RegisterScreen
+// statement for one screen. Policies (authPolicy/guestPolicy) and layouts
+// (appLayout/marketingLayout) are package-level identifiers declared in
+// app.go. A detail screen whose entity also has a list screen at <detail
+// route minus /{id}> registers as a drawer over that list: navigating to
+// the record from the list slides it over, while a hard load or a shared
+// link still renders the full page.
 func blueprintScreenMountStmt(screen BlueprintScreen, bp Blueprint) string {
 	route := blueprintScreenRoutePath(screen.Route)
 	typeName := toCamelCase(screen.Name) + "Screen"
@@ -5558,27 +5711,58 @@ func blueprintScreenMountStmt(screen BlueprintScreen, bp Blueprint) string {
 	if screen.Description != "" {
 		withDescription = fmt.Sprintf(".WithDescription(%q)", screen.Description)
 	}
+	// The drawer intercept: only when this screen is a detail screen whose
+	// base route is its entity's list route (validateDetailRoutes enforces
+	// the shape; the guard here keeps the emitter honest on its own).
+	intercept := ""
+	for _, b := range blueprintBlocksDeep(screen.Body) {
+		if !isEntityDetailBlock(b) {
+			continue
+		}
+		entity := strings.Trim(b.Entity, "/")
+		base := strings.TrimSuffix(strings.TrimRight(screen.Route, "/"), "/{id}")
+		if list := blueprintEntityListScreen(bp, entity); list != nil && strings.TrimRight(list.Route, "/") == base {
+			intercept = fmt.Sprintf("\trecord.Intercept = &app.Intercept{From: %q, As: app.ScreenDrawer}\n", base)
+		}
+		break
+	}
+	build := fmt.Sprintf("app.NewScreen(%q, &%s{}).WithTitle(%q)%s", route, typeName, screen.TitleOrName(), withDescription)
+	if intercept != "" {
+		// RegisterScreen takes no options, and the intercept is a field:
+		// build the screen, set it, register.
+		var policy string
+		switch {
+		case screen.Access.Auth:
+			policy = fmt.Sprintf(".WithPolicy(authPolicy(%q, %q))", blueprintLoginRoute(bp), screen.Access.Role)
+		case guestRedirect && screenHasAuthForm(screen):
+			policy = fmt.Sprintf(".WithPolicy(guestPolicy(%q))", blueprintAppHome(bp))
+		}
+		return fmt.Sprintf("\trecord := %s%s\n%s\tsite.RegisterScreen(record, %s)", build, policy, intercept, layoutExpr)
+	}
 	switch {
 	case screen.Access.Auth:
-		return fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q)%s.WithPolicy(authPolicy(%q, %q)), %s)", route, typeName, screen.TitleOrName(), withDescription, blueprintLoginRoute(bp), screen.Access.Role, layoutExpr)
+		return fmt.Sprintf("\tsite.RegisterScreen(%s.WithPolicy(authPolicy(%q, %q)), %s)", build, blueprintLoginRoute(bp), screen.Access.Role, layoutExpr)
 	case guestRedirect && screenHasAuthForm(screen):
-		return fmt.Sprintf("\tsite.RegisterScreen(app.NewScreen(%q, &%s{}).WithTitle(%q)%s.WithPolicy(guestPolicy(%q)), %s)", route, typeName, screen.TitleOrName(), withDescription, blueprintAppHome(bp), layoutExpr)
+		return fmt.Sprintf("\tsite.RegisterScreen(%s.WithPolicy(guestPolicy(%q)), %s)", build, blueprintAppHome(bp), layoutExpr)
 	default:
 		return fmt.Sprintf("\tsite.Register(%q, &%s{}, %s)", route, typeName, layoutExpr)
 	}
 }
 
-// blueprintScreenFiles partitions bp's (already-synthesized) screens into the
-// per-file generated layout: the fixed screens_register.go seam, one
+// blueprintScreenFiles partitions bp's (already-synthesized) screens into
+// the per-file generated layout: the fixed screens_register.go seam, one
 // screen_<snake>.go per non-CRUD authored screen, and one
-// screen_<entity>_crud.go per entity holding that entity's list/detail/form
-// screens AND its appResources wiring. screenOrderOffset continues authored
-// screen orders after an existing project's set (--add).
+// screen_<entity>_crud.go per entity holding that entity's list, record
+// and create screens. screenOrderOffset continues authored screen orders
+// after an existing project's set (--add).
 func blueprintScreenFiles(bp Blueprint, screenOrderOffset int) []generatedFile {
 	if len(bp.Screens) == 0 {
 		return nil
 	}
-	entityMap, base, needed, editable := blueprintResourceIndex(bp)
+	entityMap := make(map[string]framework.EntityDeclaration, len(bp.Entities))
+	for _, d := range bp.Entities {
+		entityMap[d.Name] = d
+	}
 	apiBase := blueprintAPIBase(bp.App.APIPrefix)
 	var files []generatedFile
 	files = append(files, generatedFile{name: "screens_register.go", content: blueprintScreensRegisterGo})
@@ -5608,23 +5792,8 @@ func blueprintScreenFiles(bp Blueprint, screenOrderOffset int) []generatedFile {
 	for _, s := range standalone {
 		files = append(files, renderBlueprintStandaloneScreenFile(s, bp, entityMap, apiBase, screenOrder[s.Name]))
 	}
-	// One crud file per entity that needs an appResources entry: entities
-	// with CRUD screens first (crudOrder), then resource-only entities
-	// (sourced but screen-less) in sorted order for stable output.
-	handled := map[string]bool{}
 	for _, e := range crudOrder {
-		files = append(files, renderBlueprintCrudFile(e, crudByEntity[e], bp, entityMap, base, editable, apiBase, screenOrder))
-		handled[e] = true
-	}
-	var resourceOnly []string
-	for e := range needed {
-		if !handled[e] {
-			resourceOnly = append(resourceOnly, e)
-		}
-	}
-	sort.Strings(resourceOnly)
-	for _, e := range resourceOnly {
-		files = append(files, renderBlueprintCrudFile(e, nil, bp, entityMap, base, editable, apiBase, screenOrder))
+		files = append(files, renderBlueprintCrudFile(e, crudByEntity[e], bp, entityMap, apiBase, screenOrder))
 	}
 	return files
 }
@@ -5640,9 +5809,11 @@ func renderBlueprintStandaloneScreenFile(screen BlueprintScreen, bp Blueprint, e
 	}
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
+	body := blueprintScreenBody(bp, screen, entityMap, apiBase)
 	needs := blueprintScreensImportNeeds(bp, []BlueprintScreen{screen}, entityMap, apiBase)
+	needs.html = emitsHTMLRef(body)
 	writeScreenImportBlock(&sb, needs, screenNeedsCtx(screen), true, true)
-	sb.WriteString(blueprintScreenBody(bp, screen, entityMap, apiBase))
+	sb.WriteString(body)
 	mountName := "mount" + toCamelCase(screen.Name) + "Screen"
 	sb.WriteString(fmt.Sprintf("// %s mounts the %s screen with site.\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s\n}\n\n", mountName, screen.Name, mountName, blueprintScreenMountStmt(screen, bp)))
 	sb.WriteString(fmt.Sprintf("func init() {\n\tscreenRegistrars = append(screenRegistrars, screenRegistrar{order: %d, fn: %s})\n}\n", order, mountName))
@@ -5658,12 +5829,11 @@ func screenGoIdentifiers(name string) bool {
 }
 
 // renderBlueprintCrudFile emits screen_<entity>_crud.go: the entity's
-// list/detail/form screens (in declaration order), a mount func per screen,
-// the entity's appResources wiring (inside the primary mount func; it needs
-// fwApp), and one init() registering every mount func at its authored order.
-// screens may be nil for a resource-only entity (sourced but screen-less):
-// then the file carries just the resource wiring.
-func renderBlueprintCrudFile(entity string, screens []BlueprintScreen, bp Blueprint, entityMap map[string]framework.EntityDeclaration, base map[string]string, editable map[string]bool, apiBase string, screenOrder map[string]int) generatedFile {
+// list, record and create screens (in declaration order) and one mount
+// func per screen, plus one init() registering every mount func at its
+// authored order. The screens render through appUI builders, which resolve
+// the entity at render time, so the file carries no per-entity wiring.
+func renderBlueprintCrudFile(entity string, screens []BlueprintScreen, bp Blueprint, entityMap map[string]framework.EntityDeclaration, apiBase string, screenOrder map[string]int) generatedFile {
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
 	// Identifier gate, same rule as the standalone screen file and the
@@ -5678,216 +5848,27 @@ func renderBlueprintCrudFile(entity string, screens []BlueprintScreen, bp Bluepr
 		}
 	}
 	screens = kept
-	needs := blueprintScreensImportNeeds(bp, screens, entityMap, apiBase)
-	needs.resource = true // every CRUD file emits a resource.Config assignment
-	// Island endpoints are mounted with an http.HandlerFunc closure.
-	needs.nethttp = len(entityListPlacements(bp, entity)) > 0
-	writeScreenImportBlock(&sb, needs, screensNeedCtx(screens), true, len(screens) > 0)
+	var bodies strings.Builder
 	for _, s := range screens {
-		sb.WriteString(blueprintScreenBody(bp, s, entityMap, apiBase))
+		bodies.WriteString(blueprintScreenBody(bp, s, entityMap, apiBase))
 	}
-	resourceStmt := blueprintResourceRegistryOne(bp, entity, entityMap, base, editable)
-	// Mount funcs in authored (declaration) order; the resource wiring lands
-	// in the primary (first) mount func so it runs before any screen renders.
+	needs := blueprintScreensImportNeeds(bp, screens, entityMap, apiBase)
+	needs.html = emitsHTMLRef(bodies.String())
+	writeScreenImportBlock(&sb, needs, screensNeedCtx(screens), true, len(screens) > 0)
+	sb.WriteString(bodies.String())
+	// Mount funcs in authored (declaration) order.
 	ordered := append([]BlueprintScreen(nil), screens...)
 	sort.SliceStable(ordered, func(i, j int) bool { return screenOrder[ordered[i].Name] < screenOrder[ordered[j].Name] })
 	var initLines []string
-	for i, s := range ordered {
+	for _, s := range ordered {
 		mountName := "mount" + toCamelCase(s.Name) + "Screen"
 		sb.WriteString(fmt.Sprintf("func %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n", mountName))
-		if i == 0 && resourceStmt != "" {
-			sb.WriteString(resourceStmt)
-		}
 		sb.WriteString(blueprintScreenMountStmt(s, bp))
 		sb.WriteString("\n}\n\n")
 		initLines = append(initLines, fmt.Sprintf("\t\tscreenRegistrar{order: %d, fn: %s},", screenOrder[s.Name], mountName))
 	}
-	if len(ordered) == 0 && resourceStmt != "" {
-		mountName := "mount" + toCamelCase(entity) + "Resource"
-		// The emitter is reachable without validateBlueprint
-		// (loadBlueprintPath(path, false)): never emit a mount func whose
-		// name is not a Go identifier, same rule as the hook stubs. A
-		// resource that fails here vanishes from this file only;
-		// validateBlueprint is the loud gate.
-		if isGoIdentifier(mountName) {
-			sb.WriteString(fmt.Sprintf("// %s wires the %s resource (no screen mounts it; it is looked up by\n// data sources / relation labels elsewhere).\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s}\n\n", mountName, entity, mountName, resourceStmt))
-			initLines = append(initLines, fmt.Sprintf("\t\tscreenRegistrar{order: 0, fn: %s},", mountName))
-		}
-	}
 	sb.WriteString("func init() {\n\tscreenRegistrars = append(screenRegistrars,\n" + strings.Join(initLines, "\n") + "\n\t)\n}\n")
 	return generatedFile{name: screenFileName(entity + "_crud"), content: sb.String()}
-}
-
-// blueprintResourceIndex computes the entity map, base route, resource set,
-// and editable-detail set used by per-entity resource.Config assignments.
-func blueprintResourceIndex(bp Blueprint) (entityMap map[string]framework.EntityDeclaration, base map[string]string, needed map[string]bool, editable map[string]bool) {
-	entityMap = make(map[string]framework.EntityDeclaration, len(bp.Entities))
-	for _, d := range bp.Entities {
-		entityMap[d.Name] = d
-	}
-	// base path per entity (list route preferred; detail route minus /{id}).
-	base = map[string]string{}
-	needed = map[string]bool{}
-	editable = map[string]bool{} // has a detail screen → Detail shows Edit/Delete
-	for _, s := range bp.Screens {
-		for _, b := range s.Body {
-			e := strings.Trim(b.Entity, "/")
-			if isEntityListBlock(b) {
-				needed[e] = true
-				base[e] = s.Route
-			} else if isEntityDetailBlock(b) {
-				needed[e] = true
-				editable[e] = true
-				if base[e] == "" {
-					r := s.Route
-					if i := strings.Index(r, "/{"); i >= 0 {
-						r = r[:i]
-					}
-					base[e] = r
-				}
-			}
-		}
-	}
-	// Dashboard data sources need a config even without a list or detail
-	// screen. Registry aggregate methods return "—" for a missing config, so
-	// emit the lookup entry here.
-	for src := range blueprintSourceEntities(bp) {
-		if _, ok := entityMap[src]; ok {
-			needed[src] = true
-		}
-	}
-	return entityMap, base, needed, editable
-}
-
-// blueprintResourceRegistryOne emits one `appResources["E"] = resource.Config{…}`
-// block. The assignment stays in the entity's own generated screen file so
-// generate --add can add resources without rewriting the shared resource.go.
-// Returns "" when the entity is unknown. When the entity is rendered by any
-// entity_list screen, it also sets IslandPath and mounts a TableHandler route
-// so the list sorts/paginates as an island (Hard rule 1), the wiring
-// examples/meridian/app.go does for its customers list.
-func blueprintResourceRegistryOne(bp Blueprint, e string, entityMap map[string]framework.EntityDeclaration, base map[string]string, editable map[string]bool) string {
-	decl, ok := entityMap[e]
-	if !ok {
-		return ""
-	}
-	apiBase := blueprintAPIBase(bp.App.APIPrefix)
-	var sb strings.Builder
-	sb.WriteString("\tappResources[" + fmt.Sprintf("%q", e) + "] = resource.Config{\n")
-	sb.WriteString(fmt.Sprintf("\t\tEntity: %q, Title: %q, Singular: %q, BasePath: %q, APIPath: %q,\n", e, toDisplayName(e), singularize(toDisplayName(e)), base[e], apiBase+"/"+e))
-	sb.WriteString(fmt.Sprintf("\t\tCrud: fwApp.MustCrudHandler(%q),\n", e))
-	if editable[e] {
-		sb.WriteString("\t\tCanEdit: true,\n")
-	}
-	// Fields: displayable columns (skip system + hidden).
-	sb.WriteString("\t\tFields: []resource.Field{\n")
-	for _, f := range decl.Fields {
-		if blueprintFieldSystem(f.Name) || f.Hidden {
-			continue
-		}
-		values := ""
-		if strings.EqualFold(f.Type, "enum") && len(f.Values) > 0 {
-			quoted := make([]string, len(f.Values))
-			for i, v := range f.Values {
-				quoted[i] = fmt.Sprintf("%q", v)
-			}
-			values = ", Values: []string{" + strings.Join(quoted, ", ") + "}"
-		}
-		noQuery := ""
-		if f.NoQuery {
-			noQuery = ", NoQuery: true"
-		}
-		sb.WriteString(fmt.Sprintf("\t\t\t{Key: %q, Label: %q, Type: %q%s%s},\n", f.Name, humanizeFieldLabel(f.Name), f.Type, values, noQuery))
-	}
-	sb.WriteString("\t\t},\n")
-	// Relations: FK column -> related crud + display field.
-	rels := blueprintEntityRelations(decl)
-	emitResourceRelations(&sb, 2, rels, entityMap)
-	// Related: reverse relations, other entities that point back at this
-	// one via a FK. Surfaced as tables on the detail page (account view).
-	if rel := blueprintRelatedEmit(e, entityMap, base); rel != "" {
-		sb.WriteString(rel)
-	}
-	sb.WriteString("\t}\n")
-	// Island endpoints: one per screen showing this entity as a list, each
-	// serving that screen's OWN refined config behind that screen's OWN
-	// policy. The closure defers evaluation to request time so it does not
-	// depend on appResources being fully populated at mount time.
-	seen := map[string]bool{}
-	for _, p := range entityListPlacements(bp, e) {
-		path := blueprintIslandPath(apiBase, p.screen, e)
-		if seen[path] {
-			continue // same screen, same entity: one endpoint serves it
-		}
-		seen[path] = true
-		cfg := blueprintEntityListConfigExpr(bp, p.screen, p.block, entityMap, apiBase)
-		sb.WriteString(fmt.Sprintf("\tfwApp.Router().HandleFunc(\"GET\", %q, func(w http.ResponseWriter, r *http.Request) {\n", path))
-		sb.WriteString(fmt.Sprintf("\t\t%s.TableHandler()(w, r)\n", cfg))
-		sb.WriteString("\t})\n")
-	}
-	return sb.String()
-}
-
-// entityHasListScreen reports whether any screen renders the entity as an
-// entity_list at any nesting depth (a top-level list page or a list embedded
-// in a section/dashboard). Those are the lists the island table handler must
-// serve, so the resource Config gets an IslandPath + a mounted TableHandler.
-// Detail-only and data-source-only entities return false (no list to island).
-func entityHasListScreen(bp Blueprint, entity string) bool {
-	return len(entityListPlacements(bp, entity)) > 0
-}
-
-// listPlacement is one entity_list block on one screen: the unit an island
-// endpoint is scoped to.
-//
-// The endpoint cannot be per-entity. A list block carries its own columns,
-// search, facets and page size, and two screens can show the same entity
-// refined differently, so one shared /api/tables/<entity> would answer the
-// wrong rows for at least one of them, and would answer them under whichever
-// screen's gate happened to be weaker. Path and policy both come from the
-// placement.
-type listPlacement struct {
-	screen BlueprintScreen
-	block  BlueprintBlock
-}
-
-// entityListPlacements returns every entity_list block for entity, at any
-// nesting depth, across every screen.
-func entityListPlacements(bp Blueprint, entity string) []listPlacement {
-	var out []listPlacement
-	for _, s := range bp.Screens {
-		var walk func(blocks []BlueprintBlock)
-		walk = func(blocks []BlueprintBlock) {
-			for _, b := range blocks {
-				if isEntityListBlock(b) && strings.Trim(b.Entity, "/") == entity {
-					out = append(out, listPlacement{screen: s, block: b})
-				}
-				walk(b.Children)
-			}
-		}
-		walk(s.Body)
-	}
-	return out
-}
-
-// blueprintIslandPath is the endpoint serving one screen's table for entity.
-func blueprintIslandPath(apiBase string, screen BlueprintScreen, entity string) string {
-	return apiBase + "/tables/" + toSnakeCase(screen.Name) + "/" + entity
-}
-
-// blueprintIslandPolicyExpr returns the policy gating the screen this
-// placement sits on: the SAME expression blueprintScreenMountStmt emits.
-// The island is a second route onto the screen's rows, so it has to repeat
-// the screen's gate.
-//
-// An ungated screen gets an explicit public policy rather than none: with no
-// policy TableHandler falls back to requiring sign-in, which would 401 an
-// anonymous visitor's first sort click on a public list.
-func blueprintIslandPolicyExpr(bp Blueprint, screen BlueprintScreen) string {
-	if screen.Access.Auth {
-		return fmt.Sprintf("authPolicy(%q, %q)", blueprintLoginRoute(bp), screen.Access.Role)
-	}
-	return "resource.PublicIsland()"
 }
 
 // blueprintEntityHasSystemColumn reports whether a framework-managed column
@@ -5951,6 +5932,15 @@ func blueprintColumn(decl framework.EntityDeclaration, name string) (found *fram
 	return nil, false
 }
 
+// blueprintNumericType reports a declared field type a sum can total.
+func blueprintNumericType(t string) bool {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "int", "integer", "float", "number", "decimal":
+		return true
+	}
+	return false
+}
+
 // requireGroupableColumn refuses a screen column whose stored values would be
 // rendered or matched on: a chart's group_by label, a summed stat_card field.
 // Hidden and no_query are both barred, for the reasons stated at each call
@@ -5996,78 +5986,6 @@ func blueprintEntityRelations(decl framework.EntityDeclaration) map[string]strin
 	return out
 }
 
-// blueprintRelatedEmit emits the Related []resource.RelatedList field for
-// entity e: one entry per (otherEntity, fkColumn) where
-// otherEntity.fkColumn targets e.
-func blueprintRelatedEmit(e string, entityMap map[string]framework.EntityDeclaration, base map[string]string) string {
-	names := make([]string, 0, len(entityMap))
-	for n := range entityMap {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	var b strings.Builder
-	for _, other := range names {
-		if other == e {
-			continue
-		}
-		od := entityMap[other]
-		orels := blueprintEntityRelations(od) // fkCol -> target
-		fkCols := make([]string, 0)
-		for col, target := range orels {
-			if target == e {
-				fkCols = append(fkCols, col)
-			}
-		}
-		sort.Strings(fkCols)
-		for _, fk := range fkCols {
-			b.WriteString("\t\t{\n")
-			b.WriteString(fmt.Sprintf("\t\t\tTitle: %q, ForeignKey: %q, BasePath: %q,\n", toDisplayName(other), fk, base[other]))
-			b.WriteString(fmt.Sprintf("\t\t\tCrud: fwApp.MustCrudHandler(%q),\n", other))
-			b.WriteString("\t\t\tFields: []resource.Field{\n")
-			shown := 0
-			for _, f := range od.Fields {
-				if blueprintFieldSystem(f.Name) || f.Hidden || f.Name == fk || shown >= 4 {
-					continue
-				}
-				b.WriteString(fmt.Sprintf("\t\t\t\t{Key: %q, Label: %q, Type: %q},\n", f.Name, humanizeFieldLabel(f.Name), f.Type))
-				shown++
-			}
-			b.WriteString("\t\t\t},\n")
-			emitResourceRelations(&b, 3, orels, entityMap)
-			b.WriteString("\t\t},\n")
-		}
-	}
-	if b.Len() == 0 {
-		return ""
-	}
-	return "\t\tRelated: []resource.RelatedList{\n" + b.String() + "\t\t},\n"
-}
-
-// emitResourceRelations writes the `Relations: map[string]resource.Relation`
-// literal of a generated resource registry entry: one relation per FK
-// column, keys sorted so the emitted Go is byte-stable, Display resolving
-// to the target entity's display field ("id" when the target is not in
-// the registry map). depth is the tab depth of the emitted `Relations:`
-// line; entries sit one tab deeper. One home for the two former in-file
-// copies: the resource entry's own Relations (depth 2) and the RelatedList
-// inline registries (depth 3).
-func emitResourceRelations(sb *strings.Builder, depth int, rels map[string]string, entityMap map[string]framework.EntityDeclaration) {
-	if len(rels) == 0 {
-		return
-	}
-	tabs := strings.Repeat("\t", depth)
-	sb.WriteString(tabs + "Relations: map[string]resource.Relation{\n")
-	for _, col := range slices.Sorted(maps.Keys(rels)) {
-		target := rels[col]
-		disp := "id"
-		if td, ok := entityMap[target]; ok {
-			disp = blueprintDisplayField(td)
-		}
-		fmt.Fprintf(sb, "%s\t%q: {Crud: fwApp.MustCrudHandler(%q), Display: %q},\n", tabs, col, target, disp)
-	}
-	sb.WriteString(tabs + "},\n")
-}
-
 // blueprintDisplayField picks the human label column for an entity.
 func blueprintDisplayField(decl framework.EntityDeclaration) string {
 	for _, pref := range []string{"name", "title", "label", "email", "slug", "number", "code"} {
@@ -6098,7 +6016,7 @@ func screenNeedsCtx(screen BlueprintScreen) bool {
 		for _, b := range blocks {
 			// Any entity list/detail/form, at any nesting level, is
 			// server-rendered via the resource engine, which needs the request ctx.
-			if isEntityListBlock(b) || isEntityDetailBlock(b) || isEntityCreateBlock(b) || isEntityEditBlock(b) {
+			if isEntityListBlock(b) || isEntityDetailBlock(b) || isEntityCreateBlock(b) {
 				return true
 			}
 			// Auth forms read ?error= from the request to surface a failed-login
@@ -6122,29 +6040,6 @@ func screenNeedsCtx(screen BlueprintScreen) bool {
 func blueprintBlockHasSource(b BlueprintBlock) bool {
 	_, ok := b.Props["source"].(map[string]any)
 	return ok
-}
-
-// blueprintSourceEntities collects every entity named by a block's
-// `source: {entity: X}` across all screens (recursing into children). These
-// are the entities a stat_card/chart reads live data from. They must be
-// registered in appResources even when no list/detail screen exists for them.
-func blueprintSourceEntities(bp Blueprint) map[string]bool {
-	out := map[string]bool{}
-	var walk func(blocks []BlueprintBlock)
-	walk = func(blocks []BlueprintBlock) {
-		for _, b := range blocks {
-			if src, ok := b.Props["source"].(map[string]any); ok {
-				if e, _ := src["entity"].(string); e != "" {
-					out[strings.Trim(e, "/")] = true
-				}
-			}
-			walk(b.Children)
-		}
-	}
-	for _, s := range bp.Screens {
-		walk(s.Body)
-	}
-	return out
 }
 
 // routeParamNames parses the param names a route declares, accepting
@@ -6190,19 +6085,12 @@ func screenParamName(screen BlueprintScreen) string {
 	return "id"
 }
 
-// screenNeedsParams reports whether a screen reads a route param
-// (either supported syntax), or renders an entity detail/edit block
-// whose synthesized route carries {id}.
+// screenNeedsParams reports whether a screen reads a route param (either
+// supported syntax). An entity_detail or edit form at any depth needs one
+// too, and validation refuses such a screen whose route has no {id}, so
+// the route alone answers.
 func screenNeedsParams(screen BlueprintScreen) bool {
-	if len(routeParamNames(screen.Route)) > 0 {
-		return true
-	}
-	for _, b := range screen.Body {
-		if isEntityDetailBlock(b) || isEntityEditBlock(b) {
-			return true
-		}
-	}
-	return false
+	return len(routeParamNames(screen.Route)) > 0
 }
 
 // screenNeedsRouteID reports whether a screen's body tree contains an
@@ -6210,139 +6098,190 @@ func screenNeedsParams(screen BlueprintScreen) bool {
 // specific record identified by a route {id} param. The first return is the
 // detail case, the second the edit-form case, so the validator can name it.
 func screenNeedsRouteID(screen BlueprintScreen) (detail, editForm bool) {
-	var walk func([]BlueprintBlock)
-	walk = func(blocks []BlueprintBlock) {
-		for _, b := range blocks {
-			if isEntityDetailBlock(b) {
-				detail = true
-			}
-			if isEntityFormBlock(b) && strings.EqualFold(strings.TrimSpace(b.Mode), "edit") {
-				editForm = true
-			}
-			walk(b.Children)
+	for _, b := range blueprintBlocksDeep(screen.Body) {
+		if isEntityDetailBlock(b) {
+			detail = true
+		}
+		if isEntityFormBlock(b) && strings.EqualFold(strings.TrimSpace(b.Mode), "edit") {
+			editForm = true
 		}
 	}
-	walk(screen.Body)
 	return
 }
 
-// blueprintDetailExpr emits the server-side detail render call, with any
-// status-transition workflow buttons chained in via WithTransitions.
+// blueprintDetailExpr emits the record render expression for an
+// entity_detail block. The record page holds the edit form and the move
+// buttons come from the entity's states, so there is nothing to configure
+// here beyond turning on the two record actions a generated CRUD screen
+// wants: delete and duplicate (off by default on app pages).
 func blueprintDetailExpr(block BlueprintBlock) string {
 	entity := strings.Trim(block.Entity, "/")
-	expr := fmt.Sprintf("appResources[%q]", entity)
-	if len(block.Transitions) > 0 {
-		parts := make([]string, len(block.Transitions))
-		for i, t := range block.Transitions {
-			parts[i] = fmt.Sprintf("resource.Transition{Label: %q, Status: %q, Variant: %q, Stamp: %q}", t.Label, t.Status, t.Variant, t.Stamp)
-		}
-		expr += ".WithTransitions(" + strings.Join(parts, ", ") + ")"
-	}
-	return expr + ".Detail(ctx, s.id)"
+	return fmt.Sprintf("appUI.Record(%q, s.id).Delete().Duplicate().RenderCtx(ctx)", entity)
 }
 
-// blueprintEntityListResourceExpr emits the server-side list render call for a
-// top-level entity_list block: appResources["x"].WithColumns(...).List(ctx).
-func blueprintEntityListResourceExpr(bp Blueprint, screen BlueprintScreen, block BlueprintBlock, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
-	return blueprintEntityListConfigExpr(bp, screen, block, entityMap, apiBase) + ".List(ctx)"
-}
-
-// blueprintEntityListConfigExpr emits the refined resource.Config for one
-// entity_list block: the chain WITHOUT a terminal .List(ctx), so the island
-// mount can render the exact same config the page renders.
-//
-// The refinement has to be shared rather than re-derived: columns, search,
-// facets and page size live here, and an island endpoint mounted on the bare
-// registry entry would answer unfiltered, differently-columned rows to a
-// sort click on a filtered page.
-func blueprintEntityListConfigExpr(bp Blueprint, screen BlueprintScreen, block BlueprintBlock, entityMap map[string]framework.EntityDeclaration, apiBase string) string {
+// blueprintCreateExpr emits the create screen's render expression: the
+// record form empty, posting a create, with Back and the after-save
+// navigation landing on the list. Base is the list screen's route, where
+// the synthesized <list>/create screen lives under.
+func blueprintCreateExpr(bp Blueprint, block BlueprintBlock) string {
 	entity := strings.Trim(block.Entity, "/")
-	expr := fmt.Sprintf("appResources[%q]", entity)
+	if list := blueprintEntityListScreen(bp, entity); list != nil {
+		return fmt.Sprintf("appUI.Create(%q).Base(%q).RenderCtx(ctx)", entity, strings.TrimRight(list.Route, "/"))
+	}
+	return fmt.Sprintf("appUI.Create(%q).RenderCtx(ctx)", entity)
+}
+
+// blueprintEntityListScreen returns the entity's home list screen, or nil
+// when no screen lists it. Its record links, the synthesized create screen
+// and the detail screen's drawer all hang off it, and a list on any other
+// screen (a dashboard's recent rows) links there too. The home is the list
+// screen the detail screen sits under (<route>/{id}), else the first list
+// screen with create: true, else the first list screen, in declaration
+// order: a dashboard declared before the entity's own screen never wins.
+func blueprintEntityListScreen(bp Blueprint, entity string) *BlueprintScreen {
+	var lists []int
+	for i := range bp.Screens {
+		if found, _ := entityListOn(bp.Screens[i].Body, entity); found {
+			lists = append(lists, i)
+		}
+	}
+	if len(lists) == 0 {
+		return nil
+	}
+	if base, ok := blueprintDetailBase(bp, entity); ok {
+		for _, i := range lists {
+			if strings.TrimRight(bp.Screens[i].Route, "/") == base {
+				return &bp.Screens[i]
+			}
+		}
+	}
+	for _, i := range lists {
+		if _, create := entityListOn(bp.Screens[i].Body, entity); create {
+			return &bp.Screens[i]
+		}
+	}
+	return &bp.Screens[lists[0]]
+}
+
+// blueprintBlocksDeep returns blocks and every block nested under them,
+// depth first, in document order. A screen's entity blocks count wherever
+// they sit, so every question about them (create synthesis, the drawer,
+// the CRUD file, the e2e target, route params) walks this, never Body
+// alone.
+func blueprintBlocksDeep(blocks []BlueprintBlock) []BlueprintBlock {
+	var out []BlueprintBlock
+	for _, b := range blocks {
+		out = append(out, b)
+		out = append(out, blueprintBlocksDeep(b.Children)...)
+	}
+	return out
+}
+
+// entityDetailsOn returns the entities blocks show an entity_detail of,
+// at any nesting depth, in block order.
+func entityDetailsOn(blocks []BlueprintBlock) []string {
+	var out []string
+	for _, b := range blueprintBlocksDeep(blocks) {
+		if isEntityDetailBlock(b) {
+			out = append(out, strings.Trim(b.Entity, "/"))
+		}
+	}
+	return out
+}
+
+// entityListOn reports whether blocks hold an entity_list of entity at
+// any nesting depth, and whether one of them sets create: true.
+func entityListOn(blocks []BlueprintBlock, entity string) (found, create bool) {
+	for _, b := range blueprintBlocksDeep(blocks) {
+		if isEntityListBlock(b) && strings.Trim(b.Entity, "/") == entity {
+			found = true
+			create = create || b.Create
+		}
+	}
+	return found, create
+}
+
+// blueprintDetailBase returns the route the entity's first detail screen
+// sits under: its route minus the trailing /{id}.
+func blueprintDetailBase(bp Blueprint, entity string) (string, bool) {
+	for _, s := range bp.Screens {
+		if slices.Contains(entityDetailsOn(s.Body), entity) {
+			base := strings.TrimRight(s.Route, "/")
+			base = strings.TrimSuffix(base, "/{id}")
+			return strings.TrimSuffix(base, "/:id"), true
+		}
+	}
+	return "", false
+}
+
+// blueprintEntityListExpr emits the appUI.List builder for one entity_list
+// block, at any nesting depth. The builder renders with the request
+// context, reads through the entity's own gates, and keeps its sort, page
+// and filter in the page's query string: there is no island to mount and
+// no second route onto the rows.
+func blueprintEntityListExpr(bp Blueprint, screen BlueprintScreen, block BlueprintBlock) string {
+	entity := strings.Trim(block.Entity, "/")
+	expr := fmt.Sprintf("appUI.List(%q)", entity)
+	// Two lists on one screen namespace their query params by key; the
+	// entity name is unique per screen (validateBlueprint refuses a
+	// repeat). One list needs no key.
+	if countEntityListBlocks(screen) > 1 {
+		expr += fmt.Sprintf(".Key(%q)", entity)
+	}
 	if len(block.Fields) > 0 {
 		args := make([]string, len(block.Fields))
 		for i, f := range block.Fields {
 			args[i] = fmt.Sprintf("%q", f)
 		}
-		expr += ".WithColumns(" + strings.Join(args, ", ") + ")"
+		expr += ".Columns(" + strings.Join(args, ", ") + ")"
 	}
-	if block.Search != "" {
-		expr += fmt.Sprintf(".WithSearch(%q)", block.Search)
-	}
-	if f := blueprintEntityListFiltersExpr(block, entityMap); f != "" {
-		expr += f
+	if mode := strings.ToLower(strings.TrimSpace(block.Mode)); mode != "" {
+		expr += fmt.Sprintf(".As(%q)", mode)
 	}
 	if block.Limit > 0 {
-		expr += fmt.Sprintf(".WithLimit(%d)", block.Limit)
+		expr += fmt.Sprintf(".PageSize(%d)", block.Limit)
 	}
-	if block.Create {
-		expr += ".WithCreate()"
+	if !block.Create {
+		expr += ".NoCreate()"
+	}
+	if block.Bulk {
+		expr += ".Bulk()"
 	}
 	if block.Text != "" {
-		expr += fmt.Sprintf(".WithHeading(%q)", block.Text)
+		// A list under an earlier <h1> (a dashboard's page header) is a
+		// section of that page, so its title drops to level 2. No layout
+		// renders an <h1> of its own, so otherwise the list's title is it.
+		level := 1
+		if h1, _ := blueprintH1Before(screen.Body, entity); h1 {
+			level = 2
+		}
+		expr += fmt.Sprintf(".Heading(%q, %d)", block.Text, level)
 	}
 	if block.EmptyText != "" {
-		expr += fmt.Sprintf(".WithEmpty(%q)", block.EmptyText)
+		expr += fmt.Sprintf(".Empty(%q)", block.EmptyText)
 	}
-	// Island mode: sort/paginate swap just the table (Hard rule 1). The
-	// endpoint carries the screen's own policy, because it serves the same
-	// rows over a route the screen's gate never sees.
-	expr += fmt.Sprintf(".WithIsland(%q)", blueprintIslandPath(apiBase, screen, entity))
-	if p := blueprintIslandPolicyExpr(bp, screen); p != "" {
-		expr += ".WithIslandPolicy(" + p + ")"
+	// Off the entity's home screen the rows still link to the home list,
+	// where the detail and create screens sit; the default base is the
+	// current path, which has neither.
+	if home := blueprintEntityListScreen(bp, entity); home != nil {
+		if base := strings.TrimRight(home.Route, "/"); base != "" && base != strings.TrimRight(screen.Route, "/") {
+			expr += fmt.Sprintf(".Base(%q)", base)
+		}
 	}
-	return expr
+	// The builder is a component; the screen's stack takes HTML.
+	return expr + ".RenderCtx(ctx)"
 }
 
-// blueprintEntityListFiltersExpr emits the `.WithFilters(resource.Filter{...}, …)`
-// call for a top-level entity_list block's `filters:` list. Each column is
-// resolved against the entity declaration to its facet type and enum values,
-// so the framework engine does not need the schema at render time. Returns ""
-// when the block declares no filters.
-func blueprintEntityListFiltersExpr(block BlueprintBlock, entityMap map[string]framework.EntityDeclaration) string {
-	if len(block.Filters) == 0 {
-		return ""
-	}
-	decl, ok := entityMap[strings.Trim(block.Entity, "/")]
-	if !ok {
-		return ""
-	}
-	byName := map[string]framework.FieldDeclaration{}
-	for _, f := range decl.Fields {
-		byName[f.Name] = f
-	}
-	rels := blueprintEntityRelations(decl) // fk column -> target entity
-	parts := make([]string, 0, len(block.Filters))
-	for _, col := range block.Filters {
-		f, defined := byName[col]
-		ft := ""
-		if defined {
-			ft = strings.ToLower(strings.TrimSpace(f.Type))
+// countEntityListBlocks counts the entity_list blocks on a screen at any
+// nesting depth.
+func countEntityListBlocks(screen BlueprintScreen) int {
+	var n int
+	for _, b := range blueprintBlocksDeep(screen.Body) {
+		if isEntityListBlock(b) {
+			n++
 		}
-		kind := ""
-		values := ""
-		switch {
-		case ft == "relation", !defined && rels[col] != "":
-			kind = "relation"
-		case ft == "bool" || ft == "boolean":
-			kind = "bool"
-		case ft == "enum":
-			kind = "enum"
-			if len(f.Values) > 0 {
-				quoted := make([]string, len(f.Values))
-				for i, v := range f.Values {
-					quoted[i] = fmt.Sprintf("%q", v)
-				}
-				values = ", Values: []string{" + strings.Join(quoted, ", ") + "}"
-			}
-		default:
-			continue
-		}
-		parts = append(parts, fmt.Sprintf("resource.Filter{Key: %q, Label: %q, Type: %q%s}", col, humanizeFieldLabel(col), kind, values))
 	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return ".WithFilters(" + strings.Join(parts, ", ") + ")"
+	return n
 }
 
 type screenImportNeeds struct {
@@ -6352,13 +6291,9 @@ type screenImportNeeds struct {
 	interactive bool
 	node        bool
 	ui          bool
-	resource    bool
 	// headless: a form field builder names headless.FieldControl (the
 	// auth and entity form emitters build ui.Control inside one).
 	headless bool
-	// nethttp: the file mounts an island endpoint, whose closure takes
-	// (http.ResponseWriter, *http.Request).
-	nethttp bool
 	// uihost: any screen without a blueprint description emits the
 	// zero-value ScreenSEO opt-out, whose SEO type lives in uihost.
 	uihost bool
@@ -6383,16 +6318,6 @@ func blueprintCatalogKind(kind string) bool {
 	return blueprintControlKind(kind)
 }
 
-// blueprintCatalogUsesHTML reports whether a catalog block's emitted code
-// references html.*. Only a hero WITH media (image/media prop) emits an
-// html.Image call; a media-less hero composes ui.* only.
-func blueprintCatalogUsesHTML(block BlueprintBlock) bool {
-	if strings.ToLower(strings.TrimSpace(block.Kind)) != "hero" {
-		return false
-	}
-	return blueprintProp(block, "image") != "" || blueprintProp(block, "media") != ""
-}
-
 func blueprintScreenImports(bp Blueprint) screenImportNeeds {
 	entityMap := make(map[string]framework.EntityDeclaration, len(bp.Entities))
 	for _, decl := range bp.Entities {
@@ -6406,16 +6331,12 @@ func blueprintScreenImports(bp Blueprint) screenImportNeeds {
 // whole project). It is the per-file analogue of blueprintScreenImports.
 func blueprintScreensImportNeeds(bp Blueprint, screens []BlueprintScreen, entityMap map[string]framework.EntityDeclaration, apiBase string) screenImportNeeds {
 	var needs screenImportNeeds
-	// Every screen root is an html.Div now, so the package is always
-	// needed when there is a screen to render at all.
-	if len(screens) > 0 {
-		needs.html = true
-	}
 	for _, screen := range screens {
-		// Empty-body screens emit html.Heading directly (see
-		// renderBlueprintStubs / the screen Render() empty path).
-		if len(screen.Body) == 0 {
-			needs.html = true
+		// A screen with blocks stacks them in ui.Stack. (The html import
+		// is not decided here: the callers read it off the emitted code,
+		// see emitsHTMLRef.)
+		if len(screen.Body) > 0 {
+			needs.ui = true
 		}
 		if screen.Description == "" {
 			needs.uihost = true
@@ -6447,34 +6368,17 @@ func blueprintScreensImportNeeds(bp Blueprint, screens []BlueprintScreen, entity
 					// interactive.*.Attrs(); a field none of them names
 					// builds ui.Control inside a FormField builder.
 					needs.ui = true
-					needs.html = true
 					needs.interactive = true
 					needs.headless = true
 					continue
 				}
-				if isEntityListBlock(block) || isEntityDetailBlock(block) || isEntityCreateBlock(block) || isEntityEditBlock(block) {
-					if len(block.Filters) > 0 || len(block.Transitions) > 0 {
-						needs.resource = true
-					}
-					// An entity_list ALWAYS gets an island, and the island
-					// always carries the screen's own gate. See
-					// blueprintEntityListConfigExpr. On an ungated screen that
-					// gate is resource.PublicIsland(), which needs the import
-					// with no filters and no transitions declared. Ask the
-					// emitter's own helper instead of re-deriving the
-					// condition: the two answers drifting apart is precisely
-					// what shipped screen files calling resource.PublicIsland()
-					// without importing resource.
-					if isEntityListBlock(block) && strings.Contains(blueprintIslandPolicyExpr(bp, screen), "resource.") {
-						needs.resource = true
-					}
+				if isEntityListBlock(block) || isEntityDetailBlock(block) || isEntityCreateBlock(block) {
+					// Entity screens render through the appUI builders,
+					// package-level in the app: no import needed here.
 					continue
 				}
 				if blueprintCatalogKind(kind) {
 					needs.ui = true
-					if blueprintCatalogUsesHTML(block) {
-						needs.html = true
-					}
 					scan(block.Children, false)
 					continue
 				}
@@ -6488,9 +6392,6 @@ func blueprintScreensImportNeeds(bp Blueprint, screens []BlueprintScreen, entity
 					}
 					continue
 				}
-				if blueprintTopLevelBlockEmitsHTML(block) {
-					needs.html = true
-				}
 				if strings.EqualFold(strings.TrimSpace(block.Type), "link") {
 					needs.ui = true
 				}
@@ -6499,19 +6400,6 @@ func blueprintScreensImportNeeds(bp Blueprint, screens []BlueprintScreen, entity
 		scan(screen.Body, true)
 	}
 	return needs
-}
-
-// blueprintTopLevelBlockEmitsHTML reports whether a non-node top-level
-// block is rendered via an html.* call by renderBlueprintBlockForScreen
-// (heading/link types). All other plain types use render.Tag/render.Text
-// and do not need the html import.
-func blueprintTopLevelBlockEmitsHTML(block BlueprintBlock) bool {
-	switch strings.ToLower(strings.TrimSpace(block.Type)) {
-	case "heading", "h1", "h2", "h3", "h4", "h5", "h6", "link":
-		return true
-	default:
-		return false
-	}
 }
 
 func blueprintBlockUsesNodeRenderer(block BlueprintBlock) bool {
@@ -6639,6 +6527,21 @@ func blueprintGapExpr(value string) string {
 	}
 }
 
+// blueprintAxisFields emits a stack's or cluster's Align and Justify
+// only when the block sets them. An unset prop leaves the component's
+// own default: an explicit AlignStart on every stack shrank each child
+// to its content, so a pricing grid inside one held a single column.
+func blueprintAxisFields(block BlueprintBlock) string {
+	out := ""
+	if v := blueprintProp(block, "align"); strings.TrimSpace(v) != "" {
+		out += ", Align: " + blueprintAlignExpr(v)
+	}
+	if v := blueprintProp(block, "justify"); strings.TrimSpace(v) != "" {
+		out += ", Justify: " + blueprintJustifyExpr(v)
+	}
+	return out
+}
+
 func blueprintAlignExpr(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "center":
@@ -6734,14 +6637,14 @@ func renderBlueprintCatalogBlock(bp Blueprint, screen BlueprintScreen, block Blu
 	}
 	switch kind {
 	case "stack":
-		cfg := fmt.Sprintf("ui.StackConfig{Gap: %s, Align: %s, Justify: %s}", blueprintGapExpr(blueprintProp(block, "gap")), blueprintAlignExpr(blueprintProp(block, "align")), blueprintJustifyExpr(blueprintProp(block, "justify")))
+		cfg := fmt.Sprintf("ui.StackConfig{Gap: %s%s}", blueprintGapExpr(blueprintProp(block, "gap")), blueprintAxisFields(block))
 		children := childExprs()
 		if children == "" {
 			return "ui.Stack(" + cfg + ")", true
 		}
 		return "ui.Stack(" + cfg + ", " + children + ")", true
 	case "cluster":
-		cfg := fmt.Sprintf("ui.ClusterConfig{Gap: %s, Align: %s, Justify: %s, NoWrap: %t}", blueprintGapExpr(blueprintProp(block, "gap")), blueprintAlignExpr(blueprintProp(block, "align")), blueprintJustifyExpr(blueprintProp(block, "justify")), blueprintBoolProp(block, "no_wrap"))
+		cfg := fmt.Sprintf("ui.ClusterConfig{Gap: %s%s, NoWrap: %t}", blueprintGapExpr(blueprintProp(block, "gap")), blueprintAxisFields(block), blueprintBoolProp(block, "no_wrap"))
 		children := childExprs()
 		if children == "" {
 			return "ui.Cluster(" + cfg + ")", true
@@ -6816,7 +6719,7 @@ func renderBlueprintCatalogBlock(bp Blueprint, screen BlueprintScreen, block Blu
 			field, _ := src["field"].(string)
 			filter, _ := src["filter"].(string)
 			format := blueprintProp(block, "format")
-			return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %q, Value: appResources.StatValue(ctx, %q, %q, %q, %q, %q)})", label, entity, agg, field, filter, format), true
+			return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %q, Value: appUI.StatValue(ctx, %q, %q, %q, %q, %q)})", label, entity, agg, field, filter, format), true
 		}
 		return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %q, Value: %q})", label, blueprintProp(block, "value")), true
 	case "bar_chart", "pie_chart", "line_chart":
@@ -6827,11 +6730,11 @@ func renderBlueprintCatalogBlock(bp Blueprint, screen BlueprintScreen, block Blu
 			var chart string
 			switch kind {
 			case "pie_chart":
-				chart = fmt.Sprintf("ui.PieChart(ui.PieChartConfig{Slices: appResources.GroupSlices(ctx, %q, %q)})", entity, groupBy)
+				chart = fmt.Sprintf("ui.PieChart(ui.PieChartConfig{Slices: appUI.GroupSlices(ctx, %q, %q)})", entity, groupBy)
 			case "line_chart":
-				chart = fmt.Sprintf("appResources.LineChart(ctx, %q, %q)", entity, groupBy)
+				chart = fmt.Sprintf("appUI.LineChart(ctx, %q, %q)", entity, groupBy)
 			default:
-				chart = fmt.Sprintf("ui.BarChart(ui.BarChartConfig{Bars: appResources.GroupBars(ctx, %q, %q), ShowLabels: true})", entity, groupBy)
+				chart = fmt.Sprintf("ui.BarChart(ui.BarChartConfig{Bars: appUI.GroupBars(ctx, %q, %q), ShowLabels: true})", entity, groupBy)
 			}
 			// A titled chart is a Card with a heading; design-system
 			// composition, zero bespoke classes (Hard rule 7).
@@ -6909,7 +6812,7 @@ func renderBlueprintBlockForScreen(bp Blueprint, screen BlueprintScreen, block B
 	}
 	if isEntityListBlock(block) {
 		// Server-rendered via the resource engine (ui.DataTable).
-		return blueprintEntityListResourceExpr(bp, screen, block, entityMap, apiBase)
+		return blueprintEntityListExpr(bp, screen, block)
 	}
 	if expr, ok := renderBlueprintCatalogBlock(bp, screen, block, path, entityMap, apiBase); ok {
 		return expr
@@ -7047,6 +6950,41 @@ func renderBlueprintNodeExpressionForScreen(screen BlueprintScreen, block Bluepr
 	return sb.String()
 }
 
+// blueprintH1Before walks blocks in document order and reports whether
+// one renders an <h1> before the list of entity; done is true once the
+// walk reached that list or an <h1>. A page header, a hero, an auth
+// card, a form or detail page header and a level-1 heading render one,
+// as does an earlier list of another entity, which by the same rule
+// kept its title at level 1.
+func blueprintH1Before(blocks []BlueprintBlock, entity string) (h1, done bool) {
+	for _, b := range blocks {
+		if isEntityListBlock(b) {
+			return strings.Trim(b.Entity, "/") != entity, true
+		}
+		if blueprintBlockRendersH1(b) {
+			return true, true
+		}
+		if h1, done := blueprintH1Before(b.Children, entity); done {
+			return h1, true
+		}
+	}
+	return false, false
+}
+
+func blueprintBlockRendersH1(b BlueprintBlock) bool {
+	kind := strings.ToLower(strings.TrimSpace(b.Kind))
+	if kind == "" {
+		kind = strings.ToLower(strings.TrimSpace(b.Type))
+	}
+	switch kind {
+	case "page_header", "hero", "login_form", "signup_form", "entity_form", "entity_detail", "h1":
+		return true
+	case "heading":
+		return b.Level == 0 || b.Level == 1
+	}
+	return false
+}
+
 func isEntityListBlock(block BlueprintBlock) bool {
 	return blueprintBlockKindIs(block, "entity_list")
 }
@@ -7059,15 +6997,12 @@ func isEntityDetailBlock(block BlueprintBlock) bool {
 	return blueprintBlockKindIs(block, "entity_detail")
 }
 
-// entity_create / entity_edit are synthesized (never authored) by
-// blueprintSynthesizeCRUDScreens for the /new and /{id}/edit form screens.
-// They render via the resource engine's Form(ctx, id).
+// entity_create is synthesized (never authored) by
+// blueprintSynthesizeCRUDScreens for the <list>/create screen. It renders
+// the appUI.Create builder. Authored entity_create blocks are refused at
+// decode and at validate.
 func isEntityCreateBlock(block BlueprintBlock) bool {
 	return blueprintBlockKindIs(block, "entity_create")
-}
-
-func isEntityEditBlock(block BlueprintBlock) bool {
-	return blueprintBlockKindIs(block, "entity_edit")
 }
 
 func isLoginFormBlock(block BlueprintBlock) bool {
@@ -7103,7 +7038,7 @@ func blueprintAuthFormExpr(heading, action, next, submitLabel, pwAutocomplete st
 	pwField := `ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true,` +
 		fmt.Sprintf(` Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password", AutoComplete: %q%s}) }})`, pwAutocomplete, minLen)
 	form := fmt.Sprintf(
-		"ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %q}, %s, %s, %s)",
+		"ui.Form(ui.FormConfig{Action: %q, Method: \"POST\", SubmitLabel: %q, SubmitFullWidth: true}, %s, %s, %s)",
 		action, submitLabel, hidden, emailField, pwField)
 	footer := ""
 	if footerHref != "" {
@@ -7738,6 +7673,14 @@ func renderBlueprintApp(bp Blueprint) string {
 	// style.FontFaceCSS rather than carrying a baked CSS string, so the
 	// import is needed whether or not a theme is declared.
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/style\"\n")
+	// A theme-less marketing app starts from framework/ui/theme.Default,
+	// the adaptive theme with a dark palette; style.DefaultTheme is the
+	// light-only core-ui baseline. A declared app.theme keeps the light
+	// baseline: its palette is the author's, and a stock dark palette
+	// would replace the brand whenever the OS is dark.
+	if len(bp.App.Theme) == 0 && hasMarketing {
+		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/ui/theme\"\n")
+	}
 	if needWidget {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/core-ui/widget\"\n")
 	}
@@ -7763,7 +7706,8 @@ func renderBlueprintApp(bp Blueprint) string {
 	if bp.App.Auth.Enabled {
 		sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/battery/auth\"\n")
 	}
-	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n)\n\n")
+	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
+	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/entityui\"\n)\n\n")
 	sb.WriteString("const (\n")
 	sb.WriteString(fmt.Sprintf("\tappName = %q\n", name))
 	sb.WriteString(fmt.Sprintf("\tappModule = %q\n", bp.App.Module))
@@ -7996,7 +7940,7 @@ func renderBlueprintApp(bp Blueprint) string {
 		// plain Items slice.
 		themeToggle := ""
 		if len(bp.App.ThemeDark) > 0 {
-			themeToggle = "ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleLabel})"
+			themeToggle = "ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})"
 		}
 		switch {
 		case bp.App.Auth.Enabled:
@@ -8015,7 +7959,9 @@ func renderBlueprintApp(bp Blueprint) string {
 			}
 			sb.WriteString("\t}\n")
 			if themeToggle != "" {
-				sb.WriteString("\tcfg.Footer = ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, " + themeToggle + ", authAction)\n")
+				// One row, the marketing header's pairing: the account action
+				// leads, the appearance glyph closes the row.
+				sb.WriteString("\tcfg.Footer = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Justify: ui.JustifyBetween, NoWrap: true}, authAction, " + themeToggle + ")\n")
 			} else {
 				sb.WriteString("\tcfg.Footer = authAction\n")
 			}
@@ -8056,6 +8002,11 @@ func renderBlueprintApp(bp Blueprint) string {
 		}
 		sb.WriteString(")\n\n")
 	}
+	// appUI is the app's entityui value: every generated entity screen
+	// renders through it. RegisterGenerated builds it once, after the
+	// entities registered (entities.RegisterAll in main.go) and before any
+	// screen mounts. extensions.go owns what goes into it.
+	sb.WriteString("var appUI *entityui.UI\n\n")
 	sb.WriteString("// RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.\n")
 	sb.WriteString("func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {\n")
 	sb.WriteString("\tif site == nil {\n")
@@ -8067,7 +8018,7 @@ func renderBlueprintApp(bp Blueprint) string {
 		// No declared palette, but the marketing chrome's sheets read their
 		// own tokens (siteheader's menu stagger): even the default theme
 		// must carry them, or every var() in the owned sheets is unset.
-		sb.WriteString("\tsite.WithTheme(style.DefaultTheme().Extend(siteheader.Tokens))\n")
+		sb.WriteString("\tsite.WithTheme(theme.Default().Extend(siteheader.Tokens))\n")
 	}
 	if len(bp.Nav) > 0 {
 		if bp.App.Auth.Enabled {
@@ -8274,6 +8225,10 @@ func renderBlueprintApp(bp Blueprint) string {
 	// or an entity fragment is a new file, never an edit here. The call is
 	// unconditional (the seam ships even with zero screens) so a later
 	// `--add`/scaffold screen mounts without editing this owned file.
+	// One UI per app, built after the entities registered and before any
+	// screen mounts. EntityUI panics at boot on a bad name in
+	// appExtensions, the way App.Entity refuses a bad declaration.
+	sb.WriteString("\tappUI = fwApp.EntityUI(appExtensions)\n")
 	sb.WriteString("\tmountGenerated(fwApp, site, db)\n")
 	for _, endpoint := range bp.Endpoints {
 		handler := blueprintEndpointHandlerName(endpoint)

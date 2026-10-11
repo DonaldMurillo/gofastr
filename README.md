@@ -233,7 +233,7 @@ the spec, and agent tools from one declaration
 (`app.Entity` in Go, or an `entities:` entry in a blueprint).
 Declarations are optional: `core/` routes and hand-written screens run
 without them. A declaration grows the same way it starts, with fields,
-enums, relations, and soft delete:
+enums, relations, soft delete, and a state machine on the status:
 
 ```go
 app.Entity("posts", framework.EntityConfig{
@@ -244,6 +244,13 @@ app.Entity("posts", framework.EntityConfig{
         {Name: "status", Type: schema.Enum,
             Values: []string{"draft", "published"}, Default: "draft"},
         {Name: "author_id", Type: schema.Relation, To: "users"},
+    },
+    States: &framework.StatesConfig{
+        Field:   "status",
+        Initial: []string{"draft"},
+        Transitions: []framework.Transition{
+            {Key: "publish", From: []string{"draft"}, To: "published"},
+        },
     },
     Exposure: &framework.ExposureConfig{MCP: true},
 })
@@ -263,7 +270,8 @@ app.Entity("posts", framework.EntityConfig{
 | FK constraints   | BelongsTo relations emit `FOREIGN KEY` clauses; `AutoMigrate` topo-sorts tables |
 | Transactions     | `Create/Update/Delete` + hooks share one tx; `TxFromContext(ctx)` exposes it    |
 | OpenAPI 3        | `/openapi.json` plus a spec-viewer page at `/api/docs/`                         |
-| MCP              | `posts_list`, `posts_get`, `posts_create`, `posts_update`, `posts_delete`       |
+| MCP              | `posts_list`, `posts_get`, `posts_create`, `posts_update`, `posts_delete`, `posts_publish` |
+| State moves      | `POST /posts/{id}/transitions/publish`: the status changes only through a move, on every write path; one call per move in each client ([states](framework/docs/content/states.md)) |
 | Soft delete      | `deleted_at` column + automatic filter                                          |
 | Multi-tenant     | `tenant_id` column + automatic scope from request context                       |
 | Hooks            | `BeforeCreate`, `AfterUpdate`, etc. for custom behaviour                        |
@@ -284,7 +292,7 @@ uploads, and sparse updates. Hooks run inside the write's transaction
 - **Security scopes live in the declaration, fail-closed.** `owner_field` makes auto-CRUD per-user (anonymous → 401, cross-user → 404), `access:` gates operations behind RBAC permissions (403), `multi_tenant` scopes by tenant, and `gofastr validate` flags PII-shaped fields (email, phone, address, …) exposed without any of them. The MCP tools respect the same scopes as the REST routes.
 - **You own the output.** The generated code is normal Go you read, debug, commit, edit, and compose from your own `main`. Registration is ordinary Go in the generated files; no reflection discovers your entities, and no platform sits between your binary and your server.
 - **Batteries are separate packages.** Auth, cache, email, queue, search, storage sit behind narrow interfaces; swap any one without forking.
-- **The framework checks whether you're still using it well.** `gofastr verify` runs the 77 rules of the contract catalog (routing, permissions, security, rendering, accessibility) and measures semantic coverage: not "did this line run" but "did a request ever reach this route, did this permission ever get evaluated". Error-severity findings fail the run (`--strict` makes warnings fail too), with per-line waivers and a baseline mode for existing codebases. See [contracts](framework/docs/content/contracts.md).
+- **The framework checks whether you're still using it well.** `gofastr verify` runs the 78 rules of the contract catalog (routing, permissions, security, rendering, accessibility) and measures semantic coverage: not "did this line run" but "did a request ever reach this route, did this permission ever get evaluated". Error-severity findings fail the run (`--strict` makes warnings fail too), with per-line waivers and a baseline mode for existing codebases. See [contracts](framework/docs/content/contracts.md).
 - **A blueprint scaffolds the whole app when you want a head start.** One `gofastr.yml` generates the screens and the API in one pass; then it's plain Go you own and edit, and the running app never needs the blueprint again ([blueprint tutorial](framework/docs/content/tutorial-blueprint-app.md)).
 
 ## The repo in 60 seconds

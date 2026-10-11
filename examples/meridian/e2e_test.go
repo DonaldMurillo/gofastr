@@ -52,7 +52,7 @@ func TestE2E(t *testing.T) {
 
 	// Gated screens redirect anonymous callers to the login page.
 	noRedir := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	for _, p := range []string{"/app", "/app/customers", "/app/invoices", "/app/subscriptions", "/app/customers/new", "/app/invoices/new", "/app/subscriptions/new"} {
+	for _, p := range []string{"/app", "/app/customers", "/app/invoices", "/app/subscriptions", "/app/customers/create", "/app/invoices/create", "/app/subscriptions/create"} {
 		if r, err := noRedir.Get(base + p); err == nil {
 			r.Body.Close()
 			if r.StatusCode != http.StatusSeeOther {
@@ -67,7 +67,7 @@ func TestE2E(t *testing.T) {
 	if _, err := client.PostForm(base+"/auth/login", url.Values{"email": {"admin@meridian.dev"}, "password": {adminPass}}); err != nil {
 		t.Fatalf("login: %v", err)
 	}
-	for _, p := range []string{"/app", "/app/customers", "/app/invoices", "/app/subscriptions", "/app/customers/new", "/app/invoices/new", "/app/subscriptions/new"} {
+	for _, p := range []string{"/app", "/app/customers", "/app/invoices", "/app/subscriptions", "/app/customers/create", "/app/invoices/create", "/app/subscriptions/create"} {
 		if code, body := e2eDo(t, client, "GET", base+p, ""); code != http.StatusOK {
 			t.Errorf("authed screen %s = %d, want 200", p, code)
 		} else if len(body) < 120 {
@@ -84,16 +84,20 @@ func TestE2E(t *testing.T) {
 	if id == "" {
 		t.Fatalf("create customers: no id in response: %s", body)
 	}
-	if code, body := e2eDo(t, client, "GET", base+"/app/customers/new", ""); code != http.StatusOK || !strings.Contains(body, "<form") {
-		t.Errorf("new form customers = %d (has <form>? %v)", code, strings.Contains(body, "<form"))
+	if code, body := e2eDo(t, client, "GET", base+"/app/customers/create", ""); code != http.StatusOK || !strings.Contains(body, "<form") {
+		t.Errorf("create form customers = %d (has <form>? %v)", code, strings.Contains(body, "<form"))
 	}
 	if code, body := e2eDo(t, client, "GET", base+"/app/customers"+"/"+id, ""); code != http.StatusOK {
 		t.Errorf("detail customers = %d, want 200", code)
 	} else if !strings.Contains(body, "e2e-name") {
 		t.Errorf("detail customers missing created value")
 	}
-	if code, body := e2eDo(t, client, "GET", base+"/app/customers"+"/"+id+"/edit", ""); code != http.StatusOK || !strings.Contains(body, "e2e-name") {
-		t.Errorf("edit form customers = %d, prefilled? %v", code, strings.Contains(body, "e2e-name"))
+	// The record page holds the edit form, prefilled; /edit is gone.
+	if code, body := e2eDo(t, client, "GET", base+"/app/customers"+"/"+id, ""); code != http.StatusOK || !strings.Contains(body, "<form") || !strings.Contains(body, `value="e2e-name"`) {
+		t.Errorf("record page customers = %d (has prefilled edit form? %v)", code, strings.Contains(body, `value="e2e-name"`))
+	}
+	if code, _ := e2eDo(t, client, "GET", base+"/app/customers"+"/"+id+"/edit", ""); code != http.StatusNotFound {
+		t.Errorf("GET /app/customers/<id>/edit = %d, want 404: the record page holds the edit form", code)
 	}
 	if code, body := e2eDo(t, client, "PUT", base+"/api/customers"+"/"+id, `{"name": "e2e-updated"}`); code/100 != 2 {
 		t.Errorf("update customers = %d: %s", code, body)

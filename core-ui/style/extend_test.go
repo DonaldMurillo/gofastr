@@ -31,7 +31,7 @@ func TestExtendEmitsAppTokens(t *testing.T) {
 		"--color-brand-glow: #FF7A00;",
 		"--size-hero-gap: clamp(2rem, 6vw, 5rem);",
 		"--font-weight-display: 800;",
-		"--color-primary: #4F46E5;",
+		"--color-primary: #18181B;",
 	} {
 		if !strings.Contains(css, decl) {
 			t.Errorf(":root is missing %q", decl)

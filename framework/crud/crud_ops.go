@@ -43,7 +43,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeCreate, body); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.BeforeCreate, body); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
 	}
@@ -59,7 +59,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	// Blank form values go first: a "" for a number must read as "not
 	// provided" before the integer coercion sees it.
 	dropEmptyFormValues(ch.entitySchema(), body)
-	if err := ch.coerceIntColumnValues(body); err != nil {
+	if err := ch.coerceNumberColumnValues(body); err != nil {
 		return nil, err
 	}
 	vr := schema.ValidateAll(ch.entitySchema(), body)
@@ -72,6 +72,11 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	// boundary exactly as ?include= is a read-side one (issue: order_items
 	// targeting another customer's order).
 	if err := ch.checkBelongsToScope(ctx, body); err != nil {
+		return nil, err
+	}
+	// The state field starts at an Initial value and no stamp is set
+	// (states.go). After the hooks, so a hook cannot set them either.
+	if err := ch.checkStateCreate(ctx, body); err != nil {
 		return nil, err
 	}
 
@@ -102,7 +107,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 			continue
 		}
 		if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.Scope.OwnerField {
-			if !serverWrites(ctx) {
+			if !serverWrites(ctx) && !ch.stateOverrideColumn(ctx, f.Name) {
 				continue
 			}
 		}
@@ -174,7 +179,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterCreate, result); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.AfterCreate, result); err != nil {
 			return nil, fmt.Errorf("after-create hook: %w", err)
 		}
 	}
@@ -204,9 +209,13 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	if pre, err := ch.selectPreImage(ctx, r, id); err == nil && pre != nil {
 		ctx = WithAuditPreImage(ctx, pre)
 	}
+	// A hook cannot move this record mid-write (RunTransition).
+	if ch.Entity != nil {
+		ctx = withRecordWrite(ctx, ch.Entity.GetName(), id)
+	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeUpdate, body); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.BeforeUpdate, body); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
 	}
@@ -227,7 +236,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	// Blank form values go first: a "" for a number must read as "not
 	// provided" before the integer coercion sees it.
 	dropEmptyFormValues(ch.entitySchema(), body)
-	if err := ch.coerceIntColumnValues(body); err != nil {
+	if err := ch.coerceNumberColumnValues(body); err != nil {
 		return nil, err
 	}
 	vr := schema.ValidatePartial(ch.entitySchema(), body)
@@ -240,6 +249,12 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	if err := ch.checkBelongsToScope(ctx, body); err != nil {
 		return nil, err
 	}
+	// The state field and stamps change only through a move: the stored
+	// value written back is dropped, any other is refused (states.go).
+	ctx, err = ch.checkStateUpdate(ctx, r, id, body)
+	if err != nil {
+		return nil, err
+	}
 
 	ub := query.Update(ch.Entity.GetTable())
 	anySet := false
@@ -249,8 +264,9 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 			continue
 		}
 		// ReadOnly/Hidden fields are client-unsettable and skipped unless
-		// the caller opted in via WithServerWrites(ctx).
-		if (f.ReadOnly || f.Hidden) && !serverWrites(ctx) {
+		// the caller opted in via WithServerWrites(ctx), or a state
+		// override releases them.
+		if (f.ReadOnly || f.Hidden) && !serverWrites(ctx) && !ch.stateOverrideColumn(ctx, f.Name) {
 			continue
 		}
 		// Refuse to let a client reassign ownership through an update body.
@@ -341,7 +357,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterUpdate, result); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.AfterUpdate, result); err != nil {
 			return nil, fmt.Errorf("after-update hook: %w", err)
 		}
 	}
@@ -526,7 +542,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeDelete, id); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.BeforeDelete, id); err != nil {
 			return &beforeHookError{err: err}
 		}
 	}
@@ -567,7 +583,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterDelete, id); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.AfterDelete, id); err != nil {
 			return fmt.Errorf("after-delete hook: %w", err)
 		}
 	}

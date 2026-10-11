@@ -37,7 +37,7 @@
   NS.loadedModules = NS.loadedModules || {};
   NS.loadedModules[NAME] = true;
 
-  const ITEM = '[role="menuitem"],[role="menuitemradio"]';
+  const ITEM = '[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]';
   const DETAILS = 'details[data-hui-disclosure]';
   const TRIGGER_WRAP = '[data-hui-menu-trigger]';
   const INTERACTIVE = 'button, a, input, select, textarea, [role="button"]';
@@ -233,6 +233,26 @@
       if (same) sib.setAttribute('aria-checked', sib === r ? 'true' : 'false');
     }
   });
+
+  // ─── command rows close the menu ─────────────────────────────────
+  //
+  // Choosing a command row closes the whole chain and returns focus to
+  // the trigger. Capture phase, so focus is back on the trigger before
+  // the row's own action runs: a confirm dialog it opens then restores
+  // focus there, not to a row inside a closed panel. A submenu parent
+  // (a <summary>) opens its panel instead, and radio and checkbox rows
+  // are settings that keep the menu open.
+  document.addEventListener('click', (e) => {
+    const r = e.target && e.target.closest && e.target.closest('[role="menuitem"]');
+    if (!r || r.tagName === 'SUMMARY' || r.getAttribute('aria-disabled') === 'true') return;
+    let d = r.closest('details[data-hui-menu]'), up;
+    if (!d) return;
+    while (d.parentElement && (up = d.parentElement.closest('details[data-hui-menu]'))) d = up;
+    if (!d.open) return;
+    closeChain(d);
+    const t = triggerElOf(d) || d.querySelector(':scope > summary');
+    if (t) t.focus();
+  }, true);
 
   // ─── caller-owned trigger elements ───────────────────────────────
   //

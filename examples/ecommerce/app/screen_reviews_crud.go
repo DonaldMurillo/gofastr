@@ -9,8 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
-	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
-	"net/http"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 type ReviewsScreen struct{ component.ContextOnly }
@@ -20,31 +19,13 @@ func (s *ReviewsScreen) ScreenDescription() string  { return "Customer reviews a
 func (s *ReviewsScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *ReviewsScreen) RenderCtx(ctx context.Context) render.HTML {
-	return html.Div(html.DivConfig{},
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Customer Reviews")),
-		appResources["reviews"].WithColumns("author_name", "rating", "title").WithLimit(20).WithHeading("Latest Reviews").WithEmpty("No reviews yet.").WithIsland("/api/tables/reviews/reviews").WithIslandPolicy(resource.PublicIsland()).List(ctx),
+		appUI.List("reviews").Columns("author_name", "rating", "title").PageSize(20).NoCreate().Heading("Latest Reviews", 2).Empty("No reviews yet.").RenderCtx(ctx),
 	)
 }
 
 func mountReviewsScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	appResources["reviews"] = resource.Config{
-		Entity: "reviews", Title: "Reviews", Singular: "Review", BasePath: "/reviews", APIPath: "/api/reviews",
-		Crud: fwApp.MustCrudHandler("reviews"),
-		Fields: []resource.Field{
-			{Key: "product_id", Label: "Product", Type: "relation"},
-			{Key: "author_name", Label: "Author Name", Type: "string"},
-			{Key: "rating", Label: "Rating", Type: "int"},
-			{Key: "title", Label: "Title", Type: "string"},
-			{Key: "body", Label: "Body", Type: "text"},
-			{Key: "verified", Label: "Verified", Type: "bool"},
-		},
-		Relations: map[string]resource.Relation{
-			"product_id": {Crud: fwApp.MustCrudHandler("products"), Display: "name"},
-		},
-	}
-	fwApp.Router().HandleFunc("GET", "/api/tables/reviews/reviews", func(w http.ResponseWriter, r *http.Request) {
-		appResources["reviews"].WithColumns("author_name", "rating", "title").WithLimit(20).WithHeading("Latest Reviews").WithEmpty("No reviews yet.").WithIsland("/api/tables/reviews/reviews").WithIslandPolicy(resource.PublicIsland()).TableHandler()(w, r)
-	})
 	site.Register("/reviews", &ReviewsScreen{}, appLayout)
 }
 

@@ -143,7 +143,9 @@ func Tag(p TagProps, s Classes) render.HTML {
 		kids = append(kids, b.El("span", PartIcon,
 			Attrs(map[string]string{"aria-hidden": "true"}), p.Icon))
 	}
-	kids = append(kids, render.Text(p.Label))
+	// The label is its own part so a constrained chip can end it with an
+	// ellipsis; a bare text node cannot be clipped that way.
+	kids = append(kids, b.El("span", PartLabel, Internal(nil), render.Text(p.Label)))
 	if p.DismissHref != "" {
 		aria := p.DismissAriaLabel
 		if aria == "" {
@@ -627,7 +629,7 @@ func init() {
 
 	Register(Spec{
 		Name:    "Tag",
-		Anatomy: []Part{PartRoot, PartIcon, PartBadgeDismiss},
+		Anatomy: []Part{PartRoot, PartIcon, PartLabel, PartBadgeDismiss},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Tag(TagProps{Label: "env=prod", Parts: parts}, s)
 		},

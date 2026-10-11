@@ -275,6 +275,9 @@ var moduleAttrs = map[string][]string{
 		"data-cui-intercept-overlay",
 		"data-cui-intercept-as",
 		"data-cui-intercept-close",
+		"data-cui-intercept-page",
+		"data-cui-intercept-swap",
+		"data-cui-intercept-panel",
 	},
 	// Lightbox's wiring (data-fui-lightbox*, data-fui-zoomed) moved to
 	// framework/ui/lightbox.js, a registered behaviour: its attributes
@@ -341,6 +344,17 @@ var moduleAttrs = map[string][]string{
 	"headless-feedback": {
 		"data-cui-toast-stack",
 	},
+	// confirm opens the kit's themed dialog for a data-cui-confirm gate
+	// (the gate itself, data-cui-confirm, is rpc's): the dialog's text
+	// and tone ride the gated element, and the host renders the kit's
+	// template with its part hooks.
+	"confirm": {
+		"data-cui-confirm-title",
+		"data-cui-confirm-accept",
+		"data-cui-confirm-tone",
+		"data-cui-confirm-dialog",
+		"data-cui-confirm-part",
+	},
 	"rpc": {
 		"data-cui-rpc",
 		"data-cui-rpc-method",
@@ -357,6 +371,8 @@ var moduleAttrs = map[string][]string{
 		"data-cui-rpc-debounce-ms",
 		"data-cui-rpc-scroll-to",
 		"data-cui-rpc-error-toast",
+		"data-cui-rpc-success-toast",
+		"data-cui-rpc-success-action",
 		"data-cui-confirm",
 		"data-cui-push-state",
 	},

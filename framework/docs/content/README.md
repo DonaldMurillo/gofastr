@@ -47,6 +47,9 @@ results, the harness contract) are exempt. The exemption list lives in
 
 - [Entity declarations](entity-declarations.md): JSON + Go field types
   and the runtime/code-gen loaders.
+- [States](states.md): `EntityConfig.States` gives an entity a state
+  machine the CRUD handler enforces: a guarded state field, moves as a
+  route, an MCP tool and a Go call.
 - [Batch endpoints](batch-endpoints.md): `_batch` POST / PATCH / DELETE
   with one-transaction semantics.
 - [Includes & eager loading](includes.md): `?include=` with scoped
@@ -58,6 +61,10 @@ results, the harness contract) are exempt. The exemption list lives in
 - [File uploads](uploads.md): multipart on `Image`/`File` fields via
   `WithFileStorage`, plus `WithImagePipeline` for automatic renditions,
   BlurHash, and LQIP on every `Image` upload.
+- [Entity screens](entityui.md): `framework/entityui`: the list, record
+  and create screens generated apps and the admin draw, from the
+  entity's `Display` and `States`, with query-param state and the read
+  gates the API applies.
 - [Query DSL](query-dsl.md): agent-friendly query parser →
   `core/query` builder.
 

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
@@ -489,4 +490,102 @@ func sortAnchorQuery(t *testing.T, h string) url.Values {
 		t.Fatalf("sort href %q does not parse: %v", href, err)
 	}
 	return q
+}
+
+// ─── Responsive rows mode ─────────────────────────────────────────
+
+// Rows mode tags each slotted column's cells with their phone slot and
+// the root with the modifier; a column with no slot carries none. A
+// slot keeps the column's alignment.
+func TestDataTable_ResponsiveRows_SlotsCells(t *testing.T) {
+	h := string(DataTable(DataTableConfig{
+		Columns: []Column{
+			{Key: "name", Header: "Name", Phone: PhoneTitle},
+			{Key: "email", Header: "Email", Phone: PhoneSubtitle},
+			{Key: "status", Header: "Status", Phone: PhoneMeta},
+			{Key: "mrr", Header: "MRR", Phone: PhoneDetail, Align: "end"},
+			{Key: "owner", Header: "Owner"},
+		},
+		Rows: []Row{{Cells: map[string]render.HTML{
+			"name": render.Text("Ada"), "email": render.Text("ada@x.com"),
+			"status": render.Text("active"), "mrr": render.Text("$99"), "owner": render.Text("Sam"),
+		}}},
+		Responsive: ResponsiveRows,
+	}))
+	if !classTokenPresent(h, "fui-data-table--responsive-rows") {
+		t.Errorf("no rows modifier: %s", h)
+	}
+	for _, slot := range []string{"title", "subtitle", "meta", "detail"} {
+		if !classTokenPresent(h, "is-phone-"+slot) {
+			t.Errorf("no %s slot: %s", slot, h)
+		}
+	}
+	if !strings.Contains(h, `class="is-align-end is-phone-detail"`) {
+		t.Errorf("the detail cell lost its alignment: %s", h)
+	}
+	if n := strings.Count(h, "is-phone-"); n != 4 {
+		t.Errorf("want 4 slotted cells, got %d", n)
+	}
+}
+
+// A slot outside rows mode is inert: no attribute, no modifier.
+func TestDataTable_PhoneSlotNeedsRowsMode(t *testing.T) {
+	h := string(DataTable(DataTableConfig{
+		Columns: []Column{{Key: "name", Header: "Name", Phone: PhoneTitle}},
+		Rows:    []Row{{Cells: map[string]render.HTML{"name": render.Text("Ada")}}},
+	}))
+	if strings.Contains(h, "is-phone-") || strings.Contains(h, "responsive-rows") {
+		t.Errorf("a scroll table carries phone slots: %s", h)
+	}
+}
+
+// Rows mode with no title slot is a programming error: the phone row
+// would have no line that names the record.
+func TestDataTable_ResponsiveRowsNeedsTitle(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("rows mode without a PhoneTitle column did not panic")
+		}
+	}()
+	DataTable(DataTableConfig{
+		Columns:    []Column{{Key: "name", Header: "Name"}},
+		Responsive: ResponsiveRows,
+	})
+}
+
+// Flush drops the table's frame, for rows that sit inside a card.
+func TestDataTableFlush(t *testing.T) {
+	cfg := DataTableConfig{Columns: []Column{{Key: "a", Header: "A"}}, Rows: []Row{{ID: "1", Cells: map[string]render.HTML{"a": "x"}}}}
+	if strings.Contains(string(DataTable(cfg)), "fui-data-table--flush") {
+		t.Error("a table is flush without asking")
+	}
+	cfg.Flush = true
+	if !strings.Contains(string(DataTable(cfg)), "fui-data-table--flush") {
+		t.Error("Flush drew no modifier")
+	}
+	css := dataTableStyle.Entry().CSSFor(style.DefaultTheme())
+	at := strings.Index(css, ".fui-data-table--flush .fui-data-table__scroll")
+	if at < 0 || !strings.Contains(css[at:at+200], "border: 0") {
+		t.Errorf("the flush rule does not drop the frame:\n%s", css)
+	}
+}
+
+// The footer carries the summary on the left and the caller's tools
+// before the pager; with neither and no pager there is no footer.
+func TestDataTableFooterSummaryAndTools(t *testing.T) {
+	cfg := DataTableConfig{Columns: []Column{{Key: "a", Header: "A"}}, Rows: []Row{{ID: "1", Cells: map[string]render.HTML{"a": "x"}}}}
+	if strings.Contains(string(DataTable(cfg)), "fui-data-table__footer") {
+		t.Error("a footer drew with nothing in it")
+	}
+	cfg.Summary = "1–1 of 1"
+	cfg.FooterTools = render.HTML(`<a href="/x?per=50">50</a>`)
+	h := string(DataTable(cfg))
+	sum, tools := strings.Index(h, "1–1 of 1"), strings.Index(h, `href="/x?per=50"`)
+	if sum < 0 || tools < sum {
+		t.Errorf("summary then tools, in the footer:\n%s", h)
+	}
+	cfg.Note = "Select a value."
+	if h := string(DataTable(cfg)); !strings.Contains(h, `<p class="fui-data-table__note" data-cui-internal="">Select a value.</p>`) {
+		t.Errorf("no note under the rows:\n%s", h)
+	}
 }

@@ -66,7 +66,7 @@ func rpcEffectDemo(spec rpcEffectDemoSpec) render.HTML {
 			html.Div(html.DivConfig{Class: "demo-stage__viewport"},
 				html.Div(html.DivConfig{Class: "demo-stack"},
 					html.Paragraph(html.TextConfig{Class: "doc-head__lede"}, render.Text(spec.caption)),
-					btn,
+					ui.Cluster(ui.ClusterConfig{}, btn),
 				),
 			),
 		),
@@ -122,6 +122,11 @@ var Catalog = []Entry{
 			ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeTogglePill}),
 		)
 	}},
+	{"themepicker", "ThemePicker", "Buttons & links", "Switches the whole page to a registered theme override and remembers the choice.", func() render.HTML {
+		return html.Div(html.DivConfig{Class: "demo-row"},
+			ui.ThemePicker(ui.ThemePickerConfig{Themes: []ui.ThemeChoice{{Label: "Square", Theme: squareTheme}}}),
+		)
+	}},
 
 	// ---------- Tags & badges ----------
 	{"tag", "Tag", "Tags & badges", "Compact status pill, optionally dismissable.", func() render.HTML {
@@ -159,7 +164,7 @@ var Catalog = []Entry{
 	}},
 	{"callout", "Callout", "Feedback", "Bordered prose call-out for tips or warnings.", func() render.HTML {
 		return ui.Callout(ui.CalloutConfig{Title: "Heads up", Variant: ui.StatusInfo},
-			render.Text("This component is a thin wrapper over <aside> with a left accent rule."),
+			render.Text("A thin wrapper over <aside>: an icon and a hairline frame carry the variant."),
 		)
 	}},
 	{"notification", "Notification", "Feedback", "Toast-style notification with icon + variant.", func() render.HTML {
@@ -287,7 +292,7 @@ var Catalog = []Entry{
 		// viewport-height by design, which inside a catalog card would eat the
 		// page. Both the class and its rule live in this package (css.go).
 		return html.Div(html.DivConfig{Class: "demo-viewport"},
-			ui.Workbench(ui.WorkbenchConfig{RailWidth: "220px", Rail: rail, Pane: pane}))
+			ui.Workbench(ui.WorkbenchConfig{RailWidth: ui.WorkbenchRailNarrow, Rail: rail, Pane: pane}))
 	}},
 	{"panehost", "PaneHost", "Layout", "Master-detail shell: a primary pane plus openable side panes that collapse to an overlay drawer on narrow screens.", func() render.HTML {
 		primary := html.Div(html.DivConfig{},
@@ -390,12 +395,12 @@ var Catalog = []Entry{
 			Label: "Demo toolbar",
 			Groups: []ui.ToolbarGroup{
 				{Label: "Text", Children: []render.HTML{
-					ui.Button(ui.ButtonConfig{Label: "Bold"}),
-					ui.Button(ui.ButtonConfig{Label: "Italic"}),
-					ui.Button(ui.ButtonConfig{Label: "Underline"}),
+					ui.Button(ui.ButtonConfig{Label: "Bold", Variant: ui.ButtonGhost}),
+					ui.Button(ui.ButtonConfig{Label: "Italic", Variant: ui.ButtonGhost}),
+					ui.Button(ui.ButtonConfig{Label: "Underline", Variant: ui.ButtonGhost}),
 				}},
 				{Label: "Insert", Children: []render.HTML{
-					ui.Button(ui.ButtonConfig{Label: "Link"}),
+					ui.Button(ui.ButtonConfig{Label: "Link", Variant: ui.ButtonGhost}),
 				}},
 			},
 		})
@@ -405,6 +410,9 @@ var Catalog = []Entry{
 	}},
 	{"sidebardrawertrigger", "SidebarDrawerTrigger", "Navigation", "The sidebar's drawer toggle on its own — the relocated hamburger a header row carries at narrow widths (the component hides itself at >= md, exactly as in a real shell).", func() render.HTML {
 		return ui.SidebarDrawerTrigger(SidebarShowcaseConfig)
+	}},
+	{"sidebarbrand", "SidebarBrand", "Navigation", "The product mark at a sidebar's head: a logo tile (or the name's initial), the name, and a muted line under it.", func() render.HTML {
+		return ui.SidebarBrand(ui.SidebarBrandConfig{Name: "Meridian", Sub: "Back office"})
 	}},
 	{"toc", "TableOfContents", "Navigation", "In-page anchor list the server rendered; the module marks the active entry.", func() render.HTML {
 		// The items are explicit and the headings they name render in
@@ -478,6 +486,16 @@ var Catalog = []Entry{
 				{Label: "Overview", Content: html.Paragraph(html.TextConfig{}, render.Text("Clicking tabs switches content without any server round-trip."))},
 				{Label: "Details", Content: html.Paragraph(html.TextConfig{}, render.Text("Panels are pre-rendered; the runtime shows/hides them based on a signal."))},
 				{Label: "Settings", Content: html.Paragraph(html.TextConfig{}, render.Text("No JavaScript needed: data attributes + CSS attribute selectors."))},
+			},
+		})
+	}},
+	{"tabnav", "TabNav", "Navigation", "Tab strip of links: each tab is a URL, the current one server-settled.", func() render.HTML {
+		return ui.TabNav(ui.TabNavConfig{
+			Label: "Views",
+			Items: []ui.TabNavItem{
+				{Text: "All", Href: "?view=all", Current: true, Badge: "75"},
+				{Text: "Past due", Href: "?view=past_due", Badge: "5"},
+				{Text: "Open", Href: "?view=open", Badge: "19"},
 			},
 		})
 	}},
@@ -565,6 +583,24 @@ var Catalog = []Entry{
 			ui.TextField(ui.TextFieldConfig{Name: "first", Label: "First name", ID: "demo-first"}),
 			ui.TextField(ui.TextFieldConfig{Name: "last", Label: "Last name", ID: "demo-last"}),
 		)
+	}},
+	{"formframe", "FormFrame", "Forms", "Record form in two columns: a wide main column beside a narrow side rail that drops under it when the form's own width is narrow — a drawer stacks, a full page sits side by side.", func() render.HTML {
+		frame := ui.FormFrame(ui.FormFrameConfig{
+			Main: []render.HTML{
+				ui.TextField(ui.TextFieldConfig{Name: "number", Label: "Number", ID: "demo-ff-number", Value: "INV-0042"}),
+				ui.TextField(ui.TextFieldConfig{Name: "memo", Label: "Memo", ID: "demo-ff-memo", Placeholder: "What this invoice is for"}),
+			},
+			Side: []render.HTML{
+				ui.Select(ui.SelectConfig{Name: "status", Label: "Status", ID: "demo-ff-status",
+					Options: []ui.SelectOption{{Value: "open", Text: "Open"}, {Value: "paid", Text: "Paid"}}}),
+			},
+		})
+		// The same frame at two container widths: the switch reads the
+		// frame's own inline size (a container query), so the wide box
+		// sits side by side and the narrow box stacks on the same page.
+		return html.Div(html.DivConfig{Class: "demo-stack"},
+			html.Div(html.DivConfig{Class: "demo-measure-wide"}, frame),
+			html.Div(html.DivConfig{Class: "demo-measure-narrow"}, frame))
 	}},
 	{"select", "Select", "Forms", "Native <select> styled to match the theme.", func() render.HTML {
 		return ui.Select(ui.SelectConfig{
@@ -702,7 +738,7 @@ var Catalog = []Entry{
 			FieldOrder:  []string{"email", "password"},
 		})
 	}},
-	{"conditionalfield", "ConditionalField", "Forms", "A field shown or hidden by another field's value — visible on first paint, hidden by the runtime until the watched field matches.", func() render.HTML {
+	{"conditionalfield", "ConditionalField", "Forms", "A field shown or hidden by another field's value — one value or any of a list; visible on first paint, hidden by the runtime until the watched field matches.", func() render.HTML {
 		return ui.Form(ui.FormConfig{ID: "demo-conditional", Action: "#"},
 			ui.RadioGroup(ui.RadioGroupConfig{
 				Legend: "Plan",
@@ -716,6 +752,17 @@ var Catalog = []Entry{
 				WhenName: "plan", WhenValue: "pro",
 				Children: []render.HTML{
 					ui.TextField(ui.TextFieldConfig{Name: "coupon", Label: "Coupon code", Help: "Pro only."}),
+				},
+			}),
+			// The in condition: shown while the watched field holds ANY
+			// of the listed values.
+			ui.Select(ui.SelectConfig{Name: "notify", Label: "Notify", ID: "demo-conditional-notify",
+				Options: []ui.SelectOption{{Value: "none", Text: "Never"}, {Value: "email", Text: "Email"}, {Value: "webhook", Text: "Webhook"}}}),
+			ui.ConditionalField(ui.ConditionalFieldConfig{
+				WhenName:   "notify",
+				WhenValues: []string{"email", "webhook"},
+				Children: []render.HTML{
+					ui.TextField(ui.TextFieldConfig{Name: "notify-address", Label: "Address", Help: "Shown for email and webhook."}),
 				},
 			}),
 		)
@@ -759,6 +806,16 @@ var Catalog = []Entry{
 		return html.Div(html.DivConfig{Class: "fact"},
 			render.Text("DataTable needs an RPC for sort/page/filter and a row data source. See the DataTable docs for the full island-RPC wiring pattern."),
 		)
+	}},
+	{"selection", "Selection", "Data", "A bar that acts on the checked rows below it; it shows only while a row is checked, with no script.", func() render.HTML {
+		row := func(id, label string) render.HTML {
+			return ui.Checkbox(ui.ToggleConfig{Name: "ids", ID: "demo-sel-" + id, Value: id, Label: label, ExtraAttrs: html.Attrs{"form": "demo-selection-bar"}})
+		}
+		return ui.Selection(ui.SelectionConfig{
+			Bar: ui.Form(ui.FormConfig{ID: "demo-selection-bar", Action: "#", Method: "POST", HideSubmit: true},
+				ui.Button(ui.ButtonConfig{Label: "Archive selected", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall, Type: "button"})),
+			Body: ui.Stack(ui.StackConfig{}, row("a", "INV-1041"), row("b", "INV-1042"), row("c", "INV-1043")),
+		})
 	}},
 	{"jsonviewer", "JSONViewer", "Data", "Pretty-printed expandable JSON.", func() render.HTML {
 		return ui.JSONViewer(ui.JSONViewerConfig{
@@ -820,6 +877,27 @@ const page = await api.posts.list({ limit: 25 });`},
 			Max:     4,
 		})
 	}},
+	{"thumbnail", "Thumbnail", "Data", "Square image preview for a table cell or a record's photo field.", func() render.HTML {
+		src, err := demoMockup(160, 160).PNG().DataURL()
+		if err != nil {
+			return html.Div(html.DivConfig{Class: "fact"}, render.Text("Demo image could not be encoded."))
+		}
+		return html.Div(html.DivConfig{Class: "demo-row"},
+			ui.Thumbnail(ui.ThumbnailConfig{Src: src, Alt: "Small", Size: ui.ThumbnailSM}),
+			ui.Thumbnail(ui.ThumbnailConfig{Src: src, Alt: "Medium"}),
+			ui.Thumbnail(ui.ThumbnailConfig{Src: src, Alt: "Large", Size: ui.ThumbnailLG}),
+		)
+	}},
+	{"shortid", "ShortID", "Data", "A long identifier's first characters, with a copy button for all of it.", func() render.HTML {
+		return ui.ShortID(ui.ShortIDConfig{Value: "c86a70b90b096dfa646910e48fd975dc"})
+	}},
+	{"changelist", "ChangeList", "Data", "What one edit changed, a field per row: the old value struck through, then the new one.", func() render.HTML {
+		return ui.ChangeList(ui.ChangeListConfig{Changes: []ui.Change{
+			{Label: "Plan", From: render.Text("Starter"), To: render.Text("Pro")},
+			{Label: "MRR", From: render.Text("$29.00"), To: render.Text("$99.00")},
+			{Label: "Notes", To: render.Text("Upgraded after the trial")},
+		}})
+	}},
 	{"statcard", "StatCard", "Data", "Metric tile with trend.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-row"},
 			ui.StatCard(ui.StatCardConfig{Label: "Active users", Value: "12,483", Trend: "+8.2%", Direction: ui.TrendUp}),
@@ -838,8 +916,11 @@ const page = await api.posts.list({ limit: 25 });`},
 	{"animatedcounter", "AnimatedCounter", "Data", "Number that animates on appearance.", func() render.HTML {
 		return ui.AnimatedCounter(ui.AnimatedCounterConfig{To: 12483})
 	}},
-	{"rating", "Rating", "Data", "Star rating input or display.", func() render.HTML {
+	{"rating", "RatingInput", "Data", "Star rating input bound to a radio group.", func() render.HTML {
 		return ui.RatingInput(ui.RatingConfig{Name: "rating", Label: "Rating", Max: 5, Value: 4})
+	}},
+	{"rating-display", "Rating", "Data", "Read-only score: a testimonial's stars, a product's average.", func() render.HTML {
+		return ui.Rating(ui.RatingDisplayConfig{Value: 4})
 	}},
 	{"counter", "Counter", "Data", "Numeric counter with +/− buttons, client-side only.", func() render.HTML {
 		return ui.Counter(ui.CounterConfig{SignalName: "demo-counter"})
@@ -899,9 +980,9 @@ const page = await api.posts.list({ limit: 25 });`},
 		return ui.Carousel(ui.CarouselConfig{
 			Label: "Demo carousel",
 			Slides: []ui.CarouselSlide{
-				{Content: html.Div(html.DivConfig{Class: "fact"}, render.Text("Slide 1"))},
-				{Content: html.Div(html.DivConfig{Class: "fact"}, render.Text("Slide 2"))},
-				{Content: html.Div(html.DivConfig{Class: "fact"}, render.Text("Slide 3"))},
+				{Content: ui.Card(ui.CardConfig{Heading: "Slide 1", Description: "Snap-scrolls one slide at a time."})},
+				{Content: ui.Card(ui.CardConfig{Heading: "Slide 2", Description: "Arrows, dots and swipe all move the track."})},
+				{Content: ui.Card(ui.CardConfig{Heading: "Slide 3", Description: "No script? The track still scrolls."})},
 			},
 		})
 	}},
@@ -965,20 +1046,24 @@ const page = await api.posts.list({ limit: 25 });`},
 		})
 	}},
 	{"optimisticaction", "OptimisticAction", "Feedback", "Action that commits + can rollback on error.", func() render.HTML {
-		return ui.OptimisticAction(ui.OptimisticActionConfig{
-			Endpoint:     "/__site/optimistic/edit/ok",
-			IdleLabel:    "Mark as read",
-			SuccessLabel: "Marked ✓",
-		})
+		return ui.Cluster(ui.ClusterConfig{},
+			ui.OptimisticAction(ui.OptimisticActionConfig{
+				Endpoint:     "/__site/optimistic/edit/ok",
+				IdleLabel:    "Mark as read",
+				SuccessLabel: "Marked ✓",
+			}),
+		)
 	}},
 	{"toggleaction", "ToggleAction", "Feedback", "Three-state toggle: commit, untoggle, mutex groups.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-stack"},
-			ui.ToggleAction(ui.ToggleActionConfig{
-				Endpoint:         "/__site/toggle/noop",
-				UntoggleEndpoint: "/__site/toggle/noop",
-				IdleLabel:        "Follow",
-				CommittedLabel:   "Following ✓",
-			}),
+			ui.Cluster(ui.ClusterConfig{},
+				ui.ToggleAction(ui.ToggleActionConfig{
+					Endpoint:         "/__site/toggle/noop",
+					UntoggleEndpoint: "/__site/toggle/noop",
+					IdleLabel:        "Follow",
+					CommittedLabel:   "Following ✓",
+				}),
+			),
 			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
 				ui.ToggleAction(ui.ToggleActionConfig{
 					Endpoint:       "/__site/toggle/noop",
@@ -1011,18 +1096,12 @@ const page = await api.posts.list({ limit: 25 });`},
     IdleLabel:    "Save",
     SuccessLabel: "Saved ✓",
 })`}),
-				html.Div(html.DivConfig{Class: "demo-row"},
-					html.Label(html.LabelConfig{
-						For:  "opt-edit-name",
-						Text: "Display name",
-					}),
-					html.Input(html.InputConfig{
-						Type:  "text",
-						Name:  "name",
-						ID:    "opt-edit-name",
-						Value: "Acme Corp",
-					}),
-				),
+				ui.TextField(ui.TextFieldConfig{
+					Name:  "name",
+					Label: "Display name",
+					ID:    "opt-edit-name",
+					Value: "Acme Corp",
+				}),
 				html.Div(html.DivConfig{Class: "demo-row"},
 					ui.OptimisticAction(ui.OptimisticActionConfig{
 						Endpoint:     "/__site/optimistic/edit/ok",
@@ -1197,12 +1276,18 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		"Submit a form and see the result inline: the page never reloads.",
 		func() render.HTML {
 			form := interactive.OnSubmit(
-				render.Tag("form", map[string]string{"class": "demo-form-inline"},
-					render.Tag("input", map[string]string{
-						"type": "text", "name": "message", "placeholder": "Type something…",
-						"required": "", "aria-label": "Message",
-					}),
-					ui.Button(ui.ButtonConfig{Label: "Send", Variant: ui.ButtonPrimary, Type: "submit"}),
+				render.Tag("form", nil,
+					ui.Cluster(ui.ClusterConfig{Align: ui.AlignEnd},
+						ui.TextField(ui.TextFieldConfig{
+							Name:        "message",
+							Label:       "Message",
+							ID:          "demo-form-message",
+							Placeholder: "Type something…",
+							Required:    true,
+							ExtraAttrs:  html.Attrs{"aria-label": "Message"},
+						}),
+						ui.Button(ui.ButtonConfig{Label: "Send", Variant: ui.ButtonPrimary, Type: "submit"}),
+					),
 				),
 				interactive.Post("/__site/interactive/submit").
 					OnSuccess(
@@ -1281,7 +1366,8 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			example := func(sig, cls, panelClass, label, copy string) render.HTML {
 				panel := render.Tag("div", map[string]string{"class": panelClass}, render.Text(copy))
 				return html.Div(html.DivConfig{Class: "demo-stack"},
-					interactive.ToggleLocal(ui.Button(ui.ButtonConfig{Label: label, Variant: ui.ButtonSecondary}), sig),
+					ui.Cluster(ui.ClusterConfig{},
+						interactive.ToggleLocal(ui.Button(ui.ButtonConfig{Label: label, Variant: ui.ButtonSecondary}), sig)),
 					interactive.AnimateOnSignal(panel, sig, cls),
 				)
 			}
@@ -1397,6 +1483,53 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	{"drawer", "Drawer", "Overlays", "Edge-mounted sliding panel: same dismiss affordances as Modal, plus deeplinking.", func() render.HTML {
 		return interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open drawer", Variant: ui.ButtonPrimary}), "site-demo-drawer")
 	}},
+	{"drawerbar", "DrawerBar", "Overlays", "The bar across the top of an intercepted drawer: close, the layer's path in mono, copy link, then actions.", func() render.HTML {
+		return ui.DrawerBar(ui.DrawerBarConfig{
+			Path:    "/admin/entities/invoices/inv-1042",
+			CopyURL: "https://example.com/admin/entities/invoices/inv-1042",
+			Actions: []render.HTML{ui.Button(ui.ButtonConfig{Label: "Save", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeSmall})},
+		})
+	}},
+	{"actionlist", "ActionList", "Navigation", "Link and button rows in a menu row's look, for a panel that is not a menu (an account panel).", func() render.HTML {
+		return ui.ActionList(ui.ActionListConfig{Label: "Account", Items: []ui.ActionListItem{
+			{Label: "Account settings", Href: "#account", Icon: "user"},
+			{Label: "Sign out", Href: "#sign-out", Icon: "log-out", Danger: true},
+		}})
+	}},
+	{"segmentedlinks", "SegmentedLinks", "Navigation", "A strip of links that reads as a segmented control, each with an optional count; the current one is marked.", func() render.HTML {
+		return ui.SegmentedLinks(ui.SegmentedLinksConfig{Label: "Job status", Items: []ui.SegmentLink{
+			{Text: "All", Href: "#all", Count: "40", Current: true},
+			{Text: "Running", Href: "#running", Count: "3"},
+			{Text: "Failed", Href: "#failed", Count: "2"},
+		}})
+	}},
+	{"statstrip", "StatStrip", "Data", "One to six figures in one frame, divided by rules: a dashboard's headline numbers.", func() render.HTML {
+		return ui.StatStrip(ui.StatStripConfig{Label: "This month", Cells: []render.HTML{
+			ui.StatCard(ui.StatCardConfig{Label: "Revenue", Value: "$48,210", Trend: "+6.1%", Direction: ui.TrendUp}),
+			ui.StatCard(ui.StatCardConfig{Label: "Open invoices", Value: "12"}),
+			ui.StatCard(ui.StatCardConfig{Label: "Failed jobs", Value: "2", Trend: "Needs a replay", Direction: ui.TrendDown}),
+		}})
+	}},
+	{"columnpicker", "ColumnPicker", "Data", "A list's Columns menu: show, hide and reorder columns through links, so the choice lives in the URL.", func() render.HTML {
+		return ui.ColumnPicker(ui.ColumnPickerConfig{ID: "demo-columns", Label: "Columns", ResetHref: "#reset", Columns: []ui.ColumnChoice{
+			{Label: "Number", Shown: true, Locked: true},
+			{Label: "Customer", Shown: true, ToggleHref: "#hide-customer", DownHref: "#customer-down"},
+			{Label: "Amount", Shown: true, ToggleHref: "#hide-amount", UpHref: "#amount-up"},
+			{Label: "Memo", ToggleHref: "#show-memo"},
+		}})
+	}},
+	{"filterrows", "FilterRows", "Forms", "Rows of field, operator and value that a list's filter form submits as its query.", func() render.HTML {
+		return ui.FilterRows(ui.FilterRowsConfig{
+			ID: "demo-filter", FieldName: "f", OpName: "op", ValueName: "v",
+			Legend: "Filters", FieldLabel: "Field", OpLabel: "Operator", ValueLabel: "Value",
+			Fields:    []ui.SelectOption{{Value: "status", Text: "Status"}, {Value: "amount", Text: "Amount"}},
+			Operators: []ui.SelectOption{{Value: "eq", Text: "is"}, {Value: "gt", Text: "greater than"}},
+			Rows:      []ui.FilterRow{{Field: "status", Op: "eq", Value: "open"}},
+		})
+	}},
+	{"datetimefield", "DateTimeField", "Forms", "A labelled date-and-time input (datetime-local) with help and error text.", func() render.HTML {
+		return ui.DateTimeField(ui.DateTimeFieldConfig{Name: "due_at", Label: "Due at", Value: "2026-10-12T09:30", Help: "Your local time."})
+	}},
 	{"bottomsheet", "BottomSheet", "Overlays", "Mobile-friendly bottom-anchored variant of Drawer with drag-to-dismiss.", func() render.HTML {
 		return interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open bottom sheet", Variant: ui.ButtonPrimary}), "site-demo-bottomsheet")
 	}},
@@ -1419,7 +1552,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			Subtitle: "UI, REST, OpenAPI, and MCP: generated, then yours to own.",
 			Actions: []render.HTML{
 				ui.Button(ui.ButtonConfig{Label: "Get started", Variant: ui.ButtonPrimary}),
-				ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/"}),
+				ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/", Variant: ui.ButtonSecondary}),
 			},
 		})
 	}},
@@ -1428,13 +1561,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 			Copy: html.Div(html.DivConfig{Class: "demo-stack"},
 				html.Heading(html.HeadingConfig{Level: 2}, render.Text("Typed Go, all the way down.")),
 				html.Paragraph(html.TextConfig{}, render.Text("Compose screens and APIs from the same declaration.")),
-				ui.Button(ui.ButtonConfig{Label: "Start building", Variant: ui.ButtonPrimary}),
+				ui.Cluster(ui.ClusterConfig{}, ui.Button(ui.ButtonConfig{Label: "Start building", Variant: ui.ButtonPrimary})),
 			),
 			Media: ui.Card(ui.CardConfig{Heading: "app.go", Description: "RegisterGenerated(fwApp, site, db)"}),
 		})
 	}},
 	{"pricingcard", "PricingCard", "Marketing", "Plan tile with price, feature list, and CTA; optional featured highlight.", func() render.HTML {
-		return html.Div(html.DivConfig{Class: "demo-row"},
+		return ui.Cluster(ui.ClusterConfig{Align: ui.AlignStretch},
 			ui.PricingCard(ui.PricingCardConfig{
 				Name: "Starter", Price: "$0", Period: "/mo", Description: "For side projects.",
 				Features: []string{"1 project", "Community support"}, CTALabel: "Start free", CTAHref: "#",
@@ -1487,7 +1620,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	}},
 	{"terminalblock", "TerminalBlock", "Data", "Terminal transcript with a labelled header and OK/output lines.", func() render.HTML {
 		return ui.TerminalBlock(ui.TerminalBlockConfig{Label: "$ gofastr generate"},
-			ui.TerminalOut("Scaffolding owned Go…"),
+			ui.TerminalOut("Scaffolding owned Go…\n"),
 			ui.TerminalOK("Generated 10 file(s)"),
 		)
 	}},

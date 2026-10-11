@@ -15,6 +15,7 @@ type Customers struct {
 	Company string `json:"company,omitempty"`
 	Status  string `json:"status,omitempty"`
 	Mrr     string `json:"mrr,omitempty"`
+	Logo    string `json:"logo,omitempty"`
 	UserId  string `json:"userId,omitempty"`
 }
 
@@ -27,6 +28,7 @@ var (
 	CustomersCompany = framework.NewStringColumn("company")
 	CustomersStatus  = framework.NewStringColumn("status")
 	CustomersMrr     = framework.NewFloatColumn("mrr")
+	CustomersLogo    = framework.NewStringColumn("logo")
 	CustomersUserId  = framework.NewStringColumn("user_id")
 )
 
@@ -233,11 +235,13 @@ func registerCustomers(app *framework.App) {
 			{Name: "company", Type: schema.String, Max: floatPtr(120)},
 			{Name: "status", Type: schema.Enum, Default: "trialing", Values: []string{"trialing", "active", "past_due", "canceled"}},
 			{Name: "mrr", Type: schema.Decimal, Default: "0", Min: floatPtr(0)},
+			{Name: "logo", Type: schema.Image},
 			{Name: "user_id", Type: schema.String, Hidden: true},
 		},
 		Scope: &framework.ScopeConfig{
 			OwnerField: "user_id",
 		},
+		SearchFields: []string{"name"},
 		Exposure: &framework.ExposureConfig{
 			CRUD: boolPtr(true),
 			MCP:  true,
@@ -245,6 +249,7 @@ func registerCustomers(app *framework.App) {
 		Indices: []framework.Index{
 			{Name: "idx_customers_owner_email", Columns: []string{"user_id", "email"}, Unique: true},
 		},
+		Display:    &framework.DisplayConfig{TitleFields: []string{"name"}, Description: "Every account that pays you.", Columns: []string{"name", "email", "company", "status", "mrr"}, Nav: &framework.EntityNav{Group: "billing", Icon: "users", Order: 1}, Views: []framework.ListView{{Key: "active", Label: "Active", Where: "status = \"active\""}, {Key: "past_due", Label: "Past due", Where: "status = \"past_due\""}}, Facets: []string{"status"}, Fields: map[string]framework.FieldDisplay{"email": {Input: "email"}, "mrr": {Label: "MRR", Input: "money"}}},
 		Properties: map[string]any{"label": "Customers"},
 	})
 	_ = Customers{}

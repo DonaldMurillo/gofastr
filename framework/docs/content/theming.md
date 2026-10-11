@@ -18,24 +18,31 @@ warning when one arrives too late.
 ## The token catalog
 
 `style.Theme` is a struct made of typed token groups. Every field is
-required; `WithTheme` panics at startup and names any token you left
-out. Each group writes CSS variables with a fixed prefix:
+required except `Strokes`, `Leading`, `Tracking`, `Opacities`, `Code` and
+`Knobs`; `WithTheme` panics at startup and
+names any token you left out. Each group writes CSS variables with a
+fixed prefix:
 
 | Theme group | Emits | Examples |
 |---|---|---|
 | `Colors` | `--color-<name>` | `--color-primary`, `--color-primary-fg`, `--color-danger`, `--color-danger-fg`, `--color-text-muted`, `--color-code-surface` |
 | `Fonts` | `--font-<name>` | `--font-body`, `--font-heading`, `--font-mono` |
 | `Spacing` | `--spacing-<name>` | `--spacing-xs` … `--spacing-3xl` (px) |
-| `Radii` | `--radii-<name>` | `--radii-sm`, `--radii-md`, `--radii-full` |
-| `Shadows` | `--shadow-<name>` | `--shadow-sm` … `--shadow-xl` |
+| `Radii` | `--radii-<name>` | `--radii-sm`, `--radii-md`, `--radii-full`. Any step can be `0`: a square theme sets them all to it |
+| `Strokes` | `--stroke-<name>` | `--stroke-thin` (1px: every control and card border, every divider, the inset ring on a shadow), `--stroke-thick` (2px: an emphasised border such as a selected card or an active tab's rule), `--stroke-focus` (2px: the focus outline) and `--stroke-focus-offset` (2px: its gap from the element). A value is `"0"` or a non-negative px/rem/em length. The group is optional: a stroke you leave unset is not emitted and the kit draws its default width, so a `theme.go` written before strokes existed keeps its borders |
+| `Shadows` | `--shadow-<name>` | `--shadow-xs` … `--shadow-xl`: `xs` is the hairline lift under a resting control (button, input, select), `sm` sits under a card, `md` under a popover or menu, `lg` under a dialog |
 | `ZIndex` | `--z-<name>` | `--z-dropdown`, `--z-modal`, `--z-toast` |
 | `Durations` | `--duration-<name>` | `--duration-fast`, `--duration-overlay-enter` |
 | `Easings` | `--easing-<name>` | `--easing-ease-out`, `--easing-spring` |
 | `Typography` | `--text-<name>` | `--text-sm`, `--text-base`, `--text-2xl` |
+| `Leading` | `--leading-<name>` | `--leading-tight` (1.2: headings), `--leading-snug` (1.4: labels, captions, compact rows), `--leading-normal` (1.5: controls and body text), `--leading-relaxed` (1.6: reading text). A value is a unitless number or a px/rem/em length. Optional like `Strokes`: an unset step is not emitted and the kit draws its default |
+| `Tracking` | `--tracking-<name>` | `--tracking-tighter` (-0.03em), `--tracking-tight` (-0.02em: display headings), `--tracking-snug` (-0.01em: titles, brand marks), `--tracking-wide` (0.04em), `--tracking-wider` (0.08em: eyebrows and small caps). A value is `0` or a px/rem/em length. Optional like `Strokes` |
+| `Opacities` | `--opacity-<name>` | `--opacity-faint` (0.2), `--opacity-disabled` (0.5: a disabled control), `--opacity-muted` (0.6: secondary glyphs and labels). A value is a number from 0 to 1. Optional like `Strokes` |
 | `FontWeights` | `--font-weight-<name>` | `--font-weight-normal` (400), `--font-weight-medium` (500), `--font-weight-semibold` (600), `--font-weight-bold` (700) |
 | `Breakpoints` | `--breakpoint-<name>` | `--breakpoint-md` (informational; media queries can't read vars) |
-| `Layout` | `--spacing-touch-target`, `--size-<name>` | `--spacing-touch-target` is the WCAG 2.5.5 minimum tap-target size (44px default); comfortable-density controls reach it through `--fui-density-control-h` (see component options), and pagination, inputs and the mobile hamburger summary read it directly. The `style.Size` fields are the dimensions a page is built around: `--size-page-width` (66rem, the column a site's header, main and footer share; `ui.Container`'s page width), `--size-page-gutter` (clamp(20px, 5vw, 32px), the side space outside it), `--size-header-height` (56px, which `ui.ContentRow`'s viewport mode subtracts), and `ui.Container`'s caps `--size-narrow-width` (640px), `--size-content-width` (1080px) and `--size-wide-width` (1280px) |
-| `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, `--tk-com`, the syntax-highlight colors code blocks read. This is the only optional group: leave a slot unset and it falls back to the built-in palette. Dark values go in `Theme.DarkCode` (a map, like `DarkColors`) |
+| `Layout` | `--spacing-touch-target`, `--size-<name>` | `--spacing-touch-target` is the WCAG 2.5.5 minimum tap-target size (44px default); comfortable-density controls, pagination and DataTable rows reach it through `--fui-density-control-h` (see component options), and the mobile hamburger summary reads it directly. The `style.Size` fields are the dimensions a page is built around: `--size-page-width` (66rem, the column a site's header, main and footer share; `ui.Container`'s page width), `--size-page-gutter` (clamp(20px, 5vw, 32px), the side space outside it), `--size-header-height` (56px, which `ui.ContentRow`'s viewport mode subtracts), and `ui.Container`'s caps `--size-narrow-width` (640px), `--size-content-width` (1080px) and `--size-wide-width` (1280px) |
+| `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, `--tk-com`, the syntax-highlight colors code blocks read. Optional like `Strokes`: leave a slot unset and it falls back to the built-in palette. Dark values go in `Theme.DarkCode` (a map, like `DarkColors`) |
+| `Knobs` | `--ui-<name>` | a map of per-component knob values (`"ui-button-edge": "var(--color-border-strong)"`, `"ui-checkbox-box-size": "20px"`), emitted in the theme's own `:root` block. Keys are `ui-` plus lower-case words joined by single dashes; values pass the same check as any free-form CSS value. See [Per-component knobs](#per-component-knobs-the---ui--variables) |
 
 Token names come from the Go field path, converted to kebab-case
 (`Colors.PrimaryFg` → `--color-primary-fg`). Set an explicit `Name` on
@@ -59,6 +66,61 @@ The desktop layouts in `battery/desktop/ui` set
 `Layout.TouchTarget` to 24 (the comfortable density's control height),
 which is how the same framework controls come out near native size in
 a desktop window.
+
+## The default look
+
+`style.DefaultTheme()` and `theme.Default()` share one neutral zinc
+palette: a near-black primary (`#18181B`) on a white page, one hairline
+border (`#E4E4E7`), and one soft surface (`#F4F4F5`) for hover states,
+secondary buttons and filled chips. The dark palette in
+`theme.Default()` inverts it: a near-white primary on `#09090B`. Brand
+colour is the host's call (`theme.Overrides.Primary`); every component
+reads the tokens, so setting it re-colours primary buttons, links and
+selected states together. Fonts are the platform's system stack, so the
+default theme ships no font files.
+
+A few rules hold across every component, so a page built only from kit
+parts reads as one system:
+
+- **One radius scale.** Controls use `--radii-md` (8px), cards and
+  panels `--radii-lg` or `--radii-xl` (10px, 14px), small chips
+  `--radii-sm` (6px).
+- **One focus ring.** Every focusable part draws
+  `outline: var(--stroke-focus) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset)` on `:focus-visible`, in
+  neutral grey rather than the brand colour. Re-skin it by changing
+  `TextSubtle` and the two focus strokes, not per component.
+- **Every look value is a variable.** Borders, dividers and inset
+  rings read `--stroke-thin` and emphasised borders `--stroke-thick`;
+  pill shapes read `--radii-full`, transitions `--duration-*` and
+  `--easing-*`, weights `--font-weight-*`, stacking
+  layers `--z-*`, gaps and padding `--spacing-*`, type `--text-*`,
+  `--leading-*` and `--tracking-*`, fades `--opacity-*`, elevation
+  `--shadow-*`. What no global token covers (a checkbox's box, a
+  slider's thumb, a filled button's edge) reads a `--ui-*` knob whose
+  fallback is the default. A theme that sets `Strokes.Thin` to 3px,
+  every radius to 0, the shadows to hard offsets and
+  `Knobs["ui-button-edge"]` to a solid colour restyles the whole kit
+  from its one `:root` block, with no component CSS. `gofastr verify`
+  holds the kit to this: a look value written as a literal in kit CSS
+  is GOFASTR1823 ([contracts](contracts.md)).
+- **Soft tones for status.** Badges, tags, chips and the pricing
+  badge are soft fills: the tone tints the background and colours the
+  text, never a solid saturated block.
+- **Text controls are 16px on phones.** Inputs draw at `--text-sm` on
+  desktop. Below the md breakpoint (767.98px) every text control
+  (text field, textarea, select, combobox, tag, grouped, password,
+  number and time inputs, search) goes back to `--text-base`, because
+  iOS Safari zooms the page into a focused control whose text is under
+  16px.
+
+Two gate tests in `framework/ui` hold the second rule and the token
+spellings: `TestFocusRingIsNeutral` fails on any registered sheet that
+draws its ring in `--color-primary`, and `TestSheetVarsNameDeclaredTokens`
+fails on a `var(--x)` that no theme or sheet declares (a misspelt token
+falls back to its literal and ignores every re-theme). Component knobs
+(`--ui-*`, `--fui-*`, `--cui-*`, `--hui-*`) are exempt, since a host
+sets them. `TestTextControlsAreBaseSizeOnPhones` holds the phone rule.
 
 ## Setting the theme
 
@@ -162,8 +224,10 @@ else: a class rule, another media query, or a dark value for a
 non-colour token is an error. Each `@property`:
 
 - is named `--<type>-<name>`, where the prefix is a token type
-  (`color`, `font`, `spacing`, `radii`, `shadow`, `z`, `duration`,
-  `easing`, `text`, `font-weight`, `size`) and the name is lowercase
+  (`color`, `font`, `spacing`, `radii`, `stroke`, `shadow`, `z`,
+  `duration`, `easing`, `text`, `leading`, `tracking`, `opacity`,
+  `font-weight`, `size`) and the name is
+  lowercase
   kebab-case,
 - declares the syntax that matches its type,
 - says `inherits: true`, since a theme token must reach every element,
@@ -175,7 +239,10 @@ non-colour token is an error. Each `@property`:
 | `--color-` | `style.Color` | `"<color>"` |
 | `--size-` | `style.Size` | `"<length>"` or `"<length-percentage>"` |
 | `--text-` | `style.FontSize` | `"<length>"` or `"<length-percentage>"` |
-| `--spacing-`, `--radii-` | `style.Spacing`, `style.Radius` | `"<length>"` |
+| `--spacing-`, `--radii-`, `--stroke-` | `style.Spacing`, `style.Radius`, `style.Stroke` | `"<length>"` |
+| `--leading-` | `style.LineHeight` | `"<number>"` or `"<length>"` |
+| `--tracking-` | `style.LetterSpacing` | `"<length>"` |
+| `--opacity-` | `style.Opacity` | `"<number>"` |
 | `--font-weight-` | `style.FontWeight` | `"<number>"` or `"<integer>"` |
 | `--z-` | `style.ZIndexValue` | `"<integer>"` |
 | `--duration-` | `style.Duration` | `"<time>"` |
@@ -241,10 +308,17 @@ one package can read a token declared in another.
   (`font-weight: 600` is `var(--font-weight-semibold)`) and sizes
   (`width`, `height`, `inline-size`, `block-size`, their `min-`/`max-`
   forms, and `flex-basis`). Padding, margin and gap compare against
-  spacing only.
+  spacing only; `border-width` (and its side and logical forms),
+  `outline-width`, `outline-offset` and `column-rule-width` compare
+  against strokes (`outline-offset: 2px` is
+  `var(--stroke-focus-offset)`); `line-height`, `letter-spacing` and
+  `opacity` compare against `--leading-*`, `--tracking-*` and
+  `--opacity-*` (`line-height: 1.6` is `var(--leading-relaxed)`). A `border` shorthand is judged whole,
+  so `1px solid …` passes this rule; write `var(--stroke-thin) solid …`
+  anyway, so a theme's line weight reaches it.
 - **GOFASTR1821**: an app token whose value is already another token's
-  value of the same type, built-in or app (`--color-brand: #4F46E5`
-  where `--color-primary` is `#4F46E5`). Read the other token, or give
+  value of the same type, built-in or app (`--color-brand: #18181B`
+  where `--color-primary` is `#18181B`). Read the other token, or give
   the new one its own value.
 - **GOFASTR1822** (warning): the same literal written in two or more
   owned sheets of one program for the same token type. Declare it once as a token and
@@ -487,6 +561,92 @@ light page is a theme with a dark palette, not an accident of
 inheritance. If you want a section to follow the page's scheme, give
 its override the dark values too.
 
+## Page themes: `ui.ThemePicker`
+
+To let a visitor switch the whole page between themes, register each
+extra theme as an override and render a picker:
+
+```go
+var Brutal = style.RegisterThemeOverride(theme.Brutal())
+
+ui.ThemePicker(ui.ThemePickerConfig{
+    Ctx:    ctx,
+    Themes: []ui.ThemeChoice{{Label: "Brutal", Theme: Brutal}},
+})
+```
+
+The picker draws as `ui.ThemeToggle`'s pill: a **Default** option for
+the app's own theme, then one option per choice. Picking one puts the
+override's `cui-theme-<hash>` class on `<html>`, so everything on the
+page draws in it: the body background, every component, the
+component options, and the theme's `Knobs`. **Default** removes the
+class. The `headless-navigation` module does the switch in place, with
+no request. The choice is stored in `localStorage["gofastr.theme"]`,
+and the color-scheme bootstrap at the top of `<head>` puts the class
+back before first paint on the next load, so a themed page never
+flashes the default. Client-side navigation keeps the class, since it
+never replaces `<html>`. Two pickers on one page show the same choice.
+
+The override CSS names `:root.cui-theme-<hash>` beside the descendant
+selector in each block, so the class works on `<html>` as well as on a
+`ui.Themed` wrapper. On `<html>` the override's light tokens outrank
+the root theme's dark block, and its dark tokens outrank both.
+
+`theme.Brutal()` is a ready page theme: the framework theme's tokens
+re-skinned as neo-brutalism, with square corners (every radius 0), 2px
+and 3px strokes, hard offset shadows drawn in the border colour (black
+on cream in light, cream on near-black in dark), a yellow primary with
+black ink, and "Archivo" first in the font stacks (self-host the face;
+without it the stack falls back to the system sans).
+
+It composes with `ui.ThemeToggle`: the page theme decides the palette
+and the toggle decides light or dark within it. Put both in the
+header.
+
+### Caveats
+
+- **Give every offered theme a full dark palette.** An override with
+  no `DarkColors` stays light when the visitor picks dark, the same
+  as a `ui.Themed` scope. Next to a dark/light toggle that reads as a
+  broken toggle.
+- **A theme names its fonts but does not load them.** Self-host every
+  family any offered theme uses ([Self-hosting web
+  fonts](#self-hosting-web-fonts)). Without that, the browser falls
+  back silently. A `@font-face` rule costs nothing until a page uses
+  the family, so declaring all of them up front is cheap.
+- **An override is a whole theme, not a patch on the app theme.** Its
+  block declares every typed token and the complete component option
+  set, so a spacing step, font or option the app theme customised and
+  the override did not reverts to the override's own value. Build each
+  override from the app theme's value (`t := appTheme()`, then change
+  what differs) rather than from `theme.Default(...)`, unless a
+  different base is the point.
+- **Unset knobs keep the app theme's value.** The class and the root
+  theme sit on the same element, so a knob the app theme sets in
+  `Knobs` stays in force under an override that does not set it. Set
+  it in the override's `Knobs` to change it.
+- **Editing a theme resets the visitors who picked it.** The stored
+  choice is the class, and the class is the theme's content hash. Any
+  change to the theme's values gives it a new class, and visitors who
+  had picked it see Default until they pick again. A stored value that
+  is not a `cui-theme-<hex>` class is ignored.
+- **The server never sees the choice.** It lives in one browser's
+  storage, not in a cookie or the account: the server renders the app
+  theme, and a private window or another device starts on Default.
+  Anything drawn from the Go `style.Theme` value rather than from
+  `app.css`, such as emails, draws the app theme. The picker ships
+  with Default checked, a first visit's choice, and the module
+  re-checks the stored one when it loads.
+- **A theme reaches what the kit draws, nothing else.** Images and
+  screenshots keep their baked colors. Owned style sheets
+  (`<name>.style.css`) follow the theme only through the tokens they
+  read. A `ui.Themed` section inside a themed page keeps its own theme.
+- **Clipping containers clip offset shadows.** A theme with hard
+  offset shadows (`4px 4px 0 0 …`) draws them outside the element's
+  box, so a container that clips its overflow crops them. A
+  `ui.Carousel` slide is one: it cuts a card's shadow off at its right
+  and bottom edges.
+
 ## Component options
 
 Tokens retune the palette and the scales; **component options** decide
@@ -534,7 +694,14 @@ with it); compact is a deliberate 36px squeeze below that floor, and
 the md/sm spacing step separates controls in each. An explicit `Size`
 on one component always wins over density — density is the default
 rhythm, not a ceiling. Reach for density when a whole screen should
-tighten; reach for a size when one control must.
+tighten; reach for a size when one control must. Buttons, fields,
+selects, pagination, the theme toggle and a DataTable's rows and
+header read the density height, so a compact table's rows are 44px
+(the height plus a 4px inset) where comfortable ones are 52px. A
+`ui.ContentRow` with `Dense: true` applies the compact values to its
+page on a fine pointer only (see the layouts page): the admin's
+operator console tightens on a desktop and keeps 44px targets on a
+phone.
 
 Zero values mean *unspecified* while overrides merge, and only then:
 `theme.Default()` flattens a complete set (Comfortable, Filled,
@@ -583,10 +750,10 @@ where one declaration covers every rule beneath it.
 | Option | Emits |
 |---|---|
 | `density: comfortable` | `--fui-density-control-h: var(--spacing-touch-target)`, `--fui-density-gap: var(--spacing-md)` |
-| `button.radius: round` / `square` / `pill` | `--fui-button-radius: var(--radii-md)` / `0` / `9999px` |
-| `button.treatment: filled` | `--fui-button-primary-bg: var(--color-primary)`, `--fui-button-primary-fg: var(--color-primary-fg)`, `--fui-button-primary-border: transparent`, and the same `-danger` trio from `--color-danger` / `--color-danger-fg` |
+| `button.radius: round` / `square` / `pill` | `--fui-button-radius: var(--radii-md)` / `0` / `var(--radii-full)` |
+| `button.treatment: filled` | `--fui-button-primary-bg: var(--color-primary)`, `--fui-button-primary-fg: var(--color-primary-fg)`, `--fui-button-primary-border: var(--ui-button-edge, transparent)`, and the same `-danger` trio from `--color-danger` / `--color-danger-fg` |
 | `button.treatment: outline` | `--fui-button-primary-bg: transparent`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: var(--color-primary)`, and the `-danger` trio from `--color-danger` |
-| `button.treatment: soft` | `--fui-button-primary-bg: color-mix(in srgb, var(--color-primary) 15%, transparent)`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: transparent`, and the `-danger` trio likewise |
+| `button.treatment: soft` | `--fui-button-primary-bg: color-mix(in srgb, var(--color-primary) 15%, transparent)`, `--fui-button-primary-fg: var(--color-primary)`, `--fui-button-primary-border: var(--ui-button-edge, transparent)`, and the `-danger` trio likewise |
 | `field.layout: stacked` | `--fui-field-columns: minmax(0, 1fr)`, `--fui-field-message-column: 1 / -1` |
 | `field.layout: inline` | `--fui-field-columns: minmax(8rem, 1fr) minmax(0, 3fr)`, `--fui-field-message-column: 2` |
 | `field.radius: round` / `square` | `--fui-field-radius: var(--radii-md)` / `0` |
@@ -653,7 +820,7 @@ Two surfaces need to move tokens in and out of a `style.Theme` as a flat
 `style.ThemeToTokens(t)` flattens a theme to a map keyed by the CSS
 custom-property identifier **without** the leading `--`:
 `"color-primary"`, `"spacing-md"`, `"duration-fast"`, `"tk-kw"`. The value
-is exactly what the `:root` block emits after the colon: `"#4F46E5"`,
+is exactly what the `:root` block emits after the colon: `"#18181B"`,
 `"8px"`, `"150ms"`. That key is chosen over a Go field-path key because it
 is what the CSS emits, what a UI control edits, and stable across struct
 reorganisations.
@@ -663,6 +830,10 @@ with the light token but live in a different selector scope, so they are
 flattened under a `dark.` prefix to stay distinct:
 `DarkColors["primary"]` → `"dark.color-primary"`, `DarkCode["kw"]` →
 `"dark.tk-kw"`.
+`Knobs` entries are flattened under a `knob.` prefix:
+`Knobs["ui-button-edge"]` → `"knob.ui-button-edge"`. A `knob.` key
+whose name is not `ui-` plus lower-case words, or whose value fails the
+free-form check below, is refused like any other bad token.
 
 `style.ApplyTokens(base, tokens)` returns a copy of `base` with the
 supplied tokens applied. It **fails closed on every axis**:
@@ -674,7 +845,7 @@ supplied tokens applied. It **fails closed on every axis**:
   `color-mix()`, `var(--…)`, and the CSS named colors) and reject
   everything else. Integer/duration tokens must match their numeric
   format. Every free-form string (Font, Shadow, Easing, FontSize,
-  CodeColor) is rejected if it contains a declaration-breaking sequence
+  CodeColor, knob values) is rejected if it contains a declaration-breaking sequence
   (`;`, `}`, `{`, `/*`, `*/`, `<`, `>`, `\`, a newline, or `url(`).
 
 A value like `red; --x:}body{display:none}` escapes its CSS declaration;
@@ -744,6 +915,45 @@ stylesheet without forking the component:
 A dimension every page shares is a theme token instead: the page
 column, its gutter, the header height and `ui.Container`'s caps live
 in `Theme.Layout` (`t.Layout.WideWidth.Value = "1240px"`).
+
+A theme sets them for the whole app through `Theme.Knobs`, which
+emits them in the same `:root` block as the tokens (and in a scoped
+theme's block, so a `ui.Themed` section can carry its own):
+
+```go
+t := theme.Default(theme.Overrides{})
+t.Knobs = map[string]string{
+    "ui-button-edge":       "var(--color-border-strong)",
+    "ui-checkbox-box-size": "20px",
+}
+```
+
+Knob values reach `ThemeToTokens` and `ApplyTokens` under a `knob.`
+prefix (`"knob.ui-button-edge"`), so a theme editor round-trips them,
+and `gofastr theme edit` writes them back to `theme.go`.
+
+Some of the knobs:
+
+| Knob | Default | What it sets |
+|---|---|---|
+| `--ui-button-edge` | `transparent` | the border colour of a filled or soft button (primary and danger); an outline button keeps its own border. A hard-edged theme sets it to `var(--color-border-strong)` or `var(--color-text)` |
+| `--ui-press-hover-translate`, `--ui-press-active-translate`, `--ui-press-hover-shadow`, `--ui-press-active-shadow` | unset: no motion, and each surface keeps its own hover shadow | how every clickable surface moves and casts its shadow under the pointer and when pressed: buttons, interactive cards, interactive tags, gallery items, the back-to-top button, the copy button, the carousel arrows, the menu trigger and the standalone theme toggle. A press-down theme lifts on hover and sinks onto its shadow on click: `"ui-press-hover-translate": "-2px -2px"`, `"ui-press-hover-shadow": "6px 6px 0 0 var(--color-border-strong)"`, `"ui-press-active-translate": "4px 4px"`, `"ui-press-active-shadow": "none"`. Active falls back to hover. Text links, table rows, row cards, tabs, segmented options, borderless close buttons and the theme toggle's pill segments stay still, and the framed code block's copy button opts out. The motion uses the CSS `translate` property, so a component that positions an element with `transform` keeps it |
+| `--ui-<component>-hover-translate`, `--ui-<component>-active-translate`, `--ui-<component>-hover-shadow`, `--ui-<component>-active-shadow` for `button`, `card`, `tag`, `gallery-item`, `back-to-top`, `copy-btn`, `carousel-arrow`, `menu-trigger`, `theme-toggle` | the shared `--ui-press-*` knob | one surface's own press motion; set `none` to keep a single component still under a press-down theme |
+| `--ui-button-shadow` | `var(--shadow-xs)` | the resting shadow of a primary, danger or secondary button |
+| `--ui-layout-gap-xs`, `--ui-layout-gap-sm`, `--ui-layout-gap-md`, `--ui-layout-gap-lg`, `--ui-layout-gap-xl`, `--ui-layout-gap-2xl` | the matching `--spacing-*` token | the room between children of `ui.Stack`, `ui.Cluster` and `ui.Grid` at each gap step (`md` is the default gap). It moves the gaps without moving any padding, so a theme whose cards cast a hard offset shadow can give them room: `"ui-layout-gap-md": "var(--spacing-xl)"`. The carousel, gallery and section body gaps below fall back to the same steps, so one setting moves them all |
+| `--ui-section-body-gap` | `--ui-layout-gap-lg` | the room between the blocks in a `ui.Section` body, such as a billing toggle, a card grid and a table below it |
+| `--ui-carousel-gap` | `--ui-layout-gap-md` | the room between `ui.Carousel` slides; the slide width subtracts it, so a wider gap keeps every column on the stage |
+| `--ui-gallery-gap` | `--ui-layout-gap-md` | the room between `ui.Gallery` tiles when no `Gap` is set; a `Gap` preset reads its own layout step |
+| `--ui-button-case`, `--ui-badge-case`, `--ui-tag-case`, `--ui-status-pill-case`, `--ui-pricing-card-badge-case`, `--ui-section-eyebrow-case`, `--ui-page-header-eyebrow-case`, `--ui-record-summary-eyebrow-case`, `--ui-anchored-rail-eyebrow-case` | `none` | the letter case (`text-transform`) of button labels, badges, tags, status pills, the pricing card's Recommended badge and each component's eyebrow; set `uppercase` for shouty labels |
+| `--ui-rating-color` | `#D97706` (amber) | the filled glyph colour of `ui.Rating` and `ui.RatingInput`; heart and fire shapes default to `--color-danger`, thumb to `--color-primary`, diamond to `--color-info`; a value set on the rating or any ancestor overrides every shape |
+| `--ui-page-header-title-size`, `--ui-page-header-section-title-size`, `--ui-page-header-subsection-title-size` | `var(--text-2xl)`, `var(--text-xl)`, `var(--text-base)` | the size of a `ui.PageHeader` title: the first sizes a page's h1, the second a section's h2 (a record's related lists, a dashboard's recent rows), the third an h3 or deeper (a list inside a dashboard panel), so display-size page titles leave sections a step below them |
+| `--ui-change-list-min-width` | `14rem` | `ui.ChangeList`'s narrowest width, so a scrolling table cell does not wrap every word onto its own line |
+| `--ui-badge-dot-size` | `0.375rem` | the circle a `ui.StatusBadge` with `Dot` draws before its label |
+| `--ui-section-overline-size`, `--ui-section-overline-weight`, `--ui-section-overline-tracking`, `--ui-section-overline-color` | `var(--text-xs)`, `600`, `0.06em`, `var(--color-text-muted)` | the group label a `ui.Section` with `Overline` draws its heading as, upper case over a run of cards |
+| `--ui-form-max` | `42rem` | `ui.Form`'s maximum width, so a wide pane does not stretch every input across it; set `none` to fill |
+| `--ui-copy-btn-size`, `--ui-copy-btn-bg`, `--ui-copy-btn-border`, `--ui-copy-btn-color`, `--ui-copy-btn-shadow`, `--ui-copy-btn-hover-bg`, `--ui-copy-btn-hover-color` | the outline button look | `ui.CopyButton`'s size and colours; the framed `ui.CodeBlock` head sets them for a quiet button on its dark chrome |
+| `--ui-status-pill-font` | `inherit` | `ui.StatusPill`'s font family (set `var(--font-mono)` for a terminal-style pill) |
+| `--ui-pricing-card-badge-fg` | `var(--color-text)` | the text colour of `ui.PricingCard`'s Recommended badge |
 
 You can also scope them: set one inside a `ui.Themed` section, or on
 a specific wrapper class, to change a single instance. Each

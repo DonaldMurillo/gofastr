@@ -14,6 +14,12 @@ or over plain HTTP.
   `completed == false`, so a restart (or a second replica) resumes to
   the same answer. All engine reads and writes go through the
   entities' CrudHandlers with the owner's identity context.
+- The task screens come from `app.EntityUI` (`framework/entityui`):
+  `/tasks/create` is the create form, `/tasks/{id}` the record page
+  whose Edit tab holds the editor and whose `focus` tab is the app's
+  own (the Start card and the task's facts in the inspector pane).
+  The dashboard's task table stays hand-composed: its per-row Start
+  button is bridge-driven, not a navigation.
 - A once-a-second tick loop, started from `app.OnReady` and stopped on
   app shutdown: while a session runs it updates the tray title to
   `mm:ss` (when the owner's `tray_countdown` preference is on) and

@@ -14,7 +14,7 @@
 # The registry is complete through this release: releases <= through with
 # no file under releases/ genuinely had no migration-relevant changes.
 # Targets beyond it make the CLI warn that it may be out of date.
-through: v0.86.0
+through: v0.87.0
 
 # Where a kept `ui-*` component name is an identifier, not a class: a
 # sheet name passed to the style registry (core-ui/registry.RegisterStyle,

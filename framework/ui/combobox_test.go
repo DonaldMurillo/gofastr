@@ -49,7 +49,7 @@ func TestComboboxCSSStylesFieldHidesStatusAndHonoursHidden(t *testing.T) {
 	for _, want := range []string{
 		// The field look item 20 names: a bordered, padded input.
 		".fui-combobox__input {",
-		"border: 1px solid var(--color-border",
+		"border: var(--stroke-thin, 1px) solid var(--color-border",
 		// The live region is clipped on a page that loads only this
 		// sheet, and stays in the tree.
 		"[data-cui-comp=\"ui-combobox\"] .fui-visually-hidden {",

@@ -27,9 +27,8 @@ func TestCollapsibleRegistersCSS(t *testing.T) {
 func TestCollapsibleUsesCanonicalThemeTokens(t *testing.T) {
 	css := collapsibleStyle.Entry().CSSFor(style.DefaultTheme())
 	for _, token := range []string{
-		"var(--color-border", "var(--color-surface", "var(--color-text",
-		"var(--color-text-muted", "var(--color-primary", "var(--radii-md",
-		"var(--duration-fast", "var(--easing-ease-in-out",
+		"var(--color-border", "var(--color-text", "var(--color-text-muted",
+		"var(--duration-fast", "var(--easing-ease-out",
 	} {
 		if !strings.Contains(css, token) {
 			t.Errorf("collapsible CSS missing canonical token %q:\n%s", token, css)
@@ -41,14 +40,26 @@ func TestCollapsibleUsesCanonicalThemeTokens(t *testing.T) {
 		"var(--fui-border, var(--color-border",
 		"var(--fui-foreground, var(--color-text",
 		"var(--fui-muted, var(--color-text-muted",
-		"var(--fui-primary, var(--color-primary",
-		"var(--fui-surface, var(--color-surface",
 	} {
 		if !strings.Contains(css, chained) {
 			t.Errorf("collapsible CSS missing bridge chain %q:\n%s", chained, css)
 		}
 	}
 	assertBridgeChainsToCanonical(t, "collapsible", css)
+}
+
+// A run of sections reads as one accordion list: a hairline under each
+// row, no per-section box, and a masked chevron instead of a glyph.
+func TestCollapsibleIsAccordionRow(t *testing.T) {
+	css := collapsibleStyle.Entry().CSSFor(style.DefaultTheme())
+	if !strings.Contains(css, `[data-cui-comp="fui-collapsible"]{border-bottom:var(--stroke-thin, 1px) solid`) {
+		t.Errorf("collapsible root should draw only a bottom hairline:\n%s", css)
+	}
+	for _, banned := range []string{`fui-collapsible"]{border:1px`, `content:"\25B8"`, "--easing-standard"} {
+		if strings.Contains(css, banned) {
+			t.Errorf("collapsible CSS still carries %q:\n%s", banned, css)
+		}
+	}
 }
 
 // ─── Collapsible ───

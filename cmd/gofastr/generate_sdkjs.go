@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 )
 
 // renderSDKJSFiles emits the JS/TS SDK: one handrolled ESM client.js plus a
@@ -39,6 +40,11 @@ func renderSDKJSFiles(spec sdkSpec) []generatedFile {
 		// access is identical for every legitimate name (`client.posts` still
 		// resolves) and admits no name that is not a string.
 		resourceProps = append(resourceProps, fmt.Sprintf("    this[%q] = new Resource(this, %q);", jsResourceProp(ent), ent.Table))
+		// One binding per move, same quoting rule: the key is data, never
+		// an identifier, in the emitted statements.
+		for _, t := range crud.RoutableTransitions(decl.States) {
+			resourceProps = append(resourceProps, fmt.Sprintf("    this[%q][%q] = (id) => this[%q].transition(id, %q);", jsResourceProp(ent), t.Key, jsResourceProp(ent), t.Key))
+		}
 	}
 
 	// Client class last in the .js so Resource is already defined; the d.ts
@@ -64,8 +70,12 @@ func renderSDKJSFiles(spec sdkSpec) []generatedFile {
 	dts.WriteString("export declare class Client {\n")
 	dts.WriteString("  constructor(opts: { baseURL: string; token?: string; fetch?: typeof fetch });\n")
 	dts.WriteString("  baseURL: string;\n  token: string;\n")
-	for _, ent := range spec.Entities {
-		dts.WriteString(fmt.Sprintf("  readonly %s: Resource<%s, %sInput, %sPatch>;\n", jsResourceProp(ent), ent.Struct, ent.Struct, ent.Struct))
+	for i, ent := range spec.Entities {
+		prop := fmt.Sprintf("  readonly %s: Resource<%s, %sInput, %sPatch>", jsResourceProp(ent), ent.Struct, ent.Struct, ent.Struct)
+		if len(crud.RoutableTransitions(spec.Decls[i].States)) > 0 {
+			prop += fmt.Sprintf(" & %sMoves", ent.Struct)
+		}
+		dts.WriteString(prop + ";\n")
 	}
 	dts.WriteString(`  /**
    * Raw escape hatch under the typed resources: same base URL, auth header,
@@ -119,9 +129,12 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 
 	// Input: create/update payload. Required declaration fields are
 	// non-optional so tsc catches a missing title at compile time.
+	// With enforced States, stamps leave Input and the state field leaves
+	// Patch, matching the Go client and the OpenAPI request schemas.
+	stamps, state := statesWriteDrops(decl.States)
 	fmt.Fprintf(dts, "export interface %sInput {\n", ent.Struct)
 	for _, fd := range decl.Fields {
-		if fd.Name == "id" || fd.Hidden {
+		if fd.Name == "id" || fd.Hidden || stamps[fd.Name] {
 			continue
 		}
 		opt := "?"
@@ -135,11 +148,15 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 	// Patch: JS objects are presence-faithful (an omitted key is simply not
 	// sent), so PATCH is just an all-optional Input, no pointer dance like
 	// the Go SDK needs.
-	fmt.Fprintf(dts, "export type %sPatch = Partial<%sInput>;\n\n", ent.Struct, ent.Struct)
+	if state != "" {
+		fmt.Fprintf(dts, "export type %sPatch = Partial<Omit<%sInput, %q>>;\n\n", ent.Struct, ent.Struct, toCamelJSON(state))
+	} else {
+		fmt.Fprintf(dts, "export type %sPatch = Partial<%sInput>;\n\n", ent.Struct, ent.Struct)
+	}
 
 	// Snake-case field-name constant, so filter/sort params never require
 	// guessing the server-side column casing.
-	fmt.Fprintf(js, "/** Snake_case query-param names for %s filters and sort. */\nexport const %sFields = Object.freeze({\n", ent.Struct, jsResourceProp(ent))
+	fmt.Fprintf(js, "/** Snake_case query-param names for %s filters and sort. */\nexport const %sFields = Object.freeze({\n", tsCommentSafe(ent.Struct), jsResourceProp(ent))
 	fmt.Fprintf(dts, "export declare const %sFields: Readonly<{\n", jsResourceProp(ent))
 	for _, f := range ent.Fields {
 		// The constant exists to be used as a filter/sort key, so a NoQuery
@@ -169,6 +186,30 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 	}
 	js.WriteString("});\n\n")
 	dts.WriteString("}>;\n\n")
+
+	// One named method per non-system move, the JS twin of the Go SDK's
+	// <Key><Struct> methods. Emitted only when there is a move; the
+	// Client's property line intersects it onto Resource.
+	if moves := crud.RoutableTransitions(decl.States); len(moves) > 0 {
+		fmt.Fprintf(dts, "export interface %sMoves {\n", ent.Struct)
+		for _, t := range moves {
+			// The doc comment is a /** … */ block: every declaration-derived
+			// part goes through tsCommentSafe, or a `*/` in an enum value
+			// ends the comment early and the rest becomes live .d.ts tokens
+			// (t.Key stays raw — it is a grammar-checked identifier there).
+			fmt.Fprintf(dts, "  /** %s: %s → %s%s. Server-set; no request body. */\n  %s(id: string): Promise<%s>;\n",
+				tsCommentSafe(decl.States.Field), tsCommentSafe(strings.Join(t.From, "|")), tsCommentSafe(t.To), tsCommentSafe(stampNote(t.Stamp)), t.Key, ent.Struct)
+		}
+		dts.WriteString("}\n\n")
+	}
+}
+
+// stampNote renders a move's stamp for a doc comment; empty when none.
+func stampNote(stamp string) string {
+	if stamp == "" {
+		return ""
+	}
+	return ", stamps " + stamp
 }
 
 // tsTypeForField mirrors goTypeForField for TypeScript. Decimal stays a
@@ -205,20 +246,18 @@ func renderSDKJSReadme(spec sdkSpec) string {
 	fmt.Fprintf(&sb, "```js\nimport { Client } from %q;\n// or, served by the app itself:\n// import { Client } from %q;\n\nconst api = new Client({ baseURL: %q, token: process.env.API_TOKEN });\nconst page = await api.%s.list({ sort: \"-created_at\", limit: 50 });\n```\n\n", "./client.js", sdkExampleHost(spec)+"/docs/api/sdk/client.js", sdkExampleBaseURL(spec), prop)
 	sb.WriteString("TypeScript picks up `client.d.ts` automatically when both files sit side by\nside. There is intentionally no package.json: if you want this on npm,\nadd your own and publish it; it's your API.\n\n")
 	sb.WriteString("## Casing contract\n\nResponses are camelCase. Filter/sort **query params** and validation-error\n`fields` keys are the server's snake_case column names. Use the exported\n`<entity>Fields` constants for filter and sort keys instead of guessing.\nThey list only the queryable columns, so a column the API refuses to filter\non is absent: validation errors can still name it, since a field can be\nwritable without being queryable:\n\n")
-	// Pick the first field the constant actually defines. NoQuery fields are
-	// excluded from <entity>Fields, so taking Fields[0] blindly could name a
-	// key that resolves to undefined. The example would then send
-	// "undefined_gte" and earn a 400 from the very snippet meant to show the
-	// casing contract working.
-	var example *cliField
-	for i := range first.Fields {
-		if !first.Fields[i].NoQuery {
-			example = &first.Fields[i]
-			break
+	// Pick the example field AND operator from the one type predicate
+	// (filter.OpSuitsType, via the CLI model's derived operator set): a
+	// `_gte` on a Bool or JSON column — the first queryable field, when
+	// the entity leads with one — is a request the server answers 400,
+	// from the snippet meant to show the casing contract working. A
+	// spec with no range-able column shows plain equality.
+	if picked, filterOp := sdkExampleFilter(first.Fields); picked != nil {
+		if filterOp == "" {
+			fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s]: \"x\" } });\n```\n\n", prop, prop, prop, picked.Wire)
+		} else {
+			fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s + \"_gte\"]: \"10\" } });\n```\n\n", prop, prop, prop, picked.Wire)
 		}
-	}
-	if example != nil {
-		fmt.Fprintf(&sb, "```js\nimport { %sFields } from \"./client.js\";\nawait api.%s.list({ filters: { [%sFields.%s + \"_gte\"]: \"10\" } });\n```\n\n", prop, prop, prop, example.Wire)
 	}
 	sb.WriteString("## Surface per entity\n\n`list(params)`, `listCursor(params)`, `get(id, opts)`, `create(body)`,\n`update(id, body)`, `patch(id, body)` (send only the keys you mean;\nJS objects are presence-faithful), `remove(id)`, `batchCreate(items)`,\n`batchUpdate(items)` (each item carries `id`), `batchDelete(ids)`, and\n`watch(onEvent, { signal })` for the live SSE feed (uses fetch streaming so\nthe Authorization header works; EventSource can't send it).\n\nErrors throw `ApiError` with `status`, `code`, `fields`, and the raw `body`.\nBatch rollbacks (HTTP 400 with a decodable envelope) resolve normally:\ninspect `committed` and per-item `error`.\n")
 	return sb.String()
@@ -289,7 +328,7 @@ class Resource {
   /**
    * Offset-paged list. params: {page, limit, sort, include, fields, q,
    * trashed, filters}: filter keys are the snake_case column names (see
-   * the exported <entity>Fields constants), with _gt/_gte/_lt/_lte/_like/_in
+   * the exported <entity>Fields constants), with _ne/_gt/_gte/_lt/_lte/_like/_in
    * suffixes for operators.
    */
   list(params) {
@@ -355,6 +394,18 @@ class Resource {
       }
       throw err;
     }
+  }
+
+  /**
+   * Runs one state move: POST /<table>/<id>/transitions/<key>. The
+   * server writes the state field and any stamp; the request sends an
+   * empty JSON body because the route requires the content type (its
+   * cross-site-form gate). Each generated client also binds the move
+   * keys as named methods (api.invoices.pay(id)).
+   */
+  async transition(id, key) {
+    const out = await this.client.do("POST", this._path("/" + encodeURIComponent(id) + "/transitions/" + encodeURIComponent(key)), {});
+    return out && out.data !== undefined ? out.data : out;
   }
 
   /**
@@ -490,7 +541,7 @@ export interface ListParams {
   trashed?: string;
   /**
    * Filter params keyed by snake_case column name (use the <entity>Fields
-   * constants), with _gt/_gte/_lt/_lte/_like/_in operator suffixes.
+   * constants), with _ne/_gt/_gte/_lt/_lte/_like/_in operator suffixes.
    */
   filters?: Record<string, string | number | boolean | Array<string | number>>;
 }
@@ -544,6 +595,8 @@ export declare class Resource<T, TInput, TPatch> {
     onEvent: (event: string, data: unknown) => void | Promise<void>,
     opts?: { signal?: AbortSignal },
   ): Promise<void>;
+  /** Runs one state move; generated clients also bind each move key as a named method. */
+  transition(id: string, key: string): Promise<T>;
 }
 
 `

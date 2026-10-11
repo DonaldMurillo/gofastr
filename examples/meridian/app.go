@@ -24,6 +24,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/examples/meridian/siteheader"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -215,23 +216,6 @@ func inkTheme() style.Theme {
 // inkBand is the registered handle screens wrap dark marketing bands with.
 var inkBand = style.RegisterThemeOverride(inkTheme())
 
-// customersList is the one configured Customers list. The screen and the
-// island endpoint share it so a sort/page RPC returns exactly the table
-// the initial SSR painted. Page size 8 keeps the island's pagination
-// exercised by the seed data alone.
-func customersList() ResourceConfig {
-	return appResources["customers"].
-		WithColumns("name", "email", "company", "status", "mrr").
-		WithSearch("name").
-		WithFilters(ResFilter{Key: "status", Label: "Status", Type: "enum", Values: []string{"trialing", "active", "past_due", "canceled"}}).
-		WithLimit(8).
-		WithCreate().
-		WithHeading("Customers").
-		WithEmpty("No customers yet. Add your first to get started.").
-		WithIsland("/api/tables/customers").WithIslandPolicy(authPolicy("/login", "")).
-		WithActions(interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Quick add", Variant: ui.ButtonSecondary}), "customer-quick-add"))
-}
-
 // quickAddCustomerModal is a plain preset.Modal: the centered slot paints
 // the default panel surface (background, border, radius, padding), so the
 // body ships zero chrome of its own, just a heading and a ui.Form. The
@@ -277,11 +261,11 @@ func sidebarConfig(ctx context.Context) ui.SidebarConfig {
 		{Label: "Invoices", Href: "/app/invoices"},
 		{Label: "Admin", Href: "/admin", Roles: []string{"admin"}},
 	}}
-	footer := []render.HTML{ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleLabel})}
+	var authAction render.HTML
 	if u, ok := handler.GetUser(ctx); ok && u != nil {
-		footer = append(footer, ui.SignOut(ui.SignOutConfig{Next: "/"}))
+		authAction = ui.SignOut(ui.SignOutConfig{Next: "/"})
 	}
-	cfg.Footer = ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, footer...)
+	cfg.Footer = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Justify: ui.JustifyBetween, NoWrap: true}, authAction, ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}))
 	return cfg
 }
 
@@ -291,6 +275,20 @@ var (
 	appLayout       *app.Layout
 	marketingLayout *app.Layout
 )
+
+// authMgr and rolePolicy are the app's auth manager and RBAC policy,
+// set by RegisterGenerated; main.go hands both to the admin, which names
+// audit actors and draws its User roles and Roles pages through them.
+var (
+	authMgr    *auth.AuthManager
+	rolePolicy *access.RolePolicy
+)
+
+// appUI is the app's entityui value: every generated entity screen
+// renders through it. RegisterGenerated builds it once, after the
+// entities registered and before any screen mounts. extensions.go owns
+// what goes into it.
+var appUI *entityui.UI
 
 // RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.
 func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
@@ -322,10 +320,13 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			marketingFooter(),
 		)
 	})
-	// mountGenerated populates appResources (per-entity crud files) and mounts
-	// every screen. It runs early so hand-written endpoints below that capture
-	// a resource config (e.g. the customers island at /api/tables/customers)
-	// see a populated map.
+	// appUI is the app's entityui value: every entity screen renders through
+	// it. One UI per app, built after the entities registered (RegisterAll in
+	// main.go) and before any screen mounts. EntityUI panics at boot on a bad
+	// name in appExtensions, the way App.Entity refuses a bad declaration.
+	appUI = fwApp.EntityUI(appExtensions)
+	// mountGenerated mounts every screen; the screens render through the
+	// appUI builders, which resolve each entity at render time.
 	mountGenerated(fwApp, site, db)
 	{
 		stack := preset.ToastStack("blueprint-toasts").Build()
@@ -335,9 +336,6 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		modal := quickAddCustomerModal()
 		widget.Mount(fwApp.Router(), &modal)
 	}
-	// Island endpoint for the Customers table: sort/page RPCs from the list
-	// screen hit this and the runtime swaps just the table island.
-	fwApp.Router().HandleFunc("GET", "/api/tables/customers", customersList().TableHandler())
 	{
 		// WARNING: auth runs in DEV MODE: HTTP-friendly cookies (no
 		// Secure flag, plain session_id name) and a per-process JWT
@@ -347,7 +345,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		authCfg := auth.AuthConfig{DevMode: true, JWTSecret: os.Getenv("JWT_SECRET")}
 		authCfg.UserStore = auth.NewEntityUserStore(db, "auth_users")
 		authCfg.SessionStore = auth.NewEntitySessionStore(db, "auth_sessions")
-		authMgr := auth.New(authCfg)
+		authMgr = auth.New(authCfg)
 		authMgr.Use(auth.NewCorePlugin())
 		// Scoped API tokens (PATs): logged-in users mint them at
 		// POST /auth/tokens (session-only, a leaked token can't mint
@@ -391,6 +389,16 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 					log.Printf("WARN: admin %q seeded but its email was not marked verified: %v", "admin@meridian.dev", verr)
 				}
 			}
+			// A seeded admin gets a display name, so the admin's account
+			// menu and avatar read "Admin Meridian" / AM. Only while it has
+			// none: a name the admin chose on the account page stays.
+			if ns, ok := authCfg.UserStore.(auth.NameStore); ok && u != nil && slices.Contains(u.GetRoles(), "admin") {
+				if name, nerr := ns.UserName(context.Background(), u.GetID()); nerr == nil && name == "" {
+					if nerr := ns.SetUserName(context.Background(), u.GetID(), "Admin Meridian"); nerr != nil {
+						log.Printf("WARN: admin %q seeded without a display name: %v", "admin@meridian.dev", nerr)
+					}
+				}
+			}
 		} else {
 			log.Printf("WARN: ADMIN_SEED_PASSWORD is not set: admin %q was NOT seeded; on a fresh database the back-office login will fail", "admin@meridian.dev")
 		}
@@ -411,10 +419,11 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// RolePolicy resolves the signed-in user's roles to those
 		// permissions on the gated CRUD API and the MCP tools. The
 		// admin role holds the wildcard; a plain signup session
-		// resolves nothing and reads stay open. Add finer per-role
-		// Grants here as the back-office grows.
-		rolePolicy := access.NewRolePolicy()
+		// resolves nothing and reads stay open. seedRoles
+		// (admin_access.go) adds the billing and support roles.
+		rolePolicy = access.NewRolePolicy()
 		rolePolicy.Grant("admin", access.Wildcard)
+		seedRoles(rolePolicy)
 		fwApp.Use(access.Middleware(rolePolicy, func(ctx context.Context) []string {
 			if u, ok := handler.GetUser(ctx); ok && u != nil {
 				if rh, ok := u.(interface{ GetRoles() []string }); ok {

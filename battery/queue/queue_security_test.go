@@ -442,7 +442,7 @@ func TestUnknownTypeJobDropIsObservable(t *testing.T) {
 		waitFor(t, func() bool { return sentinelDone.Load() >= 1 }, 5*time.Second,
 			"sentinel job never processed; unknown-type drop not observed")
 
-		failed, err := q.ListJobs(ctx, "failed", 100)
+		failed, err := q.ListJobs(ctx, "failed", 100, 0)
 		if err != nil {
 			t.Fatalf("list failed: %v", err)
 		}

@@ -47,6 +47,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -219,6 +220,20 @@ type App struct {
 	imageDeriver        file.ImageDeriver                       // optional; derives renditions + BlurHash for Image fields
 	fieldImageDerivers  map[string]map[string]file.ImageDeriver // entity -> field -> override
 	stripUploadMetadata bool                                    // WithStripUploadMetadata: strip EXIF/XMP from stored originals
+
+	// auditTable is the audit log's table once WithAuditLog ran; "" when
+	// the app keeps no audit log. entityui's Activity tab reads it.
+	auditTable string
+	// auditActor is WithAuditLog's actor resolver, for audit rows written
+	// outside the CRUD hooks (entityui's bulk runs).
+	auditActor func(context.Context) string
+	// entityUI is the UI EntityUI built; a second call is refused.
+	entityUI *entityui.UI
+	// crudMounts records where each entity's write routes mounted: the
+	// router that carries them (a group's sub-router, with its
+	// middleware) and the path on it. EntityUI mounts the bulk and export
+	// routes on the same router, and its screens post to the full path.
+	crudMounts map[*entity.Entity]crudMount
 
 	migrationRoutines []migrate.Routine // stored procedures/functions/triggers run on boot
 	migrationViews    []migrate.View    // views (virtual tables built from entities) run on boot
@@ -615,6 +630,22 @@ func (a *App) apiPrefix() string {
 // apiPrefix + "/" + table. With no prefix this is the historical "/table".
 func (a *App) entityMountPath(table string) string {
 	return a.apiPrefix() + "/" + table
+}
+
+// crudMount is where one entity's write routes live: rel on r, which
+// serves them at full.
+type crudMount struct {
+	r    *router.Router
+	rel  string
+	full string
+}
+
+func (a *App) recordCrudMount(e *entity.Entity, r *router.Router, rel, full string) {
+	if a.crudMounts == nil {
+		a.crudMounts = map[*entity.Entity]crudMount{}
+	}
+	a.crudMounts[e] = crudMount{r: r, rel: rel, full: full}
+	a.mountEntityUIRoutes(e)
 }
 
 // entityCRUDEnabled is THE predicate for "this entity has HTTP CRUD
@@ -1413,6 +1444,30 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	// entity's operations under the version's tag instead of the bare name.
 	e.OpenAPITag = g.OpenAPITag()
 
+	// Read e.Config, not the raw parameter: Define normalized the grouped
+	// Scope/Pagination/Exposure sub-configs into the flat fields, and the
+	// grouped values are authoritative.
+	crudEnabled := a.entityCRUDEnabled(e)
+	if e.Config.Exposure.MCP && a.DB != nil && e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
+		panic(fmt.Sprintf("framework: entity %q has MCP=true with CRUD=false: MCP CRUD tools require the HTTP routes to be registered", name))
+	}
+	mcpTools := (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil
+
+	// Every check that can refuse the declaration runs before the registry,
+	// router or MCP server changes: App.Entity's preflight, at the group's
+	// prefixed paths and MCP namespace. A refusal after Register left the
+	// entity registered with half its routes.
+	crudMount := ""
+	if crudEnabled {
+		crudMount = g.Prefix() + "/" + e.GetTable()
+		// Routes() records full (prefix-applied) patterns.
+		if msg := a.entityRouteCollision(e, crudMount); msg != "" {
+			panic("framework: " + msg)
+		}
+	}
+	if err := a.validateEntityRegistration(e, config.Endpoints, mcpTools, crudMount, groupMount(g, e)); err != nil {
+		panic(fmt.Sprintf("framework: failed to register entity %q in group %q: %v", name, g.Prefix(), err))
+	}
 	if a.DB != nil {
 		e.SetDB(a.DB)
 	}
@@ -1421,22 +1476,8 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		panic(fmt.Sprintf("framework: failed to register entity %q in group %q: %v", name, g.Prefix(), err))
 	}
 
-	// Read e.Config, not the raw parameter: Define normalized the grouped
-	// Scope/Pagination/Exposure sub-configs into the flat fields, and the
-	// grouped values are authoritative.
-	crudEnabled := a.entityCRUDEnabled(e)
-	if e.Config.Exposure.MCP && a.DB != nil && e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
-		panic(fmt.Sprintf("framework: entity %q has MCP=true with CRUD=false: MCP CRUD tools require the HTTP routes to be registered", name))
-	}
-
 	var crudHandler *crud.CrudHandler
 	if crudEnabled {
-		// Pre-flight collision check against the full group-prefixed path,
-		// mirroring App.Entity. Routes() records full (prefix-applied)
-		// patterns, so compare against g.Prefix()+"/"+table.
-		if msg := a.entityRouteCollision(name, g.Prefix()+"/"+e.GetTable()); msg != "" {
-			panic("framework: " + msg)
-		}
 		crudHandler = crud.NewCrudHandler(e, a.DB)
 		crudHandler.JSONCase = a.JSONCasing()
 		crudHandler.Hooks = a.HookRegistry(name)
@@ -1470,12 +1511,13 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		// The group's prefix is already baked into the sub-router,
 		// so we just mount at /<entity-table>.
 		crud.RegisterCrudRoutes(g.Router(), crudHandler, "/"+e.GetTable(), crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
+		a.recordCrudMount(e, g.Router(), "/"+e.GetTable(), crudMount)
 	}
 
 	// MCP tools, namespaced if the group has a namespace. Explicit
 	// MCP=true, or dev-implied for CRUD-enabled entities (the dev loop
 	// gives the local agent the data tools without per-entity opt-in).
-	if (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil {
+	if mcpTools {
 		// The group's middleware runs only on the redispatch, so the /mcp
 		// context cannot show the policy the route applies.
 		crudHandler.MCPRouteScoped = true
@@ -1501,16 +1543,7 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 		if method == "" {
 			return fmt.Errorf("endpoint %q: method is required", endpoint.Path)
 		}
-		// EntityEndpointPath includes the version prefix for OpenAPI/spec use.
-		// Here we register on the group's sub-router, which already carries
-		// the prefix, so build the RELATIVE path (table/endpoint) instead.
-		path := "/" + strings.Trim(ent.GetTable(), "/")
-		if !strings.HasPrefix(strings.TrimSpace(endpoint.Path), "/") {
-			path += "/" + strings.TrimPrefix(endpoint.Path, "/")
-		} else {
-			path = strings.TrimSpace(endpoint.Path)
-		}
-		path = crud.NormalizePath(convertGroupEndpointPath(path))
+		path := groupEndpointPath(ent, endpoint)
 		if endpoint.Handler != nil {
 			g.Handle(method, path, endpoint.Handler)
 		}
@@ -1535,6 +1568,63 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 		}
 	}
 	return nil
+}
+
+// groupEndpointPath is where a grouped entity's endpoint mounts, relative
+// to the group: EntityEndpointPath includes the version prefix for spec
+// use, and the group's sub-router already carries it.
+func groupEndpointPath(ent *entity.Entity, endpoint entity.Endpoint) string {
+	path := "/" + strings.Trim(ent.GetTable(), "/")
+	if !strings.HasPrefix(strings.TrimSpace(endpoint.Path), "/") {
+		path += "/" + strings.TrimPrefix(endpoint.Path, "/")
+	} else {
+		path = strings.TrimSpace(endpoint.Path)
+	}
+	return crud.NormalizePath(convertGroupEndpointPath(path))
+}
+
+// registrationMount is where validateEntityRegistration checks an entity's
+// routes and tools: App.Entity's API prefix with flat tool names, or a
+// group's prefix and MCP namespace.
+type registrationMount struct {
+	// endpointPaths returns the full route an endpoint mounts at and the
+	// path its default MCP tool name derives from.
+	endpointPaths func(entity.Endpoint) (route, toolPath string)
+	// mcpNamespace prefixes every tool name, as crud and
+	// registerGroupEndpoints spell it; "" keeps the flat names.
+	mcpNamespace string
+}
+
+func (a *App) plainMount(ent *entity.Entity) registrationMount {
+	return registrationMount{endpointPaths: func(ep entity.Endpoint) (string, string) {
+		return openapi.EntityEndpointRoutePath(ent, ep.Path, a.apiPrefix()), openapi.EntityEndpointPath(ent, ep.Path)
+	}}
+}
+
+func groupMount(g *routegroup.RouteGroup, ent *entity.Entity) registrationMount {
+	return registrationMount{
+		endpointPaths: func(ep entity.Endpoint) (string, string) {
+			p := g.Prefix() + groupEndpointPath(ent, ep)
+			return p, p
+		},
+		mcpNamespace: g.MCPNamespace(),
+	}
+}
+
+// entityTool is the name crud gives the entity's action tool.
+func (m registrationMount) entityTool(ent, action string) string {
+	if m.mcpNamespace == "" {
+		return ent + "_" + action
+	}
+	return m.mcpNamespace + "." + ent + "." + action
+}
+
+// endpointTool is the name an endpoint's MCP tool registers under.
+func (m registrationMount) endpointTool(name string) string {
+	if m.mcpNamespace == "" {
+		return name
+	}
+	return m.mcpNamespace + "." + name
 }
 
 // convertGroupEndpointPath converts ":id"-style params to "{id}" for the
@@ -1617,6 +1707,8 @@ func NewApp(opts ...AppOption) *App {
 		lc:            lifecycle.New(),
 		startupOutput: os.Stdout,
 	}
+	// A recovered battery start or stop panic logs where the App logs.
+	a.Batteries.logger = a.Logger
 
 	for _, opt := range opts {
 		opt(a)
@@ -1926,13 +2018,13 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		// entity's URL space, surface an actionable diagnostic that names
 		// the entity, the path, and the fix. BEFORE the mux panics on the
 		// opaque "/foods/llm.md conflicts with pattern" duplicate.
-		if msg := a.entityRouteCollision(name, mountPath); msg != "" {
+		if msg := a.entityRouteCollision(e, mountPath); msg != "" {
 			return fmt.Errorf("%s", msg)
 		}
 	}
 
 	mcpToolsEnabled := (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil
-	if verr := a.validateEntityRegistration(e, config.Endpoints, mcpToolsEnabled, mountPath); verr != nil {
+	if verr := a.validateEntityRegistration(e, config.Endpoints, mcpToolsEnabled, mountPath, a.plainMount(e)); verr != nil {
 		return fmt.Errorf("entity %q: %w", name, verr)
 	}
 
@@ -1969,6 +2061,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		// mounted under the API prefix, tell the handler so its tool paths match.
 		crudHandler.BasePath = a.apiPrefix()
 		crud.RegisterCrudRoutes(a.router, crudHandler, mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
+		a.recordCrudMount(e, a.router, mountPath, mountPath)
 	}
 
 	// Explicit MCP=true, or dev-implied: in the dev loop every
@@ -2203,7 +2296,8 @@ func (a *App) RegisterEntities(entities map[string]entity.EntityConfig) *App {
 // points at the generated doc handler rather than the underlying name
 // clash. We catch the most common overlaps (the bare path and its /llm.md
 // doc route) and explain WHAT collided and HOW to fix it.
-func (a *App) entityRouteCollision(name, mountPath string) string {
+func (a *App) entityRouteCollision(ent *entity.Entity, mountPath string) string {
+	name := ent.Config.Name
 	mountPath = strings.TrimRight(mountPath, "/")
 	if mountPath == "" {
 		return ""
@@ -2220,7 +2314,7 @@ func (a *App) entityRouteCollision(name, mountPath string) string {
 	// them, better a loud false positive at registration than a panic
 	// halfway through the commit phase.
 	claimed := map[string][]string{}
-	for _, pattern := range crud.CrudRoutePatterns(mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD}) {
+	for _, pattern := range crud.CrudRoutePatterns(mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States}) {
 		method, path, _ := strings.Cut(pattern, " ")
 		path = normalizeRoutePattern(path)
 		claimed[path] = append(claimed[path], method)
@@ -2280,7 +2374,23 @@ func entityScreenCollisionMessage(name, mountPath, screenPath string) string {
 // in lockstep with registerEntityEndpoints and crud.RegisterEntityMCPTools.
 // A check that only exists at commit time reintroduces the partial
 // registration this split exists to prevent.
-func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.Endpoint, mcpTools bool, crudMount string) error {
+func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.Endpoint, mcpTools bool, crudMount string, m registrationMount) error {
+	if err := validateDisplayQueries(ent); err != nil {
+		return err
+	}
+	// An entity registered after EntityUI gets the checks EntityUI ran
+	// on the ones before it.
+	if a.entityUI != nil {
+		if err := a.entityUI.CheckEntity(ent); err != nil {
+			return err
+		}
+	}
+	// A queryable field whose name is another's plus an operator suffix
+	// (?status_ne= next to a `status_ne` column) is a silent wrong-column
+	// filter, not an error; refuse it at the same gate.
+	if err := checkFilterSuffixCollisions(ent); err != nil {
+		return err
+	}
 	// Endpoint routes: an endpoint whose (method, path) is already taken,
 	// by an existing route, by a CRUD route this same call is about to
 	// mount, or by a sibling endpoint on this same declaration, would
@@ -2305,7 +2415,7 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 		// The CRUD routes are not on the router yet, this runs before
 		// the commit phase, so ask crud for the set it will mount.
 		if crudMount != "" {
-			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD}) {
+			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States}) {
 				taken[normalizeRoutePattern(pattern)] = "this entity's own generated CRUD route"
 			}
 		}
@@ -2314,7 +2424,7 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 			if method == "" || endpoint.Handler == nil {
 				continue // shape errors are reported below
 			}
-			path := openapi.EntityEndpointRoutePath(ent, endpoint.Path, a.apiPrefix())
+			path, _ := m.endpointPaths(endpoint)
 			key := normalizeRoutePattern(method + " " + path)
 			if owner, clash := taken[key]; clash {
 				return fmt.Errorf("endpoint %q would register %s, but that route is %s: rename the endpoint path, or move entity routes under an APIPrefix", endpoint.Path, key, owner)
@@ -2329,7 +2439,11 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 		// public surface (see crud.RegisterEntityMCPTools), which is what
 		// lets us pre-compute them here without reaching into crud.
 		for _, action := range []string{"list", "get", "create", "update", "delete"} {
-			claimed[ent.GetName()+"_"+action] = true
+			claimed[m.entityTool(ent.GetName(), action)] = true
+		}
+		// Each non-system move is a tool named by its key, beside them.
+		for _, t := range crud.RoutableTransitions(ent.Config.States) {
+			claimed[m.entityTool(ent.GetName(), t.Key)] = true
 		}
 	}
 	for _, endpoint := range endpoints {
@@ -2343,8 +2457,10 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 			}
 			toolName := endpoint.Name
 			if toolName == "" {
-				toolName = openapi.DefaultEndpointToolName(ent.GetName(), method, openapi.EntityEndpointPath(ent, endpoint.Path))
+				_, toolPath := m.endpointPaths(endpoint)
+				toolName = openapi.DefaultEndpointToolName(ent.GetName(), method, toolPath)
 			}
+			toolName = m.endpointTool(toolName)
 			if claimed[toolName] {
 				return fmt.Errorf("endpoint %q: MCP tool name %q is already claimed by this entity", endpoint.Path, toolName)
 			}
@@ -2757,9 +2873,7 @@ func (a *App) runStartHooks() error {
 func (a *App) runStartHookSafe(fn func(ctx context.Context) error) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			// %T not %v: a panic(config) value must not leak a secret
-			// into the error chain (callModuleSafe precedent).
-			err = fmt.Errorf("start hook panicked (panic type %T): set GOTRACEBACK=all for details", v)
+			err = recoveredPanic(a.Logger(), "start hook", fmt.Sprintf("%T", v))
 		}
 	}()
 	return fn(a.appCtx)
@@ -3157,7 +3271,7 @@ func (a *App) Start(addr string) error {
 		if appName == "" {
 			appName = "GoFastr API"
 		}
-		spec := openapi.EntityOpenAPI(a.Registry, appName, "1.0.0", a.entityCRUDEnabled, a.apiPrefix())
+		spec := openapi.EntityOpenAPIWithBulk(a.Registry, appName, "1.0.0", a.entityCRUDEnabled, a.entityUIMounted, a.apiPrefix())
 		if a.Config.PublicOpenAPI {
 			a.router.Get("/openapi.json", coreoa.PublicHandler(spec))
 		} else {
@@ -3529,9 +3643,7 @@ func (a *App) Start(addr string) error {
 func (a *App) runReadyHookSafe(fn func(addr string), addr string) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			// %T not %v: a panic(config) value must not leak a secret
-			// into the error chain (callModuleSafe precedent).
-			err = fmt.Errorf("ready hook panicked (panic type %T): set GOTRACEBACK=all for details", v)
+			err = recoveredPanic(a.Logger(), "ready hook", fmt.Sprintf("%T", v))
 		}
 	}()
 	fn(addr)

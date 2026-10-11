@@ -151,26 +151,27 @@ var optimisticActionStyle = registry.RegisterStyle("ui-optimistic-action", func(
 	return `[data-cui-comp="ui-optimistic-action"] {
   /* Inherits .fui-button base; override only what the optimistic flip needs. */
   position: relative;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
-/* Committed state — slightly darker background to signal "done". */
+/* Committed state — the soft secondary surface marks "done" without a
+   status color: success is for outcomes, not for a pressed control. */
 [data-cui-comp="ui-optimistic-action"][data-state="committed"] {
-  background: var(--color-success, #16A34A);
-  color: var(--color-primary-fg, #FFFFFF);
-  border-color: var(--color-success, #16A34A);
+  background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #09090B);
+  border-color: var(--color-border, #E4E4E7);
 }
 /* Pending state — same look as committed (optimistic) plus a subtle
    busy cursor while the RPC is in flight. */
 [data-cui-comp="ui-optimistic-action"][data-state="pending"] {
   cursor: progress;
-  background: var(--color-success, #16A34A);
-  color: var(--color-primary-fg, #FFFFFF);
-  border-color: var(--color-success, #16A34A);
+  background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #09090B);
+  border-color: var(--color-border, #E4E4E7);
 }
 /* Roll-back animation: a tiny shake when the server rejects the
    action. Pure CSS, respects prefers-reduced-motion. */
 [data-cui-comp="ui-optimistic-action"][data-state="error"] {
-  animation: ui-optimistic-action-shake 0.4s ease-in-out;
+  animation: ui-optimistic-action-shake var(--duration-slow, 400ms) var(--easing-ease-in-out, ease-in-out);
 }
 @keyframes ui-optimistic-action-shake {
   0%, 100% { transform: translateX(0); }

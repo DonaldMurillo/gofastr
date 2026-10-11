@@ -1301,7 +1301,7 @@
   // finishNav.
   const finishNav = (path, prevPath, cached, root, ps) => {
     applyDocShell(root);
-    if (!ps) scrollToHash();
+    if (!ps && (location.hash || (prevPath || '').split('?')[0] != path.split('?')[0])) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
     if (ps) {
       // Restore AFTER the navigate listeners ran: overlay scroll-lock
@@ -1728,7 +1728,7 @@
     // An intercepting route presents as an overlay when reached from its
     // declared origin. The module owns the URL and the fetch in that
     // case; returning true means it took the navigation.
-    if (window.__gofastr._intercept && window.__gofastr._intercept(fullPath, navHash)) return;
+    if (window.__gofastr._intercept?.(fullPath, navHash)) return;
     // Capture the origin BEFORE _pushURL syncs currentPath to the
     // destination, loadPage's X-Gofastr-From must name where the user
     // came from.
@@ -1783,6 +1783,13 @@
   // with zero fetches. Reads history.state, never the event's: the
   // intercept module's synthetic PopStateEvent carries none.
   window.addEventListener('popstate', () => {
+    // An open intercept stack owns history moves within its layers: the
+    // module closes or refetches panes itself and re-pushes an entry a
+    // leave guard declined, and the stack's URLs never moved the
+    // router's currentPath, so the diff below would misread them. The
+    // module loads only when a route declares an intercept; without it
+    // this is one absent-property read.
+    if (window.__gofastr._interceptPopstate?.()) return;
     // With manual scrollRestoration the viewport still holds the LEAVING
     // page's position when popstate fires, record it under the old id
     // before switching, so the entry we just left can always restore
@@ -2407,10 +2414,14 @@
       // submitter wins over the form: one form can carry several submit
       // buttons of different destructive weight. Callers that already
       // gated pass {confirmed:true} so rpc.js does not prompt twice.
+      // The gate cancels the submit and lets the confirm module ask and
+      // submit again (marked form._ok); a module that cannot load fails
+      // closed.
       const sub = e.submitter;
       const msg = (sub && sub.getAttribute('data-cui-confirm')) || form.getAttribute('data-cui-confirm');
-      if (msg && typeof window.confirm === 'function' && !window.confirm(msg)) {
+      if (msg && !form._ok) {
         e.preventDefault();
+        loadModule('confirm').then(() => window.__gofastr.confirm(form, sub));
         return;
       }
       if (form.hasAttribute('data-cui-rpc') || form.hasAttribute('data-kiln-tool')) {

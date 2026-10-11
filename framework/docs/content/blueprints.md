@@ -16,7 +16,7 @@ Blueprints are not runtime declarations: the CLI reads `.yml`, `.yaml`, or
 `.json` blueprint files (or a directory of them), validates them, and scaffolds
 owned Go into an idiomatic, module-root layout by default: a flat
 `package main` at the root (`main.go`, `app.go`, `screens_register.go`, one
-`screen_<name>.go` per screen, and, when needed, a thin `resource.go` or
+`screen_<name>.go` per screen, and, when needed, a thin `extensions.go` or
 `stubs.go`) plus the `entities/` package (set `--out=<dir>` or
 `app.output_dir` to scaffold into a subpackage instead).
 `generate` is one-shot: it refuses to overwrite an existing project
@@ -67,8 +67,8 @@ against the framework (the emitted code is the starting point, not a ceiling).
 | **Marketing pages** | `hero`, `page_header`, `card`, `pricing`, `stat_row`, `callout`, `markdown`, `link_button` blocks composed from `framework/ui`; auth-aware header | Any bespoke section not in the block catalog |
 | **Auth** | Register/login/logout/me wiring, session middleware, `login_form`/`signup_form` screens, guest-only redirects, bootstrap admin | Custom auth flows (SSO, MFA policy, email verification UX) |
 | **Dashboard stat/chart blocks** | `stat_card` (count/sum), `bar_chart`/`pie_chart`/`line_chart` bound to an entity `source: {entity, group_by}` | Custom metrics, multi-entity joins, computed series |
-| **Entity list** | Table with server-side **search**, **sort**, **pagination**, and **facet filters** (`filters:` → a `ui.FilterToolbar` of enum/bool/relation facets); optional "New" button | Filtering on computed/derived columns, range/date filters, multi-select facets |
-| **Entity detail / form** | Read view + create/edit `<form>` (enum & relation `<select>`s), status-transition buttons | Multi-step wizards, custom field widgets, cross-field validation UX |
+| **Entity list** | `entity_list` block drawn by `framework/entityui` from the entity's `display:`: server-side search/sort/pagination as query params, one-click `facets:`, optional "New" button | Filtering on computed/derived columns, range/date filters, multi-select facets |
+| **Entity record** | `entity_detail` block: the record page holds the edit form and a button per `states:` move; `create:` synthesizes `<list>/create` | Multi-step wizards, custom field widgets, cross-field validation UX |
 | **Child-collection islands** | — (not generated) | Hand-written; see [Interactive patterns](interactive-patterns.md) for the island RPC recipe |
 | **Admin back-office** | Full CRUD admin over every entity (`app.admin`), role-gated | Custom admin actions beyond CRUD |
 | **Seed data** | Explicit `rows:` + auto-generated `count:`/`weights:` demo rows | Fixtures with complex relations / business invariants |
@@ -91,6 +91,11 @@ ink, so set the `-fg` token when the dark fill needs a different one.
 A theme with only a `dark:` map is still emitted.
 Generated apps call `site.WithTheme(...)`, so the values are emitted
 through `/__gofastr/app.css` as computed CSS custom properties.
+A declared `app.theme` starts from the light-only `style.DefaultTheme()`
+and has a dark scheme only when `app.theme.dark` declares one, so a
+stock dark palette never replaces the brand. With no `app.theme`, a
+marketing app starts from `theme.Default()` and follows the OS into
+the framework's dark palette.
 
 **Fonts are self-hosted, not CDN-linked.** The generated app ships a
 strict Content-Security-Policy (`default-src 'self'`) that deliberately
@@ -371,15 +376,14 @@ aggregated `screens.go`:
   call, and an `init()` that appends one
   `screenRegistrars = append(screenRegistrars, screenRegistrar{order: N, fn: mount<Screen>})`.
 - `screen_<entity>_crud.go`: one per entity with CRUD screens (or referenced
-  by a data source): that entity's list/detail/new/edit screens, their mount
-  funcs, **and** its `appResources["<entity>"] = resource.Config{...}` wiring
-  inside the primary mount func (it needs `fwApp`). An entity's resource
-  wiring lives here, never in `app.go` or the shared engine.
+  by a data source): that entity's list/detail/create screens and their
+  mount funcs, each drawing through `appUI` (`appUI.List("<entity>")`,
+  `appUI.Record`, `appUI.Create`).
 
 `app.go` still owns layouts, nav, theme, `authPolicy`/`guestPolicy`, auth,
 toasts, and endpoints. `appLayout`/`marketingLayout` are package-level vars
 assigned in `RegisterGenerated`, which calls `mountGenerated(fwApp, site, db)`
-and names no screen type or `appResources` entry. The generated screen order is
+and names no screen type. The generated screen order is
 recovered by `gofastr pack` from each file's `screenRegistrar{order: …}`; see
 [Packing](#packing-gofastr-pack-lossy-appblueprint-snapshot).
 
@@ -412,10 +416,10 @@ pieces without editing any owned file. If you removed one of those calls,
 Only the new files are written: `entities/<name>.go` for new entities,
 `screen_<name>.go` for new authored screens, and `screen_<entity>_crud.go` for
 an entity that gains CRUD screens.
-The shared `resource.go` seam is skipped like every existing owned file. A new
-entity's `resource.Config` assignment is contained in its new
-`screen_<entity>_crud.go`, so `--add` extends the registry without rewriting an
-engine or central config file.
+The shared `extensions.go` seam (the `appExtensions` value `appUI` is built
+from) is skipped like every existing owned file. A new entity's screens live
+in their own new `screen_<entity>_crud.go`, so `--add` extends the app
+without rewriting a shared file.
 
 **Entity order continuity.** `--add` reads the existing `entities/` directory
 and assigns the new entities declaration orders that continue after the
@@ -579,15 +583,14 @@ for seed, and the per-screen `screen_<name>.go` files for screens (reading
 each file's `screenRegistrar{order: …}` to recover authored order, with a
 legacy aggregated `screens.go` fallback for apps older generators emitted),
 reversing the emitted `framework/ui` grammar (`ui.Hero` → `hero`,
-`appResources["x"].…List(ctx)` → `entity_list`, and so on). The result
+`appUI.List("x")…` → `entity_list`, and so on). The result
 prints to stdout, or to a file with `-o`:
 
 ```sh
 gofastr pack examples/meridian -o recovered.yml
 ```
 
-Synthesized `/new` + `/{id}/edit` form screens are dropped (they weren't
-authored). Generate and pack are a matched inverse pair for the declarative
+The synthesized `/create` screen is dropped (it wasn't authored). Generate and pack are a matched inverse pair for the declarative
 pieces `app`, `entities`, `screens`, `nav`, and `seed`, so the invariant
 `parse(yml)` ≡ `parse(pack(generate(yml)))` holds for a blueprint of those
 constructs (modulo comments + formatting). When you add a new construct to
@@ -640,125 +643,157 @@ re-emit their declarations.
 
 ### Data blocks (`entity_list`, `entity_form`, `entity_detail`)
 
-A top-level `entity_list` or `entity_detail` makes its screen a **server-rendered**
-(request-time) screen that queries the entity's `CrudHandler` and composes real
-`framework/ui` components with no client-side fetch. The generated screen calls
-the supported `framework/ui/resource` engine through the app's thin
-`resource.go` config registry:
+A top-level `entity_list` or `entity_detail` makes its screen a
+**server-rendered** (request-time) screen. The generated screen calls the
+app's one `entityui` value — `appUI`, built once at boot from the
+`extensions.go` seam — and every read passes the entity's own read gates
+under the page's route policy. There is no island and no second route onto
+the rows: sort, page, search and filter are query params on the page's own
+URL, and links and GET forms navigate (the runtime fetches the screen
+partial and keeps the shell).
 
-- `entity_list` → `ui.PageHeader` + `ui.SearchInput` + `ui.DataTable` +
-  `ui.Pagination`/`ui.EmptyState`, with **humanized headers** ("Generic Name"),
-  formatted cells (bool → Yes/No status badge, enum → status badge, `decimal` →
-  `$` money, dates trimmed), and **relation columns resolved to the related
-  record's display name** (not the raw id). Search/sort/pagination are
-  URL-driven and run server-side. `fields:` picks/orders the columns; `search:`
-  names the LIKE-search field; `limit:` sets the page size.
-- **`filters:`**: an optional list of columns to expose as **facet filters**
-  above the table via `ui.FilterToolbar` (one responsive, URL-driven GET form
-  that also absorbs the search box, so the screen is a single form, never two).
-  Each column must be an **enum**, **bool**, or **relation**; anything else is
-  a blueprint error. Enums render as pills when they hold ≤4 short values and as
-  a `<select>` otherwise; bools render as Yes/No pills; relations render as a
-  `<select>` of the related records' display names. A selected facet applies a
-  server-side equality filter that composes with search, sort, and pagination
-  (sort-header and page links preserve the active facets; applying a facet
-  resets to page 1). Filtering is **explicit**: omit `filters:` and the list
-  renders exactly as before, with no toolbar. Example:
-  `filters: [status, assignee_id]`.
-- `entity_detail` reads the route `{id}`, loads the record server-side, and
-  renders the fields with the same formatting + relation resolution.
-- `entity_form` renders a `<form data-cui-rpc="<api_prefix>/<entity>">` (enum →
-  `<select>` of values; relation → `<select>` populated from the related entity).
+- `entity_list` renders `appUI.List("<entity>")` with: `fields:` →
+  `.Columns(...)`, `limit:` → `.PageSize(n)`, `empty_text:` → `.Empty(...)`,
+  `mode: cards` (or `table`) → `.As(...)`, `create: false` → `.NoCreate()`,
+  `bulk: true` → `.Bulk()` (row selection, the bulk bar and Export CSV;
+  refused on any other block kind), and a `text:` heading (level 2 when a block ahead of it on the screen
+  renders the page's `<h1>`). One list per screen needs no key; two lists
+  of **different** entities each get `.Key("<entity>")` so their query
+  params stay apart, and two blocks for the same entity on one screen are
+  refused at validate time.
+- An entity listed on several screens has one **home list**: the list
+  screen its detail screen sits under, else the first one with
+  `create: true`, else the first one declared. A list on any other screen
+  (a dashboard's recent rows) gets `.Base(<home route>)`, so its record
+  links and New reach the home's detail and create screens instead of
+  `<dashboard>/<id>`.
+- `entity_detail` renders `appUI.Record("<entity>", id).Delete().Duplicate()`
+  from the screen's `{id}` route param. The record page holds the edit
+  form and a button per declared move, so there is no `/<detail>/edit`
+  screen any more. When the entity has list screens, one of them must
+  sit at the detail route minus `/{id}` (enforced at validate time, since
+  entityui links records at `<base>/<id>`), and the detail screen
+  registers as a **drawer over that list** (`app.InterceptFrom`): navigating to the
+  record from the list slides it over, while a hard load or a shared link
+  renders the full page.
+- `create: true` on a list synthesizes the create screen at
+  **`<home list>/create`** (not `/new`), rendering
+  `appUI.Create("<entity>").Base(<home route>)`. It inherits the home
+  screen's `layout` + `access` and is not added to `nav`.
+- `entity_form` renders a plain `<form data-cui-rpc="<api_prefix>/<entity>">`
+  (enum → `<select>` of values; relation → `<select>` populated from the
+  related entity) for forms not bound to one entity. The record form on
+  the entityui screens is drawn from the entity's `display: form:`.
 
-The generated `resource.Config` registry (`appResources`) is declared in the
-thin owned `resource.go` and populated in each entity's
-`screen_<entity>_crud.go` mount func (run via `mountGenerated`) from that
-entity's `CrudHandler`, fields, and relations; see [Generated screen
-files](#generated-screen-files). Rendering, queries, formatting, relations,
-filters, and mutations stay in `framework/ui/resource`, so framework updates
-reach existing generated apps. `appBaseCSS()` (mounted ahead of
-`static/app.css`) is an owned, empty-by-default extension point for app-specific
-base CSS: every generated screen composes `framework/ui` components and
-`core-ui/app` layouts that ship their own styling, so the generator emits zero
-bespoke CSS.
+**Removed screen keys.** `filters:`, `transitions:`, `island:`, `widget:`
+and `search:` are no longer block keys; the decoder refuses each with the
+error naming where the setting moved:
 
-#### Resource screens (`framework/ui/resource`)
+| Removed key | Replacement |
+|---|---|
+| `filters:` | the entity's `display: facets:` (enum/bool/relation one-click filters) |
+| `transitions:` | the entity's `states:` (declared moves, drawn as buttons) |
+| `search:` | the entity's `search_fields:` (the list's search box queries these) |
+| `island:` / `widget:` | none — lists are query-param pages, no island |
 
-`framework/ui/resource` is the supported server-rendered resource package. It
-composes `ui.PageHeader`, `ui.FilterToolbar`, `ui.DataTable`,
-`ui.Pagination`, `ui.EmptyState`, forms, and status actions. It does not ship a
-second component set or app-specific CSS.
+Likewise `entity_create` and `entity_edit` are no longer block kinds: the
+list's `create:` synthesizes the create screen, and the record page holds
+the edit form.
 
-The public seam is:
+**`display:` and `states:` on the entity.** The entity says what its
+screens show; the blueprint spells both under the entity with the same
+snake_case keys as the rest of the YAML:
 
-- `resource.DataSource`: the read methods needed by resource screens;
-  `*framework.CrudHandler` satisfies it.
-- `resource.Config`: entity labels and paths, `Fields`, relation label sources,
-  filters, related lists, transitions, and create/edit policy. `Field.Label`,
-  `Field.Type`, `Field.Values`, and `Field.NoQuery` control display and query
-  behavior; `Relation.Display` names the related record's label field.
-- `Config.WithColumns`, `WithSearch`, `WithLimit`, `WithCreate`, `WithEdit`,
-  `WithFilters`, `WithHeading`, `WithEmpty`, `WithActions`, and `WithIsland`:
-  value-copy options for one screen without changing the registry entry.
-- `Config.List`, `Table`, `Detail`, and `Form`: screen-rendering entry points;
-  `TableHandler` serves an island table refresh.
-- `resource.Registry`: the per-app config map plus dashboard helpers
-  `StatValue`, `GroupBars`, `GroupSlices`, and `LineChart`.
-
-Generated apps keep only the editable config and auth-copy hook:
-
-```go
-var appResources = resource.Registry{}
-
-func mountProductsScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	appResources["products"] = resource.Config{
-		Entity:   "products",
-		Title:    "Products",
-		Singular: "Product",
-		BasePath: "/products",
-		APIPath:  "/api/products",
-		Crud:     fwApp.MustCrudHandler("products"),
-		Fields: []resource.Field{
-			{Key: "name", Label: "Name", Type: "string"},
-			{Key: "price", Label: "Price", Type: "decimal"},
-		},
-	}
-	site.Register("/products", &ProductsScreen{}, appLayout)
-}
-
-func (s *ProductsScreen) RenderCtx(ctx context.Context) render.HTML {
-	return appResources["products"].
-		WithColumns("name", "price").
-		WithLimit(20).
-		List(ctx)
-}
+```yaml
+entities:
+  - name: invoices
+    crud: true
+    search_fields: [number]
+    fields:
+      - {name: number, type: string, required: true}
+      - {name: amount, type: decimal, required: true}
+      - {name: status, type: enum, values: [draft, open, paid, void], default: draft}
+      - {name: paid_on, type: date}
+    states:
+      field: status
+      initial: [draft]
+      transitions:
+        - {key: mark_paid, label: Mark paid, from: [open], to: paid, stamp: paid_on, variant: primary}
+    display:
+      singular: Invoice
+      plural: Invoices
+      title_fields: [number]
+      columns: [number, amount, status]
+      facets: [status]
+      form:
+        main:
+          - row: [number, amount]
+          - {section: dates, items: [paid_on]}
+        side: [status]
 ```
 
-Keep app-specific fields, actions, and copy in generated files. Do not copy the
-engine into the app: a private copy does not receive correctness or security
-fixes when the GoFastr module is upgraded.
+`states:` is a rule the CRUD handler enforces (a write may change the state
+field or a stamp only through a declared move) unless `advisory: true`;
+see [States](states.md). The generator emits the seed runner under
+an audited state override, so seeded rows may start at any state, and it
+enables the audit log when an entity declares `states:` and the blueprint
+seeds it.
+
+Dashboard data blocks read through the same value: `stat_card` calls
+`appUI.StatValue`, the charts call `appUI.GroupBars`/`GroupSlices`/
+`LineChart`, each resolving the entity at render time (a chart source
+needs no screen and no registry entry).
+
+`appBaseCSS()` (mounted ahead of `static/app.css`) is an owned,
+empty-by-default extension point for app-specific base CSS: every
+generated screen composes `framework/ui` components and `core-ui/app`
+layouts that ship their own styling, so the generator emits zero bespoke
+CSS.
+
+#### Extending the screens (`extensions.go`)
+
+The app's entityui code lands in the owned `extensions.go` seam:
+`var appExtensions = entityui.Extensions{}`. Field kinds, view funcs
+(a view whose filter depends on the caller, the tenant or the clock),
+record tabs and actions each register there, keyed by entity. `app.go`
+builds the app's UI from it once at boot:
+
+```go
+appUI = fwApp.EntityUI(appExtensions)
+```
+
+`fwApp.EntityUI` panics at boot on a name `appExtensions` uses that the
+entity does not declare, the way `App.Entity` refuses a bad declaration.
+The file ships even with zero entities, so a later `generate --add` never
+edits an owned file.
 
 #### Writable app screens (`create:`, edit, delete)
 
 App-side entity screens are read/write, not read-only:
 
-- Add `create: true` to an `entity_list` block → the list shows a **"New <Singular>"**
-  button and the generator synthesizes a `<route>/new` create-form screen
-  (rendered server-side by the resource engine's `Form(ctx, "")`).
-- Every `entity_detail` screen gets **Edit** + **Delete** actions in its header and
-  a synthesized `<detail-route>/edit` screen with the form **prefilled** from the
-  record (enum/relation `<select>`s render their options + selection server-side).
+- Add `create: true` to an `entity_list` block → the list shows a
+  **"New <Singular>"** button and the generator synthesizes a
+  `<route>/create` screen rendering `appUI.Create("<entity>")` (the record
+  form, empty).
+- Every `entity_detail` screen renders the record page with **Delete** and
+  **Duplicate** actions and the **edit form in the page** (drawn from the
+  entity's `display: form:`, prefilled server-side). There is no separate
+  edit route.
 
-The forms submit as islands: `data-cui-rpc` POSTs/PUTs JSON to the entity's
-`<api_prefix>/<entity>` endpoint, then `data-cui-rpc-navigate` returns to the
-list/detail on success. Delete is a `DELETE` with a native confirm. The synthesized
-screens inherit the source screen's `layout` + `access` and are not added to `nav`.
+The save forms submit as form RPCs: `data-cui-rpc` POSTs/PUTs to the
+entity's API and the answer re-fetches the page
+(`data-cui-rpc-navigate`) with a toast. A refused save answers 422 with
+each error beside its field. Delete is a `DELETE` behind a confirm. Moves
+post the transition route (`POST <api>/<entity>/<id>/transitions/<key>`).
+The synthesized create screen inherits the list screen's `layout` +
+`access` and is not added to `nav`.
 
-To add your own no-reload behavior to a hand-written screen, such as a status
-`<select>` that swaps a badge or a comment form that appends to a thread, follow
-[interactive-patterns.md](interactive-patterns.md), in particular "Writing a
-hand-written island, end to end" (it covers the traps: the posted JSON key is
-the input's `name`, the two route-param syntaxes, and manual route
+To add your own no-reload behavior to a hand-written screen, such as a
+status `<select>` that swaps a badge or a comment form that appends to a
+thread, follow
+[interactive-patterns.md](interactive-patterns.md), in particular "Writing
+a hand-written island, end to end" (it covers the traps: the posted JSON
+key is the input's `name`, the two route-param syntaxes, and manual route
 registration) and "Themed confirmation (`ui.ConfirmAction`)".
 
 #### RBAC for writable APIs
@@ -785,7 +820,10 @@ Any screen body can compose the framework's UI components directly via block
 
 The layout blocks map directly to `framework/ui`: `stack` and `cluster` accept
 semantic `gap`, `align`, and `justify` props (`cluster` also accepts
-`no_wrap`); `grid` accepts `min` and `gap`; `stat_grid` is the dashboard grid
+`no_wrap`). An unset `align` or `justify` keeps the component's default: a
+`stack` stretches its children across the column, a `cluster` packs them at
+the row's start and centres them vertically on its line. Set `align: start` to let a stack's children keep their natural
+width. `grid` accepts `min` and `gap`; `stat_grid` is the dashboard grid
 variant with a `12rem` default minimum. Spacing must use the shared
 `none|xs|sm|md|lg|xl|2xl` tokens; blueprints do not create a second styling system.
 
@@ -861,10 +899,13 @@ validation refuses an unsafe `href` (`javascript:`, `data:`, `//host`).
 that computes a live metric server-side:
 `source: {entity: customers, agg: sum, field: mrr}` (or `agg: count` with an
 optional `filter: status=active`) for a `stat_card`, and
-`source: {entity: customers, group_by: status}` for a chart. For the chart
-kinds `source` (with both `entity` and `group_by`, targeting a declared
-entity) is **required**: validation rejects a chart without one rather
-than letting the block silently vanish from the page. A chart with a
+`source: {entity: customers, group_by: status}` for a chart. `agg` is
+`count` (the default) or `sum`, spelled exactly, and a sum's `field` is an
+`int`, `float` or `decimal` field; validation refuses anything else rather
+than rendering "—". For the chart kinds `source` (with both `entity` and
+`group_by`, targeting a declared entity) is **required**: validation
+rejects a chart without one rather than letting the block silently vanish
+from the page. A chart with a
 `title` renders inside a `ui.Card` with that heading. A chart or `card`
 block with no titled `section` or `card` above it emits
 `HeadingLevel: 2`, so its title follows the page's h1 without skipping a
@@ -1137,10 +1178,11 @@ validation, owner/tenant scope, hooks, and events apply. Access is gated by
 `login_form` screen) instead of a bare 401, and a signed-in user without the
 role gets 403. When `seed_email`/`seed_password` are set, the app bootstraps
 that admin account on a fresh database (idempotent: created only when absent),
-so the back-office is reachable on first boot. The generated `main.go` creates
-the `audit_log` table the audit page reads (`framework.EnsureAuditTable`), so
-the page and the admin's own RBAC and module audit writes work on a fresh
-database. Requires `app.auth.enabled`.
+so the back-office is reachable on first boot. The generated `main.go` turns
+on the audit log for every entity (`fwApp.WithAuditLog`, which creates
+`audit_log`), so each admin write leaves a row and the audit page and the
+dashboard's recent activity read them on a fresh database. Requires
+`app.auth.enabled`.
 The Queue navigation item appears only when the host explicitly supplies a
 `queue.Browsable` backend to the admin battery; generated apps do not imply a
 queue they have not configured.
@@ -1268,10 +1310,11 @@ block in `island.NewIsland`; `widget` wraps it in `component.NewWidget`.
 `actions` generate GoFastr screen actions and add the required `data-action`
 attributes to the rendered node.
 
-Use `kind: entity_list` for a browser-refreshable table backed by a generated
-CRUD JSON endpoint. It requires an `entity` with `crud: true` and known
-`fields`, accepts `limit` and `empty_text`, and registers a generated client
-action that fetches `/<entity>?limit=<limit>` from the generated app.
+Use `kind: entity_list` for a browser-refreshable table drawn by entityui
+from the entity's own declaration. It requires an `entity` with `crud: true`
+and known `fields`, accepts `limit`, `empty_text` and `mode: cards`. The
+list's search box queries the entity's `search_fields:`, and its one-click
+filters come from the entity's `display: facets:`.
 
 ```yaml
 screens:
@@ -1282,15 +1325,13 @@ screens:
         text: Latest posts
         entity: posts
         fields: [title, status]
-        search: title
-        filters: [status, author_id]   # enum + relation facets above the table
         limit: 5
         empty_text: No posts yet.
 ```
 
-`filters:` accepts only enum, bool, and relation columns; the generator renders
-them as a `ui.FilterToolbar` above the table and applies each as a server-side
-equality filter that composes with search, sort, and pagination.
+`facets:` accepts only enum, bool, and relation columns; entityui renders
+them as one-click filters and applies each as a server-side equality
+filter that composes with search, sort, and pagination.
 
 Supported UI action events are `click`, `input`, `change`, and `submit`.
 `client_js` is copied into generated Go as a string and compiled by the normal
@@ -1488,11 +1529,11 @@ portability rules are built into that template:
   per-entity `owner_field`, `access`, or `multi_tenant` gate the
   generated CRUD and MCP endpoints; that's why the unscoped-PII check fires
   even with auth enabled.
-- **Copying the resource engine into a generated app.** Keep the generated
-  `resource.Config` values and app-specific hooks, but import
-  `framework/ui/resource` for rendering, filtering, formatting, relations, and
-  mutations. A private engine copy does not receive fixes when GoFastr is
-  upgraded.
+- **Copying an entity-screen engine into a generated app.** The screens
+  draw through `appUI` (`framework/entityui`, built in `extensions.go`):
+  keep the generated builders and your `appExtensions` hooks there, and
+  resist forking the drawing into the screen files. A private copy does
+  not receive fixes when GoFastr is upgraded.
 - **Writing flow-style inline maps.** `core/yaml` rejects
   `{name: x, type: relation}`; every map must be indented
   `key: value` lines. Anchors, aliases, block scalars, and tabs are

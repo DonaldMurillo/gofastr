@@ -183,6 +183,12 @@ func progressStepsCheckIcon() string {
 var progressStepsStyle = registry.RegisterStyle("ui-progress-steps", progressStepsCSS)
 
 func progressStepsCSS(_ style.Theme) string {
+	// Knobs: --ui-progress-steps-marker-size (28px, the round step
+	// marker) and --ui-progress-steps-connector-height (12px, the
+	// vertical connector's reach above its item). The connectors'
+	// centre-line offsets are calc() over the marker size; their
+	// thickness reads --stroke-thick, the marker ring's own weight.
+
 	return `[data-cui-comp="ui-progress-steps"] {
   display: block;
 }
@@ -199,24 +205,23 @@ func progressStepsCSS(_ style.Theme) string {
   position: relative;
   min-width: 0;
 }
-/* Connector line between steps. Drawn from the right edge of every
-   item except the last, behind the marker so the marker punches
-   through. Tinted by the NEXT step's status — green if both complete,
+/* Connector line between steps: every item but the first draws one
+   from the previous item's centre (half an item back, plus the list
+   gap) to its own, behind both markers so they punch through. Tinted
+   by the step it leads into: primary once that step is reached,
    border-color otherwise. */
 [data-cui-comp="ui-progress-steps"] .fui-progress-steps__item + .fui-progress-steps__item::before {
   content: "";
   position: absolute;
-  left: 0;
-  right: 50%;
-  top: 14px;
-  height: 2px;
+  inset-inline-start: calc(-50% - var(--spacing-sm, 4px));
+  inset-inline-end: 50%;
+  top: calc(var(--ui-progress-steps-marker-size, 28px) / 2);
+  height: var(--stroke-thick, 2px);
   background: var(--color-border, #E4E4E7);
   z-index: 0;
 }
-.fui-progress-steps__item[data-state="current"] + .fui-progress-steps__item::before,
-.fui-progress-steps__item[data-state="done"] + .fui-progress-steps__item[data-state="done"]::before,
 .fui-progress-steps__item[data-state="done"] + .fui-progress-steps__item::before {
-  background: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
 }
 [data-cui-comp="ui-progress-steps"] .fui-progress-steps__row {
   position: relative;
@@ -241,11 +246,11 @@ func progressStepsCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 999px;
+  width: var(--ui-progress-steps-marker-size, 28px);
+  height: var(--ui-progress-steps-marker-size, 28px);
+  border-radius: var(--radii-full, 9999px);
   background: var(--color-surface, #FFFFFF);
-  border: 2px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thick, 2px) solid var(--color-border, #E4E4E7);
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-semibold);
   color: var(--color-text-muted, #52525B);
@@ -263,16 +268,16 @@ func progressStepsCSS(_ style.Theme) string {
 
 /* Status states. */
 .fui-progress-steps__item[data-state="current"] .fui-progress-steps__marker {
-  background: var(--color-primary, #4F46E5);
-  border-color: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
+  border-color: var(--color-primary, #18181B);
   color: var(--color-primary-fg, #FFFFFF);
 }
 .fui-progress-steps__item[data-state="current"] .fui-progress-steps__label {
   color: var(--color-text, #18181B);
 }
 .fui-progress-steps__item[data-state="done"] .fui-progress-steps__marker {
-  background: var(--color-primary, #4F46E5);
-  border-color: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
+  border-color: var(--color-primary, #18181B);
   color: var(--color-primary-fg, #FFFFFF);
 }
 .fui-progress-steps__item[data-state="done"] .fui-progress-steps__label {
@@ -302,12 +307,12 @@ func progressStepsCSS(_ style.Theme) string {
   text-align: start;
 }
 .fui-progress-steps--vertical .fui-progress-steps__item + .fui-progress-steps__item::before {
-  left: 13px;
-  right: auto;
-  top: -12px;
+  inset-inline-start: calc(var(--ui-progress-steps-marker-size, 28px) / 2 - var(--stroke-thick, 2px) / 2);
+  inset-inline-end: auto;
+  top: calc(var(--ui-progress-steps-connector-height, 12px) * -1);
   bottom: auto;
-  width: 2px;
-  height: 12px;
+  width: var(--stroke-thick, 2px);
+  height: var(--ui-progress-steps-connector-height, 12px);
 }
 `
 }

@@ -1,13 +1,16 @@
 package ui
 
 import (
+	"context"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── TextArea ───────────────────────────────────────────────────────
@@ -40,6 +43,16 @@ type TextAreaConfig struct {
 	// resets the height to scrollHeight so the field always shows all
 	// content without an internal scrollbar.
 	Autogrow bool
+	// Monospace draws the text in the mono font token, for JSON and
+	// code.
+	Monospace bool
+	// JSON checks the text as JSON in the browser as it is typed: an
+	// invalid value marks the field invalid and stops the form's submit
+	// with "Enter valid JSON". The server still validates.
+	JSON bool
+	// Ctx resolves the JSON check's sentence through the request's
+	// translator; nil reads English.
+	Ctx context.Context
 	// Required marks the field required.
 	Required bool
 	// Disabled disables interaction.
@@ -48,15 +61,17 @@ type TextAreaConfig struct {
 	Help string
 	// Error overrides Help with an error message + aria-invalid.
 	Error string
-	// MaxLength applies the native maxlength attribute.
+	// MinLength and MaxLength apply the native minlength and
+	// maxlength attributes.
+	MinLength int
 	MaxLength int
 	ID        string
 	Class     string
 	// ExtraAttrs forwards additional attributes to the <textarea>
 	// element. Keys the component owns are dropped: class and id (use
 	// Class / ID), data-cui-* (incl. the autogrow wiring), name, rows,
-	// placeholder, disabled, required, maxlength, aria-invalid, and
-	// aria-describedby.
+	// placeholder, disabled, required, minlength, maxlength,
+	// aria-invalid, and aria-describedby.
 	ExtraAttrs html.Attrs
 }
 
@@ -77,10 +92,13 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 		rows = 3
 	}
 	extra := html.SafeExtraAttrs(cfg.ExtraAttrs,
-		"name", "rows", "placeholder", "disabled", "required", "maxlength",
+		"name", "rows", "placeholder", "disabled", "required", "minlength", "maxlength",
 		"aria-invalid", "aria-describedby")
 	if extra == nil {
 		extra = html.Attrs{}
+	}
+	if cfg.MinLength > 0 {
+		extra["minlength"] = strconv.Itoa(cfg.MinLength)
 	}
 	if cfg.MaxLength > 0 {
 		extra["maxlength"] = strconv.Itoa(cfg.MaxLength)
@@ -100,9 +118,14 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 			Disabled:    cfg.Disabled,
 			Invalid:     c.Invalid,
 			Autogrow:    cfg.Autogrow,
+			JSON:        jsonSentence(cfg.JSON, cfg.Ctx),
 			ID:          c.ID,
 			Extra:       extra,
 		}, textAreaClasses)))
+	}
+	class := cfg.Class
+	if cfg.Monospace {
+		class = strings.TrimSpace("fui-textarea--mono " + class)
 	}
 	return formFieldStyle.WrapHTML(headless.Field(headless.FieldProps{
 		Label:    cfg.Label,
@@ -110,8 +133,19 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 		Hint:     cfg.Help,
 		Error:    cfg.Error,
 		Required: cfg.Required,
-		Parts:    rootClassParts(cfg.Class),
+		Parts:    rootClassParts(class),
 	}, fieldClasses, control))
+}
+
+// jsonSentence is the JSON check's sentence, "" when the check is off.
+func jsonSentence(on bool, ctx context.Context) string {
+	if !on {
+		return ""
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return i18nui.T(ctx, i18nui.KeyTextAreaInvalidJSON)
 }
 
 var textAreaStyle = registry.RegisterStyle("ui-textarea", textAreaCSS)
@@ -119,32 +153,42 @@ var textAreaStyle = registry.RegisterStyle("ui-textarea", textAreaCSS)
 func textAreaCSS(_ style.Theme) string {
 	return `.fui-textarea {
   font: inherit;
-  font-size: var(--text-base, 1rem);
-  padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  font-size: var(--text-sm, 0.875rem);
+  padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
+  box-shadow: var(--shadow-xs);
   resize: vertical;
   min-block-size: var(--fui-density-control-h);
-  line-height: 1.5;
+  line-height: var(--leading-normal, 1.5);
 }
 .fui-textarea[data-cui-autogrow] {
   /* Autogrow rules the height; user resize would fight the JS. */
   resize: none;
   overflow: hidden;
 }
+.fui-textarea::placeholder { color: var(--color-text-subtle); }
 .fui-textarea:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 1px;
-  border-color: var(--color-primary, #4F46E5);
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-textarea[aria-invalid="true"] {
   border-color: var(--color-danger, #DC2626);
-  box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
+}
+.fui-textarea--mono .fui-textarea {
+  /* JSON and code: the mono token every code-ish component reads.
+     The variant class rides the FIELD root (TextArea's Class), so it
+     reaches the control as a descendant. */
+  font-family: var(--font-mono, ui-monospace, 'SF Mono', Menlo, Consolas, monospace);
+  tab-size: 2;
 }
 .fui-textarea:disabled {
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
-}`
+}
+/* Phones keep text-base so iOS does not zoom into the focused control. */
+@media (max-width: 767.98px) { .fui-textarea { font-size: var(--text-base, 1rem); } }`
 }

@@ -3,6 +3,7 @@ package style
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -62,9 +63,27 @@ type Theme struct {
 	// block and every theme-override scope block. Empty by default.
 	Components map[string]string
 
+	// Knobs sets the per-component --ui-* variables from the theme,
+	// keyed without the leading dashes ("ui-sidebar-width": "16rem").
+	// Every component dimension the scale tokens do not cover reads
+	// one of these with its default as the var() fallback, so a theme
+	// reaches every value in the kit from one place. A knob is
+	// declared at :root and in every scope block the theme emits; a
+	// value that reads a token (var(--color-border-strong)) resolves
+	// against the palette where it is declared, so a ui.Themed scope
+	// with its own palette sets the knob on its own theme too. Keys
+	// must start with "ui-"; values pass the free-form token check.
+	// Empty by default. A map (not a typed struct) so the reflection
+	// token-walk ignores it, like DarkColors.
+	Knobs map[string]string
+
 	Colors      ColorSet
 	Spacing     SpacingScale
 	Radii       RadiusSet
+	Strokes     StrokeSet
+	Leading     LeadingSet
+	Tracking    TrackingSet
+	Opacities   OpacitySet
 	Fonts       FontSet
 	Breakpoints BreakpointSet
 	Shadows     ShadowSet
@@ -120,6 +139,35 @@ type RadiusSet struct {
 	None, SM, MD, LG, XL, Full Radius
 }
 
+// StrokeSet: line widths. Thin draws a control's or card's border and
+// every divider, Thick an emphasised border (a selected card, a tab's
+// active rule), Focus the keyboard focus outline and FocusOffset its
+// gap from the element.
+type StrokeSet struct {
+	Thin, Thick, Focus, FocusOffset Stroke
+}
+
+// LeadingSet: line heights. Tight sets headings and display type, Snug
+// labels, captions and dense rows, Normal body copy and controls,
+// Relaxed long-form reading text.
+type LeadingSet struct {
+	Tight, Snug, Normal, Relaxed LineHeight
+}
+
+// TrackingSet: letter spacing. The negative steps tighten headings and
+// display type (Tighter the largest), Wide and Wider space out small
+// upper-case labels.
+type TrackingSet struct {
+	Tighter, Tight, Snug, Wide, Wider LetterSpacing
+}
+
+// OpacitySet: the opacities a state or a decoration fades to. Disabled
+// dims a control that cannot be used, Muted a secondary glyph or an
+// inactive item, Faint a decorative fill such as a chart's area.
+type OpacitySet struct {
+	Faint, Disabled, Muted Opacity
+}
+
 // FontSet: font-family stacks.
 type FontSet struct {
 	Body, Heading, Mono Font
@@ -130,9 +178,11 @@ type BreakpointSet struct {
 	SM, MD, LG, XL, XXL Breakpoint
 }
 
-// ShadowSet: box-shadow depth scale.
+// ShadowSet: box-shadow depth scale. XS is the hairline lift a resting
+// control (button, input, select) carries; SM sits under a card, MD
+// under a popover or menu, LG under a dialog.
 type ShadowSet struct {
-	None, SM, MD, LG, XL Shadow
+	None, XS, SM, MD, LG, XL Shadow
 }
 
 // ZIndexSet: named layers. Prevents the `z-index: 9999` arms race,
@@ -266,6 +316,17 @@ func autofillTokens(v reflect.Value, path []string) {
 		}
 		return
 	}
+	// Stroke, LineHeight, LetterSpacing and Opacity are optional too: a
+	// fully-unset token stays zero here, and the emitter and token map
+	// give it the default theme's value.
+	if isOptionalStringToken(v.Type()) {
+		nameField := v.FieldByName("Name")
+		if v.FieldByName("Value").String() != "" && nameField.String() == "" &&
+			len(path) > 0 && nameField.CanSet() {
+			nameField.SetString(derivedTokenName(path[len(path)-1]))
+		}
+		return
+	}
 	// Token leaf? Fill Name if empty.
 	switch v.Type() {
 	case reflect.TypeFor[Color](), reflect.TypeFor[Spacing](),
@@ -368,7 +429,56 @@ func (t Theme) Validate() error {
 	if err := validateComponents(t.Components); err != nil {
 		return err
 	}
+	if err := validateKnobs(t.Knobs); err != nil {
+		return err
+	}
 	return t.validatePairContrast()
+}
+
+// knobKeyPattern is a --ui-* variable name without its dashes.
+var knobKeyPattern = regexp.MustCompile(`^ui-[a-z0-9]+(-[a-z0-9]+)*$`)
+
+// validateKnobs refuses a knob whose key is not a ui-* name or whose
+// value could break out of its declaration. Keys are judged before
+// values so the error names the first bad key in sorted order.
+func validateKnobs(knobs map[string]string) error {
+	for _, k := range sortedMapKeys(knobs) {
+		if !knobKeyPattern.MatchString(k) {
+			return fmt.Errorf("Theme.Knobs[%q]: a knob key is ui- followed by lower-case words joined by single dashes", k)
+		}
+		if err := validateFreeFormCSS(knobs[k]); err != nil {
+			return fmt.Errorf("Theme.Knobs[%q]: %w", k, err)
+		}
+	}
+	return nil
+}
+
+// isOptionalStringToken reports whether t is one of the optional
+// string-valued token types: left fully zero, it is neither named,
+// validated nor emitted, and the kit's var() fallback applies.
+func isOptionalStringToken(t reflect.Type) bool {
+	switch t {
+	case reflect.TypeFor[Stroke](), reflect.TypeFor[LineHeight](),
+		reflect.TypeFor[LetterSpacing](), reflect.TypeFor[Opacity]():
+		return true
+	}
+	return false
+}
+
+// validateOptionalToken is the shared check for an optional string
+// token: fully unset passes, a value with no name is an autofill miss,
+// and a set value must pass its type's grammar.
+func validateOptionalToken(path, typ, name, value string, check func(string) error) error {
+	if value == "" && name == "" {
+		return nil
+	}
+	if name == "" {
+		return fmt.Errorf("%s: %s.Name is empty (Value=%q). Run AutoFillNames or set the Name", path, typ, value)
+	}
+	if err := check(value); err != nil {
+		return fmt.Errorf("%s: %s.Value (Name=%q): %w", path, typ, name, err)
+	}
+	return nil
 }
 
 // validatePairContrast refuses a theme whose filled-control ink pairs —
@@ -486,11 +596,20 @@ func validateTokens(v reflect.Value, path string) error {
 		if tk.Name == "" {
 			return fmt.Errorf("%s: Radius.Name is empty", path)
 		}
-		// "none" / "0" is a legitimate sharp-corner sentinel.
-		if tk.Value == 0 && tk.Name != "none" && tk.Name != "0" {
-			return fmt.Errorf("%s: Radius.Value is 0 (Name=%q). Use Radius{Name: \"none\"} for sharp corners explicitly", path, tk.Name)
+		// 0 is a real radius on any step: a square theme sets them all
+		// to it. Only a negative value is broken.
+		if tk.Value < 0 {
+			return fmt.Errorf("%s: Radius.Value is negative (%d, Name=%q)", path, tk.Value, tk.Name)
 		}
 		return nil
+	case Stroke:
+		return validateOptionalToken(path, "Stroke", tk.Name, tk.Value, validateStrokeValue)
+	case LineHeight:
+		return validateOptionalToken(path, "LineHeight", tk.Name, tk.Value, validateLineHeightValue)
+	case LetterSpacing:
+		return validateOptionalToken(path, "LetterSpacing", tk.Name, tk.Value, validateLetterSpacingValue)
+	case Opacity:
+		return validateOptionalToken(path, "Opacity", tk.Name, tk.Value, validateOpacityValue)
 	case Font:
 		if tk.Name == "" {
 			return fmt.Errorf("%s: Font.Name is empty", path)
@@ -603,18 +722,24 @@ func DefaultTheme() Theme {
 	return Theme{
 		Name: "default",
 		Colors: ColorSet{
-			Primary:      Color{Name: "primary", Value: "#4F46E5"},
+			// A neutral zinc palette: near-black primary on a white page,
+			// one hairline border, one soft surface for hover and fills.
+			// Brand colour is the host's call (theme.Overrides.Primary).
+			Primary: Color{Name: "primary", Value: "#18181B"},
+			// Pure white, not an off-white: a host that overrides only
+			// Primary keeps this ink, and #FAFAFA dropped brand colours that
+			// clear AA under white below 4.5:1.
 			PrimaryFg:    Color{Name: "primary-fg", Value: "#FFFFFF"},
-			Secondary:    Color{Name: "secondary", Value: "#6B7280"},
-			SecondaryFg:  Color{Name: "secondary-fg", Value: "#FFFFFF"},
-			Background:   Color{Name: "background", Value: "#F9FAFB"},
+			Secondary:    Color{Name: "secondary", Value: "#F4F4F5"},
+			SecondaryFg:  Color{Name: "secondary-fg", Value: "#18181B"},
+			Background:   Color{Name: "background", Value: "#FFFFFF"},
 			Surface:      Color{Name: "surface", Value: "#FFFFFF"},
 			SurfaceSoft:  Color{Name: "surface-soft", Value: "#F4F4F5"},
-			Text:         Color{Name: "text", Value: "#18181B"},
+			Text:         Color{Name: "text", Value: "#09090B"},
 			TextMuted:    Color{Name: "text-muted", Value: "#52525B"},
-			TextSubtle:   Color{Name: "text-subtle", Value: "#71717A"}, // 4.55:1 on surface, was #A1A1AA (2.56:1, fails AA)
+			TextSubtle:   Color{Name: "text-subtle", Value: "#71717A"}, // 4.55:1 on surface, was #A1A1AA (2.56:1, fails AA); also the focus ring
 			Border:       Color{Name: "border", Value: "#E4E4E7"},
-			BorderStrong: Color{Name: "border-strong", Value: "#A1A1AA"},
+			BorderStrong: Color{Name: "border-strong", Value: "#D4D4D8"},
 			// Status tones are used two ways by framework/ui components:
 			// as WHITE-TEXT FILLS (toasts, button--danger) and as LABEL
 			// TEXT on their own 15%-tinted chips (Badge, Tag, StatCard
@@ -631,7 +756,7 @@ func DefaultTheme() Theme {
 			Success:  Color{Name: "success", Value: "#166534"},   // 5.6:1 on its 15% chip, was #15803D (4.10:1)
 			Warning:  Color{Name: "warning", Value: "#854D0E"},   // 5.4:1 on its 15% chip, was #A16207 (4.03:1)
 			Info:     Color{Name: "info", Value: "#1D4ED8"},      // 5.3:1 on its 15% chip, was #2563EB (4.23:1)
-			Accent:   Color{Name: "accent", Value: "#7C3AED"},
+			Accent:   Color{Name: "accent", Value: "#2563EB"},
 			// Code surface: an always-dark panel for ui.CodeBlock and
 			// other code-display contexts. Light mode keeps the dark
 			// inkwell look (classic IDE feel); dark mode shifts it a
@@ -653,16 +778,40 @@ func DefaultTheme() Theme {
 		},
 		Radii: RadiusSet{
 			None: Radius{Name: "none", Value: 0},
-			SM:   Radius{Name: "sm", Value: 4},
+			SM:   Radius{Name: "sm", Value: 6},
 			MD:   Radius{Name: "md", Value: 8},
-			LG:   Radius{Name: "lg", Value: 12},
-			XL:   Radius{Name: "xl", Value: 16},
+			LG:   Radius{Name: "lg", Value: 10},
+			XL:   Radius{Name: "xl", Value: 14},
 			Full: Radius{Name: "full", Value: 9999},
 		},
+		Strokes: StrokeSet{
+			Thin:        Stroke{Name: "thin", Value: "1px"},
+			Thick:       Stroke{Name: "thick", Value: "2px"},
+			Focus:       Stroke{Name: "focus", Value: "2px"},
+			FocusOffset: Stroke{Name: "focus-offset", Value: "2px"},
+		},
+		Leading: LeadingSet{
+			Tight:   LineHeight{Name: "tight", Value: "1.2"},
+			Snug:    LineHeight{Name: "snug", Value: "1.4"},
+			Normal:  LineHeight{Name: "normal", Value: "1.5"},
+			Relaxed: LineHeight{Name: "relaxed", Value: "1.6"},
+		},
+		Tracking: TrackingSet{
+			Tighter: LetterSpacing{Name: "tighter", Value: "-0.03em"},
+			Tight:   LetterSpacing{Name: "tight", Value: "-0.02em"},
+			Snug:    LetterSpacing{Name: "snug", Value: "-0.01em"},
+			Wide:    LetterSpacing{Name: "wide", Value: "0.04em"},
+			Wider:   LetterSpacing{Name: "wider", Value: "0.08em"},
+		},
+		Opacities: OpacitySet{
+			Faint:    Opacity{Name: "faint", Value: "0.2"},
+			Disabled: Opacity{Name: "disabled", Value: "0.5"},
+			Muted:    Opacity{Name: "muted", Value: "0.6"},
+		},
 		Fonts: FontSet{
-			Body:    Font{Name: "body", Value: "'Inter', system-ui, sans-serif"},
-			Heading: Font{Name: "heading", Value: "'Inter', system-ui, sans-serif"},
-			Mono:    Font{Name: "mono", Value: "'JetBrains Mono', monospace"},
+			Body:    Font{Name: "body", Value: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif"},
+			Heading: Font{Name: "heading", Value: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif"},
+			Mono:    Font{Name: "mono", Value: "ui-monospace, 'SF Mono', Menlo, Consolas, 'JetBrains Mono', monospace"},
 		},
 		Breakpoints: BreakpointSet{
 			SM:  Breakpoint{Name: "sm", Value: 640},
@@ -673,10 +822,11 @@ func DefaultTheme() Theme {
 		},
 		Shadows: ShadowSet{
 			None: Shadow{Name: "none", Value: "none"},
-			SM:   Shadow{Name: "sm", Value: "0 1px 2px 0 rgba(0,0,0,0.05)"},
-			MD:   Shadow{Name: "md", Value: "0 4px 6px -1px rgba(0,0,0,0.10), 0 2px 4px -1px rgba(0,0,0,0.06)"},
-			LG:   Shadow{Name: "lg", Value: "0 10px 15px -3px rgba(0,0,0,0.10), 0 4px 6px -2px rgba(0,0,0,0.05)"},
-			XL:   Shadow{Name: "xl", Value: "0 20px 25px -5px rgba(0,0,0,0.10), 0 10px 10px -5px rgba(0,0,0,0.04)"},
+			XS:   Shadow{Name: "xs", Value: "0 1px 2px 0 rgba(0,0,0,0.05)"},
+			SM:   Shadow{Name: "sm", Value: "0 1px 3px 0 rgba(0,0,0,0.10), 0 1px 2px -1px rgba(0,0,0,0.10)"},
+			MD:   Shadow{Name: "md", Value: "0 4px 6px -1px rgba(0,0,0,0.10), 0 2px 4px -2px rgba(0,0,0,0.10)"},
+			LG:   Shadow{Name: "lg", Value: "0 10px 15px -3px rgba(0,0,0,0.10), 0 4px 6px -4px rgba(0,0,0,0.10)"},
+			XL:   Shadow{Name: "xl", Value: "0 20px 25px -5px rgba(0,0,0,0.10), 0 8px 10px -6px rgba(0,0,0,0.10)"},
 		},
 		ZIndex: ZIndexSet{
 			Dropdown: ZIndexValue{Name: "dropdown", Value: 100},

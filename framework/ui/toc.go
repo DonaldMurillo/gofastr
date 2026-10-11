@@ -104,17 +104,15 @@ func tocCSS(_ style.Theme) string {
   position: sticky;
   inset-block-start: var(--spacing-lg, 16px);
   align-self: start;
-  max-block-size: calc(100vh - 4rem);
+  max-block-size: calc(100vh - var(--spacing-sm, 4px) * 16);
   overflow-y: auto;
 }
 [data-cui-comp="ui-toc"]::before {
   content: attr(aria-label);
   display: block;
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--font-weight-bold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted, #52525B);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text, #09090B);
   margin-block-end: var(--spacing-sm, 4px);
 }
 [data-cui-comp="ui-toc"] .fui-toc__list {
@@ -138,11 +136,11 @@ func tocCSS(_ style.Theme) string {
 [data-cui-comp="ui-toc"] .fui-toc__link {
   display: block;
   padding: var(--spacing-sm, 4px) var(--spacing-sm, 4px);
-  border-radius: var(--radii-sm, 4px);
-  border-inline-start: 2px solid transparent;
+  border-radius: var(--radii-sm, 6px);
+  border-inline-start: var(--stroke-thick, 2px) solid transparent;
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
-  line-height: 1.4;
+  line-height: var(--leading-snug, 1.4);
 }
 [data-cui-comp="ui-toc"] .fui-toc__link:hover {
   color: var(--color-text, #18181B);
@@ -150,12 +148,12 @@ func tocCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-toc"] .fui-toc__link.is-active,
 [data-cui-comp="ui-toc"] .fui-toc__link[aria-current="true"] {
-  color: var(--color-primary, #4F46E5);
-  border-inline-start-color: var(--color-primary, #4F46E5);
-  font-weight: var(--font-weight-semibold);
+  color: var(--color-text, #09090B);
+  border-inline-start-color: var(--color-text, #09090B);
+  font-weight: var(--font-weight-medium);
 }
 [data-cui-comp="ui-toc"] .fui-toc__link:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 1px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }`
 }

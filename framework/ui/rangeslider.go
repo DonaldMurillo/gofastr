@@ -101,6 +101,12 @@ func RangeSlider(cfg RangeSliderConfig) render.HTML {
 var rangeSliderStyle = registry.RegisterStyle("ui-range-slider", rangeSliderCSS)
 
 func rangeSliderCSS(_ style.Theme) string {
+	// Knobs: --ui-range-slider-track-height (6px, the bar both thumbs
+	// ride), --ui-range-slider-thumb-size (20px, the WebKit thumb) and
+	// --ui-range-slider-thumb-size-moz (18px, the Firefox thumb). The
+	// bar's centring arithmetic (track padding, 50% offset, the
+	// WebKit thumb's margin-top) is calc() over the same knobs.
+
 	return `[data-cui-comp="ui-range-slider"] {
   display: grid;
   gap: var(--spacing-xs, 2px);
@@ -117,23 +123,23 @@ func rangeSliderCSS(_ style.Theme) string {
   font-variant-numeric: tabular-nums;
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
 }
 /* The track is the positioning context the two thumbs overlay; its
    own bar is drawn behind them. */
 [data-cui-comp="ui-range-slider"] .fui-range-slider__track {
   position: relative;
   block-size: var(--spacing-touch-target, 44px);
-  padding-block: calc((var(--spacing-touch-target, 44px) - 6px) / 2);
+  padding-block: calc((var(--spacing-touch-target, 44px) - var(--ui-range-slider-track-height, 6px)) / 2);
 }
 [data-cui-comp="ui-range-slider"] .fui-range-slider__track::before {
   content: "";
   position: absolute;
   inset-inline: 0;
-  inset-block-start: calc(50% - 3px);
-  block-size: 6px;
+  inset-block-start: calc(50% - var(--ui-range-slider-track-height, 6px) / 2);
+  block-size: var(--ui-range-slider-track-height, 6px);
   background: var(--color-border, #E4E4E7);
-  border-radius: 999px;
+  border-radius: var(--radii-full, 9999px);
 }
 [data-cui-comp="ui-range-slider"] .fui-range-slider__input {
   position: absolute;
@@ -150,34 +156,45 @@ func rangeSliderCSS(_ style.Theme) string {
 [data-cui-comp="ui-range-slider"] .fui-range-slider__input::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
-  width: 20px; height: 20px;
-  border-radius: 999px;
-  background: var(--color-primary, #4F46E5);
-  border: 2px solid var(--color-surface, #FFFFFF);
+  width: var(--ui-range-slider-thumb-size, 20px); height: var(--ui-range-slider-thumb-size, 20px);
+  border-radius: var(--radii-full, 9999px);
+  background: var(--color-surface, #FFFFFF);
+  border: var(--stroke-thick, 2px) solid var(--color-primary, #18181B);
+  box-shadow: var(--shadow-sm);
+  /* Centre the 20px thumb on the 6px runnable track, as Slider does;
+     WebKit aligns the thumb's top edge to the track otherwise. */
+  margin-top: calc((var(--ui-range-slider-track-height, 6px) - var(--ui-range-slider-thumb-size, 20px)) / 2);
   cursor: pointer;
   pointer-events: auto;
 }
 [data-cui-comp="ui-range-slider"] .fui-range-slider__input::-moz-range-thumb {
-  width: 18px; height: 18px;
-  border-radius: 999px;
-  background: var(--color-primary, #4F46E5);
-  border: 2px solid var(--color-surface, #FFFFFF);
+  width: var(--ui-range-slider-thumb-size-moz, 18px); height: var(--ui-range-slider-thumb-size-moz, 18px);
+  border-radius: var(--radii-full, 9999px);
+  background: var(--color-surface, #FFFFFF);
+  border: var(--stroke-thick, 2px) solid var(--color-primary, #18181B);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
   pointer-events: auto;
 }
 [data-cui-comp="ui-range-slider"] .fui-range-slider__input::-webkit-slider-runnable-track {
   background: transparent;
-  height: 6px;
+  height: var(--ui-range-slider-track-height, 6px);
 }
 [data-cui-comp="ui-range-slider"] .fui-range-slider__input::-moz-range-track {
   background: transparent;
-  height: 6px;
+  height: var(--ui-range-slider-track-height, 6px);
 }
+/* The thumb carries the ring; the input's own outline would box the
+   whole track. */
+[data-cui-comp="ui-range-slider"] .fui-range-slider__input:focus { outline: none; }
 [data-cui-comp="ui-range-slider"] .fui-range-slider__input:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary, #4F46E5) 30%, transparent);
+  box-shadow: 0 0 0 var(--stroke-focus-offset, 2px) var(--color-surface, #fff), 0 0 0 calc(var(--stroke-focus-offset, 2px) + var(--stroke-focus, 2px)) var(--color-text-subtle);
+}
+[data-cui-comp="ui-range-slider"] .fui-range-slider__input:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 var(--stroke-focus-offset, 2px) var(--color-surface, #fff), 0 0 0 calc(var(--stroke-focus-offset, 2px) + var(--stroke-focus, 2px)) var(--color-text-subtle);
 }
 [data-cui-comp="ui-range-slider"].is-disabled .fui-range-slider__input {
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }`
 }

@@ -26,12 +26,16 @@ func pageHeaderCSS(t style.Theme) string {
 			"align-items", "flex-start",
 			"justify-content", "space-between",
 			"gap", "var(--spacing-lg, 16px)",
-			"padding", "var(--spacing-xl, 24px) 0 var(--spacing-lg, 16px)",
-			"border-bottom", "1px solid var(--color-border, #E4E4E7)",
+			// No rule under the header: the title's weight and the gap to
+			// the content separate them, and a hairline that every page
+			// header drew competed with the card and table borders below.
+			// Knob: --ui-page-header-inset (the xl spacing) is the top
+			// inset; a frame that pads its content already sets it to 0.
+			"padding", "var(--ui-page-header-inset, var(--spacing-xl, 24px)) 0 var(--spacing-sm, 4px)",
 		).
 		End().
 		Rule(".fui-page-header__text").
-		Set("display", "grid", "gap", "var(--spacing-xs, 2px)").
+		Set("display", "grid", "gap", "var(--spacing-sm, 4px)").
 		End().
 		Rule(".fui-page-header__title-row").
 		Set("display", "flex", "flex-wrap", "wrap", "align-items", "center",
@@ -43,11 +47,12 @@ func pageHeaderCSS(t style.Theme) string {
 		Rule(".fui-page-header__eyebrow").
 		Set(
 			"margin", "0",
-			"font-size", "var(--text-xs, 0.75rem)",
-			"font-weight", "{font-weight.semibold}",
-			"text-transform", "uppercase",
-			"letter-spacing", "0.06em",
-			"color", "var(--color-text-subtle, #71717A)",
+			"font-size", "var(--text-sm, 0.875rem)",
+			"font-weight", "{font-weight.medium}",
+			"color", "var(--color-text-muted, #52525B)",
+			// Knob: --ui-page-header-eyebrow-case (none) sets the
+			// eyebrow's letter case.
+			"text-transform", "var(--ui-page-header-eyebrow-case, none)",
 		).
 		End().
 		// Knobs: --ui-page-header-title-size/-leading/-tracking let a host
@@ -57,14 +62,29 @@ func pageHeaderCSS(t style.Theme) string {
 		Set(
 			"margin", "0",
 			"font-size", "var(--ui-page-header-title-size, var(--text-2xl, 1.5rem))",
-			"font-weight", "{font-weight.bold}",
+			"font-weight", "{font-weight.semibold}",
 			"line-height", "var(--ui-page-header-title-leading, 1.25)",
-			"letter-spacing", "var(--ui-page-header-title-tracking, normal)",
+			"letter-spacing", "var(--ui-page-header-title-tracking, -0.02em)",
 			"color", "var(--color-text, #18181B)",
 		).
 		End().
 		Rule(".fui-page-header__subtitle").
-		Set("margin", "0", "color", "var(--color-text-muted, #52525B)").
+		Set("margin", "0", "font-size", "var(--text-sm, 0.875rem)", "color", "var(--color-text-muted, #52525B)").
+		End().
+		// An h2 title is a section under the page's own h1 (a dashboard's
+		// recent rows, a detail page's related list): one step down. It
+		// reads its own knob, --ui-page-header-section-title-size, so a
+		// host that scales page titles to display type leaves sections
+		// a step below them.
+		Rule("h2.fui-page-header__title").
+		Set("font-size", "var(--ui-page-header-section-title-size, var(--text-xl, 1.25rem))").
+		End().
+		// An h3 or deeper title is a section inside a section (a
+		// dashboard panel's list): another step down, read from
+		// --ui-page-header-subsection-title-size.
+		Rule(":is(h3, h4, h5, h6).fui-page-header__title").
+		Set("font-size", "var(--ui-page-header-subsection-title-size, var(--text-base, 1rem))",
+			"letter-spacing", "normal").
 		End().
 		Rule(".fui-page-header__actions").
 		Set(
@@ -73,11 +93,16 @@ func pageHeaderCSS(t style.Theme) string {
 			"gap", "var(--spacing-sm, 4px)",
 		).
 		End().
+		// A section header sits in its parent's rhythm (a stack gap), so
+		// it drops the page header's top inset.
+		Rule("&:has(h2.fui-page-header__title)").
+		Set("padding-block-start", "0").
+		End().
 		Rule("&.fui-page-header--compact").
 		Set("padding", "0", "border-bottom", "0").
 		End().
 		Rule("&.fui-page-header--compact h2.fui-page-header__title").
-		Set("font-size", "var(--text-lg)", "line-height", "1.3").
+		Set("font-size", "var(--text-lg)", "line-height", "calc(var(--leading-snug, 1.4) - 0.1)").
 		End().
 		MustBuild()
 }

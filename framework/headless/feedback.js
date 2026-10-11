@@ -1,8 +1,8 @@
 // headless-feedback: the behaviour module for the feedback family —
-// copy controls, the toast stack runtime, the notification bell's
-// spoken count, and the offline banner's retry control. Loaded by the
-// kernel on one of its markers, at boot, on insertion, or after a
-// client navigation.
+// copy controls, the toast stack runtime and the offline banner's
+// retry control (the bell's spoken count is headless-bell's). Loaded
+// by the kernel on one of its markers, at boot, on insertion, or after
+// a client navigation.
 //
 // The toast runtime is the API the kernel's response-header path and
 // every window.__gofastr.toast caller already speak (NS.toast,
@@ -75,7 +75,12 @@
         if (e.target.closest('[data-hui-toast-dismiss]')) {
           e.preventDefault();
           NS._dismissToast(item, id);
+          return;
         }
+        // The action closes its row too. The row leaves after its exit
+        // animation, so the click still reaches the RPC dispatch above
+        // it (the stack widget's listener, or the document's).
+        if (e.target.closest('[data-hui-toast-action]')) NS._dismissToast(item, id);
       });
     });
     NS._toastTimers.forEach((rec, id) => {
@@ -147,6 +152,10 @@
       el.setAttribute(hook, '');
       root.appendChild(el);
     });
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.setAttribute('data-hui-toast-action', '');
+    root.appendChild(action);
     const dismiss = document.createElement('button');
     dismiss.type = 'button';
     dismiss.setAttribute('data-hui-toast-dismiss', '');
@@ -164,6 +173,26 @@
     if (!el) return;
     if (text) el.textContent = text;
     else if (el.parentNode) el.parentNode.removeChild(el);
+  }
+
+  // fillAction: the toast's one action, {label, attrs} or that as JSON
+  // (rpc.js passes data-cui-rpc-success-action through), says its label
+  // and carries only RPC wiring, the data-cui-rpc* attributes the
+  // kernel's click dispatch reads; any other name is dropped, so a
+  // toast cannot arm a behaviour of another kind. An action with no
+  // label or no data-cui-rpc endpoint, or none at all, removes the
+  // button. Answers whether the button stays.
+  const RPC_ATTR = /^data-cui-rpc(-[a-z]+)*$/;
+  function fillAction(root, a) {
+    const el = root.querySelector('[data-hui-toast-action]');
+    if (!el) return false;
+    if (typeof a === 'string') { try { a = JSON.parse(a); } catch (_) { a = null; } }
+    const attrs = a && a.attrs;
+    if (!a || !a.label || !attrs || typeof attrs['data-cui-rpc'] !== 'string') { el.remove(); return false; }
+    el.textContent = a.label;
+    el.hidden = false;
+    Object.keys(attrs).forEach((k) => { if (RPC_ATTR.test(k)) el.setAttribute(k, attrs[k]); });
+    return true;
   }
 
   // readWord: the stack's Strings first, the template's second.
@@ -215,8 +244,6 @@
     }
     if (!item) item = bareRow();
     item.setAttribute('data-hui-toast-id', id);
-    const ttl = parseInt(cfg.ttl || 0, 10);
-    if (ttl > 0) item.setAttribute('data-hui-toast-ttl-ms', String(ttl));
 
     const root = item.querySelector('[data-hui-toast]') || item;
     let variantCls = '';
@@ -238,6 +265,11 @@
     fill(root, 'data-hui-toast-icon', glyph);
     fill(root, 'data-hui-toast-title', cfg.title);
     fill(root, 'data-hui-toast-body', cfg.body || '');
+    // A toast with an action stays up at least ten seconds, so there
+    // is time to press it.
+    const acted = fillAction(root, cfg.action);
+    const ttl = parseInt(cfg.ttl || 0, 10);
+    if (ttl > 0) item.setAttribute('data-hui-toast-ttl-ms', String(acted ? Math.max(ttl, 10000) : ttl));
     const dismiss = root.querySelector('[data-hui-toast-dismiss]');
     if (dismiss) {
       const fmt = readWord(container, tpl, 'data-hui-toast-dismiss-label') || '%s';
@@ -299,47 +331,14 @@
       if (btn && back) btn.textContent = back;
     }, 1200);
     // A toast on copy rides this module's own toast runtime; the
-    // config JSON is read from whichever element under the wrapper
-    // carries it (ui.CopyButton puts it on the button).
-    const toastEl = wrap.querySelector('[data-hui-copy-toast]');
-    const toastCfg = (toastEl && toastEl.getAttribute('data-hui-copy-toast')) || '';
+    // config JSON is read from the wrapper itself (a menu's copy row)
+    // or whichever element under it carries it (ui.CopyButton puts it
+    // on the button).
+    const toastCfg = (wrap.querySelector('[data-hui-copy-toast]') || wrap).getAttribute('data-hui-copy-toast');
     if (toastCfg) {
       try { NS.toast(JSON.parse(toastCfg)); } catch (_) {}
     }
   });
-
-  // ─── notification bell ───────────────────────────────────────────
-
-  // The spoken count follows the badge: the kernel writes a bound
-  // signal's value into the badge span (UnreadBind puts the binding on
-  // the badge, not the anchor), and an observer on that span's text
-  // re-formats the anchor's accessible name through the sentence shape
-  // the component rendered. Watching the badge, not the signal store,
-  // means no subscription outlives a bell a navigation removed.
-  const bellsWatched = new WeakSet();
-  function sayBellCount(bell, badge) {
-    const text = (badge.textContent || '').trim();
-    // An empty badge is the signal's "nothing unread" (the sheet hides
-    // it); anything else that is not a whole count leaves the name
-    // alone: parseInt would read "12x" as 12 and announce a number the
-    // badge does not show.
-    if (!/^\d{0,9}$/.test(text)) return;
-    const n = +text;
-    const fmt = bell.getAttribute('data-hui-notification-count-fmt') || '';
-    if (fmt) bell.setAttribute('aria-label', fmt.split('%d').join(n));
-    // The badge's count attribute follows too, so the next reader of
-    // it (a stylesheet's 99+ shaping, a test) sees the same number the
-    // anchor says. An attribute write, so the observer does not hear it.
-    badge.setAttribute('data-hui-notification-count', n);
-  }
-  function watchBell(bell) {
-    if (bellsWatched.has(bell) || typeof MutationObserver !== 'function') return;
-    const badge = bell.querySelector('[data-hui-notification-count]');
-    if (!badge) return;
-    bellsWatched.add(bell);
-    new MutationObserver(() => { sayBellCount(bell, badge); })
-      .observe(badge, { childList: true, characterData: true, subtree: true });
-  }
 
   // ─── network retry ───────────────────────────────────────────────
 
@@ -388,7 +387,6 @@
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
     for (const c of within(scope, '[data-hui-toast-stack],[data-cui-toast-stack]')) NS._initToasts(c);
-    for (const bell of within(scope, '[data-hui-notification-bell]')) watchBell(bell);
   }
 
   scan(document);

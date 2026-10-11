@@ -60,6 +60,10 @@ type UserFieldMap struct {
 	// table as FALSE for every row, because nothing about a pre-existing
 	// row says its address was proven.
 	EmailVerified string // default: "email_verified"
+	// Name is the optional display name (NameStore). Defaults to
+	// "name". EnsureSchema adds it to an existing table as '' for every
+	// row.
+	Name string // default: "name"
 }
 
 // DefaultUserFieldMap returns the standard field mapping.
@@ -71,6 +75,7 @@ func DefaultUserFieldMap() UserFieldMap {
 		Roles:         "roles",
 		PasswordSet:   "password_set",
 		EmailVerified: "email_verified",
+		Name:          "name",
 	}
 }
 
@@ -86,6 +91,9 @@ func NewEntityUserStore(db *sql.DB, table string, fieldMap ...UserFieldMap) *Ent
 		// A map written before the field existed keeps working.
 		fm.EmailVerified = "email_verified"
 	}
+	if fm.Name == "" {
+		fm.Name = "name"
+	}
 	// Validate all identifiers at construction time, fail fast.
 	query.MustIdent(table)
 	query.MustIdent(fm.ID)
@@ -94,6 +102,7 @@ func NewEntityUserStore(db *sql.DB, table string, fieldMap ...UserFieldMap) *Ent
 	query.MustIdent(fm.Roles)
 	query.MustIdent(fm.PasswordSet)
 	query.MustIdent(fm.EmailVerified)
+	query.MustIdent(fm.Name)
 	return &EntityUserStore{
 		db:       db,
 		table:    table,
@@ -126,6 +135,9 @@ func (s *EntityUserStore) EnsureSchema(ctx context.Context) error {
 		return err
 	}
 	if err := s.ensureEmailVerifiedColumn(ctx, boolType, boolFalse); err != nil {
+		return err
+	}
+	if err := s.ensureNameColumn(ctx); err != nil {
 		return err
 	}
 	if err := ensurePostgresBoolColumns(ctx, s.db, s.table, s.fieldMap.PasswordSet, s.fieldMap.EmailVerified); err != nil {

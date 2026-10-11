@@ -185,22 +185,23 @@ var toggleActionStyle = registry.RegisterStyle("ui-toggle-action", func(_ style.
 	return `[data-cui-comp="ui-toggle-action"] {
   /* Inherits .fui-button base; override only what the toggle flip needs. */
   position: relative;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
-/* Committed state — success tone signals "active". */
+/* Committed state — the soft secondary surface marks "on" without a
+   status color: success is for outcomes, not for a pressed toggle. */
 [data-cui-comp="ui-toggle-action"][data-state="committed"] {
-  background: var(--color-success, #16A34A);
-  color: var(--color-primary-fg, #FFFFFF);
-  border-color: var(--color-success, #16A34A);
+  background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #09090B);
+  border-color: var(--color-border, #E4E4E7);
 }
 /* Pending — same look as committed (optimistic) plus a busy cursor
    while the RPC is in flight. The runtime also sets aria-busy +
    disabled during this window. */
 [data-cui-comp="ui-toggle-action"][data-state="pending"] {
   cursor: progress;
-  background: var(--color-success, #16A34A);
-  color: var(--color-primary-fg, #FFFFFF);
-  border-color: var(--color-success, #16A34A);
+  background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #09090B);
+  border-color: var(--color-border, #E4E4E7);
 }
 `
 })

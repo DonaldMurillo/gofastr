@@ -65,9 +65,11 @@ func TestPopoverPositionOverride(t *testing.T) {
 	}
 }
 
-func TestToastStackDefaultIsTopRight(t *testing.T) {
+// Toasts rise in the bottom-right corner, clear of a page's header
+// actions.
+func TestToastStackDefaultIsBottomRight(t *testing.T) {
 	d := ToastStack("ts").Build()
-	if d.Position != widget.TopRight {
+	if d.Position != widget.BottomRight {
 		t.Errorf("ToastStack default position = %q", d.Position)
 	}
 }
@@ -125,6 +127,24 @@ func TestToastSlotRendersTheRegisteredTemplate(t *testing.T) {
 	want := `<div data-cui-comp="ui-toast-stack" data-cui-toast-stack="ts"><template data-hui-toast-template=""><div class="kit-row"></div></template></div>`
 	if got != want {
 		t.Fatalf("slot with a registered template:\n got %s\nwant %s", got, want)
+	}
+}
+
+// The confirm dialog ships only when a kit registered one, inside the
+// inert template the runtime clones; with none, the page carries
+// nothing and the runtime falls back to window.confirm.
+func TestConfirmTemplateWrapsTheRegisteredDialog(t *testing.T) {
+	registry.IsolateForTest(t)
+	if got := ConfirmTemplateHTML(context.Background()); got != "" {
+		t.Fatalf("with no dialog registered the page carries %q", got)
+	}
+	registry.RegisterTemplate(ConfirmTemplate, func(context.Context) render.HTML {
+		return render.HTML(`<dialog class="kit-confirm"></dialog>`)
+	})
+	got := string(ConfirmTemplateHTML(context.Background()))
+	want := `<template data-cui-confirm-dialog=""><dialog class="kit-confirm"></dialog></template>`
+	if got != want {
+		t.Fatalf("the registered dialog:\n got %s\nwant %s", got, want)
 	}
 }
 

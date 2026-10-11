@@ -117,6 +117,8 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 }
 
 func formRepeaterCSS(_ style.Theme) string {
+	// Knobs: --ui-form-repeater-action-min-height (36px) is the row
+	// floor of both action buttons, remove and add.
 	return `[data-cui-comp="ui-form-repeater"] {
   display: grid;
   gap: var(--spacing-md, 8px);
@@ -129,7 +131,7 @@ func formRepeaterCSS(_ style.Theme) string {
   display: grid;
   gap: var(--spacing-sm, 4px);
   padding: var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
 }
@@ -145,9 +147,9 @@ func formRepeaterCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-block-size: 36px;
+  min-block-size: var(--ui-form-repeater-action-min-height, 36px);
   padding: 0 var(--spacing-md, 8px);
-  border: 1px solid var(--color-danger, #DC2626);
+  border: var(--stroke-thin, 1px) solid var(--color-danger, #DC2626);
   border-radius: var(--radii-md, 8px);
   background: transparent;
   color: var(--color-danger, #DC2626);
@@ -160,11 +162,11 @@ func formRepeaterCSS(_ style.Theme) string {
   background: color-mix(in srgb, var(--color-danger, #DC2626) 10%, transparent);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:focus-visible {
-  outline: 2px solid var(--color-danger, #DC2626);
-  outline-offset: 1px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(var(--stroke-focus-offset, 2px) / 2);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled, 0.5);
   cursor: not-allowed;
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__add {
@@ -172,9 +174,9 @@ func formRepeaterCSS(_ style.Theme) string {
   align-items: center;
   justify-content: center;
   justify-self: start;
-  min-block-size: 36px;
+  min-block-size: var(--ui-form-repeater-action-min-height, 36px);
   padding: 0 var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
@@ -187,11 +189,11 @@ func formRepeaterCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__add:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 1px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(var(--stroke-focus-offset, 2px) / 2);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__add:disabled {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled, 0.5);
   cursor: not-allowed;
 }
 /* Scoped copy of the visually-hidden recipe: the group label and the
