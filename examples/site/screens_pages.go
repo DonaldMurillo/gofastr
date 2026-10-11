@@ -91,7 +91,8 @@ func (s *GetStartedScreen) Render() render.HTML {
 
 func gsRail() render.HTML {
 	return ui.StepRail(ui.StepRailConfig{
-		Title: "The path",
+		Title:       "The path",
+		BelowHeader: true, // the site header is sticky
 		Items: []ui.StepRailItem{
 			{Number: "01", Anchor: "s1", Label: "Install"},
 			{Number: "02", Anchor: "s2", Label: "Scaffold"},
@@ -991,6 +992,7 @@ func (s *NotFoundScreen) RenderNotFound(path string) render.HTML {
 // terminal block replays what the router tried.
 func (s *NotFoundScreen) renderFor(path string) render.HTML {
 	o := ui.TerminalOut
+	miss := ui.TerminalErr
 	ok := ui.TerminalOK
 
 	suggest := func(href, text string) render.HTML {
@@ -1015,9 +1017,9 @@ func (s *NotFoundScreen) renderFor(path string) render.HTML {
 	trace := ui.TerminalBlock(ui.TerminalBlockConfig{Label: "router trace"},
 		render.Text("$ router.Match\n"),
 		o("→ trying  "+path+"\n"),
-		o("→ miss   no exact match\n"),
+		miss("→ miss   no exact match\n"),
 		o("→ trying  "+path+"/*\n"),
-		o("→ miss   no prefix subtree\n"),
+		miss("→ miss   no prefix subtree\n"),
 		o("→ fallback handler:\n"),
 		ok("→ 404 screen + suggestions\n"),
 	)

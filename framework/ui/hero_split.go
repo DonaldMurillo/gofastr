@@ -116,7 +116,7 @@ func heroSplitCSS(_ style.Theme) string {
   [data-cui-comp="ui-hero-split"],
   [data-cui-comp="ui-hero-split"].fui-hero-split--copy,
   [data-cui-comp="ui-hero-split"].fui-hero-split--media {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--spacing-lg, 16px);
   }
 }`

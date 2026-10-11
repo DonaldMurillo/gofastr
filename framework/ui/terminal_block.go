@@ -6,7 +6,8 @@ package ui
 //
 // It is NOT an interactive terminal. There is no input, no execution. Pair
 // the body lines with the tone helpers TerminalOut (dim output) and
-// TerminalOK (success); plain command text goes in as render.Text.
+// TerminalOK (success) or TerminalErr (failure); plain command text
+// goes in as render.Text.
 
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -64,6 +65,11 @@ func TerminalOut(s string) render.HTML {
 	return html.Span(html.TextConfig{Class: "fui-terminal-block__out"}, render.Text(s))
 }
 
+// TerminalErr wraps a line of failure output ("✗ no route matched").
+func TerminalErr(s string) render.HTML {
+	return html.Span(html.TextConfig{Class: "fui-terminal-block__err"}, render.Text(s))
+}
+
 // TerminalOK wraps a line of success output ("→ installed …").
 func TerminalOK(s string) render.HTML {
 	return html.Span(html.TextConfig{Class: "fui-terminal-block__ok"}, render.Text(s))
@@ -109,5 +115,8 @@ func terminalBlockCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-terminal-block"] .fui-terminal-block__ok {
   color: var(--ui-terminal-block-ok-color, var(--color-success, #16A34A));
+}
+[data-cui-comp="ui-terminal-block"] .fui-terminal-block__err {
+  color: var(--ui-terminal-block-err-color, var(--color-danger, #DC2626));
 }`
 }

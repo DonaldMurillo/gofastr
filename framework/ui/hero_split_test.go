@@ -60,8 +60,15 @@ func TestHeroSplitCSSCollapsesAtMobileBreakpoint(t *testing.T) {
 	if !strings.Contains(css, "@media (max-width: 980px)") {
 		t.Errorf("HeroSplit must collapse to single column on mobile (≤980px):\n%s", css)
 	}
-	if !strings.Contains(css, "grid-template-columns: 1fr") {
-		t.Errorf("HeroSplit mobile branch must set 1fr columns:\n%s", css)
+	// minmax(0, 1fr), not a bare 1fr: a bare 1fr track's minimum is its
+	// content, so a long unbreakable line in the media column (an
+	// install command) widens the page past the viewport on phones.
+	mobile := css[strings.Index(css, "@media (max-width: 980px)"):]
+	if !strings.Contains(mobile, "grid-template-columns: minmax(0, 1fr)") {
+		t.Errorf("HeroSplit mobile branch must set minmax(0, 1fr) columns:\n%s", mobile)
+	}
+	if strings.Contains(mobile, "grid-template-columns: 1fr") {
+		t.Errorf("HeroSplit mobile branch must not use a bare 1fr track:\n%s", mobile)
 	}
 }
 
