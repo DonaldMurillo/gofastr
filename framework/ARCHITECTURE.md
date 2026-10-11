@@ -125,8 +125,9 @@ idiomatic layout the user owns immediately:
 ```
 main.go            # wires App + batteries + Start()           — yours
 app.go             # RegisterGenerated: screens + app wiring    — yours
-screens.go         # generated screen components                — yours
-resource.go        # server-render engine for entity screens    — yours
+screens_register.go # the fixed seam that mounts every screen   — yours
+screen_<name>.go   # one file per screen                        — yours
+extensions.go      # the entityui Extensions the screens share  — yours
 stubs.go           # endpoint/middleware/plugin/seed stubs       — yours
 entities/          # entity registration, models, typed repos   — yours
 migrations/        # versioned SQL (from `migrate generate`)
@@ -388,8 +389,8 @@ L4  crud                                     (uses entity, hook, event, db,
                                               internal/casing, and sits above
                                               crud within L4)
 L4+ ui, uihost, and the packages             (the UI stack: same direction
-    composing them: ui/resource, static,      rule; uihost never imports
-    gallery, sdkdocs, pluginhost              ui. Edges listed below)
+    composing them: entityui, static,        rule; uihost never imports
+    gallery, sdkdocs, pluginhost             ui. Edges listed below)
 L5  framework/  (facade)                     (re-exports everything for
                                               the public API surface)
 ```
@@ -406,7 +407,8 @@ suggester and the rendering rule), `dsl → filter` (the LIKE-escape helpers:
 one canonical `EscapeLikePattern`/`LikeEscapeSuffix`, not a per-package
 re-implementation). Within L4: `openapi → crud`. In the UI stack:
 `ui → i18nui + agentsinv`, `uihost → axecov + dev + embed + image +
-tenant`, `ui/resource → crud + filter + ui`, `static → ui + uihost`,
+tenant`, `entityui → access + crud + dsl + entity + filter + pagination +
+i18nui + ui`, `static → ui + uihost`,
 `gallery → ui + image + agentsinv`, `sdkdocs → ui + sdk + entity +
 internal/casing`, and `pluginhost → uihost`. `uihost/uinoderender → ui` is a separate
 package on purpose: the host itself never links `framework/ui`. The

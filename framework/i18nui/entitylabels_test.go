@@ -176,6 +176,29 @@ func TestFieldLabelPrecedence(t *testing.T) {
 	}
 }
 
+// A relation field labels as the record it points at: customer_id is
+// "Customer". The catalog key and a Display label still win, keyed by
+// the real field name.
+func TestRelationLabelDropsID(t *testing.T) {
+	bg := context.Background()
+	for name, want := range map[string]string{
+		"customer_id": "Customer", "ownerId": "Owner", "parentID": "Parent",
+		"assignee": "Assignee", "id": "Id",
+	} {
+		if got := RelationLabel(bg, nil, "invoices", name, ""); got != want {
+			t.Errorf("RelationLabel(%q) = %q, want %q", name, got, want)
+		}
+	}
+	if got := RelationLabel(bg, nil, "invoices", "customer_id", "Billed to"); got != "Billed to" {
+		t.Errorf("display label lost: %q", got)
+	}
+	key := "entity.invoices.fields.customer_id.label"
+	ctx, tr := frCatalog(key)
+	if got := RelationLabel(ctx, tr, "invoices", "customer_id", ""); got != "fr·"+key {
+		t.Errorf("catalog key did not win: %q", got)
+	}
+}
+
 // A translator on the ctx (the WithI18n bridge) resolves when the tr
 // argument is nil, the same miss-fallback T has.
 func TestEntityLabelsWithCtxTranslator(t *testing.T) {

@@ -486,6 +486,16 @@ var Catalog = []Entry{
 			},
 		})
 	}},
+	{"tabnav", "TabNav", "Navigation", "Tab strip of links: each tab is a URL, the current one server-settled.", func() render.HTML {
+		return ui.TabNav(ui.TabNavConfig{
+			Label: "Views",
+			Items: []ui.TabNavItem{
+				{Text: "All", Href: "?view=all", Current: true, Badge: "75"},
+				{Text: "Past due", Href: "?view=past_due", Badge: "5"},
+				{Text: "Open", Href: "?view=open", Badge: "19"},
+			},
+		})
+	}},
 
 	// ---------- Disclosure ----------
 

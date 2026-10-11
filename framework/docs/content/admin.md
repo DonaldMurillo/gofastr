@@ -81,10 +81,7 @@ understands. The battery ships zero JS:
 - **List** uses `ui.DataTable` with the typed `ui.Pagination` footer.
   Its sort headers and page links are plain anchors the client router
   intercepts, so the URL stays the list's state; a sort header's
-  direction indicator is drawn by CSS from `aria-sort`. The same
-  typed pager backs an island table (the resource engine's screens),
-  where the anchors carry the RPC contract beside their hrefs and the
-  swap keeps focus on the page the reader chose.
+  direction indicator is drawn by CSS from `aria-sort`.
 - **Delete** is a `<button data-cui-confirm="…" data-cui-rpc="…/_delete/{id}"
   data-cui-rpc-method="DELETE" data-cui-rpc-signal="…">`. The runtime runs
   the native confirm, fires the DELETE, and swaps the returned (refreshed)

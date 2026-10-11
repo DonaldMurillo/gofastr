@@ -229,6 +229,16 @@ notes:
       fields:
         - field: gofastr/framework/ui.WorkbenchConfig.RailWidth
     guidance: "Replace the length with the nearest named width (ui.WorkbenchRailNarrow, ui.WorkbenchRailWide, or leave it unset for 320px). A theme that needs another size sets --ui-workbench-rail-narrow or --ui-workbench-rail-wide. The old length was written as an inline style attribute that the default CSP strips, so on a strict host it never applied."
+  - change: "the blueprint's screen-level filters:, transitions:, search:, island: and widget: keys are removed (the decoder names the replacement for each), the entity_create and entity_edit block kinds are gone, and the synthesized create screen moved from <list>/new to <list>/create with no <detail>/edit screen behind it: generated apps draw entity screens through framework/entityui, and an entity detail screen must sit at <list route>/{id} under one of the entity's list screens"
+    breaking: true
+    hits: edit
+    find:
+      text:
+        - glob: "**/gofastr.yml"
+          match: '^ {8,}(filters|transitions|search|island|widget):'
+        - glob: "**/gofastr.yml"
+          match: '^\s*(-\s+)?kind:\s*["'']?entity_(create|edit)["'']?\s*(#.*)?$'
+    guidance: "In gofastr.yml: move an entity_list filters: list to that entity's display: facets:, move search: to the entity's search_fields:, drop island:/widget: (lists are query-param pages now), and move an entity_detail transitions: list to the entity's states: block — an old screen transition names no From, so write advisory: true on the states block and give each move a from: list of the statuses it may leave, then drop advisory: to let the CRUD handler enforce it. Point create links at <list>/create; the record page now holds the edit form, so delete the <detail>/edit route. Replace an entity_create block with create: true on the entity's entity_list (the create screen is synthesized at <list>/create), and delete an entity_edit block's screen: its entity_detail screen edits the record. A detail screen whose route is not <list route>/{id} under one of the entity's list screens is refused at validate time with the expected route in the error. Then regenerate the app (gofastr generate --force) to move its screens onto appUI."
   - change: "App.WithAuditLog (through EnsureAuditTable) adds a nullable reason TEXT column to an existing audit table at boot, for the reason a crud.WithStateOverride write records; a database role without ALTER TABLE on that table fails startup"
     breaking: true
     hits: review
@@ -237,3 +247,10 @@ notes:
         - gofastr/framework.App.WithAuditLog
         - gofastr/framework.EnsureAuditTable
     guidance: "Nothing to do where the app's database role may alter the audit table: the column is added at boot, and replicas booting together all succeed. Where the runtime role cannot ALTER, add the column first with a migration role: ALTER TABLE audit_log ADD COLUMN reason TEXT (Postgres can say ADD COLUMN IF NOT EXISTS; name your own table if AuditConfig.Table sets one)."
+  - change: "framework/ui/resource is removed: its Config / Registry screens, island routes and PublicIsland policy are gone, and framework/entityui draws entity screens with no islands"
+    breaking: true
+    hits: edit
+    find:
+      imports:
+        - gofastr/framework/ui/resource
+    guidance: "Build the app's one UI after every entity registers, appUI := fwApp.EntityUI(entityui.Extensions{}) (import github.com/DonaldMurillo/gofastr/framework/entityui; a second EntityUI call panics), and render appUI.List(entity), appUI.Record(entity, id) and appUI.Create(entity) where resource screens rendered. Move the resource Config's labels, columns, filters and field hints to the entity's Display, its transitions to the entity's States, and a custom DataSource to an Extensions.Entities List or Record override. Stats and charts are appUI.StatValue, GroupBars, GroupSlices and LineChart. Drop PublicIsland: there are no island routes to open. A generated app regenerates with gofastr generate --force."

@@ -134,6 +134,12 @@ type FieldDisplay struct {
 	// disabled, so they never submit — refused at registration on a
 	// Required field with no Default, like Omit.
 	ShowWhen string `json:"show_when,omitempty"`
+
+	// Input picks a different input and cell for the same storage: a
+	// built-in kind (email, url, color, markdown, code) or one the app
+	// registers in entityui.Extensions.Kinds. A key here; whether the
+	// kind exists is checked when entityui.New builds the app's UI.
+	Input string `json:"input,omitempty"`
 }
 
 // UnmarshalJSON decodes the display block strictly: an unknown key is an
@@ -333,6 +339,11 @@ func (d *DisplayConfig) validate(name string, fields []schema.Field, pagination 
 		}
 		fd := d.Fields[field]
 		f := byName[field]
+		if fd.Input != "" {
+			if err := checkKey(fmt.Sprintf("fields[%s].input", field), fd.Input); err != nil {
+				return err
+			}
+		}
 		// A Required field with no supplied value (a Default or an
 		// auto-generation) needs the form to submit it. Three hints
 		// take that away: Omit leaves it off the form entirely;

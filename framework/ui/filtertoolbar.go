@@ -107,6 +107,19 @@ type FilterSearch struct {
 	Label string
 }
 
+// HiddenField is one hidden input a GET toolbar form carries beside its
+// controls: request state the form does not own (the view a search must
+// not reset, another region's params on the same URL) that a submit
+// would otherwise drop.
+type HiddenField struct {
+	// Name is the form field name, the URL query key it round-trips.
+	// Required, and it must not collide with one of the form's own
+	// controls: the control must win, not race a stale hidden copy.
+	Name string
+	// Value is the current value carried through.
+	Value string
+}
+
 // FilterToolbarConfig configures a FilterToolbar.
 type FilterToolbarConfig struct {
 	// Action is the list route the form GETs to. Required.
@@ -118,6 +131,10 @@ type FilterToolbarConfig struct {
 
 	// Search, when non-nil, renders a search field.
 	Search *FilterSearch
+
+	// Hidden carries request state the form does not own; see
+	// HiddenField. Rendered as hidden inputs inside the form.
+	Hidden []HiddenField
 
 	// Sort, when non-empty, renders a labelled sort <select>.
 	Sort []SortOption
@@ -243,6 +260,30 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 			Class:   "fui-filter-toolbar__reset",
 		}))
 	}
+	// Hidden inputs first: carried state, not controls. A name shared
+	// with a control would submit twice and the browser's last-value
+	// order would decide, so it is refused here where both are known.
+	owned := map[string]bool{}
+	if cfg.Search != nil {
+		owned[cfg.Search.Name] = true
+	}
+	if len(cfg.Sort) > 0 {
+		owned[cfg.SortName] = true
+	}
+	for _, f := range cfg.Facets {
+		owned[f.Name] = true
+	}
+	var hidden []render.HTML
+	for _, h := range cfg.Hidden {
+		if h.Name == "" {
+			panic("ui: FilterToolbar HiddenField requires Name")
+		}
+		if owned[h.Name] {
+			panic("ui: FilterToolbar Hidden name " + h.Name + " collides with one of the form's controls; the control owns the key")
+		}
+		hidden = append(hidden, html.Input(html.InputConfig{Type: "hidden", Name: h.Name, Value: h.Value, ExtraAttrs: html.Attrs{"data-cui-internal": ""}}))
+	}
+	controls = append(hidden, controls...)
 	controls = append(controls, html.Div(html.DivConfig{
 		Class:      "fui-filter-toolbar__actions",
 		ExtraAttrs: html.Attrs{"data-cui-internal": ""},

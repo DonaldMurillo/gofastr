@@ -47,6 +47,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -219,6 +220,20 @@ type App struct {
 	imageDeriver        file.ImageDeriver                       // optional; derives renditions + BlurHash for Image fields
 	fieldImageDerivers  map[string]map[string]file.ImageDeriver // entity -> field -> override
 	stripUploadMetadata bool                                    // WithStripUploadMetadata: strip EXIF/XMP from stored originals
+
+	// auditTable is the audit log's table once WithAuditLog ran; "" when
+	// the app keeps no audit log. entityui's Activity tab reads it.
+	auditTable string
+	// auditActor is WithAuditLog's actor resolver, for audit rows written
+	// outside the CRUD hooks (entityui's bulk runs).
+	auditActor func(context.Context) string
+	// entityUI is the UI EntityUI built; a second call is refused.
+	entityUI *entityui.UI
+	// crudMounts records where each entity's write routes mounted: the
+	// router that carries them (a group's sub-router, with its
+	// middleware) and the path on it. EntityUI mounts the bulk and export
+	// routes on the same router, and its screens post to the full path.
+	crudMounts map[*entity.Entity]crudMount
 
 	migrationRoutines []migrate.Routine // stored procedures/functions/triggers run on boot
 	migrationViews    []migrate.View    // views (virtual tables built from entities) run on boot
@@ -615,6 +630,22 @@ func (a *App) apiPrefix() string {
 // apiPrefix + "/" + table. With no prefix this is the historical "/table".
 func (a *App) entityMountPath(table string) string {
 	return a.apiPrefix() + "/" + table
+}
+
+// crudMount is where one entity's write routes live: rel on r, which
+// serves them at full.
+type crudMount struct {
+	r    *router.Router
+	rel  string
+	full string
+}
+
+func (a *App) recordCrudMount(e *entity.Entity, r *router.Router, rel, full string) {
+	if a.crudMounts == nil {
+		a.crudMounts = map[*entity.Entity]crudMount{}
+	}
+	a.crudMounts[e] = crudMount{r: r, rel: rel, full: full}
+	a.mountEntityUIRoutes(e)
 }
 
 // entityCRUDEnabled is THE predicate for "this entity has HTTP CRUD
@@ -1480,6 +1511,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		// The group's prefix is already baked into the sub-router,
 		// so we just mount at /<entity-table>.
 		crud.RegisterCrudRoutes(g.Router(), crudHandler, "/"+e.GetTable(), crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
+		a.recordCrudMount(e, g.Router(), "/"+e.GetTable(), crudMount)
 	}
 
 	// MCP tools, namespaced if the group has a namespace. Explicit
@@ -2027,6 +2059,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		// mounted under the API prefix, tell the handler so its tool paths match.
 		crudHandler.BasePath = a.apiPrefix()
 		crud.RegisterCrudRoutes(a.router, crudHandler, mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
+		a.recordCrudMount(e, a.router, mountPath, mountPath)
 	}
 
 	// Explicit MCP=true, or dev-implied: in the dev loop every
@@ -2342,6 +2375,13 @@ func entityScreenCollisionMessage(name, mountPath, screenPath string) string {
 func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.Endpoint, mcpTools bool, crudMount string, m registrationMount) error {
 	if err := validateDisplayQueries(ent); err != nil {
 		return err
+	}
+	// An entity registered after EntityUI gets the checks EntityUI ran
+	// on the ones before it.
+	if a.entityUI != nil {
+		if err := a.entityUI.CheckEntity(ent); err != nil {
+			return err
+		}
 	}
 	// A queryable field whose name is another's plus an operator suffix
 	// (?status_ne= next to a `status_ne` column) is a silent wrong-column
@@ -3231,7 +3271,7 @@ func (a *App) Start(addr string) error {
 		if appName == "" {
 			appName = "GoFastr API"
 		}
-		spec := openapi.EntityOpenAPI(a.Registry, appName, "1.0.0", a.entityCRUDEnabled, a.apiPrefix())
+		spec := openapi.EntityOpenAPIWithBulk(a.Registry, appName, "1.0.0", a.entityCRUDEnabled, a.entityUIMounted, a.apiPrefix())
 		if a.Config.PublicOpenAPI {
 			a.router.Get("/openapi.json", coreoa.PublicHandler(spec))
 		} else {

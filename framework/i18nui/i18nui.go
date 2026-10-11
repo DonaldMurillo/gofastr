@@ -11,6 +11,8 @@ package i18nui
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -661,6 +663,41 @@ func EntityPlural(ctx context.Context, tr *i18n.Translator, entityName, display 
 	return displayLabel(ctx, tr, "entity."+entityName+".plural", display, entityName)
 }
 
+// EntityNoun returns the entity's name for use inside a sentence (the
+// "11 customers" count): the plural or singular catalog entry as written,
+// since the translator owns its casing, else the Display name or the
+// derived name with each word that is capitalized only at its start
+// lowercased. A word with any other capital keeps it ("API keys").
+func EntityNoun(ctx context.Context, tr *i18n.Translator, entityName, display string, plural bool) string {
+	key, slug := "entity."+entityName+".singular", inflect.Singular(entityName)
+	if plural {
+		key, slug = "entity."+entityName+".plural", entityName
+	}
+	if got, ok := catalogString(ctx, tr, key); ok {
+		return got
+	}
+	name := display
+	if name == "" {
+		name = titleCase(slug)
+	}
+	words := strings.Fields(name)
+	for i, w := range words {
+		runes := []rune(w)
+		plain := true
+		for _, r := range runes[1:] {
+			if unicode.IsUpper(r) {
+				plain = false
+				break
+			}
+		}
+		if plain {
+			runes[0] = unicode.ToLower(runes[0])
+			words[i] = string(runes)
+		}
+	}
+	return strings.Join(words, " ")
+}
+
 // EntityDescription returns the one-line description shown under a list
 // heading: entity.<entity>.description, else the Display description, else
 // the empty string (prose with no derived fallback).
@@ -680,6 +717,26 @@ func FieldLabel(ctx context.Context, tr *i18n.Translator, entityName, fieldName,
 		return display
 	}
 	return humanize(fieldName)
+}
+
+// RelationLabel is FieldLabel for a Relation field. Its humanized
+// fallback drops a trailing "_id", "Id" or "ID": the field names the
+// record it points at, so customer_id labels as "Customer". The catalog
+// key keeps the real field name.
+func RelationLabel(ctx context.Context, tr *i18n.Translator, entityName, fieldName, display string) string {
+	if display == "" {
+		display = humanize(trimIDSuffix(fieldName))
+	}
+	return FieldLabel(ctx, tr, entityName, fieldName, display)
+}
+
+func trimIDSuffix(name string) string {
+	for _, suf := range []string{"_id", "Id", "ID"} {
+		if len(name) > len(suf) && strings.HasSuffix(name, suf) {
+			return strings.TrimSuffix(name, suf)
+		}
+	}
+	return name
 }
 
 // FieldHelp returns the help line under a field's input:
@@ -785,7 +842,7 @@ func titleCase(slug string) string {
 // TestAllKeysCoversAllPackageConstants test cross-checks against the
 // Defaults map so stale entries here are caught at test time.
 func AllKeys() []Key {
-	return []Key{
+	keys := []Key{
 		KeyPaginationPrevious, KeyPaginationNext, KeyPaginationPage,
 		KeyPaginationOf, KeyPaginationShowing, KeyPaginationResults,
 		KeyPaginationLabel,
@@ -862,6 +919,11 @@ func AllKeys() []Key {
 		KeyHuiSortableConflictRefreshed, KeyHuiMultiSelectPlaceholder,
 		KeyHuiMultiSelectRemoveLabel,
 	}
+	// The entity screens keep their keys in one block per area.
+	for _, block := range entityKeyBlocks {
+		keys = append(keys, slices.Sorted(maps.Keys(block))...)
+	}
+	return keys
 }
 
 // humanize converts snake_case or camelCase to "Title Case".

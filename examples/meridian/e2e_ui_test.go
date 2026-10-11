@@ -6,8 +6,9 @@ package main
 // Browser-driven checks for the interactive design-system surfaces the
 // plain-HTTP TestE2E can't see: the quick-add customer modal (a plain
 // preset.Modal relying on the default centered panel) and the Customers
-// DataTable running in island mode (sort + pagination via RPC, swapping
-// just the table, never a document navigation).
+// list's sort + pagination as query-param navigation (the link navigates,
+// the client router fetches the screen partial and swaps it, never a
+// document navigation).
 
 import (
 	"context"
@@ -112,16 +113,21 @@ func TestE2E_QuickAddModal(t *testing.T) {
 		chromedp.SendKeys(`#qa-name`, "Modal E2E", chromedp.ByQuery),
 		chromedp.SendKeys(`#qa-email`, "modal-e2e@example.com", chromedp.ByQuery),
 		chromedp.Click(`[data-cui-widget="customer-quick-add"] button[type="submit"]`, chromedp.ByQuery),
-		chromedp.Sleep(1200*time.Millisecond),
-		chromedp.Evaluate(closedJS, &closedAfterSave),
-		// data-cui-rpc-navigate re-rendered the list: 10 seeds + 1.
-		chromedp.Evaluate(`document.body.innerText.includes("11 customers")`, &countBumped),
+		// The submit's 2xx closes the widget and data-cui-rpc-navigate
+		// re-fetches the page (page partial + widget catalog), so the
+		// close and the re-rendered count land after a fetch round-trip:
+		// poll for both instead of sleeping a fixed window.
+		chromedp.Poll(closedJS, &closedAfterSave, chromedp.WithPollingTimeout(8*time.Second)),
+		// The count subtitle is entityui's "{count} {plural}" with the
+		// title-cased plural label.
+		chromedp.Poll(`document.body.innerText.includes("11 customers")`, &countBumped, chromedp.WithPollingTimeout(8*time.Second)),
 	); err != nil {
 		t.Fatalf("modal flow: %v", err)
 	}
 	if panelBG == "" || panelBG == "rgba(0, 0, 0, 0)" || panelBG == "transparent" {
 		t.Errorf("modal panel background = %q: default panel surface missing", panelBG)
 	}
+
 	if !closedAfterEsc {
 		t.Error("Escape did not close the modal")
 	}
@@ -133,7 +139,7 @@ func TestE2E_QuickAddModal(t *testing.T) {
 	}
 }
 
-func TestE2E_CustomersSortIsland(t *testing.T) {
+func TestE2E_CustomersSortQueryNav(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds + boots the binary")
 	}
@@ -148,8 +154,9 @@ func TestE2E_CustomersSortIsland(t *testing.T) {
 		chromedp.Navigate(base+"/app/customers"),
 		chromedp.WaitVisible(`.fui-data-table`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.__e2eMark = 1`, nil),
-		// Two clicks on the Name anchor: asc, then desc. Each swap
-		// re-renders the island, so re-query the anchor per click.
+		// Two clicks on the Name anchor: asc, then desc. Each click is a
+		// client-side navigation (the anchor's ?sort=&dir= ride the page's
+		// own URL), so re-query the anchor per click: the swap replaced it.
 		chromedp.Click(sortAnchor, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Click(sortAnchor, chromedp.ByQuery),
@@ -164,16 +171,16 @@ func TestE2E_CustomersSortIsland(t *testing.T) {
 		t.Errorf("first row after desc name sort = %q, want Tim Berners-Lee", first)
 	}
 	if mark != 1 {
-		t.Error("window marker lost: sort caused a document navigation, not an island swap")
+		t.Error("window marker lost: sort caused a document navigation, not a client-side swap")
 	}
 	// The primitive builds the href through net/url, whose Encode
 	// orders parameters alphabetically.
 	if loc != "?dir=desc&sort=name" {
-		t.Errorf("push-state URL = %q, want ?dir=desc&sort=name", loc)
+		t.Errorf("sort URL = %q, want ?dir=desc&sort=name", loc)
 	}
 }
 
-func TestE2E_CustomersPageIsland(t *testing.T) {
+func TestE2E_CustomersPageQueryNav(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds + boots the binary")
 	}
@@ -188,10 +195,10 @@ func TestE2E_CustomersPageIsland(t *testing.T) {
 		chromedp.WaitVisible(`.fui-data-table`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.__e2eMark = 1`, nil),
 		// 10 seeded customers at page size 8 → the seed data alone
-		// paginates. Page 2 holds the last two rows. The pager is the
-		// typed one: page anchors keep their hrefs and carry the RPC
-		// contract beside them.
-		chromedp.Click(`.fui-data-table__footer a[data-cui-rpc$="p=2"]`, chromedp.ByQuery),
+		// paginates. Page 2 holds the last two rows. The pager is a
+		// plain link whose ?page= rides the page's own URL: the click
+		// is a client-side navigation that swaps the screen partial.
+		chromedp.Click(`.fui-data-table__footer a[href$="page=2"]`, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`document.querySelectorAll('.fui-data-table tbody tr').length`, &rows),
 		chromedp.Evaluate(`window.__e2eMark || 0`, &mark),
@@ -203,9 +210,9 @@ func TestE2E_CustomersPageIsland(t *testing.T) {
 		t.Errorf("page 2 rows = %d, want 2", rows)
 	}
 	if mark != 1 {
-		t.Error("window marker lost: paging caused a document navigation, not an island swap")
+		t.Error("window marker lost: paging caused a document navigation, not a client-side swap")
 	}
-	if loc != "?p=2" {
-		t.Errorf("push-state URL = %q, want ?p=2", loc)
+	if loc != "?page=2" {
+		t.Errorf("page URL = %q, want ?page=2", loc)
 	}
 }

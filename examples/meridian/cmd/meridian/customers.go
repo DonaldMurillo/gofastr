@@ -28,6 +28,7 @@ func customersCommands() []command {
 // customersListFilters is the filter-flag table behind `customers list`: one entry
 // per flag, in help order, each bound to the query param it sets.
 var customersListFilters = []filterFlag{
+	{flag: "q", param: "q", help: "free-text search over the declared search fields"},
 	{flag: "name", param: "name", help: "filter: name equals (comma list = IN)"},
 	{flag: "name-gte", param: "name_gte", help: "filter: name greater than or equal"},
 	{flag: "name-lte", param: "name_lte", help: "filter: name less than or equal"},

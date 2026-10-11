@@ -1,5 +1,5 @@
-// desktop-notes page behaviour: the copy-link button, the export
-// toast, and mirroring document.title into the native window title.
+// desktop-notes page behaviour: the export toast and mirroring
+// document.title into the native window title.
 //
 // External same-origin script (served from static/, wired with
 // uihost.WithExtraScripts), never inline. Nothing here logs payloads.
@@ -25,29 +25,6 @@
     return ns && ns.desktop && ns.desktop.available ? ns.desktop : null;
   };
 
-  const copyLink = (btn) => {
-    const d = desktopNS();
-    if (d && d.clipboard) {
-      d.clipboard.writeText({ text: location.href })
-        .then(() => show('Link copied'))
-        .catch(() => show('Copy failed'));
-      return;
-    }
-    // Browser mode (--serve): the plain async clipboard.
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(location.href)
-        .then(() => show('Link copied'))
-        .catch(() => show('Copy failed'));
-      return;
-    }
-    show('Copy not available');
-  };
-
-   // Delegated: the button lives inside a re-rendered form island.
-   document.addEventListener('click', (e) => {
-     const btn = e.target.closest('[data-notes-copy]');
-     if (btn) copyLink(btn);
-  });
 
   // The quick-note widget's Close button. Only the page knows which
   // window it lives in: the host marker carries the id, and

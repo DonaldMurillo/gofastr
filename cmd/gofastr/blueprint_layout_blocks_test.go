@@ -213,33 +213,30 @@ func TestAppShellFooterAndAuthSubmit(t *testing.T) {
 	}
 }
 
-// An index screen whose first block is its entity list has no other
-// heading, so the list title stays the page's h1; a list below another
-// block drops to a section.
 func TestListFirstKeepsPageHeading(t *testing.T) {
 	bp := Blueprint{
 		App:      BlueprintApp{Name: "Idx", Module: "example.com/idx", DBDriver: "sqlite", DBURL: "idx.db"},
 		Entities: []framework.EntityDeclaration{{Name: "posts", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}}},
 		Screens: []BlueprintScreen{
-			{Name: "index", Route: "/index", Title: "Posts", Body: []BlueprintBlock{{Kind: "entity_list", Entity: "posts"}}},
+			{Name: "index", Route: "/index", Title: "Posts", Body: []BlueprintBlock{{Kind: "entity_list", Entity: "posts", Text: "Index list"}}},
 			{Name: "home", Route: "/", Title: "Home", Body: []BlueprintBlock{
 				{Kind: "page_header", Props: map[string]any{"title": "Home"}},
-				{Kind: "entity_list", Entity: "posts"},
+				{Kind: "entity_list", Entity: "posts", Text: "Home list"},
 			}},
 			// No layout renders an <h1>, so a list under a block that has
 			// none (a paragraph, or a stack wrapping the list) is the h1.
 			{Name: "para", Route: "/para", Title: "Para", Body: []BlueprintBlock{
 				{Type: "paragraph", Text: "Recent posts."},
-				{Kind: "entity_list", Entity: "posts"},
+				{Kind: "entity_list", Entity: "posts", Text: "Para list"},
 			}},
 			// An <h1> after the list does not demote it.
 			{Name: "nested", Route: "/nested", Title: "Nested", Body: []BlueprintBlock{
-				{Kind: "stack", Children: []BlueprintBlock{{Kind: "entity_list", Entity: "posts"}}},
+				{Kind: "stack", Children: []BlueprintBlock{{Kind: "entity_list", Entity: "posts", Text: "Nested list"}}},
 				{Kind: "page_header", Props: map[string]any{"title": "Later"}},
 			}},
 			{Name: "titled", Route: "/titled", Title: "Titled", Body: []BlueprintBlock{
 				{Type: "h1", Text: "Posts"},
-				{Kind: "stack", Children: []BlueprintBlock{{Kind: "entity_list", Entity: "posts"}}},
+				{Kind: "stack", Children: []BlueprintBlock{{Kind: "entity_list", Entity: "posts", Text: "Titled list"}}},
 			}},
 		},
 	}
@@ -248,14 +245,23 @@ func TestListFirstKeepsPageHeading(t *testing.T) {
 		all.WriteString(src)
 	}
 	src := all.String()
-	for screen, level2 := range map[string]bool{"index": false, "home": true, "para": false, "nested": false, "titled": true} {
-		island := `.WithIsland("/tables/` + screen + `/posts")`
-		h2 := strings.Contains(src, `WithHeadingLevel(2)`+island)
-		if !h2 && !strings.Contains(src, island) {
-			t.Fatalf("screen %s rendered no list:\n%s", screen, src)
+	// The level is part of the heading call: presence of the exact string
+	// is the assertion (it drops only under an earlier <h1>).
+	for _, heading := range []string{
+		`.Heading("Index list", 1)`,
+		`.Heading("Home list", 2)`,
+		`.Heading("Para list", 1)`,
+		`.Heading("Nested list", 1)`,
+		`.Heading("Titled list", 2)`,
+	} {
+		if !strings.Contains(src, heading) {
+			t.Errorf("list heading %s not emitted:\n%s", heading, src)
 		}
-		if h2 != level2 {
-			t.Errorf("screen %s: list at level 2 = %v, want %v (it drops only under an earlier <h1>)", screen, h2, level2)
+	}
+	// Level is bound to the heading call: no bare level override exists.
+	for _, banned := range []string{"HeadingLevel", "WithHeading"} {
+		if strings.Contains(src, banned) {
+			t.Errorf("emitted screens still use the resource engine's %s", banned)
 		}
 	}
 }

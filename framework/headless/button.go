@@ -155,6 +155,11 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			// read as textContent). Empty is allowed: the runtime
 			// titles it with the status instead.
 			out[k] = v
+		case "data-cui-rpc-success-toast":
+			// The title of the toast a 2xx shows, before any navigate
+			// on the same button. Empty is allowed: the runtime titles
+			// it "Done".
+			out[k] = v
 		case "data-cui-rpc-close", "data-cui-rpc-reset", "data-cui-rpc-after-disable",
 			"data-cui-intercept-close":
 			// Presence is the value. intercept-close closes the

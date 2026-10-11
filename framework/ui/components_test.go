@@ -886,7 +886,7 @@ func TestButtonExtraAttrsCarriesWiring(t *testing.T) {
 	// Button is the documented carrier for interactive wiring
 	// (interactive-patterns.md attaches Action.Attrs() via ExtraAttrs):
 	// data-cui-* must pass through, unlike components that own their
-	// own wiring. framework/ui/resource and battery/admin depend on it.
+	// own wiring. framework/entityui and battery/admin depend on it.
 	h := Button(ButtonConfig{Label: "Delete", ExtraAttrs: map[string]string{
 		"data-cui-rpc":        "/api/items/42",
 		"data-cui-rpc-method": "DELETE",

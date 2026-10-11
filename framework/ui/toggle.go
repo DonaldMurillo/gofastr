@@ -35,6 +35,13 @@ type ToggleConfig struct {
 	// Required for accessibility.
 	Label string
 
+	// LabelHidden keeps Label as the control's accessible name and
+	// folds its text into the visually-hidden recipe, for a control
+	// whose meaning its surroundings already show: a table's select
+	// column, where each row's checkbox is named "Select <title>".
+	// Checkbox and Radio only; a Switch ignores it.
+	LabelHidden bool
+
 	// ID is the input element's id. When empty, defaults to Name
 	// (Checkbox/Switch, one per name) or Name-slug(Value) (Radio, so
 	// each input in a group gets a distinct id and no two labels
@@ -189,12 +196,23 @@ func renderToggle(inputType string, cfg ToggleConfig) render.HTML {
 		Type: inputType, Name: cfg.Name, Value: cfg.Value, Label: cfg.Label,
 		Hint: hint, Checked: cfg.Checked, Disabled: cfg.Disabled,
 		ID: id, Extra: extra,
-	}, withRootClass(withRootClass(choiceClasses, "fui-choice--"+inputType), cfg.Class))
+	}, withRootClass(withRootClass(choiceTextClasses(cfg.LabelHidden), "fui-choice--"+inputType), cfg.Class))
 	if cfg.Error == "" {
 		return toggleStyle.WrapHTML(run)
 	}
 	// The shell is the root; the run inside it is the component's own.
 	return toggleStyle.WrapHTML(erroredRun(headless.Own(run), "", cfg.Error, id))
+}
+
+// choiceTextClasses is choiceClasses, with the label text folded into
+// the visually-hidden recipe when hidden is set.
+func choiceTextClasses(hidden bool) headless.Classes {
+	if !hidden {
+		return choiceClasses
+	}
+	out := maps.Clone(choiceClasses)
+	out[headless.PartText] += " fui-visually-hidden"
+	return out
 }
 
 // erroredRun wraps a rendered choice run with its message paragraph —

@@ -257,6 +257,8 @@ func registerSubscriptions(app *framework.App) {
 			CRUD: boolPtr(true),
 			MCP:  true,
 		},
+		States:     &framework.StatesConfig{Field: "status", Transitions: []framework.Transition{{Key: "activate", Label: "Activate", From: []string{"trialing", "past_due"}, To: "active", Variant: "primary"}, {Key: "cancel", Label: "Cancel", From: []string{"trialing", "active", "past_due"}, To: "canceled", Variant: "danger"}}, Advisory: true},
+		Display:    &framework.DisplayConfig{Fields: map[string]framework.FieldDisplay{"mrr": {Label: "MRR"}}},
 		Properties: map[string]any{"label": "Subscriptions"},
 	})
 	_ = Subscriptions{}

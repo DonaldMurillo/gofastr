@@ -153,6 +153,7 @@
 //	Sticky:               theme-token sticky wrapper (top/bottom pinning)
 //	Switch:               iOS-style toggle switch with role=switch
 //	TableOfContents:      auto-built sticky nav from <h2>/<h3>
+//	TabNav:              navigation strip of links, one current
 //	Tabs:                 signal-driven tab strip
 //	Tag:                  interactive pill (filter link or × dismiss)
 //	TagInput:             free-form chips, Enter/comma to commit

@@ -19,6 +19,8 @@ func subscriptionsCommands() []command {
 		{name: "subscriptions batch-update", summary: "patch up to 100 records atomically (--json array)", run: runSubscriptionsBatchUpdate},
 		{name: "subscriptions batch-delete", summary: "delete ids atomically (positional ids)", run: runSubscriptionsBatchDelete},
 		{name: "subscriptions watch", summary: "stream live create/update/delete events (SSE)", run: runSubscriptionsWatch},
+		{name: "subscriptions activate", summary: "move status from trialing or past_due to active", run: runSubscriptionsActivate},
+		{name: "subscriptions cancel", summary: "move status from trialing or active or past_due to canceled", run: runSubscriptionsCancel},
 	}
 }
 
@@ -123,4 +125,12 @@ func runSubscriptionsBatchDelete(args []string) int {
 
 func runSubscriptionsWatch(args []string) int {
 	return runWatchVerb("subscriptions watch", (*client.Client).WatchSubscriptions, args)
+}
+
+func runSubscriptionsActivate(args []string) int {
+	return runTransitionVerb("subscriptions activate", "/subscriptions", "activate", args)
+}
+
+func runSubscriptionsCancel(args []string) int {
+	return runTransitionVerb("subscriptions cancel", "/subscriptions", "cancel", args)
 }

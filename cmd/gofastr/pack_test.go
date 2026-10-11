@@ -476,8 +476,6 @@ func TestPackSerializerCoversEveryConstructField(t *testing.T) {
 // of the contract; an omission not listed here fails the guard above.
 var constructOmissions = map[string]string{
 	"entities.Endpoints": "derived runtime wiring, not an authoring key: the decoder splits entity-level endpoints into decl.Endpoints (Method/Path/Name/Description, MCP hard-false, handler dropped) and a top-level Blueprint.Endpoints stub carrying the full authoring form (entity, handler, mcp). Emitting decl.Endpoints back under the entity would duplicate every endpoint on re-parse.",
-	"entities.States":    "entity.StatesConfig is authored in Go and in EntityDeclaration JSON; the blueprint grammar has no states: key yet (decodeBlueprintEntities refuses it as unknown), so States can never come from YAML and emitting it would fail rejectUnknownKeys on re-parse. The blueprint's states: key replaces this exemption with a serializer line.",
-	"entities.Display":   "entity.DisplayConfig is authored in Go and in EntityDeclaration JSON; the blueprint grammar has no display: key yet (decodeBlueprintEntities refuses it as unknown), so Display can never come from YAML and emitting it would fail rejectUnknownKeys on re-parse. The blueprint's display: key replaces this exemption with a serializer line.",
 	"indices.Expression": "framework.Index is shared with hand-written Go configs, which support expression indexes; the blueprint grammar's indices allow-list is name/columns/unique only (decodeIndices), so Expression can never be authored in YAML and emitting it would fail rejectUnknownKeys on re-parse.",
 }
 
@@ -576,16 +574,6 @@ func constructSpecs() []constructSpec {
 			},
 			at: func(out map[string]any) map[string]any {
 				return digEmitted(out, "screens", 0, "body", 0, "actions", 0)
-			},
-		},
-		{
-			name: "transitions", order: transitionOrder, orderName: "transitionOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Screens: []BlueprintScreen{{Body: []BlueprintBlock{{Transitions: []BlueprintTransition{{}}}}}}}
-				return bp, reflect.ValueOf(&bp.Screens[0].Body[0].Transitions[0]).Elem()
-			},
-			at: func(out map[string]any) map[string]any {
-				return digEmitted(out, "screens", 0, "body", 0, "transitions", 0)
 			},
 		},
 		{

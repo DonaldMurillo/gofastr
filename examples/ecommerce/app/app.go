@@ -19,6 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -90,6 +91,8 @@ var (
 	// wire admin.Config.Policy or append finer-grained grants).
 	rolePolicy *access.RolePolicy
 )
+
+var appUI *entityui.UI
 
 // RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.
 func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
@@ -199,6 +202,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// HTML forms, mount auth.CSRF: see `gofastr docs blueprints`
 		// (Auth section) and `gofastr docs auth`.
 	}
+	appUI = fwApp.EntityUI(appExtensions)
 	mountGenerated(fwApp, site, db)
 	fwApp.Router().Handle("POST", "/orders/{id}/confirm", http.HandlerFunc(ConfirmOrder))
 	fwApp.Router().Handle("POST", "/orders/{id}/ship", http.HandlerFunc(ShipOrder))

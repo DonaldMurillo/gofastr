@@ -8,6 +8,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`ui.TextAreaConfig.Monospace`** draws the text in the mono font
+  token; entity screens set it on JSON fields and the `code` and
+  `markdown` kinds.
 - **`EntityConfig.States` gives an entity a state machine.** The config
   names the Enum field holding the state, the values a create may start
   at, and the named moves that change it. Unless `Advisory` is set, the
@@ -661,8 +664,129 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`gofastr blueprint` warns on a single-column unique field in an
   owner-scoped entity.** Under owner scoping one user's row blocks every
   other user's create, and the 409 reveals that the value exists.
+- **`framework/entityui` draws entity screens.** `App.EntityUI(ext)`
+  builds the app's one `*entityui.UI`; a second call panics, so the admin
+  and the app's own screens share it. `List`, `Record` and `Create`
+  builders render from the entity's schema, `Display` and `States` with
+  no islands: a list keeps sort, page, search, filter, view and facets in
+  its query string, and writes are form RPCs to the REST routes. A list
+  draws a table or cards with view tabs, facets, filter chips and a pager,
+  and takes `Where` pins, `Base` and `NoLinks`. Each row's actions sit
+  behind one icon-only menu: open, copy link, duplicate and delete. A
+  pinned field leaves the default columns and the facets, and New
+  prefills it. A relation field labels as its target (`customer_id`
+  reads "Customer"), and an entity with no `TitleField`, `name` or
+  `title` is named by its first plain `String` column. A record draws its state
+  badge, a button per open move (gated by `access.CanResourceExact`, the
+  route's own check), and Edit, Related and Activity tabs, with
+  `Related` and `RelatedAt` naming the related lists. An app action
+  draws as a record header button in its `ui.ButtonVariant` and runs on
+  that record through the `_bulk` route's `record` scope, bulk on or off.
+  New, Duplicate,
+  Delete, the moves and the edit form follow the caller's create, update
+  and delete access, so a screen never draws a write the route refuses.
+  A relation the caller may not read shows the em dash, in pickers and
+  read-only values alike. `StatValue`,
+  `GroupBars`, `GroupSlices` and `LineChart` serve dashboards.
+  `Extensions` adds field kinds, view funcs, record tabs, actions and
+  list or record overrides, every name checked at boot. Every read of
+  another entity (relation labels, pickers, facets, related lists, stats)
+  passes that entity's own read gate. See
+  `framework/docs/content/entityui.md`.
+- **`crud.SumAll` and `crud.GroupCountAll`.** The database totals a
+  numeric field, or counts rows per stored value, over every match under
+  the same owner, tenant, read, soft-delete and `BeforeList` scopes as
+  `ListAll`. A decimal sums as `NUMERIC` on Postgres. Under
+  `WithReadHooks` an entity with `AfterList` hooks refuses both with
+  `crud.ErrAggregateMasked`. `StatValue` and the chart helpers compute
+  through them: a sum covers every row and rounds once, an agg other
+  than `count` or `sum` prints "—" (the blueprint refuses it, and a sum
+  of a non-numeric field), and an `AfterList`-hooked entity totals its
+  masked rows up to 100,000, printing "—" past that.
+- **Bulk actions and CSV export on entity lists.** `.Bulk()` adds a
+  select column, a bulk bar and an Export CSV link; `bulk: true` on a
+  blueprint `entity_list` emits it. `App.EntityUI` mounts
+  `POST <api>/<entity>/_bulk` and `GET <api>/<entity>/_export.csv`
+  on the router each entity's CRUD routes use, so a grouped entity's pair
+  sits behind its group's middleware. The server re-reads every posted id
+  through the scoped handler, rebuilds "every match" from the list's own
+  narrowing (at most `EveryMatchCap`, 10,000) and refuses it with 409 when
+  the matching ids are not the set the bar offered (it carries their
+  digest), even at the same size, and asks each record's
+  update or delete gate before the write, counting a refusal as skipped.
+  The bulk route takes JSON only (415 otherwise). Up to
+  `InRequestCap` (100) records run in the request; past it the run needs
+  `Extensions.Jobs`, and `App.EntityUI` then creates the snapshot tables
+  `gofastr_bulk_jobs` and `gofastr_bulk_items` (it panics without
+  `App.DB`). Every run writes one audit row with op `bulk` under
+  `WithAuditLog`, counted from the store (`BulkStore.Tally`) so a resumed
+  run reports the whole job. A queued run leases its job and fences every
+  write on the lease, so a second worker runs nothing and a lapsed one
+  writes nothing; app actions read `ActionContext.Run` to stay
+  idempotent under at-least-once delivery. A repeated confirm answers the
+  job already queued, and `App.Start` re-hands jobs a crash left
+  unenqueued and deletes finished jobs past `BulkRetention` (30 days).
+  The export holds what the list narrowed to,
+  leaves out `NoQuery`, omitted and JSON fields, and quotes cells a
+  spreadsheet would run as formulas; a `Where`-pinned list draws none.
+  An entity registered after `App.EntityUI` gets both routes too. Only
+  the entity its name resolves to gets them: a group version that shares
+  the name with an unversioned entity, or with other versions, gets none.
+- **`crud.CrudHandler.CanUpdateRecordScoped`, `CanDeleteRecordScoped`
+  and `CanCreateScoped`** answer, as booleans, the gates `PUT` and
+  `DELETE /<entity>/{id}` and `POST /<entity>` run: session, owner,
+  tenant, then the permission asked about the record (or the collection,
+  for a create).
+- **`ui.ToggleConfig.LabelHidden`** keeps a Checkbox or Radio's label as
+  its accessible name and hides the text, for a control whose meaning its
+  surroundings show, such as a table's select column.
+- **`i18nui.EntityNoun`** returns an entity's name for use inside a
+  sentence ("11 customers"): a catalog entry as written, else the Display
+  or derived name with plain words lowercased and acronyms kept.
+- **`openapi.EntityOpenAPIWithBulk`** is `EntityOpenAPI` with a second
+  predicate that also documents an entity's `POST <path>/_bulk` and
+  `GET <path>/_export.csv`. The app's served spec lists them for every
+  entity `App.EntityUI` mounted them on.
+- **`ui.MenuConfig.IconOnly`** draws the trigger as a "more" icon (new in
+  `ui.Icon`) with the label kept as its accessible name, for a table row's
+  action menu. **`ui.MenuItem.Do`** takes a built `*interactive.Action`,
+  effects and toasts included, and **`ui.MenuItem.Copy`** copies an
+  element's text with an optional success toast. The headless menu
+  carries both as `MenuItem.RPCAttrs` (only `data-cui-rpc*` and
+  `data-cui-confirm`, same-origin paths) and `MenuItem.Copy`, and refuses
+  a row that mixes either with another action.
+- **`--ui-page-header-section-title-size`** sizes an h2 `PageHeader`
+  title, so a host that scales page titles leaves sections a step below.
+- **`i18nui.RelationLabel`** is `FieldLabel` for a Relation field: its
+  fallback drops a trailing `_id`.
 
 ### Changed
+
+- **BREAKING: `framework/ui/resource` is removed.** `framework/entityui`
+  replaces its `Config` and `Registry` screens and its island routes:
+  build the app's UI with `App.EntityUI` and render `appUI.List`,
+  `appUI.Record` and `appUI.Create`. `PublicIsland` has no replacement,
+  because entityui mounts no islands. `gofastr upgrade` lists the
+  importers.
+- **BREAKING: the blueprint's screen-level `filters:`, `transitions:`,
+  `search:`, `island:` and `widget:` keys are removed**, and the decoder
+  refuses each naming where the setting moved: `filters:` to the entity's
+  `display: facets:`, `transitions:` to the entity's `states:`, `search:`
+  to the entity's `search_fields:`, and `island:`/`widget:` to nothing —
+  lists are query-param pages now. The `entity_create` and `entity_edit`
+  block kinds are gone with them, and the synthesized create screen moved
+  from `<list>/new` to `<list>/create`; there is no `/<detail>/edit`
+  screen any more, the record page holds the edit form.
+- **BREAKING: generated apps draw entity screens through
+  `framework/entityui`.** `display:` and `states:` on an entity reach the
+  generated app: the entity registration carries both, the screens render
+  `appUI.List`/`appUI.Record`/`appUI.Create` builders, `app.go` builds the
+  app's one UI from the new owned `extensions.go` seam, and the dashboard
+  stat and chart blocks read through it. An entity detail screen sits at
+  `<list route>/{id}` under one of the entity's list screens (enforced at
+  validate time) and opens as a drawer over it. That list is the
+  entity's home: the create screen hangs off it, and a list on any other
+  screen, such as a dashboard's recent rows, links its records there.
 - **BREAKING: filter operators must suit the column type.** `like`
   works only on String, Text, Enum and UUID columns, and `gt`, `gte`,
   `lt` and `lte` are refused on Bool and JSON, with a 400 naming the
@@ -934,6 +1058,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   a turn the moment the stream opened lost that turn's events whenever
   the handler was descheduled between the two. Both now subscribe
   first, the order the WebSocket control surface already used.
+- **A `DataTable` in cards mode no longer clips its cells.** The table's
+  52px row height is a minimum in table layout but an exact height once
+  a cell becomes a flex box, so a cell taller than that (an empty state,
+  wrapped text) overflowed and the scroll wrapper cut it off. Card cells
+  now grow to their content, and the empty state fills its card instead
+  of sitting at the end.
 - **`EnsureAuditTable` adds missing columns on SQLite.** An audit table
   created before `tenant_id` existed kept running without it: SQLite has
   no `ADD COLUMN IF NOT EXISTS`, and the fallback's probe reported the
@@ -1399,6 +1529,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   standard-library advisories govulncheck reports against 1.27.0 (among
   them GO-2026-6599 and GO-2026-6600 in html/template). golang.org/x/tools
   moves to v0.50.0, which reads the export data Go 1.27.2 writes.
+- **`crud.WithReadHooks` applies the `BeforeList`/`BeforeGet` scopes.**
+  Under the opt-in, `ListAll`, `CountAll` and `TypedQuery.Find`/`First`/
+  `Count` run `BeforeList` and `GetOne` runs `BeforeGet`, ANDing the
+  clauses those hooks append the way the HTTP routes do; a before hook
+  that errors fails the read. A screen rendering through the in-process
+  API previously listed, counted and opened rows a team or status scope
+  added in `BeforeList` hid from `GET /api/<entity>`. Reads without the
+  opt-in are unchanged.
 - **Entity MCP tools list only for callers who may use them.** Each
   generated `<entity>_list/get/create/update/delete` tool carries its
   operation's `Exposure.Access` permission as a `WithToolGate` gate. A

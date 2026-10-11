@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -40,6 +41,9 @@ type TextAreaConfig struct {
 	// resets the height to scrollHeight so the field always shows all
 	// content without an internal scrollbar.
 	Autogrow bool
+	// Monospace draws the text in the mono font token, for JSON and
+	// code.
+	Monospace bool
 	// Required marks the field required.
 	Required bool
 	// Disabled disables interaction.
@@ -104,13 +108,17 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 			Extra:       extra,
 		}, textAreaClasses)))
 	}
+	class := cfg.Class
+	if cfg.Monospace {
+		class = strings.TrimSpace("fui-textarea--mono " + class)
+	}
 	return formFieldStyle.WrapHTML(headless.Field(headless.FieldProps{
 		Label:    cfg.Label,
 		For:      id,
 		Hint:     cfg.Help,
 		Error:    cfg.Error,
 		Required: cfg.Required,
-		Parts:    rootClassParts(cfg.Class),
+		Parts:    rootClassParts(class),
 	}, fieldClasses, control))
 }
 
@@ -143,6 +151,13 @@ func textAreaCSS(_ style.Theme) string {
 .fui-textarea[aria-invalid="true"] {
   border-color: var(--color-danger, #DC2626);
   box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
+}
+.fui-textarea--mono .fui-textarea {
+  /* JSON and code: the mono token every code-ish component reads.
+     The variant class rides the FIELD root (TextArea's Class), so it
+     reaches the control as a descendant. */
+  font-family: var(--font-mono, ui-monospace, 'SF Mono', Menlo, Consolas, monospace);
+  tab-size: 2;
 }
 .fui-textarea:disabled {
   opacity: var(--opacity-muted, 0.6);

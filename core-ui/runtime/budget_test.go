@@ -1085,17 +1085,16 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// plus the core-side hint channel. Before that: 1183 measured
 		// after the re-delivery's pointer-modality hint.
 		"transition": 1395,
-		// rpc 3156 measured (3154 + 2 clearance) after the
-		// gofastr:formresult seam (admin rebuild P0, 2026-10-06): one
-		// CustomEvent per form-sourced settle, ok:true on 2xx and
-		// ok:false on a refusal, so headless-leaveguard's shared
-		// "changed" state learns a refused save left the form dirty.
-		// The success arm cannot live in formerrors (the happy path
-		// never loads it) and the failure arm cannot live in the
-		// submit bridge (core has no budget headroom), so this is the
-		// smallest spelling that keeps both arms in the one module
-		// that already owns the form's response.
-		"rpc": 3158,
+		// rpc 3195 measured (3193 + 2 clearance) after the 2xx success
+		// toast (admin rebuild W2, 2026-10-06): data-cui-rpc-success-
+		// toast dispatches through _toastOrFallback BEFORE the trigger's
+		// data-cui-rpc-navigate, so the toast outlives the SPA swap its
+		// own RPC caused — the save that bounces the reader back to the
+		// record page still says "Saved". It cannot live in a module
+		// beside rpc: the dispatch is part of the RPC response effects
+		// this module already owns, and a demand module loaded after the
+		// navigate would render into a page that already swapped.
+		"rpc": 3195,
 	}
 	const coreOverride = 0
 

@@ -24,6 +24,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/examples/meridian/siteheader"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -215,23 +216,6 @@ func inkTheme() style.Theme {
 // inkBand is the registered handle screens wrap dark marketing bands with.
 var inkBand = style.RegisterThemeOverride(inkTheme())
 
-// customersList is the one configured Customers list. The screen and the
-// island endpoint share it so a sort/page RPC returns exactly the table
-// the initial SSR painted. Page size 8 keeps the island's pagination
-// exercised by the seed data alone.
-func customersList() ResourceConfig {
-	return appResources["customers"].
-		WithColumns("name", "email", "company", "status", "mrr").
-		WithSearch("name").
-		WithFilters(ResFilter{Key: "status", Label: "Status", Type: "enum", Values: []string{"trialing", "active", "past_due", "canceled"}}).
-		WithLimit(8).
-		WithCreate().
-		WithHeading("Customers").
-		WithEmpty("No customers yet. Add your first to get started.").
-		WithIsland("/api/tables/customers").WithIslandPolicy(authPolicy("/login", "")).
-		WithActions(interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Quick add", Variant: ui.ButtonSecondary}), "customer-quick-add"))
-}
-
 // quickAddCustomerModal is a plain preset.Modal: the centered slot paints
 // the default panel surface (background, border, radius, padding), so the
 // body ships zero chrome of its own, just a heading and a ui.Form. The
@@ -292,6 +276,12 @@ var (
 	marketingLayout *app.Layout
 )
 
+// appUI is the app's entityui value: every generated entity screen
+// renders through it. RegisterGenerated builds it once, after the
+// entities registered and before any screen mounts. extensions.go owns
+// what goes into it.
+var appUI *entityui.UI
+
 // RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.
 func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	if site == nil {
@@ -322,10 +312,13 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			marketingFooter(),
 		)
 	})
-	// mountGenerated populates appResources (per-entity crud files) and mounts
-	// every screen. It runs early so hand-written endpoints below that capture
-	// a resource config (e.g. the customers island at /api/tables/customers)
-	// see a populated map.
+	// appUI is the app's entityui value: every entity screen renders through
+	// it. One UI per app, built after the entities registered (RegisterAll in
+	// main.go) and before any screen mounts. EntityUI panics at boot on a bad
+	// name in appExtensions, the way App.Entity refuses a bad declaration.
+	appUI = fwApp.EntityUI(appExtensions)
+	// mountGenerated mounts every screen; the screens render through the
+	// appUI builders, which resolve each entity at render time.
 	mountGenerated(fwApp, site, db)
 	{
 		stack := preset.ToastStack("blueprint-toasts").Build()
@@ -335,9 +328,6 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		modal := quickAddCustomerModal()
 		widget.Mount(fwApp.Router(), &modal)
 	}
-	// Island endpoint for the Customers table: sort/page RPCs from the list
-	// screen hit this and the runtime swaps just the table island.
-	fwApp.Router().HandleFunc("GET", "/api/tables/customers", customersList().TableHandler())
 	{
 		// WARNING: auth runs in DEV MODE: HTTP-friendly cookies (no
 		// Secure flag, plain session_id name) and a per-process JWT

@@ -206,3 +206,16 @@ func TestLayoutGapKnobs(t *testing.T) {
 		}
 	}
 }
+
+// A host that scales page titles to display type must not drag section
+// headers (a record's related lists, a dashboard's recent rows) up with
+// them: the h2 title reads its own knob.
+func TestPageHeaderSectionTitleKnob(t *testing.T) {
+	body := ruleBody(t, pageHeaderCSS(style.DefaultTheme()), "h2.fui-page-header__title")
+	if !strings.Contains(body, "var(--ui-page-header-section-title-size, var(--text-xl, 1.25rem))") {
+		t.Errorf("the h2 title must size from --ui-page-header-section-title-size, got:\n%s", body)
+	}
+	if strings.Contains(body, "--ui-page-header-title-size") {
+		t.Errorf("the h2 title must not read the page-title knob, got:\n%s", body)
+	}
+}

@@ -10,8 +10,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
-	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
-	"net/http"
 )
 
 type CategoriesScreen struct{ component.ContextOnly }
@@ -23,41 +21,11 @@ func (s *CategoriesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *CategoriesScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Categories")),
-		appResources["categories"].WithColumns("name", "description", "active").WithLimit(50).WithHeading("All Categories").WithHeadingLevel(2).WithEmpty("No categories yet.").WithIsland("/api/tables/categories/categories").WithIslandPolicy(resource.PublicIsland()).List(ctx),
+		appUI.List("categories").Columns("name", "description", "active").PageSize(50).NoCreate().Heading("All Categories", 2).Empty("No categories yet.").RenderCtx(ctx),
 	)
 }
 
 func mountCategoriesScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	appResources["categories"] = resource.Config{
-		Entity: "categories", Title: "Categories", Singular: "Category", BasePath: "/categories", APIPath: "/api/categories",
-		Crud: fwApp.MustCrudHandler("categories"),
-		Fields: []resource.Field{
-			{Key: "name", Label: "Name", Type: "string"},
-			{Key: "slug", Label: "Slug", Type: "string"},
-			{Key: "description", Label: "Description", Type: "text"},
-			{Key: "image", Label: "Image", Type: "image"},
-			{Key: "sort_order", Label: "Sort Order", Type: "int"},
-			{Key: "active", Label: "Active", Type: "bool"},
-		},
-		Related: []resource.RelatedList{
-			{
-				Title: "Products", ForeignKey: "category_id", BasePath: "/products",
-				Crud: fwApp.MustCrudHandler("products"),
-				Fields: []resource.Field{
-					{Key: "name", Label: "Name", Type: "string"},
-					{Key: "slug", Label: "Slug", Type: "string"},
-					{Key: "sku", Label: "SKU", Type: "string"},
-					{Key: "description", Label: "Description", Type: "text"},
-				},
-				Relations: map[string]resource.Relation{
-					"category_id": {Crud: fwApp.MustCrudHandler("categories"), Display: "name"},
-				},
-			},
-		},
-	}
-	fwApp.Router().HandleFunc("GET", "/api/tables/categories/categories", func(w http.ResponseWriter, r *http.Request) {
-		appResources["categories"].WithColumns("name", "description", "active").WithLimit(50).WithHeading("All Categories").WithHeadingLevel(2).WithEmpty("No categories yet.").WithIsland("/api/tables/categories/categories").WithIslandPolicy(resource.PublicIsland()).TableHandler()(w, r)
-	})
 	site.Register("/categories", &CategoriesScreen{}, appLayout)
 }
 

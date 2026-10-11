@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"encoding/json"
 	"maps"
 	"slices"
 	"strconv"
@@ -87,6 +88,21 @@ type MenuItem struct {
 	// Radio and Children: incoherent combos are refused at render.
 	Action *MenuAction
 
+	// RPCAttrs carries a built RPC's attributes, core-ui/interactive's
+	// Action.Attrs(), for a row that needs more of the RPC contract
+	// than RPC and Confirm spell: a navigate on success, an error
+	// toast. Only data-cui-rpc* and data-cui-confirm keys are taken,
+	// data-cui-rpc is required and must be a same-origin path, and any
+	// other key is refused at render. Mutually exclusive with Href,
+	// RPC, Action, Copy, Radio and Children.
+	RPCAttrs map[string]string
+
+	// Copy renders the row as a copy-to-clipboard command over another
+	// element's text, the headless-feedback copy contract CopyButton
+	// uses. Mutually exclusive with Href, RPC, RPCAttrs, Action, Radio
+	// and Children.
+	Copy *MenuCopy
+
 	// Children nests a submenu behind this row. The row renders as a
 	// disclosure summary; setting Href, RPC, Action or Radio on it is
 	// refused at render.
@@ -95,6 +111,17 @@ type MenuItem struct {
 	// ExtraAttrs forwards additional attributes onto the row. Keys the
 	// row owns are dropped, as everywhere in this package.
 	ExtraAttrs html.Attrs
+}
+
+// MenuCopy is the row's copy shape.
+type MenuCopy struct {
+	// Target is the id of the element whose text the row copies. A
+	// leading "#" is dropped; anything else that reads as a selector
+	// is refused at render, since the module resolves an id.
+	Target string
+	// Toast is the title of the success toast shown on copy. Empty
+	// shows none.
+	Toast string
 }
 
 // MenuAction is the row's form-POST shape.
@@ -414,6 +441,22 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 			own["data-cui-confirm"] = it.Confirm
 		}
 	}
+	// checkMenuItemCoherence has refused every key but the RPC
+	// contract's.
+	for k, v := range it.RPCAttrs {
+		own[k] = v
+	}
+	if it.Copy != nil {
+		// The row is the copy module's wrapper: the module resolves the
+		// clicked element's closest [data-hui-copy] and reads the
+		// target and toast from it.
+		own["data-hui-copy"] = ""
+		own["data-hui-copy-target"] = strings.TrimPrefix(it.Copy.Target, "#")
+		if it.Copy.Toast != "" {
+			b, _ := json.Marshal(map[string]any{"variant": "success", "title": it.Copy.Toast, "ttl": 3000})
+			own["data-hui-copy-toast"] = string(b)
+		}
+	}
 	if it.Disabled {
 		// Presence, not value: the button element's own spelling.
 		Mark(own, "disabled")
@@ -517,6 +560,7 @@ func menuSubmenu(b Box, it MenuItem, parentPanelID string, idx int, mark bool) r
 
 // checkMenuItemCoherence refuses the caller-incoherent combinations.
 func checkMenuItemCoherence(it MenuItem) {
+	checkMenuRowShape(it)
 	if len(it.Children) > 0 {
 		if it.Radio != "" {
 			panic("headless: MenuItem with Radio cannot have Children — a radio row is a leaf command, a submenu parent is a disclosure")
@@ -532,6 +576,34 @@ func checkMenuItemCoherence(it MenuItem) {
 		}
 		if len(it.Action.Fields) == 0 && !it.Action.Unsafe {
 			panic("headless: MenuAction has no Fields (no CSRF token?) — pass the token in Fields or set Unsafe: true to acknowledge the endpoint protects itself")
+		}
+	}
+}
+
+// checkMenuRowShape refuses an RPCAttrs or Copy row that also names
+// another way to act, and the values neither may carry.
+func checkMenuRowShape(it MenuItem) {
+	if it.RPCAttrs != nil {
+		if it.Href != "" || it.RPC != "" || it.Action != nil || it.Copy != nil || it.Radio != "" || len(it.Children) > 0 {
+			panic("headless: MenuItem with RPCAttrs cannot also set Href, RPC, Action, Copy, Radio or Children — the row is one RPC")
+		}
+		path := it.RPCAttrs["data-cui-rpc"]
+		if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+			panic("headless: MenuItem RPCAttrs needs data-cui-rpc set to a same-origin path, got " + strconv.Quote(path))
+		}
+		for k := range it.RPCAttrs {
+			if k != "data-cui-confirm" && !strings.HasPrefix(k, "data-cui-rpc") {
+				panic("headless: MenuItem RPCAttrs takes only data-cui-rpc* and data-cui-confirm keys, got " + strconv.Quote(k))
+			}
+		}
+	}
+	if it.Copy != nil {
+		if it.Href != "" || it.RPC != "" || it.Action != nil || it.Radio != "" || len(it.Children) > 0 {
+			panic("headless: MenuItem with Copy cannot also set Href, RPC, Action, Radio or Children — the row is one copy command")
+		}
+		id := strings.TrimPrefix(it.Copy.Target, "#")
+		if id == "" || strings.ContainsAny(id, " \t\n\r\f.>[:#") {
+			panic("headless: MenuCopy Target must be an element id (a leading # is allowed), not a CSS selector: " + strconv.Quote(it.Copy.Target))
 		}
 	}
 }

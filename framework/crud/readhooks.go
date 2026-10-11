@@ -61,8 +61,11 @@ func (ch *CrudHandler) requestFrom(ctx context.Context) *http.Request {
 	return syntheticRequest(hookCtx(ctx), http.MethodGet, "/")
 }
 
-// WithReadHooks returns a context in which the in-process read API applies
-// AfterList/AfterGet, so callers see the same values the HTTP surface returns.
+// WithReadHooks returns a context in which the in-process read API runs the
+// read hooks the HTTP surface runs, so callers see the rows and values a
+// GET would return: BeforeList/BeforeGet scope the query (ListAll and
+// CountAll run BeforeList, GetOne runs BeforeGet), and AfterList/AfterGet
+// mask the result.
 //
 // Use it where rows are RENDERED, not where they are read to be written back:
 //
@@ -88,6 +91,34 @@ func readHooksEnabled(ctx context.Context) bool {
 // runtime error, runHookSafely's recover() cannot catch it.
 func hookCtx(ctx context.Context) context.Context {
 	return context.WithValue(ctx, readHooksKey{}, false)
+}
+
+// runBeforeList runs the BeforeList chain for an in-process read under
+// WithReadHooks and returns the WHERE clauses its hooks appended. The
+// HTTP List handler runs the same chain and ANDs the same clauses into
+// both its data and count queries; a hook error refuses the read there
+// with a 400 and refuses it here with the error.
+func (ch *CrudHandler) runBeforeList(ctx context.Context, r *http.Request) ([]hook.WhereClause, error) {
+	if ch.Hooks == nil || !readHooksEnabled(ctx) {
+		return nil, nil
+	}
+	payload := &hook.ListPayload{Request: hookRequest(r)}
+	if err := ch.Hooks.ExecuteHooks(hookCtx(ctx), hook.BeforeList, payload); err != nil {
+		return nil, fmt.Errorf("before-list hook: %w", err)
+	}
+	return payload.Where, nil
+}
+
+// runBeforeGet is runBeforeList for a by-id read: the BeforeGet chain.
+func (ch *CrudHandler) runBeforeGet(ctx context.Context, r *http.Request, id string) ([]hook.WhereClause, error) {
+	if ch.Hooks == nil || !readHooksEnabled(ctx) {
+		return nil, nil
+	}
+	payload := &hook.GetPayload{Request: hookRequest(r), ID: id}
+	if err := ch.Hooks.ExecuteHooks(hookCtx(ctx), hook.BeforeGet, payload); err != nil {
+		return nil, fmt.Errorf("before-get hook: %w", err)
+	}
+	return payload.Where, nil
 }
 
 // runAfterGet applies the AfterGet chain to a single in-process result and

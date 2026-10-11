@@ -21,9 +21,11 @@ func (s *DashboardScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *DashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		ui.PageHeader(ui.PageHeaderConfig{Title: "Overview", Subtitle: "Revenue at a glance", Eyebrow: ""}),
-		ui.Grid(ui.GridConfig{Min: "12rem"}, ui.StatCard(ui.StatCardConfig{Label: "MRR", Value: statValue(ctx, "subscriptions", "sum", "mrr", "status=active", "money")}), ui.StatCard(ui.StatCardConfig{Label: "Active customers", Value: statValue(ctx, "customers", "count", "", "status=active", "")}), ui.StatCard(ui.StatCardConfig{Label: "Past-due invoices", Value: statValue(ctx, "invoices", "count", "", "status=past_due", "")}), ui.StatCard(ui.StatCardConfig{Label: "Plans", Value: statValue(ctx, "plans", "count", "", "", "")})),
-		ui.Card(ui.CardConfig{Heading: "Customers by status", HeadingLevel: 2}, ui.BarChart(ui.BarChartConfig{Bars: groupBars(ctx, "customers", "status"), ShowLabels: true})),
-		appResources["invoices"].WithColumns("number", "customer_id", "amount", "status", "due_on").WithLimit(8).WithHeading("Recent invoices").WithHeadingLevel(2).WithEmpty("No invoices yet.").List(ctx),
+		ui.Grid(ui.GridConfig{Min: "12rem"}, ui.StatCard(ui.StatCardConfig{Label: "MRR", Value: appUI.StatValue(ctx, "subscriptions", "sum", "mrr", `status = "active"`, "money")}), ui.StatCard(ui.StatCardConfig{Label: "Active customers", Value: appUI.StatValue(ctx, "customers", "count", "", `status = "active"`, "")}), ui.StatCard(ui.StatCardConfig{Label: "Past-due invoices", Value: appUI.StatValue(ctx, "invoices", "count", "", `status = "past_due"`, "")}), ui.StatCard(ui.StatCardConfig{Label: "Plans", Value: appUI.StatValue(ctx, "plans", "count", "", "", "")})),
+		ui.Card(ui.CardConfig{Heading: "Customers by status", HeadingLevel: 2}, ui.BarChart(ui.BarChartConfig{Bars: appUI.GroupBars(ctx, "customers", "status"), ShowLabels: true})),
+		// Base pins the record links at the invoices list screen: this
+		// list lives on /app, and its rows belong to /app/invoices/<id>.
+		appUI.List("invoices").Columns("number", "customer_id", "amount", "status", "due_on").PageSize(8).NoCreate().Heading("Recent invoices", 2).Empty("No invoices yet.").Base("/app/invoices").RenderCtx(ctx),
 	)
 }
 
@@ -35,7 +37,10 @@ func (s *InvoicesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *InvoicesScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
-		appResources["invoices"].WithColumns("number", "customer_id", "amount", "status", "issued_on", "due_on").WithSearch("number").WithFilters(ResFilter{Key: "status", Label: "Status", Type: "enum", Values: []string{"draft", "open", "paid", "past_due", "void"}}, ResFilter{Key: "customer_id", Label: "Customer", Type: "relation"}).WithLimit(25).WithCreate().WithHeading("Invoices").WithEmpty("No invoices yet.").List(ctx),
+		// Search over number and the status + customer facets come from
+		// the entity itself (search_fields, display facets in
+		// gofastr.yml), not per-screen config.
+		appUI.List("invoices").Columns("number", "customer_id", "amount", "status", "issued_on", "due_on").PageSize(25).Bulk().Heading("Invoices", 1).Empty("No invoices yet.").RenderCtx(ctx),
 	)
 }
 
@@ -51,73 +56,28 @@ func (s *InvoiceDetailScreen) ScreenType() app.ScreenType    { return app.Screen
 
 func (s *InvoiceDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
-		appResources["invoices"].WithTransitions(Transition{Label: "Mark paid", Status: "paid", Variant: "primary", Stamp: "paid_on"}, Transition{Label: "Void", Status: "void", Variant: "danger", Stamp: ""}).Detail(ctx, s.id),
+		// The record page holds the edit form; the Mark paid and Void
+		// buttons come from the entity's States (gofastr.yml), including
+		// their variants and the paid_on stamp. The invoice's payments
+		// have no screen of their own, so they list without links.
+		appUI.Record("invoices", s.id).RelatedAt("payments", "").Delete().Duplicate().RenderCtx(ctx),
 	)
 }
 
-type InvoicesNewScreen struct{ component.ContextOnly }
+type InvoicesCreateScreen struct{ component.ContextOnly }
 
-func (s *InvoicesNewScreen) ScreenTitle() string        { return "New Invoice" }
-func (s *InvoicesNewScreen) ScreenDescription() string  { return "" }
-func (s *InvoicesNewScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *InvoicesCreateScreen) ScreenTitle() string        { return "New Invoice" }
+func (s *InvoicesCreateScreen) ScreenDescription() string  { return "" }
+func (s *InvoicesCreateScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
-func (s *InvoicesNewScreen) RenderCtx(ctx context.Context) render.HTML {
+func (s *InvoicesCreateScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
-		appResources["invoices"].Form(ctx, ""),
-	)
-}
-
-type InvoicesEditScreen struct {
-	component.ContextOnly
-	id string
-}
-
-func (s *InvoicesEditScreen) SetParams(p map[string]string) { s.id = p["id"] }
-func (s *InvoicesEditScreen) ScreenTitle() string           { return "Edit Invoice" }
-func (s *InvoicesEditScreen) ScreenDescription() string     { return "" }
-func (s *InvoicesEditScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
-
-func (s *InvoicesEditScreen) RenderCtx(ctx context.Context) render.HTML {
-	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
-		appResources["invoices"].Form(ctx, s.id),
+		appUI.Create("invoices").Base("/app/invoices").RenderCtx(ctx),
 	)
 }
 
 func mountDashboardScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	appResources["invoices"] = ResourceConfig{
-		Title: "Invoices", Singular: "Invoice", BasePath: "/app/invoices", APIPath: "/api/invoices",
-		Crud:    fwApp.MustCrudHandler("invoices"),
-		CanEdit: true,
-		Fields: []ResField{
-			{Key: "customer_id", Label: "Customer", Type: "relation"},
-			{Key: "number", Label: "Number", Type: "string"},
-			{Key: "amount", Label: "Amount", Type: "decimal"},
-			{Key: "status", Label: "Status", Type: "enum", Values: []string{"draft", "open", "paid", "past_due", "void"}},
-			{Key: "issued_on", Label: "Issued", Type: "date"},
-			{Key: "due_on", Label: "Due", Type: "date"},
-			{Key: "paid_on", Label: "Paid", Type: "date"},
-		},
-		Relations: map[string]RelSource{
-			"customer_id": {Crud: fwApp.MustCrudHandler("customers"), Display: "name"},
-		},
-		Related: []RelatedList{
-			{
-				Title: "Payments", ForeignKey: "invoice_id", BasePath: "",
-				Crud: fwApp.MustCrudHandler("payments"),
-				Fields: []ResField{
-					{Key: "customer_id", Label: "Customer", Type: "relation"},
-					{Key: "amount", Label: "Amount", Type: "decimal"},
-					{Key: "method", Label: "Method", Type: "enum"},
-					{Key: "status", Label: "Status", Type: "enum"},
-				},
-				Relations: map[string]RelSource{
-					"customer_id": {Crud: fwApp.MustCrudHandler("customers"), Display: "name"},
-					"invoice_id":  {Crud: fwApp.MustCrudHandler("invoices"), Display: "number"},
-				},
-			},
-		},
-	}
-	site.RegisterScreen(app.NewScreen("/app", &DashboardScreen{}).WithTitle("Overview").WithPolicy(authPolicy("/login", "")), appLayout)
+	site.RegisterScreen(app.NewScreen("/app", &DashboardScreen{}).WithTitle("Overview").WithDescription("Your revenue at a glance.").WithPolicy(authPolicy("/login", "")), appLayout)
 }
 
 func mountInvoicesScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
@@ -125,15 +85,13 @@ func mountInvoicesScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
 }
 
 func mountInvoiceDetailScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	site.RegisterScreen(app.NewScreen("/app/invoices/:id", &InvoiceDetailScreen{}).WithTitle("Invoice").WithPolicy(authPolicy("/login", "")), appLayout)
+	record := app.NewScreen("/app/invoices/:id", &InvoiceDetailScreen{}).WithTitle("Invoice").WithPolicy(authPolicy("/login", ""))
+	record.Intercept = &app.Intercept{From: "/app/invoices", As: app.ScreenDrawer}
+	site.RegisterScreen(record, appLayout)
 }
 
-func mountInvoicesNewScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	site.RegisterScreen(app.NewScreen("/app/invoices/new", &InvoicesNewScreen{}).WithTitle("New Invoice").WithPolicy(authPolicy("/login", "")), appLayout)
-}
-
-func mountInvoicesEditScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
-	site.RegisterScreen(app.NewScreen("/app/invoices/:id/edit", &InvoicesEditScreen{}).WithTitle("Edit Invoice").WithPolicy(authPolicy("/login", "")), appLayout)
+func mountInvoicesCreateScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	site.RegisterScreen(app.NewScreen("/app/invoices/create", &InvoicesCreateScreen{}).WithTitle("New Invoice").WithPolicy(authPolicy("/login", "")), appLayout)
 }
 
 func init() {
@@ -141,7 +99,6 @@ func init() {
 		screenRegistrar{order: 7, fn: mountDashboardScreen},
 		screenRegistrar{order: 10, fn: mountInvoicesScreen},
 		screenRegistrar{order: 11, fn: mountInvoiceDetailScreen},
-		screenRegistrar{order: 16, fn: mountInvoicesNewScreen},
-		screenRegistrar{order: 17, fn: mountInvoicesEditScreen},
+		screenRegistrar{order: 15, fn: mountInvoicesCreateScreen},
 	)
 }

@@ -238,6 +238,7 @@ func registerCustomers(app *framework.App) {
 		Scope: &framework.ScopeConfig{
 			OwnerField: "user_id",
 		},
+		SearchFields: []string{"name"},
 		Exposure: &framework.ExposureConfig{
 			CRUD: boolPtr(true),
 			MCP:  true,
@@ -245,6 +246,7 @@ func registerCustomers(app *framework.App) {
 		Indices: []framework.Index{
 			{Name: "idx_customers_owner_email", Columns: []string{"user_id", "email"}, Unique: true},
 		},
+		Display:    &framework.DisplayConfig{Facets: []string{"status"}, Fields: map[string]framework.FieldDisplay{"mrr": {Label: "MRR"}}},
 		Properties: map[string]any{"label": "Customers"},
 	})
 	_ = Customers{}

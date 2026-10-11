@@ -1712,10 +1712,11 @@ site.Register("/settings",
 
 The screen's title is "Settings". It renders one `framework/ui` form
 with one field per declared preference: bool as the hidden+checkbox
-pair the resource engine uses (the runtime's serializer collapses the
+pair the entity screens use (the runtime's serializer collapses the
 pair to one scalar), int as a number input carrying Min and Max (the
 range hint joins the field's help), string as a text input, choice as
-a select. Field ids follow the resource engine's `f-<key>` convention.
+a select. Field ids follow the `f-<key>` shape the screen has always
+used.
 Zero CSS, zero hand-rolled structural markup; a missing primitive
 would be a gap to fix upstream, never a local div. Mount it where
 `Config.Settings.Path` points (the settings window opens that path) or
@@ -1723,8 +1724,8 @@ anywhere else; `PreferencesScreenPath` names the mount path and
 panics on one that is not a same-origin absolute path, the grammar
 `Config.Settings.Path` is held to.
 
-Saving goes through the runtime's form intercept (`data-cui-rpc`, the
-resource engine's shape) to the battery's own route,
+Saving goes through the runtime's form intercept (`data-cui-rpc` on the
+form, the entity screens' shape) to the battery's own route,
 `POST /__gofastr/desktop/preferences`, which sits behind the same
 session gate as every other `/__gofastr/desktop/*` route. The route
 reads the serializer's JSON body (bools and numbers arrive as the

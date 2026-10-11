@@ -178,8 +178,8 @@ the user left blank arrives as `""`. Create and update treat that as
 optional field takes its declared `Default` on create and leaves the
 column alone on update, and a blank required field fails with
 `is required` rather than `must be an integer`. Empty text stays an
-empty string, since that is a value a user can mean. The
-resource-engine forms (`framework/ui/resource`) rely on this; a JSON
+empty string, since that is a value a user can mean. The entityui forms
+(`framework/entityui`) rely on this; a JSON
 client gets the same treatment.
 
 ## `Entity` vs `TryEntity`
@@ -1240,6 +1240,26 @@ column may be read: NoQuery keeps it out of filters and sorts only),
 and masking hooks still run on whatever came back. `CountAll` applies
 both identically, so a page count matches its rows.
 
+Two aggregates run under the same scopes and compute in the database,
+over every match rather than a page:
+
+```go
+total, err := invoices.SumAll(ctx, "amount", crud.ListOptions{Where: open})
+groups, err := invoices.GroupCountAll(ctx, "status", crud.ListOptions{}, 50)
+```
+
+`SumAll` returns the database's own decimal text ("0" over no rows), so
+a `decimal` column sums as `NUMERIC` on Postgres, exactly; it takes a
+visible int, float or decimal field. `GroupCountAll` returns each stored
+value with its count, ordered by value, a bool as `true`/`false`; a
+positive limit caps the groups, so ask for one more than you draw to
+tell a capped result from a whole one. Both refuse `Fields`, `Sorts`,
+`Limit`, `Offset` and `Includes`, and a Hidden field. Under
+`WithReadHooks`, an entity with `AfterList` hooks refuses both with
+`crud.ErrAggregateMasked`: those hooks mask rows after the query, and a
+total the database computed would count what they hide. Read the rows
+with `ListAll` there.
+
 ## Restoring and purging soft-deleted rows
 
 For a `soft_delete: true` entity, the in-process handler offers the pair
@@ -1344,7 +1364,7 @@ every key lives under it, and an unknown key is a decode error.
 | `Singular`, `Plural` | Names for nav, headings and buttons. The key under them (`entity.<entity>.singular`) translates; the value is the English fallback, and without Display the entity name is — singularized for `Singular` (so `invoices` labels one record "Invoice"), title-cased for `Plural` |
 | --- | --- |
 | `Description` | One line under the list heading |
-| `TitleField` | The field that names a record in lists, drawers, pickers and breadcrumbs; may not be `Hidden` |
+| `TitleField` | The field that names a record in lists, drawers, pickers and breadcrumbs; may not be `Hidden`. Unset, a `name` or `title` field names it, else the first `String` column that is not omitted or `NoQuery`, else the singular |
 | `Columns` | The columns a list opens with, before the viewer picks their own |
 | `Views` | Named starting points for the list, shown as tabs. `Key`, optional `Label`, a DSL `Where`, a `Sort`, an optional `As` (`"table"`, the default, or `"cards"`; anything else is refused), and `Default` (at most one view may set it) |
 | `Facets` | Enum, Bool or Relation fields offered as one-click filters |

@@ -124,6 +124,11 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any) err
 	return c.doJSON(ctx, method, path, body, out)
 }
 
+// moveBody is the empty JSON body every transition POST sends: a move
+// carries no payload, but its route requires the JSON content type (its
+// cross-site-form gate), which doJSON only sets on a non-nil body.
+var moveBody = map[string]any{}
+
 // BatchResult is one entry in a _batch response, in input order. Exactly one
 // of Data, Error, or Skipped is populated. When a later item failed, earlier
 // successes still carry Data, but Committed=false on the envelope means
@@ -592,6 +597,30 @@ func (c *Client) WatchSubscriptions(ctx context.Context, fn func(event string, d
 	return c.watchSSE(ctx, "/subscriptions/_events", fn)
 }
 
+// ActivateSubscriptions runs the "activate" move on the record at id (status: trialing|past_due → active).
+// The server writes the state and any stamp; the request sends an empty
+// JSON body (the route requires the content type).
+func (c *Client) ActivateSubscriptions(ctx context.Context, id string) (Subscriptions, error) {
+	var out Subscriptions
+	path := "/subscriptions/" + url.PathEscape(id) + "/transitions/" + url.PathEscape("activate")
+	if err := c.doSingleJSON(ctx, http.MethodPost, path, moveBody, &out); err != nil {
+		return Subscriptions{}, err
+	}
+	return out, nil
+}
+
+// CancelSubscriptions runs the "cancel" move on the record at id (status: trialing|active|past_due → canceled).
+// The server writes the state and any stamp; the request sends an empty
+// JSON body (the route requires the content type).
+func (c *Client) CancelSubscriptions(ctx context.Context, id string) (Subscriptions, error) {
+	var out Subscriptions
+	path := "/subscriptions/" + url.PathEscape(id) + "/transitions/" + url.PathEscape("cancel")
+	if err := c.doSingleJSON(ctx, http.MethodPost, path, moveBody, &out); err != nil {
+		return Subscriptions{}, err
+	}
+	return out, nil
+}
+
 type Invoices struct {
 	ID         string `json:"id"`
 	CustomerId string `json:"customerId,omitempty"`
@@ -723,6 +752,30 @@ func (c *Client) BatchDeleteInvoices(ctx context.Context, ids []string) (BatchRe
 // event JSON. Requires an authenticated client unless the entity is Public.
 func (c *Client) WatchInvoices(ctx context.Context, fn func(event string, data []byte) error) error {
 	return c.watchSSE(ctx, "/invoices/_events", fn)
+}
+
+// MarkPaidInvoices runs the "mark_paid" move on the record at id (status: draft|open|past_due → paid, stamps paid_on).
+// The server writes the state and any stamp; the request sends an empty
+// JSON body (the route requires the content type).
+func (c *Client) MarkPaidInvoices(ctx context.Context, id string) (Invoices, error) {
+	var out Invoices
+	path := "/invoices/" + url.PathEscape(id) + "/transitions/" + url.PathEscape("mark_paid")
+	if err := c.doSingleJSON(ctx, http.MethodPost, path, moveBody, &out); err != nil {
+		return Invoices{}, err
+	}
+	return out, nil
+}
+
+// VoidInvoices runs the "void" move on the record at id (status: draft|open|past_due → void).
+// The server writes the state and any stamp; the request sends an empty
+// JSON body (the route requires the content type).
+func (c *Client) VoidInvoices(ctx context.Context, id string) (Invoices, error) {
+	var out Invoices
+	path := "/invoices/" + url.PathEscape(id) + "/transitions/" + url.PathEscape("void")
+	if err := c.doSingleJSON(ctx, http.MethodPost, path, moveBody, &out); err != nil {
+		return Invoices{}, err
+	}
+	return out, nil
 }
 
 type Payments struct {

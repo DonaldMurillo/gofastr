@@ -678,6 +678,18 @@ func TestOnErrorToastEmitsAttr(t *testing.T) {
 	}
 }
 
+func TestOnSuccessToastEmitsAttr(t *testing.T) {
+	attrs := Put("/api/item/1").
+		OnSuccessToast("Saved").
+		OnSuccess(Navigate("/items/1")).Attrs()
+	if got := attrs["data-cui-rpc-success-toast"]; got != "Saved" {
+		t.Fatalf("OnSuccessToast attr = %q, want the title: %v", got, attrs)
+	}
+	if _, ok := Put("/api/item/1").Attrs()["data-cui-rpc-success-toast"]; ok {
+		t.Fatal("an action without OnSuccessToast must not carry the hook")
+	}
+}
+
 func TestAfterTextEmitsAttr(t *testing.T) {
 	btn := render.Tag("button", nil, render.Text("Save"))
 	result := OnClick(btn, Post("/api/save").OnSuccess(AfterText("Saved ✓")))

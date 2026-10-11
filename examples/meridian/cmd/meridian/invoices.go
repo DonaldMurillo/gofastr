@@ -19,6 +19,8 @@ func invoicesCommands() []command {
 		{name: "invoices batch-update", summary: "patch up to 100 records atomically (--json array)", run: runInvoicesBatchUpdate},
 		{name: "invoices batch-delete", summary: "delete ids atomically (positional ids)", run: runInvoicesBatchDelete},
 		{name: "invoices watch", summary: "stream live create/update/delete events (SSE)", run: runInvoicesWatch},
+		{name: "invoices mark_paid", summary: "move status from draft or open or past_due to paid, stamps paid_on", run: runInvoicesMarkPaid},
+		{name: "invoices void", summary: "move status from draft or open or past_due to void", run: runInvoicesVoid},
 	}
 }
 
@@ -28,6 +30,7 @@ func invoicesCommands() []command {
 // invoicesListFilters is the filter-flag table behind `invoices list`: one entry
 // per flag, in help order, each bound to the query param it sets.
 var invoicesListFilters = []filterFlag{
+	{flag: "q", param: "q", help: "free-text search over the declared search fields"},
 	{flag: "customer-id", param: "customer_id", help: "filter: customer_id equals (comma list = IN)"},
 	{flag: "customer-id-gte", param: "customer_id_gte", help: "filter: customer_id greater than or equal"},
 	{flag: "customer-id-lte", param: "customer_id_lte", help: "filter: customer_id less than or equal"},
@@ -131,4 +134,12 @@ func runInvoicesBatchDelete(args []string) int {
 
 func runInvoicesWatch(args []string) int {
 	return runWatchVerb("invoices watch", (*client.Client).WatchInvoices, args)
+}
+
+func runInvoicesMarkPaid(args []string) int {
+	return runTransitionVerb("invoices mark_paid", "/invoices", "mark_paid", args)
+}
+
+func runInvoicesVoid(args []string) int {
+	return runTransitionVerb("invoices void", "/invoices", "void", args)
 }

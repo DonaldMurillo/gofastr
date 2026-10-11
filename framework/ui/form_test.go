@@ -558,3 +558,42 @@ func TestTextareaFloorsAtDensityHeight(t *testing.T) {
 		}
 	}
 }
+
+// LeaveGuard is the record form's hook: non-empty marks the form for
+// headless-leaveguard with these words, empty emits neither attribute
+// (a bare mark with no message is a different caller's shape).
+func TestFormLeaveGuard(t *testing.T) {
+	guarded := string(Form(FormConfig{Action: "/x", LeaveGuard: "You have unsaved changes."}))
+	if !strings.Contains(guarded, `data-hui-leave-guard=""`) {
+		t.Errorf("a guarded form must carry the mark:\n%s", guarded)
+	}
+	if !strings.Contains(guarded, `data-hui-leave-guard-message="You have unsaved changes."`) {
+		t.Errorf("a guarded form must carry its words:\n%s", guarded)
+	}
+	plain := string(Form(FormConfig{Action: "/x"}))
+	if strings.Contains(plain, "data-hui-leave-guard") {
+		t.Errorf("an unguarded form must carry no guard:\n%s", plain)
+	}
+}
+
+// A form's RPC success toast rides the typed Request seam (ExtraAttrs
+// would be decoration, and headless refuses unknown wiring keys), so a
+// save that navigates away can still say "Saved" before it goes.
+func TestFormCarriesRPCSuccessToast(t *testing.T) {
+	h := string(Form(FormConfig{
+		Action: "/api/things",
+		ExtraAttrs: interactive.Post("/api/things").
+			OnSuccessToast("Saved.").
+			OnSuccess(interactive.Navigate("/things")).
+			Attrs(),
+	}, FormField(FormFieldConfig{Label: "n", For: "n", Input: testControl("n")})))
+	for _, want := range []string{
+		`data-cui-rpc="/api/things"`,
+		`data-cui-rpc-success-toast="Saved."`,
+		`data-cui-rpc-navigate="/things"`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("missing %q in:\n%s", want, h)
+		}
+	}
+}

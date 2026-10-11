@@ -155,6 +155,13 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 	ch.ApplyOwnerScope(qb, req)
 	ch.ApplyReadScope(qb, req)
 	ch.ApplySoftDeleteFilter(qb, req)
+	hookWheres, err := ch.runBeforeGet(ctx, req, id)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range hookWheres {
+		qb.Where(c.SQL, c.Args...)
+	}
 
 	sqlStr, args := qb.Build()
 	row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
@@ -234,36 +241,6 @@ type ListOptions struct {
 // and returns the matching rows. Caller is responsible for paging if the
 // result set is large.
 func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[string]any, error) {
-	if err := ch.requireOwnerContext(ctx); err != nil {
-		return nil, err
-	}
-	if err := ch.requireTenantContext(ctx); err != nil {
-		return nil, err
-	}
-	nested, err := resolveNestedFilters(ch.Entity, ch.Registry, opts.NestedFilters)
-	if err != nil {
-		return nil, err
-	}
-	if err := ch.scopeNestedFiltersInProcess(ctx, nested); err != nil {
-		return nil, err
-	}
-	// Search: fail loud when Search is set on an entity without SearchFields.
-	if opts.Search != "" && len(ch.Entity.Config.SearchFields) == 0 {
-		return nil, fmt.Errorf("ListAll: Search set on entity %q without SearchFields", ch.Entity.GetName())
-	}
-	// Where: a hand-built tree is re-validated before it reaches SQL, and
-	// the SQL is built from the resolved copy the check returns — the
-	// caller's tree is never written to (it may be shared across
-	// goroutines: a parsed Display view). Filters get the same
-	// operator/type rule ParseFilters applies to ?field_<op>=.
-	where, err := ch.validateWherePredicate(opts.Where)
-	if err != nil {
-		return nil, fmt.Errorf("ListAll: %w", err)
-	}
-	filters, err := ch.validateFilters(opts.Filters)
-	if err != nil {
-		return nil, fmt.Errorf("ListAll: %w", err)
-	}
 	cols := ch.visibleFields()
 	if len(opts.Fields) > 0 {
 		var err error
@@ -272,26 +249,9 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 			return nil, fmt.Errorf("ListAll: %w", err)
 		}
 	}
-	searchConds := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
-	qb := query.Select(cols...).From(ch.Entity.GetTable())
-	filter.ApplyToQuery(qb, filters)
-	// Where joins the caller filters as one parenthesized clause; the
-	// scopes below each wrap in their own parens, so an OR inside Where
-	// cannot widen past them.
-	if c := filter.BuildPredicate(where); c.SQL != "" {
-		qb.Where(c.SQL, c.Args...)
-	}
-	req := syntheticRequest(ctx, http.MethodGet, "/")
-	ch.ApplyTenantScope(qb, req)
-	ch.ApplyOwnerScope(qb, req)
-	ch.ApplyReadScope(qb, req)
-	ch.ApplySoftDeleteFilter(qb, req)
-	applyNestedFilters(
-		func(sql string, args ...any) { qb.Where(sql, args...) },
-		ch.Entity.GetTable(), ch.PrimaryKey, nested,
-	)
-	for _, c := range searchConds {
-		qb.Where(c.SQL, c.Args...)
+	qb, req, err := ch.scopedSelect(ctx, "ListAll", opts, cols)
+	if err != nil {
+		return nil, err
 	}
 	filter.ApplySortToQuery(qb, opts.Sorts)
 	if opts.Limit > 0 {
@@ -326,6 +286,73 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	// reads through here, so skipping it meant the app's own grid printed
 	// what the API masked.
 	return ch.runAfterList(ctx, req, results)
+}
+
+// scopedSelect builds SELECT cols FROM the entity's table under every
+// scope a list read runs: opts' Where, Filters, nested filters and
+// Search, then the tenant, owner, read and soft-delete scopes and the
+// BeforeList clauses. ListAll adds sort and paging; the aggregates wrap
+// it. op names the caller in refusals.
+func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOptions, cols []string) (*query.QueryBuilder, *http.Request, error) {
+	if err := ch.requireOwnerContext(ctx); err != nil {
+		return nil, nil, err
+	}
+	if err := ch.requireTenantContext(ctx); err != nil {
+		return nil, nil, err
+	}
+	nested, err := resolveNestedFilters(ch.Entity, ch.Registry, opts.NestedFilters)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := ch.scopeNestedFiltersInProcess(ctx, nested); err != nil {
+		return nil, nil, err
+	}
+	// Search: fail loud when Search is set on an entity without SearchFields.
+	if opts.Search != "" && len(ch.Entity.Config.SearchFields) == 0 {
+		return nil, nil, fmt.Errorf("%s: Search set on entity %q without SearchFields", op, ch.Entity.GetName())
+	}
+	// Where: a hand-built tree is re-validated before it reaches SQL, and
+	// the SQL is built from the resolved copy the check returns — the
+	// caller's tree is never written to (it may be shared across
+	// goroutines: a parsed Display view). Filters get the same
+	// operator/type rule ParseFilters applies to ?field_<op>=.
+	where, err := ch.validateWherePredicate(opts.Where)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", op, err)
+	}
+	filters, err := ch.validateFilters(opts.Filters)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", op, err)
+	}
+	searchConds := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
+	qb := query.Select(cols...).From(ch.Entity.GetTable())
+	filter.ApplyToQuery(qb, filters)
+	// Where joins the caller filters as one parenthesized clause; the
+	// scopes below each wrap in their own parens, so an OR inside Where
+	// cannot widen past them.
+	if c := filter.BuildPredicate(where); c.SQL != "" {
+		qb.Where(c.SQL, c.Args...)
+	}
+	req := syntheticRequest(ctx, http.MethodGet, "/")
+	ch.ApplyTenantScope(qb, req)
+	ch.ApplyOwnerScope(qb, req)
+	ch.ApplyReadScope(qb, req)
+	ch.ApplySoftDeleteFilter(qb, req)
+	applyNestedFilters(
+		func(sql string, args ...any) { qb.Where(sql, args...) },
+		ch.Entity.GetTable(), ch.PrimaryKey, nested,
+	)
+	for _, c := range searchConds {
+		qb.Where(c.SQL, c.Args...)
+	}
+	hookWheres, err := ch.runBeforeList(ctx, req)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, c := range hookWheres {
+		qb.Where(c.SQL, c.Args...)
+	}
+	return qb, req, nil
 }
 
 // BatchCreateMany runs CreateOne for each body in a single transaction.
@@ -482,6 +509,13 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 		ch.Entity.GetTable(), ch.PrimaryKey, nested,
 	)
 	for _, c := range searchConds {
+		cb.Where(c.SQL, c.Args...)
+	}
+	hookWheres, err := ch.runBeforeList(ctx, req)
+	if err != nil {
+		return 0, err
+	}
+	for _, c := range hookWheres {
 		cb.Where(c.SQL, c.Args...)
 	}
 	sqlStr, args := cb.Build()

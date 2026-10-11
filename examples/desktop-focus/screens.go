@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"net/http"
 	"strconv"
 	"time"
 
@@ -11,88 +10,64 @@ import (
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
-	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
-	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 )
 
-// The screens. All markup comes from framework/ui components (plus the
-// resource engine's list/form/detail): the example ships zero CSS and
-// zero hand-rolled structural markup (hard rules 7 and 8). The few
-// html.Div/html.Paragraph/html.Heading uses are the 1:1 tag primitives
+// The screens. All markup comes from framework/ui components; the
+// entity's record and create pages come from the entityui builders
+// over them: the example ships zero CSS and zero hand-rolled
+// structural markup (hard rules 7 and 8). The few html.Div /
+// html.Paragraph / html.Heading uses are the 1:1 tag primitives
 // carrying a data-focus-* hook, the same shape desktop-notes' drag
 // handle uses.
 
-// tasksResource is the /tasks list's config: the resource engine's
-// list/detail/form screens for tasks.
-func tasksResource(app *framework.App) resource.Config {
-	return resource.Config{
-		Entity:   "tasks",
-		Title:    "Tasks",
-		Singular: "Task",
-		BasePath: "/tasks",
-		APIPath:  "/api/tasks",
-		Crud:     app.MustCrudHandler("tasks"),
-		Fields: []resource.Field{
-			{Key: "title", Label: "Title", Type: "string"},
-			{Key: "estimate", Label: "Estimate", Type: "int"},
-			{Key: "completed_pomodoros", Label: "Pomodoros", Type: "int"},
-			{Key: "done", Label: "Done", Type: "bool"},
-		},
-	}.WithSearch("title").WithCreate().WithEdit().WithIsland("/api/tables/tasks")
-}
+// focusUI is the app's entity screen set, built once in buildSite
+// after the entities register. App.EntityUI checks every name the
+// builders read against the declarations.
+var focusUI *entityui.UI
 
-// tasksFormResource is the editor's config: only the fields the form
-// edits. The submit goes through the runtime's form intercept to the
-// entity's REST route (POST /api/tasks, PUT /api/tasks/{id}).
-func tasksFormResource(src resource.DataSource) resource.Config {
-	return resource.Config{
-		Entity:   "tasks",
-		Title:    "Tasks",
-		Singular: "Task",
-		BasePath: "/tasks",
-		APIPath:  "/api/tasks",
-		Crud:     src,
-		Fields: []resource.Field{
-			{Key: "title", Label: "Title", Type: "string"},
-			{Key: "note", Label: "Note", Type: "text"},
-			{Key: "estimate", Label: "Estimate (pomodoros)", Type: "int"},
-			{Key: "done", Label: "Done", Type: "bool"},
-		},
-	}
-}
-
-// taskDetailScreen is "/tasks/{id}": the task's title and actions, the
-// Start card (a saved task lands here, so this is where a session
-// starts), and the task's facts in the desktop inspector pane. It
-// composes the same framework primitives the resource engine's Detail
-// uses (PageHeader, DetailList rows via desktopui.Inspector, the
-// interactive delete) instead of res.Detail, because the facts read
-// better in the Mac inspector pane beside the content than in a
-// full-width list under it, the Things and Reminders shape.
-type taskDetailScreen struct {
+// taskCreateScreen is "/tasks/create": the create form, posting to the
+// entity's REST route and landing on /tasks — the dashboard with the
+// timer, where the new task's Start button is.
+type taskCreateScreen struct {
 	component.ContextOnly
-	res   resource.Config
+}
+
+func (s *taskCreateScreen) ScreenTitle() string       { return "New task" }
+func (s *taskCreateScreen) ScreenDescription() string { return "Create a task" }
+
+func (s *taskCreateScreen) RenderCtx(ctx context.Context) render.HTML {
+	return focusUI.Create("tasks").Base("/tasks").RenderCtx(ctx)
+}
+
+// taskRecordScreen is "/tasks/{id}": the entityui record page. Its
+// Edit tab holds the editor form, so there is no separate edit route.
+// The "focus" tab is the app's own: the Start card a saved task can
+// start a session from, and the task's facts in the desktop inspector
+// pane. Load resolves the task's title so the page <title> follows the
+// task; the lookup goes through the owner-scoped CRUD handler, so a
+// foreign id renders "Not found", never another user's title.
+type taskRecordScreen struct {
+	component.ContextOnly
+	ch    *crud.CrudHandler
 	id    string
 	title string
-	row   map[string]any
 }
 
-func (s *taskDetailScreen) SetParams(p map[string]string) { s.id = p["id"] }
+func (s *taskRecordScreen) SetParams(p map[string]string) { s.id = p["id"] }
 
-func (s *taskDetailScreen) Load(ctx context.Context) error {
+func (s *taskRecordScreen) Load(ctx context.Context) error {
 	s.title = "Task"
-	s.row = nil
-	row, err := s.res.Crud.GetOne(ctx, s.id, nil)
+	row, err := s.ch.GetOne(ctx, s.id, nil)
 	if err != nil || row == nil {
 		return nil
 	}
-	s.row = row
 	if v, present := row["title"]; present {
 		if t, ok := v.(string); ok && t != "" {
 			s.title = t
@@ -101,48 +76,44 @@ func (s *taskDetailScreen) Load(ctx context.Context) error {
 	return nil
 }
 
-func (s *taskDetailScreen) ScreenTitle() string       { return s.title }
-func (s *taskDetailScreen) ScreenDescription() string { return "A task" }
+func (s *taskRecordScreen) ScreenTitle() string       { return s.title }
+func (s *taskRecordScreen) ScreenDescription() string { return "A task" }
+func (s *taskRecordScreen) RenderCtx(ctx context.Context) render.HTML {
+	return focusUI.Record("tasks", s.id).Base("/tasks").Delete().RenderCtx(ctx)
+}
 
-func (s *taskDetailScreen) RenderCtx(ctx context.Context) render.HTML {
-	if s.row == nil {
-		// The owner-scoped read answered nothing: a foreign or deleted
-		// id is simply not there, never a leak.
-		return ui.EmptyState(ui.EmptyStateConfig{
-			Title: "Task not found", Description: "It may have been deleted.", HeadingLevel: 1,
-		})
-	}
-	header := ui.PageHeader(ui.PageHeaderConfig{
-		Title: s.title,
-		Actions: ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
-			ui.LinkButton(ui.LinkButtonConfig{Label: "Edit", Href: "/tasks/" + s.id + "/edit", Variant: ui.ButtonSecondary}),
-			ui.Button(ui.ButtonConfig{
-				Label: "Delete", Variant: ui.ButtonDanger,
-				ExtraAttrs: interactive.Delete("/api/tasks/" + s.id).
-					WithConfirm("Delete this task? This cannot be undone.").
-					OnSuccess(interactive.Navigate("/tasks")).Attrs(),
-			}),
-			ui.Link(ui.LinkConfig{Href: "/tasks", Text: "← Back", Variant: ui.LinkMuted}),
-		),
-	})
+// taskFocusTab is the record page's "Start" tab: what the old task
+// page showed under its header. A saved task is what a session starts
+// on, so this is where Start lives; the facts read better in the Mac
+// inspector pane beside the content than in a full-width list under
+// it, the Things and Reminders shape.
+func taskFocusTab(tc entityui.TabContext) (component.Component, error) {
+	return appui.NewStaticComponent(focusTab(tc)), nil
+}
 
-	// A saved task lands here, so this is where a session starts: the
-	// primary action the dashboard's row button repeats. The paragraph
-	// names what Start does, since every one of those things happens
-	// outside this page (a floating panel, the menu bar, a notification).
+// focusTab draws the Start card, the note and the facts.
+func focusTab(tc entityui.TabContext) render.HTML {
+	row := tc.Record.Values
+	id := tc.Record.ID
+	title := stringField(row, "title")
+
+	// A saved task is where a session starts: the primary action the
+	// dashboard's row button repeats. The paragraph names what Start
+	// does, since every one of those things happens outside this page
+	// (a floating panel, the menu bar, a notification).
 	start := ui.Card(ui.CardConfig{Heading: "Start a session", HeadingLevel: 2},
 		ui.Cluster(ui.ClusterConfig{Gap: ui.GapMD, Align: ui.AlignCenter},
 			ui.Button(ui.ButtonConfig{
 				Label:      "Start focus",
-				AriaLabel:  "Start a focus session on " + s.title,
+				AriaLabel:  "Start a focus session on " + title,
 				Variant:    ui.ButtonPrimary,
-				ExtraAttrs: map[string]string{"data-focus-start": s.id},
+				ExtraAttrs: map[string]string{"data-focus-start": id},
 			}),
 			html.Paragraph(html.TextConfig{}, render.Text("Opens the floating timer, counts down in the menu bar, and notifies you when the session ends.")),
 		),
 	)
 	content := start
-	if note := stringField(s.row, "note"); note != "" {
+	if note := stringField(row, "note"); note != "" {
 		content = render.Join(start, ui.Card(ui.CardConfig{Heading: "Note", HeadingLevel: 2},
 			html.Paragraph(html.TextConfig{}, render.Text(note))))
 	}
@@ -151,12 +122,12 @@ func (s *taskDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 		Label: "Task facts",
 		Title: "Details",
 		Items: []ui.DetailItem{
-			{Label: "Estimate", Value: render.Text(pomodoros(asInt(s.row["estimate"])))},
-			{Label: "Completed", Value: render.Text(pomodoros(asInt(s.row["completedPomodoros"])))},
-			{Label: "Done", Value: render.Text(boolField(s.row, "done"))},
+			{Label: "Estimate", Value: render.Text(pomodoros(asInt(row["estimate"])))},
+			{Label: "Completed", Value: render.Text(pomodoros(asInt(row["completedPomodoros"])))},
+			{Label: "Done", Value: render.Text(boolField(row, "done"))},
 		},
 	})
-	return render.Join(header, desktopui.InspectorSplit(content, facts))
+	return desktopui.InspectorSplit(content, facts)
 }
 
 // pomodoros is n with its unit, singular for one.
@@ -165,40 +136,6 @@ func pomodoros(n int) string {
 		return "1 pomodoro"
 	}
 	return strconv.Itoa(n) + " pomodoros"
-}
-
-type taskEditorScreen struct {
-	component.ContextOnly
-	src   resource.DataSource
-	id    string
-	title string
-}
-
-func (s *taskEditorScreen) SetParams(p map[string]string) { s.id = p["id"] }
-
-func (s *taskEditorScreen) Load(ctx context.Context) error {
-	if s.id == "" {
-		s.title = "New task"
-		return nil
-	}
-	s.title = "Task"
-	row, err := s.src.GetOne(ctx, s.id, nil)
-	if err != nil || row == nil {
-		return nil
-	}
-	if v, present := row["title"]; present {
-		if t, ok := v.(string); ok && t != "" {
-			s.title = t
-		}
-	}
-	return nil
-}
-
-func (s *taskEditorScreen) ScreenTitle() string       { return s.title }
-func (s *taskEditorScreen) ScreenDescription() string { return "Edit a task" }
-
-func (s *taskEditorScreen) RenderCtx(ctx context.Context) render.HTML {
-	return tasksFormResource(s.src).Form(ctx, s.id)
 }
 
 // dashboardScreen is "/": the page header, the floating timer toolbar,
@@ -223,7 +160,7 @@ func (s *dashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 		Title:    "Focus",
 		Subtitle: "One task, one timer, one break at a time",
 		Actions: ui.LinkButton(ui.LinkButtonConfig{
-			Label: "New task", Href: "/tasks/new", Variant: ui.ButtonPrimary,
+			Label: "New task", Href: "/tasks/create", Variant: ui.ButtonPrimary,
 		}),
 	})
 	// The timer controls float in the glass capsule (the macOS
@@ -562,27 +499,28 @@ func sidebarNav() component.Component {
 
 // buildSite assembles the UI app and its screens: the desktop theme
 // and the desktop layout with the source-list sidebar over the native
-// sidebar material. The island endpoint behind the tasks list's
-// sort/pagination is registered on the app router, the notes example's
-// shape.
+// sidebar material. The entity screen set is built here, after the
+// entities registered.
 func buildSite(app *framework.App, eng *Engine, d *desktop.Battery) (*appui.App, error) {
 	site := appui.NewApp("desktop-focus")
 	site.WithTheme(desktopui.Theme())
 	layout := desktopui.Layout(sidebarNav())
 
-	tasks := tasksResource(app)
-	site.Register("/", &dashboardScreen{app: app, eng: eng}, layout)
-	app.Router().HandleFunc("GET", "/api/tables/tasks", func(w http.ResponseWriter, r *http.Request) {
-		tasks.TableHandler()(w, r)
+	focusUI = app.EntityUI(entityui.Extensions{
+		Entities: map[string]entityui.Extension{
+			"tasks": {Tabs: []entityui.Tab{{Key: "focus", Label: "Start", Build: taskFocusTab}}},
+		},
 	})
-	// The new-task form saves (and cancels) to the resource's BasePath,
-	// so /tasks must be the dashboard with the timer, never the engine's
-	// bare list: the first thing a user did landed on a page with no
-	// Start button, and the whole timer looked gone.
+	tasks := app.MustCrudHandler("tasks")
+
+	site.Register("/", &dashboardScreen{app: app, eng: eng}, layout)
+	// The create form saves (and cancels) to the tasks base, so /tasks
+	// must be the dashboard with the timer, never a bare list: the
+	// first thing a user did landed on a page with no Start button,
+	// and the whole timer looked gone.
 	site.Register("/tasks", &dashboardScreen{app: app, eng: eng}, layout)
-	site.Register("/tasks/new", &taskEditorScreen{src: tasks.Crud}, layout)
-	site.Register("/tasks/{id}", &taskDetailScreen{res: tasks}, layout)
-	site.Register("/tasks/{id}/edit", &taskEditorScreen{src: tasks.Crud}, layout)
+	site.Register("/tasks/create", &taskCreateScreen{}, layout)
+	site.Register("/tasks/{id}", &taskRecordScreen{ch: tasks}, layout)
 	site.Register("/history", &historyScreen{app: app}, layout)
 	// The widget window is borderless and transparent: its screen
 	// renders in the chrome-less widget layout, never the desktop

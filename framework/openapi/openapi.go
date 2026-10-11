@@ -43,7 +43,15 @@ import (
 // nil falls back to the Exposure-only check. Declared custom Endpoints
 // are documented either way; App mounts those outside its CRUD branch.
 func EntityOpenAPI(registry entity.Registry, title, version string, crudMounted func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
-	s := entityOpenAPI(registry, title, version, crudMounted, nil, basePath...)
+	return EntityOpenAPIWithBulk(registry, title, version, crudMounted, nil, basePath...)
+}
+
+// EntityOpenAPIWithBulk is EntityOpenAPI that also documents the routes
+// App.EntityUI mounts beside an entity's CRUD routes, POST <path>/_bulk
+// and GET <path>/_export.csv, for each entity bulkMounted reports. nil
+// documents neither, which is EntityOpenAPI.
+func EntityOpenAPIWithBulk(registry entity.Registry, title, version string, crudMounted, bulkMounted func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
+	s := entityOpenAPI(registry, title, version, crudMounted, bulkMounted, nil, basePath...)
 	// The auth-gated serving path (core/openapi Handler) rebuilds the
 	// document per request through RequestView, keeping only the
 	// entities THIS caller can read — llm.md parity: the spec is the
@@ -55,7 +63,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 	// and keeps serving the full spec.
 	s.RequestView = func(r *http.Request) *openapi.Spec {
 		ctx := r.Context()
-		return entityOpenAPI(registry, title, version, crudMounted, func(ent *entity.Entity) bool {
+		return entityOpenAPI(registry, title, version, crudMounted, bulkMounted, func(ent *entity.Entity) bool {
 			return canReadSpecEntity(ctx, ent)
 		}, basePath...)
 	}
@@ -84,7 +92,7 @@ func objectSchemaWith(props map[string]any) map[string]any {
 
 // entityOpenAPI is EntityOpenAPI's builder: keep, when non-nil, filters
 // which registered entities reach the document.
-func entityOpenAPI(registry entity.Registry, title, version string, crudMounted func(*entity.Entity) bool, keep func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
+func entityOpenAPI(registry entity.Registry, title, version string, crudMounted, bulkMounted func(*entity.Entity) bool, keep func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
 	s := openapi.NewSpec(title, version)
 	apiPrefix := ""
 	if len(basePath) > 0 && basePath[0] != "" && basePath[0] != "/" {
@@ -662,6 +670,9 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 			batchDeleteOp.AddSecurity("cookieAuth", nil)
 		}
 		s.AddPath("DELETE", path+"/_batch", *batchDeleteOp)
+		if bulkMounted != nil && bulkMounted(ent) {
+			addBulkPaths(s, path, entityName, schemaName, tagName, gated, errorRef)
+		}
 
 		addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix)
 	}

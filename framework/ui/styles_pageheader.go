@@ -70,9 +70,12 @@ func pageHeaderCSS(t style.Theme) string {
 		Set("margin", "0", "font-size", "var(--text-sm, 0.875rem)", "color", "var(--color-text-muted, #52525B)").
 		End().
 		// An h2 title is a section under the page's own h1 (a dashboard's
-		// recent rows, a detail page's related list): one step down.
+		// recent rows, a detail page's related list): one step down. It
+		// reads its own knob, --ui-page-header-section-title-size, so a
+		// host that scales page titles to display type leaves sections
+		// a step below them.
 		Rule("h2.fui-page-header__title").
-		Set("font-size", "var(--ui-page-header-title-size, var(--text-xl, 1.25rem))").
+		Set("font-size", "var(--ui-page-header-section-title-size, var(--text-xl, 1.25rem))").
 		End().
 		Rule(".fui-page-header__actions").
 		Set(
