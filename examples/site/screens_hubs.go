@@ -12,19 +12,32 @@ package main
 // doesn't exist.
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// registerHubs registers every area hub on the site. Each is a taught page.
-func registerHubs(site *app.App) {
-	site.Register("/primitives", primitivesHub(), nil)
-	site.Register("/framework", frameworkHub(), nil)
-	site.Register("/agents", agentsHub(), nil)
-	site.Register("/interactivity", interactivityHub(), nil)
-	site.Register("/generator", generatorHub(), nil)
+// hubRoute is one taught hub and the route it is served at.
+type hubRoute struct {
+	Path   string
+	Screen *TeachHubScreen
+}
+
+// hubScreens lists every taught area hub with its route. main.go registers
+// them into the hub ScreenGroup (one shared layout with the on-this-page
+// rail), and each hub fills that rail's outlet with its own concepts.
+func hubScreens() []hubRoute {
+	return []hubRoute{
+		{"/primitives", primitivesHub()},
+		{"/framework", frameworkHub()},
+		{"/agents", agentsHub()},
+		{"/interactivity", interactivityHub()},
+		{"/generator", generatorHub()},
+	}
 }
 
 // -----------------------------------------------------------------------------
@@ -60,6 +73,29 @@ func (c hubConcept) refLink() (href, label string) {
 	return href, label
 }
 
+// anchor is the concept's in-page id: the section carries it and the
+// on-this-page rail links to it.
+func (c hubConcept) anchor() string { return hubAnchor(c.Title) }
+
+// hubAnchor lowercases a heading into an id: letters and digits kept,
+// every other run collapsed to one hyphen.
+func hubAnchor(title string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(title) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			dash = false
+			continue
+		}
+		if !dash && b.Len() > 0 {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	return strings.TrimSuffix(b.String(), "-")
+}
+
 // hubNextLink is a card at the bottom of a hub: where to go once the area clicks.
 type hubNextLink struct {
 	Title string
@@ -72,7 +108,7 @@ type TeachHubScreen struct {
 	Name     string // area name, the eyebrow pill and the page <title>
 	Title    string // the h1
 	Desc     string // meta description
-	Lede     render.HTML
+	Lede     string
 	Moves    []string // the pieces of this area, named up front
 	Concepts []hubConcept
 	Next     []hubNextLink
@@ -82,36 +118,55 @@ func (h *TeachHubScreen) ScreenTitle() string        { return h.Name }
 func (h *TeachHubScreen) ScreenDescription() string  { return h.Desc }
 func (h *TeachHubScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
+// Render is the hub body: the hero with the area's pieces named under it,
+// one section per concept, then where to go next. The page frame (reading
+// column + on-this-page rail) is the hub layout's, not the screen's.
 func (h *TeachHubScreen) Render() render.HTML {
 	movePills := make([]render.HTML, 0, len(h.Moves))
 	for _, m := range h.Moves {
-		movePills = append(movePills, ui.StatusPill(ui.StatusPillConfig{Label: m, Tone: ui.StatusPillAccent}))
+		movePills = append(movePills, ui.StatusPill(ui.StatusPillConfig{Label: m}))
 	}
-	hero := html.Section(html.SectionConfig{Class: "ex-hero", Label: h.Name},
-		container(
-			html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent(h.Name)),
-			html.Heading(html.HeadingConfig{Level: 1}, render.Text(h.Title)),
-			html.Paragraph(html.TextConfig{Class: "lede"}, h.Lede),
+	blocks := make([]render.HTML, 0, len(h.Concepts)+3)
+	blocks = append(blocks,
+		ui.Stack(ui.StackConfig{Gap: ui.GapLG},
+			ui.Hero(ui.HeroConfig{Eyebrow: h.Name, Title: h.Title, Subtitle: h.Lede, AriaLabel: h.Name}),
 			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, movePills...),
 		),
 	)
-
-	blocks := make([]render.HTML, 0, len(h.Concepts))
-	for _, c := range h.Concepts {
-		blocks = append(blocks, renderHubConcept(c))
+	for i, c := range h.Concepts {
+		blocks = append(blocks, renderHubConcept(fmt.Sprintf("%02d", i+1), c))
 	}
-	concepts := html.Section(html.SectionConfig{Class: "section-v2", Label: "Concepts"},
-		container(ui.Stack(ui.StackConfig{Gap: ui.GapXL}, blocks...)),
-	)
-
-	return render.Join(hero, concepts, hubNext(h.Next))
+	blocks = append(blocks, hubNext(h.Next))
+	return ui.Stack(ui.StackConfig{Gap: ui.Gap2XL}, blocks...)
 }
 
-// renderHubConcept renders one concept block: heading, prose, an optional real
-// code sample, then a single link to the one reference doc that owns it.
-func renderHubConcept(c hubConcept) render.HTML {
-	kids := []render.HTML{html.Heading(html.HeadingConfig{Level: 2}, render.Text(c.Title))}
-	kids = append(kids, c.Body...)
+// TOC is the hub's on-this-page rail fill: one entry per concept plus
+// "Where next". main.go fills the hub layout's toc outlet with it.
+func (h *TeachHubScreen) TOC() *hubTOCFill {
+	items := make([]ui.TOCItem, 0, len(h.Concepts)+1)
+	for _, c := range h.Concepts {
+		items = append(items, ui.TOCItem{ID: c.anchor(), Label: c.Title, Level: 2})
+	}
+	items = append(items, ui.TOCItem{ID: hubNextID, Label: "Where next", Level: 2})
+	return &hubTOCFill{items: items}
+}
+
+// hubTOCFill renders a hub's concept list as the sticky on-this-page rail.
+type hubTOCFill struct{ items []ui.TOCItem }
+
+func (f *hubTOCFill) Render() render.HTML {
+	return ui.TableOfContents(ui.TOCConfig{Label: "On this page", Items: f.items, Sticky: true})
+}
+
+// hubNextID anchors the closing "Where next" section.
+const hubNextID = "where-next"
+
+// renderHubConcept renders one concept block: a numbered, titled section (the
+// eyebrow number steps ui.Section's heading up to display size) with the
+// prose, an optional real code sample, then a single link to the one
+// reference doc that owns it.
+func renderHubConcept(num string, c hubConcept) render.HTML {
+	kids := append([]render.HTML{}, c.Body...)
 	if c.Code != "" {
 		kids = append(kids, ui.CodeBlock(ui.CodeBlockConfig{
 			Lines:    ui.HighlightLines(c.Code, c.CodeLang),
@@ -121,32 +176,24 @@ func renderHubConcept(c hubConcept) render.HTML {
 		}))
 	}
 	href, label := c.refLink()
-	kids = append(kids, ui.LinkButton(ui.LinkButtonConfig{
-		Label:   label,
-		Href:    href,
-		Variant: ui.ButtonGhost,
-	}))
-	return ui.Stack(ui.StackConfig{Gap: ui.GapSM}, kids...)
+	kids = append(kids, html.Paragraph(html.TextConfig{}, ui.Link(ui.LinkConfig{Href: href, Text: label})))
+	return ui.Section(ui.SectionConfig{ID: c.anchor(), Eyebrow: num, Heading: c.Title, Compact: true},
+		ui.Stack(ui.StackConfig{Gap: ui.GapMD}, kids...))
 }
 
 // hubNext renders the "where next" card row at the bottom of a taught hub.
 func hubNext(links []hubNextLink) render.HTML {
 	cards := make([]render.HTML, 0, len(links))
 	for _, l := range links {
-		cards = append(cards, html.LinkHTML(html.LinkHTMLConfig{
-			Href:  l.Href,
-			Class: "ex-card",
-			Content: render.Join(
-				html.Heading(html.HeadingConfig{Level: 3}, render.Text(l.Title)),
-				html.Paragraph(html.TextConfig{}, render.Text(l.Hint)),
-			),
+		cards = append(cards, ui.Card(ui.CardConfig{
+			Heading:      l.Title,
+			HeadingLevel: 3,
+			Description:  l.Hint,
+			Href:         l.Href,
 		}))
 	}
-	return html.Section(html.SectionConfig{Class: "next", Label: "Where next"},
-		container(
-			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Where next")),
-			html.Div(html.DivConfig{Class: "next__grid"}, cards...),
-		),
+	return ui.Section(ui.SectionConfig{ID: hubNextID, Eyebrow: "Next", Heading: "Where next", Compact: true},
+		ui.Grid(ui.GridConfig{Min: "16rem"}, cards...),
 	)
 }
 
@@ -158,7 +205,7 @@ func interactivityHub() *TeachHubScreen {
 		Name:  "Interactivity",
 		Title: "The server drives the UI",
 		Desc:  "The server-driven UI model in GoFastr: islands, signals, server push over SSE, server-validated forms, and optimistic actions. No client framework to ship.",
-		Lede:  render.Text("You write Go. The browser gets HTML. There's no client framework to ship. Almost everything you'll do is one of five moves:"),
+		Lede:  "You write Go. The browser gets HTML. There's no client framework to ship. Almost everything you'll do is one of five moves:",
 		Moves: []string{"islands", "signals", "push (SSE)", "forms", "optimistic actions"},
 		Concepts: []hubConcept{
 			{
@@ -258,7 +305,7 @@ func primitivesHub() *TeachHubScreen {
 		Name:  "Primitives",
 		Title: "Stdlib-first building blocks",
 		Desc:  "The core layer of GoFastr: router, typed handlers, render, schema, the MCP server, and a client store, plain stdlib-first Go you can use on their own.",
-		Lede:  render.Text("core and core-ui are small Go packages, each usable on its own, no framework required. When you want more, the framework composes them for you."),
+		Lede:  "core and core-ui are small Go packages, each usable on its own, no framework required. When you want more, the framework composes them for you.",
 		Moves: []string{"router", "typed handlers", "render", "schema", "MCP server", "client store"},
 		Concepts: []hubConcept{
 			{
@@ -353,7 +400,7 @@ func frameworkHub() *TeachHubScreen {
 		Name:  "Framework",
 		Title: "The framework layer, on top of core",
 		Desc:  "The framework layer of GoFastr: entities and CRUD on the backend, composed components on the front: auth, access control, migrations, and theming.",
-		Lede:  render.Text("framework and framework/ui sit on top of the primitives. Declare an entity and get the database, API, and tools; compose screens from components that already match your theme."),
+		Lede:  "framework and framework/ui sit on top of the primitives. Declare an entity and get the database, API, and tools; compose screens from components that already match your theme.",
 		Moves: []string{"entities", "auth", "access control", "migrations", "components", "theming"},
 		Concepts: []hubConcept{
 			{
@@ -460,7 +507,7 @@ func agentsHub() *TeachHubScreen {
 		Name:  "Agents",
 		Title: "Built for two kinds of agents",
 		Desc:  "GoFastr's agent surface: production MCP tools your users' agents call with their own login, and dev MCP that hands your coding agent the running app's routes, config, and logs.",
-		Lede:  render.Text("Two kinds of agents, two layers of MCP. In production, the agents your users bring call your data with the same login and permissions the users have. While you build, gofastr dev hands your coding agent the running app."),
+		Lede:  "Two kinds of agents, two layers of MCP. In production, the agents your users bring call your data with the same login and permissions the users have. While you build, gofastr dev hands your coding agent the running app.",
 		Moves: []string{"production MCP", "dev MCP", "auto llm.md", "discovery", "local search"},
 		Concepts: []hubConcept{
 			{
@@ -541,7 +588,7 @@ func generatorHub() *TeachHubScreen {
 		Name:  "Generator",
 		Title: "Scaffold plain Go from a declaration",
 		Desc:  "GoFastr's code generators: app code from a blueprint, client SDKs, and a customer CLI. Each writes plain Go you own and edit, not a runtime you configure.",
-		Lede:  render.Text("When you want a head start, generate the code. It writes plain Go to disk. You own it, read it, and edit it. One shot: nothing to keep regenerating against."),
+		Lede:  "When you want a head start, generate the code. It writes plain Go to disk. You own it, read it, and edit it. One shot: nothing to keep regenerating against.",
 		Moves: []string{"code generation", "SDKs", "customer CLI", "blueprints"},
 		Concepts: []hubConcept{
 			{

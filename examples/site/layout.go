@@ -9,9 +9,155 @@ package main
 // them around the primary slot; see those packages for the contract.
 
 import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/examples/site/sitefooter"
 	"github.com/DonaldMurillo/gofastr/examples/site/siteheader"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
+
+// =============================================================================
+// The layout tree. Every page renders inside the default "main" layer
+// (header, primary, footer). Sections whose pages share chrome get a
+// ScreenGroup with their own layer below it, so a navigation between two
+// pages of one section swaps only that layer's primary slot and the
+// section chrome (its nav column, its rail) stays in place:
+//
+//	main                      siteheader · primary · sitefooter
+//	├── g:/            hub    reading column + on-this-page rail (toc outlet)
+//	│     /primitives /framework /agents /interactivity /generator
+//	├── g:/examples/   examples   examples nav column + primary
+//	│     /examples /examples/workspace /examples/catalog(/:id)
+//	│     /examples/presence /examples/live-dashboard
+//	├── g:/plugins/    plugins    registry nav column + primary
+//	│     /plugins /plugins/:name
+//	└── g:/components/ components (components.go)
+//
+// Everything else (home, docs, get started, kiln, seo, reader, the headless
+// theme showcases) renders straight in the main layer.
+// =============================================================================
+
+// mainLayout is the site frame: the page-tall stack with the sticky banner
+// bar directly inside it (siteheader owns the sticky + z-order), the
+// primary slot under it, and the colophon closing the page.
+func mainLayout() *app.Layout {
+	return app.NewLayout("main", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+			siteHeader(ctx),
+			l.Primary(),
+			siteFooter(),
+		)
+	})
+}
+
+// hubLayout frames the taught area hubs: the wide reading container with a
+// content row whose aside holds the toc outlet. The rail sits beside the
+// content on wide screens and stacks under it on phones.
+//
+// The toc outlet is the hubs' on-this-page rail: each hub fills it with its
+// own concept list (TeachHubScreen.TOC), and an unfilled outlet releases
+// the aside column. An outlet handle binds to exactly one layout, so the
+// pair is minted together per setupServer call.
+func hubLayout() (*app.Layout, *app.Outlet) {
+	hubTOC := app.NewOutlet("toc")
+	return app.NewLayout("hub", app.LayoutSpec{Outlets: []*app.Outlet{hubTOC}}, func(_ context.Context, l *app.LayoutTree) render.HTML {
+		return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide, Pad: ui.ContainerPadPage},
+			ui.ContentRow(ui.ContentRowConfig{
+				Aside:      l.Place(hubTOC),
+				AsideLabel: "On this page",
+			}, l.Primary()),
+		)
+	}), hubTOC
+}
+
+// sectionNavLayout frames a section with a nav column: the content row with
+// a SectionMenu (sticky rail on desktop, drawer trigger on phones) beside
+// the primary slot. The menu is static chrome; the runtime's active-link
+// sweep marks the current page, so the column keeps its scroll across
+// sibling navigations.
+func sectionNavLayout(name string, menu func() interactive.SectionMenuConfig) *app.Layout {
+	return app.NewLayout(name, app.LayoutSpec{}, func(_ context.Context, l *app.LayoutTree) render.HTML {
+		// The row's column landmark keeps its default name: the menu
+		// inside it is its own named nav, and two navs sharing one
+		// name fail landmark-unique.
+		return ui.ContentRow(ui.ContentRowConfig{Sidebar: interactive.SectionMenu(menu())}, l.Primary())
+	})
+}
+
+// examplesSectionMenuConfig is the /examples section nav: the reference-app
+// index, the in-site demo apps, and the headless theme showcases. Shared by
+// the inline rail and the phone drawer mounted in setupServer.
+func examplesSectionMenuConfig() interactive.SectionMenuConfig {
+	themes := make([]interactive.SectionItem, 0, 2*len(landingRoutes))
+	for _, r := range landingRoutes {
+		themes = append(themes, interactive.SectionItem{Label: r.Name + " landing", Href: landingRoutePath(r.Segment)})
+	}
+	for _, r := range landingRoutes {
+		themes = append(themes, interactive.SectionItem{Label: r.Name + " dashboard", Href: dashboardRoutePath(r.Segment)})
+	}
+	return interactive.SectionMenuConfig{
+		AriaLabel:    "Examples navigation",
+		TriggerLabel: "Examples",
+		DrawerName:   "examples-section-menu",
+		Lead:         &interactive.SectionItem{Label: "Reference apps", Href: "/examples"},
+		Groups: []interactive.SectionGroup{
+			{Label: "In-site apps", Items: []interactive.SectionItem{
+				{Label: "Support workspace", Href: "/examples/workspace"},
+				{Label: "Catalog (intercepting route)", Href: "/examples/catalog"},
+			}},
+			{Label: "Live data", Items: []interactive.SectionItem{
+				{Label: "Live dashboard", Href: "/examples/live-dashboard?presence=" + liveDashTopic},
+				{Label: "Live presence", Href: "/examples/presence?presence=" + presenceDemoTopic},
+			}},
+			{Label: "Theme layer", Items: themes, Collapsed: true},
+		},
+	}
+}
+
+// pluginsSectionMenuConfig is the /plugins section nav: the registry index
+// and one entry per vendored plugin row.
+func pluginsSectionMenuConfig() interactive.SectionMenuConfig {
+	cfg := interactive.SectionMenuConfig{
+		AriaLabel:    "Plugins navigation",
+		TriggerLabel: "Plugins",
+		DrawerName:   "plugins-section-menu",
+		Lead:         &interactive.SectionItem{Label: "All plugins", Href: "/plugins"},
+	}
+	reg, err := pluginReg()
+	if err != nil {
+		return cfg
+	}
+	items := make([]interactive.SectionItem, 0, len(reg.Plugins))
+	for _, p := range reg.Plugins {
+		items = append(items, interactive.SectionItem{Label: p.Name, Href: "/plugins/" + p.Name})
+	}
+	cfg.Groups = []interactive.SectionGroup{{Label: "Registry · " + reg.Release.Tag, Items: items}}
+	return cfg
+}
+
+// groupScreen builds a group member from a component the way App.Register
+// does: title, description, and type read from the component's own
+// metadata interfaces, then the registration options applied.
+func groupScreen(path string, comp component.Component, opts ...app.ScreenOption) *app.Screen {
+	s := app.NewScreen(path, comp)
+	if t, ok := comp.(app.ScreenTitler); ok {
+		s.Title = t.ScreenTitle()
+	}
+	if d, ok := comp.(app.ScreenDescriber); ok {
+		s.Description = d.ScreenDescription()
+	}
+	if ty, ok := comp.(app.ScreenTyper); ok {
+		s.Type = ty.ScreenType()
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
 
 // build time from the deployment's git tag via
 //

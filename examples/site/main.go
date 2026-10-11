@@ -175,18 +175,9 @@ func setupServer() *framework.App {
 		FallbackHref: "/docs/",
 	})
 
-	layout := app.NewLayout("main", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
-		// The page-tall stack with the sticky banner bar directly
-		// inside it: the header pins for the whole page (siteheader
-		// owns the sticky + z-order), the primary slot scrolls under
-		// it, and the colophon closes the page.
-		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
-			siteHeader(ctx),
-			l.Primary(),
-			siteFooter(),
-		)
-	})
-	site.SetDefaultLayout(layout)
+	// The default layer every page renders in; the section layers nest
+	// under it (the tree is drawn in layout.go).
+	site.SetDefaultLayout(mainLayout())
 
 	registerScreens(site)
 
@@ -314,6 +305,8 @@ func setupServer() *framework.App {
 	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(docsSectionMenuConfig("")))
 	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(componentsSectionMenuConfig()))
 	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(demoSectionMenuConfig()))
+	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(examplesSectionMenuConfig()))
+	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(pluginsSectionMenuConfig()))
 	// Kiln panel approve/reject, no-op endpoints. The OptimisticAction
 	// runtime needs a real 2xx response to keep the optimistic label;
 	// these record nothing because the page is a demo, but the round-trip
@@ -639,8 +632,8 @@ func setupServer() *framework.App {
 	}))
 	// Modal for the "RPC → Open Widget" demo.
 	// Hidden by default, only appears when data-cui-rpc-open triggers it.
-	modalBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
-		html.Paragraph(html.TextConfig{Class: "demo-modal-emoji"}, render.Text("🎉")),
+	modalBody := ui.Stack(ui.StackConfig{},
+		html.Paragraph(html.TextConfig{}, render.Text("🎉")),
 		html.Heading(html.HeadingConfig{Level: 3, ID: "demo-modal-heading"}, render.Text("Congratulations!")),
 		html.Paragraph(html.TextConfig{}, render.Text("This modal was triggered from an in-browser action. The server returned 2xx, so the runtime opened the widget. No JavaScript required.")),
 	)
@@ -654,7 +647,7 @@ func setupServer() *framework.App {
 	// trigger button (data-cui-open / data-cui-toast) that opens them. Modal +
 	// drawer are Hidden (lazy-fetched on open); the toast stack is auto-mount
 	// (always inlined) so a toast has somewhere to land on any page.
-	demoModalBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
+	demoModalBody := ui.Stack(ui.StackConfig{},
 		html.Heading(html.HeadingConfig{Level: 3, ID: "site-demo-modal-heading"}, render.Text("Edit user")),
 		html.Paragraph(html.TextConfig{}, render.Text("Center-mounted dialog with a backdrop, focus trap, and Escape-to-close. Open a deeplinked variant and the URL gains ?modal=user-edit&user_id=42. Refresh re-opens it.")),
 	)
@@ -665,7 +658,7 @@ func setupServer() *framework.App {
 		Slot("body", app.NewStaticComponent(demoModalBody)).
 		Hidden())
 
-	demoDrawerBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
+	demoDrawerBody := ui.Stack(ui.StackConfig{},
 		html.Heading(html.HeadingConfig{Level: 3, ID: "site-demo-drawer-heading"}, render.Text("Filters")),
 		html.Paragraph(html.TextConfig{}, render.Text("Side-mounted sliding panel. Same dismiss affordances as Modal: backdrop, Escape, focus trap, scroll lock.")),
 	)
@@ -674,7 +667,7 @@ func setupServer() *framework.App {
 		Slot("body", app.NewStaticComponent(demoDrawerBody)).
 		Hidden())
 
-	demoSheetBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
+	demoSheetBody := ui.Stack(ui.StackConfig{},
 		html.Heading(html.HeadingConfig{Level: 3, ID: "site-demo-sheet-heading"}, render.Text("Share")),
 		html.Paragraph(html.TextConfig{}, render.Text("Bottom-anchored sibling of Drawer. Drag the handle down past ~80px to dismiss; Escape and backdrop click also close it.")),
 	)
@@ -890,7 +883,7 @@ func servePaletteSearch(w http.ResponseWriter, r *http.Request) {
 		// data-cui-push-state navigates without a hard refresh on click.
 		// data-value is what the combobox echoes back to the input.
 		_, _ = fmt.Fprintf(w,
-			`<li role="option" id="site-pal-%d" data-value=%q data-cui-push-state=%q><span>%s</span><span class="pal-meta">%s</span></li>`,
+			`<li role="option" id="site-pal-%d" data-value=%q data-cui-push-state=%q><span>%s</span><span>%s</span></li>`,
 			i, p.title, p.path, htmlEscape(p.title), htmlEscape(p.path))
 		matched++
 	}
@@ -912,7 +905,19 @@ func htmlEscape(s string) string {
 // the palette seed stay editable side by side.
 func registerScreens(site *app.App) {
 	site.Register("/", &HomeScreen{}, nil)
-	registerHubs(site) // /primitives, /framework, /agents, /interactivity, /generator
+
+	// The taught area hubs share one layer: the reading column and the
+	// on-this-page rail. The group sits at "/" because the hubs are
+	// top-level siblings (/primitives, /framework, …); the layer key is
+	// the group, so moving between hubs keeps the frame and swaps the
+	// primary plus the rail's fill.
+	hubFrame, hubTOC := hubLayout()
+	hubs := app.NewScreenGroup("/", hubFrame)
+	for _, h := range hubScreens() {
+		hubs.Screen(groupScreen(h.Path, h.Screen).Fill(hubTOC, h.Screen.TOC()), nil)
+	}
+	site.Router.ScreenGroup(hubs)
+
 	site.Register("/get-started", &GetStartedScreen{}, nil)
 	site.Register("/docs/", &ConceptsIndexScreen{}, nil)
 	// One catch-all route serves every doc page. DocPageScreen resolves
@@ -921,11 +926,38 @@ func registerScreens(site *app.App) {
 	// llm.md, and the strict coverage gate stay in sync with the
 	// catalog, the same URL set the old per-slug loop emitted.
 	site.Register("/docs/{path...}", &DocPageScreen{}, nil)
-	site.Register("/examples", &ExamplesScreen{}, nil)
+
+	// The examples section: the reference-app index and the in-site demo
+	// apps share the examples nav column (layout.go), so moving between
+	// them swaps only the primary slot beside it.
+	examples := app.NewScreenGroup("/examples", sectionNavLayout("examples", examplesSectionMenuConfig))
+	examples.Screen(groupScreen("/examples", &ExamplesScreen{}), nil)
 	// Advanced, full-page interactive example: a master-detail workspace
 	// on ui.PaneHost. Its /__site/workspace/* detail endpoints are mounted
 	// in setupServer.
-	site.Register("/examples/workspace", &WorkspaceScreen{}, nil)
+	examples.Screen(groupScreen("/examples/workspace", &WorkspaceScreen{}), nil)
+	// Intercepting route: the detail is a normal page registration, and
+	// InterceptFrom only changes how a soft nav that STARTED on the list
+	// presents it. Hard load, refresh, or an external link still render
+	// the full page, the deep link stays the canonical render.
+	examples.Screen(groupScreen("/examples/catalog", &CatalogScreen{}), nil)
+	examples.Screen(groupScreen("/examples/catalog/:id", &CatalogItemScreen{},
+		app.InterceptFrom("/examples/catalog", app.ScreenDrawer)), nil)
+	// ── Presence demo ──────────────────────────────────────────────
+	// /examples/presence?presence=presence-demo, a live avatar roster.
+	// The ?presence= param is threaded into the SSE <meta> tag by
+	// handlePage so the connection joins the topic.
+	examples.Screen(groupScreen("/examples/presence", &PresenceScreen{}), nil)
+	// ── Live-dashboard demo ────────────────────────────────────────
+	// /examples/live-dashboard?presence=live-dashboard-demo, an ops
+	// dashboard fed by SSE island push. The ticker that advances the
+	// demo state is wired in setupServer; see screen_livedash.go.
+	examples.Screen(groupScreen("/examples/live-dashboard", &LiveDashboardScreen{}), nil)
+	site.Router.ScreenGroup(examples)
+
+	// The headless showcases stay out of the examples layer on purpose:
+	// each renders a whole themed product page (its own theme scope), so a
+	// site nav column beside it would misrepresent the page it demos.
 	// ── Headless landing, the theme-layer showcase (additive) ──────
 	// /examples/headless/{theme}/landing: one screen parameterised by
 	// the theme segment, its content scoped by the route's
@@ -935,28 +967,15 @@ func registerScreens(site *app.App) {
 	// The form family's dashboard: same parameterised shape, scoped by
 	// the theme segment (screen_headless_dashboard.go).
 	site.Register("/examples/headless/:theme/dashboard", &HeadlessDashboardScreen{}, nil)
-	// Intercepting route: the detail is a normal page registration, and
-	// InterceptFrom only changes how a soft nav that STARTED on the list
-	// presents it. Hard load, refresh, or an external link still render
-	// the full page, the deep link stays the canonical render.
-	site.Register("/examples/catalog", &CatalogScreen{}, nil)
-	site.Register("/examples/catalog/:id", &CatalogItemScreen{}, nil,
-		app.InterceptFrom("/examples/catalog", app.ScreenDrawer))
-	// ── Presence demo (additive) ───────────────────────────────────
-	// /examples/presence?presence=presence-demo, a live avatar roster.
-	// The ?presence= param is threaded into the SSE <meta> tag by
-	// handlePage so the connection joins the topic.
-	site.Register("/examples/presence", &PresenceScreen{}, nil)
-	// ── Live-dashboard demo (additive) ──────────────────────────
-	// /examples/live-dashboard?presence=live-dashboard-demo, an ops
-	// dashboard fed by SSE island push. The ticker that advances the
-	// demo state is wired in setupServer; see screen_livedash.go.
-	site.Register("/examples/live-dashboard", &LiveDashboardScreen{}, nil)
 	// The gofastr-plugins registry: one index plus one page per row of the
 	// vendored plugins.json (see screen_plugins.go). PluginScreen 404s an
-	// unknown name (Load) and enumerates every row via StaticPaths.
-	site.Register("/plugins", &PluginsScreen{}, nil)
-	site.Register("/plugins/:name", &PluginScreen{}, nil)
+	// unknown name (Load) and enumerates every row via StaticPaths. The
+	// registry nav column is the plugins layer's (list on the left, the
+	// plugin on the right), kept across plugin pages.
+	plugins := app.NewScreenGroup("/plugins", sectionNavLayout("plugins", pluginsSectionMenuConfig))
+	plugins.Screen(groupScreen("/plugins", &PluginsScreen{}), nil)
+	plugins.Screen(groupScreen("/plugins/:name", &PluginScreen{}), nil)
+	site.Router.ScreenGroup(plugins)
 	site.Register("/kiln", &KilnScreen{}, nil)
 	site.Register("/philosophy", &PhilosophyScreen{}, nil)
 	// /reader: a reader-ready article, the simple way. This is a normal
