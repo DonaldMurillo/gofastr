@@ -61,6 +61,7 @@ var docIntents = []docIntent{
 			{"comparison", "Comparison", "Where GoFastr sits relative to other full-stack frameworks."},
 			{"upgrading", "Upgrading", "Move an app (and the CLI) to a newer release, plus gofastr upgrade, the guided helper."},
 			{"release-0-86", "What changed in v0.86.0", "The UI-layer rebuild: headless components, fui-* classes, the layout primitive and owned styles, with every breaking change and how to move an app."},
+			{"release-0-87", "What changed in v0.87.0", "The zinc theme and its tokens, entity Display and States, entityui screens and the admin rebuilt on them, with every breaking change and how to move an app."},
 			{"stability", "API stability", "Compatibility windows, deprecation rules, and the public v1 promise."},
 		},
 	},
