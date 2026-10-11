@@ -131,3 +131,26 @@ func TestContentRowStickyRefusesViewport(t *testing.T) {
 	}()
 	ContentRow(ContentRowConfig{Sticky: true, Viewport: true}, render.Text("main"))
 }
+
+// BelowHeader offsets the Sticky frame, so a row asking for it without
+// Sticky is refused rather than drawn with the option ignored.
+func TestContentRowBelowHeaderRequiresSticky(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("ContentRow drew a BelowHeader row without Sticky")
+		}
+	}()
+	ContentRow(ContentRowConfig{BelowHeader: true}, render.Text("main"))
+}
+
+// Footer lands in the workspace column after main, so it sits beside
+// the nav column; the BelowHeader marker rides the root.
+func TestContentRowFooterInMainColumn(t *testing.T) {
+	out := renderRow(t, ContentRowConfig{Sticky: true, BelowHeader: true, Footer: render.HTML("<footer>F</footer>")}, render.HTML("<main>M</main>"))
+	if !strings.Contains(out, "fui-content-row--below-header") {
+		t.Errorf("BelowHeader should mark the root:\n%s", out)
+	}
+	if !strings.Contains(out, `<div class="fui-content-row__workspace"><main>M</main><footer>F</footer></div>`) {
+		t.Errorf("Footer should follow main inside the workspace column:\n%s", out)
+	}
+}

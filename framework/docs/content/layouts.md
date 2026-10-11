@@ -767,6 +767,33 @@ the top at one viewport tall and scrolls its own overflow, and the
 content beneath it. The client router's scroll restore and fragment
 jumps keep working because the window stays the scroller. Sticky and
 Viewport are two scroll models; setting both panics.
+`BelowHeader: true` (with `Sticky`) is the same frame under a sticky
+page header: the nav column and the toolbar stick below
+`--size-header-height` instead of behind the header, and the column is
+the rest of the viewport tall. Setting it without `Sticky` panics.
+`Footer` places the page's footer at the end of the main column, after
+main and beside the nav column, instead of under the whole row; a short
+page still holds it at the bottom. Together they make a docs frame: the
+menu stays pinned on the left under the header and keeps its own scroll
+position, while the page and its footer scroll past on the right. The
+layout owns the whole page there, so mark its group `Standalone()` and
+render the header in it too:
+
+```go
+layout := app.NewLayout("docs", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+	nav, _ := component.SafeRenderCtx(ctx, ui.Sidebar(cfg))
+	return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+		header, // a sticky bar --size-header-height tall
+		ui.ContentRow(ui.ContentRowConfig{
+			Sidebar: nav, Sticky: true, BelowHeader: true, Footer: footer,
+		}, l.Primary()))
+})
+site.Router.ScreenGroup(app.NewScreenGroup("/docs", layout).Standalone())
+```
+
+An `interactive.SectionMenu` in that column sets `FillColumn: true`:
+its rail drops its own sticky offset and viewport cap, fills the pinned
+column to the bottom of the screen and scrolls there.
 `PhoneNavFlush: true` drops the nav column's phone separator below the
 breakpoint — set it when the sidebar's phone navigation lives outside
 the column (a `NativeMobile` sidebar whose drawer trigger,
