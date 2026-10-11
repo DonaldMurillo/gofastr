@@ -210,12 +210,25 @@ func refreshAgentsMD(existing []byte) ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("end marker %q appears before start marker %q; refusing to refresh", agentsAutoEnd, agentsAutoStart)
 	}
 	var b bytes.Buffer
-	b.Write(existing[:startIdx+len(agentsAutoStart)])
+	b.Write(migrateLegacyAgentsRefs(existing[:startIdx+len(agentsAutoStart)]))
 	b.WriteString("\n\n")
 	writeAutoSection(&b)
-	b.Write(existing[endIdx:])
+	b.Write(migrateLegacyAgentsRefs(existing[endIdx:]))
 	out := b.Bytes()
 	return out, !bytes.Equal(normalizeMD(out), normalizeMD(existing)), nil
+}
+
+// migrateLegacyAgentsRefs points the generator's own spellings of the
+// old visible agents/ folder at .agents/: a code span (`agents/ui.md`,
+// `agents/`) and a Markdown link target ((agents/battery-admin.md)).
+// AGENTS.md keeps everything outside its markers on sync, and an older
+// generator wrote those spellings into the preamble, so without this a
+// synced project would keep pointing at a folder the sync just
+// removed. Prose that merely names a folder called agents is left
+// alone.
+func migrateLegacyAgentsRefs(b []byte) []byte {
+	b = bytes.ReplaceAll(b, []byte("`"+legacyAgentsDetailDir+"/"), []byte("`"+agentsDetailDir+"/"))
+	return bytes.ReplaceAll(b, []byte("]("+legacyAgentsDetailDir+"/"), []byte("]("+agentsDetailDir+"/"))
 }
 
 // normalizeMD collapses runs of whitespace so the changed-check ignores
@@ -386,6 +399,19 @@ func removeLegacyAgentDetailFiles(dir string) error {
 		return fmt.Errorf("open %s: %w", dir, err)
 	}
 	defer root.Close()
+	// A symlinked agents/ (say, agents -> .agents, kept for old links)
+	// stays as it is: os.Root follows a link that stays inside the
+	// root, so cleaning through it would delete the files just written.
+	fi, err := root.Lstat(legacyAgentsDetailDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("stat %s: %w", legacyAgentsDetailDir, err)
+	}
+	if !fi.IsDir() {
+		return nil
+	}
 	d, err := root.Open(legacyAgentsDetailDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

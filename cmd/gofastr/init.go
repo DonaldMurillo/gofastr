@@ -992,7 +992,11 @@ func runReinit(dir string, force bool) {
 		info("  ✓ CLAUDE.md created")
 	} else {
 		generated := claudeMDContent()
-		if bytes.Equal(normalizeMD(existingClaude), normalizeMD(generated)) {
+		// A stock CLAUDE.md from a release that wrote agents/ instead
+		// of .agents/ is still unmodified: compare against both.
+		legacyGenerated := bytes.ReplaceAll(generated, []byte(agentsDetailDir+"/"), []byte(legacyAgentsDetailDir+"/"))
+		if bytes.Equal(normalizeMD(existingClaude), normalizeMD(generated)) ||
+			bytes.Equal(normalizeMD(existingClaude), normalizeMD(legacyGenerated)) {
 			// Unmodified: safe to overwrite.
 			if err := os.WriteFile(claudePath, generated, 0o644); err != nil {
 				fail("Failed to write CLAUDE.md: %v", err)

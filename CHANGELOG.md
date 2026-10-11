@@ -18,7 +18,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `gofastr init --reinit`) once in an existing project: it writes
   `.agents/`, deletes the old generated files in `agents/` (only files
   with the auto-generated header, so a hand-written file there stays)
-  and removes the folder once nothing else is in it.
+  and removes the folder once nothing else is in it. It also points the
+  generated `agents/` references in `AGENTS.md`'s intro at `.agents/`,
+  and `--reinit` refreshes a stock `CLAUDE.md` from the earlier release.
+  An `agents` symlink is left as it is.
 
 ### Added
 - **A sidebar can stay pinned under a sticky page header.**

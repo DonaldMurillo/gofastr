@@ -426,3 +426,78 @@ func TestWriteAgentDetailFilesRemovesLegacyGeneratedFolder(t *testing.T) {
 		}
 	})
 }
+
+// A project that kept agents/ as a symlink to .agents/ (for old links)
+// keeps it: os.Root follows a link that stays inside the root, so the
+// legacy cleanup must not walk through it and delete the files it just
+// wrote under .agents/.
+func TestWriteAgentDetailFilesLeavesSymlinkedLegacyDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Symlink(".agents", filepath.Join(dir, "agents")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := writeAgentDetailFiles(dir); err != nil {
+		t.Fatalf("writeAgentDetailFiles: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".agents", "framework.md")); err != nil {
+		t.Fatalf("cleanup deleted .agents/framework.md through the agents symlink: %v", err)
+	}
+	if fi, err := os.Lstat(filepath.Join(dir, "agents")); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("the agents symlink should be left as it is: %v, %v", fi, err)
+	}
+}
+
+// AGENTS.md keeps everything outside its markers on sync. A preamble an
+// older generator wrote points at agents/; sync moves those generated
+// spellings (code spans and link targets) to .agents/ and leaves other
+// prose alone.
+func TestRefreshAgentsMDMigratesLegacyPreambleRefs(t *testing.T) {
+	old := "# AGENTS.md\n\nThen read `agents/ui.md` and the files under `agents/`, " +
+		"see [admin](agents/battery-admin.md). Our agents team owns this.\n\n" +
+		agentsAutoStart + "\n\nold toc\n\n" + agentsAutoEnd + "\n\nTail: `agents/x.md`\n"
+	got, changed, err := refreshAgentsMD([]byte(old))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !changed {
+		t.Fatal("refresh should report a change")
+	}
+	s := string(got)
+	for _, want := range []string{"`.agents/ui.md`", "`.agents/`", "](.agents/battery-admin.md)", "Tail: `.agents/x.md`", "Our agents team owns this."} {
+		if !strings.Contains(s, want) {
+			t.Errorf("refreshed AGENTS.md missing %q:\n%s", want, s)
+		}
+	}
+	if strings.Contains(s, "`agents/") || strings.Contains(s, "](agents/") {
+		t.Errorf("refreshed AGENTS.md still points at agents/:\n%s", s)
+	}
+}
+
+// A stock CLAUDE.md from a release that wrote agents/ is unmodified, so
+// reinit refreshes it to the .agents/ spelling without --force; an
+// edited one is still left alone.
+func TestReinitRefreshesLegacyStockClaudeMD(t *testing.T) {
+	legacy := bytes.ReplaceAll(claudeMDContent(), []byte(".agents/"), []byte("agents/"))
+	if bytes.Equal(legacy, claudeMDContent()) {
+		t.Fatal("claudeMDContent no longer names .agents/: the legacy fixture proves nothing")
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "CLAUDE.md")
+	if err := os.WriteFile(path, legacy, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	covT_capStdout(t, func() { runReinit(dir, false) })
+	if got, _ := os.ReadFile(path); !bytes.Equal(got, claudeMDContent()) {
+		t.Fatalf("legacy stock CLAUDE.md was not refreshed:\n%s", got)
+	}
+
+	edited := append(append([]byte{}, legacy...), "\nOur own rule.\n"...)
+	if err := os.WriteFile(path, edited, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	covT_capStdout(t, func() { runReinit(dir, false) })
+	if got, _ := os.ReadFile(path); !bytes.Equal(got, edited) {
+		t.Fatalf("an edited CLAUDE.md must be left alone:\n%s", got)
+	}
+}
