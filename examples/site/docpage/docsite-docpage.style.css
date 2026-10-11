@@ -31,6 +31,29 @@
 .content {
   max-inline-size: 720px;
 }
+
+/* The layer shape (Layer): nav | article | rail. The rail cell comes
+   before the article in source order so it stacks above it on phones;
+   on wide screens each cell names its column. An unfilled rail outlet
+   is an empty cell: the column collapses and the shell is nav |
+   article. The rail is sticky inside a full-height column, the same
+   flex shape the nav uses. */
+.rail {
+  display: flex;
+  flex-direction: column;
+  grid-column: 3;
+  grid-row: 1;
+}
+.rail > * {
+  flex: 1 1 auto;
+}
+.rail:has(> :empty) { display: none; }
+:scope:has(> .rail) > .nav { grid-column: 1; grid-row: 1; }
+:scope:has(> .rail) > .content { grid-column: 2; grid-row: 1; }
+:scope:has(> .rail > :not(:empty)) { grid-template-columns: 220px minmax(0, 1fr) 220px; }
+
+/* An unfilled crumbs outlet takes no room above the body. */
+.crumbs:has(> :empty) { display: none; }
 /* The narrow shape centers the article. The track is the reading
    measure and the grid centers the track: auto margins on the article
    would stop it stretching, and a short page would shrink to its
