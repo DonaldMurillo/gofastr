@@ -11,6 +11,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - `ui.TerminalErr` marks a failure line in a `ui.TerminalBlock`
   (danger tone, `--ui-terminal-block-err-color` knob), beside
   `TerminalOut` and `TerminalOK`.
+- `HeroConfig.Lede` (inline markup in place of `Subtitle`) and
+  `HeroConfig.Footer` (content under the actions: an install line,
+  a byline, a stats line).
 - `StepRailConfig.BelowHeader` stops the sticky rail under a sticky
   site header (`--size-header-height` plus the rail's gap).
 
