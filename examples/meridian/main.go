@@ -61,7 +61,7 @@ func main() {
 		defer db.Close()
 	}
 
-	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix})}
+	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}), fileStorageOption(), translatorOption()}
 	if db != nil {
 		options = append(options, framework.WithDB(db))
 	}
@@ -94,7 +94,12 @@ func main() {
 	})
 	fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)
 	site := uiapp.NewApp(appName)
+	// The queue first: its bulk runner joins the entity UI's extensions,
+	// which RegisterGenerated builds the UI from.
+	setupQueue(fwApp, db)
+	appExtensions.FilesURL = filesURL
 	RegisterGenerated(fwApp, site, db)
+	mountFiles(fwApp)
 	// SEO surface: sitewide description/OG defaults (per-screen values
 	// override, see screen_home.go / screen_pricing.go), a sitemap of the
 	// marketing pages only, and a robots.txt that keeps the authed app,
@@ -126,14 +131,13 @@ func main() {
 	}); err != nil {
 		log.Fatal(err)
 	}
-	// The admin audit page reads audit_log and the admin's own RBAC and
-	// module changes append to it: create it if it does not exist.
+	// The admin writes entities under elevation, and its Audit log page and
+	// dashboard read audit_log: record every entity write there
+	// (WithAuditLog creates audit_log when it does not exist).
 	if db != nil {
-		if err := framework.EnsureAuditTable(db, "audit_log"); err != nil {
-			log.Fatalf("audit table: %v", err)
-		}
+		fwApp.WithAuditLog(framework.AuditConfig{})
 	}
-	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: appName, AdminRole: "admin", LoginPath: "/login", DB: db, AuditTable: "audit_log", AllEntities: true, Theme: appTheme(), FontFaceCSS: fontFaceCSS}))
+	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: appName, AdminRole: "admin", LoginPath: "/login", UI: appUI, DB: db, AuditTable: "audit_log", AllEntities: true, SavedViews: true, Auth: authMgr, Policy: rolePolicy, GrantStore: adminGrantStore(db, rolePolicy), Metrics: adminMetrics, Attention: adminAttention, Queue: adminBrowsable(), BulkJobs: adminBulkJobs, Themes: adminThemes, Pages: []admin.Page{revenuePage}, DashboardNew: "customers"}))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {
 		log.Fatal(err)

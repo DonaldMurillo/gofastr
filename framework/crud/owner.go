@@ -56,7 +56,7 @@ func (ch *CrudHandler) CanRead(ctx context.Context) bool {
 	if perm == "" {
 		return true
 	}
-	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName()})
+	return ch.accessAllows(ctx, perm, "")
 }
 
 // CanReadScoped reports whether ctx may read this entity's rows: the baseline
@@ -135,7 +135,7 @@ func (ch *CrudHandler) canCascadeWrite(ctx context.Context, r *http.Request, op 
 	if perm == "" {
 		return true
 	}
-	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName(), ID: id})
+	return ch.accessAllows(ctx, perm, id)
 }
 
 // relationReachable answers the rule that binds a route reaching THIS entity
@@ -209,8 +209,7 @@ func (ch *CrudHandler) requirePermission(w http.ResponseWriter, r *http.Request,
 	if perm == "" {
 		return true
 	}
-	resource := access.Ref{Type: ch.Entity.GetName(), ID: recordID}
-	if !access.CanResource(r.Context(), access.Permission(perm), resource) {
+	if !ch.accessAllows(r.Context(), perm, recordID) {
 		writeJSONError(w, http.StatusForbidden, "access denied: missing permission "+perm)
 		return false
 	}
@@ -228,7 +227,7 @@ func (ch *CrudHandler) itemPermitted(ctx context.Context, op crudOp, id string) 
 	if perm == "" {
 		return true
 	}
-	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName(), ID: id})
+	return ch.accessAllows(ctx, perm, id)
 }
 
 // tenantIDFromCtx is a thin wrapper so owner.go doesn't drag the

@@ -27,10 +27,10 @@ func registerNotesEntity(app *framework.App) {
 		Scope:        &framework.ScopeConfig{OwnerField: "user_id"},
 		SearchFields: []string{"title", "body"},
 		Display: &framework.DisplayConfig{
-			Singular:   "Note",
-			Plural:     "Notes",
-			TitleField: "title",
-			Columns:    []string{"title", "updated_at"},
+			Singular:    "Note",
+			Plural:      "Notes",
+			TitleFields: []string{"title"},
+			Columns:     []string{"title", "updated_at"},
 			Fields: map[string]framework.FieldDisplay{
 				"user_id": {Omit: true},
 			},

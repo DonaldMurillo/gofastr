@@ -17,6 +17,7 @@ import (
 	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
 
@@ -53,6 +54,9 @@ const (
 	KeyDialogClose   Key = "ui.dialog.close"
 	KeyDialogSave    Key = "ui.dialog.save"
 	KeyDialogDelete  Key = "ui.dialog.delete"
+	// KeyDialogConfirmTitle titles the confirm dialog a
+	// data-cui-confirm control opens when it names no title.
+	KeyDialogConfirmTitle Key = "ui.dialog.confirmTitle"
 
 	// Toast
 	KeyToastSuccess Key = "ui.toast.success"
@@ -118,14 +122,29 @@ const (
 	// DataTable extras
 	KeyTableEmptyDesc Key = "ui.table.emptyDescription"
 	KeyTableSortBy    Key = "ui.table.sortBy"
+	KeyTableSelectAll Key = "ui.table.selectAll"
 
 	// FilterToolbar
-	KeyFilterToolbarLabel Key = "ui.filterToolbar.label"
-	KeyFilterApply        Key = "ui.filterToolbar.apply"
-	KeyFilterReset        Key = "ui.filterToolbar.reset"
-	KeyFilterAll          Key = "ui.filterToolbar.all" // "All {label}"
-	KeyFilterAllPlain     Key = "ui.filterToolbar.allPlain"
-	KeyFilterSortBy       Key = "ui.filterToolbar.sortBy"
+	KeyFilterToolbarLabel  Key = "ui.filterToolbar.label"
+	KeyFilterApply         Key = "ui.filterToolbar.apply"
+	KeyFilterReset         Key = "ui.filterToolbar.reset"
+	KeyShortcutSheetTitle  Key = "ui.shortcutSheet.title"  // "Keyboard shortcuts"
+	KeyTextAreaInvalidJSON Key = "ui.textArea.invalidJSON" // "Enter valid JSON"
+	KeyInlineEditSave      Key = "ui.inlineEdit.save"      // "Save"
+	KeyInlineEditSaved     Key = "ui.inlineEdit.saved"     // "Saved"
+	KeySelectionCount      Key = "ui.selection.count"      // "{n} selected"
+	KeySelectionClear      Key = "ui.selection.clear"      // "Clear selection"
+	KeySelectionCopy       Key = "ui.selection.copy"       // "Copy CSV"
+	KeySelectionCopied     Key = "ui.selection.copied"     // "Copied {n} rows as CSV"
+	KeySelectionCopyFailed Key = "ui.selection.copyFailed" // "The rows could not be copied."
+	// ColumnPicker's link names.
+	KeyColumnShow     Key = "ui.columnPicker.show"     // "Show {column}"
+	KeyColumnHide     Key = "ui.columnPicker.hide"     // "Hide {column}"
+	KeyColumnMoveUp   Key = "ui.columnPicker.moveUp"   // "Move {column} earlier"
+	KeyColumnMoveDown Key = "ui.columnPicker.moveDown" // "Move {column} later"
+	KeyFilterAll      Key = "ui.filterToolbar.all"     // "All {label}"
+	KeyFilterAllPlain Key = "ui.filterToolbar.allPlain"
+	KeyFilterSortBy   Key = "ui.filterToolbar.sortBy"
 	// FilterChipBar
 	KeyFilterClearAll   Key = "ui.filterChipBar.clearAll"
 	KeyFilterChipRemove Key = "ui.filterChipBar.removeFilter" // "Remove filter {label}"
@@ -194,6 +213,22 @@ const (
 	KeyCopyCopy        Key = "ui.copy.copy"
 	KeyCopyCopied      Key = "ui.copy.copied"
 	KeyCopyToClipboard Key = "ui.copy.toClipboard"
+	KeyCopyLink        Key = "ui.copy.link"
+	KeyDrawerOpenPage  Key = "ui.drawer.open_page"
+	KeyDrawerOpenPanel Key = "ui.drawer.open_panel"
+	KeyDrawerPrev      Key = "ui.drawer.prev"
+	KeyDrawerNext      Key = "ui.drawer.next"
+
+	// Ago: how long before now, the way an activity feed says it.
+	KeyAgoNow     Key = "ui.ago.now"     // "just now"
+	KeyAgoMinutes Key = "ui.ago.minutes" // "{n}m ago"
+	KeyAgoHours   Key = "ui.ago.hours"   // "{n}h ago"
+	KeyAgoDays    Key = "ui.ago.days"    // "{n}d ago"
+
+	// ChangeList: the visually hidden words before an edit's old and
+	// new value.
+	KeyChangeFrom Key = "ui.change.from" // "from"
+	KeyChangeTo   Key = "ui.change.to"   // "to"
 
 	// ProgressSteps
 	KeyProgressLabel Key = "ui.progress.label"
@@ -284,6 +319,7 @@ const (
 	KeyHuiComboboxResultsLabel      Key = "ui.combobox.resultsLabel"      // "results"                 // "On this page"
 	KeyHuiSidebarCollapse           Key = "ui.sidebar.collapse"           // "Collapse navigation"
 	KeyHuiSidebarExpand             Key = "ui.sidebar.expand"             // "Expand navigation"
+	KeyHuiSidebarCollapseText       Key = "ui.sidebar.collapseText"       // "Collapse"
 	KeyHuiBreadcrumbsLabel          Key = "ui.breadcrumbs.label"          // "Breadcrumb"
 	KeyHuiSortableItemRole          Key = "ui.sortable.itemRole"          // "sortable item"
 	KeyHuiSortableDragLabel         Key = "ui.sortable.dragLabel"         // "Drag %s"
@@ -322,11 +358,12 @@ var Defaults = map[Key]string{
 	KeyEmptyStateTitle: "Nothing here yet",
 	KeyEmptyStateDesc:  "No items to display.",
 
-	KeyDialogConfirm: "Confirm",
-	KeyDialogCancel:  "Cancel",
-	KeyDialogClose:   "Close",
-	KeyDialogSave:    "Save",
-	KeyDialogDelete:  "Delete",
+	KeyDialogConfirm:      "Confirm",
+	KeyDialogCancel:       "Cancel",
+	KeyDialogClose:        "Close",
+	KeyDialogSave:         "Save",
+	KeyDialogDelete:       "Delete",
+	KeyDialogConfirmTitle: "Are you sure?",
 
 	KeyToastSuccess: "Success",
 	KeyToastError:   "Error",
@@ -380,15 +417,29 @@ var Defaults = map[Key]string{
 
 	KeyTableEmptyDesc: "Adjust your filters or add new entries.",
 	KeyTableSortBy:    "Sort by {column}",
+	KeyTableSelectAll: "Select all rows",
 
-	KeyFilterToolbarLabel: "Filters",
-	KeyFilterApply:        "Apply",
-	KeyFilterSortBy:       "Sort by",
-	KeyFilterClearAll:     "Clear all",
-	KeyFilterChipRemove:   "Remove filter {label}",
-	KeyFilterReset:        "Reset",
-	KeyFilterAll:          "All {label}",
-	KeyFilterAllPlain:     "All",
+	KeyFilterToolbarLabel:  "Filters",
+	KeyFilterApply:         "Apply",
+	KeyFilterSortBy:        "Sort by",
+	KeyFilterClearAll:      "Clear all",
+	KeyFilterChipRemove:    "Remove filter {label}",
+	KeyFilterReset:         "Reset",
+	KeyShortcutSheetTitle:  "Keyboard shortcuts",
+	KeyTextAreaInvalidJSON: "Enter valid JSON",
+	KeyInlineEditSave:      "Save",
+	KeyInlineEditSaved:     "Saved",
+	KeySelectionCount:      "{n} selected",
+	KeySelectionClear:      "Clear selection",
+	KeySelectionCopy:       "Copy CSV",
+	KeySelectionCopied:     "Copied {n} rows as CSV",
+	KeySelectionCopyFailed: "The rows could not be copied.",
+	KeyColumnShow:          "Show {column}",
+	KeyColumnHide:          "Hide {column}",
+	KeyColumnMoveUp:        "Move {column} earlier",
+	KeyColumnMoveDown:      "Move {column} later",
+	KeyFilterAll:           "All {label}",
+	KeyFilterAllPlain:      "All",
 
 	KeySearchInputPlaceholder: "Search...",
 	KeySearchLabel:            "Search",
@@ -440,6 +491,19 @@ var Defaults = map[Key]string{
 	KeyCopyCopy:        "Copy",
 	KeyCopyCopied:      "Copied",
 	KeyCopyToClipboard: "Copy to clipboard",
+	KeyCopyLink:        "Copy link",
+	KeyDrawerOpenPage:  "Open as page",
+	KeyDrawerOpenPanel: "Open in panel",
+	KeyDrawerPrev:      "Previous record",
+	KeyDrawerNext:      "Next record",
+
+	KeyAgoNow:     "just now",
+	KeyAgoMinutes: "{n}m ago",
+	KeyAgoHours:   "{n}h ago",
+	KeyAgoDays:    "{n}d ago",
+
+	KeyChangeFrom: "from",
+	KeyChangeTo:   "to",
 
 	KeyProgressLabel: "Progress",
 
@@ -517,6 +581,7 @@ var Defaults = map[Key]string{
 	KeyHuiComboboxResultsLabel:      "results",
 	KeyHuiSidebarCollapse:           "Collapse navigation",
 	KeyHuiSidebarExpand:             "Expand navigation",
+	KeyHuiSidebarCollapseText:       "Collapse",
 	KeyHuiBreadcrumbsLabel:          "Breadcrumb",
 	KeyHuiSortableItemRole:          "sortable item",
 	KeyHuiSortableDragLabel:         "Drag %s",
@@ -606,6 +671,38 @@ func TVars(ctx context.Context, key Key, vars map[string]string) string {
 		s = strings.ReplaceAll(s, "{"+k+"}", v)
 	}
 	return s
+}
+
+// TVarsHTML is TVars for a line that carries markup: an activity line
+// with a bold actor and the record as a link. The translated text is
+// escaped and each {name} becomes vars[name] as given, in one pass, so
+// a value holding "{verb}" stays as written. A placeholder vars does not
+// name is left as text. The caller escapes what it builds each value
+// from.
+func TVarsHTML(ctx context.Context, key Key, vars map[string]render.HTML) render.HTML {
+	s := resolve(ctx, key)
+	var b strings.Builder
+	for {
+		open := strings.IndexByte(s, '{')
+		if open < 0 {
+			break
+		}
+		end := strings.IndexByte(s[open:], '}')
+		if end < 0 {
+			break
+		}
+		v, ok := vars[s[open+1:open+end]]
+		if !ok {
+			b.WriteString(string(render.Text(s[:open+1])))
+			s = s[open+1:]
+			continue
+		}
+		b.WriteString(string(render.Text(s[:open])))
+		b.WriteString(string(v))
+		s = s[open+end+1:]
+	}
+	b.WriteString(string(render.Text(s)))
+	return render.HTML(b.String())
 }
 
 // TranslateValidation returns a translated validation error message
@@ -851,12 +948,12 @@ func AllKeys() []Key {
 		KeyValidationPattern, KeyValidationUnique,
 		KeyEmptyStateTitle, KeyEmptyStateDesc,
 		KeyDialogConfirm, KeyDialogCancel, KeyDialogClose,
-		KeyDialogSave, KeyDialogDelete,
+		KeyDialogSave, KeyDialogDelete, KeyDialogConfirmTitle,
 		KeyToastSuccess, KeyToastError, KeyToastWarning, KeyToastInfo,
 		KeyBannerDismiss,
 		KeyTableSortAsc, KeyTableSortDesc, KeyTableNoSort,
 		KeyTableFilter, KeyTableNoResults, KeyTableLoading,
-		KeyTableEmptyDesc, KeyTableSortBy,
+		KeyTableEmptyDesc, KeyTableSortBy, KeyTableSelectAll,
 		KeyFilterToolbarLabel, KeyFilterApply, KeyFilterReset,
 		KeyFilterAll, KeyFilterAllPlain, KeyFilterSortBy,
 		KeyFilterClearAll, KeyFilterChipRemove,
@@ -882,7 +979,10 @@ func AllKeys() []Key {
 		KeyAuthEmail, KeyAuthPassword, KeyAuthRememberMe,
 		KeyNotificationDismiss, KeyNotificationEmpty,
 		KeyPollingLive,
-		KeyCopyCopy, KeyCopyCopied, KeyCopyToClipboard,
+		KeyCopyCopy, KeyCopyCopied, KeyCopyToClipboard, KeyCopyLink,
+		KeyDrawerOpenPage, KeyDrawerOpenPanel, KeyDrawerPrev, KeyDrawerNext,
+		KeyAgoNow, KeyAgoMinutes, KeyAgoHours, KeyAgoDays,
+		KeyChangeFrom, KeyChangeTo,
 		KeyProgressLabel, KeyTagRemove,
 		KeyRepeaterAdd, KeyRepeaterRemove, KeyRepeaterRemoveItem,
 		KeyPasswordInputShow, KeyPasswordInputHide,
@@ -893,6 +993,12 @@ func AllKeys() []Key {
 		KeyThemeToggle, KeyThemeLight, KeyThemeDark,
 		KeyThemeAuto, KeyThemeColorScheme,
 		KeyThemePicker, KeyThemeDefault,
+		KeyShortcutSheetTitle, KeyTextAreaInvalidJSON,
+		KeyInlineEditSave, KeyInlineEditSaved,
+		KeySelectionCount, KeySelectionClear,
+		KeySelectionCopy, KeySelectionCopied, KeySelectionCopyFailed,
+		KeyColumnShow, KeyColumnHide,
+		KeyColumnMoveUp, KeyColumnMoveDown,
 		KeyNavPrimary, KeyNavMobilePrimary, KeyNavToggle,
 		KeyDismissTitled, KeyTagRemoveLabelled, KeyActionFailed,
 		KeyColorPick, KeyPasswordRevealShow, KeyPasswordRevealHide,
@@ -913,7 +1019,7 @@ func AllKeys() []Key {
 		KeyHuiJSONEmptyArr, KeyHuiJSONTruncated,
 		KeyHuiComboboxLoading, KeyHuiComboboxNoResults,
 		KeyHuiComboboxResultCount, KeyHuiComboboxResultsLabel,
-		KeyHuiSidebarCollapse, KeyHuiSidebarExpand, KeyHuiBreadcrumbsLabel, KeyHuiSortableItemRole,
+		KeyHuiSidebarCollapse, KeyHuiSidebarExpand, KeyHuiSidebarCollapseText, KeyHuiBreadcrumbsLabel, KeyHuiSortableItemRole,
 		KeyHuiSortableDragLabel, KeyHuiSortableGrabbed, KeyHuiSortablePosition, KeyHuiSortableMoved,
 		KeyHuiSortableSaved, KeyHuiSortableReverted, KeyHuiSortableCancelled, KeyHuiSortableConflictReverted,
 		KeyHuiSortableConflictRefreshed, KeyHuiMultiSelectPlaceholder,

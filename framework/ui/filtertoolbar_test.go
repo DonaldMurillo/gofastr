@@ -277,3 +277,21 @@ func TestFilterToolbarHiddenCarriesRequestState(t *testing.T) {
 		Hidden: []HiddenField{{Name: "q", Value: "stale"}},
 	})
 }
+
+// A search with a Shortcut takes focus on that chord: the facet carries
+// the shortcut hooks, aimed at its input, and a chip shows the key.
+func TestFilterSearchShortcut(t *testing.T) {
+	h := string(FilterToolbar(FilterToolbarConfig{
+		Action: "/orders",
+		Search: &FilterSearch{Name: "q", Shortcut: "/"},
+	}))
+	for _, want := range []string{`data-hui-shortcut-focus="/"`, `data-hui-shortcut-target="#filter-search-q"`, `data-cui-comp="ui-shortcut-hint"`} {
+		if !strings.Contains(h, want) {
+			t.Errorf("search shortcut misses %q:\n%s", want, h)
+		}
+	}
+	plain := string(FilterToolbar(FilterToolbarConfig{Action: "/orders", Search: &FilterSearch{Name: "q"}}))
+	if strings.Contains(plain, "data-hui-shortcut") {
+		t.Errorf("a search with no Shortcut binds one:\n%s", plain)
+	}
+}

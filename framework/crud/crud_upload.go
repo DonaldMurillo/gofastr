@@ -254,6 +254,13 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 			if len(vals) == 0 {
 				continue
 			}
+			// The HTML checkbox idiom: a bool field's hidden "false"
+			// followed by its checked box. Exactly that pair is one
+			// value, the box's, as the runtime folds it on the JSON path.
+			if len(vals) == 2 && vals[0] == "false" && ch.isBoolColumn(key) {
+				body[key] = coerceFormValue(ch.Entity, key, vals[1])
+				continue
+			}
 			if len(vals) == 1 {
 				body[key] = coerceFormValue(ch.Entity, key, vals[0])
 				continue
@@ -299,6 +306,16 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 	return body, rec.saved(), nil
 }
 
+// isBoolColumn reports whether name is a Bool field of the entity.
+func (ch *CrudHandler) isBoolColumn(name string) bool {
+	for _, f := range ch.snapshotFields() {
+		if f.Name == name {
+			return f.Type == schema.Bool
+		}
+	}
+	return false
+}
+
 // saveFilePart opens one multipart file header, runs ProcessFileField, and
 // stores the resulting URL on body[key]. For a schema.Image field with an
 // ImageDeriver configured, renditions and placeholder metadata are derived
@@ -318,6 +335,8 @@ func saveFilePart(ctx context.Context, ch *CrudHandler, store upload.Storage, ke
 	// Only Image fields get the pipeline. A File field is any binary, a
 	// PDF, a CSV, and decoding it as an image would fail every upload.
 	if fieldType == schema.Image {
+		// An image field takes a raster image, sniffed from its bytes.
+		opts = append(opts, file.AllowTypes(file.ImageTypes...))
 		if d := ch.deriverFor(key); d != nil {
 			opts = append(opts, file.WithImageDeriver(d))
 		}
@@ -407,7 +426,11 @@ func coerceFormValue(ent *entity.Entity, name, raw string) any {
 			if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
 				return n
 			}
-		case schema.Float, schema.Decimal:
+		case schema.Decimal:
+			// A decimal is the exact string the JSON path takes; a float
+			// would round it, and the decimal validator refuses one.
+			return raw
+		case schema.Float:
 			// Reject NaN/Inf so a form value like "NaN" cannot land in a
 			// numeric column; the raw string then fails schema validation.
 			if n, err := strconv.ParseFloat(raw, 64); err == nil && !math.IsNaN(n) && !math.IsInf(n, 0) {

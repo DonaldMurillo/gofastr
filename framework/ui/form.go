@@ -83,6 +83,11 @@ type FormConfig struct {
 	// should be a thumb target spanning the card.
 	SubmitFullWidth bool
 
+	// Wide lifts the readable-measure cap (--ui-form-max), so the form
+	// fills its container: for a form whose body is a FormFrame with a
+	// side column, which splits only when the form is wide enough.
+	Wide bool
+
 	// NoValidate turns off the browser's own validation bubbles, for a
 	// form that validates on the server and reports through Errors.
 	NoValidate bool
@@ -114,6 +119,11 @@ type FormConfig struct {
 	// away, Back, a drawer's Escape and a reload all ask first, with
 	// these words. Empty omits the guard. See headless.FormProps.
 	LeaveGuard string
+	// LeaveGuardTitle and LeaveGuardAccept word the kit's dialog the
+	// guard asks in (its title and danger accept button). Empty keeps
+	// the dialog's own.
+	LeaveGuardTitle  string
+	LeaveGuardAccept string
 }
 
 // Form renders a complete <form> with an optional error summary above
@@ -195,22 +205,27 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	if cfg.SubmitFullWidth {
 		rootClass = strings.TrimSpace(rootClass + " fui-form--block-actions")
 	}
+	if cfg.Wide {
+		rootClass = strings.TrimSpace(rootClass + " fui-form--wide")
+	}
 
 	request, plain := splitFormAttrs(cfg.ExtraAttrs)
 	// The refusal headless applies to a rejected Action is this
 	// package's too: today's "#" substitution shipped a form whose
 	// submit went nowhere, which is worse than a panic at render.
 	return formStyle.WrapHTML(headless.Form(headless.FormProps{
-		Action:     cfg.Action,
-		Method:     method,
-		Errors:     errorsHTML,
-		Actions:    actions,
-		NoValidate: cfg.NoValidate,
-		LeaveGuard: cfg.LeaveGuard,
-		Request:    request,
-		ID:         cfg.ID,
-		ExtraAttrs: plain,
-		Parts:      rootClassParts(rootClass),
+		Action:           cfg.Action,
+		Method:           method,
+		Errors:           errorsHTML,
+		Actions:          actions,
+		NoValidate:       cfg.NoValidate,
+		LeaveGuard:       cfg.LeaveGuard,
+		LeaveGuardTitle:  cfg.LeaveGuardTitle,
+		LeaveGuardAccept: cfg.LeaveGuardAccept,
+		Request:          request,
+		ID:               cfg.ID,
+		ExtraAttrs:       plain,
+		Parts:            rootClassParts(rootClass),
 	}, formClasses, body...))
 }
 

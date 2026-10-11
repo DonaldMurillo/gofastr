@@ -21,6 +21,7 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 	labels := b.ui.resolveRowLabels(ctx, s, rows, allCols)
 
 	cards := make([]render.HTML, 0, len(rows))
+	noLinks := b.noLinks || s.deletedView
 	for i, row := range rows {
 		id := cell(rowValue(row, s.m.pk))
 		title := ""
@@ -30,8 +31,8 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 		if title == "" {
 			title = id
 		}
-		header := []render.HTML{ui.Link(ui.LinkConfig{Href: s.recordHref(id), Text: title})}
-		if b.noLinks {
+		header := []render.HTML{ui.Link(ui.LinkConfig{Href: s.recordHref(id), Text: title, Variant: ui.LinkTitle})}
+		if noLinks {
 			header[0] = render.Text(title)
 		}
 		if card.badge != "" {
@@ -62,7 +63,9 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 			}
 		}
 		var footer render.HTML
-		if !b.noLinks {
+		if s.deletedView {
+			footer = b.deletedActions(ctx, s, row)
+		} else if !noLinks && !b.top {
 			footer = b.rowActions(ctx, s, row, i)
 		}
 		cards = append(cards, ui.Card(ui.CardConfig{
@@ -72,7 +75,7 @@ func (b *ListBuilder) cards(ctx context.Context, s *listState, rows []map[string
 		}, html.Span(html.TextConfig{ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, body)))
 	}
 	out := ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapMD}, cards...)
-	if known && pagesFor(total, s.limit) > 1 {
+	if known && pagesFor(total, s.limit) > 1 && !b.top {
 		out = render.Join(out, ui.Pagination(ui.PaginationConfig{
 			Pages:     pagesFor(total, s.limit),
 			Page:      page,
@@ -96,6 +99,15 @@ func cardFieldsOf(s *listState) (out cardFieldSet) {
 	}
 	if out.title == "" {
 		out.title = s.m.titleField()
+	}
+	if s.m.d.Card == nil {
+		// With no Card declared, the first shown enum is the badge.
+		for _, c := range s.columns {
+			if f, ok := s.m.field(c); ok && f.Type == schema.Enum && c != out.title {
+				out.badge = c
+				break
+			}
+		}
 	}
 	if len(out.meta) == 0 {
 		for _, c := range s.columns {

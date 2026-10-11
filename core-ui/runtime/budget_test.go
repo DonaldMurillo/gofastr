@@ -874,7 +874,22 @@ const (
 	// placements and spellings were measured (15532 to 15537); the
 	// header alone, with no kernel property, measures 15527. Bracket
 	// re-verified by TestCoreBudgetRejectsCliffOverflow.
-	coreCongestionWindowGZ = 14*1024 + 1197
+	//
+	// 2026-10-07, the themed confirm (data-cui-confirm opens the kit's
+	// dialog from the confirm demand module instead of window.confirm)
+	// took the real bundle 15533 -> 15534. 15534, the smallest step that
+	// fits. What stays in core is the submit gate itself: the submit
+	// event must be cancelled synchronously, before the module can load,
+	// so no carve exists; the ask, the resubmit and the fallback all
+	// moved to the module. Six spellings were measured (15534 to 15555).
+	//
+	// 2026-10-07, later: a navigation that changes only the query on the
+	// same path (a list's sort, page, filter) keeps the scroll instead of
+	// jumping to the top. It took the real bundle 15534 -> 15563. 15563,
+	// the smallest step that fits. The decision is finishNav's own
+	// scroll write, the tail every plain-page navigation runs, so no
+	// carve exists. Three spellings were measured (15563 to 15567).
+	coreCongestionWindowGZ = 14*1024 + 1227
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1054,7 +1069,34 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 7664 measured after the session-id rewrite took a replacer
 		// function, so a `$&` or `$1` in the header is never read as a
 		// replacement pattern.
-		"envelope": 7664,
+		// 7679 measured after finishNav kept the scroll on a query-only
+		// change of the same path (core's rule; the module carries its
+		// own navigation tail, so it spells the same decision).
+		"envelope": 7679,
+		// widgets 3077 measured (2026-10-07): a widget-scoped form's
+		// data-cui-confirm gate cancels the submit and hands it to the
+		// confirm demand module, the same synchronous gate core runs for
+		// the document; the 5 bytes over the generic goal are that
+		// hand-off. Pinned at the measured size plus 2 clearance.
+		"widgets": 3079,
+		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
+		// link): a data-cui-intercept-page link in the top pane closes
+		// the stack and hands its target to the router over the top
+		// layer's history entry. 3067 before it.
+		// 3119 measured (2026-10-07, the drawer's previous/next record):
+		// a data-cui-intercept-swap link in the top pane renders its
+		// target in that pane through the query-move path. Pinned at the
+		// measured size plus 2 clearance.
+		// 3176 measured (2026-10-07, the leave guard in the kit's
+		// dialog): each guarded close path hands the guard a retry that
+		// makes its move again after Discard. Pinned at the measured
+		// size plus 2 clearance.
+		// 3335 measured (2026-10-10, the record page's Open in panel):
+		// a data-cui-intercept-panel link hands its href to the router
+		// over the page's history entry and mounts the named record
+		// over the page it lands on. Pinned at the measured size plus 2
+		// clearance.
+		"intercept": 3337,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
@@ -1094,7 +1136,17 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// beside rpc: the dispatch is part of the RPC response effects
 		// this module already owns, and a demand module loaded after the
 		// navigate would render into a page that already swapped.
-		"rpc": 3195,
+		// 3210 measured (3208 + 2) after the success navigate asks the
+		// intercept module first (2026-10-07, the stacked create): a save
+		// in a drawer that names the page under it returns there instead
+		// of leaving the stack. The question needs the node that saved,
+		// which only this module holds at the navigate.
+		// 3225 measured (3223 + 2) after the success toast carries the
+		// trigger's data-cui-rpc-success-action through (2026-10-07, the
+		// delete toast's Undo): the 13 bytes are the attribute read; the
+		// parse, the button and the longer stay live in headless-feedback,
+		// which made room by moving the bell into headless-bell.
+		"rpc": 3225,
 	}
 	const coreOverride = 0
 

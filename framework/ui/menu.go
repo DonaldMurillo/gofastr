@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strconv"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -87,9 +89,14 @@ type MenuItem struct {
 	// zero-value output is unchanged.
 	Radio string
 
-	// Checked sets aria-checked on a Radio row. Inert without Radio
-	// (like Confirm without RPC): there is no checked state to render
-	// on a plain menuitem.
+	// Check renders the row as a checkbox option (menuitemcheckbox)
+	// with a check mark while Checked. The state is the server's: pair
+	// it with Href (a link that toggles the option) or RPC. Mutually
+	// exclusive with Radio and Children.
+	Check bool
+
+	// Checked sets aria-checked on a Radio or Check row. Inert on a
+	// plain menuitem: there is no checked state to render.
 	Checked bool
 
 	// Action renders the row as a form submission instead of a link or
@@ -191,11 +198,23 @@ type MenuConfig struct {
 	// avatar buttons and other custom triggers.
 	TriggerHTML render.HTML
 
+	// Icon names a registered icon drawn before Label on the trigger
+	// (a list's Columns menu). It panics beside TriggerHTML,
+	// TriggerElement, IconOnly or Avatar, which draw the trigger
+	// themselves, and on a name that is not registered.
+	Icon string
+
 	// IconOnly draws the trigger as the "more" glyph, a compact square
 	// like an icon button, with Label as its accessible name and no
 	// caret: a table row's actions, where the row already says what
 	// the menu acts on. Ignored with TriggerHTML or TriggerElement.
 	IconOnly bool
+
+	// Avatar draws the trigger as that avatar alone: round, borderless,
+	// 2rem, with a focus ring (the account menu in an app bar). Label
+	// stays the trigger's accessible name, after the avatar's own name.
+	// Mutually exclusive with TriggerHTML, TriggerElement and IconOnly.
+	Avatar *AvatarConfig
 
 	// TriggerElement replaces the framework-rendered summary with a
 	// caller-owned interactive element: inline HTML for a real <button>
@@ -305,12 +324,34 @@ func Menu(cfg MenuConfig) render.HTML {
 		classes[headless.PartPanel] += " " + cfg.PanelClass
 	}
 	trigger := cfg.TriggerHTML
+	if cfg.Icon != "" {
+		if trigger != "" || cfg.TriggerElement != "" || cfg.IconOnly || cfg.Avatar != nil {
+			panic("ui: Menu Icon dresses the Label trigger; drop TriggerHTML, TriggerElement, IconOnly and Avatar")
+		}
+		if !IconRegistered(cfg.Icon) {
+			panic("ui: Menu Icon " + strconv.Quote(cfg.Icon) + " is not a registered icon")
+		}
+		trigger = headless.Own(render.Join(
+			Icon(cfg.Icon, IconConfig{Size: "16"}),
+			html.Span(html.TextConfig{}, render.Text(cfg.Label)),
+		))
+	}
+	if cfg.Avatar != nil {
+		if trigger != "" || cfg.TriggerElement != "" || cfg.IconOnly {
+			panic("ui: Menu Avatar draws the trigger; drop TriggerHTML, TriggerElement and IconOnly")
+		}
+		classes[headless.PartSummary] += " fui-menu__trigger--avatar"
+		trigger = headless.Own(render.Join(
+			Avatar(*cfg.Avatar),
+			html.Span(html.TextConfig{Class: "fui-visually-hidden"}, render.Text(cfg.Label)),
+		))
+	}
 	if cfg.IconOnly && trigger == "" && cfg.TriggerElement == "" {
 		classes[headless.PartSummary] += " fui-menu__trigger--icon"
-		trigger = render.Join(
+		trigger = headless.Own(render.Join(
 			Icon("more", IconConfig{Size: "18", ExtraAttrs: html.Attrs{"aria-hidden": "true"}}),
 			html.Span(html.TextConfig{Class: "fui-visually-hidden"}, render.Text(cfg.Label)),
-		)
+		))
 	}
 	out := headless.Menu(headless.MenuProps{
 		ID:             cfg.ID,
@@ -359,6 +400,7 @@ func headlessMenuItem(it MenuItem) headless.MenuItem {
 		Separator:  it.Separator,
 		ID:         it.ID,
 		Radio:      it.Radio,
+		Check:      it.Check,
 		Checked:    it.Checked,
 		Action:     action,
 		ExtraAttrs: extras,
@@ -405,6 +447,11 @@ func menuCSS(_ style.Theme) string {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
 }
+/* Icon: the glyph before the label, quieter than the text. */
+[data-cui-comp="ui-menu"] > summary.fui-menu__trigger > svg.fui-icon {
+  flex: none;
+  color: var(--color-text-muted, #52525B);
+}
 /* IconOnly: a quiet square the touch target's size, the glyph centred,
    for a row's actions where a bordered button per row would shout. It
    takes the surface only on hover. */
@@ -419,6 +466,22 @@ func menuCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-menu"] > summary.fui-menu__trigger--icon:hover {
   color: var(--color-text, #18181B);
+}
+/* Avatar: the avatar is the whole trigger, round, with the ring as the
+   only chrome. A coarse pointer keeps the touch target around it. */
+[data-cui-comp="ui-menu"] > summary.fui-menu__trigger--avatar {
+  justify-content: center;
+  padding: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: var(--radii-full, 9999px);
+  background: transparent;
+  box-shadow: none;
+  --ui-avatar-size: 2rem;
+}
+[data-cui-comp="ui-menu"] > summary.fui-menu__trigger--avatar:hover { background: transparent; box-shadow: none; translate: none; }
+@media (pointer: coarse) {
+  [data-cui-comp="ui-menu"] > summary.fui-menu__trigger--avatar { min-inline-size: var(--spacing-touch-target, 44px); min-block-size: var(--spacing-touch-target, 44px); }
 }
 /* Knobs: --ui-menu-caret-size (12px) is the trigger caret's square;
    --ui-menu-min-width (12rem) and --ui-menu-max-width (20rem) bound
@@ -436,6 +499,8 @@ func menuCSS(_ style.Theme) string {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 [data-cui-comp="ui-menu"] .fui-menu__panel {
+  /* headless-disclosure shifts a panel that would leave the viewport. */
+  translate: var(--hui-panel-shift, 0);
   position: absolute;
   z-index: var(--z-dropdown, 100);
   min-width: var(--ui-menu-min-width, 12rem);
@@ -543,10 +608,10 @@ details[data-cui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
   opacity: var(--ui-menu-submenu-caret-opacity, 0.7);
 }
 :dir(rtl) [data-cui-comp="ui-menu"] .fui-menu__item--hassub::after { content: "◂"; }
-/* Radio rows: the check indicator is likewise a pseudo-element —
-   space is reserved in both states so labels align whether checked
-   or not. */
-[data-cui-comp="ui-menu"] [role="menuitemradio"]::before {
+/* Radio and checkbox rows: the check indicator is likewise a
+   pseudo-element — space is reserved in both states so labels align
+   whether checked or not. */
+[data-cui-comp="ui-menu"] :is([role="menuitemradio"], [role="menuitemcheckbox"])::before {
   content: "✓";
   display: inline-flex;
   width: 1em;
@@ -554,7 +619,7 @@ details[data-cui-comp="ui-menu"]:not([open]) .fui-menu__panel { display: none; }
   justify-content: center;
   visibility: hidden;
 }
-[data-cui-comp="ui-menu"] [role="menuitemradio"][aria-checked="true"]::before { visibility: visible; }
+[data-cui-comp="ui-menu"] :is([role="menuitemradio"], [role="menuitemcheckbox"])[aria-checked="true"]::before { visibility: visible; }
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-menu"] .fui-menu__panel { animation: none; }
 }`

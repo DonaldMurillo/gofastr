@@ -62,12 +62,14 @@ func (c *CorePlugin) Init(mgr *AuthManager) error {
 	return nil
 }
 
-// RegisterRoutes mounts the core auth routes: login, logout, me, register.
+// RegisterRoutes mounts the core auth routes: login, logout, me,
+// register, and password (a signed-in user's own password change).
 func (c *CorePlugin) RegisterRoutes(r *router.Router, basePath string) {
 	r.Post(basePath+"/login", c.loginHandler())
 	r.Post(basePath+"/logout", c.logoutHandler())
 	r.Get(basePath+"/me", c.meHandler())
 	r.Post(basePath+"/register", c.registerHandler())
+	r.Post(basePath+"/password", c.changePasswordHandler())
 }
 
 // rejectCrossSiteForm refuses a browser cross-site submission to an auth

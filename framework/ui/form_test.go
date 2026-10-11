@@ -560,19 +560,29 @@ func TestTextareaFloorsAtDensityHeight(t *testing.T) {
 }
 
 // LeaveGuard is the record form's hook: non-empty marks the form for
-// headless-leaveguard with these words, empty emits neither attribute
-// (a bare mark with no message is a different caller's shape).
+// headless-leaveguard with these words, and the dialog's title and
+// accept label ride beside them; empty emits none of them (a bare mark
+// with no message is a different caller's shape).
 func TestFormLeaveGuard(t *testing.T) {
-	guarded := string(Form(FormConfig{Action: "/x", LeaveGuard: "You have unsaved changes."}))
-	if !strings.Contains(guarded, `data-hui-leave-guard=""`) {
-		t.Errorf("a guarded form must carry the mark:\n%s", guarded)
+	guarded := string(Form(FormConfig{Action: "/x", LeaveGuard: "You have unsaved changes.",
+		LeaveGuardTitle: "Discard changes?", LeaveGuardAccept: "Discard"}))
+	for _, want := range []string{
+		`data-hui-leave-guard=""`,
+		`data-hui-leave-guard-message="You have unsaved changes."`,
+		`data-hui-leave-guard-title="Discard changes?"`,
+		`data-hui-leave-guard-accept="Discard"`,
+	} {
+		if !strings.Contains(guarded, want) {
+			t.Errorf("a guarded form is missing %s:\n%s", want, guarded)
+		}
 	}
-	if !strings.Contains(guarded, `data-hui-leave-guard-message="You have unsaved changes."`) {
-		t.Errorf("a guarded form must carry its words:\n%s", guarded)
-	}
-	plain := string(Form(FormConfig{Action: "/x"}))
+	plain := string(Form(FormConfig{Action: "/x", LeaveGuardTitle: "Discard changes?", LeaveGuardAccept: "Discard"}))
 	if strings.Contains(plain, "data-hui-leave-guard") {
 		t.Errorf("an unguarded form must carry no guard:\n%s", plain)
+	}
+	bare := string(Form(FormConfig{Action: "/x", LeaveGuard: "You have unsaved changes."}))
+	if strings.Contains(bare, "data-hui-leave-guard-title") || strings.Contains(bare, "data-hui-leave-guard-accept") {
+		t.Errorf("an empty title or accept must be left to the dialog's own:\n%s", bare)
 	}
 }
 

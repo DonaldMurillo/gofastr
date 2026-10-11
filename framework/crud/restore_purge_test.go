@@ -420,3 +420,40 @@ func TestPurgeOneResultInvisible(t *testing.T) {
 		t.Fatal("table not empty after purge")
 	}
 }
+
+// An entity keeping timestamps (the default) gets updated_at set on
+// restore, and that SET must not shift the id's placeholder.
+func TestRestoreOneWithTimestamps(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Skip("sqlite3 driver not available")
+	}
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.Exec(`CREATE TABLE notes (id TEXT PRIMARY KEY, title TEXT, created_at TEXT, updated_at TEXT, deleted_at TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO notes (id, title, deleted_at) VALUES ('n1', 'x', '2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	ent := entity.Define("notes", entity.EntityConfig{
+		Name:   "notes",
+		Table:  "notes",
+		Scope:  &entity.ScopeConfig{SoftDelete: true},
+		Fields: []schema.Field{{Name: "title", Type: schema.String}},
+	})
+	ent.SetDB(db)
+	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
+	if err := ch.RestoreOne(context.Background(), "n1"); err != nil {
+		t.Fatalf("RestoreOne: %v", err)
+	}
+	if !rowDeletedAt(t, db, "notes", "n1") {
+		t.Fatal("deleted_at not cleared")
+	}
+	var updated sql.NullString
+	if err := db.QueryRow(`SELECT updated_at FROM notes WHERE id = 'n1'`).Scan(&updated); err != nil {
+		t.Fatal(err)
+	}
+	if !updated.Valid {
+		t.Fatal("updated_at not set on restore")
+	}
+}

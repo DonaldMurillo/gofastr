@@ -275,7 +275,8 @@
   // listeners (remounted widgets need no rebinding, detached elements
   // can never fire), composing events ignored (an IME confirmation is
   // not a hotkey), and the first CONNECTED match wins so a stale SSR
-  // duplicate cannot steal the chord. data-hui-shortcut-target lets a
+  // duplicate cannot steal the chord, and an element inside an inert
+  // subtree never matches. data-hui-shortcut-target lets a
   // non-focusable wrapper carry the chord while focus lands on (or the
   // click lands in) the element its selector names — the styled search
   // bar wrapping the input is the shape it exists for.
@@ -325,7 +326,9 @@
     if (e.isComposing) return;
     const els = document.querySelectorAll('[data-hui-shortcut-focus],[data-hui-shortcut-click]');
     for (const el of els) {
-      if (!el.isConnected) continue;
+      // An inert subtree takes no input: a drawer under the top layer
+      // keeps its own Save chord, and the top layer's must win.
+      if (!el.isConnected || el.closest('[inert]')) continue;
       const focusCombo = el.getAttribute('data-hui-shortcut-focus');
       if (focusCombo && chordMatches(e, focusCombo)) {
         e.preventDefault();

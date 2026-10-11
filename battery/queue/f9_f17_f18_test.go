@@ -17,7 +17,7 @@ func TestRedisBrowsable_ListJobsAndStats(t *testing.T) {
 	ctx := context.Background()
 
 	// Initially: no dead jobs, ListJobs and Stats should return empty results.
-	jobs, err := q.ListJobs(ctx, "failed", 10)
+	jobs, err := q.ListJobs(ctx, "failed", 10, 0)
 	if err != nil {
 		t.Fatalf("ListJobs empty: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestRedisBrowsable_ListJobsAndStats(t *testing.T) {
 	}
 
 	// ListJobs "failed" must return the dead job.
-	jobs, err = q.ListJobs(ctx, "failed", 10)
+	jobs, err = q.ListJobs(ctx, "failed", 10, 0)
 	if err != nil {
 		t.Fatalf("ListJobs after dead: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestRedisBrowsable_ListJobsLimit(t *testing.T) {
 	}
 
 	// Limit to 3.
-	jobs, err := q.ListJobs(ctx, "failed", 3)
+	jobs, err := q.ListJobs(ctx, "failed", 3, 0)
 	if err != nil {
 		t.Fatalf("ListJobs with limit: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestRedisBrowsable_ListJobsAllStatus(t *testing.T) {
 	_ = q.Nack(ctx, job)
 
 	// Passing empty status should return same as "failed" for Redis (dead list).
-	jobs, err := q.ListJobs(ctx, "", 10)
+	jobs, err := q.ListJobs(ctx, "", 10, 0)
 	if err != nil {
 		t.Fatalf("ListJobs all: %v", err)
 	}

@@ -81,7 +81,7 @@ func TestDBFinalAttemptLeaseExpiryDeadLetters(t *testing.T) {
 	}
 
 	// The dead-letter is observable through the Browsable surface.
-	failed, err := q.ListJobs(ctx, "failed", 10)
+	failed, err := q.ListJobs(ctx, "failed", 10, 0)
 	if err != nil {
 		t.Fatalf("list failed: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestLateAckKeepsDeadLetterRow(t *testing.T) {
 	if err := q.Ack(ctx, job); err != nil {
 		t.Fatalf("late ack: %v", err)
 	}
-	failed, err := q.ListJobs(ctx, "failed", 10)
+	failed, err := q.ListJobs(ctx, "failed", 10, 0)
 	if err != nil {
 		t.Fatalf("list failed: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestLateAckKeepsDeadLetterRow(t *testing.T) {
 	if err := q.Ack(ctx, replayed); err != nil {
 		t.Fatalf("ack after replay: %v", err)
 	}
-	left, err := q.ListJobs(ctx, "", 10)
+	left, err := q.ListJobs(ctx, "", 10, 0)
 	if err != nil {
 		t.Fatalf("list all: %v", err)
 	}

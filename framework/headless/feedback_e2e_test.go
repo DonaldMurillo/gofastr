@@ -160,7 +160,7 @@ func TestE2E_RuntimeToastSaysItsTone(t *testing.T) {
 // clones, and no class literal exists in the module.
 var probeToastClasses = Classes{
 	PartToastItem: "item", PartRoot: "row", PartToastToneWord: "tone", PartIcon: "ico",
-	PartTitle: "ttl", PartBody: "bdy", PartDismiss: "dis",
+	PartTitle: "ttl", PartBody: "bdy", PartDismiss: "dis", PartToastAction: "act",
 	"root--success": "row--success", "root--danger": "row--danger",
 }
 
@@ -194,6 +194,42 @@ func TestE2E_RuntimeToastWearsTheTemplate(t *testing.T) {
 		var stack string
 		_ = chromedp.Run(ctx, chromedp.Evaluate(`(document.querySelector('[data-hui-toast-stack]')||{}).outerHTML || ''`, &stack))
 		t.Fatalf("a runtime toast did not wear the template's classes, glyph and dismiss label; the stack holds:\n%s", stack)
+	}
+}
+
+// A toast's action is a button labelled as asked, wearing the
+// template's class and only the action's data-cui-rpc* wiring (any
+// other attribute it names is dropped). Pressing it closes the row; a
+// toast with no action draws no button.
+func TestE2E_RuntimeToastAction(t *testing.T) {
+	b := startBehaviorServer(t, toastStackWithTemplate())
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, controlsLoadedExpr(FeedbackBehaviorName)) {
+		t.Fatal("the stack marker never loaded headless-feedback")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`window.__gofastr.toast({variant:'success', title:'Plain'});`+
+			`window.__gofastr.toast({variant:'success', title:'Deleted', action:{label:'Undo', attrs:{`+
+			`'data-cui-rpc':'/undo', 'data-cui-rpc-method':'POST', 'onclick':'window.__bad=1', 'data-cui-signal-set':'x', 'class':'evil'}}})`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `(function(){var rows=document.querySelectorAll('[data-hui-toast-stack] [data-hui-toast-id]');`+
+		`if(rows.length!==2) return false;`+
+		`if(rows[0].querySelector('[data-hui-toast-action]')!==null) return false;`+
+		`var a=rows[1].querySelector('[data-hui-toast-action]');`+
+		`return !!a && a.tagName==='BUTTON' && a.type==='button' && a.textContent==='Undo' && a.className==='act' && !a.hidden`+
+		` && a.getAttribute('data-cui-rpc')==='/undo' && a.getAttribute('data-cui-rpc-method')==='POST'`+
+		` && !a.hasAttribute('onclick') && !a.hasAttribute('data-cui-signal-set');})()`) {
+		var stack string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(`(document.querySelector('[data-hui-toast-stack]')||{}).outerHTML || ''`, &stack))
+		t.Fatalf("the action toast did not draw one labelled button with only its rpc wiring; the stack holds:\n%s", stack)
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelector('[data-hui-toast-action]').click()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `document.querySelectorAll('[data-hui-toast-stack] [data-hui-toast-id]').length===1`) {
+		t.Fatal("pressing the action did not close its row")
 	}
 }
 

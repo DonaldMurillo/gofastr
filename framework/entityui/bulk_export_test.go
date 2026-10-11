@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -119,5 +120,33 @@ func TestExportBadFilterRefused(t *testing.T) {
 	rec, _ := getExport(t, x, bulkCtx("u1", nil), "filter=token+%3D+%22tok-secret%22")
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status %d, want 422", rec.Code)
+	}
+}
+
+// _id names the rows to export (a bulk bar's Copy CSV of the checked
+// rows): only those, still through the caller's scope, so a named row
+// another owner holds is not read. A list query beside them is not
+// applied; too many names are refused.
+func TestExportNamedRows(t *testing.T) {
+	x := ownedInvoices(t, Extensions{})
+	_, got := getExport(t, x, bulkCtx("u1", nil), "_id=a2&_id=b1&_id=a2")
+	if len(got) != 2 || got[1][0] != "a2" {
+		t.Fatalf("named export = %v, want the header and a2 only", got)
+	}
+	_, got = getExport(t, x, bulkCtx("u1", nil), "_id=a1&filter=number+%3D+%22A-2%22")
+	if len(got) != 2 || got[1][0] != "a1" {
+		t.Fatalf("a named export applied the list query: %v", got)
+	}
+	names := make([]string, InRequestCap+1)
+	for i := range names {
+		names[i] = "_id=x" + strconv.Itoa(i)
+	}
+	if rec, _ := getExport(t, x, bulkCtx("u1", nil), strings.Join(names, "&")); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("%d names: status %d, want 422", InRequestCap+1, rec.Code)
+	}
+	// A name repeated past the cap is refused too: the cap counts what
+	// was sent.
+	if rec, _ := getExport(t, x, bulkCtx("u1", nil), strings.Repeat("_id=a1&", InRequestCap+1)); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("a repeated name past the cap: status %d, want 422", rec.Code)
 	}
 }

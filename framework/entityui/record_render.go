@@ -161,25 +161,29 @@ func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) 
 	}
 	masked := maskedFields(m, raw, row)
 
-	header := b.header(ctx, m, row, base)
 	if m.ext.Record != nil {
+		header := b.header(ctx, m, row, base, false)
 		body := contain(ctx, m.name, "record", func() (render.HTML, error) {
-			c, err := m.ext.Record(RecordContext{Ctx: ctx, UI: b.ui, Entity: m.name, Record: Record{ID: b.id, Values: row}})
+			cctx := asCaller(ctx)
+			c, err := m.ext.Record(RecordContext{Ctx: cctx, UI: b.ui, Entity: m.name, Record: Record{ID: b.id, Values: row}})
 			if err != nil {
 				return "", err
 			}
 			if c == nil {
 				return "", fmt.Errorf("record body is nil")
 			}
-			return renderComponent(ctx, c), nil
+			return renderComponent(cctx, c), nil
 		})
 		return render.Join(header, body), nil
 	}
-	body, err := b.tabbedBody(ctx, m, row, raw, masked, base)
+	body, active, err := b.tabbedBody(ctx, m, row, raw, masked, base)
 	if err != nil {
 		return "", err
 	}
-	return render.Join(header, body), nil
+	header := b.header(ctx, m, row, base, active == "edit" && canUpdate(ctx, m, b.id))
+	// The override panel rides below the tabs, not inside one: it is an
+	// operator action on the record, not a view of it.
+	return render.Join(header, body, b.overridePanel(ctx, m, row, base)), nil
 }
 
 // notFound is the one answer for a missing id and an id the caller may
@@ -192,11 +196,14 @@ func (m *meta) notFound(ctx context.Context) render.HTML {
 	})
 }
 
-// header draws the record's page header: the title, the singular
-// eyebrow, the state badge, and the action row (moves, copy link,
-// duplicate, delete, back).
-func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any, base string) render.HTML {
-	cfg := ui.PageHeaderConfig{Title: m.recordTitle(ctx, row), Eyebrow: m.singular(ctx)}
+// header draws the record's page header: the title, the state badge,
+// when it was created and last updated, and the action row (moves, app
+// actions, the menu, and Save when the Edit tab drew a form). Drawn as
+// an intercepted drawer it sits under the drawer's bar: close, the
+// record's path, copy link.
+func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any, base string, save bool) render.HTML {
+	title := b.ui.recordTitle(ctx, m, row)
+	cfg := ui.PageHeaderConfig{Title: title, Subtitle: stampLine(ctx, m, row)}
 	if m.states != nil {
 		if v := cell(rowValue(row, m.states.Field)); v != "" {
 			cfg.Badge = ui.StatusBadge(ui.StatusBadgeConfig{
@@ -205,12 +212,80 @@ func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any,
 			})
 		}
 	}
-	cfg.Actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, b.actions(ctx, m, row, base)...)
-	return ui.PageHeader(cfg)
+	actions := append(b.pageTools(ctx, base), b.actions(ctx, m, row, title, base, save)...)
+	if save {
+		actions = append(actions, saveButton(ctx, m, false))
+	}
+	cfg.Actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, actions...)
+	var prev, next string
+	if b.steps && inDrawer(ctx) {
+		prev, next = b.ui.neighbours(ctx, m, base, b.id)
+	}
+	return render.Join(drawerBar(ctx, prev, next), ui.PageHeader(cfg))
 }
 
-func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any, base string) []render.HTML {
+// inDrawer reports whether the record renders as an intercepted drawer.
+func inDrawer(ctx context.Context) bool {
+	as, ok := appui.OverlayFromContext(ctx)
+	return ok && as == appui.ScreenDrawer
+}
+
+// drawerBar is the intercepted drawer's bar: close, the path, the
+// previous and next record when either is given, copy link, open as
+// page. The full page draws none; its breadcrumbs place it.
+func drawerBar(ctx context.Context, prev, next string) render.HTML {
+	if !inDrawer(ctx) {
+		return ""
+	}
+	p := currentURLPath(ctx)
+	return ui.DrawerBar(ui.DrawerBarConfig{Path: p, CopyURL: absoluteURL(ctx), PageURL: p, Prev: prev, Next: next, Ctx: ctx})
+}
+
+// saveButton is the form's submit, drawn in the header: it names the
+// record form by the form attribute, so it submits from outside it,
+// and Mod+S clicks it. It reads as idle until the form has edits.
+func saveButton(ctx context.Context, m *meta, create bool) render.HTML {
+	return ui.Button(ui.ButtonConfig{
+		Label:           submitLabel(ctx, m, create),
+		Type:            "submit",
+		ID:              "eui-" + m.name + "-save",
+		Shortcut:        "Mod+S",
+		QuietUntilDirty: true,
+		ExtraAttrs:      html.Attrs{"form": recordFormID(m)},
+	})
+}
+
+// recordFormID is the record form's id, which the header's Save names.
+func recordFormID(m *meta) string { return "eui-" + m.name + "-form" }
+
+// stampLine is "Created Aug 2, 2026 · Updated Sep 2, 2026" from the
+// entity's timestamp columns, each part only when its column is shown
+// and set.
+func stampLine(ctx context.Context, m *meta, row map[string]any) string {
+	var parts []string
+	for _, s := range []struct {
+		col string
+		key i18nui.Key
+	}{{"created_at", i18nui.KeyEntityCreatedOn}, {"updated_at", i18nui.KeyEntityUpdatedOn}} {
+		f, ok := m.field(s.col)
+		if !ok || f.Hidden {
+			continue
+		}
+		if t, ok := parseTime(rowValue(row, s.col)); ok {
+			parts = append(parts, i18nui.TVars(ctx, s.key, map[string]string{"date": t.Format(dateLayout)}))
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+// actions are the header's moves, app actions and menu. With save the
+// header also draws Save, its one primary action, so a move or action
+// declared primary draws as secondary beside it.
+func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any, title, base string, save bool) []render.HTML {
 	var out []render.HTML
+	// A danger move or action never sits beside Save as a header
+	// button: it goes in the menu, above Delete, behind a confirm.
+	var danger []ui.MenuItem
 	if m.states != nil && canUpdate(ctx, m, b.id) {
 		current := cell(rowValue(row, m.states.Field))
 		for _, t := range m.states.Transitions {
@@ -226,67 +301,55 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 			}
 			label := i18nui.TransitionLabel(ctx, m.tr, m.name, t.Key, t.Label)
 			variant, ok := ui.ParseButtonVariant(t.Variant)
-			if !ok || variant == "" {
+			if !ok || variant == "" || (save && variant == ui.ButtonPrimary) {
 				variant = ui.ButtonSecondary
 			}
-			out = append(out, ui.Button(ui.ButtonConfig{
-				Label:   label,
-				Variant: variant,
-				ExtraAttrs: interactive.Post(m.api + "/" + url.PathEscape(b.id) + "/transitions/" + url.PathEscape(t.Key)).
-					OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityMoved, map[string]string{"entity": m.singular(ctx)})).
-					OnSuccess(interactive.Navigate(currentURL(ctx))).
-					OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityMoveFailed, map[string]string{"action": strings.ToLower(label)})).
-					Attrs(),
-			}))
+			act := interactive.Post(m.api + "/" + url.PathEscape(b.id) + "/transitions/" + url.PathEscape(t.Key)).
+				OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityMoved, map[string]string{"entity": m.singular(ctx)})).
+				OnSuccess(interactive.Navigate(currentURL(ctx))).
+				OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityMoveFailed, map[string]string{"action": strings.ToLower(label)}))
+			if variant == ui.ButtonDanger {
+				act = act.WithConfirmDialog(interactive.Confirm{
+					Title: i18nui.TVars(ctx, i18nui.KeyEntityMoveConfirmTitle, map[string]string{"action": label, "entity": m.noun(ctx, false)}),
+					Message: i18nui.TVars(ctx, i18nui.KeyEntityMoveConfirm, map[string]string{
+						"from": m.valueLabel(ctx, m.states.Field, current),
+						"to":   m.valueLabel(ctx, m.states.Field, t.To),
+					}),
+					// The move's label alone can read as the dismiss
+					// button ("Cancel" beside "Cancel"); naming the
+					// record makes the accept unmistakable.
+					Accept: i18nui.TVars(ctx, i18nui.KeyEntityMoveAccept, map[string]string{"action": label, "entity": m.noun(ctx, false)}),
+					Danger: true,
+				})
+				danger = append(danger, ui.MenuItem{Label: label, Danger: true, Do: &act})
+				continue
+			}
+			out = append(out, ui.Button(ui.ButtonConfig{Label: label, Variant: variant, ExtraAttrs: act.Attrs()}))
 		}
 	}
-	out = append(out, b.appActions(ctx, m)...)
-	if link := b.copyLink(ctx, m, base); link != "" {
-		out = append(out, link)
+	buttons, dangerActs := b.appActions(ctx, m, title, save)
+	out = append(out, buttons...)
+	danger = append(danger, dangerActs...)
+	if menu := b.menu(ctx, m, title, base, danger); menu != "" {
+		out = append(out, menu)
 	}
-	if b.dup && !m.d.NoDuplicate && canCreate(ctx, m) {
-		out = append(out, ui.LinkButton(ui.LinkButtonConfig{
-			Label:   i18nui.T(ctx, i18nui.KeyEntityDuplicate),
-			Href:    base + "/create?duplicate=" + url.QueryEscape(b.id),
-			Variant: ui.ButtonSecondary,
-		}))
-	}
-	if b.delete && canDelete(ctx, m, b.id) {
-		singular := m.singular(ctx)
-		out = append(out, ui.Button(ui.ButtonConfig{
-			Label:   i18nui.T(ctx, i18nui.KeyEntityDelete),
-			Variant: ui.ButtonDanger,
-			ExtraAttrs: interactive.Delete(m.api + "/" + url.PathEscape(b.id)).
-				WithConfirm(i18nui.TVars(ctx, i18nui.KeyEntityDeleteConfirm, map[string]string{"entity": singular})).
-				OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleted, map[string]string{"entity": singular})).
-				OnSuccess(interactive.Navigate(base)).
-				OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleteFailed, map[string]string{"entity": singular})).
-				Attrs(),
-		}))
-	}
-	out = append(out, ui.LinkButton(ui.LinkButtonConfig{
-		Label:   i18nui.T(ctx, i18nui.KeyEntityBack),
-		Href:    base,
-		Variant: ui.ButtonGhost,
-		Icon:    "chevron-left",
-	}))
 	return out
 }
 
 // appActions are the Extension actions the caller may run on this
-// record, each a button posting the record scope to the bulk route: the
-// same route, gates and audit as a bulk run over one record.
-func (b *RecordBuilder) appActions(ctx context.Context, m *meta) []render.HTML {
+// record, each posting the record scope to the bulk route: the same
+// route, gates and audit as a bulk run over one record. A danger action
+// comes back as a menu item behind a confirm, the rest as buttons.
+func (b *RecordBuilder) appActions(ctx context.Context, m *meta, title string, save bool) (out []render.HTML, danger []ui.MenuItem) {
 	if !m.hasAPI {
-		return nil
+		return nil, nil
 	}
-	var out []render.HTML
 	for _, act := range recordActions(m) {
 		if !mayRun(ctx, m, act, b.id) {
 			continue
 		}
 		variant := act.app.Variant
-		if variant == "" {
+		if variant == "" || (save && variant == ui.ButtonPrimary) {
 			variant = ui.ButtonSecondary
 		}
 		body, err := json.Marshal(map[string]string{"action": act.key, "scope": bulkScopeRecord, "ids": b.id})
@@ -294,23 +357,112 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta) []render.HTML {
 			continue
 		}
 		name := strings.ToLower(act.label)
-		out = append(out, ui.Button(ui.ButtonConfig{
-			Label:   act.label,
-			Variant: variant,
-			ExtraAttrs: interactive.Post(m.api + "/_bulk").WithBody(string(body)).
-				OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityActionRan, map[string]string{"action": name})).
-				OnSuccess(interactive.Navigate(currentURL(ctx))).
-				OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityMoveFailed, map[string]string{"action": name})).
-				Attrs(),
-		}))
+		run := interactive.Post(m.api + "/_bulk").WithBody(string(body)).
+			OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityActionRan, map[string]string{"action": name})).
+			OnSuccess(interactive.Navigate(currentURL(ctx))).
+			OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityMoveFailed, map[string]string{"action": name}))
+		if variant == ui.ButtonDanger {
+			run = run.WithConfirmDialog(interactive.Confirm{
+				Title:   i18nui.TVars(ctx, i18nui.KeyEntityActionConfirmTitle, map[string]string{"action": act.label}),
+				Message: i18nui.TVars(ctx, i18nui.KeyEntityActionConfirm, map[string]string{"title": title}),
+				Accept:  act.label,
+				Danger:  true,
+			})
+			danger = append(danger, ui.MenuItem{Label: act.label, Danger: true, Do: &run})
+			continue
+		}
+		out = append(out, ui.Button(ui.ButtonConfig{Label: act.label, Variant: variant, ExtraAttrs: run.Attrs()}))
 	}
-	return out
+	return out, danger
 }
 
-// copyLink renders the record's absolute URL as a hidden span plus the
-// button that copies it. The span carries the kernel's visually-hidden
-// utility class: present for the copy module, absent to the eye.
-func (b *RecordBuilder) copyLink(ctx context.Context, m *meta, base string) render.HTML {
+// menu is the header's icon-only menu named for the record, the list
+// row menu's shape: Copy link, Duplicate where turned on, the danger
+// moves and actions behind their confirms, and Delete as a confirmed
+// RPC that lands on the list. The other moves and app actions stay
+// buttons beside it. Nothing to offer draws nothing.
+func (b *RecordBuilder) menu(ctx context.Context, m *meta, title, base string, danger []ui.MenuItem) render.HTML {
+	// A drawer's bar carries the copy link, and so does a Panel page's
+	// header; otherwise the full page's menu does.
+	var span render.HTML
+	var items []ui.MenuItem
+	if !inDrawer(ctx) && !b.panelPage(ctx) {
+		span, items = b.copyLink(ctx)
+	}
+	if b.dup && canCreate(ctx, m) {
+		if !m.d.NoDuplicate {
+			items = append(items, ui.MenuItem{
+				Label: i18nui.T(ctx, i18nui.KeyEntityDuplicate),
+				Href:  base + "/create?duplicate=" + url.QueryEscape(b.id),
+			})
+		}
+		items = append(items, ui.MenuItem{
+			Label: i18nui.T(ctx, i18nui.KeyEntityCreateAnother),
+			Href:  base + "/create",
+		})
+	}
+	apiSpan, apiItem := b.copyAPIURL(ctx, m)
+	span = render.Join(span, apiSpan)
+	items = append(items, apiItem...)
+	if len(danger) > 0 {
+		if len(items) > 0 {
+			items = append(items, ui.MenuItem{Separator: true})
+		}
+		items = append(items, danger...)
+	}
+	if b.delete && canDelete(ctx, m, b.id) {
+		del := deleteAction(ctx, m, b.id, base, b.undo)
+		// Delete joins the danger group when there is one.
+		if len(items) > 0 && len(danger) == 0 {
+			items = append(items, ui.MenuItem{Separator: true})
+		}
+		items = append(items, ui.MenuItem{Label: i18nui.T(ctx, i18nui.KeyEntityDelete), Danger: true, Do: &del})
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	return render.Join(span, ui.Menu(ui.MenuConfig{
+		Label:    i18nui.TVars(ctx, i18nui.KeyEntityRowActions, map[string]string{"title": title}),
+		IconOnly: true,
+		Items:    items,
+		Position: ui.MenuBottomEnd,
+	}))
+}
+
+// copyLink is the record's absolute URL as a hidden span and the menu
+// row that copies it. The span carries the kernel's visually-hidden
+// utility class: present for the copy module, absent to the eye. No
+// request on the context draws neither.
+func (b *RecordBuilder) copyLink(ctx context.Context) (render.HTML, []ui.MenuItem) {
+	abs := absoluteURL(ctx)
+	if abs == "" {
+		return "", nil
+	}
+	id := "eui-rec-link"
+	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(abs)),
+		[]ui.MenuItem{{Label: i18nui.T(ctx, i18nui.KeyEntityCopyLink), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}}}
+}
+
+// copyAPIURL is the record's REST address on this origin as a hidden
+// span and the menu row that copies it: only for an entity whose REST
+// routes mounted, and only with a request on the context.
+func (b *RecordBuilder) copyAPIURL(ctx context.Context, m *meta) (render.HTML, []ui.MenuItem) {
+	base, ok := b.ui.restBase(m.e)
+	if !ok {
+		return "", nil
+	}
+	origin := requestOrigin(ctx)
+	if origin == "" {
+		return "", nil
+	}
+	id := "eui-rec-api"
+	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(origin+base+"/"+url.PathEscape(b.id))),
+		[]ui.MenuItem{{Label: i18nui.T(ctx, i18nui.KeyEntityCopyAPIURL), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}}}
+}
+
+// absoluteURL is the request's absolute address without its query:
+// the record's shareable link. No request on the context is "".
+func absoluteURL(ctx context.Context) string {
 	r := appui.RequestFromContext(ctx)
 	if r == nil {
 		return ""
@@ -326,30 +478,37 @@ func (b *RecordBuilder) copyLink(ctx context.Context, m *meta, base string) rend
 	if p := r.Header.Get("X-Forwarded-Proto"); p == "http" || p == "https" {
 		scheme = p
 	}
-	abs := scheme + "://" + r.Host + r.URL.Path
-	id := "eui-rec-link"
-	return render.Join(
-		html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(abs)),
-		ui.CopyButton(ui.CopyButtonConfig{Target: id, Label: i18nui.T(ctx, i18nui.KeyEntityCopyLink), Ctx: ctx}),
-	)
+	return scheme + "://" + r.Host + r.URL.Path
+}
+
+// requestOrigin is the request's scheme and host, absoluteURL's prefix.
+func requestOrigin(ctx context.Context) string {
+	r := appui.RequestFromContext(ctx)
+	if r == nil {
+		return ""
+	}
+	return strings.TrimSuffix(absoluteURL(ctx), r.URL.Path)
 }
 
 // tab is one entry of the record's tab strip.
 type tab struct {
 	key   string
 	label string
+	// count is the strip's badge on this tab; empty draws none.
+	count string
 	build func() (render.HTML, error)
 }
 
 // tabbedBody draws the tab strip (query-param navigation) and the
-// active tab's body. Only the active tab's body is built.
-func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[string]any, masked map[string]bool, base string) (render.HTML, error) {
+// active tab's body, and names the active tab. Only the active tab's
+// body is built.
+func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[string]any, masked map[string]bool, base string) (render.HTML, string, error) {
 	editTab := tab{key: "edit", label: i18nui.T(ctx, i18nui.KeyEntityTabEdit), build: func() (render.HTML, error) {
 		return b.editTab(ctx, m, raw, row, masked, base), nil
 	}}
 	tabs := []tab{editTab}
 	if len(b.related) > 0 {
-		tabs = append(tabs, tab{key: "related", label: i18nui.T(ctx, i18nui.KeyEntityTabRelated), build: func() (render.HTML, error) {
+		tabs = append(tabs, tab{key: "related", label: i18nui.T(ctx, i18nui.KeyEntityTabRelated), count: b.relatedCount(ctx, m), build: func() (render.HTML, error) {
 			return b.relatedTab(ctx, m, base), nil
 		}})
 	}
@@ -364,20 +523,26 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 		}
 		tabs = append(tabs, tab{key: key, label: label, build: func() (render.HTML, error) {
 			return contain(ctx, m.name, "tab "+key, func() (render.HTML, error) {
-				c, err := build(TabContext{Ctx: ctx, UI: b.ui, Entity: m.name, Record: rec})
+				cctx := asCaller(ctx)
+				c, err := build(TabContext{Ctx: cctx, UI: b.ui, Entity: m.name, Record: rec})
 				if err != nil {
 					return "", err
 				}
 				if c == nil {
 					return "", fmt.Errorf("tab body is nil")
 				}
-				return renderComponent(ctx, c), nil
+				return renderComponent(cctx, c), nil
 			}), nil
 		}})
 	}
 	if b.activity && b.ui.host.Audit() != nil {
-		tabs = append(tabs, tab{key: "activity", label: i18nui.T(ctx, i18nui.KeyEntityTabActivity), build: func() (render.HTML, error) {
+		tabs = append(tabs, tab{key: "activity", label: i18nui.T(ctx, i18nui.KeyEntityTabActivity), count: b.activityCount(ctx, m), build: func() (render.HTML, error) {
 			return b.activityTab(ctx, m), nil
+		}})
+	}
+	if b.apiTab {
+		tabs = append(tabs, tab{key: "api", label: i18nui.T(ctx, i18nui.KeyEntityTabApi), build: func() (render.HTML, error) {
+			return b.apiTabBody(ctx, m, row), nil
 		}})
 	}
 
@@ -401,11 +566,12 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 			Text:    t.label,
 			Href:    currentURLPath(ctx) + "?tab=" + url.QueryEscape(t.key),
 			Current: i == active,
+			Badge:   t.count,
 		}
 	}
 	body, err := tabs[active].build()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	return ui.Stack(ui.StackConfig{},
 		ui.TabNav(ui.TabNavConfig{
@@ -414,7 +580,7 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 			Items: items,
 		}),
 		body,
-	), nil
+	), tabs[active].key, nil
 }
 
 // currentURLPath is the request path with its query stripped: the page
@@ -427,8 +593,9 @@ func currentURLPath(ctx context.Context) string {
 	return r.URL.Path
 }
 
-// renderComponent draws an extension component with the request
-// context when it takes one, and through Render when it does not.
+// renderComponent draws an extension component with ctx when it takes
+// one, and through Render when it does not. ctx is the caller's, with
+// any elevation removed.
 func renderComponent(ctx context.Context, c component.Component) render.HTML {
 	if cc, ok := c.(component.ContextComponent); ok {
 		return cc.RenderCtx(ctx)
@@ -495,4 +662,43 @@ func checkForm(m *meta, f *entity.EntityForm) error {
 		return err
 	}
 	return walk(f.Side, 0)
+}
+
+// deleteAction is a row's or a record's Delete: the confirm, a toast
+// naming what went, and back to back (the list). A refusal (a row other
+// records still reference) toasts the server's message instead of
+// ending in silence. Under undo, on a soft-deleting entity whose record
+// the caller may update, the toast carries Undo: it restores the record
+// and returns to back, and the restore handler's answer is its toast.
+func deleteAction(ctx context.Context, m *meta, id, back string, undo bool) interactive.Action {
+	vars := map[string]string{"entity": m.singular(ctx)}
+	del := interactive.Delete(m.api + "/" + url.PathEscape(id)).
+		WithConfirmDialog(deleteConfirm(ctx, m)).
+		OnSuccessToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleted, vars)).
+		OnSuccess(interactive.Navigate(back)).
+		OnErrorToast(i18nui.TVars(ctx, i18nui.KeyEntityDeleteFailed, vars))
+	if undo && m.e.Config.Scope.SoftDelete && canUpdate(ctx, m, id) {
+		del = del.OnSuccessToastAction(i18nui.T(ctx, i18nui.KeyEntityUndo),
+			interactive.Post(m.api+"/"+url.PathEscape(id)+"/_restore").WithBody(`{}`).
+				OnSuccess(interactive.Navigate(back)).
+				OnErrorToast(i18nui.T(ctx, i18nui.KeyEntityRestoreFailed)))
+	}
+	return del
+}
+
+// deleteConfirm is the dialog a Delete opens: it names the entity, says
+// whether the delete is final (a soft-deleting entity's record can be
+// restored) and answers in the danger variant.
+func deleteConfirm(ctx context.Context, m *meta) interactive.Confirm {
+	vars := map[string]string{"entity": m.noun(ctx, false)}
+	msg := i18nui.KeyEntityDeleteConfirm
+	if m.e.Config.Scope.SoftDelete {
+		msg = i18nui.KeyEntityDeleteSoft
+	}
+	return interactive.Confirm{
+		Title:   i18nui.TVars(ctx, i18nui.KeyEntityDeleteTitle, vars),
+		Message: i18nui.T(ctx, msg),
+		Accept:  i18nui.T(ctx, i18nui.KeyEntityDelete),
+		Danger:  true,
+	}
 }

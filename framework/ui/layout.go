@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -142,6 +143,11 @@ type ClusterConfig struct {
 	// NoWrap opts out of the default responsive wrapping behavior. Use it only
 	// for compact chrome that is guaranteed to fit, such as two icon controls.
 	NoWrap bool
+	// Shrink lets the row narrow below its content, and its last child
+	// take the squeeze while the earlier children keep their size: the
+	// lead side of a toolbar whose last child truncates (a menu button,
+	// then a breadcrumb trail that ellipsizes). Pair it with NoWrap.
+	Shrink bool
 	ID     string
 	Class  string
 
@@ -163,8 +169,16 @@ func Cluster(cfg ClusterConfig, children ...render.HTML) render.HTML {
 		NoWrap:     cfg.NoWrap,
 		ID:         cfg.ID,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id"),
-		Parts:      rootClassParts(cfg.Class),
+		Parts:      rootClassParts(clusterClass(cfg)),
 	}, clusterClasses, children...))
+}
+
+// clusterClass is the caller's class plus the Shrink modifier.
+func clusterClass(cfg ClusterConfig) string {
+	if !cfg.Shrink {
+		return cfg.Class
+	}
+	return strings.TrimSpace("fui-cluster--shrink " + cfg.Class)
 }
 
 // ─── Grid: responsive CSS grid ─────────────────────────────────────
@@ -174,8 +188,12 @@ type GridConfig struct {
 	// Min is the minimum column width (e.g. "20rem"). The grid uses
 	// `repeat(auto-fit, minmax(<Min>, 1fr))` so columns wrap at the
 	// breakpoint implied by the minimum. Defaults to "16rem".
-	Min   string
-	Gap   Gap
+	Min string
+	Gap Gap
+	// Fill keeps the row's empty columns (auto-fill rather than
+	// auto-fit), so a short last row, or a grid of one card, keeps a
+	// full row's column width instead of stretching across it.
+	Fill  bool
 	ID    string
 	Class string
 
@@ -204,10 +222,14 @@ func Grid(cfg GridConfig, children ...render.HTML) render.HTML {
 		attrs = html.Attrs{}
 	}
 	attrs["data-min"] = min
-	if cfg.Class != "" {
+	class := cfg.Class
+	if cfg.Fill {
+		class = strings.TrimSpace("fui-grid--fill " + class)
+	}
+	if class != "" {
 		// The class rides in the same root attrs as the hook: a part
 		// map set beside them would be replaced, not merged.
-		attrs["class"] = cfg.Class
+		attrs["class"] = class
 	}
 	return layoutStyle.WrapHTML(headless.Grid(headless.GridProps{
 		Gap:   string(cfg.Gap),

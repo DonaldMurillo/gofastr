@@ -178,9 +178,12 @@ the user left blank arrives as `""`. Create and update treat that as
 optional field takes its declared `Default` on create and leaves the
 column alone on update, and a blank required field fails with
 `is required` rather than `must be an integer`. Empty text stays an
-empty string, since that is a value a user can mean. The entityui forms
-(`framework/entityui`) rely on this; a JSON
-client gets the same treatment.
+empty string, since that is a value a user can mean. A filled number
+input arrives as text too: an `Int` field takes `"42"` and a `Float`
+field takes `"42.5"` as the number each spells, and a `Float` refuses
+hex, underscore separators, `NaN` and `Inf`. `Decimal` stays a string. The
+entityui forms (`framework/entityui`) rely on this; a JSON client gets
+the same treatment.
 
 ## `Entity` vs `TryEntity`
 
@@ -1305,11 +1308,11 @@ is not part of the SDK schema hash, so relabelling never reports as drift.
 app.Entity("invoices", framework.EntityConfig{
     Fields: []schema.Field{ /* … */ },
     Display: &framework.DisplayConfig{
-        Singular:   "Invoice",
-        Plural:     "Invoices",
-        TitleField: "number",               // names a record in lists, drawers, breadcrumbs
-        Columns:    []string{"number", "amount", "status"},
-        Nav:        &framework.EntityNav{Group: "billing", Icon: "receipt", Order: 1},
+        Singular:    "Invoice",
+        Plural:      "Invoices",
+        TitleFields: []string{"number"},    // names a record in lists, drawers, breadcrumbs
+        Columns:     []string{"number", "amount", "status"},
+        Nav:         &framework.EntityNav{Group: "billing", Icon: "receipt", Order: 1}, // HideCount drops the row's record count
         Views: []framework.ListView{
             {Key: "open", Where: `status = "open"`, Sort: "due_on ASC"},
         },
@@ -1336,7 +1339,7 @@ every key lives under it, and an unknown key is a decode error.
   ],
   "display": {
     "singular": "Invoice",
-    "title_field": "number",
+    "title_fields": ["number"],
     "columns": ["number", "status"],
     "nav": {"group": "billing", "icon": "receipt", "order": 1},
     "views": [{"key": "open", "where": "status = \"open\"", "sort": "due_on ASC"}],
@@ -1364,7 +1367,7 @@ every key lives under it, and an unknown key is a decode error.
 | `Singular`, `Plural` | Names for nav, headings and buttons. The key under them (`entity.<entity>.singular`) translates; the value is the English fallback, and without Display the entity name is — singularized for `Singular` (so `invoices` labels one record "Invoice"), title-cased for `Plural` |
 | --- | --- |
 | `Description` | One line under the list heading |
-| `TitleField` | The field that names a record in lists, drawers, pickers and breadcrumbs; may not be `Hidden`. Unset, a `name` or `title` field names it, else the first `String` column that is not omitted or `NoQuery`, else the singular |
+| `TitleFields` | The fields that name a record in lists, drawers, pickers and breadcrumbs, their values joined with " · "; none may be `Hidden`. A `Relation` field contributes the related record's own title, read through that entity's gate: a subscription titled by `customer_id` and `plan_id` reads "Ada Lovelace · Pro". A relation is followed one hop, and a part the caller may not read or that is `NoQuery` is left out. The first carries the list's record link. Unset, a `name` or `title` field names it, else the first `String` column that is not omitted or `NoQuery`, else the singular |
 | `Columns` | The columns a list opens with, before the viewer picks their own |
 | `Views` | Named starting points for the list, shown as tabs. `Key`, optional `Label`, a DSL `Where`, a `Sort`, an optional `As` (`"table"`, the default, or `"cards"`; anything else is refused), and `Default` (at most one view may set it) |
 | `Facets` | Enum, Bool or Relation fields offered as one-click filters |
@@ -1389,11 +1392,11 @@ when any name Display holds is wrong, so a typo or a stale name after a
 rename fails the app at boot instead of rendering a blank column per
 request:
 
-- **Fields.** Every name in `Columns`, `TitleField`, `Facets`, `Card`,
+- **Fields.** Every name in `Columns`, `TitleFields`, `Facets`, `Card`,
   `Form` (items, rows, nested sections) and the keys of `Fields` must
   exist and not be `Hidden`.
-- **Duplicates.** `Columns`, `Facets` and `PageSizes` are menus; a
-  repeated entry is refused, naming the duplicate.
+- **Duplicates.** `TitleFields`, `Columns`, `Facets` and `PageSizes`
+  refuse a repeated entry, naming the duplicate.
 - **Facet types.** A facet must be an Enum, Bool or Relation field, and
   not `NoQuery`.
 - **Keys.** View keys, form section keys and the nav group are lowercase
@@ -1610,7 +1613,20 @@ A write the database refuses on a constraint answers `409 Conflict`, not
 (a create or update that points at a missing row, or a delete of a row that
 other rows still reference) on SQLite, Postgres and MySQL. The body names
 neither the constraint nor the table; the driver's message goes to the
-server log only.
+server log only. When the refused constraint is one the entity declares
+(a `unique` field, a unique column index, a relation's foreign key) the
+body carries the fields the caller sent in the validation shape, so a
+form shows the refusal on the control:
+`{"error":"conflict","success":false,"code":409,"fields":{"number":["is already in use"]}}`.
+A relation's message is "refers to a record that does not exist". A
+column the caller did not send (the owner column of a per-account
+index) is not named, and a conflict on a `hidden` or `no_query` field
+the caller sent stays bare, so a probe cannot learn which value exists. SQLite's foreign-key refusal names no column, so on
+SQLite it stays bare too. A NOT NULL refusal on a declared field (a
+column the database holds `NOT NULL` that the entity does not mark
+`required`) answers `400` in the same shape with "is required" on it,
+instead of a `500`; on a `hidden` column the server fills, it stays a
+`500`, since the caller cannot fix it.
 A path no route ever owned — `/api/anything/else`, including on apps with
 no DB and therefore no CRUD routes — answers `404` with an RFC 9457
 `application/problem+json` document (`type`/`title`/`status`/`detail`)

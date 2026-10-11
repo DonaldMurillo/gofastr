@@ -166,6 +166,14 @@ func buttonCSS(t style.Theme) string {
   box-shadow: var(--fui-button-state-shadow, var(--ui-button-shadow, var(--shadow-xs)));
 }
 .fui-button--secondary:hover { background: var(--color-surface-soft); }
+/* QuietUntilDirty: the leave guard sets data-hui-dirty on the form
+   and on a control naming it by form=; until then the button reads
+   as idle, in body text so its label and chips keep their contrast. */
+.fui-button--until-dirty:not([data-hui-dirty]) {
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
 .fui-button--ghost {
   background: transparent;
   color: var(--color-text);
@@ -193,6 +201,15 @@ func buttonCSS(t style.Theme) string {
   min-height: var(--ui-button-large-min-height, 48px);
   padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-xl, 24px);
   font-size: var(--text-base);
+}
+/* IconOnly: a square the control's height, the glyph centred. */
+.fui-button--icon {
+  min-inline-size: var(--fui-density-control-h);
+  padding-inline: 0;
+}
+.fui-button--small:where(.fui-button--icon) {
+  min-inline-size: 0;
+  padding: calc(var(--spacing-sm, 4px) * 1.5);
 }
 ` +
 		// Registered custom variants and sizes, as plain class rules.
@@ -434,6 +451,15 @@ func sectionCSS(_ style.Theme) string {
   letter-spacing: var(--ui-section-heading-tracking, -0.025em);
   line-height: var(--leading-tight, 1.2);
 }
+/* Overline: the heading is a group label over a run of cards.
+   Knobs: --ui-section-overline-size/-weight/-tracking/-color. */
+[data-cui-comp="ui-section"].fui-section--overline .fui-section__heading {
+  font-size: var(--ui-section-overline-size, var(--text-xs, 0.75rem));
+  font-weight: var(--ui-section-overline-weight, 600);
+  letter-spacing: var(--ui-section-overline-tracking, 0.06em);
+  text-transform: uppercase;
+  color: var(--ui-section-overline-color, var(--color-text-muted));
+}
 [data-cui-comp="ui-section"] .fui-section__description {
   margin: 0;
   color: var(--color-text-muted, #52525B);
@@ -496,6 +522,19 @@ func formFieldCSS(_ style.Theme) string {
   /* A long label wraps rather than widening its track. */
   overflow-wrap: break-word;
 }
+/* A label hidden from view stays the control's accessible name. */
+.fui-field--label-hidden > .fui-field__label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.fui-field--label-hidden { grid-template-columns: minmax(0, 1fr); }
 /* The required mark is drawn from the state attribute: an asterisk
    whose alternative text is empty, so the label's accessible name
    stays clean (the parser is told the rule by the control's own
@@ -518,6 +557,11 @@ func formFieldCSS(_ style.Theme) string {
    a live error unstyled. */
 .fui-field__error,
 .fui-field > [data-hui-field-error] { color: var(--color-danger, #DC2626); }
+/* A server's message is a fragment written to follow the field's name
+   ("is required"); under the label it starts the line, so its first
+   letter is capitalized, by the page's own lang. */
+.fui-field__error::first-letter,
+.fui-field > [data-hui-field-error]::first-letter { text-transform: uppercase; }
 /* A reserved error node (headless.FieldProps.ReserveError) ships empty
    so a script can fill it without re-rendering. Empty, it must not
    take a grid row: the row gap under every reserved field would be
@@ -612,7 +656,8 @@ func formSectionCSS(_ style.Theme) string {
 func statusBadgeCSS(t style.Theme) string {
 	// Knobs: --ui-badge-line-height (1rem) pins the pill's line box so
 	// xs padding keeps it a pill at any body leading; --ui-badge-case
-	// (none) sets its letter case.
+	// (none) sets its letter case; --ui-badge-dot-size (0.375rem) sizes
+	// a Dot badge's circle.
 	return `[data-cui-comp="ui-badge"] {
   display: inline-flex;
   /* A chip keeps its own width in a flex column too (a Card header,
@@ -630,6 +675,19 @@ func statusBadgeCSS(t style.Theme) string {
      the reading. Narrow columns must give the badge room, not fold
      it (a detail-list value column, a table cell). */
   white-space: nowrap;
+}
+/* Dot: a filled circle in the label's tone before the word, the
+   status-column shape. --ui-badge-dot-size (0.375rem) sizes it. */
+[data-cui-comp="ui-badge"].fui-badge--dot {
+  gap: var(--spacing-sm, 4px);
+}
+[data-cui-comp="ui-badge"].fui-badge--dot::before {
+  content: "";
+  flex: none;
+  inline-size: var(--ui-badge-dot-size, 0.375rem);
+  block-size: var(--ui-badge-dot-size, 0.375rem);
+  border-radius: 50%;
+  background: currentColor;
 }
 [data-cui-comp="ui-badge"].fui-badge--success {
   background: color-mix(in oklab, var(--color-success, #16A34A) 15%, var(--color-surface, #fff) 85%);
@@ -687,7 +745,17 @@ func emptyStateCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
   max-inline-size: 36ch;
 }
-[data-cui-comp="ui-empty-state"] .fui-empty-state__action { margin-top: var(--spacing-md, 8px); }`
+[data-cui-comp="ui-empty-state"] .fui-empty-state__action { margin-top: var(--spacing-md, 8px); }
+/* Compact: one muted line in a small panel. */
+[data-cui-comp="ui-empty-state"].fui-empty-state--compact {
+  padding: var(--spacing-lg, 16px);
+  border-radius: var(--radii-lg);
+}
+.fui-empty-state--compact .fui-empty-state__title {
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-muted, #52525B);
+}`
 }
 
 func calloutCSS(t style.Theme) string {
@@ -774,7 +842,12 @@ func calloutCSS(t style.Theme) string {
 func statCardCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-stat-card"] {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
+  /* A card wrapped in a grid cell (a polled region) fills the cell, so
+     a row's cards share one height. */
+  block-size: 100%;
+  box-sizing: border-box;
   gap: var(--spacing-sm, 4px);
   padding: var(--spacing-xl, 24px);
   background: var(--color-surface);
@@ -782,11 +855,74 @@ func statCardCSS(_ style.Theme) string {
   border-radius: var(--radii-xl);
   box-shadow: var(--shadow-xs);
 }
+[data-cui-comp="ui-stat-card"].fui-stat-card--plain {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+/* Two figures to a phone's row leave each half the width: a plain
+   figure steps its value down and its padding in so "$1,194.00" fits. */
+@media (max-width: 45rem) {
+  [data-cui-comp="ui-stat-card"].fui-stat-card--plain { padding: var(--spacing-lg, 16px); }
+  [data-cui-comp="ui-stat-card"].fui-stat-card--plain .fui-stat-card__value { font-size: var(--text-2xl); }
+}
 [data-cui-comp="ui-stat-card"] .fui-stat-card__label {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-muted);
+}
+[data-cui-comp="ui-stat-card"] .fui-stat-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm, 4px) var(--spacing-md, 8px);
+}
+/* The label takes the line; an action that no longer fits beside a
+   long (or translated) label drops under it instead of leaving the
+   card. */
+[data-cui-comp="ui-stat-card"] .fui-stat-card__head > .fui-stat-card__label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+/* Tile: the icon in a tinted square and the action share the first
+   line, the label sits under them. */
+[data-cui-comp="ui-stat-card"].fui-stat-card--tile .fui-stat-card__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "icon . action" "label label label";
+  row-gap: var(--spacing-md, 8px);
+}
+[data-cui-comp="ui-stat-card"].fui-stat-card--tile .fui-stat-card__icon {
+  grid-area: icon;
+  justify-content: center;
+  align-items: center;
+  inline-size: var(--ui-stat-card-tile-size, 2rem);
+  block-size: var(--ui-stat-card-tile-size, 2rem);
+  border-radius: var(--radii-md, 8px);
+  background: var(--color-surface-soft);
+  border: var(--stroke-thin, 1px) solid var(--color-border);
+}
+[data-cui-comp="ui-stat-card"].fui-stat-card--tile .fui-stat-card__head > .fui-stat-card__label {
+  grid-area: label;
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+[data-cui-comp="ui-stat-card"].fui-stat-card--tile .fui-stat-card__head > :not(.fui-stat-card__icon):not(.fui-stat-card__label) {
+  grid-area: action;
+}
+[data-cui-comp="ui-stat-card"] .fui-stat-card__icon {
+  display: inline-flex;
+  color: var(--color-text-muted);
+}
+[data-cui-comp="ui-stat-card"] .fui-stat-card__link {
+  color: inherit;
+  text-decoration: none;
+}
+[data-cui-comp="ui-stat-card"] .fui-stat-card__link:hover {
+  color: var(--color-text);
+  text-decoration: underline;
 }
 [data-cui-comp="ui-stat-card"] .fui-stat-card__value {
   margin: 0;
@@ -814,15 +950,16 @@ func avatarCSS(_ style.Theme) string {
 	//
 	// Knobs: --ui-avatar-size (2.5rem) and its -sm (1.5rem), -lg (3rem),
 	// -xl (4rem) variants square the circle; --ui-avatar-status-min-size
-	// (6px) / --ui-avatar-status-max-size (12px) clamp the presence dot.
+	// (6px) / --ui-avatar-status-max-size (12px) clamp the presence dot;
+	// --ui-avatar-bg / --ui-avatar-fg recolor the initials disc.
 	return `[data-cui-comp="ui-avatar"] {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--radii-full, 9999px);
-  background: var(--color-surface-soft, #F4F4F5);
-  color: var(--color-text-muted, #52525B);
+  background: var(--ui-avatar-bg, var(--color-surface-soft, #F4F4F5));
+  color: var(--ui-avatar-fg, var(--color-text-muted, #52525B));
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-xs, 0.75rem);
   flex-shrink: 0;
@@ -831,6 +968,8 @@ func avatarCSS(_ style.Theme) string {
 }
 :where([data-cui-comp="ui-avatar"]).fui-avatar--sm { inline-size: var(--ui-avatar-size-sm, 1.5rem); block-size: var(--ui-avatar-size-sm, 1.5rem); font-size: var(--text-xs, 0.75rem); }
 :where([data-cui-comp="ui-avatar"]).fui-avatar--lg { inline-size: var(--ui-avatar-size-lg, 3rem);   block-size: var(--ui-avatar-size-lg, 3rem);   font-size: var(--text-base, 1rem); }
+:where([data-cui-comp="ui-avatar"]).fui-avatar--square,
+[data-cui-comp="ui-avatar"].fui-avatar--square .fui-avatar__img { border-radius: var(--radii-md, 8px); }
 :where([data-cui-comp="ui-avatar"]).fui-avatar--xl { inline-size: var(--ui-avatar-size-xl, 4rem);   block-size: var(--ui-avatar-size-xl, 4rem);   font-size: var(--text-lg, 1.125rem); }
 [data-cui-comp="ui-avatar"] .fui-avatar__img {
   width: 100%;
@@ -867,6 +1006,7 @@ func formCSS(_ style.Theme) string {
 	// Knob: --ui-form-max caps the form at a readable measure (a 60rem
 	// pane does not stretch every input across it); set none to fill.
 	return `.fui-form { display: grid; gap: var(--spacing-xl, 24px); grid-template-columns: 1fr; max-inline-size: var(--ui-form-max, 42rem); }
+.fui-form--wide { max-inline-size: none; }
 /* Fields sit a step further apart than a field's own label and control,
    so each label reads as belonging to the control under it. */
 .fui-form__body { display: grid; gap: var(--spacing-lg, 16px); grid-template-columns: 1fr; }
@@ -888,6 +1028,7 @@ func formCSS(_ style.Theme) string {
 func notificationCSS(t style.Theme) string {
 	// Knobs: --ui-notification-max-width (28rem) caps the card,
 	// --ui-notification-icon-size (1.25rem) squares the tone icon,
+	// --ui-notification-dismiss-size (1.75rem) the drawn dismiss button,
 	// --ui-notification-tone carries the variant accent; the floating
 	// corners sit --spacing-lg from the viewport edge.
 	return `[data-cui-comp="ui-notification"] .fui-visually-hidden {
@@ -933,6 +1074,37 @@ func notificationCSS(t style.Theme) string {
 [data-cui-comp="ui-notification"] > .fui-notification__title { grid-column: 2; grid-row: 1; }
 [data-cui-comp="ui-notification"] > .fui-notification__body { grid-column: 2; grid-row: 2; }
 [data-cui-comp="ui-notification"] > .fui-notification__dismiss { grid-column: 3; grid-row: 1 / span 2; }
+/* A runtime toast's action (Undo) takes a column of its own before the
+   dismiss; a toast without one keeps three. */
+[data-cui-comp="ui-notification"]:has(> .fui-notification__action:not([hidden])) { grid-template-columns: auto 1fr auto auto; }
+[data-cui-comp="ui-notification"] > .fui-notification__action { grid-column: 3; grid-row: 1 / span 2; }
+[data-cui-comp="ui-notification"]:has(> .fui-notification__action:not([hidden])) > .fui-notification__dismiss { grid-column: 4; }
+[data-cui-comp="ui-notification"] .fui-notification__action {
+  position: relative;
+  align-self: center;
+  padding: var(--spacing-xs, 2px) var(--spacing-md, 8px);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-md, 8px);
+  background: var(--color-surface, #FFFFFF);
+  font: inherit;
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-text, #18181B);
+  cursor: pointer;
+}
+[data-cui-comp="ui-notification"] .fui-notification__action::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: max(100%, var(--spacing-touch-target, 44px));
+  block-size: var(--spacing-touch-target, 44px);
+  transform: translate(-50%, -50%);
+}
+[data-cui-comp="ui-notification"] .fui-notification__action:hover {
+  background: var(--color-surface-soft, #F4F4F5);
+}
 [data-cui-comp="ui-notification"] .fui-notification__title {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-semibold);
@@ -944,19 +1116,36 @@ func notificationCSS(t style.Theme) string {
   color: var(--color-text-muted, #52525B);
 }
 [data-cui-comp="ui-notification"] .fui-notification__dismiss {
+  position: relative;
   align-self: start;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* WCAG 2.5.5 — 44×44 tap target. The 24×24 in chaos sweep was
-     <30% of WCAG's 1936px² floor. */
-  min-inline-size: var(--spacing-touch-target);
-  min-block-size: var(--spacing-touch-target);
-  border-radius: var(--radii-full, 9999px);
+  inline-size: var(--ui-notification-dismiss-size, 1.75rem);
+  block-size: var(--ui-notification-dismiss-size, 1.75rem);
+  /* Centres the box on the title's line, which is a step shorter. */
+  margin-block: calc(var(--spacing-sm, 4px) * -1);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radii-md, 8px);
+  background: transparent;
+  font: inherit;
   font-size: var(--text-lg, 1.125rem);
   line-height: 1;
   color: var(--color-text-muted, #52525B);
   text-decoration: none;
+  cursor: pointer;
+}
+/* WCAG 2.5.5: the drawn box is small, the 44×44 tap target rides on a
+   pseudo-element centred over it. */
+[data-cui-comp="ui-notification"] .fui-notification__dismiss::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: var(--spacing-touch-target, 44px);
+  block-size: var(--spacing-touch-target, 44px);
+  transform: translate(-50%, -50%);
 }
 [data-cui-comp="ui-notification"] .fui-notification__dismiss:hover {
   background: var(--color-surface-soft, #F4F4F5);
@@ -1015,7 +1204,9 @@ func toastStackCSS(_ style.Theme) string {
   display: grid;
   gap: var(--spacing-md, 8px);
   pointer-events: none;
-  max-width: min(var(--ui-toast-width, 360px), calc(100vw - var(--spacing-2xl, 32px)));
+  /* One width for every toast, so a short title is not a pill; on a
+     phone it spans the viewport less the corner widget's 20px insets. */
+  inline-size: min(var(--ui-toast-width, 360px), calc(100vw - var(--spacing-sm, 4px) * 10));
 }
 [data-cui-comp="ui-toast-stack"] .fui-toast-stack__item {
   pointer-events: auto;
@@ -1027,6 +1218,9 @@ func toastStackCSS(_ style.Theme) string {
   animation: fui-toast-stack-out var(--duration-toast-exit, 180ms)
     var(--easing-ease-in, cubic-bezier(0.4, 0, 1, 1)) forwards;
 }
+/* A stack in a bottom corner rises from below; one at the top drops. */
+[class*="cui-pos-bottom"] [data-cui-comp="ui-toast-stack"] .fui-toast-stack__item { animation-name: fui-toast-stack-rise; }
+[class*="cui-pos-bottom"] [data-cui-comp="ui-toast-stack"] .fui-toast-stack__item[data-hui-toast-leaving] { animation-name: fui-toast-stack-sink; }
 @keyframes fui-toast-stack-in {
   from { opacity: 0; transform: translateY(-8px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0)    scale(1);    }
@@ -1034,6 +1228,14 @@ func toastStackCSS(_ style.Theme) string {
 @keyframes fui-toast-stack-out {
   from { opacity: 1; transform: translateY(0)   scale(1);    }
   to   { opacity: 0; transform: translateY(-6px) scale(0.98); }
+}
+@keyframes fui-toast-stack-rise {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+@keyframes fui-toast-stack-sink {
+  from { opacity: 1; transform: translateY(0)   scale(1);    }
+  to   { opacity: 0; transform: translateY(6px) scale(0.98); }
 }
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-toast-stack"] .fui-toast-stack__item,
@@ -1045,11 +1247,21 @@ func toastStackCSS(_ style.Theme) string {
 
 func dataTableCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-data-table"] { display: grid; gap: var(--spacing-md, 8px); }
+/* The scroll box is the containing block for a cell's absolutely
+   positioned parts (a visually hidden label, a menu panel), so the
+   clip holds them; otherwise they widen the page from where they sit
+   in a table wider than the viewport. */
 [data-cui-comp="ui-data-table"] .fui-data-table__scroll {
+  position: relative;
   overflow-x: auto;
   border: var(--stroke-thin, 1px) solid var(--color-border);
   border-radius: var(--radii-lg);
   background: var(--color-surface);
+}
+[data-cui-comp="ui-data-table"].fui-data-table--flush .fui-data-table__scroll {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 /* The scroll region is a keyboard tab stop (tabindex=0, so it can be
    scrolled by keyboard whenever it overflows), so its focus state
@@ -1073,27 +1285,54 @@ func dataTableCSS(_ style.Theme) string {
   border-bottom: var(--stroke-thin, 1px) solid var(--color-border);
   caption-side: top;
 }
+/* A cell's height counts its inset and rule: content-box sizing would
+   add them on top of the row height. */
 [data-cui-comp="ui-data-table"] .fui-data-table__table th,
 [data-cui-comp="ui-data-table"] .fui-data-table__table td {
+  box-sizing: border-box;
   padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
   text-align: start;
   vertical-align: middle;
   border-bottom: var(--stroke-thin, 1px) solid var(--color-border);
 }
-/* Body rows are a fixed 52px rhythm: a 44px row action (View, Edit)
-   fits inside the 4px inset instead of stretching its row to 68px, and
-   a text-only row lands on the same height. */
+/* Body rows are the control height plus a 4px inset (52px at the
+   comfortable density, 44px at the compact one): a row action (View,
+   Edit) fits inside the inset instead of stretching its row, and a
+   text-only row lands on the same height. */
 [data-cui-comp="ui-data-table"] .fui-data-table__table td {
   padding-block: var(--spacing-sm, 4px);
-  block-size: calc(var(--spacing-touch-target) + 2 * var(--spacing-sm, 4px));
+  block-size: calc(var(--fui-density-control-h, var(--spacing-touch-target)) + 2 * var(--spacing-sm, 4px));
+  white-space: nowrap;
+}
+/* A cell holds its value on one line, so a wide table scrolls in its
+   box instead of breaking a date at its hyphens. Column.Wrap opts a
+   prose column out, inside a minimum width. */
+/* An empty result keeps its head, which can outgrow a narrow column.
+   The empty state stays in view at the scroll region's width instead
+   of scrolling off with the head, and wraps. */
+[data-cui-comp="ui-data-table"].is-empty .fui-data-table__scroll { container-type: inline-size; }
+[data-cui-comp="ui-data-table"] .fui-data-table__table td.fui-data-table__empty { white-space: normal; }
+[data-cui-comp="ui-data-table"] .fui-data-table__empty > * {
+  position: sticky;
+  inset-inline-start: var(--spacing-lg, 16px);
+  max-inline-size: calc(100cqi - 2 * var(--spacing-lg, 16px));
+}
+[data-cui-comp="ui-data-table"] .fui-data-table__table td.is-wrap {
+  white-space: normal;
+  min-inline-size: var(--ui-data-table-wrap-width, 16rem);
+}
+[data-cui-comp="ui-data-table"] .fui-data-table__table td.is-truncate {
+  max-inline-size: var(--ui-data-table-truncate-width, 20rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr:last-child td {
   border-bottom: 0;
 }
-/* A table cell's height is a minimum: the header row holds the 44px
-   tap row whether or not a column sorts. */
+/* A table cell's height is a minimum: the header row holds the
+   control height whether or not a column sorts. */
 [data-cui-comp="ui-data-table"] .fui-data-table__table th {
-  block-size: var(--spacing-touch-target);
+  block-size: var(--fui-density-control-h, var(--spacing-touch-target));
   padding-block: 0;
   font-weight: var(--font-weight-medium);
   color: var(--color-text-muted);
@@ -1112,20 +1351,33 @@ func dataTableCSS(_ style.Theme) string {
   background: color-mix(in srgb, var(--color-surface-soft) 50%, transparent);
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table .is-align-end   { text-align: end; }
+/* A fitted column takes its content's width; the spare width goes to
+   the data columns. */
+[data-cui-comp="ui-data-table"] .fui-data-table__table .is-fit { inline-size: 1%; }
+[data-cui-comp="ui-data-table"] .fui-data-table__select {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--fui-density-control-h, var(--spacing-touch-target));
+  vertical-align: middle;
+  cursor: pointer;
+}
 [data-cui-comp="ui-data-table"] .fui-data-table__table .is-align-center { text-align: center; }
 [data-cui-comp="ui-data-table"] .fui-data-table__sort {
   display: inline-flex;
   align-items: center;
-  /* Token-scaled tap target. Sort headers are the most-tapped
-     element in a data table on mobile. Both axes — short column
+  /* The density's control height on both axes. Sort headers are the
+     most-tapped element in a data table on mobile, and short column
      labels like "Email" (38px wide) failed the 44px width floor. */
-  min-block-size: var(--spacing-touch-target);
-  min-inline-size: var(--spacing-touch-target);
+  min-block-size: var(--fui-density-control-h, var(--spacing-touch-target));
+  min-inline-size: var(--fui-density-control-h, var(--spacing-touch-target));
   gap: var(--spacing-sm, 0.25rem);
   box-sizing: border-box;
   background: transparent;
   border: 0;
   padding: 0 var(--spacing-sm, 0.25rem);
+  /* The anchor's own inset hangs into the cell's padding, so the
+     label lines up with the values under it. */
+  margin-inline: calc(-1 * var(--spacing-sm, 0.25rem));
   color: inherit;
   font: inherit;
   text-align: inherit;
@@ -1142,17 +1394,28 @@ func dataTableCSS(_ style.Theme) string {
 }
 /* The direction indicator is drawn from aria-sort, the same
    attribute assistive technology reads: state and appearance share
-   one source and cannot disagree. The markup carries no glyph. */
-[data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after,
-[data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] .fui-data-table__sort::after {
-  font-size: 0.85em;
-  color: var(--color-text-muted);
+   one source and cannot disagree. The markup carries no glyph. A
+   sortable column at rest shows the up-down chevrons, quiet; the
+   sorted one shows its arrow at full strength. */
+[data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort] .fui-data-table__sort::after {
+  content: "";
+  flex: none;
+  inline-size: var(--ui-data-table-sort-icon-size, 14px);
+  block-size: var(--ui-data-table-sort-icon-size, 14px);
+  background: currentColor;
+  opacity: var(--opacity-muted, 0.6);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='7 15 12 20 17 15'/%3E%3Cpolyline points='7 9 12 4 17 9'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='7 15 12 20 17 15'/%3E%3Cpolyline points='7 9 12 4 17 9'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"] .fui-data-table__sort::after {
-  content: "↑";
+  opacity: 1;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='12' y1='19' x2='12' y2='5'/%3E%3Cpolyline points='5 12 12 5 19 12'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='12' y1='19' x2='12' y2='5'/%3E%3Cpolyline points='5 12 12 5 19 12'/%3E%3C/svg%3E");
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] .fui-data-table__sort::after {
-  content: "↓";
+  opacity: 1;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='12' y1='5' x2='12' y2='19'/%3E%3Cpolyline points='19 12 12 19 5 12'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cline x1='12' y1='5' x2='12' y2='19'/%3E%3Cpolyline points='19 12 12 19 5 12'/%3E%3C/svg%3E");
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="ascending"],
 [data-cui-comp="ui-data-table"] .fui-data-table__table th[aria-sort="descending"] {
@@ -1160,7 +1423,22 @@ func dataTableCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__footer {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--spacing-sm, 4px) var(--spacing-md, 8px);
+}
+[data-cui-comp="ui-data-table"] .fui-data-table__note {
+  margin: 0;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted);
+}
+/* The summary takes the left; the tools and the pager hold the right. */
+[data-cui-comp="ui-data-table"] .fui-data-table__summary {
+  margin-inline-end: auto;
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Responsive-cards mode (Container Queries).
@@ -1184,6 +1462,10 @@ func dataTableCSS(_ style.Theme) string {
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td {
     display: block;
     inline-size: 100%;
+    /* The card's padding and border sit inside that width. */
+    box-sizing: border-box;
+    /* A card is as wide as the phone: its values wrap. */
+    white-space: normal;
   }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table thead {
     /* Visually hide the header row — labels travel with each cell via
@@ -1237,9 +1519,120 @@ func dataTableCSS(_ style.Theme) string {
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:not([data-label]) {
     justify-content: flex-end;
   }
+  /* A labelled cell's value is one part, however many it is made of,
+     and wraps inside its share of the line. A label-less cell's
+     controls stay apart, each its own part. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__value {
+    min-inline-size: 0;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:not([data-label]) > .fui-data-table__value {
+    display: contents;
+  }
   /* The empty row's one spanning cell holds the empty state, which
      fills the card rather than aligning to its end. */
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td[colspan] {
+    display: block;
+    text-align: start;
+  }
+}
+
+/* Responsive-rows mode: below 720px of container each row is a
+   two-line row, the phone list of a record index. The slots are the
+   cells' is-phone-* classes; a cell with none is not drawn. */
+[data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__scroll {
+  container-type: inline-size;
+  overflow-x: auto;
+}
+
+@container (max-width: 720px) {
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table,
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody {
+    display: block;
+    inline-size: 100%;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table thead {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "lead title meta end" "lead subtitle detail end";
+    align-items: center;
+    column-gap: calc(var(--spacing-sm, 4px) * 3);
+    row-gap: var(--spacing-xs, 2px);
+    padding: calc(var(--spacing-sm, 4px) * 3) calc(var(--spacing-sm, 4px) * 3.5);
+    border-block-end: var(--stroke-thin, 1px) solid var(--color-border);
+  }
+  /* A row with nothing to select keeps no empty lead column or gap. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody tr:not(:has(> td.is-phone-lead)) {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas: "title meta end" "subtitle detail end";
+  }
+  /* Flush rows line up with the card's own content. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows.fui-data-table--flush .fui-data-table__table tbody tr {
+    padding-inline: 0;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody tr:last-child {
+    border-block-end: 0;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td {
+    display: none;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td[class*="is-phone-"] {
+    display: block;
+    block-size: auto;
+    min-inline-size: 0;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* A chip or an id in a slot is one atomic box the cell's ellipsis
+     cannot reach: it is held to the cell's width and ends its own text
+     instead. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td[class*="is-phone-"] > * {
+    max-inline-size: 100%;
+    vertical-align: middle;
+  }
+  /* The checkbox and the row menu are controls, never clipped. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-lead {
+    grid-area: lead;
+    display: flex;
+    min-inline-size: max-content;
+    overflow: visible;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-title { grid-area: title; font-weight: var(--font-weight-medium); }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-subtitle {
+    grid-area: subtitle;
+    color: var(--color-text-muted);
+    font-size: var(--text-sm, 0.875rem);
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-meta { grid-area: meta; justify-self: end; }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-detail {
+    grid-area: detail;
+    justify-self: end;
+    color: var(--color-text-muted);
+    font-size: var(--text-sm, 0.875rem);
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-end {
+    grid-area: end;
+    min-inline-size: max-content;
+    overflow: visible;
+  }
+  /* A row with no subtitle or detail centres its one line. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-title:last-of-type { grid-row: 1 / span 2; }
+  /* The empty row's one spanning cell holds the empty state. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody tr:has(> td[colspan]) {
+    display: block;
+    padding: 0;
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td[colspan] {
     display: block;
     text-align: start;
   }
@@ -1270,9 +1663,9 @@ func paginationCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Token-scaled tap target (default 44px, WCAG 2.5.5). */
-  min-inline-size: var(--spacing-touch-target);
-  min-block-size: var(--spacing-touch-target);
+  /* The density's control height (44px comfortable, WCAG 2.5.5). */
+  min-inline-size: var(--fui-density-control-h, var(--spacing-touch-target));
+  min-block-size: var(--fui-density-control-h, var(--spacing-touch-target));
   padding: 0 calc(var(--spacing-sm, 4px) * 3);
   border-radius: var(--radii-md);
   border: var(--stroke-thin, 1px) solid transparent;
@@ -1361,8 +1754,8 @@ func themeToggleCSS(_ style.Theme) string {
   background: var(--color-surface, #fff);
   color: var(--color-text, #18181B);
   padding: var(--spacing-xs, 2px);
-  min-block-size: var(--spacing-touch-target, 44px);
-  min-inline-size: var(--spacing-touch-target, 44px);
+  min-block-size: var(--fui-density-control-h, var(--spacing-touch-target, 44px));
+  min-inline-size: var(--fui-density-control-h, var(--spacing-touch-target, 44px));
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1438,6 +1831,8 @@ html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-togg
   overscroll-behavior-x: contain;
   scrollbar-width: none;
   background: var(--color-surface, #fff);
+  padding: var(--ui-theme-toggle-track-inset, 2px);
+  gap: var(--ui-theme-toggle-track-inset, 2px);
 }
 [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__option {
   flex-shrink: 0;
@@ -1445,7 +1840,7 @@ html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-togg
 [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__option {
   border: none;
   border-radius: var(--radii-full, 9999px);
-  padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px);
+  padding: 0 var(--ui-theme-toggle-option-pad-inline, 0.75rem);
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
   min-inline-size: auto;
@@ -1455,7 +1850,10 @@ html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-togg
 [data-cui-comp="ui-theme-toggle"] .fui-theme-toggle__option[aria-checked="true"] {
   background: var(--color-primary, #18181B);
   color: var(--color-primary-fg, #fff);
-}`
+}
+/* Fill: the pill spans its container and the options share it. */
+:where([data-cui-comp="ui-theme-toggle"]).fui-theme-toggle--fill { display: flex; inline-size: 100%; box-sizing: border-box; }
+[data-cui-comp="ui-theme-toggle"].fui-theme-toggle--fill .fui-theme-toggle__option { flex: 1 1 0; }`
 }
 
 func backToTopCSS(_ style.Theme) string {

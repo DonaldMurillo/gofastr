@@ -69,6 +69,11 @@ func layoutCSS(_ style.Theme) string {
   align-items: center;
 }
 [data-cui-comp="ui-layout"].fui-cluster--nowrap { flex-wrap: nowrap; }
+/* Shrink: the row narrows below its content, the last child takes the
+   squeeze, and the earlier children keep their size. */
+:where([data-cui-comp="ui-layout"]).fui-cluster--shrink { min-inline-size: 0; }
+[data-cui-comp="ui-layout"].fui-cluster--shrink > :not(:last-child) { flex-shrink: 0; }
+[data-cui-comp="ui-layout"].fui-cluster--shrink > :last-child { min-inline-size: 0; }
 
 :where([data-cui-comp="ui-layout"]).fui-grid {
   display: grid;
@@ -77,6 +82,9 @@ func layoutCSS(_ style.Theme) string {
      card grid on a phone) shrinks to the container instead of
      overflowing it. */
   grid-template-columns: repeat(auto-fit, minmax(min(var(--ui-grid-min, 16rem), 100%), 1fr));
+}
+[data-cui-comp="ui-layout"].fui-grid--fill {
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--ui-grid-min, 16rem), 100%), 1fr));
 }
 /* GridConfig.Min rides on data-min (no inline style under the CSP).
    Where typed attr() is supported the attribute IS the minimum, any
@@ -204,6 +212,21 @@ func cardCSS(t style.Theme) string {
    without a footer below). */
 [data-cui-comp="ui-card"] .fui-card__header:last-child,
 [data-cui-comp="ui-card"] .fui-card__header:has(+ .fui-card__body:empty) { padding-block-end: var(--spacing-xl, 24px); }
+/* With an Action the header is two columns: the heading and its
+   description, then the control at the end, level with the heading. */
+[data-cui-comp="ui-card"] .fui-card__header:has(> .fui-card__action) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--spacing-md, 8px);
+}
+[data-cui-comp="ui-card"] .fui-card__action {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: start;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm, 4px);
+}
 [data-cui-comp="ui-card"] .fui-card__heading {
   margin: 0;
   font-size: var(--text-base, 1rem);
@@ -350,7 +373,10 @@ func toggleCSS(_ style.Theme) string {
   gap: var(--spacing-md, 8px);
   cursor: pointer;
   /* Token-scaled touch target; the label wrap is the accessible
-     target (WCAG 2.5.8), the row keeps the comfortable height. */
+     target (WCAG 2.5.8), the row keeps the comfortable height. The
+     height counts the inset: a checkbox in a table row is the target's
+     height, not 8px more. */
+  box-sizing: border-box;
   min-block-size: var(--spacing-touch-target, 44px);
   padding-block: var(--spacing-sm, 4px);
 }
@@ -411,6 +437,17 @@ func toggleCSS(_ style.Theme) string {
   background-repeat: no-repeat;
   background-size: 5px 5px, 8px 9px;
   background-position: 3px 8px, 7px 4px;
+}
+
+/* A mixed box (a select-all over a partial selection) is a filled box
+   with a bar. */
+.fui-choice--checkbox .fui-choice__input:indeterminate {
+  background-color: var(--color-primary, #18181B);
+  border-color: var(--color-primary, #18181B);
+  background-image: linear-gradient(var(--color-primary-fg, #FFFFFF), var(--color-primary-fg, #FFFFFF));
+  background-repeat: no-repeat;
+  background-size: 50% 2px;
+  background-position: center;
 }
 
 /* ─── Radio: the dot is a hard-stop radial gradient. ─── */
@@ -632,6 +669,19 @@ func tagCSS(t style.Theme) string {
   line-height: var(--ui-tag-line-height, 1rem);
   text-decoration: none;
   text-transform: var(--ui-tag-case, none);
+  /* In a box narrower than the chip (a phone row's cell) the label
+     ends with an ellipsis; the icon and the dismiss keep their size. */
+  min-inline-size: 0;
+}
+[data-cui-comp="ui-tag"] .fui-tag__label {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-cui-comp="ui-tag"] .fui-tag__icon,
+[data-cui-comp="ui-tag"] .fui-tag__dismiss {
+  flex: none;
 }
 /* Same drawing as ui-badge: the tint is 15% of the status hue, the ink
    mixes the hue toward --color-text so it holds AA on the tint in

@@ -193,6 +193,13 @@ type SidebarItem struct {
 	// manually.
 	MatchPath string
 
+	// Count is drawn after a link's label, small and muted at the
+	// row's end: the rows behind the link, an unread total. Hand in
+	// render.Text("12"), or a route area cell (app.AreaSpec Inline)
+	// so the figure follows client navigations while the sidebar
+	// stays put. Links only; the collapsed rail hides it.
+	Count render.HTML
+
 	// Open forces a group to render expanded on first paint regardless
 	// of active-state rules — for hosts whose contract pins certain
 	// sections open by default (metacollector's My Inventory group).
@@ -224,6 +231,16 @@ type SidebarConfig struct {
 	// Compact is a documentation rail: tighter links and a thin current marker.
 	// On phones its full-width trigger shows NavLabel and links keep 44px targets.
 	Compact bool
+	// SectionLabels draws group headers as section labels: small,
+	// uppercase and muted, with a chevron at the end that turns when the
+	// group closes, and the group's links flush under the label instead
+	// of indented (an app's nav split into Billing, Catalog, System).
+	SectionLabels bool
+	// RaisedCurrent draws the current page's link as a raised pill (the
+	// surface, a hairline ring and a small shadow) instead of a soft
+	// grey fill: an app shell's nav, where the current screen should
+	// read as the one on top.
+	RaisedCurrent bool
 
 	// DrawerBreakpoint picks the viewport width below which the
 	// sidebar collapses to its hamburger drawer instead of the inline
@@ -294,6 +311,12 @@ type SidebarConfig struct {
 	// so the runtime keeps using them after a client-side toggle.
 	ExpandLabel string
 
+	// CollapseText is the collapse button's visible word, drawn beside
+	// its panel icon in the column's foot row and hidden in the
+	// collapsed rail. Keep it inside CollapseLabel. Defaults to
+	// "Collapse".
+	CollapseText string
+
 	// SuppressDrawerTrigger hides the hamburger button rendered by
 	// Sidebar (some apps put their hamburger in the page header
 	// instead and call MountSidebar themselves).
@@ -337,6 +360,7 @@ func sidebarClasses(variant SidebarVariant) headless.Classes {
 		headless.PartIcon:                  "fui-sidebar__icon",
 		headless.Part("icon--fallback"):    "fui-sidebar__icon--fallback",
 		headless.PartText:                  "fui-sidebar__label",
+		headless.PartSidebarCount:          "fui-sidebar__count",
 		headless.PartFooter:                "fui-sidebar__footer",
 	}
 }
@@ -495,6 +519,12 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 	cfg := s.cfg
 	classes := sidebarClasses(cfg.Variant)
 	drawerLabel := "Open navigation"
+	if cfg.SectionLabels {
+		classes[headless.PartRoot] += " fui-sidebar--section-labels"
+	}
+	if cfg.RaisedCurrent {
+		classes[headless.PartRoot] += " fui-sidebar--raised-current"
+	}
 	if cfg.Compact {
 		classes[headless.PartRoot] += " fui-sidebar--compact"
 		drawerLabel = cfg.navLabel()
@@ -554,6 +584,10 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 	if expandLabel == "" {
 		expandLabel = i18nui.T(ctx, i18nui.KeyHuiSidebarExpand)
 	}
+	collapseText := cfg.CollapseText
+	if collapseText == "" {
+		collapseText = i18nui.T(ctx, i18nui.KeyHuiSidebarCollapseText)
+	}
 
 	out := headless.Sidebar(headless.SidebarProps{
 		NavLabel:           cfg.navLabel(),
@@ -568,6 +602,8 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 		HideDrawerTrigger:  cfg.SuppressDrawerTrigger,
 		CollapseLabel:      collapseLabel,
 		ExpandLabel:        expandLabel,
+		ToggleIcon:         Icon("panel-left", IconConfig{Size: "16"}),
+		ToggleText:         collapseText,
 		GroupMarkup:        string(cfg.GroupMarkup),
 		GroupIDPrefix:      cfg.DrawerName + "-inline",
 		Prepend:            sidebarPrepend(ctx, cfg),
@@ -620,7 +656,7 @@ func sidebarNavItems(cfg SidebarConfig) []headless.SidebarItem {
 		out := make([]headless.SidebarItem, 0, len(items))
 		for _, it := range items {
 			mapped := headless.SidebarItem{
-				Label: it.Label, Href: it.Href, Icon: it.Icon,
+				Label: it.Label, Href: it.Href, Icon: it.Icon, Count: it.Count,
 				// MatchPath rides the leaf as data-cui-match-prefix so
 				// the runtime's active-link sweep keeps the item lit on
 				// sub-paths after a client navigation (the server owns
@@ -691,6 +727,9 @@ func sidebarBodyRegion(ctx context.Context, cfg SidebarConfig, idPrefix, rootCla
 	}
 	classes := sidebarClasses(cfg.Variant)
 	classes[headless.PartRoot] = rootClass
+	if cfg.SectionLabels {
+		classes[headless.PartRoot] += " fui-sidebar--section-labels"
+	}
 	if cfg.Compact {
 		classes[headless.PartRoot] += " fui-sidebar--compact"
 	}
@@ -919,36 +958,90 @@ func sidebarCSS(_ style.Theme) string {
 }
 .fui-sidebar__hamburger--labelled { width: 100%; justify-content: flex-start; gap: var(--spacing-md); padding-inline: var(--spacing-md); font-size: var(--text-sm); }
 .fui-sidebar__hamburger--labelled::after { content: attr(aria-label); }
+/* The collapse toggle is the column's foot row: the panel icon and its
+   word, muted like a nav link, held at the bottom of a scrolling column
+   on the column's own surface. */
 [data-cui-comp="ui-sidebar"] .fui-sidebar__collapse {
-  display: inline-flex;
+  position: sticky;
+  inset-block-end: 0;
+  margin-block: auto calc(-1 * var(--spacing-lg, 16px));
+  margin-inline: calc(-1 * var(--spacing-lg, 16px));
+  display: flex;
   align-items: center;
-  justify-content: center;
-  justify-self: end;
-  width: var(--spacing-touch-target, 44px);
-  height: var(--spacing-touch-target, 44px);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-sm, 6px);
+  gap: var(--spacing-sm, 4px);
+  padding: var(--spacing-md, 8px) calc(var(--spacing-lg, 16px) + var(--spacing-md, 8px));
+  min-height: var(--ui-sidebar-row-height, var(--spacing-touch-target, 44px));
+  border: 0;
+  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   background: var(--color-surface, #FFF);
-  color: var(--color-text, #18181B);
+  color: var(--color-text-muted, #52525B);
+  font: inherit;
+  font-size: var(--text-sm, 0.875rem);
   cursor: pointer;
-  font-size: var(--text-xl, 1.25rem);
 }
+[data-cui-comp="ui-sidebar"] .fui-sidebar__collapse:hover { color: var(--color-text, #09090B); }
+[data-cui-comp="ui-sidebar"] .fui-sidebar__collapse > [aria-hidden] { display: inline-flex; }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__collapse:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
 }
+/* A flex box, so the glyph centres on the label instead of sitting on
+   an inline line box's baseline. */
+[data-cui-comp="ui-sidebar"] .fui-sidebar__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
 [data-cui-comp="ui-sidebar"] .fui-sidebar__icon--fallback {
+  display: none;
+}
+/* A link's count sits at the row's end, small and muted, in tabular
+   figures so the column of counts lines up. */
+[data-cui-comp="ui-sidebar"] .fui-sidebar__count {
+  margin-inline-start: auto;
+  padding-inline-start: var(--spacing-sm, 4px);
+  color: var(--color-text-subtle, #71717A);
+  font-size: var(--text-xs, 0.75rem);
+  font-variant-numeric: tabular-nums;
+}
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__count,
+[data-cui-comp="ui-sidebar"].fui-sidebar--auto-hide:not(:hover):not(:focus-within) .fui-sidebar__count {
   display: none;
 }
 /* Knobs: --ui-sidebar-width (220px) is the expanded inline column's
    width (min-width and width); --ui-sidebar-rail-width (64px) is the
    collapsed icon rail's width (the collapsible collapsed state and the
-   auto-hide rest state). */
+   auto-hide rest state); --ui-sidebar-row-height is a row's minimum
+   height: the touch target on a coarse pointer, 2.25rem under a fine
+   one, where a 44px row spreads a long nav over two screens. */
+@media (pointer: fine) {
+  [data-cui-comp="ui-sidebar"] .fui-sidebar__inline { --ui-sidebar-row-height: 2.25rem; }
+}
+/* In a column of fixed height (a sticky ContentRow's nav, one screen
+   tall) the inline sidebar fills it and its nav scrolls in its own
+   region, so the brand stays put and the collapse row sits under the
+   links instead of painting over the last one. In a column that grows
+   with the page, 100% resolves to auto and nothing changes. */
 [data-cui-comp="ui-sidebar"] .fui-sidebar__inline {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  min-block-size: 100%;
+  block-size: 100%;
+  box-sizing: border-box;
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-lg, 16px);
   min-width: var(--ui-sidebar-width, 220px);
+}
+/* The scroll region clips what its links draw outside their box (the
+   raised current link's ring, a focus outline), so it pads by the
+   focus ring's reach and takes the same back with a negative margin:
+   the links stay where they were. */
+[data-cui-comp="ui-sidebar"] .fui-sidebar__inline > .fui-sidebar__nav {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(var(--stroke-focus, 2px) + var(--stroke-focus-offset, 2px));
+  margin: calc(-1 * (var(--stroke-focus, 2px) + var(--stroke-focus-offset, 2px)));
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__title {
   font-size: var(--text-xs, 0.75rem);
@@ -995,7 +1088,7 @@ func sidebarCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.875rem);
   text-decoration: none;
-  min-height: var(--spacing-touch-target, 44px);
+  min-height: var(--ui-sidebar-row-height, var(--spacing-touch-target, 44px));
   cursor: pointer;
   transition: background-color var(--duration-fast, 150ms), color var(--duration-fast, 150ms);
 }
@@ -1022,6 +1115,12 @@ func sidebarCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #09090B);
   font-weight: var(--font-weight-medium);
+}
+/* RaisedCurrent: the current link sits on the surface as a pill, ringed
+   by a hairline and lifted by the smallest shadow. */
+[data-cui-comp="ui-sidebar"].fui-sidebar--raised-current .fui-sidebar__link[aria-current="page"] {
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs), 0 0 0 var(--stroke-thin, 1px) var(--color-border);
 }
 [data-cui-comp="ui-sidebar"] .fui-sidebar__group > summary {
   list-style: none;
@@ -1058,11 +1157,12 @@ func sidebarCSS(_ style.Theme) string {
   padding-inline: var(--spacing-sm, 4px);
 }
 [data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__collapse {
-  justify-self: center;
-  transform: rotate(180deg);
+  justify-content: center;
+  margin-inline: calc(-1 * var(--spacing-sm, 4px));
+  padding-inline: var(--spacing-sm, 4px);
 }
 [data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__title,
-[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__prepend,
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__prepend:not(:has(> [data-cui-comp="ui-sidebar-brand"]:only-child)),
 [data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__footer,
 [data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__sublist {
   display: none;
@@ -1090,6 +1190,66 @@ func sidebarCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-sidebar"].fui-sidebar--off-canvas .fui-sidebar__inline {
   display: none;
+}
+/* The collapsed rail keeps a Prepend that is only a SidebarBrand (its
+   logo tile heads the rail) and opens each group under a rule, so the
+   rail still reads as groups once their labels are gone. */
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__item:has(> .fui-sidebar__group, > .fui-sidebar__sublist) {
+  margin-block-start: var(--spacing-sm, 4px);
+  padding-block-start: var(--spacing-sm, 4px);
+  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+}
+/* The collapsed rail: an open group's header gives way to its links,
+   so every page keeps its own icon in the rail; a closed group keeps
+   its header (the one way back into it). */
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__group[open] > .fui-sidebar__sublist,
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__group-toggle[aria-expanded="true"] + .fui-sidebar__sublist {
+  display: grid;
+  margin-inline-start: 0;
+}
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__group[open] > summary,
+[data-cui-comp="ui-sidebar"].fui-sidebar--collapsible[data-collapsed="true"] .fui-sidebar__group-toggle[aria-expanded="true"] {
+  display: none;
+}
+/* SectionLabels: group headers read as section labels over flush
+   links, with a chevron that turns when the group closes. The header
+   keeps a 28px box (--ui-sidebar-section-height) so it stays a
+   comfortable target, and drops its icon outside the collapsed rail,
+   where the label alone names it. --ui-sidebar-chevron-size (12px)
+   sizes the chevron. */
+[data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group > summary,
+[data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group-toggle {
+  min-height: var(--ui-sidebar-section-height, 1.75rem);
+  margin-block-start: var(--spacing-md, 8px);
+  padding-block: var(--spacing-xs, 2px);
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide, 0.04em);
+  color: var(--color-text-muted, #52525B);
+  background: none;
+}
+[data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group > summary::after,
+[data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group-toggle::after {
+  content: "";
+  margin-inline-start: auto;
+  inline-size: var(--ui-sidebar-chevron-size, 12px);
+  block-size: var(--ui-sidebar-chevron-size, 12px);
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition: rotate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
+}
+[data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group:not([open]) > summary::after,
+[data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__group-toggle[aria-expanded="false"]::after {
+  rotate: -90deg;
+}
+[data-cui-comp="ui-sidebar"].fui-sidebar--section-labels:not([data-collapsed="true"]) .fui-sidebar__group > summary .fui-sidebar__icon,
+[data-cui-comp="ui-sidebar"].fui-sidebar--section-labels:not([data-collapsed="true"]) .fui-sidebar__group-toggle .fui-sidebar__icon {
+  display: none;
+}
+[data-cui-comp="ui-sidebar"].fui-sidebar--section-labels .fui-sidebar__sublist {
+  margin-inline-start: 0;
 }
 /* Viewport behaviour: < md collapses to the hamburger; ≥ md the
    inline column appears and the hamburger hides. OffCanvas keeps the

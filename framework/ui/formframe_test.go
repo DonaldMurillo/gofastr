@@ -168,3 +168,38 @@ func TestFormFrameSeams(t *testing.T) {
 		}
 	}
 }
+
+// SidePanel draws the side column as a bordered surface that stays in
+// view beside a long main column, the prototype's record rail. Sticky
+// rides only the side-by-side posture: stacked under the fields in a
+// drawer, a pinned panel would cover them. The main column holds a
+// readable measure either way.
+func TestFormFrameSidePanelSticksBesideFields(t *testing.T) {
+	h := string(FormFrame(FormFrameConfig{
+		Main:      []render.HTML{render.Text("m")},
+		Side:      []render.HTML{render.Text("s")},
+		SidePanel: true,
+	}))
+	if !strings.Contains(h, `fui-form-frame--side-panel`) {
+		t.Errorf("SidePanel did not land as its modifier:\n%s", h)
+	}
+	if plain := string(FormFrame(FormFrameConfig{Side: []render.HTML{render.Text("s")}})); strings.Contains(plain, "side-panel") {
+		t.Errorf("the plain rail shipped the panel modifier:\n%s", plain)
+	}
+	css := formFrameStyle.Entry().CSSFor(theme.Default())
+	at := strings.Index(css, "@container")
+	if at < 0 {
+		t.Fatalf("no container query:\n%s", css)
+	}
+	before, inside := css[:at], css[at:]
+	if !strings.Contains(before, `.fui-form-frame--side-panel .fui-form-frame__side {`) ||
+		!strings.Contains(before, "var(--color-surface)") || !strings.Contains(before, "var(--color-border)") {
+		t.Errorf("the panel rule does not draw a tokened surface:\n%s", css)
+	}
+	if !strings.Contains(inside, "position: sticky") || strings.Contains(before, "position: sticky") {
+		t.Errorf("the panel sticks outside the side-by-side posture:\n%s", css)
+	}
+	if !strings.Contains(css, "max-inline-size: var(--ui-form-frame-main-max, 45rem)") {
+		t.Errorf("the main column holds no readable measure:\n%s", css)
+	}
+}

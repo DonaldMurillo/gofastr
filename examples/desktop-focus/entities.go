@@ -26,10 +26,10 @@ func registerTasksEntity(app *framework.App) {
 		Scope:        &framework.ScopeConfig{OwnerField: "user_id"},
 		SearchFields: []string{"title"},
 		Display: &framework.DisplayConfig{
-			Singular:   "Task",
-			Plural:     "Tasks",
-			TitleField: "title",
-			Columns:    []string{"title", "estimate", "completed_pomodoros", "done"},
+			Singular:    "Task",
+			Plural:      "Tasks",
+			TitleFields: []string{"title"},
+			Columns:     []string{"title", "estimate", "completed_pomodoros", "done"},
 			Form: &framework.EntityForm{
 				Main: []framework.FormItem{
 					{Field: "title"},

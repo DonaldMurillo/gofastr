@@ -106,6 +106,41 @@ func prepSet(pairs ...any) func([]reflect.Value) {
 	}
 }
 
+// prepInstead zeroes field wherever its markup alternative is filled
+// (a timeline event's Title beside a Lead): the filled run checks the
+// alternative's marks, the empty run the field's own.
+func prepInstead(alt, field string) func([]reflect.Value) {
+	return func(args []reflect.Value) {
+		var walk func(v reflect.Value)
+		walk = func(v reflect.Value) {
+			switch v.Kind() {
+			case reflect.Pointer:
+				if !v.IsNil() {
+					walk(v.Elem())
+				}
+			case reflect.Slice:
+				for i := range v.Len() {
+					walk(v.Index(i))
+				}
+			case reflect.Struct:
+				if a := v.FieldByName(alt); a.IsValid() && !a.IsZero() {
+					if f := v.FieldByName(field); f.IsValid() {
+						f.SetZero()
+					}
+				}
+				for i := range v.NumField() {
+					if v.Type().Field(i).IsExported() {
+						walk(v.Field(i))
+					}
+				}
+			}
+		}
+		for _, a := range args {
+			walk(a)
+		}
+	}
+}
+
 // prepZero zeroes the named top-level fields of the first argument: a
 // filled optional pointer that would override the field the test set.
 func prepZero(names ...string) func([]reflect.Value) {
@@ -147,10 +182,17 @@ func TestKitMarkingCoversEveryComponent(t *testing.T) {
 		t.Errorf("component %s is not in kitComponents: add it, so the marking gate renders it", n)
 	}
 	for n := range listed {
-		if !found[n] {
+		if !found[funcName(n)] {
 			t.Errorf("kitComponents lists %s, which is not an exported render.HTML function", n)
 		}
 	}
+}
+
+// funcName is the function a kitComponents entry renders: a name past
+// a slash is a second rendering of the same function (Card/linked).
+func funcName(entry string) string {
+	name, _, _ := strings.Cut(entry, "/")
+	return name
 }
 
 // exportedHTMLFuncs returns every exported package-level function in
@@ -259,7 +301,7 @@ func renderWithSentinels(c kitComponent, empty bool) (out render.HTML, err error
 // fillableParts returns the parts a headless spec lets a caller fill,
 // for a component rendered through headless.Parts.
 func fillableParts(name string) []headless.Part {
-	sp, ok := headless.SpecOf(strings.TrimPrefix(name, "headless."))
+	sp, ok := headless.SpecOf(strings.TrimPrefix(funcName(name), "headless."))
 	if !ok {
 		return nil
 	}
@@ -596,6 +638,7 @@ func isSpace(b byte) bool { return b == ' ' || b == '\t' || b == '\n' || b == '\
 
 // kitComponents is every component the marking gate renders.
 var kitComponents = []kitComponent{
+	{name: "ActionList", fn: ActionList, prep: prepSet("Items", []ActionListItem{{Label: "Account", Href: "/account"}})},
 	{name: "AnchoredRail", fn: AnchoredRail},
 	{name: "AnimatedCounter", fn: AnimatedCounter},
 	{name: "AspectRatioComponent", fn: AspectRatioComponent},
@@ -609,9 +652,13 @@ var kitComponents = []kitComponent{
 	{name: "Breadcrumbs", fn: Breadcrumbs},
 	{name: "Button", fn: Button},
 	{name: "Callout", fn: Callout},
-	{name: "Card", fn: Card},
+	// Action and Href refuse each other: the linked card is the second
+	// entry.
+	{name: "Card", fn: Card, prep: prepSet("Href", "")},
+	{name: "Card/linked", fn: Card, prep: prepSet("Action", render.HTML(""))},
 	{name: "Carousel", fn: Carousel, required: []string{"Content"}},
 	{name: "Center", fn: Center},
+	{name: "ChangeList", fn: ChangeList},
 	{name: "Checkbox", fn: Checkbox},
 	{name: "CheckboxGroup", fn: CheckboxGroup},
 	{name: "Cluster", fn: Cluster},
@@ -626,12 +673,20 @@ var kitComponents = []kitComponent{
 	{name: "ContentRow", fn: ContentRow},
 	{name: "Control", fn: Control},
 	{name: "CopyButton", fn: CopyButton},
+	{name: "ShortID", fn: ShortID, required: []string{"Value"}},
 	{name: "Counter", fn: Counter, prep: prepZero("Slice")},
 	{name: "DataTable", fn: DataTable, prep: prepSet("Pages", 3, "Page", 1)},
 	{name: "DateField", fn: DateField},
+	{name: "DateTimeField", fn: DateTimeField},
 	{name: "DetailList", fn: DetailList},
 	{name: "DiffViewer", fn: DiffViewer},
 	{name: "Divider", fn: Divider},
+	{name: "DrawerBar", fn: DrawerBar, prep: prepSet("Path", "/x", "CopyURL", "http://example.com/x", "PageURL", "/x")},
+	{name: "Dropdown", fn: Dropdown, required: []string{"Content"}, prep: prepSet("Align", DropdownEnd, "Icon", "filter", "Avatar", nil)},
+	{name: "Dropdown/avatar", fn: Dropdown, required: []string{"Content"}, prep: func(args []reflect.Value) {
+		prepSet("Align", DropdownEnd)(args)
+		prepZero("Icon", "Count")(args)
+	}},
 	{name: "EmptyState", fn: EmptyState},
 	{name: "EmptyValue", fn: EmptyValue},
 	{name: "FactBox", fn: FactBox},
@@ -651,6 +706,8 @@ var kitComponents = []kitComponent{
 	{name: "Hero", fn: Hero},
 	{name: "HeroSplit", fn: HeroSplit},
 	{name: "Icon", fn: Icon},
+	{name: "InlineCode", fn: InlineCode},
+	{name: "InlineCodeDanger", fn: InlineCodeDanger},
 	{name: "InputGroup", fn: InputGroup, required: []string{"Input"}},
 	{name: "JSONViewer", fn: JSONViewer},
 	{name: "LineChart", fn: LineChart},
@@ -659,7 +716,12 @@ var kitComponents = []kitComponent{
 	{name: "ListDetail", fn: ListDetail, prep: prepSet("MobileSinglePane", true)},
 	{name: "ListDetailPlaceholder", fn: ListDetailPlaceholder},
 	{name: "Markdown", fn: Markdown, content: "the rendered document is the caller's prose, which a docs or article owner styles"},
-	{name: "Menu", fn: Menu, prep: prepSet("Href", "", "RPC", "", "Action", nil, "Do", nil, "Copy", nil)},
+	// Avatar draws the trigger and refuses the other trigger fields, so
+	// the fill drops those and checks the avatar trigger.
+	{name: "Menu", fn: Menu, prep: func(args []reflect.Value) {
+		prepSet("Href", "", "RPC", "", "Action", nil, "Do", nil, "Copy", nil)(args)
+		prepZero("TriggerHTML", "TriggerElement", "IconOnly", "Icon")(args)
+	}},
 	{name: "MetricBand", fn: MetricBand},
 	{name: "MultiSelect", fn: MultiSelect},
 	{name: "Muted", fn: Muted},
@@ -671,6 +733,7 @@ var kitComponents = []kitComponent{
 	{name: "OptimizedImage", fn: OptimizedImage, prep: prepSet("Width", 100, "Height", 100)},
 	{name: "PageHeader", fn: PageHeader},
 	{name: "Pagination", fn: Pagination, prep: prepSet("Pages", 3, "Page", 1)},
+	{name: "PaletteResults", fn: PaletteResults},
 	{name: "PaneHost", fn: PaneHost, required: []string{"Primary"}},
 	{name: "PasswordInput", fn: PasswordInput},
 	{name: "PieChart", fn: PieChart},
@@ -694,9 +757,18 @@ var kitComponents = []kitComponent{
 		opts.Set(reflect.Append(opts, opts.Index(0)))
 		opts.Index(1).FieldByName("Value").SetString("other")
 	}},
+	{name: "ColumnPicker", fn: ColumnPicker},
+	{name: "ShortcutList", fn: ShortcutList},
+	{name: "SegmentedLinks", fn: SegmentedLinks, required: []string{"Href", "Text"}},
+	{name: "InlineEdit", fn: InlineEdit, prep: prepSet("Action", "/a", "Return", "/r", "Label", "Edit"), required: []string{"Display", "Control"}},
+	{name: "FilterRows", fn: FilterRows},
+	{name: "Picker", fn: Picker},
+	{name: "PickerRows", fn: PickerRows},
 	{name: "Select", fn: Select},
+	{name: "Selection", fn: Selection, required: []string{"Bar", "Body"}},
 	{name: "ShortcutHint", fn: ShortcutHint},
 	{name: "SidebarBody", fn: SidebarBody, prep: prepSet("Href", "")},
+	{name: "SidebarBrand", fn: SidebarBrand},
 	{name: "SidebarDrawerTrigger", fn: SidebarDrawerTrigger},
 	{name: "SignOut", fn: SignOut},
 	{name: "SignalToggle", fn: SignalToggle, prep: prepZero("Slice")},
@@ -714,6 +786,7 @@ var kitComponents = []kitComponent{
 	{name: "Spinner", fn: Spinner},
 	{name: "Stack", fn: Stack},
 	{name: "StatCard", fn: StatCard},
+	{name: "StatStrip", fn: StatStrip, prep: prepSet("Cells", []render.HTML{render.HTML("<p>figure</p>")})},
 	{name: "StatusBadge", fn: StatusBadge},
 	{name: "StatusPill", fn: StatusPill},
 	{name: "StepRail", fn: StepRail},
@@ -730,6 +803,7 @@ var kitComponents = []kitComponent{
 	{name: "TerminalOut", fn: TerminalOut},
 	{name: "TextArea", fn: TextArea},
 	{name: "TextField", fn: TextField},
+	{name: "Thumbnail", fn: Thumbnail},
 	{name: "ThemePicker", fn: ThemePicker, prep: prepSet("Themes", []ThemeChoice{{Label: "Alt", Theme: style.RegisterThemeOverride(theme.Default())}})},
 	// The pill: it renders the kit's own option buttons, which the
 	// default icon variant never reaches (its two glyphs are constants
@@ -737,7 +811,7 @@ var kitComponents = []kitComponent{
 	{name: "ThemeToggle", fn: ThemeToggle, prep: prepSet("Variant", ThemeTogglePill)},
 	{name: "Themed", fn: Themed, prep: func(args []reflect.Value) { args[0].Set(reflect.ValueOf(style.RegisterThemeOverride(theme.Default()))) }},
 	{name: "TimePicker", fn: TimePicker},
-	{name: "Timeline", fn: Timeline},
+	{name: "Timeline", fn: Timeline, prep: prepInstead("Lead", "Title")},
 	{name: "ToggleAction", fn: ToggleAction},
 	{name: "Toolbar", fn: Toolbar},
 	{name: "Tooltip", fn: Tooltip},
@@ -749,12 +823,15 @@ var kitComponents = []kitComponent{
 	{name: "headless.Badge", fn: headless.Badge},
 	{name: "headless.Breadcrumbs", fn: headless.Breadcrumbs},
 	{name: "headless.Button", fn: headless.Button},
-	{name: "headless.Card", fn: headless.Card},
+	{name: "headless.Card", fn: headless.Card, prep: prepSet("Href", "")},
+	{name: "headless.Card/linked", fn: headless.Card, prep: prepSet("Action", render.HTML(""))},
 	{name: "headless.Carousel", fn: headless.Carousel},
 	{name: "headless.Choice", fn: headless.Choice, prep: prepSet("Type", "checkbox")},
 	{name: "headless.Cluster", fn: headless.Cluster},
 	{name: "headless.Color", fn: headless.Color},
-	{name: "headless.Combobox", fn: headless.Combobox},
+	{name: "headless.Combobox", fn: headless.Combobox, prep: prepZero("Pick", "Control")},
+	{name: "headless.Combobox/pick", fn: headless.Combobox, prep: prepZero("NoScriptAction", "Control")},
+	{name: "headless.ComboboxRows", fn: headless.ComboboxRows},
 	{name: "headless.ConditionalField", fn: headless.ConditionalField},
 	{name: "headless.Container", fn: headless.Container},
 	{name: "headless.Counter", fn: headless.Counter},
@@ -808,10 +885,11 @@ var kitComponents = []kitComponent{
 	{name: "headless.Table", fn: headless.Table},
 	{name: "headless.TableOfContents", fn: headless.TableOfContents},
 	{name: "headless.Tabs", fn: headless.Tabs},
+	{name: "headless.Selection", fn: headless.Selection, required: []string{"Bar", "Body"}},
 	{name: "headless.Tag", fn: headless.Tag},
 	{name: "headless.TagInput", fn: headless.TagInput},
 	{name: "headless.Textarea", fn: headless.Textarea},
-	{name: "headless.Timeline", fn: headless.Timeline},
+	{name: "headless.Timeline", fn: headless.Timeline, prep: prepInstead("Lead", "Title")},
 	{name: "headless.Toast", fn: headless.Toast},
 	{name: "headless.ToastStack", fn: headless.ToastStack},
 	{name: "headless.ToastTemplate", fn: headless.ToastTemplate},

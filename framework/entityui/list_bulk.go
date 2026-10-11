@@ -22,7 +22,7 @@ type listBulk struct {
 // bulkFor reports the bulk state of the list: on when the builder asked
 // for it, the entity allows it, and the caller has at least one action.
 func (b *ListBuilder) bulkFor(ctx context.Context, s *listState) *listBulk {
-	if !b.bulk || !bulkOn(s.m) {
+	if !b.bulk || !bulkOn(s.m) || s.deletedView {
 		return nil
 	}
 	actions := b.ui.bulkActions(ctx, s.m)
@@ -48,6 +48,9 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 		return ""
 	}
 	m := s.m
+	// Beside the table the bar floats under the rows as a pill, whose
+	// place names its controls; above cards it is a plain form.
+	floating := s.as != "cards"
 	actionOpts := make([]ui.SelectOption, 0, len(lb.actions))
 	for _, a := range lb.actions {
 		actionOpts = append(actionOpts, ui.SelectOption{Value: a.key, Text: a.label})
@@ -62,7 +65,7 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 	// The bar carries the digest of the ids every match covers, so the
 	// run refuses any other set. A list past the cap is not offered it.
 	var match string
-	if known && !s.filterBad && len(b.where) == 0 && total > len(rows) {
+	if known && !s.filterBad && len(b.where) == 0 && s.savedID == "" && total > len(rows) {
 		if ids, err := b.ui.matchIDs(ctx, m, s.key, s.carry()); err == nil {
 			match = matchDigest(ids)
 		}
@@ -81,21 +84,27 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 	if every {
 		fields = append(fields, hiddenInput("match", match))
 	}
+	// A soft delete's toast offers Undo, which returns here.
+	if b.undo && m.e.Config.Scope.SoftDelete {
+		fields = append(fields, hiddenInput("undo", "1"), hiddenInput("back", listHref(s.path, s.q)))
+	}
 	fields = append(fields,
 		hiddenInput("key", s.key),
 		hiddenInput("query", s.carry().Encode()),
 		ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignEnd},
 			ui.Select(ui.SelectConfig{
-				Name:    "action",
-				ID:      lb.form + "-action",
-				Label:   i18nui.T(ctx, i18nui.KeyEntityBulkAction),
-				Options: actionOpts,
+				Name:        "action",
+				ID:          lb.form + "-action",
+				Label:       i18nui.T(ctx, i18nui.KeyEntityBulkAction),
+				LabelHidden: floating,
+				Options:     actionOpts,
 			}),
 			ui.Select(ui.SelectConfig{
-				Name:    "scope",
-				ID:      lb.form + "-scope",
-				Label:   i18nui.T(ctx, i18nui.KeyEntityBulkScope),
-				Options: scopes,
+				Name:        "scope",
+				ID:          lb.form + "-scope",
+				Label:       i18nui.T(ctx, i18nui.KeyEntityBulkScope),
+				LabelHidden: floating,
+				Options:     scopes,
 			}),
 			ui.Button(ui.ButtonConfig{
 				Label:   i18nui.T(ctx, i18nui.KeyEntityBulkApply),
@@ -105,7 +114,11 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 		),
 	)
 	rpc := interactive.Post(m.api + "/_bulk").
-		WithConfirm(i18nui.TVars(ctx, i18nui.KeyEntityBulkConfirm, map[string]string{"entity": m.plural(ctx)})).
+		WithConfirmDialog(interactive.Confirm{
+			Title:   i18nui.TVars(ctx, i18nui.KeyEntityBulkTitle, map[string]string{"entity": m.noun(ctx, true)}),
+			Message: i18nui.T(ctx, i18nui.KeyEntityBulkConfirm),
+			Accept:  i18nui.T(ctx, i18nui.KeyEntityBulkApply),
+		}).
 		OnSuccess(interactive.Navigate(listHref(s.path, s.q)))
 	attrs := rpc.Attrs()
 	attrs["aria-label"] = i18nui.T(ctx, i18nui.KeyEntityBulkBar)
@@ -126,7 +139,7 @@ func selectCell(ctx context.Context, s *listState, lb *listBulk, row map[string]
 		Name:        "ids",
 		ID:          lb.form + "-sel-" + strconv.Itoa(i),
 		Value:       cell(rowValue(row, s.m.pk)),
-		Label:       i18nui.TVars(ctx, i18nui.KeyEntityBulkSelect, map[string]string{"title": s.m.recordTitle(ctx, row)}),
+		Label:       i18nui.TVars(ctx, i18nui.KeyEntityBulkSelect, map[string]string{"title": s.rowTitle(ctx, row)}),
 		LabelHidden: true,
 		ExtraAttrs:  html.Attrs{"form": lb.form},
 	})
@@ -146,6 +159,7 @@ func exportLink(ctx context.Context, s *listState) render.HTML {
 		Label:      i18nui.T(ctx, i18nui.KeyEntityBulkExport),
 		Href:       listHref(s.m.api+"/_export.csv", q),
 		Variant:    ui.ButtonSecondary,
+		Icon:       "download",
 		ExtraAttrs: html.Attrs{"download": ""},
 	})
 }

@@ -77,13 +77,17 @@ type ButtonProps struct {
 
 // linkLegal reports whether an Action key may ride an anchor: exactly
 // the wiring keys that say where a click goes — opening a widget,
-// deep-linking its data, writing the URL, prefetching a module. The
+// deep-linking its data, writing the URL, prefetching a module,
+// leaving an intercept stack for the page, swapping the target into
+// the top intercept layer, opening a record as a layer over the target
+// page. The
 // rest of the vocabulary needs a button, because a link navigates and
 // a button acts: a request, a pane, a toast or a local mutation on an
 // anchor is a click the href and the runtime would both answer.
 func linkLegal(key string) bool {
 	switch key {
-	case "data-cui-open", "data-cui-push-state", "data-cui-deeplink", "data-cui-prefetch":
+	case "data-cui-open", "data-cui-push-state", "data-cui-deeplink", "data-cui-prefetch",
+		"data-cui-intercept-page", "data-cui-intercept-swap", "data-cui-intercept-panel":
 		return true
 	}
 	return false
@@ -160,8 +164,12 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			// on the same button. Empty is allowed: the runtime titles
 			// it "Done".
 			out[k] = v
+		case "data-cui-rpc-success-action":
+			checkToastAction("Action", v)
+			out[k] = v
 		case "data-cui-rpc-close", "data-cui-rpc-reset", "data-cui-rpc-after-disable",
-			"data-cui-intercept-close":
+			"data-cui-intercept-close", "data-cui-intercept-page", "data-cui-intercept-swap",
+			"data-cui-intercept-panel":
 			// Presence is the value. intercept-close closes the
 			// enclosing intercept overlay — the runtime's own family
 			// (fragments.go owns it), carried the same way a page
@@ -223,6 +231,17 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			}
 			checkNoControlBytes("a Button Action", k, v)
 			out[k] = v
+		case "data-cui-confirm-title", "data-cui-confirm-accept", "data-cui-confirm-tone":
+			checkConfirmWording("Action", a, k, v)
+			out[k] = v
+		case "data-cui-confirm-part":
+			// The part of the kit's confirm dialog this button is: the
+			// confirm module (confirm.js) finds the answer buttons by
+			// it. Only the dialog's own buttons carry one.
+			if v != "accept" && v != "accept-danger" && v != "cancel" {
+				panic("headless: Action carries data-cui-confirm-part " + strconv.Quote(v) + ", and a confirm dialog's buttons are accept, accept-danger and cancel")
+			}
+			out[k] = v
 		case "data-cui-prefetch":
 			for _, name := range strings.Fields(v) {
 				for i := range len(name) {
@@ -247,6 +266,7 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			panic("headless: Action carries data-cui-action=\"close\" beside data-cui-rpc — the runtime fires the request and never reaches the close; a close after a request is data-cui-rpc-close")
 		}
 	}
+	checkToastActionRides("Action", out)
 	return out
 }
 
@@ -256,6 +276,11 @@ func Button(p ButtonProps, s Classes) render.HTML {
 		panic("headless: Button needs Label, or AriaLabel for an icon-only button")
 	}
 	action := actionAttrs(p.Action)
+	for _, k := range []string{"data-cui-intercept-page", "data-cui-intercept-swap", "data-cui-intercept-panel"} {
+		if _, ok := action[k]; ok && p.Href == "" {
+			panic("headless: Button carries " + k + " with no Href — it acts on a link's target, and a button has no target")
+		}
+	}
 	if p.Href != "" {
 		for k := range action {
 			if !linkLegal(k) {
@@ -338,4 +363,59 @@ func orDefault(s, fallback string) string {
 		return fallback
 	}
 	return s
+}
+
+// hasFold reports whether a carries key under any spelling of its case.
+func hasFold(a html.Attrs, key string) bool {
+	for k := range a {
+		if strings.EqualFold(k, key) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkConfirmWording checks what a confirm dialog says
+// (interactive.Confirm): a title or an accept label must say
+// something, danger is the one tone the dialog draws, and every one
+// of them rides only beside the data-cui-confirm it words.
+// checkToastAction checks a data-cui-rpc-success-action: the success
+// toast's one button, {"label", "attrs"}, whose attrs are RPC wiring only
+// (the runtime copies nothing else onto the button) and are checked as a
+// Button's own would be, so its navigate stays same-origin too.
+func checkToastAction(seam, v string) {
+	var a struct {
+		Label string            `json:"label"`
+		Attrs map[string]string `json:"attrs"`
+	}
+	if err := json.Unmarshal([]byte(v), &a); err != nil || a.Label == "" || a.Attrs["data-cui-rpc"] == "" {
+		panic("headless: " + seam + " carries a data-cui-rpc-success-action that is not a label and an RPC to run")
+	}
+	for k := range a.Attrs {
+		if k != "data-cui-rpc" && !strings.HasPrefix(k, "data-cui-rpc-") {
+			panic("headless: " + seam + "'s success toast action carries " + k + "; a toast's button carries RPC wiring only")
+		}
+	}
+	actionAttrs(html.Attrs(a.Attrs))
+}
+
+// checkToastActionRides refuses a success toast action with no success
+// toast: the runtime shows the action only on that toast.
+func checkToastActionRides(seam string, out html.Attrs) {
+	if _, act := out["data-cui-rpc-success-action"]; act {
+		if _, toast := out["data-cui-rpc-success-toast"]; !toast {
+			panic("headless: " + seam + " carries data-cui-rpc-success-action with no data-cui-rpc-success-toast — the action rides the success toast")
+		}
+	}
+}
+
+func checkConfirmWording(seam string, a html.Attrs, k, v string) {
+	switch {
+	case k == "data-cui-confirm-tone" && v != "danger":
+		panic("headless: " + seam + " carries data-cui-confirm-tone " + strconv.Quote(v) + ", and danger is the only tone the confirm dialog draws")
+	case v == "":
+		panic("headless: " + seam + " carries an empty " + k + " — it words the confirm dialog, and empty words nothing")
+	case !hasFold(a, "data-cui-confirm"):
+		panic("headless: " + seam + " carries " + k + " with no data-cui-confirm — it words a confirmation nothing asks")
+	}
 }

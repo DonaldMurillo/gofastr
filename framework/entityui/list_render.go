@@ -52,15 +52,17 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	// A replaced list body is the app's component, under the same read
 	// gate and the same key rules. Build runs inside this render's
 	// recover; SafeRenderCtx contains a panic in the component's render.
+	// Both run as the caller.
 	if m.ext.List != nil {
-		comp, err := m.ext.List(ListContext{Ctx: ctx, UI: b.ui, Entity: m.name})
+		cctx := asCaller(ctx)
+		comp, err := m.ext.List(ListContext{Ctx: cctx, UI: b.ui, Entity: m.name})
 		if err != nil {
 			return "", err
 		}
 		if comp == nil {
 			return "", fmt.Errorf("entityui: entity %q: replaced list returned no component", m.name)
 		}
-		out, err := component.SafeRenderCtx(ctx, comp)
+		out, err := component.SafeRenderCtx(cctx, comp)
 		if err != nil {
 			return "", err
 		}
@@ -84,9 +86,20 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	if err := s.resolveColumns(b); err != nil {
 		return "", err
 	}
+	if b.colsMenu {
+		s.applyColsParam()
+	}
+	if err := b.openSaved(ctx, s); err != nil {
+		return "", err
+	}
 	if err := b.narrow(ctx, s); err != nil {
 		return "", err
 	}
+	// The trash view: offered when the builder asked and the entity
+	// soft-deletes, shown when the URL opens it. It keeps every other
+	// scope; the read below inverts only the soft-delete term.
+	s.offeredTab = b.deleted && m.e.Config.Scope.SoftDelete
+	s.deletedView = s.offeredTab && s.view == deletedViewKey
 	s.as = b.as
 	if s.as == "" {
 		for _, v := range m.d.Views {
@@ -95,13 +108,18 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 			}
 		}
 	}
+	if b.layoutSwitch {
+		if v := s.q.Get(s.p.as); v == "table" || v == "cards" {
+			s.as = v
+		}
+	}
 	switch s.as {
 	case "", "table", "cards":
 	default:
 		return "", fmt.Errorf("entityui: entity %q: As(%q) must be \"table\" or \"cards\"", m.name, b.as)
 	}
 
-	s.resolveSort()
+	s.resolveSort(b)
 	s.resolvePage(b)
 
 	where, err := s.predicate(b)
@@ -114,6 +132,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		Filters: filters,
 		Search:  s.search,
 		Fields:  s.readFields(),
+		Deleted: s.deletedView,
 	}
 	// The count only feeds pagination chrome; a refused count degrades to
 	// unknown totals rather than a failed screen, and only a known total
@@ -136,31 +155,73 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 			Variant: ui.StatusDanger,
 		}, render.Text(i18nui.T(ctx, i18nui.KeyEntitySlotFailedBody))), nil
 	}
+	b.ui.pageTitles(ctx, s, rows)
+	if b.inlineEdit && !s.deletedView && !b.top && m.hasAPI {
+		// The same page read without read hooks: an inline editor
+		// prefills only a value the hooks left as stored.
+		if raw, err := m.ch.ListAll(ctx, listOpts); err == nil {
+			s.rawRows = make(map[string]map[string]any, len(raw))
+			for _, r := range raw {
+				s.rawRows[cell(rowValue(r, m.pk))] = r
+			}
+		}
+	}
 
+	if b.embedded {
+		return b.embeddedBody(ctx, s, rows, total, known, page), nil
+	}
 	lb := b.bulkFor(ctx, s)
 	var body []render.HTML
-	body = append(body, b.header(ctx, s, total, known))
-	if tabs := viewTabs(ctx, s); tabs != "" {
+	tabs := b.viewTabs(ctx, s, total, known)
+	body = append(body, b.header(ctx, s, total, known, b.counts && tabs != ""))
+	if tabs != "" {
 		body = append(body, tabs)
+	}
+	if s.savedGone {
+		body = append(body, savedGoneWarning(ctx))
 	}
 	if s.filterBad {
 		body = append(body, filterWarning(ctx))
 	}
-	if chips := filterChips(ctx, s); chips != "" {
-		body = append(body, chips)
-	}
-	if tb := b.toolbar(ctx, s); tb != "" {
+	facets := b.facetControls(ctx, s)
+	if tb := b.toolbar(ctx, s, facets); tb != "" {
 		body = append(body, tb)
 	}
+	if chips := filterChips(ctx, s, facets); chips != "" {
+		body = append(body, chips)
+	}
 
+	var bar render.HTML
 	if lb != nil {
-		if bar := b.bulkBar(ctx, s, lb, rows, total, known); bar != "" {
+		bar = b.bulkBar(ctx, s, lb, rows, total, known)
+	}
+	switch {
+	case s.as == "cards":
+		// Cards carry no row checkboxes; the bar acts on the page or
+		// every match, so it stays in view.
+		if bar != "" {
 			body = append(body, bar)
 		}
-	}
-	if s.as == "cards" {
 		body = append(body, b.cards(ctx, s, rows, total, known, page))
-	} else {
+	case bar != "":
+		// The bar floats under the rows while one is checked.
+		// Copy CSV reads the checked rows back through the export route,
+		// by id and under the caller's scope; it shows where the header's
+		// Export does (the route cannot see a Where pin or a saved
+		// view's filter, so a named id could reach past either).
+		var copyURL string
+		if bulkOn(m) && len(b.where) == 0 && s.savedID == "" && !s.deletedView {
+			copyURL = m.api + "/_export.csv"
+		}
+		body = append(body, ui.Selection(ui.SelectionConfig{
+			Bar:      bar,
+			Body:     b.table(ctx, s, lb, rows, total, known, page),
+			Floating: true,
+			Form:     lb.form,
+			Copy:     copyURL,
+			Ctx:      ctx,
+		}))
+	default:
 		body = append(body, b.table(ctx, s, lb, rows, total, known, page))
 	}
 	return render.Join(body...), nil
@@ -190,9 +251,20 @@ func (b *ListBuilder) narrow(ctx context.Context, s *listState) error {
 	if len(m.e.Config.SearchFields) > 0 {
 		s.search = strings.TrimSpace(s.q.Get(s.p.q))
 	}
-	// The filter text: a parse failure is a warning and an unfiltered
-	// list, never a failed screen — the reader typed it, not the app.
-	if text := strings.TrimSpace(s.q.Get(s.p.filter)); text != "" {
+	// The filter text: the URL's, else an open saved view's (an explicit
+	// param wins, an empty one included — it is the reader clearing the
+	// filter). A parse failure is a warning and an unfiltered list,
+	// never a failed screen — the reader typed it, not the app.
+	text := strings.TrimSpace(s.q.Get(s.p.filter))
+	if !s.q.Has(s.p.filter) && s.savedFilter != "" {
+		text = s.savedFilter
+	}
+	// Submitted filter rows write the filter: their terms, then the
+	// box's text. The row params never ride a link; the filter does.
+	if s.q.Has(s.p.rowF) {
+		text = composeFilter(rowTerms(m, s.q[s.p.rowF], s.q[s.p.rowO], s.q[s.p.rowV]), strings.TrimSpace(s.q.Get(s.p.filter)))
+	}
+	if text != "" {
 		s.filterText = text
 		p, err := dsl.ParsePredicate(text, m.e.GetFields())
 		if err != nil {
@@ -207,15 +279,15 @@ func (b *ListBuilder) narrow(ctx context.Context, s *listState) error {
 }
 
 // header draws the list's page header: the plural (or the builder's
-// heading), the description, a count subtitle and the actions.
-func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known bool) render.HTML {
+// heading), a count subtitle and the actions. The description stands in
+// for the count when the count is unknown, and when the view tabs carry
+// the counts.
+func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known, tabsCounted bool) render.HTML {
 	m := s.m
-	title := b.heading
-	if title == "" {
-		title = m.plural(ctx)
-	}
+	title := b.title(ctx, m)
+	desc := m.description(ctx)
 	subtitle := ""
-	if known {
+	if known && (desc == "" || !tabsCounted) {
 		if total == 1 {
 			subtitle = i18nui.TVars(ctx, i18nui.KeyEntityCountOne, map[string]string{"entity": m.noun(ctx, false)})
 		} else {
@@ -224,7 +296,7 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 				"entity": m.noun(ctx, true),
 			})
 		}
-	} else if desc := m.description(ctx); desc != "" {
+	} else {
 		subtitle = desc
 	}
 	var actions []render.HTML
@@ -232,15 +304,18 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 	// Export is a read: it rides with bulk, not with the caller's
 	// write actions.
 	// A Where pin is not in the query the export route reads, so a pinned
-	// list draws none rather than exporting past its pins.
-	if b.bulk && bulkOn(m) && len(b.where) == 0 {
+	// list draws none rather than exporting past its pins; an open saved
+	// view is the same shape — its filter is not in the query either.
+	if b.bulk && bulkOn(m) && len(b.where) == 0 && s.savedID == "" && !s.deletedView {
 		actions = append(actions, exportLink(ctx, s))
 	}
-	if b.mayCreate() && canCreate(ctx, m) {
+	// The trash view creates nothing: there is no New in it.
+	if !s.deletedView && b.mayCreate() && canCreate(ctx, m) {
 		actions = append(actions, ui.LinkButton(ui.LinkButtonConfig{
 			Label:   i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
 			Href:    s.createHref(),
 			Variant: ui.ButtonPrimary,
+			Icon:    "plus",
 		}))
 	}
 	return ui.PageHeader(ui.PageHeaderConfig{
@@ -249,6 +324,42 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 		Actions:      actionCluster(actions),
 		HeadingLevel: b.headingLevel(),
 	})
+}
+
+// embeddedBody is an Embedded list: its compact header, then the rows,
+// or the one-line empty state in place of an empty table. It selects
+// no rows: bulk belongs to the entity's own list.
+func (b *ListBuilder) embeddedBody(ctx context.Context, s *listState, rows []map[string]any, total int, known bool, page int) render.HTML {
+	m := s.m
+	title := b.title(ctx, m)
+	var count render.HTML
+	if known {
+		count = ui.Muted(render.Text(formatNumber(float64(total), 0)))
+	}
+	actions := slices.Clone(b.actions)
+	if !s.deletedView && b.mayCreate() && canCreate(ctx, m) {
+		actions = append(actions, ui.LinkButton(ui.LinkButtonConfig{
+			Label:   i18nui.TVars(ctx, i18nui.KeyEntityAdd, map[string]string{"entity": m.noun(ctx, false)}),
+			Href:    s.createHref(),
+			Variant: ui.ButtonSecondary,
+			Size:    ui.ButtonSizeSmall,
+			Icon:    "plus",
+		}))
+	}
+	head := ui.PageHeader(ui.PageHeaderConfig{
+		Title:        title,
+		Badge:        count,
+		Actions:      actionCluster(actions),
+		HeadingLevel: b.headingLevel(),
+		Compact:      true,
+	})
+	switch {
+	case known && total == 0:
+		return render.Join(head, ui.EmptyState(b.emptyState(ctx, s)))
+	case s.as == "cards":
+		return render.Join(head, b.cards(ctx, s, rows, total, known, page))
+	}
+	return render.Join(head, b.table(ctx, s, nil, rows, total, known, page))
 }
 
 // actionCluster lays out zero or more actions without wrapping markup
@@ -263,12 +374,10 @@ func actionCluster(actions []render.HTML) render.HTML {
 	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, actions...)
 }
 
-// toolbar draws the one GET form: the search box and the facets
-// together, so a submission carries both. Hidden inputs round-trip the
-// request state the form does not own — this list's view, filter and
-// sort, and every other param on the URL — so applying a search does not
-// silently reset the rest of the page.
-func (b *ListBuilder) toolbar(ctx context.Context, s *listState) render.HTML {
+// facetControls are the list's facets as toolbar controls, each named
+// for its URL param and holding the URL's value. A facet with nothing
+// to offer (a refused relation, an enum with no values) is left out.
+func (b *ListBuilder) facetControls(ctx context.Context, s *listState) []ui.Facet {
 	m := s.m
 	facets := make([]ui.Facet, 0, len(m.d.Facets))
 	for _, name := range s.facets() {
@@ -289,13 +398,7 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState) render.HTML {
 			}
 			facet.Kind = ui.FacetPills
 		case schema.Relation:
-			opts := b.ui.relationFacetOptions(ctx, m, name)
-			if len(opts) == 0 {
-				// A refused relation shows no options; a facet with
-				// nothing to offer is not drawn.
-				continue
-			}
-			facet.Options = opts
+			facet.Options = b.ui.relationFacetOptions(ctx, m, name)
 			facet.Kind = ui.FacetSelect
 		default: // Enum
 			short := len(f.Values) > 0 && len(f.Values) <= 4
@@ -319,21 +422,58 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState) render.HTML {
 		}
 		facets = append(facets, facet)
 	}
+	return facets
+}
+
+// toolbar draws the list's one row of tools: the search box, a Filters
+// dropdown holding the facets and the typed filter with
+// the one Apply, and the columns menu. Search, facets and filter are
+// one GET form, so a submission carries all of them; hidden inputs
+// round-trip the request state the form does not own (this list's view
+// and sort, every other param on the URL) so applying a search does not
+// silently reset the rest of the page.
+func (b *ListBuilder) toolbar(ctx context.Context, s *listState, facets []ui.Facet) render.HTML {
+	m := s.m
 	var search *ui.FilterSearch
 	if len(m.e.Config.SearchFields) > 0 {
 		placeholder := i18nui.TVars(ctx, i18nui.KeyEntitySearch, map[string]string{"entity": m.plural(ctx)})
 		search = &ui.FilterSearch{Name: s.p.q, Value: s.search, Placeholder: placeholder, Label: placeholder}
+		if !b.embedded && !b.top && s.key == "" {
+			// The page's own list takes "/"; an embedded or keyed list
+			// (one of several) does not claim it.
+			search.Shortcut = "/"
+		}
 	}
-	if len(facets) == 0 && search == nil {
-		return ""
+	var extra []render.HTML
+	applied := 0
+	if qf := b.queryField(ctx, s); qf != "" {
+		extra = append(extra, qf)
+		if s.filterText != "" {
+			applied = 1
+		}
+	}
+	// Columns, then the layout switch at the end of the row, as the
+	// prototype lays them out.
+	var tools []render.HTML
+	if menu := b.columnsMenu(ctx, s); menu != "" {
+		tools = append(tools, menu)
+	}
+	if sw := b.layoutSwitchControl(ctx, s); sw != "" {
+		tools = append(tools, sw)
+	}
+	if len(facets) == 0 && search == nil && len(extra) == 0 {
+		// Nothing to submit: the columns menu, if any, stands alone.
+		return actionCluster(tools)
 	}
 	var hidden []ui.HiddenField
 	for _, k := range slices.Sorted(maps.Keys(s.q)) {
-		if k == s.p.q || k == s.p.page || s.ownsFacetParam(k) {
+		if k == s.p.q || k == s.p.page || s.ownsFacetParam(k) || (len(extra) > 0 && (k == s.p.filter || k == s.p.rowF || k == s.p.rowO || k == s.p.rowV)) {
 			continue
 		}
-		if vs := s.q[k]; len(vs) > 0 {
-			hidden = append(hidden, ui.HiddenField{Name: k, Value: vs[0]})
+		// Every value: a repeated param (another list's cols=a&cols=b)
+		// must survive the submit whole.
+		for _, v := range s.q[k] {
+			hidden = append(hidden, ui.HiddenField{Name: k, Value: v})
 		}
 	}
 	// Reset returns to the bare action and would drop every param the
@@ -347,12 +487,39 @@ func (b *ListBuilder) toolbar(ctx context.Context, s *listState) render.HTML {
 		}
 	}
 	return ui.FilterToolbar(ui.FilterToolbarConfig{
+		ID:        "eui-" + listIDSafe(s.key, m.name) + "-toolbar",
 		Action:    s.path,
+		Dropdown:  true,
 		Facets:    facets,
 		Search:    search,
+		Extra:     extra,
+		Applied:   applied,
+		Tools:     tools,
 		Hidden:    hidden,
 		HideReset: hideReset,
 		Ctx:       ctx,
+	})
+}
+
+// layoutSwitchControl is the Table / Cards switch: two links into the as
+// param that keep the rest of the URL, sort included.
+func (b *ListBuilder) layoutSwitchControl(ctx context.Context, s *listState) render.HTML {
+	if !b.layoutSwitch {
+		return ""
+	}
+	href := func(as string) string {
+		q := s.carryWithSort(s.p.as)
+		q.Set(s.p.as, as)
+		return listHref(s.path, q)
+	}
+	cards := s.as == "cards"
+	return ui.SegmentedLinks(ui.SegmentedLinksConfig{
+		Label: i18nui.T(ctx, i18nui.KeyEntityLayout),
+		Items: []ui.SegmentLink{
+			{Text: i18nui.T(ctx, i18nui.KeyEntityLayoutTable), Icon: "list", Href: href("table"), Current: !cards},
+			{Text: i18nui.T(ctx, i18nui.KeyEntityLayoutCards), Icon: "grid", Href: href("cards"), Current: cards},
+		},
+		Ctx: ctx,
 	})
 }
 
@@ -365,6 +532,14 @@ func (s *listState) ownsFacetParam(name string) bool {
 		}
 	}
 	return false
+}
+
+// title is the list's heading: the builder's, else the entity's plural.
+func (b *ListBuilder) title(ctx context.Context, m *meta) string {
+	if b.heading != "" {
+		return b.heading
+	}
+	return m.plural(ctx)
 }
 
 // headingLevel is the list heading's level: the builder's, or 1 when

@@ -30,8 +30,13 @@ const (
 
 // TimelineEvent is one entry in the Timeline.
 type TimelineEvent struct {
-	// Title is the event headline (required, e.g. "Deployed v3.2.1").
+	// Title is the event headline (e.g. "Deployed v3.2.1"). Exactly one
+	// of Title and Lead is set.
 	Title string
+	// Lead is a headline the caller draws, in place of Title: an
+	// activity line with a bold actor and the record as a link. It is
+	// markup, so the caller escapes what it interpolates.
+	Lead render.HTML
 	// Meta is the optional right-aligned secondary text (e.g. a time
 	// or actor: "2h ago" / "by dom"), rendered in the header row
 	// after the title.
@@ -40,6 +45,11 @@ type TimelineEvent struct {
 	Body render.HTML
 	// Variant tints the dot on the rail. Defaults to neutral.
 	Variant TimelineEventVariant
+	// Icon names a registered icon (see Icon) drawn in the marker, which
+	// becomes a bordered circle with the icon tinted by Variant: the kind
+	// of event at a glance, as an activity feed draws it. An unknown
+	// name draws the plain dot.
+	Icon string
 }
 
 // TimelineConfig configures a Timeline.
@@ -83,8 +93,8 @@ func Timeline(cfg TimelineConfig) render.HTML {
 	}
 	events := make([]headless.Event, len(cfg.Events))
 	for i, e := range cfg.Events {
-		if e.Title == "" {
-			panic("ui: Timeline event requires Title")
+		if (e.Title == "") == (e.Lead == "") {
+			panic("ui: Timeline event requires exactly one of Title and Lead")
 		}
 		switch e.Variant {
 		case TimelineNeutral, TimelineSuccess, TimelineWarn, TimelineDanger, TimelineInfo:
@@ -99,11 +109,17 @@ func Timeline(cfg TimelineConfig) render.HTML {
 		if body != "" {
 			body = render.Tag("div", map[string]string{"class": "fui-timeline__body"}, body)
 		}
+		var icon render.HTML
+		if e.Icon != "" && IconRegistered(e.Icon) {
+			icon = Icon(e.Icon, IconConfig{})
+		}
 		events[i] = headless.Event{
 			Title: e.Title,
+			Lead:  e.Lead,
 			Meta:  e.Meta,
 			Body:  body,
 			Tone:  string(e.Variant),
+			Icon:  icon,
 		}
 	}
 
@@ -196,6 +212,11 @@ func timelineCSS(_ style.Theme) string {
   font-weight: var(--font-weight-medium);
   color: var(--color-text, #18181B);
 }
+/* A Lead is a sentence that carries its own emphasis (a bold actor, a
+   linked record): body weight, so the emphasis reads. */
+[data-cui-comp="ui-timeline"] .fui-timeline__title[data-lead] {
+  font-weight: var(--font-weight-normal, 400);
+}
 [data-cui-comp="ui-timeline"] .fui-timeline__meta {
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
@@ -218,5 +239,34 @@ func timelineCSS(_ style.Theme) string {
 [data-cui-comp="ui-timeline"] .fui-timeline__dot--success { background: var(--color-success, #16A34A); }
 [data-cui-comp="ui-timeline"] .fui-timeline__dot--warn    { background: var(--color-warning, #D97706); }
 [data-cui-comp="ui-timeline"] .fui-timeline__dot--danger  { background: var(--color-danger, #DC2626); }
-[data-cui-comp="ui-timeline"] .fui-timeline__dot--info    { background: var(--color-info, #3B82F6); }`
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--info    { background: var(--color-info, #3B82F6); }
+
+/* An event with an Icon: the marker is a bordered circle
+   (--ui-timeline-icon-size, 28px) on the surface, the icon inside it
+   tinted by the variant, and the marker column and rail widen to fit. */
+[data-cui-comp="ui-timeline"] .fui-timeline__item:has(> .fui-timeline__dot > .fui-icon) {
+  grid-template-columns: var(--ui-timeline-icon-size, 28px) 1fr;
+  gap: var(--spacing-lg, 16px);
+}
+[data-cui-comp="ui-timeline"] .fui-timeline__item:has(> .fui-timeline__dot > .fui-icon)::before {
+  left: calc((var(--ui-timeline-icon-size, 28px) - var(--ui-timeline-rail-width, 2px)) / 2);
+  top: var(--ui-timeline-icon-size, 28px);
+}
+[data-cui-comp="ui-timeline"] .fui-timeline__dot:has(> .fui-icon) {
+  --ui-timeline-dot-size: var(--ui-timeline-icon-size, 28px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-surface, #FFFFFF);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  color: var(--color-text-muted, #52525B);
+}
+[data-cui-comp="ui-timeline"] .fui-timeline__dot:has(> .fui-icon) > .fui-icon {
+  inline-size: calc(var(--ui-timeline-icon-size, 28px) / 2);
+  block-size: calc(var(--ui-timeline-icon-size, 28px) / 2);
+}
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--success:has(> .fui-icon) { color: var(--color-success, #16A34A); }
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--warn:has(> .fui-icon)    { color: var(--color-warning, #D97706); }
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--danger:has(> .fui-icon)  { color: var(--color-danger, #DC2626); }
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--info:has(> .fui-icon)    { color: var(--color-info, #3B82F6); }`
 }

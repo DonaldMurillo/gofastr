@@ -22,6 +22,10 @@ const (
 	// LinkMuted is a subdued text-muted link, for "see all", "view
 	// details" affordances that should not compete with primary CTAs.
 	LinkMuted LinkVariant = "muted"
+	// LinkTitle is a record's name where it heads a row or card: the
+	// text colour, semibold, underlined only on hover. It sits outside
+	// prose, so it needs no underline at rest to tell it from a sentence.
+	LinkTitle LinkVariant = "title"
 )
 
 // LinkConfig configures a Link.
@@ -56,11 +60,11 @@ func Link(cfg LinkConfig) render.HTML {
 		panic("ui: Link requires Text")
 	}
 	switch cfg.Variant {
-	case LinkInline, LinkAction, LinkMuted:
+	case LinkInline, LinkAction, LinkMuted, LinkTitle:
 		// recognized
 	default:
 		panic("ui: Link unknown Variant " + string(cfg.Variant) +
-			`. Pick one of: "" (inline), action, muted`)
+			`. Pick one of: "" (inline), action, muted, title`)
 	}
 	cls := "fui-link"
 	if cfg.Variant != LinkInline {
@@ -102,8 +106,8 @@ func linkCSS(_ style.Theme) string {
 [data-cui-comp="ui-link"]:hover, .fui-link:hover { text-decoration: underline; }
 /* An inline link sits in prose, where the neutral primary is the text's
    own colour: the underline is what tells it from its sentence (WCAG
-   1.4.1). Action and muted links sit outside prose and stay bare. */
-:where([data-cui-comp="ui-link"], .fui-link):not(.fui-link--action, .fui-link--muted) {
+   1.4.1). Action, muted and title links sit outside prose and stay bare. */
+:where([data-cui-comp="ui-link"], .fui-link):not(.fui-link--action, .fui-link--muted, .fui-link--title) {
   text-decoration: underline;
   text-underline-offset: 0.2em;
 }
@@ -127,5 +131,8 @@ func linkCSS(_ style.Theme) string {
 /* Muted — quieter affordance ("see all", "view details") that doesn't
    compete with primary CTAs. */
 .fui-link--muted { color: var(--color-text-muted); font-weight: var(--font-weight-normal); }
-.fui-link--muted:hover { color: var(--color-text); }`
+.fui-link--muted:hover { color: var(--color-text); }
+
+/* Title — a record's name heading a row or card. */
+.fui-link--title { color: var(--color-text); font-weight: var(--font-weight-semibold, 600); }`
 }

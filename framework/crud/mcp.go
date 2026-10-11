@@ -145,7 +145,7 @@ func (ch *CrudHandler) mcpToolGate(op crudOp, item bool) func(ctx context.Contex
 		if perm == "" {
 			return nil
 		}
-		if access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName()}) {
+		if ch.accessAllows(ctx, perm, "") {
 			return nil
 		}
 		return errMCPToolForbidden

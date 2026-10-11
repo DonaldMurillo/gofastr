@@ -553,7 +553,7 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 		for k, v := range writes {
 			body[k] = v
 		}
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeUpdate, body); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.BeforeUpdate, body); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
 	}
@@ -598,7 +598,7 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 		return nil, fmt.Errorf("transition %s: %w", t.Key, err)
 	}
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterUpdate, result); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.AfterUpdate, result); err != nil {
 			return nil, fmt.Errorf("after-update hook: %w", err)
 		}
 	}

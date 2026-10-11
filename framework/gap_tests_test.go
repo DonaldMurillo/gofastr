@@ -102,10 +102,13 @@ func TestGap_MultipartLargeFile_RoundTripsExactly(t *testing.T) {
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		// 64 KiB of distinct content so any truncation/corruption is observable.
+		// Behind a PNG signature: the avatar is an Image field, which
+		// takes only a raster image.
 		content := make([]byte, 64*1024)
 		for i := range content {
 			content[i] = byte(i % 251) // not 256 so the pattern doesn't align with byte boundaries
 		}
+		copy(content, "\x89PNG\r\n\x1a\n")
 
 		body, ct := buildMultipartBody(t,
 			map[string][2]string{"avatar": {"big.bin", string(content)}},

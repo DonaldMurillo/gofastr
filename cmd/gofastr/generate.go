@@ -1508,7 +1508,13 @@ func renderDisplayLiteral(d *fwentity.DisplayConfig) string {
 	}
 	str("Singular", d.Singular)
 	str("Plural", d.Plural)
-	str("TitleField", d.TitleField)
+	if len(d.TitleFields) > 0 {
+		if !first {
+			sb.WriteString(", ")
+		}
+		first = false
+		sb.WriteString("TitleFields: []string{" + stringSliceLiteral(d.TitleFields) + "}")
+	}
 	str("Description", d.Description)
 	if len(d.Columns) > 0 {
 		if !first {
@@ -1535,6 +1541,9 @@ func renderDisplayLiteral(d *fwentity.DisplayConfig) string {
 		}
 		if d.Nav.Hide {
 			parts = append(parts, "Hide: true")
+		}
+		if d.Nav.HideCount {
+			parts = append(parts, "HideCount: true")
 		}
 		sb.WriteString(strings.Join(parts, ", "))
 		sb.WriteString("}")

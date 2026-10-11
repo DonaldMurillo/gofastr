@@ -7,6 +7,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
+// compactControlHeight and compactGap are the compact density's values:
+// the theme option declares them at a theme boundary, and a Dense
+// ContentRow declares them on a fine pointer.
+const (
+	compactControlHeight = "36px"
+	compactGap           = "var(--spacing-sm)"
+)
+
 // buttonEdge is the border the filled and soft treatments draw: the
 // --ui-button-edge knob, transparent when no theme sets it.
 const buttonEdge = "var(--ui-button-edge, transparent)"
@@ -86,8 +94,8 @@ func componentOptionsCSS(components map[string]string) []style.Declaration {
 		)
 	case theme.Compact:
 		decls = append(decls,
-			style.Declaration{Name: "--fui-density-control-h", Value: "36px"},
-			style.Declaration{Name: "--fui-density-gap", Value: "var(--spacing-sm)"},
+			style.Declaration{Name: "--fui-density-control-h", Value: compactControlHeight},
+			style.Declaration{Name: "--fui-density-gap", Value: compactGap},
 		)
 	case theme.DensityUnset:
 		// Inherit: nothing to declare.

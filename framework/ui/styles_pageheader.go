@@ -29,7 +29,9 @@ func pageHeaderCSS(t style.Theme) string {
 			// No rule under the header: the title's weight and the gap to
 			// the content separate them, and a hairline that every page
 			// header drew competed with the card and table borders below.
-			"padding", "var(--spacing-xl, 24px) 0 var(--spacing-sm, 4px)",
+			// Knob: --ui-page-header-inset (the xl spacing) is the top
+			// inset; a frame that pads its content already sets it to 0.
+			"padding", "var(--ui-page-header-inset, var(--spacing-xl, 24px)) 0 var(--spacing-sm, 4px)",
 		).
 		End().
 		Rule(".fui-page-header__text").
@@ -76,6 +78,13 @@ func pageHeaderCSS(t style.Theme) string {
 		// a step below them.
 		Rule("h2.fui-page-header__title").
 		Set("font-size", "var(--ui-page-header-section-title-size, var(--text-xl, 1.25rem))").
+		End().
+		// An h3 or deeper title is a section inside a section (a
+		// dashboard panel's list): another step down, read from
+		// --ui-page-header-subsection-title-size.
+		Rule(":is(h3, h4, h5, h6).fui-page-header__title").
+		Set("font-size", "var(--ui-page-header-subsection-title-size, var(--text-base, 1rem))",
+			"letter-spacing", "normal").
 		End().
 		Rule(".fui-page-header__actions").
 		Set(

@@ -28,6 +28,7 @@ func paymentsCommands() []command {
 // paymentsListFilters is the filter-flag table behind `payments list`: one entry
 // per flag, in help order, each bound to the query param it sets.
 var paymentsListFilters = []filterFlag{
+	{flag: "trashed", param: "trashed", help: "include soft-deleted rows", isBool: true},
 	{flag: "invoice-id", param: "invoice_id", help: "filter: invoice_id equals (comma list = IN)"},
 	{flag: "invoice-id-gte", param: "invoice_id_gte", help: "filter: invoice_id greater than or equal"},
 	{flag: "invoice-id-lte", param: "invoice_id_lte", help: "filter: invoice_id less than or equal"},

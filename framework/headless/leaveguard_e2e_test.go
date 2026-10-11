@@ -5,10 +5,9 @@ package headless
 // after a successful submit or a reset. While dirty, link navigation
 // (through gofastr:beforenavigate), closing an intercept layer (Esc,
 // Back), a reload (beforeunload) and the browser's own Back all ask
-// first. The ask is window.confirm — the same mechanism data-cui-confirm
-// uses — because gofastr:beforenavigate is a synchronous, cancellable
-// event: an async dialog cannot answer it in time, and the runtime has
-// no synchronous dialog of its own.
+// first. These fixtures carry no kit dialog template, so the ask is the
+// window.confirm fallback; leaveguard_dialog_e2e_test.go covers the
+// kit's dialog.
 
 import (
 	"fmt"
@@ -123,6 +122,44 @@ func TestLeaveGuardSubmitClearsFailedRPCRedirties(t *testing.T) {
 	}
 }
 
+// TestLeaveGuardReflectsDirty: the dirty state shows as data-hui-dirty
+// on the form and on a control outside it that names it by form=, so a
+// header Save can look idle until there is something to save; a save
+// clears both.
+func TestLeaveGuardReflectsDirty(t *testing.T) {
+	body := `<script type="application/json" id="gofastr-routes">[{"path":"/"}]</script>` +
+		`<button id="out-save" type="submit" form="gf">Save</button>` +
+		`<form id="gf" data-hui-leave-guard data-cui-rpc="/__hui/ok" data-cui-rpc-method="POST">` +
+		`<input id="gf-name" name="name"></form>`
+	b := startBehaviorServer(t, body)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, `!!window.__gofastr.loadedModules['headless-leaveguard']`) {
+		t.Fatal("the guard marker never loaded headless-leaveguard")
+	}
+	const probe = `['gf','out-save'].map(id => document.getElementById(id).hasAttribute('data-hui-dirty')).join()`
+	var clean, typed, saved string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(probe, &clean),
+		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
+		chromedp.Evaluate(probe, &typed),
+		chromedp.Click(`#out-save`, chromedp.ByID),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(probe, &saved),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if clean != "false,false" {
+		t.Errorf("a clean form reads dirty: %s", clean)
+	}
+	if typed != "true,true" {
+		t.Errorf("an edit is not reflected on the form and its outside Save: %s", typed)
+	}
+	if saved != "false,false" {
+		t.Errorf("a save leaves the dirty mark: %s", saved)
+	}
+}
+
 // TestLeaveGuardBeforeunloadFollowsDirty: while any guarded form is
 // dirty, a beforeunload is cancelled (the browser's own reload prompt);
 // clean, it is not.
@@ -157,10 +194,13 @@ func TestLeaveGuardBeforeunloadFollowsDirty(t *testing.T) {
 // leaveGuardLayerServer adds the intercepted /rec/1 overlay to the
 // behavior server: the overlay carries a guarded form, so closing the
 // layer with edits in flight has to ask first.
-func leaveGuardLayerServer(t *testing.T) *behaviorServer {
+func leaveGuardLayerServer(t *testing.T, extra ...string) *behaviorServer {
 	t.Helper()
 	body := `<script type="application/json" id="gofastr-routes">` + leaveGuardRoutes + `</script>` +
 		`<a id="open" href="/rec/1">open</a>`
+	for _, x := range extra {
+		body += x
+	}
 	b := startBehaviorServer(t, body, func(mux *http.ServeMux) {
 		mux.HandleFunc("/rec/1", func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("X-Gofastr-Intercept") == "" {

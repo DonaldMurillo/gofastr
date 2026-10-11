@@ -165,6 +165,11 @@ func searchInputCSS(_ style.Theme) string {
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);
   overflow: hidden;
+  /* The frame is the control: its height counts the border, so the
+     field lines up with the buttons beside it. The input and the clear
+     button stretch to fill it. */
+  box-sizing: border-box;
+  min-block-size: var(--fui-density-control-h, var(--spacing-touch-target, 44px));
 }
 .fui-search .fui-search__icon {
   display: inline-flex;
@@ -183,7 +188,6 @@ func searchInputCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   padding: var(--ui-control-padding-y, 10px) var(--spacing-xs, 2px);
   color: var(--color-text, #18181B);
-  min-block-size: var(--spacing-touch-target, 44px);
   /* Remove native search clear button (we provide our own). */
   appearance: none;
   -webkit-appearance: none;
@@ -217,7 +221,6 @@ func searchInputCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-block-size: var(--spacing-touch-target, 44px);
   min-inline-size: var(--ui-search-clear-min-width, 2rem);
   background: transparent;
   border: 0;

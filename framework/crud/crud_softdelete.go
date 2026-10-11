@@ -217,7 +217,7 @@ func (ch *CrudHandler) doRestore(ctx context.Context, r *http.Request, id string
 	if ch.Hooks != nil {
 		// Empty body: restore changes no data column. Hooks that need to
 		// veto restores (a retention policy, say) do it on the id.
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeUpdate, map[string]any{}); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.BeforeUpdate, map[string]any{}); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
 	}
@@ -244,7 +244,7 @@ func (ch *CrudHandler) doRestore(ctx context.Context, r *http.Request, id string
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterUpdate, result); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.AfterUpdate, result); err != nil {
 			return nil, fmt.Errorf("after-update hook: %w", err)
 		}
 	}
@@ -273,7 +273,7 @@ func (ch *CrudHandler) doPurge(ctx context.Context, r *http.Request, id string) 
 	ctx = withAuditOperation(ctx, ch.Entity.GetName(), id, "purge")
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeDelete, id); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.BeforeDelete, id); err != nil {
 			return &beforeHookError{err: err}
 		}
 	}
@@ -295,7 +295,7 @@ func (ch *CrudHandler) doPurge(ctx context.Context, r *http.Request, id string) 
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterDelete, id); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.AfterDelete, id); err != nil {
 			return fmt.Errorf("after-delete hook: %w", err)
 		}
 	}

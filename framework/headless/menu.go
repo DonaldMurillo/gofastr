@@ -79,7 +79,13 @@ type MenuItem struct {
 	// both set is refused at render.
 	Radio string
 
-	// Checked sets aria-checked on a Radio row.
+	// Check renders the row as a checkbox option: role=
+	// "menuitemcheckbox" plus aria-checked (see Checked). The state is
+	// the server's: pair it with Href or RPC, whose answer re-renders
+	// the row. Mutually exclusive with Radio and Children.
+	Check bool
+
+	// Checked sets aria-checked on a Radio or Check row.
 	Checked bool
 
 	// Action renders the row as a form submission instead of a link or
@@ -91,7 +97,7 @@ type MenuItem struct {
 	// RPCAttrs carries a built RPC's attributes, core-ui/interactive's
 	// Action.Attrs(), for a row that needs more of the RPC contract
 	// than RPC and Confirm spell: a navigate on success, an error
-	// toast. Only data-cui-rpc* and data-cui-confirm keys are taken,
+	// toast. Only data-cui-rpc* and data-cui-confirm* keys are taken,
 	// data-cui-rpc is required and must be a same-origin path, and any
 	// other key is refused at render. Mutually exclusive with Href,
 	// RPC, Action, Copy, Radio and Children.
@@ -221,12 +227,13 @@ func Menu(p MenuProps, s Classes) render.HTML {
 	// The summary is the trigger; the caret says the activation opens a
 	// list. TriggerHTML is the caller's, replacing the summary's whole
 	// content — with none, the label and the caret are both the
-	// component's own, and the mark goes on the summary itself.
+	// component's own, and the mark goes on the summary itself. A
+	// trigger the composer built and Own'd counts as its own too.
 	summaryOwn := Attrs(map[string]string{
 		"aria-haspopup": "menu",
 		"aria-controls": panelID,
 	})
-	if p.TriggerHTML == "" {
+	if p.TriggerHTML == "" || ownedSlot(p.TriggerHTML) {
 		summaryOwn = Internal(summaryOwn)
 	}
 	summary := b.El("summary", PartSummary, summaryOwn, menuTriggerContent(b, p))
@@ -252,9 +259,11 @@ func menuDetails(b Box, id, panelID string, items []MenuItem, lazy bool, root Pa
 	// rootAttrs arrives already sanitised (Menu ran Safe) with the
 	// position variant folded into its class; re-running Safe here
 	// would drop the class the variant lives in.
+	// A menu is a popup: a press outside closes it.
 	own := Merge(rootAttrs, html.Attrs{
-		"data-hui-disclosure": "",
-		"data-hui-menu":       id,
+		"data-hui-disclosure":         "",
+		"data-hui-disclosure-dismiss": "",
+		"data-hui-menu":               id,
 	})
 	hasContent := menuItemsHaveOwnContent(items)
 	rows := menuRows(b, items, panelID, hasContent)
@@ -347,12 +356,14 @@ func menuItemEl(b Box, it MenuItem, parentPanelID string, idx int, mark bool) re
 	// out of the tab order.
 	own["tabindex"] = "-1"
 	own["role"] = menuRowRole(it)
-	if it.Radio != "" {
+	if it.Radio != "" || it.Check {
 		checked := "false"
 		if it.Checked {
 			checked = "true"
 		}
 		own["aria-checked"] = checked
+	}
+	if it.Radio != "" {
 		own["data-hui-menu-radio"] = it.Radio
 	}
 	if it.Disabled {
@@ -469,6 +480,9 @@ func menuRowRole(it MenuItem) string {
 	if it.Radio != "" {
 		return "menuitemradio"
 	}
+	if it.Check {
+		return "menuitemcheckbox"
+	}
 	return "menuitem"
 }
 
@@ -561,7 +575,13 @@ func menuSubmenu(b Box, it MenuItem, parentPanelID string, idx int, mark bool) r
 // checkMenuItemCoherence refuses the caller-incoherent combinations.
 func checkMenuItemCoherence(it MenuItem) {
 	checkMenuRowShape(it)
+	if it.Check && it.Radio != "" {
+		panic("headless: MenuItem cannot be both Check and Radio — a row is one kind of option")
+	}
 	if len(it.Children) > 0 {
+		if it.Check {
+			panic("headless: MenuItem with Check cannot have Children — a checkbox row is a leaf option, a submenu parent is a disclosure")
+		}
 		if it.Radio != "" {
 			panic("headless: MenuItem with Radio cannot have Children — a radio row is a leaf command, a submenu parent is a disclosure")
 		}
@@ -592,8 +612,12 @@ func checkMenuRowShape(it MenuItem) {
 			panic("headless: MenuItem RPCAttrs needs data-cui-rpc set to a same-origin path, got " + strconv.Quote(path))
 		}
 		for k := range it.RPCAttrs {
-			if k != "data-cui-confirm" && !strings.HasPrefix(k, "data-cui-rpc") {
-				panic("headless: MenuItem RPCAttrs takes only data-cui-rpc* and data-cui-confirm keys, got " + strconv.Quote(k))
+			switch k {
+			case "data-cui-confirm", "data-cui-confirm-title", "data-cui-confirm-accept", "data-cui-confirm-tone":
+				continue
+			}
+			if !strings.HasPrefix(k, "data-cui-rpc") {
+				panic("headless: MenuItem RPCAttrs takes only data-cui-rpc* and data-cui-confirm* keys, got " + strconv.Quote(k))
 			}
 		}
 	}
@@ -665,7 +689,7 @@ func init() {
 		Anatomy: []Part{PartRoot, PartSummary, PartMenuCaret, PartPanel, PartMenuItem,
 			PartIcon, PartText, PartDividerLine, PartMenuSubmenu, PartMenuTrigger, PartMenuToggle, PartMenuForm},
 		Hooks: []string{"data-hui-menu", "data-hui-menu-trigger", "data-hui-menu-panel",
-			"data-hui-menu-radio", "data-hui-menu-lazy", "data-hui-disclosure"},
+			"data-hui-menu-radio", "data-hui-menu-lazy", "data-hui-disclosure", "data-hui-disclosure-dismiss"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Menu(MenuProps{Label: "Options", Items: []MenuItem{
 				{Label: "Profile", Href: "/profile"},

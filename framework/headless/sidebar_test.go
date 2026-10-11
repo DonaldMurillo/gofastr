@@ -140,6 +140,32 @@ func TestSidebarRegionRendersNoShellHooks(t *testing.T) {
 	}
 }
 
+// TestSidebarCountFollowsLabel: a leaf's Count renders after its label
+// under the count part, and is the caller's content, so neither the
+// count nor the link around it carries the internal mark while the
+// label beside it does.
+func TestSidebarCountFollowsLabel(t *testing.T) {
+	h := string(Sidebar(SidebarProps{NavLabel: "Primary", Items: []SidebarItem{
+		{Label: "Invoices", Href: "/invoices", Count: "12"},
+		{Label: "Plans", Href: "/plans"},
+		{Label: "Group", Count: "99", Children: []SidebarItem{{Label: "Leaf", Href: "/leaf"}}},
+	}}, Classes{PartSidebarCount: "count"}))
+	for _, want := range []string{
+		`<a data-cui-activelink="" href="/invoices"><span data-cui-internal="">Invoices</span><span class="count">12</span></a>`,
+		`<a data-cui-activelink="" data-cui-internal="" href="/plans"><span>Plans</span></a>`,
+		// A group's Count is inert: the summary holds only the
+		// component's own label, so the summary itself is marked.
+		`<summary data-cui-internal=""><span>Group</span></summary>`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("sidebar missing %q:\n%s", want, h)
+		}
+	}
+	if strings.Contains(h, "99") {
+		t.Errorf("a group drew its Count:\n%s", h)
+	}
+}
+
 func TestSidebarRefusesBrokenConfiguration(t *testing.T) {
 	cases := []struct {
 		name string

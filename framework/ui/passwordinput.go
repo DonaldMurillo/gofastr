@@ -180,9 +180,12 @@ func passwordInputCSS(_ style.Theme) string {
   opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }
-/* The invalid state arrives as data-invalid on the shell (the input
-   inside has no border of its own to colour). */
-.fui-password[data-invalid] {
+/* The invalid state arrives as data-invalid on the shell when the page
+   renders with the error, or as aria-invalid on the input when the
+   form-errors runtime places a server's refusal after a submit. The
+   input has no border of its own to colour, so either marks the shell. */
+.fui-password[data-invalid],
+.fui-password:has(> .fui-password__input[aria-invalid="true"]) {
   border-color: var(--color-danger, #DC2626);
   box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
 }`

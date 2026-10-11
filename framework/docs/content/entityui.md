@@ -40,15 +40,99 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   its columns from `Display.Columns`, a title cell that links to the
   record, view tabs, facets, a search box over `SearchFields`, filter
   chips, sort headers and a pager. The row menu offers Open, Duplicate
-  and Delete where the builder turns them on.
+  and Delete where the builder turns them on. Five more controls are
+  off by default on app pages and on in the admin: the query box
+  (`.QueryBox()`), the columns menu (`.ColumnsMenu()`), the trash view
+  (`.Deleted()`), saved views (`.SavedViews()`) and tab counts
+  (`.TabCounts()`) — "Query box, columns menu, trash view, saved
+  views, tab counts" covers them. On a phone (below 720px) the table
+  becomes two-line rows (`ui.ResponsiveRows`): the title over the card
+  subtitle (or the first other text column), the card badge (or the
+  first enum) over the first number at the end, the checkbox before
+  and the row menu after. The other columns show on the record.
 - **A record** (`appUI.Record("invoices", id)`): a page header with the
-  record's title and state badge, a button per state move whose `From`
-  holds the stored value, and tabs: Edit (the form from `Display.Form`),
-  Related (the related entities the page names), any extension tabs, and
-  Activity (the audit trail) where turned on.
-- **A create screen** (`appUI.Create("invoices")`): the same form, empty,
-  posting a create to the entity's REST base. `?duplicate=<id>` prefills
-  from that record minus what a create may not set;
+  record's title, its state as the badge, and "Created … · Updated …"
+  from its timestamps; a button per state move whose `From` holds the
+  stored value; one icon-only menu named for the record (Copy link;
+  Copy API URL, the record's REST address on this origin, when its REST
+  routes mounted; with `Duplicate()` and a caller who may create,
+  Duplicate and Create another, the blank create screen; and Delete
+  where turned on); and on the Edit tab, Save. A
+  move or app action declared `danger` is not a header button: it sits
+  in the menu above Delete and runs only after a confirm dialog names it
+  ("Void this invoice?" / "It moves from Draft to Paid."). Save
+  submits the form from the header, answers Mod+S (⌘S, Ctrl+S), and
+  reads as idle until the form has edits; beside it a move or app action
+  declared primary draws as secondary, so Save is the header's one
+  primary action. Tabs: Edit (the form from `Display.Form`), Related
+  (the related entities the page names), any extension tabs, and
+  Activity (the audit trail) and API (the record as the API returns it)
+  where turned on. Related draws each related entity as an embedded
+  list (see below) whose Add opens the create form with this record
+  prefilled, and shows how many rows its lists hold, each
+  entity counted through its own read gate and scope, and Activity how
+  many trail entries it draws (50 at most, "50+" past that). Activity is
+  a timeline, newest first: each entry is a sentence with the actor in
+  bold ("**ada@example.com** made changes", "… created this invoice",
+  "… ran Send", "… overrode the status") and how long ago, and an edit
+  lists the fields it changed as a `ui.ChangeList`, each value drawn the
+  way the list's cell draws it (a badge, a money figure, a related
+  record's title). An update that changed no field the caller may see
+  reads "… saved this invoice". Masked (`NoQuery`) and `Hidden` fields
+  never appear, and an override's reason shows under it. The form's
+  side column holds Details: the id with a copy button, the created and
+  updated times, and each move's stamp; the state field and its stamps
+  are not form fields. Opened as a drawer, the record wears
+  `ui.DrawerBar` (close, its path, copy link, open as page) and its menu drops Copy
+  link. With `Steps()`, a drawer over the record's own list (the
+  builder's `Base`) adds previous and next record to the bar, in the
+  order the list shows its rows under the query it was opened from:
+  view, saved view, search, filter, facets and sort, read as the caller.
+  The query arrives from the client, so it is parsed the way the list
+  parses its own URL, and a sort the list refuses (a masked field's) is
+  refused here too. A record past the first `EveryMatchCap` rows, or
+  outside the list, draws no steps. With `Panel()`, the record's full page
+  heads its actions with Copy link (out of the menu) and Open in panel:
+  a link to the list at `Base` marked `data-cui-intercept-panel`, which
+  loads the list in the page's place and opens the record over it as a
+  drawer, so Back from the drawer lands on the list. Turn it on only
+  where the record's route opens as a drawer over `Base`
+  (`app.InterceptFrom`); elsewhere the link is a plain move to the list. Delete asks first, and on an entity
+  with `Scope.SoftDelete` the confirm says the record can be restored.
+  With `Undo()` (on the list builder too), the toast a soft delete
+  leaves carries Undo for ten seconds, for a caller who may update the
+  record: it posts the restore (`<write base>/<id>/_restore`, the trash
+  view's route) and returns to the list. The bulk bar's Delete offers
+  it too (see "Bulk actions and export"). A relation field is a
+  `ui.Picker`: focus lists the first 20 related records by title, typing
+  searches the related entity (its `SearchFields`, else its titles)
+  through `POST <api>/_pick?field=<field>`, and a note says when the list is
+  cut off. A hidden input submits the picked id. With `WithRecordPath`,
+  the picker draws an open button when it holds a value (when the
+  caller's own read of the related entity returns the row) and a New
+  button to the related create screen when the caller may create one.
+  `PickerHandler` serves the search: POST only, JSON only, 4 KB body,
+  no-store, refused cross-site, and gated by the host entity's read and
+  the related entity's read and per-row Decider. `App.EntityUI` and the
+  admin mount it beside `_bulk`.
+  A `JSON` field is a mono text area checked as JSON in the browser as
+  it is typed (`ui.TextAreaConfig.JSON`): an invalid value stops the
+  save before it is sent; the server still validates.
+  An `Image` or `File` field is an upload when the app has file storage
+  (`framework.WithFileStorage`): the stored file (a thumbnail, or a link
+  named by its file name) above a `ui.FileUpload` of the types the field
+  takes; the form then posts multipart (the runtime does so for any
+  form with a file input), and an empty input keeps the stored file. Without storage the stored URL stays an editable text
+  box. A stored key draws at `Extensions.FilesURL` + key (each segment
+  escaped; a key with `..` or a scheme other than http(s) draws
+  nothing).
+- **A create screen** (`appUI.Create("invoices")`): the same form,
+  starting at each field's `Default`, posting a create to the entity's
+  REST base. `?duplicate=<id>` prefills
+  from that record minus what a create may not set and what the copy
+  would collide on: a `unique` field and the fields of a unique index
+  start blank (a relation in a mixed index keeps its value, so an
+  invoice copies under its customer with a blank number);
   `?prefill_<field>=<value>` prefills one field — the convention a
   `Where`-pinned list's New link uses, the Related tab's among them. A
   bare `?<field>=` is some other param and prefills nothing.
@@ -62,12 +146,25 @@ screen, or call `RenderCtx(ctx)` to place one inside another component.
   masked rows instead, and past 100,000 rows prints "—" rather than part
   of them; a field with more than 100 values draws no chart. Each logs
   why. A dashboard block reads an entity without a screen of its own.
+  `appUI.Count(ctx, entity, where)` is the count alone, formatted, and
+  reports false where `StatValue` would print "—", so a nav row or a
+  badge draws nothing instead. `appUI.CheckStat(entity, agg, field,
+  where, format)` returns why `StatValue` could never compute a spec,
+  so a host can refuse a configured stat at boot.
+  `appUI.LastUpdated` is when the newest record the caller can read was
+  written (the greatest `updated_at` in scope); it reports false on an
+  entity without timestamps, a refused read or no rows.
+
+An `Image` field draws a `ui.Thumbnail`: a small one in a list cell, a
+large one above the URL input on the record. A URL that
+`urlsafe.ImageSource` refuses (a `javascript:` or SVG data URI) draws
+no image.
 
 ## How it reads the entity
 
 `Display` (`entity.DisplayConfig`, spelled `display:` in a blueprint) is
 plain data on the entity; nil means every default falls back to the schema
-itself. It names the record (`Singular`, `Plural`, `TitleField`,
+itself. It names the record (`Singular`, `Plural`, `TitleFields`,
 `Description`), the list (`Columns`, `Views`, `Facets`, `PageSizes`,
 `Card`, `NoDuplicate`, `NoBulk`), the sidebar (`Nav`), the form layout
 (`Form`, with rows, sections and a side rail) and per-field hints
@@ -76,11 +173,24 @@ itself. It names the record (`Singular`, `Plural`, `TitleField`,
 accepts; the field's own `Hidden`, `ReadOnly` and `NoQuery` keep their
 meaning and every screen honours them first.
 
+A form input carries the field's own validators, so the browser refuses a
+bad value before the round trip: `Required` sets `required`; a string's
+`Min` and `Max` set `minlength` and `maxlength` (a fractional minimum
+rounds up) and a number's set `min` and `max`; `Pattern` sets
+`pattern`, wrapped as `[\s\S]*(?:<pattern>)[\s\S]*` because the
+server's check is an unanchored match and the browser anchors the
+attribute. A pattern using Go-only syntax (inline flags such as `(?i)`)
+stays off the input and the server alone checks it. The server still
+validates every write; the attributes only move the first refusal
+earlier.
+
 `States` (`entity.StatesConfig`) gives the record its moves. The state
 field and every stamp render read-only on every screen; a button per
 transition posts the entity's transition route
 (`POST <api>/<entity>/<id>/transitions/<key>`), whose success re-fetches
-the page. A `System: true` move draws no button — only Go code calls it.
+the page. A move with `Variant: "danger"` is a menu item behind a
+confirm in place of a button. A `System: true` move draws no button —
+only Go code calls it.
 A move's `Permission` gates its button with the same exact resource check
 the route runs: the caller's roles must grant it by name, and a
 `Wildcard` grant does not, so no button is drawn that the route would
@@ -112,20 +222,48 @@ record := appUI.Record("invoices", "inv-42").Delete().RenderCtx(ctx)
 _, _ = list, record
 ```
 
+Under the rows a list says which rows show out of how many ("1–25 of
+40") and, when more rows exist than the smallest size, offers rows per
+page: the entity's `Display.PageSizes`, else 25, 50 and 100, each within
+`Pagination.MaxListLimit`. The menu's links set `<key>_per` and return to
+the first page; the param rides every other link like `as`, and a size
+not on offer is ignored. A builder's `PageSize`, a preview (`Top`) and
+an embedded list offer none.
+
 The list builder also takes `Key` (namespaces its query params when two
 lists share a page), `View` (the view that opens when the URL names
-none), `As("cards")`, `Where(field, value)` (pins a term inside the
+none), `As("cards")`, `InlineEdit()` (a table's plain cells, an enum, a bool, a
+number, a date or a short string, are edited in place through
+`ui.InlineEdit`: the form PUTs the one field to the record's write route
+and returns to the list; only for a caller who may update the row, never
+on a value a read hook masks, the title link, a state field or a locked
+one. The editor is the field with its label hidden from view (an enum as
+a select, a whole number with no stepper) beside Save, and a line under
+the rows says "Select a value to edit it in place."), `LayoutSwitch()` (a labelled Table / Cards switch at
+the end of the toolbar, after Columns, `ui.SegmentedLinks`, whose links set `<key>_as`; it then wins
+over `As` and the view's layout), `Where(field, value)` (pins a term inside the
 caller's scope — a tab listing one invoice's payments; the pinned field leaves the default columns and the facets, and New carries it as `?prefill_<field>=`), `Base` (where
-record links hang off), `Heading(text, level)` and `Empty(text)`,
+record links hang off), `Heading(text, level)` (it also names the table,
+as a hidden caption, so two lists on one page are two named regions) and
+`Empty(text)`,
 `NoCreate`, `NoLinks` (rows with no record links, no row menu and no New,
-for an entity with no screen of its own), `Delete`, `Duplicate`, `Bulk`,
-and `Actions` for header buttons beside New.
+for an entity with no screen of its own), `Delete`, `Undo`, `Duplicate`, `Bulk`,
+`QueryBox`, `ColumnsMenu`, `Deleted` and `SavedViews` (the four list
+controls below), and `Actions` for header buttons beside New.
+
+`Empty(text)` replaces the description of an empty list's state, which
+offers New. A list narrowed to nothing draws its own state instead,
+without New: a search, typed filter, facet or saved view that matches
+no row reads "No {entity} match" with a "Clear search and filters"
+link (the view and columns stay, the sort resets), and a view with no
+rows reads "No {entity} in this view".
 
 The record builder takes `Base`, `Form` (replaces `Display.Form` on this
 page), `Omit(fields...)`, `Tab(key, build)` for a page-local tab,
 `Related(entities...)` for the Related tab's lists, `RelatedAt(entity,
 base)` for one whose screens live elsewhere (an empty base draws it with
-`NoLinks`), `Activity()`, `Delete()`, `Duplicate()` and `Prefill(values)`.
+`NoLinks`), `Activity()`, `API()`, `Override()`, `Delete()`, `Undo()`,
+`Duplicate()`, `Steps()`, `Panel()` and `Prefill(values)`.
 A related list's heading sits one level below the record's title, so the
 page keeps one `<h1>`.
 
@@ -133,10 +271,62 @@ A builder name that is wrong — an unknown entity, a bad `As`, an unknown
 column — fails that slot with a generic message and a log line, never a
 failed page.
 
+## Naming records and pointing writes elsewhere
+
+`appUI.RecordTitle(ctx, entity, id)` answers the name a record's heading
+shows, for a breadcrumb or a link drawn outside its screen: its
+`TitleFields` joined with " · ", a relation part read as the related
+record's own title.
+`appUI.SearchRecords(ctx, entity, q, limit)` answers up to `limit`
+records (at most 20) whose `SearchFields` match `q`, the way the list's
+search box matches, as `entityui.RecordMatch{ID, Title}`, in primary-key
+order. The limit counts records the caller may open: a row a Decider
+refuses does not use up a place, and the read pages past refused rows for
+at most five pages of `limit` rows. Both read behind the same gates as
+the screens (scope, sign-in, RBAC, a Decider's per-row answer, the read
+hooks) and answer nothing for a record or entity the caller may not see.
+
+`appUI.SnapshotTitle(ctx, entity, row)` names a record from a stored copy
+of its values (an audit row's old or new side) the way `RecordTitle`
+names a live one, reading only the related records a relation part
+names, so a deleted record keeps its name; a masked title field is left
+out. A list names its page's rows in one batch: each relation part is
+one read for the page, not one per row.
+`appUI.Changes(ctx, entity, before, after)` draws what one edit changed
+as the Activity tab's change list, "" when no field the caller may see
+differs; `before` and `after` are keyed by the API's wire names, the way
+the audit log stores them. `appUI.WithActorName(name)` returns a UI whose
+Activity tab names each actor by `name(ctx, id)` (the admin passes the
+account's email), the id where it answers "" or panics.
+
+`appUI.WithAPIPath(path)` returns a UI with the same screens and
+Extensions whose writes (save, delete, moves, bulk, export) post to
+`path(e)` instead of the entity's REST routes; `path` answering false
+draws that entity read-only. A back office uses it to send writes through
+routes it gates itself: `battery/admin` mounts the CRUD handler's write
+routes under `/admin/api/<entity>` this way. Reads are unchanged.
+
+`appUI.WithRecordPath(path)` returns a UI whose list cells draw a
+relation's title as a chip linking to `path(e) + "/" + id`, the related
+record's screen. A link is drawn only for a title the caller's own read
+of the related entity returned; a refused relation stays muted, an id
+the read did not return stays text, and `path` answering false leaves
+that entity's titles as text. The admin points it at
+`/admin/entities/<entity>` for the entities it exposes. An enum cell
+draws its badge with a dot.
+
 ## Extensions
 
 `Extensions` is the code an app registers next to its screens: the entity
 says what to show, extensions draw or act.
+
+Extension code runs as the caller. A back office that elevates its own
+reads and writes (`crud.WithElevation`, as battery/admin does) does not
+vouch for an action's `Run`, a tab's `Build`, a view func, a field kind
+or a replaced list or record body: each receives the caller's context
+with the elevation removed (`crud.WithoutElevation`), and the component
+it returns draws with that context too, so it passes only
+the read and write gates the caller's own roles pass.
 
 ```go
 <!-- gofastr:compile
@@ -168,11 +358,21 @@ appUI := fwApp.EntityUI(entityui.Extensions{
 - **Kinds** draw one field kind: `Input` on forms, `Cell` in list cells
   and cards, `Detail` read-only (`Cell` when nil). `Display.Fields[f].Input`
   picks one by name. `email`, `url`, `color`, `markdown` and `code` are
-  built in; an app kind of the same name replaces a built-in one.
+  built in, and so is `money` for an Int, Float or Decimal: a number input
+  behind the currency symbol, and the value printed as an amount (`$1,234.50`,
+  `-$5.00`) in cells and read-only. The symbol is the
+  `ui.entity.currency` catalog entry (`$` by default), which the
+  `format: money` stat reads too. A built-in kind on a field type it does
+  not fit (`money` on a String) fails registration. An app kind of the
+  same name replaces a built-in one, and its fit is the app's to judge. A
+  locked field drawn by a kind keeps its label above the kind's `Detail`.
   `Cell` and `Detail` get the row after the read hooks, so a column a hook
   masks stays masked in them, and a relation whose target the caller may
   not read draws muted without calling them. Only `Input` gets the stored
-  value, since a form prefills from it.
+  value, since a form prefills from it. `InputContext.Label` and `Help`
+  carry the words the form resolved (catalog entry, else the Display
+  hint, else the humanized name), so a kind labels its field the way a
+  built-in field would.
 - **Views** bind a func to a `Display.Views` key, for a filter that
   depends on who is looking, the tenant or the clock. The URL carries the
   key (`?view=overdue`), never the predicate. The func's predicate passes
@@ -186,6 +386,14 @@ appUI := fwApp.EntityUI(entityui.Extensions{
   func registered for a key no view declares.
 - **Tabs** add a record tab after the built-in ones. `Build` runs inside
   a recover: a panicking tab fails that tab alone.
+- **Side** adds panels to the record's side column on the Edit tab,
+  after the record's details, each a compact section headed by its
+  `Title`. `Build` gets the record as the read hooks left it and runs
+  as the caller, inside a recover: a panicking or erroring panel fails
+  that panel alone. A create form draws none. The column sits inside the
+  record's form, so a panel is read-only or gives its own controls a
+  `form` attribute naming a form outside it. `New` refuses a panel whose
+  key is not a key, a duplicate key, or a nil `Build`.
 - **Actions** add record header buttons and, with `Bulk`, list bulk
   actions. A record button posts to the entity's `_bulk` route with scope
   `record` and the one id, so it runs through the same re-read, gates and
@@ -193,7 +401,8 @@ appUI := fwApp.EntityUI(entityui.Extensions{
   the record's gates skipped it and 500 when `Run` failed. It shows only
   to a caller who may run it on that record, in its `Variant`
   (`ui.ButtonSecondary` when empty; `New` refuses a variant no Button
-  knows). `Permission`, when set, is checked against the caller's own
+  knows). A `ui.ButtonDanger` action is a record menu item above Delete,
+  behind a confirm naming the action and the record. `Permission`, when set, is checked against the caller's own
   roles on top of the entity's update access; a `Wildcard` grant does not
   satisfy it. `Run` receives the resolved selection and a CRUD handle
   scoped to the caller. Up to `InRequestCap` (100) records run inside the
@@ -236,7 +445,8 @@ submittable.
 ## State in the URL, writes as form RPCs
 
 A list keeps its state in the page's own query string: `sort`, `dir`,
-`page`, `q`, `filter` (DSL text), `view` and `f_<field>` facets, each
+`page`, `q`, `filter` (DSL text), `view`, `cols` (the shown columns, in
+order), `saved` (an open saved view's id) and `f_<field>` facets, each
 prefixed by the list's key when it has one (`due_sort` for
 `.Key("due")`). Sort headers, pager links and view tabs are plain
 anchors the client router intercepts; the toolbar is one GET form whose
@@ -252,6 +462,164 @@ REST routes whose answer re-fetches the page
 runtime's error toast. The edit form's inputs prefill from the unhooked
 read so they round-trip; read-only values show what an `AfterGet`
 redaction shows.
+
+## Query box, columns menu, trash view, saved views
+
+Four list controls are off by default on app pages and on in the admin.
+Each is one builder method, and each keeps its state in the page's own
+query string like the rest of the list. The list draws one toolbar
+form: the search, a Filters dropdown (the facets, the query box and
+the one Apply/Reset pair, with a badge counting the filters set) and
+the Columns menu at the row's end. Saved views are tabs beside the
+declared views, and the "Save view" dropdown sits at the tab row's
+end. Active filters show as chips under the toolbar, each linking to
+the list without it, plus a "Clear all".
+
+```go
+<!-- gofastr:compile
+import "context"
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/framework/entityui"
+var fwApp *framework.App
+var ctx = context.Context(nil)
+-->
+list := fwApp.EntityUI(entityui.Extensions{}).
+	List("invoices").
+	QueryBox().      // the filter typed by hand
+	ColumnsMenu().   // show, hide, reset
+	Deleted().       // the trash view, ?view=deleted
+	SavedViews().    // the caller's named views, ?saved=<id>
+	TabCounts()      // a row count on each view tab
+_ = list.RenderCtx(ctx)
+```
+
+- **An embedded list** (`.Embedded()`) is one section of another
+  screen, the way a record's Related tab draws its lists: a compact
+  header holding the heading, the row count and a small "Add
+  <singular>" button, then the rows with no view tabs, search, filters
+  or bulk selection, and a one-line empty state when there are none.
+  Sort and pager stay, keyed as ever. `.Flush()` drops the table's
+  frame, for rows inside a card whose frame is the card's.
+
+- **A preview** (`.Top(n)`) shows the first `n` rows in the view's own
+  order, with no pager, sort controls or row menu (each row still links
+  to its record), ignoring the URL's page and sort params. It is for a
+  list whose full form lives on another screen: the admin's Needs
+  attention panel draws `.Embedded().Top(5)` lists linking to theirs.
+
+- **The query box** (`.QueryBox()`) is where the reader types the
+  filter: a labelled text field named the list's `filter` param,
+  prefilled with the active filter text, inside the Filters dropdown of
+  the toolbar form, which round-trips the state it does not own. Under
+  it a reference shows, each as `ui.InlineCode`, an example built from
+  the entity's own fields, also the placeholder
+  (`status = "open" and amount > 100`: an enum against its first
+  value, a number against 100, a text field's `contains`, a boolean's
+  `true`; never the id, a relation or a date), the operators (`=`,
+  `!=`, `<`, `>`, `<=`, `>=`, `contains`, `in [a, b]`), the joining
+  words (`and`, `or`, parentheses) and the queryable fields. The server parses the text with the same parser the
+  chips use, so both stay in sync; text that fails to parse, or names a
+  Hidden, `NoQuery` or unknown field, keeps the filter-did-not-apply
+  warning and lists without it — never an error page, never SQL.
+- **The columns menu** (`.ColumnsMenu()`) is a menu of checkbox rows,
+  one per available field, each a link that toggles that field in the
+  `cols` param and keeps the filter and the sort, plus a Reset row that
+  drops it. The title row is checked and disabled. A `cols` param
+  typed by hand still sets the order. Every
+  `cols` name must be a visible, non-omitted field; an unknown,
+  Hidden, omitted or duplicate name makes the whole param ignored —
+  the list's resolved columns stand. The title column carries the
+  record link, so it may not be hidden: a `cols` that leaves it out
+  gets it back, first. Columns change what a row shows, not which rows
+  match, so the page stays; the read asks only for the shown columns.
+- **The trash view** (`.Deleted()`, an entity with `Scope.SoftDelete`
+  only) adds a Deleted tab beside the views: `?view=deleted` lists only
+  soft-deleted rows, under the same owner, tenant and read scope as the
+  live list, with no bulk bar, no New, no row menu and no record link
+  (the record screens read live rows only). Each row offers Restore
+  and Delete permanently, behind a confirm. The two post to the host's
+  write base for the entity — `POST <write base>/<id>/_restore` and
+  `POST <write base>/<id>/_purge` — served by
+  `appUI.RestoreHandler(entity)` and `appUI.PurgeHandler(entity)`,
+  which a host mounts the way it mounts `appUI.BulkHandler(entity)`.
+  The handlers run the CRUD handler's `RestoreOne` / `PurgeOne` under
+  the caller's own context, so permission, the Decider and owner and
+  tenant scope are the write route's own gates; a purge of a live row
+  answers 409 and touches nothing. A form-RPC caller gets a status and
+  a toast; a plain form post gets a 303 back to the Deleted view, along
+  a same-origin relative return path the form carried — never an
+  absolute URL. Cross-site posts are refused, the body is capped and
+  nothing is stored cacheable.
+- **Tab counts** (`.TabCounts()`) put a row count on each view tab:
+  the rows that tab's link would list, under the page's search, facets,
+  filter, `Where` pins and the caller's read scope (owner, tenant,
+  read hooks). A saved view's tab counts its own filter, a Deleted tab
+  the trashed rows. The open tab reuses the page's own count; every
+  other tab is one COUNT. A refused count leaves its tab bare. With
+  the counts on the tabs, the page header shows the entity's
+  `Display.Description` in place of the "N invoices" line, when it has
+  one.
+- **Saved views** (`.SavedViews()`, when the UI carries a store —
+  `appUI.WithSavedViews(store)`) keep a named filter-and-columns state
+  per caller, in a `SavedViewStore` the host backs with a table
+  (`battery/admin` provides it). `?saved=<id>` opens one: its filter
+  and columns apply as if they were the `filter` and `cols` params,
+  with an explicit param in the URL winning, and both are re-parsed
+  and re-checked on every open — a view that no longer applies (or an
+  unknown or foreign id) draws a callout and lists the All view,
+  revealing nothing. The save form ("Save view", a name; shown once the
+  filter or the columns differ from the open view) and the open view's
+  delete form post to `POST <write base>/_views` and
+  `POST <write base>/_views/_delete/{id}`, served by
+  `appUI.SavedViewsHandler(entity)`. The handler re-checks the filter
+  and columns against the entity's fields before storing anything;
+  owner and tenant come only from the caller's context, which the
+  store enforces. A list with a saved view open draws no Export link
+  and offers no "every match" bulk scope: the saved narrowing is not
+  in the query those routes read, the same rule a `Where`-pinned list
+  follows.
+
+A saved view's own columns apply even when the columns menu is off:
+they are the saved-view feature's state, not the menu's.
+
+## API tab and status override
+
+`Record("invoices", id).API()` adds the API tab: how to reach this
+record from code. It shows the record as JSON, as the REST read under
+the caller's context returns it (Hidden columns never appear, an
+`AfterGet` mask shows the mask); the entity's own REST path and the
+methods its `Exposure` allows, even on a back office whose
+`UI.WithAPIPath` moved the writes; the MCP tool names while
+`Exposure.MCP` is on (`crud.MCPToolNames`); and a link to `/api/llm.md`.
+The methods come from the declaration, so a read-only `App.View` mount
+still lists the write methods. The tab reads nothing the record screen
+could not.
+
+`Record("invoices", id).Override()` adds a status override: a form in a
+disclosure below the tabs, for setting the state field outside the
+declared moves (a bad import, a support case). It is drawn only for an
+entity with enforced `States` on an app that keeps an audit log, and
+only for a caller who may update the record and also holds
+`<entity>:override_state`, checked with `access.CanResourceExact`: a
+`Wildcard` grant does not satisfy it, and neither does
+`crud.WithElevation`. The capability adds to the update permission; it
+does not replace it. The form takes a state and a
+required reason (at most 500 characters) and asks before it posts.
+
+It posts to `<write base>/{id}/_override`, served by
+`UI.OverrideHandler(entity)`, which the host mounts beside its other
+write routes. The handler takes POST only, refuses cross-site posts,
+caps the body, checks the capability before reading anything, reads the
+record under the caller's context and the entity's read permission
+(another owner's id answers 404), refuses a caller the update
+permission refuses (403), validates the state and the reason, and
+writes with `crud.UpdateOne` under `crud.WithStateOverride`. The audit
+row (`state_override`, with the reason) comes from crud. An entity no
+audit log records answers 409; the write never falls back to an
+unaudited one. A write crud refuses answers what the JSON API would: 403,
+404, 422 for invalid values, 400 for a hook's refusal. A form RPC gets a
+status and a toast; a plain form post gets a 303 to the form's `back`
+path, which must be a same-origin relative path.
 
 ## Bulk actions and export
 
@@ -280,6 +648,18 @@ and so does an entity with no REST write routes.
   it was drawn is never touched. A list past the cap is not offered
   every match. Each record then passes its own update or delete
   gate before the write; a refused record counts as skipped.
+- **Undo.** Under `.Undo()` on a soft-deleting entity the bar also posts
+  `undo` and the list's path, and a delete run in the request answers a
+  toast whose Undo button restores the rows it deleted that the caller
+  could update, then returns to the list. The button posts the
+  `deleted` scope with the action `restore`: the ids are re-read from
+  the trash under the caller's scope, at most `InRequestCap`, and each
+  restore passes the caller's own update gate, so a forged id restores
+  nothing the trash view's Restore would refuse. The ids ride the toast
+  header, so a run whose button would pass 2 KiB offers no Undo (a
+  proxy refuses a response with oversized headers, and the delete has
+  already happened); the Deleted view restores those. A queued run
+  offers none either.
 - **Every run writes one audit row** (`op: "bulk"`) with the action, the
   count and the done, skipped and failed tallies, when the app has
   `WithAuditLog`. The actor is the audit log's actor.
@@ -318,7 +698,12 @@ and so does an entity with no REST write routes.
   the list uses. `NoQuery`, omitted and JSON fields are left out, and a
   cell a spreadsheet would run as a formula is prefixed with a quote. A
   list pinned with `Where` draws no Export link: the route reads the
-  query, and a pin is not in it.
+  query, and a pin is not in it. Repeated `_id=<id>` parameters replace
+  the query with those rows (at most `InRequestCap`, repeats counted),
+  still through the scoped handler, so a row the caller may not read
+  drops out. The floating bulk bar's **Copy CSV** uses it: it fetches
+  the checked rows' ids and writes the CSV to the clipboard. It shows
+  where Export does.
 
 Both routes mount on the router the entity's CRUD routes went on, so an
 entity registered with `App.GroupEntity` keeps its group's prefix and

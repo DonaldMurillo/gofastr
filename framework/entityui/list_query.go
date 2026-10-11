@@ -3,6 +3,7 @@ package entityui
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -19,6 +20,14 @@ type listParams struct {
 	q      string
 	filter string
 	view   string
+	cols   string
+	saved  string
+	// The filter rows' field, operator and value, repeated per row.
+	rowF, rowO, rowV string
+	// as is the layout the switch picks: "table" or "cards".
+	as string
+	// per is the rows per page the footer's menu picks.
+	per string
 }
 
 func listParamsFor(key string) listParams {
@@ -29,6 +38,14 @@ func listParamsFor(key string) listParams {
 		q:      param(key, "q"),
 		filter: param(key, "filter"),
 		view:   param(key, "view"),
+		cols:   param(key, "cols"),
+		saved:  param(key, "saved"),
+
+		rowF: param(key, "rf"),
+		rowO: param(key, "ro"),
+		rowV: param(key, "rv"),
+		as:   param(key, "as"),
+		per:  param(key, "per"),
 	}
 }
 
@@ -41,6 +58,18 @@ type listState struct {
 	q    url.Values
 	path string // the page's own path, for sort/page/view links
 	base string // the record-link base, b.Base or the page path
+	// relBase is each relation column's related-record base, set when
+	// the UI has a record path for the related entity.
+	relBase map[string]string
+	// titles is each page row's title by id, set by pageTitles.
+	titles map[string]string
+	// rawRows is the page read without read hooks, by id: set only for
+	// a list with InlineEdit, which edits a value only where the hooked
+	// and the stored one agree.
+	rawRows map[string]map[string]any
+	// inlineDrawn is set once a cell's editor is drawn, so the table
+	// says how to edit in place.
+	inlineDrawn bool
 
 	view string // "" = All
 	// implicitView is the view shown with no ?view= param, "" when that
@@ -50,6 +79,7 @@ type listState struct {
 	viewSorts    []filter.ParsedSort
 	as           string // "table" | "cards"
 	columns      []string
+	available    []string    // the default resolution the cols param and the menu work from
 	pins         []listWhere // the builder's Where pins: context, never a column or facet
 
 	search     string
@@ -63,6 +93,20 @@ type listState struct {
 
 	page  int
 	limit int
+
+	// The trash view: offeredTab is whether the strip carries it (the
+	// builder asked and the entity soft-deletes); deletedView is whether
+	// this render shows it, ?view=deleted.
+	offeredTab  bool
+	deletedView bool
+
+	// Saved views, on when the builder asked and the UI carries a store.
+	savedOn     bool
+	savedViews  []SavedView // the caller's, for the strip
+	savedID     string      // the open one, "" when none
+	savedName   string
+	savedFilter string // the open view's filter text, when the URL names none
+	savedGone   bool   // the open view no longer applies: callout, All view
 }
 
 // facetParam is a facet field's param name: ?<p>f_<field>=.
@@ -136,6 +180,9 @@ func (s *listState) resolveColumns(b *ListBuilder) error {
 		out = append(out, name)
 	}
 	s.columns = out
+	// The available set the columns menu offers and the cols param and a
+	// saved view are measured against: the default resolution itself.
+	s.available = slices.Clone(out)
 	return nil
 }
 
@@ -150,9 +197,9 @@ func (s *listState) sortable(col string) bool {
 
 // resolveSort reads ?sort= and ?dir=, refusing anything but a shown,
 // queryable column; with none, the view's declared Sort is the order.
-func (s *listState) resolveSort() {
+func (s *listState) resolveSort(b *ListBuilder) {
 	col := s.q.Get(s.p.sort)
-	if col != "" && s.sortable(col) {
+	if col != "" && s.sortable(col) && !b.top {
 		s.sortField = col
 		s.sortDesc = s.q.Get(s.p.dir) == "desc"
 		s.sorts = []filter.ParsedSort{{Field: col, Desc: s.sortDesc}}
@@ -166,8 +213,9 @@ func (s *listState) resolveSort() {
 }
 
 // resolvePage reads ?page= and settles the page size: the builder's,
-// else the first Display.PageSizes entry, else 25, never above the
-// entity's Pagination.MaxListLimit.
+// else ?per= when it is a size on offer, else the first
+// Display.PageSizes entry, else 25, never above the entity's
+// Pagination.MaxListLimit.
 func (s *listState) resolvePage(b *ListBuilder) {
 	limit := b.pageSize
 	if limit <= 0 && len(s.m.d.PageSizes) > 0 {
@@ -176,12 +224,17 @@ func (s *listState) resolvePage(b *ListBuilder) {
 	if limit <= 0 {
 		limit = 25
 	}
+	// The footer's menu picks among the sizes on offer; anything else
+	// on the URL is ignored, never a size of its own.
+	if n, err := strconv.Atoi(s.q.Get(s.p.per)); err == nil && slices.Contains(s.pageSizes(b), n) {
+		limit = n
+	}
 	if max := s.maxListLimit(); max > 0 && limit > max {
 		limit = max
 	}
 	s.limit = limit
 	page := 1
-	if n, err := strconv.Atoi(s.q.Get(s.p.page)); err == nil && n > 1 {
+	if n, err := strconv.Atoi(s.q.Get(s.p.page)); err == nil && n > 1 && !b.top {
 		page = n
 	}
 	s.page = page
@@ -236,7 +289,9 @@ func (s *listState) readFields() []string {
 	for _, c := range s.columns {
 		add(c)
 	}
-	add(s.m.titleField())
+	for _, tf := range s.m.titleFields() {
+		add(tf)
+	}
 	if s.m.states != nil {
 		add(s.m.states.Field)
 	}
@@ -248,12 +303,18 @@ func (s *listState) readFields() []string {
 // the tree as ONE parenthesized clause beside the owner, tenant,
 // soft-delete and read scopes, so nothing here can widen past them.
 func (s *listState) predicate(b *ListBuilder) (*filter.Predicate, error) {
+	return s.narrowed(b, s.viewPred, s.filterPred)
+}
+
+// narrowed ANDs a view's predicate and a filter's with the builder's
+// Where pins: the list's own predicate, or a view tab's.
+func (s *listState) narrowed(b *ListBuilder, view, filt *filter.Predicate) (*filter.Predicate, error) {
 	var children []*filter.Predicate
-	if s.viewPred != nil {
-		children = append(children, s.viewPred)
+	if view != nil {
+		children = append(children, view)
 	}
-	if s.filterPred != nil {
-		children = append(children, s.filterPred)
+	if filt != nil {
+		children = append(children, filt)
 	}
 	for _, w := range b.where {
 		f, ok := s.m.field(w.field)
@@ -306,6 +367,28 @@ func (s *listState) facetFilters() []filter.ParsedFilter {
 		out = append(out, pf)
 	}
 	return out
+}
+
+// searchedOrFiltered reports a search, a typed or saved filter, or a
+// facet narrowing the list.
+func (s *listState) searchedOrFiltered() bool {
+	return strings.TrimSpace(s.search) != "" || s.filterText != "" || len(s.activeFacets()) > 0
+}
+
+// clearSearchHref is the list without its search, filter and facets:
+// the view and columns stay, and the sort resets as on any narrowing
+// link. An open saved view whose filter narrows the list goes too, the
+// way the chip bar's Clear all drops it.
+func (s *listState) clearSearchHref() string {
+	drop := []string{s.p.q, s.p.filter, s.p.page}
+	for _, name := range s.activeFacets() {
+		drop = append(drop, s.facetParam(name))
+	}
+	q := s.carry(drop...)
+	if s.savedID != "" && !s.q.Has(s.p.filter) && s.filterText != "" {
+		q.Del(s.p.saved)
+	}
+	return listHref(s.path, q)
 }
 
 // activeFacets are the facets with a value in the URL, for carrying
@@ -362,7 +445,8 @@ func (s *listState) carry(exclude ...string) url.Values {
 // ownsParam reports whether name is one of this list's own params.
 func (s *listState) ownsParam(name string) bool {
 	switch name {
-	case s.p.sort, s.p.dir, s.p.page, s.p.q, s.p.filter, s.p.view:
+	case s.p.sort, s.p.dir, s.p.page, s.p.q, s.p.filter, s.p.view,
+		s.p.rowF, s.p.rowO, s.p.rowV:
 		return true
 	}
 	// A facet param names one of this entity's fields: an unkeyed list's
@@ -374,6 +458,35 @@ func (s *listState) ownsParam(name string) bool {
 	}
 	_, own := s.m.byName[field]
 	return own
+}
+
+// defaultPageSizes are the rows-per-page choices an entity with no
+// Display.PageSizes offers.
+var defaultPageSizes = []int{25, 50, 100}
+
+// pageSizes are the sizes the footer offers: the entity's
+// Display.PageSizes, else 25, 50 and 100, each within its
+// Pagination.MaxListLimit. A builder that fixed its size, a preview and
+// an embedded list offer none.
+func (s *listState) pageSizes(b *ListBuilder) []int {
+	if b.pageSize > 0 || b.top || b.embedded {
+		return nil
+	}
+	sizes := s.m.d.PageSizes
+	if len(sizes) == 0 {
+		sizes = defaultPageSizes
+	}
+	max := s.maxListLimit()
+	var out []int
+	for _, n := range sizes {
+		if n > 0 && (max <= 0 || n <= max) {
+			out = append(out, n)
+		}
+	}
+	if len(out) < 2 {
+		return nil
+	}
+	return out
 }
 
 // listHref renders path plus query.

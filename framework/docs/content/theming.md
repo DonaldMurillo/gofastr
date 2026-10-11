@@ -40,7 +40,7 @@ fixed prefix:
 | `Opacities` | `--opacity-<name>` | `--opacity-faint` (0.2), `--opacity-disabled` (0.5: a disabled control), `--opacity-muted` (0.6: secondary glyphs and labels). A value is a number from 0 to 1. Optional like `Strokes` |
 | `FontWeights` | `--font-weight-<name>` | `--font-weight-normal` (400), `--font-weight-medium` (500), `--font-weight-semibold` (600), `--font-weight-bold` (700) |
 | `Breakpoints` | `--breakpoint-<name>` | `--breakpoint-md` (informational; media queries can't read vars) |
-| `Layout` | `--spacing-touch-target`, `--size-<name>` | `--spacing-touch-target` is the WCAG 2.5.5 minimum tap-target size (44px default); comfortable-density controls reach it through `--fui-density-control-h` (see component options), and pagination, inputs and the mobile hamburger summary read it directly. The `style.Size` fields are the dimensions a page is built around: `--size-page-width` (66rem, the column a site's header, main and footer share; `ui.Container`'s page width), `--size-page-gutter` (clamp(20px, 5vw, 32px), the side space outside it), `--size-header-height` (56px, which `ui.ContentRow`'s viewport mode subtracts), and `ui.Container`'s caps `--size-narrow-width` (640px), `--size-content-width` (1080px) and `--size-wide-width` (1280px) |
+| `Layout` | `--spacing-touch-target`, `--size-<name>` | `--spacing-touch-target` is the WCAG 2.5.5 minimum tap-target size (44px default); comfortable-density controls, pagination and DataTable rows reach it through `--fui-density-control-h` (see component options), and the mobile hamburger summary reads it directly. The `style.Size` fields are the dimensions a page is built around: `--size-page-width` (66rem, the column a site's header, main and footer share; `ui.Container`'s page width), `--size-page-gutter` (clamp(20px, 5vw, 32px), the side space outside it), `--size-header-height` (56px, which `ui.ContentRow`'s viewport mode subtracts), and `ui.Container`'s caps `--size-narrow-width` (640px), `--size-content-width` (1080px) and `--size-wide-width` (1280px) |
 | `Code` | `--tk-<name>` | `--tk-kw`, `--tk-str`, `--tk-com`, the syntax-highlight colors code blocks read. Optional like `Strokes`: leave a slot unset and it falls back to the built-in palette. Dark values go in `Theme.DarkCode` (a map, like `DarkColors`) |
 | `Knobs` | `--ui-<name>` | a map of per-component knob values (`"ui-button-edge": "var(--color-border-strong)"`, `"ui-checkbox-box-size": "20px"`), emitted in the theme's own `:root` block. Keys are `ui-` plus lower-case words joined by single dashes; values pass the same check as any free-form CSS value. See [Per-component knobs](#per-component-knobs-the---ui--variables) |
 
@@ -567,7 +567,7 @@ To let a visitor switch the whole page between themes, register each
 extra theme as an override and render a picker:
 
 ```go
-var Brutal = style.RegisterThemeOverride(brutalTheme())
+var Brutal = style.RegisterThemeOverride(theme.Brutal())
 
 ui.ThemePicker(ui.ThemePickerConfig{
     Ctx:    ctx,
@@ -591,6 +591,13 @@ The override CSS names `:root.cui-theme-<hash>` beside the descendant
 selector in each block, so the class works on `<html>` as well as on a
 `ui.Themed` wrapper. On `<html>` the override's light tokens outrank
 the root theme's dark block, and its dark tokens outrank both.
+
+`theme.Brutal()` is a ready page theme: the framework theme's tokens
+re-skinned as neo-brutalism, with square corners (every radius 0), 2px
+and 3px strokes, hard offset shadows drawn in the border colour (black
+on cream in light, cream on near-black in dark), a yellow primary with
+black ink, and "Archivo" first in the font stacks (self-host the face;
+without it the stack falls back to the system sans).
 
 It composes with `ui.ThemeToggle`: the page theme decides the palette
 and the toggle decides light or dark within it. Put both in the
@@ -687,7 +694,14 @@ with it); compact is a deliberate 36px squeeze below that floor, and
 the md/sm spacing step separates controls in each. An explicit `Size`
 on one component always wins over density — density is the default
 rhythm, not a ceiling. Reach for density when a whole screen should
-tighten; reach for a size when one control must.
+tighten; reach for a size when one control must. Buttons, fields,
+selects, pagination, the theme toggle and a DataTable's rows and
+header read the density height, so a compact table's rows are 44px
+(the height plus a 4px inset) where comfortable ones are 52px. A
+`ui.ContentRow` with `Dense: true` applies the compact values to its
+page on a fine pointer only (see the layouts page): the admin's
+operator console tightens on a desktop and keeps 44px targets on a
+phone.
 
 Zero values mean *unspecified* while overrides merge, and only then:
 `theme.Default()` flattens a complete set (Comfortable, Filled,
@@ -932,7 +946,10 @@ Some of the knobs:
 | `--ui-gallery-gap` | `--ui-layout-gap-md` | the room between `ui.Gallery` tiles when no `Gap` is set; a `Gap` preset reads its own layout step |
 | `--ui-button-case`, `--ui-badge-case`, `--ui-tag-case`, `--ui-status-pill-case`, `--ui-pricing-card-badge-case`, `--ui-section-eyebrow-case`, `--ui-page-header-eyebrow-case`, `--ui-record-summary-eyebrow-case`, `--ui-anchored-rail-eyebrow-case` | `none` | the letter case (`text-transform`) of button labels, badges, tags, status pills, the pricing card's Recommended badge and each component's eyebrow; set `uppercase` for shouty labels |
 | `--ui-rating-color` | `#D97706` (amber) | the filled glyph colour of `ui.Rating` and `ui.RatingInput`; heart and fire shapes default to `--color-danger`, thumb to `--color-primary`, diamond to `--color-info`; a value set on the rating or any ancestor overrides every shape |
-| `--ui-page-header-title-size`, `--ui-page-header-section-title-size` | `var(--text-2xl)`, `var(--text-xl)` | the size of a `ui.PageHeader` title: the first sizes a page's h1, the second a section's h2 (a record's related lists, a dashboard's recent rows), so display-size page titles leave sections a step below them |
+| `--ui-page-header-title-size`, `--ui-page-header-section-title-size`, `--ui-page-header-subsection-title-size` | `var(--text-2xl)`, `var(--text-xl)`, `var(--text-base)` | the size of a `ui.PageHeader` title: the first sizes a page's h1, the second a section's h2 (a record's related lists, a dashboard's recent rows), the third an h3 or deeper (a list inside a dashboard panel), so display-size page titles leave sections a step below them |
+| `--ui-change-list-min-width` | `14rem` | `ui.ChangeList`'s narrowest width, so a scrolling table cell does not wrap every word onto its own line |
+| `--ui-badge-dot-size` | `0.375rem` | the circle a `ui.StatusBadge` with `Dot` draws before its label |
+| `--ui-section-overline-size`, `--ui-section-overline-weight`, `--ui-section-overline-tracking`, `--ui-section-overline-color` | `var(--text-xs)`, `600`, `0.06em`, `var(--color-text-muted)` | the group label a `ui.Section` with `Overline` draws its heading as, upper case over a run of cards |
 | `--ui-form-max` | `42rem` | `ui.Form`'s maximum width, so a wide pane does not stretch every input across it; set `none` to fill |
 | `--ui-copy-btn-size`, `--ui-copy-btn-bg`, `--ui-copy-btn-border`, `--ui-copy-btn-color`, `--ui-copy-btn-shadow`, `--ui-copy-btn-hover-bg`, `--ui-copy-btn-hover-color` | the outline button look | `ui.CopyButton`'s size and colours; the framed `ui.CodeBlock` head sets them for a quiet button on its dark chrome |
 | `--ui-status-pill-font` | `inherit` | `ui.StatusPill`'s font family (set `var(--font-mono)` for a terminal-style pill) |

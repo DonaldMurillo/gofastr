@@ -27,10 +27,23 @@ type ListBuilder struct {
 	empty    string
 	create   bool
 	delete   bool
+	undo     bool
 	dup      bool
 	bulk     bool
 	noLinks  bool
-	actions  []render.HTML
+	queryBox bool
+	colsMenu bool
+	deleted  bool
+	saved    bool
+	counts   bool
+	embedded bool
+	flush    bool
+	top      bool
+	// layoutSwitch draws the Table / Cards switch and reads the as param.
+	layoutSwitch bool
+	// inlineEdit edits plain table cells in place.
+	inlineEdit bool
+	actions    []render.HTML
 }
 
 type listWhere struct {
@@ -58,6 +71,18 @@ func (b *ListBuilder) View(key string) *ListBuilder { b.view = key; return b }
 
 // As draws rows as "table" or "cards".
 func (b *ListBuilder) As(presentation string) *ListBuilder { b.as = presentation; return b }
+
+// InlineEdit edits a table's plain cells where they are shown (ui.InlineEdit):
+// an enum, a bool, a number, a date or a short string the caller may
+// update and no read hook masks. Saving PUTs the one field to the
+// record's write route and returns to the list. The title link, long
+// text, relations, files, JSON and NoQuery fields are left as they are.
+func (b *ListBuilder) InlineEdit() *ListBuilder { b.inlineEdit = true; return b }
+
+// LayoutSwitch draws a Table / Cards switch in the toolbar. Its links set
+// the list's as param (<key>_as), which then wins over As and the view's
+// layout; an unknown value is ignored.
+func (b *ListBuilder) LayoutSwitch() *ListBuilder { b.layoutSwitch = true; return b }
 
 // PageSize sets rows per page, capped by Pagination.MaxListLimit.
 func (b *ListBuilder) PageSize(n int) *ListBuilder { b.pageSize = n; return b }
@@ -94,10 +119,70 @@ func (b *ListBuilder) NoCreate() *ListBuilder { b.create = false; return b }
 func (b *ListBuilder) Delete() *ListBuilder    { b.delete = true; return b }
 func (b *ListBuilder) Duplicate() *ListBuilder { b.dup = true; return b }
 
+// Undo puts Undo on the toast a row's Delete leaves, for an entity with
+// Scope.SoftDelete (a no-op otherwise) and a caller who may update the
+// row: it restores the row through the host's RestoreHandler and
+// re-renders the list as it was. Off by default.
+func (b *ListBuilder) Undo() *ListBuilder { b.undo = true; return b }
+
 // NoLinks draws the rows with no record links: the title is text, there
 // is no row menu and no New. It is for an entity with no screen of its
 // own on this app, such as a Related list of payments on an invoice.
 func (b *ListBuilder) NoLinks() *ListBuilder { b.noLinks = true; return b }
+
+// QueryBox turns on the filter's text box: a control named the list's
+// filter param, prefilled with the active filter text and labelled with
+// the entity's queryable field names, riding the list's GET form so a
+// typed filter narrows the same way the chips do. Off by default on
+// app pages; the admin turns it on.
+func (b *ListBuilder) QueryBox() *ListBuilder { b.queryBox = true; return b }
+
+// ColumnsMenu turns on the columns control: a disclosure holding a GET
+// form that shows, hides, reorders and resets the list's columns
+// through the cols param. A cols value naming anything but a visible,
+// non-omitted field is ignored, never an error page; the title column
+// stays — it carries the record link. Off by default on app pages.
+func (b *ListBuilder) ColumnsMenu() *ListBuilder { b.colsMenu = true; return b }
+
+// Deleted turns on the trash view beside the list's views, for an
+// entity with Scope.SoftDelete (a no-op otherwise): ?view=deleted
+// lists only soft-deleted rows under the same owner, tenant and read
+// scope as the live list, and each row offers Restore and Delete
+// permanently through the host's restore and purge handlers. Off by
+// default on app pages.
+func (b *ListBuilder) Deleted() *ListBuilder { b.deleted = true; return b }
+
+// SavedViews turns on named saved views for this list, when the UI
+// carries a SavedViewStore (UI.WithSavedViews; without one it is a
+// no-op): the caller's views open through ?saved=, and a small form
+// saves the active filter and columns under a name. Off by default on
+// app pages.
+func (b *ListBuilder) SavedViews() *ListBuilder { b.saved = true; return b }
+
+// TabCounts shows each view tab's row count: the rows that tab's link
+// lists, under the page's search, facets, filter, Where pins and read
+// scope. The header then carries the entity's description, when it has
+// one, in place of the count. One COUNT per tab per render; a refused
+// count leaves its tab bare. Off by default on app pages; the admin
+// turns it on.
+func (b *ListBuilder) TabCounts() *ListBuilder { b.counts = true; return b }
+
+// Embedded draws the list as one section of another screen, the way a
+// record's Related tab shows its lists: a compact header holding the
+// heading, the row count and a small "Add <singular>" button, then the
+// rows with no view tabs, search or filters, and a one-line empty
+// state when there are none. Sort and pager stay, keyed as ever.
+func (b *ListBuilder) Embedded() *ListBuilder { b.embedded = true; return b }
+
+// Flush draws the table without its frame: rows inside a card, whose
+// frame is the card's (a dashboard's Needs attention).
+func (b *ListBuilder) Flush() *ListBuilder { b.flush = true; return b }
+
+// Top previews the list: its first n rows in the view's own order, with
+// no pager, no sort controls and no row menu (each row still links to
+// its record), and the URL's page and sort params ignored. It is for a list whose full form lives on another screen,
+// such as a dashboard panel linking to it.
+func (b *ListBuilder) Top(n int) *ListBuilder { b.pageSize = n; b.top = true; return b }
 
 // mayCreate reports whether the list offers New: on unless NoCreate or
 // NoLinks turned it off.

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── TextArea ───────────────────────────────────────────────────────
@@ -44,6 +46,13 @@ type TextAreaConfig struct {
 	// Monospace draws the text in the mono font token, for JSON and
 	// code.
 	Monospace bool
+	// JSON checks the text as JSON in the browser as it is typed: an
+	// invalid value marks the field invalid and stops the form's submit
+	// with "Enter valid JSON". The server still validates.
+	JSON bool
+	// Ctx resolves the JSON check's sentence through the request's
+	// translator; nil reads English.
+	Ctx context.Context
 	// Required marks the field required.
 	Required bool
 	// Disabled disables interaction.
@@ -52,15 +61,17 @@ type TextAreaConfig struct {
 	Help string
 	// Error overrides Help with an error message + aria-invalid.
 	Error string
-	// MaxLength applies the native maxlength attribute.
+	// MinLength and MaxLength apply the native minlength and
+	// maxlength attributes.
+	MinLength int
 	MaxLength int
 	ID        string
 	Class     string
 	// ExtraAttrs forwards additional attributes to the <textarea>
 	// element. Keys the component owns are dropped: class and id (use
 	// Class / ID), data-cui-* (incl. the autogrow wiring), name, rows,
-	// placeholder, disabled, required, maxlength, aria-invalid, and
-	// aria-describedby.
+	// placeholder, disabled, required, minlength, maxlength,
+	// aria-invalid, and aria-describedby.
 	ExtraAttrs html.Attrs
 }
 
@@ -81,10 +92,13 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 		rows = 3
 	}
 	extra := html.SafeExtraAttrs(cfg.ExtraAttrs,
-		"name", "rows", "placeholder", "disabled", "required", "maxlength",
+		"name", "rows", "placeholder", "disabled", "required", "minlength", "maxlength",
 		"aria-invalid", "aria-describedby")
 	if extra == nil {
 		extra = html.Attrs{}
+	}
+	if cfg.MinLength > 0 {
+		extra["minlength"] = strconv.Itoa(cfg.MinLength)
 	}
 	if cfg.MaxLength > 0 {
 		extra["maxlength"] = strconv.Itoa(cfg.MaxLength)
@@ -104,6 +118,7 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 			Disabled:    cfg.Disabled,
 			Invalid:     c.Invalid,
 			Autogrow:    cfg.Autogrow,
+			JSON:        jsonSentence(cfg.JSON, cfg.Ctx),
 			ID:          c.ID,
 			Extra:       extra,
 		}, textAreaClasses)))
@@ -120,6 +135,17 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 		Required: cfg.Required,
 		Parts:    rootClassParts(class),
 	}, fieldClasses, control))
+}
+
+// jsonSentence is the JSON check's sentence, "" when the check is off.
+func jsonSentence(on bool, ctx context.Context) string {
+	if !on {
+		return ""
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return i18nui.T(ctx, i18nui.KeyTextAreaInvalidJSON)
 }
 
 var textAreaStyle = registry.RegisterStyle("ui-textarea", textAreaCSS)

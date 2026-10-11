@@ -93,10 +93,16 @@ var stringsKeys = map[string]i18nui.Key{
 	// the one ui.DataTable already resolved for the same purpose; the
 	// announcement's three keys are new with the headless behaviour
 	// and their English is the component's own defaults.
-	"TableSortBy":    i18nui.KeyTableSortBy,
-	"TableSortedBy":  i18nui.KeyTableSortedBy,
-	"SortAscending":  i18nui.KeyTableDirAscending,
-	"SortDescending": i18nui.KeyTableDirDescending,
+	"TableSortBy":         i18nui.KeyTableSortBy,
+	"TableSelectAll":      i18nui.KeyTableSelectAll,
+	"SelectionCount":      i18nui.KeySelectionCount,
+	"SelectionClear":      i18nui.KeySelectionClear,
+	"SelectionCopy":       i18nui.KeySelectionCopy,
+	"SelectionCopied":     i18nui.KeySelectionCopied,
+	"SelectionCopyFailed": i18nui.KeySelectionCopyFailed,
+	"TableSortedBy":       i18nui.KeyTableSortedBy,
+	"SortAscending":       i18nui.KeyTableDirAscending,
+	"SortDescending":      i18nui.KeyTableDirDescending,
 
 	// The stateful-control family's words. The counter, copy and
 	// scheme words reuse the keys their config-struct components

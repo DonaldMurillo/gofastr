@@ -8,6 +8,444 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- A record's full page goes back to the drawer, as the prototype's does:
+  with `RecordBuilder.Panel()` (the admin turns it on) the header heads
+  its actions with Copy link (out of the menu) and Open in panel. The
+  new runtime attribute `data-cui-intercept-panel="<path>"` on a link
+  loads the link's page (the list) in the current page's history entry
+  and opens the named record over it as the first intercept layer, so
+  Back from the drawer lands on the list; a record whose route does not
+  open over the link's page is a plain navigation. A labelled
+  `ui.CopyButton` with `Icon` draws the icon before its label.
+- The bulk bar copies the checked rows as CSV (Copy CSV), as the
+  prototype's does: `ui.SelectionConfig.Copy` names a route that answers
+  CSV for repeated `_id` parameters, and the headless behaviour
+  (`data-hui-selection-copy`, its own `headless-selection-copy` module,
+  so the shared headless behaviour stays in its size budget) fetches it
+  with the checked rows' ids, writes it to the clipboard and toasts. The entity export route takes
+  `_id` (at most `InRequestCap`, through the caller's scope).
+- The admin's avatar opens the prototype's account panel: the name over
+  the email and roles, the Theme switch and, with `Config.Themes`, the
+  Look picker, then Account settings and Sign out. It is a
+  `ui.Dropdown` with the new `Avatar` trigger, and its rows are the new
+  `ui.ActionList` (link and button rows in a menu row's look, for a
+  panel that is not a menu). `ThemeToggleConfig.Fill` and
+  `ThemePickerConfig.Fill` stretch a pill across its container. New
+  icons: `log-out`, `minimize`.
+- Users can carry a display name: `auth.NameStore` (`UserName`,
+  `SetUserName`), implemented by `EntityUserStore` over a `name` column
+  that `EnsureSchema` adds (`UserFieldMap.Name`), with `auth.CleanName`
+  refusing control, bidi and zero-width characters and names over
+  `MaxNameRunes`. The admin's account page sets it
+  (`POST <PathPrefix>/account/_name`, the caller only), and the account
+  menu and avatar use it: Meridian's seeded admin reads "Admin Meridian",
+  AM, as in the prototype.
+- `ui.SidebarConfig.RaisedCurrent` draws the current page's link as a
+  raised pill (the surface, a hairline ring, a small shadow) instead of a
+  grey fill; the admin's nav uses it, as the prototype's does.
+- `StatCardConfig.Tile` draws a card's icon in a tinted square at the
+  head's start, with its Action at the end and the label under them;
+  the admin's entity cards use it, as the prototype's do.
+- The admin's Jobs filter is a strip of links with counts ("Failed 2"),
+  as in the prototype, not chips behind Apply. `ui.SegmentLink.Count`
+  draws the figure; `ui.SegmentedLinks` keeps its own width and scrolls
+  inside itself when its box is narrower.
+- Entity lists end with "1–25 of 40" and, past one page, a rows-per-page
+  menu (25, 50, 100, or the entity's `Display.PageSizes`; the new
+  `<key>_per` param), as the prototype does. The Table / Cards switch is
+  labelled and sits after Columns. `ui.DataTableConfig` shows `Summary`
+  under the rows, and gains `FooterTools` and `Note` (small print; the
+  inline-edit hint uses it).
+- Inline editing reads as editing in the cell: `ui.InlineEdit` lays its
+  editor over the value (the field and Save on one line, no pencil),
+  entityui draws that field with its label hidden (`LabelHidden`, new on
+  `ui.TextFieldConfig`, `NumberFieldConfig`, `DateFieldConfig` and
+  `DateTimeFieldConfig`), an enum as a select and a whole number with no
+  stepper, and a line under the rows says "Select a value to edit it in
+  place." (`ui.entity.inlineEditHint`).
+- The admin dashboard follows the prototype: its figures are one
+  `ui.StatStrip` (new: one frame around up to six figures, two columns
+  on a phone) of plain cards (`StatCardConfig.Plain`), a Detail's
+  `admin.Metric.Tone` colours its line, and with a Queue the strip ends
+  with Failed jobs ("Needs a replay"). Failed jobs moved from their own
+  card into Needs attention, whose rows sit in the card unframed
+  (`ui.DataTableConfig.Flush`, `entityui.ListBuilder.Flush`). A
+  DataTable phone row with nothing to select keeps no empty lead column.
+- `ui.SelectionConfig.Floating` holds a list's bulk bar to the bottom
+  of the screen under the rows, as an inverse pill with "{n} selected"
+  and a clear button (`Form`), built on the new `headless.Selection`
+  (hooks `data-hui-selection`, `data-hui-selection-count`). Entity
+  tables use it, as the prototype does. `ui.SelectConfig.LabelHidden`
+  keeps a select's label for assistive tech and hides it from view.
+- `admin.Config.DashboardNew` heads the dashboard with one entity's New
+  button, the prototype's page-level action; Meridian's is New Customer.
+- Meridian's admin has a Revenue report (an `admin.Page` in the Billing
+  group: MRR, collected, outstanding and failed payments, and three
+  breakdowns), and its seed data carries payments, so an invoice's
+  Related tab lists them.
+- Meridian speaks Spanish: `locales/es.json` translates the admin, the
+  entity screens and its own entities, picked by Accept-Language. With
+  `MERIDIAN_PSEUDO_LOCALE=1` it also offers en-XA, and
+  `TestE2E_AdminPseudoLocaleOverflow` browses every admin screen in both
+  at desktop and phone widths and fails on overflow.
+- `i18nui.Pseudo` pseudo-localizes a string (accented, a third longer,
+  placeholders kept) and `i18nui.AddPseudo` puts every framework default
+  into a catalog under a pseudo tag such as en-XA, for overflow testing.
+- `entityui.Extension.Side` adds panels (`SidePanel`: Key, Title,
+  Build) to a record's side column, after its details, each built as
+  the caller and failing alone.
+- `ui.DateTimeField`: a labelled native date-and-time field
+  (`datetime-local`) with min/max bounds and a step in seconds, the
+  peer of `ui.DateField` and `ui.TimePicker`. Entity forms draw
+  timestamp fields with it.
+- **Inline editing**: `ListBuilder.InlineEdit()` edits a table's plain
+  cells in place (new `ui.InlineEdit`, a popup one-field form that PUTs
+  over the runtime's form RPC and returns to the list), only for a
+  caller who may update the row and never on a value a read hook masks.
+  The admin turns it on.
+- `ListBuilder.LayoutSwitch()` draws a Table / Cards switch (new
+  `ui.SegmentedLinks`) whose links set the list's `as` param; the admin
+  turns it on.
+- `theme.Brutal()` re-skins the framework theme's tokens as
+  neo-brutalism (square corners, 2px strokes, hard shadows in the
+  border colour, a yellow primary, Archivo) in light and dark.
+  `admin.Config.Themes` offers page themes on the account page as a
+  `ui.ThemePicker`; Meridian offers Brutal.
+- `ui.TextAreaConfig.JSON` checks the text as JSON in the browser as it
+  is typed (`headless.TextareaProps.JSON`, the `data-hui-json` hook of
+  headless-controls); entity forms' JSON fields use it.
+- A dashboard count that misses its deadline falls back to a bounded
+  read (`entityui.UI.CountUpTo`, at most 10,000 ids in the caller's
+  scope) instead of drawing "—".
+- An entity record's menu offers Create another (with `Duplicate()`)
+  and Copy API URL, the record's REST address on this origin.
+- **Keyboard help**: `ui.ShortcutSheet` is a modal listing an app's
+  keys, opened by `?`, with `ui.ShortcutList` for its scriptless page;
+  the admin mounts it (`GET /admin/shortcuts`). `ui.FilterSearch.Shortcut`
+  binds a chord to a toolbar search, and entity lists take `/`.
+- **Filter rows and column order on lists**: an entity list's Filters
+  dropdown holds field / operator / value rows (`ui.FilterRows`), one per
+  plain term of the filter plus a blank one; submitting them writes the
+  filter param (row params never ride a link), and the query box keeps
+  what a row cannot say. The Columns control is `ui.ColumnPicker`: show,
+  hide and move each column earlier or later, all links into the list's
+  `cols` param. A headless Disclosure whose content is a component's own
+  marks its panel internal, as it does its summary.
+- **Uploads on entity screens**: with file storage on the app, an
+  `Image` or `File` field on an entity form (and so the admin) is a
+  `ui.FileUpload` beside the stored file, and the save posts multipart.
+  `entityui.Extensions.FilesURL` names where stored files are served.
+  An `Image` field now takes only PNG, JPEG, GIF or WebP, sniffed from
+  the bytes (`file.AllowTypes`, `file.ImageTypes`,
+  `file.ErrFileFieldType`). A multipart body takes a bool's hidden
+  "false" followed by its checked box as one value, as the JSON path
+  does; any other repeated scalar is still refused. Meridian
+  customers have a logo, served to signed-in accounts at `/files/`.
+- **Queue history**: a job `DBQueue.ListJobs` returns carries `Status`,
+  `UpdatedAt` and `LastError` (the worker keeps the error its last
+  failed attempt returned, scrubbed and cut to 500 runes), and
+  `queue.WithDoneRetention(d)` keeps acked jobs as `"done"` for `d`.
+  The admin's Jobs page filters by Pending, Running, Failed and Done
+  with counts, shows Status, Updated and Last error columns, replays
+  failed rows in every view, and draws phone rows on a phone.
+  `ui.DataTable` gains `Column.Truncate`, and `ui.InlineCodeDanger`
+  draws an error in the danger tone. Meridian runs a database queue
+  for its billing jobs and queued bulk runs, and its admin has the
+  Jobs page.
+- `ui.Picker` picks one record from a server-searched list inside a
+  form: `headless.Combobox` gains `Pick` (a hidden input submits the
+  picked value; the search input is detached from the host form) and
+  `Control` (a host field labels it), and `headless.ComboboxRows` /
+  `ui.PickerRows` render an island answer. Entity forms draw every
+  relation with it, searched through the new `POST <api>/_pick?field=<field>`
+  (`entityui.UI.PickerHandler`), with open and New buttons beside it.
+  The capped 100-row relation select is gone.
+- `ui.DataTable` `Responsive: ui.ResponsiveRows` draws each row as a
+  two-line phone row below 720px of container, placed by
+  `Column.Phone` (`PhoneTitle`, `PhoneSubtitle`, `PhoneMeta`,
+  `PhoneDetail`, `PhoneLead`, `PhoneEnd`). Entity lists, and so the
+  admin, use it: a list on a phone no longer scrolls sideways.
+- `ui.InlineCode` draws a short piece of code inside text or a
+  reference row (an operator, a field name, an example) as a `<code>`
+  in the mono font on the soft surface. The entity list's query box
+  uses it for its syntax reference.
+- `ui.ShortID` shows a long identifier (a UUID, a job id, a hash) in
+  a table cell: its first eight characters, the full value as their
+  title, and an inline copy button that copies all of it. The admin's
+  Jobs page draws job ids with it, so the Replay column stays on
+  screen.
+- **Admin dashboard metrics**: `admin.Config.Metrics` draws a strip of
+  figures above the entity cards, each a count or a sum over an exposed
+  entity (`Where` in the query DSL, `Format: "money"`), linked to a list
+  view and optionally carrying a second figure (`Detail`: "$99.00
+  outstanding"). Each polls on its own. Boot refuses a metric that
+  could only draw "—"; `entityui.UI.CheckStat` is the check. Meridian
+  shows MRR, active customers and past-due invoices.
+- **Admin Needs attention panel**: `admin.Config.Attention` lists
+  `admin.Watch` entries (an entity and one of its list views); the
+  dashboard previews the first rows of each watched view that has any,
+  beside the recent activity, linking to the full view. Underneath:
+  `ListBuilder.Top(n)`, a list preview with no pager, sorting or row
+  menu, and `--ui-page-header-subsection-title-size`, which sizes an h3
+  or deeper `PageHeader` title a step under an h2. Meridian watches its
+  past-due invoices and subscriptions.
+- **The admin's recent activity reads like the prototype**: the actor
+  in bold (an account by its email's local part, the full email on
+  hover), the record's entity, muted, and a live record's title as a
+  link to its screen. A deleted one is named by the title the audit row
+  stored, as on the Audit log page, and an edit lists what it changed
+  under its line. A bulk run reads "deleted 2 payments in bulk"
+  (`i18nui.KeyAdminActivityBulkLine`). Underneath:
+  `ui.TimelineEvent.Lead` (and `headless.Event.Lead`), headline markup
+  in place of `Title`, and `i18nui.TVarsHTML`, which fills a translated
+  line with markup values in one pass and escapes the text around them.
+- **A record's Activity tab is a timeline, and the audit log shows what
+  changed.** Each entry reads as a sentence, "**ada@example.com** made
+  changes · 2h ago", and lists the fields an edit changed, old value
+  struck through, each drawn the way its list cell is; an update that
+  changed nothing visible reads "saved this invoice". The audit page's
+  Record column names the record by its title ("Invoice · INV-1010"),
+  a deleted one by the title in its stored copy, and a new Changes
+  column lists the fields. Underneath: `ui.ChangeList`, `ui.Ago` (the
+  "5m ago" wording, through `i18nui.KeyAgo*`),
+  `entityui.UI.WithActorName`, `entityui.UI.Changes` and
+  `entityui.UI.SnapshotTitle`. A move's audit row (`transition:<key>`)
+  now badges and draws like any move. A Roles change reads "Role ·
+  billing" and "Granted `plans:write`"; a User roles change names the
+  account and its roles; a bulk run reads "2 payments" and "Deleted · 1
+  skipped". On a phone the audit table is a stack of cards.
+- **The admin's related records stack as drawers.** A record opens as a
+  drawer over the record of each exposed entity it belongs to or that
+  belongs to it, so a relation field's open button and a Related tab's
+  row push a panel over the drawer instead of leaving it for the page.
+- **The admin sidebar counts each entity's records.** The figure ends
+  the row, counted under the list's read gate, and re-renders on every
+  client navigation, so a create shows on the next click.
+  `EntityNav.HideCount` (`hide_count`) drops it for a table too large
+  to count per click. Underneath: `ui.SidebarItem.Count` (and
+  `headless.SidebarItem.Count`), `app.AreaSpec.Inline` for a route area
+  that renders a `span`, and `entityui.UI.Count`, which reports false
+  where `StatValue` prints "—".
+- **Admin account settings**: `<PathPrefix>/account`, linked from the
+  account menu, shows the signed-in user's profile (email with its
+  verified state, roles), the theme choice, and, with `Config.Auth`, a
+  change-password form posting to `POST <auth>/password` with per-field
+  errors. A passwordless account is pointed at "Forgot password".
+- **`ui.CardConfig.Action`** puts a control at the end of the card's
+  header, level with the heading (a feed's "Audit log" link), the slot
+  shadcn calls CardAction. It panics beside `Href`, whose link would wrap
+  it. `headless.CardProps.Action` draws it in the new `card-action` part.
+- **`ui.TimelineEvent.Icon`** draws a registered icon in the event's
+  marker, which becomes a bordered circle with the icon tinted by the
+  variant: an activity feed's pencil or plus. `--ui-timeline-icon-size`
+  (28px) sizes it; `headless.Event.Icon` carries it.
+- **`entityui.UI.LastUpdated`** reads when the newest record the caller
+  can read was written: the greatest `updated_at` in the caller's scope.
+- **`ui.SectionConfig.Overline`** draws the heading as a group label:
+  small, upper case and muted, over a run of cards. The
+  `--ui-section-overline-*` knobs tune it.
+- **`ui.GridConfig.Fill`** keeps the row's empty columns (`auto-fill`), so
+  a lone card, or a short last row, keeps a column's width.
+- **`ui.StatusBadgeConfig.Dot`** draws a filled circle in the badge's
+  tone before its label, the status-column shape;
+  `--ui-badge-dot-size` sizes it. An entityui enum cell uses it.
+- **`entityui.UI.WithRecordPath`** links a list's relation cells to the
+  related record: the title becomes a chip pointing at
+  `path(e) + "/" + id`, drawn only for a title the caller's own read
+  returned. The admin links the entities it exposes.
+- **`ui.Column.Fit`** shrinks a DataTable column to its content, a
+  checkbox or a row menu, so the other columns take the spare width.
+- **`ui.Column.SelectAll`** (and `headless.Column.SelectAll`) draws a
+  header checkbox that checks and clears its own table's row boxes of
+  that name and shows mixed when only some are checked. An empty
+  `ui.DataTable` draws no box. A checkbox in
+  the indeterminate state now draws filled with a bar. An entityui bulk
+  list uses it for its select column.
+- **`ui.ClusterConfig.Shrink`**: the row narrows below its content and
+  its last child takes the squeeze while the earlier children keep
+  their size: a toolbar's menu button beside a trail that ellipsizes.
+- **`ui.ContainerConfig.Start`**: pins the column to the inline start
+  and drops the container's gutter, for a measure inside a frame that
+  already pads its content.
+- **`POST /auth/password`**: the core auth plugin takes a signed-in
+  user's password change, `{"current_password", "password"}` and an
+  optional `confirm_password`. It needs
+  the interactive session (not an API token or embed grant) with its
+  second factor passed, spends the login limiters on the current-password
+  check, and answers a fixable refusal with 422 and per-field errors. A
+  change revokes the user's other sessions and outstanding reset links
+  and re-issues the caller's session; API tokens stay.
+- **entityui `money` field kind**: `Display.Fields[f].Input: "money"` on an
+  Int, Float or Decimal draws a number input behind the currency symbol
+  and prints the value as an amount in list cells and read-only fields.
+  `i18nui.KeyEntityCurrency` (`ui.entity.currency`, default `$`) holds the
+  symbol, and the `format: money` stat now reads it too. Registration refuses
+  a built-in kind on a field type it does not fit. Meridian's amounts, MRR
+  and price use it, and the customer email uses the `email` kind.
+- **`entityui.InputContext.Label` and `Help`** hand a field kind the label
+  and help the form resolved, the Display hint included. The built-in
+  kinds draw them, so a hinted label (`MRR`) no longer reverts to the
+  humanized name.
+- **entityui form inputs carry the field's validators**: `required`,
+  `minlength`/`maxlength` from a string's `Min`/`Max`, `min`/`max`
+  on numbers, and `pattern` from `Pattern`, wrapped to match anywhere
+  the way the server's unanchored check does. The built-in email, url,
+  color, markdown and code kinds carry them too, with the label's
+  required mark. A pattern in Go-only syntax stays server-side.
+- **`ui.TextAreaConfig.MinLength`** applies the native `minlength`
+  attribute beside `MaxLength`.
+- **`ui.SidebarConfig.SectionLabels` draws group headers as section
+  labels**: small uppercase muted text over flush links, with a
+  chevron that turns when the group closes and no icon outside the
+  collapsed rail. In the rail an open group shows its links flat under
+  a rule, so every page keeps its own icon there. The admin sidebar
+  uses it, its groups ending in System (queue, audit log, roles).
+- **`ui.SidebarBrand`** draws the product mark at a sidebar's head: a
+  square logo tile (the `Logo` image, or the name's initial on the
+  inverted surface), the name and an optional muted `Sub` line.
+  `--ui-sidebar-brand-tile` sizes the tile. A collapsed rail keeps a
+  `Prepend` that is only a brand, drawn as the tile alone. The admin
+  brand uses it.
+- **`ui.MenuConfig.Avatar` draws the trigger as an avatar**: round,
+  borderless, 32px, with `Label` kept as its visually hidden name and
+  a 44px box on coarse pointers. It refuses `TriggerHTML`,
+  `TriggerElement` and `IconOnly`. The admin account menu uses it.
+- **`ui.AvatarConfig.Square`** rounds the avatar to the medium radius
+  instead of a circle, and the `--ui-avatar-bg` / `--ui-avatar-fg`
+  knobs recolour its initials surface.
+- **`interactive.Action.WithConfirmDialog(interactive.Confirm{...})`**
+  words the confirm dialog: `Title`, `Message`, the `Accept` button's
+  label, and `Danger`, which draws the accept button in the danger
+  variant. It writes `data-cui-confirm-title`, `-accept` and
+  `-tone="danger"` beside `data-cui-confirm`; an empty `Message`
+  panics. `preset.ConfirmTemplate` names the dialog a kit registers,
+  `framework/ui` registers one, and the host emits it once per page.
+  The entity screens' delete, purge, bulk, status-override and
+  saved-view deletes and the admin battery's queue and module
+  operations use it, with new i18n title keys (`ui.entity.deleteTitle`,
+  `purgeTitle`, `bulkTitle`, `overrideTitle`, `savedDeleteTitle`,
+  `ui.dialog.confirmTitle`).
+- **A click outside an open menu closes it.** `headless.Disclosure`
+  gains `Dismiss` (`data-hui-disclosure-dismiss`) for panels that
+  float over the page, and every menu root carries it. An accordion
+  section leaves it off.
+- **`ui.Dropdown`.** A trigger button whose panel floats under it and
+  holds any content, such as a list's filter fields or a "save view"
+  form, where a `Menu` holds only command rows. It closes on a click
+  outside, Escape and a navigation, and fields inside it submit with
+  their form while it is closed. `Icon`, `Count` (a badge) and
+  `Align` dress the trigger.
+- **`ui.FilterToolbarConfig.Dropdown` moves the filters into a
+  Filters dropdown**: the row is the search at a fixed width, the
+  Filters button with a badge counting the filters set, and the
+  `Tools`. `Extra` adds controls of the same form (a typed filter),
+  `Applied` adds to the badge, and `Tools` draws links and link menus
+  at the row's end; a tool holding a `<form>` panics. With nothing for
+  the panel there is no Filters button and no Apply.
+- **`ui.Selection`** puts a bulk-action bar over the rows it acts on
+  and shows the bar only while a checkbox in the rows is checked, in
+  CSS with no script; a browser without `:has()` shows it always. The
+  entity list's bulk bar uses it, so a list nobody is selecting from
+  no longer carries an action form above its table.
+- **`ui.DetailListConfig.Stacked`** draws a read-only value inside a
+  form: the label above like a field's, the value in a control's box on
+  the soft surface. The entity record form draws its locked fields this
+  way, so they line up with the inputs around them instead of jutting
+  out as a two-column row.
+- **`ui.DetailListConfig.Spread`** draws compact facts for a side
+  column: the label at the row's start, the value at its end, one line
+  each, no row rules. A first value that does not fit (an id) truncates
+  while what follows it (a copy button) keeps its size.
+- **`ui.ButtonConfig` gains `Icon`, `IconOnly`, `Shortcut` and
+  `QuietUntilDirty`.** `Icon` draws a registered icon before the label;
+  `IconOnly` draws it alone in a square button, the label its
+  accessible name (`ui.LinkButtonConfig.IconOnly` too). `Shortcut`
+  ("Mod+S") binds a chord that clicks the button, drawn after the label
+  as `ui.ShortcutHint` chips and announced through `aria-keyshortcuts`;
+  it needs `ID`. `QuietUntilDirty` draws the button in the secondary
+  look until the form it submits has unsaved edits.
+- **`ui.DrawerBar`** is the bar across the top of an intercepted
+  drawer: a close button, the layer's path in mono, a copy-link button
+  when `CopyURL` is set, an open-as-page link when `PageURL` is set,
+  then `Actions`. It sticks to the layer's top edge while the layer
+  scrolls. The open-as-page link carries the new
+  `data-cui-intercept-page`: the stack closes and the router loads the
+  link's target over the top layer's history entry, so Back returns to
+  the page under the drawer. `Prev` and `Next` draw up and down icon
+  links after the path, marked with the new `data-cui-intercept-swap`:
+  the target renders in the same layer, one history entry per step, so
+  Back steps back inside the drawer and closing it consumes them all.
+- **`app.OverlayFromContext`** reports whether a render is an
+  intercepted overlay and which presentation, so a screen draws a
+  layer's chrome only in the layer. Each layer's inset is
+  `--cui-intercept-pad`.
+- **`ui.CopyButtonConfig.Icon` and `Inline`.** An icon-only copy button
+  draws a registered icon (the new `"copy"` and `"link"`); `Inline`
+  draws it quiet, with no border or fill until hover and a 24px target,
+  for a copy control inside a line of text. `Ghost` draws it like a
+  small ghost icon button, for a row of icon buttons.
+- **`ui.FormConfig.Wide`** lifts the form's readable-measure cap, so a
+  `ui.FormFrame` body splits into its side column.
+- **`ui.SelectConfig.Action`** draws a control after the select on its
+  row, such as a link to the chosen record. The new `"arrow-up-right"`
+  icon draws one.
+- **`ui.EmptyStateConfig.Compact`** draws one muted line in a small
+  panel, for an empty list inside another screen.
+- **`ui.Column.Wrap`** lets a `ui.DataTable` column's cells wrap, for
+  prose. Every other cell now holds its value on one line, so a table
+  wider than its box scrolls inside it instead of breaking a date at its
+  hyphens (the admin audit log's times took four lines on a phone). The
+  entity list wraps its long-text (`schema.Text`) columns.
+- **`ui.LinkTitle`** is a link variant for a record's name where it
+  heads a row or card: the text colour, semibold, underlined on hover.
+  The entity list's table and cards link each record through it.
+- **`ui.TabNavConfig.End`** draws a control at the strip's trailing
+  edge, outside the `<nav>` landmark, such as a "Save view" dropdown.
+- **`ui.MenuConfig.Icon`** draws a registered icon before the label on
+  the default trigger. It panics beside `TriggerHTML`,
+  `TriggerElement`, `IconOnly` or `Avatar`.
+- **`ui.DataTable` sort headers show their state as icons**: a muted
+  up-down glyph on every sortable column and an up or down arrow on the
+  sorted one, drawn from `aria-sort`.
+  `--ui-data-table-sort-icon-size` sizes them.
+- **Checkbox menu rows.** `MenuItem.Check` renders a
+  `role="menuitemcheckbox"` row whose `aria-checked` comes from
+  `Checked`. The server owns the state, so the row is a link or RPC
+  that toggles it.
+- **Icons:** `filter`, `columns`, `bookmark`, `arrow-up`, `arrow-down`,
+  `chevrons-up-down`, `download`, `pencil`, `trash` and `rotate-ccw`.
+- **`ui.ContentRowConfig.Sticky` keeps a shell's frame in place.** The
+  window scrolls the page while the nav column sticks to the top, one
+  viewport tall with its own overflow scroll, and the `Toolbar` row
+  sticks at every width. The admin shell uses it, so its sidebar and
+  top bar no longer scroll away.
+- **An entityui list narrowed to nothing says so.** A search, filter,
+  facet or saved view that matches no row shows "No {entity} match" and
+  a link that clears them, keeping the view; a view with no rows shows
+  "No {entity} in this view". Neither offers New. New i18n keys:
+  `ui.entity.noMatch`, `noMatchBody`, `clearSearch`, `viewEmpty` and
+  `viewEmptyBody`.
+- **`ui.ContentRowConfig.Dense` tightens an operator console on a
+  desktop.** On a fine pointer the page takes the compact density,
+  drawers and dialogs included: 36px controls, 44px table rows and a
+  smaller gap, with the
+  `--spacing-touch-target` token at 36px so every control sized from it
+  follows. A touch screen keeps 44px targets. The admin shell sets it.
+  A DataTable's rows, header, select boxes and sort links, pagination
+  and the theme toggle now read the density height instead of the
+  fixed touch target.
+- **`app.Instant()` swaps a layout region in one frame** while the
+  rest of the page runs its view transition: no fade, no group morph.
+  The admin's breadcrumb trail uses it, so its root no longer blinks on
+  every navigation. The region also skips the busy dim a slow
+  navigation puts on the page's other regions; it keeps `aria-busy`.
+- **`ui.CommandPalette` can draw a visible search field.**
+  `Trigger: ui.PaletteTriggerField` renders the trigger as a field with
+  a magnifier, `TriggerText` and the shortcut's keycaps, and as a 44px
+  icon button on phones. The default stays the visually hidden link.
+  `ui.PaletteResults` renders the option rows a palette's search
+  endpoint answers, dropping any href that is not a safe link. The
+  palette sheet now styles its option rows, including the active row.
 - **`ui.TextAreaConfig.Monospace`** draws the text in the mono font
   token; entity screens set it on JSON fields and the `code` and
   `markdown` kinds.
@@ -68,14 +506,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   caller's own grants, and a Wildcard grant does not satisfy it.
 - **`EntityConfig.Display` carries an entity's screen hints.** One
   block holds what admin and generated screens read: singular and plural
-  names, list columns, named views (a DSL `Where` and a `Sort`), facets,
+  names, the title fields that name a record (joined with " · ", a
+  relation part read as the related record's own title, so a
+  subscription reads "Ada Lovelace · Pro"), list columns, named views (a DSL `Where` and a `Sort`), facets,
   the record form (main and side columns, rows, sections), card fields,
   nav placement, per-field `Label`, `Help`, `Placeholder`, `Locked`,
   `Omit` and `ShowWhen`, page sizes, and `NoDuplicate` / `NoBulk`. nil
   means every default. `App.Entity` and `App.GroupEntity` check every
   name when the entity registers and refuse, naming the offender: unknown
   or Hidden fields, NoQuery fields in facets, bad or reserved keys
-  (`all`, `deleted`), duplicate view, section, column, facet or
+  (`all`, `deleted`), duplicate title-field, view, section, column, facet or
   page-size entries, empty sections, a view `As` other than `table` or
   `cards`, `Omit`, `Locked` or `ShowWhen` on a Required field with no
   default (a locked or hidden-away control never submits, so no form
@@ -143,7 +583,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `FormFrameSideWide` (22rem), each a modifier class whose registered
   CSS reads the `--ui-form-frame-side-narrow` / `-wide` tokens, so a
   theme retunes them and no inline style attribute ships for the
-  default CSP to strip. An unknown name panics at render.
+  default CSP to strip. An unknown name panics at render. The main
+  column stops at a readable 45rem (`--ui-form-frame-main-max`), and
+  `SidePanel` draws the side column as a bordered panel that stays in
+  view beside the fields as they scroll. The record page uses both,
+  on the wide rail.
 - **`ui.ConditionalField.WhenValues`** shows its children while the
   watched field holds any of the listed values
   (`headless.ConditionalFieldProps.Values`, carried as one JSON `data-hui-when-in` attribute).
@@ -159,14 +603,29 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   only the drawer's own query (sort, page, filter) re-renders the
   drawer, one history entry per click, instead of navigating the page
   under it.
+- **A screen intercepts from more than one origin, and a save in a
+  drawer returns to the page under it.** `app.InterceptFrom(from, as,
+  also...)` takes more origin patterns (`Intercept.AlsoFrom`, `also` in
+  the route manifest). `app.OverlayOriginFromContext(ctx)` gives an
+  overlay render the path of the page it opened over, and
+  `app.OverlayOriginQueryFromContext(ctx)` that page's query. A form in a drawer
+  whose success navigation names that page, or the drawer's own path,
+  closes the layers above it and re-renders it in place instead of
+  leaving the stack, so the new row shows and Back walks history as it
+  was before the drawer opened.
 - **`data-hui-leave-guard` on a form asks before its unsaved edits are
   lost**: to a link, Back or Forward, a drawer's Escape or close
   control, or a reload. It asks only when the move discards the form,
   so opening a related drawer over a changed record does not ask.
-  `data-hui-leave-guard-message` sets the question. The form cleans on
+  It asks in the kit's confirm dialog: Cancel keeps the edits, Discard
+  drops them and makes the move (the browser's own prompt only on a
+  page without the kit's dialog). `data-hui-leave-guard-message`,
+  `-title` and `-accept` word it (`ui.FormConfig.LeaveGuard`,
+  `LeaveGuardTitle`, `LeaveGuardAccept`). The form cleans on
   a successful submit or a reset; a refused submit marks it changed
   again (the rpc module now dispatches `gofastr:formresult` with
-  `detail.ok` on the form).
+  `detail.ok` on the form). While dirty, the form and every control
+  naming it by `form=` carry `data-hui-dirty`.
 - **Stroke tokens: `style.Theme.Strokes`** (`style.StrokeSet` of
   `style.Stroke`) emits `--stroke-thin` (1px), `--stroke-thick` (2px),
   `--stroke-focus` (2px) and `--stroke-focus-offset` (2px). Every kit
@@ -656,6 +1115,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `data-cui-rpc-error-toast` attribute it writes: a non-2xx answer to
   the action shows a toast with that title. The resource detail page's
   Delete and transition buttons use it, so a refused delete says so.
+- **`interactive.Action.OnSuccessToastAction(label, next)`** puts one
+  button on the action's success toast, written as
+  `data-cui-rpc-success-action`: pressing it runs `next`, with its own
+  toasts and navigation, and the toast stays up ten seconds. The button
+  carries RPC wiring only; the Go side panics on anything else and the
+  runtime drops it. The toast row gains the `headless.PartToastAction`
+  part (`fui-notification__action` in the kit), and
+  `__gofastr.toast(cfg)` takes `action: {label, attrs}`.
 - **`check.LintReplaceFill`** fires on a `String.prototype.replace` whose
   replacement is a value rather than a function, since `$&`, `$1` and
   `$$` in user text expand there.
@@ -672,17 +1139,47 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   its query string, and writes are form RPCs to the REST routes. A list
   draws a table or cards with view tabs, facets, filter chips and a pager,
   and takes `Where` pins, `Base` and `NoLinks`. Each row's actions sit
-  behind one icon-only menu: open, copy link, duplicate and delete. A
+  behind one icon-only menu: open, copy link, duplicate and delete. The
+  list's heading also names its table, as a hidden caption. A
   pinned field leaves the default columns and the facets, and New
   prefills it. A relation field labels as its target (`customer_id`
-  reads "Customer"), and an entity with no `TitleField`, `name` or
+  reads "Customer"), and an entity with no `TitleFields`, `name` or
   `title` is named by its first plain `String` column. A record draws its state
-  badge, a button per open move (gated by `access.CanResourceExact`, the
-  route's own check), and Edit, Related and Activity tabs, with
-  `Related` and `RelatedAt` naming the related lists. An app action
+  as the header's badge with a "Created … · Updated …" line, a button
+  per open move (gated by `access.CanResourceExact`, the route's own
+  check), one icon-only menu holding copy link, duplicate and delete,
+  and Edit, Related and Activity tabs, with `Related` and `RelatedAt`
+  naming the related lists. Save sits in the header, answers Mod+S, and
+  reads as idle until the form has edits; a move or action declared
+  primary draws as secondary beside it. Related and Activity show their
+  counts, the Related count read through each entity's own gate and
+  scope. A Details column beside the form holds the id with a copy
+  button, the timestamps and each move's stamp. In a drawer the record
+  wears `ui.DrawerBar` and its menu drops copy link. With `Steps()` (on
+  in the admin) a drawer over the record's own list steps to the
+  previous and next row in the list's order, under the view, saved
+  view, search, filter, facets and sort it was opened from, read as the
+  caller; a sort the list refuses, such as a masked field's, is refused
+  here too. A row's Delete toasts what went, as the record's does, and
+  on a soft-deleting entity the confirm says the record can be
+  restored. With `Undo()` (on in the admin) that toast carries Undo for
+  a caller who may update the record, restoring it through the host's
+  `_restore` route; a bulk delete's toast carries Undo for the rows it
+  deleted, through the `_bulk` route's new `deleted` scope, when the ids
+  fit in 2 KiB. A bulk run that went through on every row says what it
+  did ("2 payments deleted") instead of counting outcomes. A server
+  toast takes a button
+  (`ui.ToastTrigger.Action`, built by `interactive.NewToastAction`).
+  Under
+  `WithRecordPath` a relation select draws an open button to the record
+  it holds, when the caller's own read of that entity returns the row.
+  An app action
   draws as a record header button in its `ui.ButtonVariant` and runs on
   that record through the `_bulk` route's `record` scope, bulk on or off.
-  New, Duplicate,
+  A danger move or action sits in the menu above Delete instead, and
+  runs only after a confirm dialog names it and where the record lands.
+  Duplicate leaves blank the fields a unique index covers, as it does a
+  `unique` field, keeping a relation in a mixed index. New, Duplicate,
   Delete, the moves and the edit form follow the caller's create, update
   and delete access, so a screen never draws a write the route refuses.
   A relation the caller may not read shows the em dash, in pickers and
@@ -691,8 +1188,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `Extensions` adds field kinds, view funcs, record tabs, actions and
   list or record overrides, every name checked at boot. Every read of
   another entity (relation labels, pickers, facets, related lists, stats)
-  passes that entity's own read gate. See
-  `framework/docs/content/entityui.md`.
+  passes that entity's own read gate. A create form starts at each
+  field's `Default`, and an `Image` field draws a thumbnail in list cells
+  and above its input. `RecordTitle` and `SearchRecords` name and find
+  records behind the same gates, for breadcrumbs and search outside the
+  screens, and `WithAPIPath` returns a UI whose writes post to routes a
+  back office gates itself. See `framework/docs/content/entityui.md`.
 - **`crud.SumAll` and `crud.GroupCountAll`.** The database totals a
   numeric field, or counts rows per stored value, over every match under
   the same owner, tenant, read, soft-delete and `BeforeList` scopes as
@@ -759,9 +1260,238 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   title, so a host that scales page titles leaves sections a step below.
 - **`i18nui.RelationLabel`** is `FieldLabel` for a Relation field: its
   fallback drops a trailing `_id`.
+- **`crud.WithElevation(ctx, entities...)`** lifts one check for a back
+  office that has already authorized its caller: the `Exposure.Access`
+  permission of the named entities, on reads and writes. An entity it does
+  not name keeps its check, and a call naming none lifts nothing. Owner
+  and tenant scope, held token and embed scopes, the session gate, a
+  move's own `Permission` and the state override permission still apply.
+  Set it only from server code, never from request data.
+- **`crud.WithoutElevation(ctx)`** removes `WithElevation`'s lift.
+  entityui runs an app's actions, tabs, view funcs and field kinds, and
+  draws the components they return, under it, and crud runs every
+  lifecycle hook under it (the request a read hook's payload carries
+  included), so code a back office did not write passes only the
+  caller's own gates.
+- **`ui.Thumbnail`** draws a square, lazily loaded image preview in three
+  sizes (`ThumbnailSM`, the default `ThumbnailMD`, `ThumbnailLG`). A
+  source `urlsafe.ImageSource` refuses draws nothing.
+- **`ui.StatCardConfig.Href`, `.Icon` and `.Action`** link a stat's label
+  to what it counts, draw a registered icon in the card's head and hold
+  a control there, outside the link.
+- **`ui.ContentRowConfig.ToolbarLabel`** names the toolbar row, which
+  is now a `<section>` region landmark ("Toolbar" by default), so the
+  controls in it sit inside a landmark.
+- **A navigation icon set in `ui.Icon`**: `home`, `user`, `users`, `file`,
+  `receipt`, `card`, `box`, `layers`, `activity`, `shield`, `key`, `lock`,
+  `sliders`, `chart`, `calendar`, `clock`, `plus`, `list`, `grid`,
+  `database`, `inbox`, `folder`, `tag`, `mail`, `bell`, `globe`, `repeat`,
+  `cpu` and `star`, for an entity's `Display.Nav.Icon`, sidebar links and
+  dashboard cards.
+- **`entityui` lists have five optional tools: a query box, a columns
+  menu, a trash view, saved views and tab counts.** They are off on app
+  pages and on in the admin. `ListBuilder.QueryBox()` takes a filter typed by hand
+  and parses it with the parser the chips use; a filter that does not
+  parse keeps the "filter did not apply" warning. A reference under
+  the box shows an example from the entity's own fields
+  (`status = "open" and amount > 100`, also the placeholder), the
+  operators, the joining words and the fields a filter may use. `ColumnsMenu()` shows
+  and hides columns through the `cols` query param, a menu of checkbox
+  rows that keep the filter and the sort, and the list reads only the
+  columns it shows. `Deleted()` adds a Deleted tab
+  to an entity with `Scope.SoftDelete`, listing soft-deleted rows under
+  the same owner, tenant and read scope, each with Restore and Delete
+  permanently. `SavedViews()`, on a UI built with
+  `UI.WithSavedViews(store)`, keeps named filter-and-columns sets per
+  caller in a `SavedViewStore`; an opened view is parsed and checked
+  again each time. The list draws one toolbar form: the search, a
+  Filters dropdown holding the facets, the typed filter and the one
+  Apply/Reset pair, and the Columns menu at the row's end. Saved views
+  are tabs beside the declared views, with a "Save view" dropdown at
+  the tab row's end once the filter or the columns differ from the
+  open view, and the open saved view's Delete beside it. Active
+  filters show as chips under the toolbar, each removing its own
+  filter, with a "Clear all". `Embedded()` draws a list as a section
+  of another screen: a compact header with the count and a small "Add
+  <singular>" button, the rows without tabs, search, filters or bulk,
+  and a one-line empty state; a record's Related tab draws its lists
+  this way. `TabCounts()` puts a row count on each
+  view tab, the rows that tab's link lists under the page's search,
+  facets, filter and read scope, and the header then shows the
+  entity's description in place of its count.
+  `UI.RestoreHandler`, `PurgeHandler` and
+  `SavedViewsHandler` serve the writes at `<write base>/<id>/_restore`,
+  `/_purge`, `/_views` and `/_views/_delete/<id>`. A plain form post is
+  answered with a 303 to a return path that must be a same-origin
+  relative path; anything else is a 400.
+- **`crud.ListOptions.Deleted`** lists only soft-deleted rows in
+  `ListAll` and `CountAll`, with every other scope applied unchanged. An
+  entity without `Scope.SoftDelete` returns `ErrNoSoftDelete` before any
+  SQL runs.
+- **`entityui.RecordBuilder.API()` adds an API tab to the record
+  screen.** It shows the record as the REST GET returns it to the
+  caller, the entity's REST base with the methods its exposure allows,
+  the MCP tool names it registers, and a link to `/api/llm.md`.
+  `crud.MCPToolNames` returns those names.
+- **`entityui.RecordBuilder.Override()` and `UI.OverrideHandler` set a
+  record's status outside its declared moves.** The form draws only for
+  an entity with enforced `States`, on an app with an audit log, for a
+  caller who may update the record and holds `<entity>:override_state`
+  itself (a wildcard grant and `crud.WithElevation` do not count). The
+  handler checks the capability again, reads the record under the
+  caller's scope and read permission, refuses a caller without the
+  update permission, requires a reason of at most 500 characters, and
+  writes through `crud.WithStateOverride`, so the audit row records
+  `state_override` and the reason. A refused write answers 403, 404,
+  422 or 400 as the JSON API does.
+- **`crud.IsHookRefusal(err)`** reports a Before hook's rejection, the
+  error the HTTP handlers answer 400, so in-process code serving its own
+  answer can tell a refusal from a failure.
+- **The admin's audit log filters by actor, entity, operation and date
+  range** through the page's query string (`actor`, `entity`, `op`,
+  `from`, `to`), set in the same Filters dropdown the entity lists
+  use. Each value is validated and bound as a placeholder; an invalid
+  one is ignored with a warning naming it. A pager under the table
+  reaches older rows (`?p=`), keeping the filter.
+- **`admin.Config.SavedViews` stores saved views** in the admin's
+  database (`admin_saved_views`, or `Config.SavedViewsTable`), one set
+  per user per entity, kept apart by owner and tenant read from the
+  caller's context. `(*Battery).SavedViews()` returns the store.
+- **`admin.NewBulkJobs` runs bulk actions over `entityui.InRequestCap`
+  records on `battery/queue`.** The payload carries only the job id.
+  Before every chunk the runner rebuilds the confirming user's context
+  as of now through `PrincipalFunc` (or `admin.AuthPrincipal` on
+  `battery/auth`), the admin adds its `Config.Policy` when the context
+  carries none, and adds `crud.WithElevation` only while that user still
+  passes the admin gate. A user who is gone runs nothing; one who lost
+  the admin role runs only what their current roles allow. Wire the runner into
+  both `entityui.Extensions.Jobs` and `admin.Config.BulkJobs`.
+- **Generated apps turn on saved views** in the admin config the
+  blueprint writes, and Meridian's payments use soft delete, so the
+  admin shows their trash view. A generated app with an admin, and
+  Meridian, turn on `WithAuditLog` for every entity, so admin writes
+  leave audit rows for the Audit log page and the dashboard's recent
+  activity.
 
 ### Changed
+- `admin.Config.Metrics` holds at most six figures (five with a Queue),
+  the strip's size; a `Tone` on a top-level metric fails the boot.
+- The admin's page-theme picker (`admin.Config.Themes`) moved from the
+  toolbar to the account page's Appearance card, as its Look row (new
+  key `ui.admin.look`). In a longer language the toolbar's picker
+  squeezed the phone's menu button under the search button.
+- The admin's User roles page pages through every account: a pager
+  under the table turns pages through `?p=`. It read a bare `?offset=`
+  that nothing on the page linked to; that parameter is gone.
+- **BREAKING: the admin's Roles page is a grid, saved through
+  `POST /admin/rbac/_permissions`; `POST /admin/rbac/_revoke` is
+  removed.** A row per permission, a column per role, a checkbox where
+  they meet, and one "Save permissions" button that grants and revokes
+  only what changed, one audit row per change. A save is checked whole
+  first: one change the caller may not make refuses the save and
+  applies nothing. Revoke by unchecking a box and saving; a client that
+  posted to `_revoke` posts the grid to `_permissions` instead (see
+  admin.md). `_grant` stays, for the "Add a role" form. Meridian seeds
+  `billing` and `support` roles over its declared capabilities and
+  wires a `GrantStore`, so its Roles page can be edited.
+- `admin.Config.AuditListLimit` is the Audit log page's rows per page,
+  default 50; it was a cap on the only rows the page could show,
+  default 200.
+- The admin's Jobs page pages through every job: a pager under the
+  table turns pages through `?p=`, keeping the status.
+  `admin.Config.QueueListLimit` is its rows per page, default 50; it
+  was a cap on the only rows the page could show, default 200.
+  Replay all re-queues every failed job, up to 10,000 a click, where
+  it replayed the ones on screen.
+- **BREAKING: `queue.Browsable.ListJobs(ctx, status, limit, offset)`**
+  takes an offset after the limit and skips the newest `offset` jobs;
+  a negative offset reads as zero. `DBQueue`, `MemoryQueue` and
+  `RedisQueue` implement it. Pass `0` to keep the first page.
+- The notification bell's spoken count moved out of `headless-feedback`
+  into its own `headless-bell` module, loaded on
+  `[data-hui-notification-bell]`, which keeps the toast runtime under
+  its size budget now that a toast can carry an action.
+- **BREAKING: `app.App.RenderOverlayResult(ctx, path, origin, as)`** takes
+  the location the overlay opens over, which the screen reads with
+  `app.OverlayOriginFromContext`. A host passes the request's
+  `X-Gofastr-From`; a test with no origin passes `""`.
+- **Toasts rise in the bottom-right corner.** `preset.ToastStack`, and
+  so the stack `framework/uihost` mounts, defaults to
+  `widget.BottomRight` instead of top-right, where a toast covered a
+  page's header actions; a bottom stack slides up instead of down.
+  `.Mount` still moves it. The dismiss is a 28px ghost icon button
+  (`--ui-notification-dismiss-size`) with its 44px tap target kept on a
+  pseudo-element, instead of a bare button wearing the browser's border.
+- **A constraint conflict names the field.** A create or update the
+  database refuses on a constraint the entity declares (a `unique`
+  field, a unique column index, a relation's foreign key) answers 409
+  with `fields` in the validation shape, naming the fields the caller
+  sent, so a form shows "is already in use" on the control instead of a
+  bare conflict toast. Columns the caller did not send stay unnamed, a
+  conflict on a `hidden` or `no_query` field the caller sent stays bare,
+  and the driver's text never reaches the body. A NOT NULL refusal on a
+  declared field answers 400 with "is required" on it instead of a 500.
+- **An intercepted drawer is wider**: half the viewport between 480px
+  and 720px, up from a fixed 480px, so a record's form has room. Themes
+  that set `--ui-intercept-drawer-w` keep their width.
+- **The admin's recent activity reads as sentences.** Each line names
+  the actor by its account's email (through `Config.Auth`), the
+  operation as a verb, and the record by its title, with a relative
+  time: "ada@example.com updated INV-1010 · 5m ago" in place of the
+  record UUID, the raw op and the actor id. The audit page's actor
+  column names the actor the same way.
+- **`data-cui-confirm` asks in the kit's dialog, not `window.confirm`.**
+  The runtime's `confirm` module opens a themed `<dialog>` with Cancel
+  focused; Escape and a backdrop click answer no. A form submit is held
+  while it is open and sent again with the same submitter on an accept.
+  A page without the kit's template, or a browser without
+  `showModal`, still asks with `window.confirm`. Tests that stubbed
+  `window.confirm` on a kit page now click the dialog's buttons
+  (`[data-cui-confirm-part="accept"]`). The entity confirm messages
+  lost the question their new titles ask: `ui.entity.deleteConfirm`
+  reads "This cannot be undone.", and the purge, bulk, override and
+  saved-view messages changed the same way.
+- **The collapsible sidebar's toggle sits at the foot of the column**,
+  a sticky row with the `panel-left` icon and a "Collapse" label
+  (`SidebarConfig.CollapseText`, i18n key `ui.sidebar.collapseText`)
+  that the collapsed rail draws as the icon alone. It was a chevron
+  button at the head. Rows are 2.25rem tall under a fine pointer and
+  keep the 44px touch target on a coarse one; `--ui-sidebar-row-height`
+  overrides both.
 
+- **An audit row names the request's user by default.** With
+  `AuditConfig.Actor` unset, `WithAuditLog` recorded no actor, so every
+  write read as a system write. It now records the `GetID()` of the user
+  `handler.GetUser` returns, and still no actor when the request has no
+  user. An `Actor` func, including one that returns `""`, wins.
+- **BREAKING: `battery/admin` is rebuilt on `framework/entityui`.** Entity
+  screens moved from `/admin/e/<entity>` (with `/new`, `/view/<id>` and
+  `/edit/<id>`) to `/admin/entities/<entity>`, `/create` and `/<id>`; a
+  record, and the create form, open in a drawer from the list; the
+  create form also opens over a record whose Related tab adds to it,
+  and Create returns to that record. Writes go to
+  `/admin/api/<entity>`, the entity's own CRUD handler behind the admin
+  gate under `crud.WithElevation`. `Config.UI` (`app.EntityUI(ext)`) is
+  required when the admin exposes an entity, and every admin page, the
+  queue and audit pages included, needs the app's UI host: `Init` fails
+  without one. The admin reads names, columns and nav from each entity's
+  `Display`. The admin ships no CSS: `Config.Theme`, `Config.FontFaceCSS`
+  and `/admin/admin.css` are removed and the shell takes the app's theme
+  through the UI host. `Config.EntityListLimit` (the list's page sizes
+  come from `Display.PageSizes`), `Config.Secret`,
+  `Battery.RegisterRoutes` and `SortDirOf` are removed. New: a dashboard with a polled
+  count card per entity (with when its newest record was written),
+  failed jobs and recent activity marked by each operation's icon; a command
+  palette searching pages, entities and records (`SearchFields`);
+  `Config.Pages`, `Cards`, `Links` and `Commands` for the app's own admin
+  pages, dashboard cards, sidebar links and palette entries;
+  `Config.Logo`; and `Config.SignOutPath` for the account menu. The jobs,
+  audit, roles, user roles and modules pages draw in the same shell. See
+  `framework/docs/content/admin.md`.
+- **A `Float` field takes decimal text.** A form posts `"42.5"` for a
+  number input; create and update now read it as the number, the way an
+  `Int` field already read `"42"`. Hex, underscore separators, `NaN` and
+  `Inf` are still refused.
 - **BREAKING: `framework/ui/resource` is removed.** `framework/entityui`
   replaces its `Config` and `Registry` screens and its island routes:
   build the app's UI with `App.EntityUI` and render `appUI.List`,
@@ -1051,6 +1781,40 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
   names the actual remedy (#456).
 ### Fixed
+- A long sidebar no longer hides its last link behind the Collapse row:
+  in a fixed-height column (the admin's sticky nav) the nav scrolls in
+  its own region above it. axe's target-size check failed on Meridian's
+  User roles link once the Revenue report added a nav row.
+- A record form's side panel sticks below the admin's top bar, not behind
+  it: `ui.ContentRow{Sticky: true}` sizes its toolbar to one control row
+  and publishes that height as `--ui-sticky-top`, which `ui.FormFrame`'s
+  sticky `SidePanel` adds to its offset.
+- A list's bulk bar no longer shows for a checked box in a cell's inline
+  editor (a yes/no field): a box in a form inside a `ui.Selection`'s body
+  is not a row. A filter toolbar's tools wrap inside a narrow screen
+  instead of pushing the page sideways.
+- An entity form's upload prompt speaks the request's language: the
+  file input now gets the request context.
+- A chip, a short id or a stat card's action no longer runs out of a
+  narrow box. `headless.Tag` draws its label as its own part
+  (`fui-tag__label`), which ends with an ellipsis when the chip is held
+  narrower than its text; `ui.ShortID`'s code gives way before its copy
+  button; a `ui.DataTable` phone row holds each slot's chip or id to the
+  cell's width; and a `ui.StatCard` action drops under a long (or
+  translated) label instead of leaving the card. Found by Meridian's
+  pseudo-locale overflow test.
+- A multipart create or update stored a `Decimal` field as a float,
+  which the decimal validator refused; it is the decimal string now.
+- **An empty `ui.DataTable` keeps its empty state in view on a phone.**
+  The empty state sat in a cell spanning the head, so when the columns
+  outgrew a narrow screen it scrolled sideways with them and its text
+  was cut off on one line. It now stays at the visible width and
+  wraps.
+- **Choosing a `ui.Menu` command row closes the menu.** Only link rows
+  closed it, so Delete and the other button rows left the panel open
+  behind their confirm dialog and after their request. A command row
+  now closes the whole chain and returns focus to the trigger; radio
+  and checkbox rows keep the menu open.
 - **A harness event stream carries the turn its client starts at once.**
   The REST `/v1/sessions/<id>/events` stream and the web client's SSE
   stream flushed their headers before subscribing to the session's bus,
@@ -1058,6 +1822,100 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   a turn the moment the stream opened lost that turn's events whenever
   the handler was descheduled between the two. Both now subscribe
   first, the order the WebSocket control surface already used.
+- **A link with a query opens its intercepting route as a drawer.** The
+  runtime matched the route against the path with its query attached,
+  so `/invoices/create?prefill_customer_id=7` never matched
+  `/invoices/create` and loaded as a full page.
+- **A keyboard chord reaches the top layer's control.** A
+  `data-hui-shortcut-click` or `-focus` target inside an `inert`
+  subtree (the page under an open drawer, a lower drawer) is skipped,
+  so Mod+S in a drawer clicks that drawer's Save, not the page's.
+- **An intercepted drawer or sheet loads its components' stylesheets.**
+  A pane that brought a component the page under it did not carry drew
+  it unstyled: the admin's record drawer showed its money field's
+  currency on a line of its own and its read-only fields as bare text.
+- **A DataTable's body rows are 52px, as their rule says.** A cell's
+  4px inset sat on top of the row height, so every row drew 60px; the
+  cells now count it inside.
+- **A checkbox or radio row is 44px tall**, its inset inside the touch
+  target instead of 8px on top of it, so a table row holding one keeps
+  the row height.
+- **A `ui.SearchInput` is as tall as the buttons beside it.** Its frame
+  holds the control height with the border inside; it drew 2px taller.
+- **A DataTable sort header's label sits level with the values under
+  it**, at the start edge and the end edge, instead of one padding
+  further in.
+- **A `ui.StatCard` fills its grid cell**, so a row of cards shares one
+  height when each sits in a wrapper such as a polled region; a card
+  without a trend line no longer stops short of its neighbours.
+- **A `CompactMobile` breadcrumb trail stays on one line on a phone.**
+  Its crumbs ellipsize, the parent before the current page, instead of
+  wrapping the trail over two lines of the toolbar. The admin's toolbar
+  gives the trail the room left after the menu button.
+- **`ui.PasswordInput` turns red when a submit is refused**: the
+  form-errors runtime marks the input `aria-invalid`, and the shell
+  now takes the danger border from it as it does from a server-rendered
+  error. Before, only a field rendered with its error showed red.
+- **The theme pill's options have room**: `ThemeTogglePill` and
+  `ThemePicker` options pad their labels by
+  `--ui-theme-toggle-option-pad-inline` (0.75rem) and the track insets
+  the selected option by `--ui-theme-toggle-track-inset` (2px); the
+  selected "Auto" used to fill its button edge to edge.
+- **An invalid control inside a `ui.InputGroup` marks the whole group.**
+  The input drew its own danger ring inside the group, so a `$` prefix
+  sat outside the red box; the group now takes the error ring the way it
+  takes the focus ring.
+- **A field's error message starts with a capital.** Server messages are
+  fragments written to follow the field name ("is required"); under
+  the label they now read "Is required".
+- **A menu or dropdown opened near the viewport's edge stays on
+  screen.** Its panel hangs from one edge of the trigger, and a trigger
+  at the end of a row opened it past the viewport (a phone's row menu,
+  a toolbar's last button). `headless-disclosure` measures an opened
+  light-dismiss panel and shifts it back inside, through
+  `--hui-panel-shift`, which the kit's menu and dropdown panels read.
+- **A menu or dropdown inside a table opens in full.** A table's
+  scroll box clips what hangs past its edge, so a last-row menu opened
+  cut off at the table's bottom and scrolled the table instead.
+  `headless-disclosure` now floats a panel that a scrolling ancestor
+  would clip: fixed at its trigger's edge, above the trigger when the
+  viewport has no room below, and following it while the page scrolls.
+- **A `ui.DataTable` in cards mode no longer runs past its box.** Each
+  card was the box's full width plus its own padding and border, 26px
+  too wide on a phone; the card's padding and border now sit inside
+  that width.
+- **A page header inside an app frame no longer doubles the top
+  inset.** `ui.ContentRow` pads main beside a nav column, and a
+  `ui.PageHeader` first in it added its own 24px above the title. The
+  header reads its top inset from `--ui-page-header-inset`, which the
+  padded main sets to 0.
+- **Sorting or paging a list no longer jumps to the top of the page.**
+  A client navigation that changes only the query on the same path
+  keeps the scroll position; a new path or a fragment still scrolls as
+  before. Core's navigator and the layout envelope module both apply
+  it.
+- **A `ui.DataTable` wider than a phone no longer widens the page.** A
+  cell's absolutely positioned part, such as a visually hidden label,
+  took its containing block from outside the scroll box, escaped its
+  clip and pushed the document sideways (the Meridian invoice list
+  measured 660px in a 390px viewport). The scroll box is now that
+  containing block.
+- **A panic in a battery or plugin `Init`, a start, ready or seed hook
+  logs its stack.** The error said to set `GOTRACEBACK=all`, which
+  prints nothing for a recovered panic, so the panic could not be
+  traced. The stack now goes to the App's logger (`WithLogger`) at
+  error level; the error and the log still name only the panic value's
+  type.
+- **`query.UpdateBuilder` binds its args in placeholder order.** The SQL
+  numbers every SET placeholder before the WHERE's, but a `Set` called
+  after a `Where` appended its value after the WHERE args, so the
+  statement bound the wrong value to each slot. `Build` now lists every SET value, then every
+  WHERE arg.
+- **A `ui.DataTable` card keeps a value of several parts together.** A
+  cell of text and inline elements ("Role · billing") spread each part
+  across the card line, one flex item apiece; each cell's value is now
+  one element (`fui-data-table__value`) at the line's end, and a
+  label-less cell's controls still sit apart.
 - **A `DataTable` in cards mode no longer clips its cells.** The table's
   52px row height is a minimum in table layout but an exact height once
   a cell becomes a flex box, so a cell taller than that (an empty state,
@@ -1254,7 +2112,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **An empty list with hooks or includes answers `"data": []`**, not
   `null`.
 - **The admin nav lists every exposed entity** when the config uses
-  `AllEntities`, and the entity pages link back to Overview and Audit.
+  `AllEntities`, and the entity pages link back to the dashboard and
+  the audit log.
   Both navs label an entity the same way ("Customers", not
   "customers").
 - **Admin labels singularize English plurals** ("New category", not

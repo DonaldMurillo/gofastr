@@ -143,7 +143,7 @@ func TestDBQueueLaneRoundTrip(t *testing.T) {
 	}
 
 	// ListJobs hydrates Lane (newest-first: "laned" then "default").
-	jobs, err := q.ListJobs(ctx, "", 10)
+	jobs, err := q.ListJobs(ctx, "", 10, 0)
 	if err != nil {
 		t.Fatalf("list jobs: %v", err)
 	}

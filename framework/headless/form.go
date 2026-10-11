@@ -54,6 +54,11 @@ type FormProps struct {
 	// lives here because no headless primitive owns a whole form; the
 	// record screens are the usual carriers.
 	LeaveGuard string
+	// LeaveGuardTitle and LeaveGuardAccept word the kit's dialog the
+	// guard asks in: its title and its (danger) accept button. Empty
+	// keeps the dialog's own; both need LeaveGuard.
+	LeaveGuardTitle  string
+	LeaveGuardAccept string
 	// Island is where the form's answer is rendered again: when set,
 	// the form carries the RPC contract beside its action and the
 	// arrival pass focuses the summary. The HTTP convention the
@@ -144,6 +149,12 @@ func Form(p FormProps, s Classes, fields ...render.HTML) render.HTML {
 	if p.LeaveGuard != "" {
 		Mark(own, "data-hui-leave-guard")
 		own["data-hui-leave-guard-message"] = p.LeaveGuard
+		if p.LeaveGuardTitle != "" {
+			own["data-hui-leave-guard-title"] = p.LeaveGuardTitle
+		}
+		if p.LeaveGuardAccept != "" {
+			own["data-hui-leave-guard-accept"] = p.LeaveGuardAccept
+		}
 	}
 
 	b := p.Parts.Box(s)
@@ -250,10 +261,16 @@ func formRequestAttrs(a html.Attrs) html.Attrs {
 				panic("headless: Form Request carries an empty data-cui-rpc-success-toast — say the title or leave the toast off")
 			}
 			out[k] = v
+		case "data-cui-rpc-success-action":
+			checkToastAction("Form Request", v)
+			out[k] = v
 		case "data-cui-confirm":
 			if v == "" {
 				panic("headless: Form Request carries an empty data-cui-confirm — a confirmation with no message confirms nothing")
 			}
+			out[k] = v
+		case "data-cui-confirm-title", "data-cui-confirm-accept", "data-cui-confirm-tone":
+			checkConfirmWording("Form Request", a, k, v)
 			out[k] = v
 		case "data-action-mount":
 			// A compiled action name: an identifier the host
@@ -275,6 +292,7 @@ func formRequestAttrs(a html.Attrs) html.Attrs {
 			panic("headless: Form Request carries " + k + ", which is not a request attribute a form admits (the wiring vocabulary lives on FormProps.Request; decoration belongs in ExtraAttrs)")
 		}
 	}
+	checkToastActionRides("Form Request", out)
 	return out
 }
 

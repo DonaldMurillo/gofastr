@@ -3,7 +3,7 @@
 // A detail screen that presents as an overlay when you reach it from
 // inside the app, and as its own full page when you land on it directly.
 // Registered server-side with app.InterceptFrom("/products",
-// app.ScreenDrawer); the route manifest carries {from, as} per route and
+// app.ScreenDrawer); the route manifest carries {from, also, as} per route and
 // core loads this module only when at least one route declares it.
 //
 // The rules that keep this honest:
@@ -38,7 +38,9 @@
 // A link inside a pane that changes only the pane's own query re-renders
 // INSIDE the pane (the pane's URL gains one history entry per click,
 // the same contract a list at top level follows) and never drops the
-// pane by navigating the whole page.
+// pane by navigating the whole page. A link marked
+// data-cui-intercept-swap does the same for another path: the target
+// renders in the pane, fetched with the pane's own origin.
 (() => {
   'use strict';
   window.__gofastr = window.__gofastr || {};
@@ -93,6 +95,9 @@
   const routeFor = (path) => routes().find((r) => r.path && matchRoute(r.path, path));
   const pathOf = (u) => u.split('?')[0].split('#')[0];
   const top = () => layers[layers.length - 1];
+  // Does the route's intercept open over the origin route o? Its from
+  // pattern, or any of its also patterns.
+  const fromOK = (target, o) => o.path === target.intercept.from || (target.intercept.also || []).includes(o.path);
 
   // Every history write here is a RAW pushState on purpose: currentPath
   // must stay on the page UNDER the stack, so popstate diffs inside the
@@ -103,10 +108,13 @@
   function rawPush(t) { history.pushState({ cui: { s: stackId, k: t.key, i: t.cur } }, '', t.url); }
 
   // A fresh render of a layer, wearing the presentation the server
-  // chose for it. Each layer carries its own: a stack can mix them.
+  // chose for it. Each layer carries its own: a stack can mix them. The
+  // pane loads the stylesheet of each component it brings, as every
+  // other swap path does.
   function swap(t, res) {
     t.el.innerHTML = res.html;
     t.el.setAttribute('data-cui-intercept-as', res.as);
+    if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(t.el);
   }
 
   function overlayHost() {
@@ -149,9 +157,12 @@
 
   // The leave guard hook (headless-leaveguard, loaded when a
   // data-hui-leave-guard form is on the page). scope is the element (or
-  // elements) whose content the move would discard.
-  function guardOK(scope) {
-    return !NS._leaveGuard || NS._leaveGuard.ok(scope);
+  // elements) whose content the move would discard; retry makes the
+  // move again, for a guard that declines now and asks in the kit's
+  // dialog after. A declined history move's retry goes the same
+  // distance again: the dialog answers after the undo has landed.
+  function guardOK(scope, retry) {
+    return !NS._leaveGuard || NS._leaveGuard.ok(scope, retry);
   }
 
   // fetchOverlay asks the server for the overlay variant of path,
@@ -224,7 +235,7 @@
   function closeTopDirect() {
     const t = top();
     if (!t) return;
-    if (!guardOK(t.el)) return;
+    if (!guardOK(t.el, closeTopDirect)) return;
     epoch++;
     layers.pop();
     t.el.remove();
@@ -277,22 +288,27 @@
   // move will discard.
   function decide(path, anchor) {
     const cont = document.getElementById(OVERLAY_ID);
-    const target = routeFor(path);
+    const target = routeFor(pathOf(path));
     if (layers.length && cont) {
       const t = top();
       const inPane = !!(anchor && cont.contains(anchor));
-      // The pane's own URL, query-only change: stay in the pane.
-      if (inPane && pathOf(path) === pathOf(t.url)) return { kind: 'query' };
+      // A link in the top pane marked data-cui-intercept-page opens its
+      // target as the page: the stack closes and the router loads it.
+      if (inPane && anchor.hasAttribute('data-cui-intercept-page')) return { kind: 'page' };
+      // The pane's own URL, query-only change, or a link marked
+      // data-cui-intercept-swap (a drawer's previous/next record): render
+      // in the pane, one history entry of the layer.
+      if (inPane && (pathOf(path) === pathOf(t.url) || (anchor.hasAttribute('data-cui-intercept-swap') && NS._originOK?.(path)))) return { kind: 'query' };
       const origin = inPane ? t.url : underPath;
       if (!target || !target.intercept) return null;
       const o = routeFor(pathOf(origin));
-      if (!o || o.path !== target.intercept.from) return null;
+      if (!o || !fromOK(target, o)) return null;
       if (!NS._originOK?.(path)) return null;
       return { kind: layers.length >= MAX_LAYERS ? 'refuse' : 'open', origin };
     }
     if (!target || !target.intercept) return null;
     const o = routeFor(location.pathname);
-    if (!o || o.path !== target.intercept.from) return null;
+    if (!o || !fromOK(target, o)) return null;
     if (!NS._originOK?.(path)) return null;
     return { kind: 'open', origin: location.pathname + location.search };
   }
@@ -304,7 +320,7 @@
   // it); an element = that layer (a query move re-renders the top pane).
   NS._interceptScope = function (path, anchor) {
     const d = decide(path, anchor);
-    if (!d) return undefined;
+    if (!d || d.kind === 'page') return undefined;
     return d.kind === 'query' ? top().el : null;
   };
 
@@ -318,10 +334,20 @@
   NS._intercept = function (path, hash) {
     const anchor = clicked;
     clicked = null;
+    if (claimPanel(anchor, path, hash)) return true;
     const d = decide(path, anchor);
     if (!d) return false;
     if (d.kind === 'query') {
       claimQuery(path, hash);
+      return true;
+    }
+    if (d.kind === 'page') {
+      // The page takes the top layer's history entry, so Back returns to
+      // what was under the stack, not to a layer that is gone. Then the
+      // router loads it the way fallbackNav hands a navigation over.
+      closeAllNow();
+      history.replaceState(null, '', path + (hash || ''));
+      window.dispatchEvent(new PopStateEvent('popstate'));
       return true;
     }
     if (d.kind === 'refuse') {
@@ -339,6 +365,73 @@
         mountLayer(res, path, hash, d.origin, trigger);
       })
       .catch(() => { if (e === epoch) fallbackNav(path, hash); });
+    return true;
+  };
+
+  // A link on a page marked data-cui-intercept-panel="<record>" is the
+  // drawer's open-as-page in reverse: its href is the page the record
+  // opens over (a list), so the list takes the page's history entry,
+  // the router loads it, and the record mounts as the first layer over
+  // it. Back from the layer lands on the list. Without the module, or
+  // when the record's route does not open over that page, the link is
+  // a plain navigation to the list.
+  let panel = null;
+  function claimPanel(anchor, path, hash) {
+    const rec = !layers.length && anchor && anchor.getAttribute('data-cui-intercept-panel');
+    if (!rec) return false;
+    const target = routeFor(pathOf(rec));
+    const o = routeFor(pathOf(path));
+    if (!target || !target.intercept || !o || !fromOK(target, o) || !NS._originOK?.(rec)) return false;
+    panel = { rec, under: path };
+    history.replaceState(null, '', path + (hash || ''));
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    return true;
+  }
+
+  // The rpc module asks this before a success navigation (a save that
+  // names where to go next) made by node. When node sits in the top
+  // layer and the destination's path is a layer's own (the top one, or
+  // one under it) or the page under the stack, the stack returns there
+  // instead of leaving: the layers above it close, their history entries
+  // consumed in one move, and it re-renders in place with what the save
+  // changed. A create opened over a record lands back on the record, a
+  // save in a record pane keeps the pane. The leave guard asks first
+  // about what the move discards. true = handled; anywhere else is a
+  // real navigation, as before.
+  NS._interceptReturn = function (path, node) {
+    const t = top();
+    if (!t || !node || !t.el.contains(node)) return false;
+    const p = pathOf(path);
+    let i = layers.length - 1;
+    while (i >= 0 && pathOf(layers[i].url) !== p) i--;
+    if (i < 0 && pathOf(underPath) !== p) return false;
+    if (!guardOK(i < 0 ? null : layers.slice(i).map((l) => l.el), () => NS._interceptReturn(path, node))) return true;
+    const e = ++epoch;
+    let focus = null;
+    while (layers.length > i + 1) {
+      const shut = layers.pop();
+      focus = shut.restoreFocus;
+      shut.el.remove();
+    }
+    const lay = top();
+    const back = t.p0 + t.cur - (lay ? lay.p0 + lay.cur : 0);
+    if (back) {
+      // The popstate this move fires is the return arriving, not a move.
+      repair = { k: lay?.key, i: lay?.cur };
+      history.go(-back);
+    }
+    settleAfterDrop(focus);
+    if (!lay) {
+      NS.refresh?.();
+      return true;
+    }
+    fetchOverlay(lay.url, lay.fromURL)
+      .then((res) => {
+        if (e !== epoch) return;
+        if (!res) { fallbackNav(lay.url, ''); return; }
+        swap(lay, res);
+      })
+      .catch(() => { if (e === epoch) fallbackNav(lay.url, ''); });
     return true;
   };
 
@@ -369,7 +462,7 @@
       const scope = layers.slice(i + 1).map((l) => l.el);
       const refetch = j !== lay.cur;
       if (refetch) scope.push(lay.el);
-      if (!guardOK(scope)) { undo(lay.p0 + j); return true; }
+      if (!guardOK(scope, () => history.go(lay.p0 + j - t.p0 - t.cur))) { undo(lay.p0 + j); return true; }
       // Focus returns to the control that opened the LOWEST closed
       // layer: it lives in layer i, the one left showing.
       let focus = null;
@@ -403,7 +496,8 @@
     // entry is pushed again instead); accepted, drop the stack and let
     // the router load the destination.
     const base = tag.s === stackId && !tag.k;
-    if (!guardOK(base ? layers.map((l) => l.el) : null)) {
+    const dest = location.href;
+    if (!guardOK(base ? layers.map((l) => l.el) : null, () => (base ? history.go(-t.p0 - t.cur) : NS.navigate(dest)))) {
       if (base) undo(0);
       else rawPush(t);
       return true;
@@ -419,7 +513,18 @@
   // A real client-side navigation took the URL: the stack's layers are
   // gone with the page they floated over. No history move — the
   // navigation itself owns the entry.
-  window.addEventListener('gofastr:navigate', closeAllNow);
+  // The navigation a data-cui-intercept-panel link handed over has
+  // landed on its page: open the record over it.
+  window.addEventListener('gofastr:navigate', () => {
+    closeAllNow();
+    const p = panel;
+    panel = null;
+    if (!p || location.pathname + location.search !== p.under) return;
+    const e = epoch;
+    fetchOverlay(p.rec, p.under)
+      .then((res) => { if (e === epoch && res && !layers.length) mountLayer(res, p.rec, '', p.under, null); })
+      .catch(() => {});
+  });
 
   document.addEventListener('keydown', (e) => {
     if (!layers.length || e.key !== 'Escape') return;

@@ -81,6 +81,14 @@ type AuditEntry struct {
 type UI struct {
 	host Host
 	ext  Extensions
+	// views keeps saved list views, nil when the app keeps none.
+	views SavedViewStore
+	// recordPath is the base of an entity's record screens, nil when
+	// the UI links no relation to its record.
+	recordPath func(e *entity.Entity) (string, bool)
+	// actorName names an audit entry's actor, nil when entries show the
+	// stored id.
+	actorName func(ctx context.Context, id string) string
 	// now is the clock queued runs lease and finish by.
 	now func() time.Time
 }
@@ -109,6 +117,81 @@ func New(h Host, ext Extensions) (*UI, error) {
 		}
 	}
 	return &UI{host: h, ext: ext.clone(), now: time.Now}, nil
+}
+
+// WithAPIPath returns a UI that draws the same screens with the same
+// Extensions but points every write (save, delete, moves, bulk, export)
+// at path(e) instead of the entity's REST routes. A back office uses it
+// to send writes through routes it gates itself, the way battery/admin
+// mounts the CRUD handler's write routes behind its own gate. path
+// answers false for an entity whose screens should draw read-only.
+// Reads are unchanged: they run in process under the caller's context.
+func (u *UI) WithAPIPath(path func(e *entity.Entity) (string, bool)) *UI {
+	h := apiPathHost{Host: u.host, path: path}
+	c := *u
+	c.host = h
+	if bh, ok := u.host.(BulkHost); ok {
+		c.host = apiPathBulkHost{apiPathHost: h, BulkHost: bh}
+	}
+	return &c
+}
+
+// WithRecordPath returns a UI whose list cells link a relation's title
+// to the related record, at path(e) + "/" + id, as a chip. path answers
+// false for an entity whose records have no screen here, and the cell
+// stays text. A link is drawn only for a title the caller's own read
+// of the related entity returned, and the record screen behind it runs
+// its own read gate. A nil path returns the UI unchanged.
+func (u *UI) WithRecordPath(path func(e *entity.Entity) (string, bool)) *UI {
+	if path == nil {
+		return u
+	}
+	c := *u
+	c.recordPath = path
+	return &c
+}
+
+// WithSavedViews returns a UI whose lists can keep named saved views in
+// store (ListBuilder.SavedViews turns a list on). The same host,
+// Extensions and clock ride along — a UI that WithAPIPath rebuilt keeps
+// its write paths, so the save and delete forms still post through
+// them. The store reads the owner and tenant from the caller's context
+// only; nothing about a caller travels from a request into it. A nil
+// store returns the UI unchanged.
+func (u *UI) WithSavedViews(store SavedViewStore) *UI {
+	if store == nil {
+		return u
+	}
+	c := *u
+	c.views = store
+	return &c
+}
+
+// WithActorName returns a UI whose Activity tab names each entry's actor
+// by name(ctx, id), an account's email say, in place of the bare id the
+// audit row stores. An empty answer, or a panic, falls back to the id.
+// A nil name returns the UI unchanged.
+func (u *UI) WithActorName(name func(ctx context.Context, id string) string) *UI {
+	if name == nil {
+		return u
+	}
+	c := *u
+	c.actorName = name
+	return &c
+}
+
+// apiPathHost is a Host whose write routes live elsewhere.
+type apiPathHost struct {
+	Host
+	path func(e *entity.Entity) (string, bool)
+}
+
+func (h apiPathHost) APIPath(e *entity.Entity) (string, bool) { return h.path(e) }
+
+// apiPathBulkHost keeps the wrapped host's bulk backing.
+type apiPathBulkHost struct {
+	apiPathHost
+	BulkHost
 }
 
 // entityFor resolves a builder's entity name.

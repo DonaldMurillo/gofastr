@@ -24,6 +24,10 @@ Hooks run in registration order. The first error stops execution and
 returns to the caller. For `Before*` hooks the error cancels the
 operation. For `After*` hooks the error rolls back the transaction.
 
+A Before hook that returns an error refuses the write: the HTTP handlers
+answer 400, and an in-process caller (`CreateOne`, `UpdateOne`,
+`DeleteOne`) gets an error `crud.IsHookRefusal` reports true for.
+
 `BeforeCreate` / `BeforeUpdate` run **before** schema validation, so a
 hook that fills in or normalizes a field mutates the body the validator
 then checks; use them to supply server-derived values that must pass
@@ -41,6 +45,12 @@ app.HookRegistry("posts").RegisterHook(framework.AfterCreate,
 
 `HookRegistry(entityName)` lazily creates a registry for that entity.
 Each entity has its own registry: hooks do not cross entities.
+
+A hook runs as the caller. When a back office such as battery/admin
+elevates a write or read (`crud.WithElevation`), the hook's `ctx`, and the
+`Request` a List or Get payload carries, arrive with the elevation
+removed: a read or write the hook makes passes only the caller's own
+gates.
 
 ## List & Get hooks: scoping reads
 

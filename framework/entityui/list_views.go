@@ -3,10 +3,12 @@ package entityui
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -26,6 +28,12 @@ const allView = "all"
 
 func viewKeyOf(ctx context.Context, m *meta, b *ListBuilder, q url.Values) (string, error) {
 	if key := q.Get(param(b.key, "view")); key != "" {
+		// The trash view is the screens' own, beside the declared ones.
+		// It narrows nothing here — the read inverts its soft-delete
+		// term — so it resolves before the unknown-view fallback.
+		if key == deletedViewKey && b.deleted && m.e.Config.Scope.SoftDelete {
+			return deletedViewKey, nil
+		}
 		if declaredAndViewable(ctx, m, key) {
 			return key, nil
 		}
@@ -56,7 +64,7 @@ func viewable(ctx context.Context, m *meta, key string) bool {
 	if !ok || vf.Show == nil {
 		return true
 	}
-	return vf.Show(ctx)
+	return vf.Show(asCaller(ctx))
 }
 
 // declaredAndViewable reports whether key is one of the entity's views
@@ -102,7 +110,7 @@ func viewPredicate(ctx context.Context, m *meta, key string) (*filter.Predicate,
 	if !ok || vf.Filter == nil {
 		return nil, nil
 	}
-	p, err := vf.Filter(ctx)
+	p, err := vf.Filter(asCaller(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("entityui: entity %q view %q filter: %w", m.name, key, err)
 	}
@@ -132,57 +140,164 @@ func viewSorts(m *meta, key string) ([]filter.ParsedSort, error) {
 	return nil, nil
 }
 
-// viewTabs draws the strip above the list: All plus every declared view
-// shown to this caller. Each tab is a link that swaps the view param and
-// drops sort and page — a view carries its own default order, and every
-// view starts on page one.
-func viewTabs(ctx context.Context, s *listState) render.HTML {
-	allQ := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page)
+// viewTabs draws the strip above the list: All, every declared view
+// shown to this caller, then the caller's saved views, with the
+// save/delete view tools at its end. Each tab is a link: a declared one
+// swaps the view param and drops sort, page and any open saved view —
+// a view carries its own default order, and every view starts on page
+// one; a saved one opens that view. With TabCounts each tab carries the
+// count of what its link lists; the open tab reuses the page's total.
+func (b *ListBuilder) viewTabs(ctx context.Context, s *listState, total int, known bool) render.HTML {
+	builtIn := s.savedID == ""
+	// A built-in tab's link keeps the URL's filter param and drops the
+	// open saved view, and with it the saved view's filter.
+	urlFilter := s.filterPred
+	if !s.q.Has(s.p.filter) {
+		urlFilter = nil
+	}
+	count := func(current bool, view, filt *filter.Predicate, deleted bool) string {
+		switch {
+		case !b.counts:
+			return ""
+		case current && known:
+			return formatNumber(float64(total), 0)
+		case current:
+			return ""
+		}
+		return b.tabCount(ctx, s, view, filt, deleted)
+	}
+	allQ := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page, s.p.saved)
 	if s.implicitView != "" {
 		allQ.Set(s.p.view, allView)
 	}
+	allCurrent := builtIn && s.view == ""
 	items := []ui.TabNavItem{{
 		Text:    i18nui.T(ctx, i18nui.KeyEntityViewAll),
 		Href:    listHref(s.path, allQ),
-		Current: s.view == "",
+		Current: allCurrent,
+		Badge:   count(allCurrent, nil, urlFilter, false),
 	}}
 	for _, v := range s.m.d.Views {
 		if !viewable(ctx, s.m, v.Key) {
 			continue
 		}
-		items = append(items, ui.TabNavItem{
+		current := builtIn && s.view == v.Key
+		item := ui.TabNavItem{
 			Text: i18nui.ViewLabel(ctx, s.m.tr, s.m.name, v.Key, v.Label),
 			Href: func() string {
-				q := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page)
+				q := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page, s.p.saved)
 				q.Set(s.p.view, v.Key)
 				return listHref(s.path, q)
 			}(),
-			Current: s.view == v.Key,
+			Current: current,
+		}
+		// A view whose predicate fails here failed the open list already
+		// when it was the open one; another tab only goes bare.
+		if pred, err := viewPredicate(ctx, s.m, v.Key); err == nil {
+			item.Badge = count(current, pred, urlFilter, false)
+		}
+		items = append(items, item)
+	}
+	if savedViewsOn(ctx, s) {
+		for _, v := range s.savedViews {
+			q := s.carry(s.p.saved, s.p.filter, s.p.cols, s.p.page)
+			q.Set(s.p.saved, v.ID)
+			current := v.ID == s.savedID
+			item := ui.TabNavItem{
+				Text:    v.Name,
+				Href:    listHref(s.path, q),
+				Current: current,
+			}
+			// A saved view's link keeps the open view and swaps in its
+			// own filter; one that no longer parses opens as All.
+			var filt *filter.Predicate
+			ok := true
+			if v.Filter != "" {
+				p, err := dsl.ParsePredicate(v.Filter, s.m.e.GetFields())
+				filt, ok = p, err == nil
+			}
+			if ok {
+				item.Badge = count(current, s.viewPred, filt, s.deletedView)
+			}
+			items = append(items, item)
+		}
+	}
+	// The trash view rides after the others.
+	if s.offeredTab {
+		q := s.carry(s.p.view, s.p.sort, s.p.dir, s.p.page, s.p.saved)
+		q.Set(s.p.view, deletedViewKey)
+		current := builtIn && s.deletedView
+		items = append(items, ui.TabNavItem{
+			Text:    i18nui.T(ctx, i18nui.KeyEntityViewDeleted),
+			Href:    listHref(s.path, q),
+			Current: current,
+			Badge:   count(current, nil, urlFilter, true),
 		})
 	}
-	if len(items) < 2 {
+	end := b.viewTools(ctx, s)
+	if len(items) < 2 && end == "" {
 		// All alone is not a strip of tabs; it is the list's only shape.
 		return ""
 	}
 	return ui.TabNav(ui.TabNavConfig{
 		Label: i18nui.T(ctx, i18nui.KeyEntityViews),
 		Items: items,
+		End:   end,
 	})
 }
 
-// filterChips draws the active filter as one chip per top-level AND
-// term, each a link to the same URL with that term removed. The query
-// box that writes the text is P4; the chips are how a reader narrows
-// what they typed.
-func filterChips(ctx context.Context, s *listState) render.HTML {
-	if s.filterPred == nil {
+// tabCount counts the rows one tab lists: its view and filter with the
+// page's pins, search and facets, under the same read scope as the
+// list. A refused count is a bare tab, never a failed strip.
+func (b *ListBuilder) tabCount(ctx context.Context, s *listState, view, filt *filter.Predicate, deleted bool) string {
+	where, err := s.narrowed(b, view, filt)
+	if err != nil {
 		return ""
 	}
-	terms := topLevelTerms(s.filterPred)
-	if len(terms) == 0 {
+	n, err := s.m.ch.CountAll(crud.WithReadHooks(ctx), crud.ListOptions{
+		Where:   where,
+		Filters: s.facetFilters(),
+		Search:  s.search,
+		Deleted: deleted,
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "entityui: tab count", "entity", s.m.name, "error", err)
 		return ""
 	}
+	return formatNumber(float64(n), 0)
+}
+
+// filterChips draws what narrows the list: a chip per facet set
+// ("Status: Paid") and per top-level AND term of the typed filter, each
+// a link to the same URL without it, then "Clear all", which drops the
+// facets and the filter (and an open saved view whose filter it is) but
+// keeps the search, the view and the columns.
+func filterChips(ctx context.Context, s *listState, facets []ui.Facet) render.HTML {
 	var chips []render.HTML
+	for _, f := range facets {
+		if f.Value == "" {
+			continue
+		}
+		label := f.Value
+		for _, o := range f.Options {
+			if o.Value == f.Value {
+				label = o.Label
+			}
+		}
+		text := f.Label + ": " + label
+		chips = append(chips, ui.Tag(ui.TagConfig{
+			Label: text,
+			Href:  listHref(s.path, s.carry(f.Name, s.p.page)),
+			ExtraAttrs: map[string]string{
+				"aria-label": i18nui.TVars(ctx, i18nui.KeyFilterChipRemove, map[string]string{"label": text}),
+			},
+			Ctx: ctx,
+		}))
+	}
+	var terms []string
+	if s.filterPred != nil {
+		terms = topLevelTerms(s.filterPred)
+	}
 	for i, term := range terms {
 		chips = append(chips, ui.Tag(ui.TagConfig{
 			Label: term,
@@ -193,6 +308,23 @@ func filterChips(ctx context.Context, s *listState) render.HTML {
 			Ctx: ctx,
 		}))
 	}
+	if len(chips) == 0 {
+		return ""
+	}
+	drop := []string{s.p.filter, s.p.page}
+	for _, f := range facets {
+		drop = append(drop, f.Name)
+	}
+	q := s.carry(drop...)
+	if s.savedID != "" && !s.q.Has(s.p.filter) && s.filterText != "" {
+		q.Del(s.p.saved)
+	}
+	chips = append(chips, ui.LinkButton(ui.LinkButtonConfig{
+		Label:   i18nui.T(ctx, i18nui.KeyFilterClearAll),
+		Href:    listHref(s.path, q),
+		Variant: ui.ButtonGhost,
+		Size:    ui.ButtonSizeSmall,
+	}))
 	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, chips...)
 }
 
@@ -252,7 +384,9 @@ func predicateText(p *filter.Predicate) string {
 }
 
 // removeFilterHref rebuilds the filter text without term i and returns
-// the same URL with that filter. Removing the last term drops the param.
+// the same URL with that filter. Removing the last term drops the
+// param — or, when the text came from an open saved view, drops the
+// saved param: leaving it would bring the view's filter straight back.
 func removeFilterHref(s *listState, terms []string, i int) string {
 	kept := make([]string, 0, len(terms)-1)
 	for j, t := range terms {
@@ -263,6 +397,10 @@ func removeFilterHref(s *listState, terms []string, i int) string {
 	q := s.carry(s.p.filter, s.p.page)
 	if len(kept) > 0 {
 		q.Set(s.p.filter, strings.Join(kept, " and "))
+		return listHref(s.path, q)
+	}
+	if s.savedID != "" && !s.q.Has(s.p.filter) {
+		q.Del(s.p.saved)
 	}
 	return listHref(s.path, q)
 }

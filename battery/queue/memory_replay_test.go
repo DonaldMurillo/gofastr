@@ -36,7 +36,7 @@ func TestMemoryQueue_DeadJobRetained(t *testing.T) {
 
 	id := driveToFailure(t, q)
 
-	failed, err := q.ListJobs(ctx, "failed", 10)
+	failed, err := q.ListJobs(ctx, "failed", 10, 0)
 	if err != nil {
 		t.Fatalf("listjobs: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestMemoryQueue_ReplayRequeues(t *testing.T) {
 	}
 
 	// The job is gone from the dead-letter store after replay.
-	failed, err := q.ListJobs(ctx, "failed", 10)
+	failed, err := q.ListJobs(ctx, "failed", 10, 0)
 	if err != nil {
 		t.Fatalf("listjobs after replay: %v", err)
 	}

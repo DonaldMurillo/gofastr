@@ -123,5 +123,18 @@ func breadcrumbsCSS(_ style.Theme) string {
 @media (max-width: 47.99rem) {
   [data-cui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__item:not(:nth-last-child(-n+2)) { display: none; }
   [data-cui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__item:nth-last-child(2) .fui-breadcrumbs__sep { display: none; }
+  /* One line on a phone: the crumbs ellipsize instead of stacking the
+     trail over two lines of the toolbar, the parent giving way before
+     the page's own name. The trail narrows only as far as its
+     container lets it (a Shrink cluster in a toolbar). */
+  [data-cui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__list { flex-wrap: nowrap; }
+  [data-cui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__item { min-inline-size: 0; flex-shrink: 4; }
+  [data-cui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__item:last-child { flex-shrink: 1; }
+  [data-cui-comp="ui-breadcrumbs"].fui-breadcrumbs--compact-mobile .fui-breadcrumbs__link {
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }`
 }

@@ -34,15 +34,45 @@ import (
 
 // Action describes an RPC call triggered by click or submit.
 type Action struct {
-	method  string // GET, POST, PUT, DELETE, PATCH
-	path    string // URL path
-	confirm string // pre-flight window.confirm message (empty = none)
-	body    string // static JSON body for non-form RPCs (data-cui-rpc-body); empty = none
+	method  string  // GET, POST, PUT, DELETE, PATCH
+	path    string  // URL path
+	confirm Confirm // pre-flight confirmation (empty Message = none)
+	body    string  // static JSON body for non-form RPCs (data-cui-rpc-body); empty = none
 	effects []Effect
 	// errorToast is the data-cui-rpc-error-toast title; nil = no error toast.
 	errorToast *string
 	// successToast is the data-cui-rpc-success-toast title; nil = none.
 	successToast *string
+	// successAction is the data-cui-rpc-success-action payload; nil = none.
+	successAction *ToastAction
+}
+
+// ToastAction is a toast's one button as the runtime reads it: its
+// label and the RPC attributes it carries. Build it with
+// NewToastAction; a server toast carries it as ui.ToastTrigger.Action.
+type ToastAction struct {
+	Label string            `json:"label"`
+	Attrs map[string]string `json:"attrs"`
+}
+
+// NewToastAction is a toast button labelled label that runs next. The
+// button carries next's RPC wiring and nothing else, so it panics on an
+// empty label, on a next that is no RPC, and on a next carrying any
+// other attribute (a confirm, a signal).
+func NewToastAction(label string, next Action) *ToastAction {
+	if label == "" {
+		panic("interactive: a toast action needs a label")
+	}
+	attrs := next.attrs()
+	if attrs == nil {
+		panic("interactive: a toast action needs an RPC action to run")
+	}
+	for k := range attrs {
+		if k != "data-cui-rpc" && !strings.HasPrefix(k, "data-cui-rpc-") {
+			panic(fmt.Sprintf("interactive: a toast action carries %s; a toast's button carries RPC wiring only", k))
+		}
+	}
+	return &ToastAction{Label: label, Attrs: attrs}
 }
 
 // Post creates a POST action. Panics if path does not start with "/".
@@ -83,26 +113,60 @@ func (a Action) OnSuccess(effects ...Effect) Action {
 	return a
 }
 
+// Confirm is what a pre-flight confirmation says: the dialog's title,
+// its message, the accept button's label, and whether accepting
+// destroys something (Danger draws the accept button in the danger
+// variant). Only Message is required; an empty Title or Accept keeps
+// the kit dialog's own ("Are you sure?", "Confirm").
+type Confirm struct {
+	Title   string
+	Message string
+	Accept  string
+	Danger  bool
+}
+
 // WithConfirm gates the action behind a PRE-FLIGHT confirmation. Before the
-// RPC is dispatched, the runtime shows a native window.confirm(message)
-// dialog; cancelling aborts the request entirely, so the RPC never fires.
+// RPC is dispatched, the runtime opens the kit's confirm dialog with
+// message; cancelling aborts the request entirely, so the RPC never fires.
 // Because the gate runs *before* the request, not after it succeeds, it is
-// a property of the Action itself, not an OnSuccess effect. Use for
-// destructive actions (delete, revoke, drop):
+// a property of the Action itself, not an OnSuccess effect.
 //
-//	interactive.OnClick(deleteBtn,
-//	    interactive.Delete("/api/items/42").
-//	        WithConfirm("Delete this item? This cannot be undone."),
+//	interactive.OnClick(saveBtn,
+//	    interactive.Post("/api/items/42/publish").
+//	        WithConfirm("Publish this item to every customer?"),
 //	)
 //
-// window.confirm is native, unthemed, and blocks browser automation. For a
-// design-system-styled confirmation that matches the rest of the app (and is
-// drivable by tests), reach for framework/ui.ConfirmAction instead, it
-// renders a themed alertdialog whose Confirm button carries the RPC.
+// It is WithConfirmDialog(Confirm{Message: message}): reach for that to
+// title the dialog, name the accept button or mark the action
+// destructive. A page with no confirm dialog registered (no kit
+// imported) falls back to window.confirm, so the gate never opens.
 //
 // Maps to data-cui-confirm="message".
 func (a Action) WithConfirm(message string) Action {
-	a.confirm = message
+	return a.WithConfirmDialog(Confirm{Message: message})
+}
+
+// WithConfirmDialog gates the action behind the kit's confirm dialog,
+// spelled in full. Use it for destructive actions (delete, revoke,
+// drop), where the dialog names what goes and the accept button says
+// so in the danger variant:
+//
+//	interactive.Delete("/api/items/42").
+//	    WithConfirmDialog(interactive.Confirm{
+//	        Title:   "Delete item?",
+//	        Message: "This cannot be undone.",
+//	        Accept:  "Delete",
+//	        Danger:  true,
+//	    })
+//
+// Panics on an empty Message: a confirmation that says nothing asks
+// nothing. Maps to data-cui-confirm, data-cui-confirm-title,
+// data-cui-confirm-accept and data-cui-confirm-tone="danger".
+func (a Action) WithConfirmDialog(c Confirm) Action {
+	if c.Message == "" {
+		panic("interactive: WithConfirmDialog needs a Message — a confirmation that says nothing asks nothing")
+	}
+	a.confirm = c
 	return a
 }
 
@@ -134,6 +198,26 @@ func (a Action) OnErrorToast(title string) Action {
 // Maps to data-cui-rpc-success-toast="title".
 func (a Action) OnSuccessToast(title string) Action {
 	a.successToast = &title
+	return a
+}
+
+// OnSuccessToastAction puts one action on the OnSuccessToast toast: a
+// button labelled label that runs next when pressed, with next's own
+// toasts and navigation. The toast stays up for ten seconds, paused
+// while hovered or focused, so there is time to press it. The button
+// carries next's RPC wiring and nothing else, so next may not carry a
+// confirm: it panics on one, and on an empty label. The action rides
+// the success toast, so an Action that renders without OnSuccessToast
+// panics too.
+//
+//	interactive.Delete("/api/invoices/42").
+//	    OnSuccessToast("Invoice deleted").
+//	    OnSuccessToastAction("Undo", interactive.Post("/api/invoices/42/_restore").
+//	        WithBody(`{}`).OnSuccessToast("Invoice restored"))
+//
+// Maps to data-cui-rpc-success-action='{"label":…,"attrs":{…}}'.
+func (a Action) OnSuccessToastAction(label string, next Action) Action {
+	a.successAction = NewToastAction(label, next)
 	return a
 }
 
@@ -631,8 +715,17 @@ func (a Action) attrs() map[string]string {
 		"data-cui-rpc":        a.path,
 		"data-cui-rpc-method": a.method,
 	}
-	if a.confirm != "" {
-		m["data-cui-confirm"] = a.confirm
+	if a.confirm.Message != "" {
+		m["data-cui-confirm"] = a.confirm.Message
+		if a.confirm.Title != "" {
+			m["data-cui-confirm-title"] = a.confirm.Title
+		}
+		if a.confirm.Accept != "" {
+			m["data-cui-confirm-accept"] = a.confirm.Accept
+		}
+		if a.confirm.Danger {
+			m["data-cui-confirm-tone"] = "danger"
+		}
 	}
 	if a.body != "" {
 		m["data-cui-rpc-body"] = a.body
@@ -642,6 +735,14 @@ func (a Action) attrs() map[string]string {
 	}
 	if a.successToast != nil {
 		m["data-cui-rpc-success-toast"] = *a.successToast
+	}
+	if a.successAction != nil {
+		if a.successToast == nil {
+			panic("interactive: OnSuccessToastAction needs OnSuccessToast — the action rides the success toast")
+		}
+		// Strings in, so the encode cannot fail.
+		b, _ := json.Marshal(a.successAction)
+		m["data-cui-rpc-success-action"] = string(b)
 	}
 	for _, e := range a.effects {
 		maps.Copy(m, e.rpcAttrs())

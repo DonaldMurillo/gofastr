@@ -3,6 +3,7 @@ package entityui
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
 	"slices"
 	"strconv"
@@ -33,7 +34,15 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 	if m.hasAPI && !m.ch.CanCreateScoped(ctx) {
 		return accessDenied(ctx, m.plural(ctx))
 	}
+	// A field's declared Default starts the form, so the form shows the
+	// value an omitted field would store; a prefill or a duplicate
+	// overrides it.
 	values := map[string]string{}
+	for _, f := range m.fields {
+		if f.Default != nil && mayCreateSet(m, f) {
+			values[f.Name] = formValueText(f, f.Default)
+		}
+	}
 	if b.prefill != nil {
 		for k, v := range b.prefill {
 			values[k] = v
@@ -56,8 +65,9 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 		// failed or empty hooked read refuses the duplicate rather than
 		// fall back to raw values. The prefill itself comes from the
 		// raw read, since the values round-trip on submit. Fields a
-		// create may not set (system, the state field, stamps, unique)
-		// start blank, so the normal create hooks and scope apply.
+		// create may not set (system, the state field, stamps) and
+		// fields a copy would collide on (uniqueBlank) start blank, so
+		// the normal create hooks and scope apply.
 		if !canReadRecord(ctx, m.ch, dup) {
 			return m.notFound(ctx)
 		}
@@ -69,8 +79,9 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 		if err != nil || row == nil {
 			return m.notFound(ctx)
 		}
+		blank := uniqueBlank(m)
 		for _, f := range m.fields {
-			if !mayCreateSet(m, f) || f.Unique {
+			if !mayCreateSet(m, f) || blank[f.Name] {
 				continue
 			}
 			if cell(rowValue(row, f.Name)) != cell(rowValue(hooked, f.Name)) {
@@ -81,17 +92,49 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 			}
 		}
 	}
-	header := ui.PageHeader(ui.PageHeaderConfig{
-		Title:   i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
-		Eyebrow: m.plural(ctx),
-		Actions: ui.LinkButton(ui.LinkButtonConfig{
+	cfg := ui.PageHeaderConfig{
+		Title: i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
+	}
+	if !m.hasAPI {
+		return render.Join(drawerBar(ctx, "", ""), ui.PageHeader(cfg), readOnlyNotice(ctx, m))
+	}
+	cfg.Actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
+		ui.LinkButton(ui.LinkButtonConfig{
 			Label: i18nui.T(ctx, i18nui.KeyEntityCancel), Href: base, Variant: ui.ButtonGhost,
 		}),
-	})
-	if !m.hasAPI {
-		return render.Join(header, readOnlyNotice(ctx, m))
+		saveButton(ctx, m, true),
+	)
+	return render.Join(drawerBar(ctx, "", ""), ui.PageHeader(cfg), b.drawForm(ctx, m, nil, nil, nil, values, base))
+}
+
+// uniqueBlank names the fields a duplicate leaves blank because the
+// copy would collide on them: a Unique field, and each field of a
+// unique column index. A relation in a mixed index keeps its value,
+// since the other fields alone make the copy distinct (an invoice
+// copied under the same customer needs only a new number); an index
+// of relations alone blanks them all.
+func uniqueBlank(m *meta) map[string]bool {
+	out := map[string]bool{}
+	for _, f := range m.fields {
+		if f.Unique {
+			out[f.Name] = true
+		}
 	}
-	return render.Join(header, b.drawForm(ctx, m, nil, nil, nil, values, base))
+	for _, ix := range m.e.Config.Indices {
+		if !ix.Unique || ix.Expression != "" {
+			continue
+		}
+		onlyRelations := !slices.ContainsFunc(ix.Columns, func(c string) bool {
+			f, ok := m.field(c)
+			return ok && f.Type != schema.Relation
+		})
+		for _, c := range ix.Columns {
+			if f, ok := m.field(c); ok && (onlyRelations || f.Type != schema.Relation) {
+				out[c] = true
+			}
+		}
+	}
+	return out
 }
 
 // readOnlyNotice is what a create screen draws when the entity mounts
@@ -151,9 +194,19 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		// skipping it there.
 		return slotFailed(ctx)
 	}
+	// The record's facts sit in the side column, after any the layout
+	// put there; the frame stacks them under the fields in a narrow
+	// pane (a drawer, a phone). Beside the fields they are a panel on
+	// the wide rail, which holds a full id without crowding its label.
+	if !fb.create {
+		if d := fb.details(ctx); d != "" {
+			side = append(side, d)
+		}
+		side = append(side, fb.sidePanels(ctx)...)
+	}
 	var body render.HTML
 	if len(side) > 0 {
-		body = ui.FormFrame(ui.FormFrameConfig{Main: main, Side: side})
+		body = ui.FormFrame(ui.FormFrameConfig{Main: main, Side: side, SidePanel: true, SideWidth: ui.FormFrameSideWide})
 	} else {
 		body = render.Join(main...)
 	}
@@ -167,7 +220,13 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 	action := m.api
 	rpc := interactive.Post(m.api)
 	toast := i18nui.TVars(ctx, i18nui.KeyEntityCreated, map[string]string{"entity": m.singular(ctx)})
+	// A create lands on the list, or, opened as a drawer, back on the
+	// page under it (the list, or the record whose Related tab added
+	// it), which the runtime refreshes in place of leaving the stack.
 	dest := base
+	if o := appui.OverlayOriginFromContext(ctx); o != "" {
+		dest = o
+	}
 	if !fb.create {
 		action = m.api + "/" + url.PathEscape(b.id)
 		rpc = interactive.Put(action)
@@ -178,14 +237,18 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		OnSuccessToast(toast).
 		OnSuccess(interactive.Navigate(dest)).
 		Attrs()
+	// The header's Save submits it (saveButton): the form draws none.
 	forms := []render.HTML{ui.Form(ui.FormConfig{
-		Action:      action,
-		Method:      "POST",
-		ID:          "eui-" + m.name + "-form",
-		Ctx:         ctx,
-		SubmitLabel: submitLabel(ctx, m, fb.create),
-		ExtraAttrs:  attrs,
-		LeaveGuard:  i18nui.T(ctx, i18nui.KeyEntityLeaveGuard),
+		Action:           action,
+		Method:           "POST",
+		ID:               recordFormID(m),
+		Ctx:              ctx,
+		HideSubmit:       true,
+		Wide:             len(side) > 0,
+		ExtraAttrs:       attrs,
+		LeaveGuard:       i18nui.T(ctx, i18nui.KeyEntityLeaveGuard),
+		LeaveGuardTitle:  i18nui.T(ctx, i18nui.KeyEntityLeaveGuardTitle),
+		LeaveGuardAccept: i18nui.T(ctx, i18nui.KeyEntityLeaveGuardAccept),
 	}, body)}
 	// The masked fields' Replace forms: empty, their input and button
 	// sit in the record form's markup and name them by the form
@@ -245,12 +308,47 @@ type formBuilder struct {
 	// form, in placement order; drawForm emits those forms after the
 	// record form, which must not submit them.
 	replace []string
+	// compact draws a control for a table cell's editor: its label
+	// hidden from view (the cell names it), an enum as a select and a
+	// whole number with no stepper buttons.
+	compact bool
 }
 
 // replaceFormID names the form a masked field's input and Replace
 // button belong to.
 func (fb *formBuilder) replaceFormID(field string) string {
 	return "eui-" + fb.m.name + "-replace-" + field
+}
+
+// sidePanels draws the entity's extension side panels, each built as
+// the caller from the record the read hooks left, each failing alone.
+func (fb *formBuilder) sidePanels(ctx context.Context) []render.HTML {
+	m := fb.m
+	row := fb.displayRow
+	if row == nil {
+		row = fb.row
+	}
+	rec := Record{ID: fb.b.id, Values: row}
+	var out []render.HTML
+	for _, p := range m.ext.Side {
+		body := contain(ctx, m.name, "side "+p.Key, func() (render.HTML, error) {
+			cctx := asCaller(ctx)
+			c, err := p.Build(RecordContext{Ctx: cctx, UI: fb.b.ui, Entity: m.name, Record: rec})
+			if err != nil {
+				return "", err
+			}
+			if c == nil {
+				return "", fmt.Errorf("side panel body is nil")
+			}
+			return renderComponent(cctx, c), nil
+		})
+		title := p.Title
+		if title == "" {
+			title = p.Key
+		}
+		out = append(out, ui.Section(ui.SectionConfig{ID: "eui-side-" + p.Key, Heading: title, Overline: true, Compact: true}, body))
+	}
+	return out
 }
 
 // walk resolves the form layout: Main and Side children. A field the
@@ -269,7 +367,9 @@ func (fb *formBuilder) walk(ctx context.Context, f *entity.EntityForm) (main, si
 		return nil, nil, err
 	}
 	for _, fl := range fb.b.editableFields(fb.m) {
-		if fb.placed[fl.Name] {
+		// The state field shows as the header's badge and its stamps
+		// in Details: a layout that places one draws it there instead.
+		if fb.placed[fl.Name] || fb.m.guarded(fl.Name) {
 			continue
 		}
 		if h := fb.field(ctx, fl); h != "" {
@@ -277,6 +377,52 @@ func (fb *formBuilder) walk(ctx context.Context, f *entity.EntityForm) (main, si
 		}
 	}
 	return main, side, nil
+}
+
+// details is the record's facts below its fields: the id with a copy
+// button, when it was created and updated, and the workflow's stamps
+// the layout did not place. A field the schema hides stays out.
+func (fb *formBuilder) details(ctx context.Context) render.HTML {
+	m, row := fb.m, fb.displayRow
+	if row == nil {
+		row = fb.row
+	}
+	if row == nil {
+		return ""
+	}
+	var items []ui.DetailItem
+	if id := cell(rowValue(row, m.pk)); id != "" {
+		target := "eui-" + m.name + "-id"
+		items = append(items, ui.DetailItem{
+			Label: i18nui.T(ctx, i18nui.KeyEntityID),
+			Value: render.Join(
+				html.Code(html.TextConfig{ID: target, ExtraAttrs: html.Attrs{"title": id}}, render.Text(id)),
+				ui.CopyButton(ui.CopyButtonConfig{
+					Target: target, IconOnly: true, Icon: "copy", Inline: true, Ctx: ctx,
+					AriaLabel: i18nui.T(ctx, i18nui.KeyCopyToClipboard),
+				})),
+		})
+	}
+	names := []string{"created_at", "updated_at"}
+	if m.states != nil {
+		names = append(names, m.states.Guarded()[1:]...)
+	}
+	for _, name := range names {
+		f, ok := m.field(name)
+		if !ok || f.Hidden || fb.placed[name] || fb.skipped(name) {
+			continue
+		}
+		v := fb.display(ctx, f, row)
+		if v == "" {
+			v = muted()
+		}
+		items = append(items, ui.DetailItem{Label: m.label(ctx, name), Value: v})
+	}
+	if len(items) == 0 {
+		return ""
+	}
+	return ui.Section(ui.SectionConfig{Heading: i18nui.T(ctx, i18nui.KeyEntityDetails), Overline: true, Compact: true},
+		ui.DetailList(ui.DetailListConfig{Spread: true, Items: items}))
 }
 
 // items renders one level of form items: fields, rows and sections.
@@ -425,7 +571,8 @@ func (fb *formBuilder) control(ctx context.Context, f schema.Field, label string
 }
 
 // readOnly draws a locked field as a value, never a disabled input:
-// nothing about it is submitted.
+// nothing about it is submitted. The stacked list sits where an input
+// would, label above and the value boxed like a control.
 func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label string) render.HTML {
 	if k, ok := fb.kind(f); ok && (k.Detail != nil || k.Cell != nil) {
 		// A display callback gets what the read-only value would show:
@@ -436,13 +583,14 @@ func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label strin
 			row, val = fb.displayRow, formValueText(f, rowValue(fb.displayRow, f.Name))
 		}
 		if f.Type == schema.Relation && val != "" && !fb.relationReadable(ctx, f, val) {
-			return ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{{Label: label, Value: muted()}}})
+			return ui.DetailList(ui.DetailListConfig{Stacked: true, Items: []ui.DetailItem{{Label: label, Value: muted()}}})
 		}
-		cc := CellContext{Ctx: ctx, Entity: fb.m.name, Field: f, Value: val, Row: row}
+		cc := CellContext{Ctx: asCaller(ctx), Entity: fb.m.name, Field: f, Value: val, Row: row}
+		draw := k.Cell
 		if k.Detail != nil {
-			return k.Detail(cc)
+			draw = k.Detail
 		}
-		return k.Cell(cc)
+		return ui.DetailList(ui.DetailListConfig{Stacked: true, Items: []ui.DetailItem{{Label: label, Value: draw(cc)}}})
 	}
 	var value render.HTML
 	if fb.create {
@@ -457,7 +605,7 @@ func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label strin
 	if value == "" {
 		value = muted()
 	}
-	return ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{{Label: label, Value: value}}})
+	return ui.DetailList(ui.DetailListConfig{Stacked: true, Items: []ui.DetailItem{{Label: label, Value: value}}})
 }
 
 // maskedControl draws a hook-masked column as write-only: the value
@@ -488,7 +636,7 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 			},
 		})
 	case schema.Relation:
-		return fb.relationSelect(ctx, f, label, help, id, "")
+		return fb.relationPicker(ctx, f, label, help, id, "")
 	default:
 		// A blank text input cannot mean "keep": CRUD stores "" for
 		// String and Text, so a record form that carried this input
@@ -535,19 +683,29 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 	case schema.String:
 		return ui.TextField(ui.TextFieldConfig{
 			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph,
-			Help: help, Required: required,
+			Help: help, Required: required, LabelHidden: fb.compact,
+			MinLength: minLength(f.Min), MaxLength: maxLength(f.Max),
+			ExtraAttrs: patternAttr(f.Pattern),
 		})
 	case schema.Text:
 		return ui.TextArea(ui.TextAreaConfig{
 			Name: f.Name, Label: label, ID: id, Value: val, Rows: 4, Placeholder: ph,
 			Help: help, Required: required,
+			MinLength: minLength(f.Min), MaxLength: maxLength(f.Max),
 		})
 	case schema.JSON:
 		return ui.TextArea(ui.TextAreaConfig{
 			Name: f.Name, Label: label, ID: id, Value: val, Rows: 6, Placeholder: ph,
-			Help: help, Required: required, Monospace: true,
+			Help: help, Required: required, Monospace: true, JSON: true, Ctx: ctx,
 		})
 	case schema.Int:
+		if fb.compact {
+			step := 1.0
+			return ui.NumberField(ui.NumberFieldConfig{
+				Name: f.Name, Label: label, ID: id, Value: val, LabelHidden: true,
+				Help: help, Required: required, Min: f.Min, Max: f.Max, Step: &step,
+			})
+		}
 		return ui.NumberInput(ui.NumberInputConfig{
 			Name: f.Name, Label: label, ID: id, Value: intInputValue(val), Ctx: ctx,
 			Help: help, Required: required, Min: intBound(f.Min), Max: intBound(f.Max),
@@ -560,7 +718,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			step = 1e-9
 		}
 		return ui.NumberField(ui.NumberFieldConfig{
-			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph,
+			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph, LabelHidden: fb.compact,
 			Help: help, Required: required, Min: f.Min, Max: f.Max, Step: &step,
 		})
 	case schema.Bool:
@@ -570,10 +728,10 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		// scalar, so false round-trips.
 		return render.Join(
 			html.Input(html.InputConfig{Type: "hidden", Name: f.Name, Value: "false"}),
-			ui.Switch(ui.ToggleConfig{Name: f.Name, Label: label, ID: id, Value: "true", Checked: truthy(val), Help: help}),
+			ui.Switch(ui.ToggleConfig{Name: f.Name, Label: label, ID: id, Value: "true", Checked: truthy(val), Help: help, LabelHidden: fb.compact}),
 		)
 	case schema.Enum:
-		if len(f.Values) <= 4 && required {
+		if len(f.Values) <= 4 && required && !fb.compact {
 			return ui.SegmentedControl(ui.SegmentedControlConfig{
 				Name: f.Name, ID: id, Label: label,
 				Options:  enumSegments(ctx, fb.m, f),
@@ -581,7 +739,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 			})
 		}
 		return ui.Select(ui.SelectConfig{
-			Name: f.Name, Label: label, ID: id, Help: help,
+			Name: f.Name, Label: label, ID: id, Help: help, LabelHidden: fb.compact,
 			Placeholder: selectPlaceholder(ctx, f, required),
 			Options:     enumOptions(ctx, fb.m, f, val),
 			Required:    required,
@@ -589,19 +747,29 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 	case schema.Date:
 		return ui.DateField(ui.DateFieldConfig{
 			Name: f.Name, Label: label, ID: id, Value: dateInputValue(val),
-			Help: help, Required: required,
+			Help: help, Required: required, LabelHidden: fb.compact,
 		})
 	case schema.Timestamp:
-		return ui.FormField(ui.FormFieldConfig{
-			Label: label, For: id, Help: help, Required: required,
-			Input: func(c headless.FieldControl) render.HTML {
-				return ui.Control(ui.ControlConfig{
-					Field: c, Type: "datetime-local", Name: f.Name, Value: timestampInputValue(val),
-				})
-			},
+		return ui.DateTimeField(ui.DateTimeFieldConfig{
+			Name: f.Name, Label: label, ID: id, Value: timestampInputValue(val),
+			Help: help, Required: required,
 		})
 	case schema.Relation:
-		return fb.relationSelect(ctx, f, label, help, id, val)
+		return fb.relationPicker(ctx, f, label, help, id, val)
+	case schema.Image, schema.File:
+		if fb.m.uploads() {
+			return fb.uploadInput(ctx, f, label, help, id, val, required)
+		}
+		// Without storage the stored URL stays editable; a preview sits
+		// above it.
+		field := ui.TextField(ui.TextFieldConfig{
+			Name: f.Name, Label: label, ID: id, Value: val, Placeholder: ph,
+			Help: help, Required: required,
+		})
+		if t := fb.b.ui.fileValue(f, label, val, ui.ThumbnailLG); t != "" {
+			return ui.Stack(ui.StackConfig{Gap: ui.GapSM}, t, field)
+		}
+		return field
 	case schema.UUID:
 		if fb.create {
 			return ui.TextField(ui.TextFieldConfig{
@@ -620,92 +788,36 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 	}
 }
 
-// relationSelect draws a belongs-to picker: a Select of at most 100
-// related records read through that entity's own crud handle and read
-// gate, showing the pk and the title field.
-func (fb *formBuilder) relationSelect(ctx context.Context, f schema.Field, label, help, id, cur string) render.HTML {
-	opts := []ui.SelectOption{}
+// relationOpen links to the record a relation names, beside its
+// select: only for a stored value, an entity the UI has record screens
+// for, and a record the caller's own scoped, hooked read returns — the
+// gate alone passes a row another owner holds.
+func (fb *formBuilder) relationOpen(ctx context.Context, f schema.Field, cur string) render.HTML {
 	if cur == "" {
-		opts = append(opts, ui.SelectOption{Value: "", Text: i18nui.T(ctx, i18nui.KeyEntitySelect)})
+		return ""
 	}
-	related, refused := fb.relationOptions(ctx, f)
-	for _, o := range related {
-		opts = append(opts, ui.SelectOption{Value: o.id, Text: o.label, Selected: o.id == cur})
+	base, ok := fb.b.ui.relatedBase(ctx, fb.m, f.Name)
+	if !ok || !fb.relationReadable(ctx, f, cur) {
+		return ""
 	}
-	if cur != "" && !optionListed(opts, cur) {
-		// The current value was not among the first 100 (or the picker
-		// read none): offer it anyway so a submit cannot silently
-		// clear the column. Its label is the id when the caller may
-		// read the related entity (a legibility limit), and the em dash
-		// when it may not: never the raw foreign key of a refused entity.
-		text := cur
-		if refused {
-			text = "—"
-		}
-		opts = append([]ui.SelectOption{{Value: cur, Text: text, Selected: true}}, opts...)
-	}
-	return ui.Select(ui.SelectConfig{
-		Name: f.Name, Label: label, ID: id, Options: opts, Help: help,
-		Required: f.Required && !fb.masked[f.Name],
-	})
-}
-
-// optionListed reports whether one option already carries value.
-func optionListed(opts []ui.SelectOption, value string) bool {
-	for _, o := range opts {
-		if o.Value == value {
-			return true
-		}
-	}
-	return false
-}
-
-// relationOption is one row of a relation picker.
-type relationOption struct {
-	id    string
-	label string
-}
-
-// relationOptions reads the related entity's first 100 rows through
-// its own handler after its own read gate: a picker for an open entity
-// must not become a window onto a gated one. The read runs with hooks
-// so the labels show what a hooked read shows. refused reports that the
-// related entity is unknown or its read gate refused the caller.
-func (fb *formBuilder) relationOptions(ctx context.Context, f schema.Field) (opts []relationOption, refused bool) {
 	other, err := fb.b.ui.entityFor(f.To)
 	if err != nil {
-		return nil, true
+		return ""
 	}
 	om, err := fb.b.ui.meta(other.GetName())
 	if err != nil {
-		return nil, true
+		return ""
 	}
-	if !canRead(ctx, om.ch) {
-		return nil, true
+	if row, err := om.ch.GetOne(crud.WithReadHooks(ctx), cur, nil); err != nil || row == nil {
+		return ""
 	}
-	fields := []string{om.pk}
-	if tf := om.titleField(); tf != "" && tf != om.pk {
-		fields = append(fields, tf)
-	}
-	rows, err := om.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{Fields: fields, Limit: 100, Sorts: []filter.ParsedSort{{Field: om.pk}}})
-	if err != nil {
-		return nil, false
-	}
-	out := make([]relationOption, 0, len(rows))
-	for _, r := range rows {
-		oid := cell(rowValue(r, om.pk))
-		if oid == "" {
-			continue
-		}
-		label := oid
-		if tf := om.titleField(); tf != "" {
-			if l := cell(rowValue(r, tf)); l != "" {
-				label = l
-			}
-		}
-		out = append(out, relationOption{id: oid, label: label})
-	}
-	return out, false
+	return ui.LinkButton(ui.LinkButtonConfig{
+		Label:    i18nui.TVars(ctx, i18nui.KeyEntityOpen, map[string]string{"entity": om.singular(ctx)}),
+		Href:     base + "/" + url.PathEscape(cur),
+		Variant:  ui.ButtonSecondary,
+		Icon:     "arrow-up-right",
+		IconOnly: true,
+	})
 }
 
 // kindInput draws the input a registered kind (or a built-in one)
@@ -720,11 +832,11 @@ func (fb *formBuilder) kindInput(ctx context.Context, f schema.Field, label, hel
 	// The kind's ctx carries the app's translator so its labels
 	// resolve through the same catalog the form's own fields read, and
 	// Control carries the wiring a FormField would have handed down.
-	kctx := i18nui.WithTranslator(ctx, fb.m.tr)
+	kctx := i18nui.WithTranslator(asCaller(ctx), fb.m.tr)
 	return contain(kctx, fb.m.name, "input "+f.Name, func() (render.HTML, error) {
 		return kind.Input(InputContext{
 			Ctx: kctx, Entity: fb.m.name, Field: f, Name: f.Name, Value: val, Placeholder: ph,
-			Control: headless.FieldControl{ID: id, Required: f.Required},
+			Label: label, Help: help, Control: headless.FieldControl{ID: id, Required: f.Required},
 		}), nil
 	})
 }
@@ -896,6 +1008,40 @@ func inputType(f schema.Field) string {
 	default:
 		return "text"
 	}
+}
+
+// minLength and maxLength are a string field's Min and Max as length
+// attributes: 0 (no attribute) when unset, below one, or past what an
+// attribute holds; a fractional bound rounds the way the server's rune
+// count compares. The browser counts UTF-16 units where the server
+// counts runes, so text past the Basic Multilingual Plane reaches
+// maxlength first: the browser can stop an emoji short of the server's
+// limit, never let one past it.
+func minLength(b *float64) int { return lengthAttr(b, math.Ceil) }
+func maxLength(b *float64) int { return lengthAttr(b, math.Floor) }
+
+func lengthAttr(b *float64, round func(float64) float64) int {
+	if b == nil {
+		return 0
+	}
+	n := round(*b)
+	if n < 1 || n > math.MaxInt32 {
+		return 0
+	}
+	return int(n)
+}
+
+// patternAttr carries a field's Pattern to the input. The server's
+// check is an unanchored match (regexp.MatchString) and the browser
+// anchors a pattern attribute to the whole value, so the attribute
+// wraps it to match anywhere; the browser then refuses exactly what
+// the server would. A pattern with inline flags ((?i) and the like) is
+// Go syntax a browser's regex refuses, and stays server-side.
+func patternAttr(p string) html.Attrs {
+	if p == "" || strings.Contains(strings.ReplaceAll(p, "(?:", ""), "(?") {
+		return nil
+	}
+	return html.Attrs{"pattern": `[\s\S]*(?:` + p + `)[\s\S]*`}
 }
 
 func intInputValue(s string) int {

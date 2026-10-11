@@ -28,6 +28,9 @@ type ThemePickerConfig struct {
 	// DefaultLabel names the option that shows the app's own theme.
 	// Defaults to "Default".
 	DefaultLabel string
+	// Fill stretches the pill across its container, the options sharing
+	// the width (a panel's full-width switch).
+	Fill bool
 
 	// ID is an optional id for the root element.
 	ID string
@@ -81,7 +84,7 @@ func ThemePicker(cfg ThemePickerConfig) render.HTML {
 			delete(rootAttrs, k)
 		}
 	}
-	rootAttrs["class"] = strings.TrimSpace("fui-theme-toggle fui-theme-toggle--pill " + cfg.Class)
+	rootAttrs["class"] = strings.TrimSpace("fui-theme-toggle fui-theme-toggle--pill " + modifierClass("fui-theme-toggle--fill", cfg.Fill) + " " + cfg.Class)
 	rootAttrs["data-hui-theme-picker"] = ""
 	rootAttrs["role"] = "radiogroup"
 	rootAttrs["aria-label"] = i18nui.T(ctx, i18nui.KeyThemePicker)

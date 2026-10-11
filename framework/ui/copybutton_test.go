@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestCopyButtonBasic(t *testing.T) {
@@ -69,6 +71,34 @@ func TestCopyButtonIconOnly(t *testing.T) {
 	}
 	if !strings.Contains(out, "fui-copy-btn--icon") {
 		t.Errorf("expected icon modifier class, got: %s", out)
+	}
+}
+
+// Inline adds its class, and its rule sets the knobs on the button
+// itself with the 24px floor.
+func TestCopyButtonInline(t *testing.T) {
+	if out := string(CopyButton(CopyButtonConfig{Target: "x", IconOnly: true, Inline: true})); !classTokenPresent(out, "fui-copy-btn--inline") {
+		t.Errorf("Inline lacks its class: %s", out)
+	}
+	if out := string(CopyButton(CopyButtonConfig{Target: "x", IconOnly: true})); classTokenPresent(out, "fui-copy-btn--inline") {
+		t.Errorf("the default draws the inline class: %s", out)
+	}
+	if !strings.Contains(copyButtonCSS(style.Theme{}), ".fui-copy-btn--inline {\n  --ui-copy-btn-size: 1.5rem;") {
+		t.Error("the inline rule does not set the 24px size knob")
+	}
+}
+
+// Ghost adds its class, and its rule drops the outline and the
+// touch-target floor a small icon Button also drops.
+func TestCopyButtonGhost(t *testing.T) {
+	if out := string(CopyButton(CopyButtonConfig{Target: "x", IconOnly: true, Ghost: true})); !classTokenPresent(out, "fui-copy-btn--ghost") {
+		t.Errorf("Ghost lacks its class: %s", out)
+	}
+	if out := string(CopyButton(CopyButtonConfig{Target: "x", IconOnly: true})); classTokenPresent(out, "fui-copy-btn--ghost") {
+		t.Errorf("the default draws the ghost class: %s", out)
+	}
+	if !strings.Contains(copyButtonCSS(style.Theme{}), ".fui-copy-btn--ghost {\n  --ui-copy-btn-size: auto;\n  --ui-copy-btn-border: transparent;") {
+		t.Error("the ghost rule does not clear the size floor and the border")
 	}
 }
 

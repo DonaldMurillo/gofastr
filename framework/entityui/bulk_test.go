@@ -329,7 +329,9 @@ type memBulk struct {
 	pendingCalls int
 	// failEnqueue and failAudit, when set, refuse those calls.
 	failEnqueue error
-	failAudit   error
+	// panicEnqueue, when set, panics in Enqueue.
+	panicEnqueue bool
+	failAudit    error
 	// onSettle, when set, runs before each Settle: a second worker can
 	// take the lease there.
 	onSettle func(id string)
@@ -500,6 +502,9 @@ func (b *memBulk) Prune(_ context.Context, before time.Time) (int, error) {
 func (b *memBulk) Enqueue(_ context.Context, job BulkJob) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.panicEnqueue {
+		panic("enqueue")
+	}
 	if b.failEnqueue != nil {
 		return b.failEnqueue
 	}

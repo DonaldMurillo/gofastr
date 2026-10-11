@@ -150,9 +150,9 @@
     // request or leave an unused controller in the per-signal map.
     // opts.confirmed === true means the caller (a submit bridge) already ran
     // the gate on this submit; skip so the user is not prompted twice.
-    const confirmMsg = node.getAttribute('data-cui-confirm');
-    if (confirmMsg && !(opts && opts.confirmed === true) && typeof window.confirm === 'function') {
-      if (!window.confirm(confirmMsg)) return;
+    if (node.getAttribute('data-cui-confirm') && !(opts && opts.confirmed === true)) {
+      await NS.loadModule('confirm');
+      if (!(await NS.ask(node))) return;
     }
 
     if (responseSignal) {
@@ -345,11 +345,15 @@
       // its RPC triggered — a save that lands on the record page still
       // says "Saved". _toastOrFallback keeps it reachable when the
       // feedback module cannot load.
+      // Its action (Undo) passes through as the attribute's JSON: the
+      // feedback module parses it and puts it on the toast's button.
       if (successToast !== null) {
-        NS._toastOrFallback?.({ variant: 'success', title: successToast || 'Done', ttl: 6000 });
+        NS._toastOrFallback?.({ variant: 'success', title: successToast || 'Done', ttl: 6000, action: node.getAttribute('data-cui-rpc-success-action') });
       }
       const navigatePath = node.getAttribute('data-cui-rpc-navigate');
-      if (navigatePath) {
+      // A save inside an intercept layer returns to the layer (or the
+      // page under the stack) it names instead of leaving the stack.
+      if (navigatePath && !NS._interceptReturn?.(navigatePath, node)) {
         try { NS.navigate(navigatePath, { force: true }); }
         catch (_) {}
       }

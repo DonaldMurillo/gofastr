@@ -72,7 +72,7 @@ entities:
     display:
       singular: Invoice
       plural: Invoices
-      title_field: number
+      title_fields: [number, issued_on]
       description: One billed order.
       columns: [number, amount, status, issued_on]
       nav:
@@ -80,6 +80,7 @@ entities:
         icon: receipt
         order: 2
         hide: true
+        hide_count: true
       views:
         - key: open
           label: Open
@@ -175,7 +176,7 @@ func TestDisplayStatesRoundTripThroughGo(t *testing.T) {
 		"States: &framework.StatesConfig{",
 		"Display: &framework.DisplayConfig{",
 		`{Key: "mark_paid", Label: "Mark paid"`,
-		"Hide: true",
+		"Hide: true, HideCount: true",
 		"As: \"cards\"",
 		"Default: true",
 		"Collapsed: true",

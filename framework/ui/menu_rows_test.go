@@ -13,7 +13,7 @@ func TestMenuIconOnlyTrigger(t *testing.T) {
 	h := string(Menu(MenuConfig{Label: "Actions for INV-1", IconOnly: true, Items: []MenuItem{{Label: "Open", Href: "/i/1"}}}))
 	for _, want := range []string{
 		`fui-menu__trigger fui-menu__trigger--icon`,
-		`<span class="fui-visually-hidden">Actions for INV-1</span>`,
+		`<span class="fui-visually-hidden" data-cui-internal="">Actions for INV-1</span>`,
 		`<circle cx="5" cy="12" r="1"`,
 	} {
 		if !strings.Contains(h, want) {

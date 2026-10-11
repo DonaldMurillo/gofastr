@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -70,8 +71,22 @@ func TestContentRowWorkspaceOnlyWithToolbar(t *testing.T) {
 	if !strings.Contains(out, `<div class="fui-content-row__workspace">`) {
 		t.Errorf("toolbar should render inside the workspace wrapper:\n%s", out)
 	}
-	if !strings.Contains(out, `<div class="fui-content-row__toolbar">`) {
+	if !strings.Contains(out, `class="fui-content-row__toolbar"`) {
 		t.Errorf("toolbar row missing its own band:\n%s", out)
+	}
+}
+
+// The toolbar row sits outside main and the nav column, so it is a
+// labelled region of its own: controls placed there (a palette trigger,
+// a theme toggle) stay inside a landmark (axe region).
+func TestContentRowToolbarIsARegion(t *testing.T) {
+	out := renderRow(t, ContentRowConfig{Toolbar: render.Text("crumbs")}, render.Text("main"))
+	if !regexp.MustCompile(`<section [^>]*aria-label="Toolbar"[^>]*class="fui-content-row__toolbar"`).MatchString(out) {
+		t.Errorf("toolbar should be a section labelled Toolbar:\n%s", out)
+	}
+	out = renderRow(t, ContentRowConfig{Toolbar: render.Text("crumbs"), ToolbarLabel: "Workspace tools"}, render.Text("main"))
+	if !strings.Contains(out, `aria-label="Workspace tools"`) {
+		t.Errorf("ToolbarLabel should name the region:\n%s", out)
 	}
 }
 
@@ -104,4 +119,15 @@ func TestContentRowModifiersAndBreakpointValidation(t *testing.T) {
 	defer func() { _ = recover() }()
 	renderRow(t, ContentRowConfig{Breakpoint: "xl"}, render.Text("main"))
 	t.Error("an unknown StackBreakpoint should panic at render")
+}
+
+// Sticky and Viewport are two scroll models: a row asking for both is
+// refused at render, not drawn with one silently winning.
+func TestContentRowStickyRefusesViewport(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("ContentRow drew a row with both Sticky and Viewport")
+		}
+	}()
+	ContentRow(ContentRowConfig{Sticky: true, Viewport: true}, render.Text("main"))
 }

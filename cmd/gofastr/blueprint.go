@@ -5014,12 +5014,20 @@ func renderBlueprintMain(bp Blueprint) string {
 		sb.WriteString("\t}\n")
 	}
 	sb.WriteString("\tentities.RegisterAll(fwApp)\n")
-	if hasSeed && blueprintHasStatesEntity(bp) {
+	switch {
+	case hasSeed && blueprintHasStatesEntity(bp):
 		sb.WriteString("\t// An entity declares states and the seed writes rows: seeded rows may\n")
 		sb.WriteString("\t// start at any state under the audited state override below, and an\n")
 		sb.WriteString("\t// override is refused on an entity with no audit log, so enable it\n")
 		sb.WriteString("\t// here (WithAuditLog creates audit_log when it does not exist).\n")
 		sb.WriteString("\tfwApp.WithAuditLog(framework.AuditConfig{})\n")
+	case bp.App.Admin.Enabled:
+		// The admin writes under elevation and its Audit log page and
+		// dashboard read audit_log: every entity write leaves a row.
+		sb.WriteString("\t// The admin writes entities under elevation, and its Audit log page and\n")
+		sb.WriteString("\t// dashboard read audit_log: record every entity write there\n")
+		sb.WriteString("\t// (WithAuditLog creates audit_log when it does not exist).\n")
+		sb.WriteString("\tif db != nil {\n\t\tfwApp.WithAuditLog(framework.AuditConfig{})\n\t}\n")
 	}
 	for _, hook := range bp.Hooks {
 		handler := strings.TrimSpace(hook.Handler)
@@ -5135,24 +5143,13 @@ func renderBlueprintMain(bp Blueprint) string {
 		if adminRole == "" {
 			adminRole = "admin"
 		}
-		themeArg := ""
-		if blueprintHasTheme(bp.App) {
-			// Hand the admin back-office the same theme tokens AND @font-face
-			// rules the UI host uses, so the back-office renders coherently
-			// with the rest of the app. Same colors, same fonts.
-			themeArg = ", Theme: appTheme(), FontFaceCSS: fontFaceCSS"
-		}
-		// The admin battery reads audit_log for its audit page and appends
-		// to it on RBAC and module changes, but nothing else creates the
-		// table: ensure it here (idempotent, dialect-aware).
-		sb.WriteString("\t// The admin audit page reads audit_log and the admin's own RBAC and\n")
-		sb.WriteString("\t// module changes append to it: create it if it does not exist.\n")
-		sb.WriteString("\tif db != nil {\n\t\tif err := framework.EnsureAuditTable(db, \"audit_log\"); err != nil {\n\t\t\tlog.Fatalf(\"audit table: %v\", err)\n\t\t}\n\t}\n")
 		// Build the base admin config, then route it through the
 		// adminBatteryConfigurators seam (admin_register.go) so a new file
-		// can wire Policy/GrantStore/Auth additively, no edits here.
-		sb.WriteString(fmt.Sprintf("\tadminCfg := admin.Config{PathPrefix: %q, Title: appName, AdminRole: %q, LoginPath: %q, DB: db, AuditTable: \"audit_log\", AllEntities: true%s}\n",
-			adminPath, adminRole, bp.App.Admin.LoginPath, themeArg))
+		// can wire Policy/GrantStore/Auth additively, no edits here. The
+		// admin draws through the app's UI host and its entity screens
+		// through appUI, so it inherits the app's theme and fonts.
+		sb.WriteString(fmt.Sprintf("\tadminCfg := admin.Config{PathPrefix: %q, Title: appName, AdminRole: %q, LoginPath: %q, UI: appUI, DB: db, AuditTable: \"audit_log\", AllEntities: true, SavedViews: true}\n",
+			adminPath, adminRole, bp.App.Admin.LoginPath))
 		sb.WriteString("\tapplyAdminBatteryConfigurators(&adminCfg)\n")
 		sb.WriteString("\tfwApp.RegisterBattery(admin.New(adminCfg))\n")
 	}

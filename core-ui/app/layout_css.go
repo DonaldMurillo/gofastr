@@ -27,6 +27,9 @@ func InterceptOverlayCSS() string {
      top of the overlay gets clipped. */
   z-index: var(--z-modal, 300);
   background: var(--ui-intercept-overlay-bg, rgba(0, 0, 0, 0.45));
+  /* A record's form needs room: half the viewport, between 480px and
+     720px, unless the theme's knob says otherwise. */
+  --cui-intercept-drawer-w: var(--ui-intercept-drawer-w, clamp(480px, 50vw, 720px));
 }
 /* Every layer is positioned on its own, so stacked layers overlap
    instead of sharing the host's width. */
@@ -36,7 +39,10 @@ func InterceptOverlayCSS() string {
   color: var(--color-text, #18181b);
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: clamp(calc(var(--spacing-sm, 4px) * 5), 3vw, var(--spacing-2xl, 32px));
+  /* The layer's inset, named so chrome inside it (ui.DrawerBar) can
+     bleed to the layer's edges. */
+  --cui-intercept-pad: clamp(calc(var(--spacing-sm, 4px) * 5), 3vw, var(--spacing-2xl, 32px));
+  padding: var(--cui-intercept-pad);
   box-shadow: var(--ui-intercept-shadow, 0 10px 40px rgba(0, 0, 0, 0.25));
 }
 /* Stacked layers: only the top one is live; the runtime marks the rest
@@ -53,17 +59,17 @@ func InterceptOverlayCSS() string {
 [data-cui-intercept-overlay] > [data-cui-intercept-as="drawer"] {
   inset-block: 0;
   inset-inline-end: 0;
-  width: min(var(--ui-intercept-drawer-w, 480px), 100%);
+  width: min(var(--cui-intercept-drawer-w), 100%);
   border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
 }
 [data-cui-intercept-overlay] > [data-cui-intercept-as="drawer"]:nth-child(2) {
-  width: min(calc(var(--ui-intercept-drawer-w, 480px) - var(--ui-intercept-stack-step, var(--spacing-2xl, 32px))), 100%);
+  width: min(calc(var(--cui-intercept-drawer-w) - var(--ui-intercept-stack-step, var(--spacing-2xl, 32px))), 100%);
 }
 [data-cui-intercept-overlay] > [data-cui-intercept-as="drawer"]:nth-child(3) {
-  width: min(calc(var(--ui-intercept-drawer-w, 480px) - 2 * var(--ui-intercept-stack-step, var(--spacing-2xl, 32px))), 100%);
+  width: min(calc(var(--cui-intercept-drawer-w) - 2 * var(--ui-intercept-stack-step, var(--spacing-2xl, 32px))), 100%);
 }
 [data-cui-intercept-overlay] > [data-cui-intercept-as="drawer"]:nth-child(4) {
-  width: min(calc(var(--ui-intercept-drawer-w, 480px) - 3 * var(--ui-intercept-stack-step, var(--spacing-2xl, 32px))), 100%);
+  width: min(calc(var(--cui-intercept-drawer-w) - 3 * var(--ui-intercept-stack-step, var(--spacing-2xl, 32px))), 100%);
 }
 /* Sheet: docked to the bottom, capped so the page stays visible above.
    Stacked sheets overlap at the bottom edge, full width. */

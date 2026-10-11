@@ -42,6 +42,27 @@ func TestListRowMenu(t *testing.T) {
 	}
 }
 
+// On a phone a list is a column of two-line rows, never a table that
+// scrolls sideways: the title over the subtitle, the status badge over
+// the next column at the end, the selection box before and the row
+// menu after. Every other column stays off the phone row.
+func TestListRowsOnPhones(t *testing.T) {
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+		withAPI(map[string]string{"orders": "/api/orders"}),
+	)
+	h := listHTML(t, x.ui.List("orders").Delete().Bulk(), x.ctx("/orders", ""))
+	if !strings.Contains(h, "fui-data-table--responsive-rows") {
+		t.Fatalf("the list does not collapse into phone rows:\n%s", h)
+	}
+	for _, slot := range []string{"is-phone-lead", "is-phone-title", "is-phone-meta", "is-phone-subtitle", "is-phone-end"} {
+		if !strings.Contains(h, slot) {
+			t.Errorf("the phone row has no %s cell:\n%s", slot, h)
+		}
+	}
+}
+
 // A relation column and its form field label as the record they point
 // at: customer_id reads "Customer", never "Customer Id".
 func TestRelationFieldLabel(t *testing.T) {
@@ -59,7 +80,7 @@ func TestRelationFieldLabel(t *testing.T) {
 	}
 }
 
-// With no TitleField and no name or title field, the first plain String
+// With no TitleFields and no name or title field, the first plain String
 // column names a record: never a NoQuery column (a token), never an
 // omitted one, never an enum. An entity with none falls back to "".
 func TestTitleFieldFallback(t *testing.T) {
@@ -149,8 +170,8 @@ func TestRecordReadOnlyDateMatchesList(t *testing.T) {
 	}
 }
 
-// The Related tab adds no New of its own: the list's header New (and
-// its empty state's) is the one, pointed at this record.
+// The Related tab adds no New of its own: the list's header Add is the
+// one, pointed at this record.
 func TestRelatedTabOneNew(t *testing.T) {
 	x := newInvoiceUI(t)
 	body := string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").Related("payments").
@@ -158,10 +179,52 @@ func TestRelatedTabOneNew(t *testing.T) {
 	section := body[strings.Index(body, `id="eui-related-payments"`):]
 	all := strings.Count(section, "/rec/payments/create")
 	pointed := strings.Count(section, `/rec/payments/create?prefill_invoice_id=inv-1"`)
-	if all == 0 || all != pointed {
-		t.Errorf("%d of %d New links prefill the record:\n%s", pointed, all, section)
+	if all != 1 || pointed != 1 {
+		t.Errorf("%d of %d create links prefill the record, want 1 of 1:\n%s", pointed, all, section)
 	}
-	if strings.Contains(section, "fui-button--secondary") {
-		t.Errorf("the Related tab drew its own New beside the list's:\n%s", section)
+}
+
+// The page's list search takes "/"; a keyed list (one of several on a
+// page) does not claim it.
+func TestListSearchTakesSlash(t *testing.T) {
+	cfg := ordersConfig()
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": cfg},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	if h := listHTML(t, x.ui.List("orders"), x.ctx("/orders", "")); !strings.Contains(h, `data-hui-shortcut-focus="/"`) {
+		t.Errorf("the list search does not take /:\n%s", h)
+	}
+	if h := listHTML(t, x.ui.List("orders").Key("o"), x.ctx("/orders", "")); strings.Contains(h, `data-hui-shortcut-focus`) {
+		t.Errorf("a keyed list claimed /")
+	}
+}
+
+// LayoutSwitch draws a Table / Cards switch whose links set the list's
+// as param; the list draws in the layout the URL names, and an unknown
+// value keeps the default.
+func TestListLayoutSwitch(t *testing.T) {
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	b := x.ui.List("orders").LayoutSwitch()
+	table := listHTML(t, b, x.ctx("/orders", ""))
+	if !strings.Contains(table, `aria-label="Layout"`) || !strings.Contains(table, `href="/orders?as=cards"`) || !strings.Contains(table, "fui-data-table") {
+		t.Fatalf("no switch, or not a table:\n%s", table)
+	}
+	cards := listHTML(t, b, x.ctx("/orders", "?as=cards"))
+	if strings.Contains(cards, "fui-data-table__table") || !strings.Contains(cards, `href="/orders?as=table"`) {
+		t.Errorf("as=cards did not draw cards:\n%s", cards)
+	}
+	// With no Card declared, the status enum is each card's badge.
+	if !strings.Contains(cards, `data-cui-comp="ui-badge"`) {
+		t.Errorf("the cards carry no status badge:\n%s", cards)
+	}
+	if bad := listHTML(t, b, x.ctx("/orders", "?as=board")); !strings.Contains(bad, "fui-data-table__table") {
+		t.Errorf("an unknown layout did not keep the table")
+	}
+	if plain := listHTML(t, x.ui.List("orders"), x.ctx("/orders", "?as=cards")); strings.Contains(plain, `aria-label="Layout"`) || !strings.Contains(plain, "fui-data-table__table") {
+		t.Errorf("a list without LayoutSwitch read as=")
 	}
 }

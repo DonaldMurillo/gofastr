@@ -52,6 +52,11 @@ type ContentRowConfig struct {
 	// ui.Toolbar (or any row) here; the row owns only its placement
 	// and its block-end rule.
 	Toolbar render.HTML
+	// ToolbarLabel names the toolbar row's region landmark. The row
+	// sits outside main and the nav column, so it is a labelled
+	// <section> of its own and controls placed there stay inside a
+	// landmark. Defaults to "Toolbar".
+	ToolbarLabel string
 	// Aside is the optional end column after main: a context aside.
 	// It stacks below main under the breakpoint, and it releases its
 	// width when it holds only an empty outlet, so an unfilled
@@ -76,12 +81,36 @@ type ContentRowConfig struct {
 	// carrying the fixed band. The row assumes no footer band below it
 	// in this mode; give viewport pages their footer inside main.
 	Viewport bool
+	// Sticky keeps the frame in place while the window scrolls the
+	// page: at and above the breakpoint the nav column sticks to the
+	// top, one viewport tall, and scrolls its own overflow; the Toolbar
+	// row sticks to the top of the workspace at every width, on the
+	// page background and above the content. The window stays the
+	// scroller, so the client router's scroll restore and fragment
+	// jumps keep working. The row assumes nothing above it scrolls into
+	// view first (no header band); for a header band with columns that
+	// scroll on their own, use Viewport. Setting both panics. The
+	// toolbar is one control row tall and the row publishes that height
+	// as --ui-sticky-top, so a sticky panel inside it (a FormFrame's
+	// SidePanel) stops under the toolbar rather than behind it.
+	Sticky bool
 	// PhoneNavFlush drops the stacked nav column's block-end rule
 	// below the breakpoint. Set it when the sidebar's phone navigation
 	// lives outside the column (a NativeMobile sidebar whose drawer
 	// trigger the page header hosts): the stacked column renders empty
 	// on phones and an empty band must not draw a line.
 	PhoneNavFlush bool
+	// Dense gives the page the compact density on a fine pointer (a
+	// mouse or trackpad): controls, toolbar fields and table rows take
+	// the 36px control height and the tighter gap that the theme's
+	// compact density sets, and the --spacing-touch-target token drops
+	// to the same 36px, so every control sized from it (search fields,
+	// checkboxes, menus) follows. The values sit on the document root,
+	// so drawers, dialogs and menus mounted outside the row follow too.
+	// A touch screen keeps the theme's values,
+	// so a phone holds its 44px targets. Set it on an operator console
+	// (the admin's frame); a site's content row leaves it off.
+	Dense bool
 	// Class appends to the row root's class list.
 	Class string
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
@@ -98,6 +127,9 @@ type ContentRowConfig struct {
 // footer at the viewport bottom with no dead scroll.
 func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 	checkStackBreakpoint(cfg.Breakpoint)
+	if cfg.Sticky && cfg.Viewport {
+		panic("ui: ContentRow Sticky and Viewport are two scroll models; set one")
+	}
 	cls := "fui-content-row"
 	if cfg.Sidebar != "" {
 		cls += " fui-content-row--has-nav"
@@ -105,8 +137,14 @@ func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 	if cfg.Viewport {
 		cls += " fui-content-row--viewport"
 	}
+	if cfg.Sticky {
+		cls += " fui-content-row--sticky"
+	}
 	if cfg.PhoneNavFlush {
 		cls += " fui-content-row--phone-nav-flush"
+	}
+	if cfg.Dense {
+		cls += " fui-content-row--dense"
 	}
 	if cfg.Breakpoint == StackBelowLG {
 		cls += " fui-content-row--stack-below-lg"
@@ -127,8 +165,12 @@ func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 		body = append(body, html.Nav(html.NavConfig{Label: label, Class: "fui-content-row__nav"}, cfg.Sidebar))
 	}
 	if cfg.Toolbar != "" {
+		label := cfg.ToolbarLabel
+		if label == "" {
+			label = "Toolbar"
+		}
 		body = append(body, html.Div(html.DivConfig{Class: "fui-content-row__workspace"},
-			html.Div(html.DivConfig{Class: "fui-content-row__toolbar"}, cfg.Toolbar),
+			html.Section(html.SectionConfig{Label: label, Class: "fui-content-row__toolbar"}, cfg.Toolbar),
 			render.Join(main...)))
 	} else {
 		body = append(body, main...)
@@ -175,18 +217,60 @@ func contentRowCSS(_ style.Theme) string {
 .fui-content-row__toolbar { flex: 0 0 auto; min-inline-size: 0; padding: var(--spacing-sm) var(--spacing-lg); border-block-end: var(--stroke-thin, 1px) solid var(--color-border); }
 .fui-content-row__aside { flex: 0 0 var(--ui-content-row-aside-width, 18rem); min-inline-size: 0; padding: var(--spacing-lg); border-inline-start: var(--stroke-thin, 1px) solid var(--color-border); }
 .fui-content-row__aside:has(> [data-cui-outlet]:empty) { display: none; }
+/* Dense: on a fine pointer the document takes the compact option
+   values, declared at the root the way a theme boundary declares them,
+   so the app's overlays (a drawer, a dialog, a floating menu) mounted
+   outside the row tighten with it; a Themed scope inside redeclares
+   its own. A mouse needs no 44px touch target, so the root lowers that
+   token too: every control sized from it (search fields, checkboxes,
+   menus, icon buttons) tightens with the density-sized ones. The
+   control padding knob drops to the small step so a button's 10px
+   default inset cannot push it past the control height. */
+@media (pointer: fine) {
+  :root:has(.fui-content-row--dense) {
+    --spacing-touch-target: ` + compactControlHeight + `;
+    --fui-density-control-h: ` + compactControlHeight + `;
+    --fui-density-gap: ` + compactGap + `;
+    --ui-control-padding-y: var(--spacing-sm, 4px);
+  }
+}
+/* Sticky: the toolbar row stays at the top of the window at every
+   width, painted over the content that scrolls beneath it. */
+.fui-content-row--sticky .fui-content-row__toolbar { position: sticky; inset-block-start: 0; z-index: var(--z-sticky, 200); background-color: var(--color-background, #fff); }
+/* The sticky toolbar is one control row tall (a control, its padding
+   and its rule), and the row publishes that height as --ui-sticky-top:
+   a sticky panel inside it (a FormFrame's side rail) stops under the
+   toolbar instead of under the window's edge, where the toolbar would
+   paint over it. */
+.fui-content-row--sticky { --ui-sticky-top: var(--ui-content-row-toolbar-height, calc(var(--spacing-touch-target, 44px) + 2 * var(--spacing-sm, 4px) + var(--stroke-thin, 1px))); }
+.fui-content-row--sticky .fui-content-row__toolbar { box-sizing: border-box; min-block-size: var(--ui-sticky-top); display: flex; flex-direction: column; justify-content: center; }
 /* Viewport aside: the tighter padding applies below the breakpoint
    too, matching the shell (the phone column is denser everywhere). */
 .fui-content-row--viewport .fui-content-row__aside { flex-basis: var(--ui-content-row-aside-width, 18rem); padding: var(--spacing-md); }
 .fui-content-row--viewport { min-block-size: 0; flex: 1 0 auto; }
-/* App frame: a padded content area beside the nav column. */
+/* App frame: a padded content area beside the nav column. The padding
+   is the page header's top inset too, so the header adds none. */
 .fui-content-row--has-nav main, .fui-content-row--has-nav .layout-content {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xl, 24px);
   padding: clamp(var(--spacing-xl, 24px), 3vw, calc(var(--spacing-sm, 4px) * 10));
+  --ui-page-header-inset: 0;
 }
-` + md.viewportCSS() + md.stackCSS() + lg.viewportCSS() + lg.stackCSS()
+` + md.viewportCSS() + md.stickyCSS() + md.stackCSS() + lg.viewportCSS() + lg.stickyCSS() + lg.stackCSS()
+}
+
+// stickyCSS is the desktop half of Sticky mode: the nav column sticks
+// to the top, exactly one viewport tall, and scrolls its own overflow
+// while the window scrolls the page. align-self keeps the row's
+// stretch from making the column as tall as the page, which would
+// leave it nothing to stick within.
+func (b rowBreakpointCSS) stickyCSS() string {
+	css := fmt.Sprintf(`@media (min-width: %s) {
+  .fui-content-row--sticky:SCOPE: .fui-content-row__nav { position: sticky; inset-block-start: 0; align-self: flex-start; block-size: 100dvh; overflow-y: auto; overscroll-behavior: contain; }
+}
+`, b.minw)
+	return strings.ReplaceAll(css, ":SCOPE:", b.scope)
 }
 
 // viewportCSS is the desktop half of Viewport mode: the row fills the

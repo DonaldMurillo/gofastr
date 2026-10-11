@@ -18,7 +18,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/stream"
-	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -336,8 +335,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 			if readPerm == "" {
 				return true
 			}
-			return access.CanResource(fresh, access.Permission(readPerm),
-				access.Ref{Type: ch.Entity.GetName(), ID: ""})
+			return ch.accessAllows(fresh, readPerm, "")
 		}
 
 		reauth := time.NewTicker(ch.eventStreamReauthInterval())
@@ -474,7 +472,7 @@ func (ch *CrudHandler) redactEventRecord(r *http.Request, ev event.Event) event.
 		hctx = r.Context()
 	}
 	payload := &hook.GetPayload{Request: r, ID: id, Result: clone}
-	if err := ch.Hooks.ExecuteHooks(hookCtx(hctx), hook.AfterGet, payload); err != nil {
+	if err := runHooks(ch.Hooks, hookCtx(hctx), hook.AfterGet, payload); err != nil {
 		log.Printf("crud: after-get hook failed on %s event; omitting record: %v", ch.Entity.GetName(), err)
 		payload.Result = nil
 	}

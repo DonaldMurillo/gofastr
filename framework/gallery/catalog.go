@@ -411,6 +411,9 @@ var Catalog = []Entry{
 	{"sidebardrawertrigger", "SidebarDrawerTrigger", "Navigation", "The sidebar's drawer toggle on its own — the relocated hamburger a header row carries at narrow widths (the component hides itself at >= md, exactly as in a real shell).", func() render.HTML {
 		return ui.SidebarDrawerTrigger(SidebarShowcaseConfig)
 	}},
+	{"sidebarbrand", "SidebarBrand", "Navigation", "The product mark at a sidebar's head: a logo tile (or the name's initial), the name, and a muted line under it.", func() render.HTML {
+		return ui.SidebarBrand(ui.SidebarBrandConfig{Name: "Meridian", Sub: "Back office"})
+	}},
 	{"toc", "TableOfContents", "Navigation", "In-page anchor list the server rendered; the module marks the active entry.", func() render.HTML {
 		// The items are explicit and the headings they name render in
 		// the same demo, so every link resolves and the no-script
@@ -804,6 +807,16 @@ var Catalog = []Entry{
 			render.Text("DataTable needs an RPC for sort/page/filter and a row data source. See the DataTable docs for the full island-RPC wiring pattern."),
 		)
 	}},
+	{"selection", "Selection", "Data", "A bar that acts on the checked rows below it; it shows only while a row is checked, with no script.", func() render.HTML {
+		row := func(id, label string) render.HTML {
+			return ui.Checkbox(ui.ToggleConfig{Name: "ids", ID: "demo-sel-" + id, Value: id, Label: label, ExtraAttrs: html.Attrs{"form": "demo-selection-bar"}})
+		}
+		return ui.Selection(ui.SelectionConfig{
+			Bar: ui.Form(ui.FormConfig{ID: "demo-selection-bar", Action: "#", Method: "POST", HideSubmit: true},
+				ui.Button(ui.ButtonConfig{Label: "Archive selected", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall, Type: "button"})),
+			Body: ui.Stack(ui.StackConfig{}, row("a", "INV-1041"), row("b", "INV-1042"), row("c", "INV-1043")),
+		})
+	}},
 	{"jsonviewer", "JSONViewer", "Data", "Pretty-printed expandable JSON.", func() render.HTML {
 		return ui.JSONViewer(ui.JSONViewerConfig{
 			Value: map[string]any{
@@ -863,6 +876,27 @@ const page = await api.posts.list({ limit: 25 });`},
 			Avatars: []ui.AvatarConfig{{Name: "A"}, {Name: "B"}, {Name: "C"}, {Name: "D"}, {Name: "E"}, {Name: "F"}, {Name: "G"}},
 			Max:     4,
 		})
+	}},
+	{"thumbnail", "Thumbnail", "Data", "Square image preview for a table cell or a record's photo field.", func() render.HTML {
+		src, err := demoMockup(160, 160).PNG().DataURL()
+		if err != nil {
+			return html.Div(html.DivConfig{Class: "fact"}, render.Text("Demo image could not be encoded."))
+		}
+		return html.Div(html.DivConfig{Class: "demo-row"},
+			ui.Thumbnail(ui.ThumbnailConfig{Src: src, Alt: "Small", Size: ui.ThumbnailSM}),
+			ui.Thumbnail(ui.ThumbnailConfig{Src: src, Alt: "Medium"}),
+			ui.Thumbnail(ui.ThumbnailConfig{Src: src, Alt: "Large", Size: ui.ThumbnailLG}),
+		)
+	}},
+	{"shortid", "ShortID", "Data", "A long identifier's first characters, with a copy button for all of it.", func() render.HTML {
+		return ui.ShortID(ui.ShortIDConfig{Value: "c86a70b90b096dfa646910e48fd975dc"})
+	}},
+	{"changelist", "ChangeList", "Data", "What one edit changed, a field per row: the old value struck through, then the new one.", func() render.HTML {
+		return ui.ChangeList(ui.ChangeListConfig{Changes: []ui.Change{
+			{Label: "Plan", From: render.Text("Starter"), To: render.Text("Pro")},
+			{Label: "MRR", From: render.Text("$29.00"), To: render.Text("$99.00")},
+			{Label: "Notes", To: render.Text("Upgraded after the trial")},
+		}})
 	}},
 	{"statcard", "StatCard", "Data", "Metric tile with trend.", func() render.HTML {
 		return html.Div(html.DivConfig{Class: "demo-row"},
@@ -1448,6 +1482,53 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	}},
 	{"drawer", "Drawer", "Overlays", "Edge-mounted sliding panel: same dismiss affordances as Modal, plus deeplinking.", func() render.HTML {
 		return interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open drawer", Variant: ui.ButtonPrimary}), "site-demo-drawer")
+	}},
+	{"drawerbar", "DrawerBar", "Overlays", "The bar across the top of an intercepted drawer: close, the layer's path in mono, copy link, then actions.", func() render.HTML {
+		return ui.DrawerBar(ui.DrawerBarConfig{
+			Path:    "/admin/entities/invoices/inv-1042",
+			CopyURL: "https://example.com/admin/entities/invoices/inv-1042",
+			Actions: []render.HTML{ui.Button(ui.ButtonConfig{Label: "Save", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeSmall})},
+		})
+	}},
+	{"actionlist", "ActionList", "Navigation", "Link and button rows in a menu row's look, for a panel that is not a menu (an account panel).", func() render.HTML {
+		return ui.ActionList(ui.ActionListConfig{Label: "Account", Items: []ui.ActionListItem{
+			{Label: "Account settings", Href: "#account", Icon: "user"},
+			{Label: "Sign out", Href: "#sign-out", Icon: "log-out", Danger: true},
+		}})
+	}},
+	{"segmentedlinks", "SegmentedLinks", "Navigation", "A strip of links that reads as a segmented control, each with an optional count; the current one is marked.", func() render.HTML {
+		return ui.SegmentedLinks(ui.SegmentedLinksConfig{Label: "Job status", Items: []ui.SegmentLink{
+			{Text: "All", Href: "#all", Count: "40", Current: true},
+			{Text: "Running", Href: "#running", Count: "3"},
+			{Text: "Failed", Href: "#failed", Count: "2"},
+		}})
+	}},
+	{"statstrip", "StatStrip", "Data", "One to six figures in one frame, divided by rules: a dashboard's headline numbers.", func() render.HTML {
+		return ui.StatStrip(ui.StatStripConfig{Label: "This month", Cells: []render.HTML{
+			ui.StatCard(ui.StatCardConfig{Label: "Revenue", Value: "$48,210", Trend: "+6.1%", Direction: ui.TrendUp}),
+			ui.StatCard(ui.StatCardConfig{Label: "Open invoices", Value: "12"}),
+			ui.StatCard(ui.StatCardConfig{Label: "Failed jobs", Value: "2", Trend: "Needs a replay", Direction: ui.TrendDown}),
+		}})
+	}},
+	{"columnpicker", "ColumnPicker", "Data", "A list's Columns menu: show, hide and reorder columns through links, so the choice lives in the URL.", func() render.HTML {
+		return ui.ColumnPicker(ui.ColumnPickerConfig{ID: "demo-columns", Label: "Columns", ResetHref: "#reset", Columns: []ui.ColumnChoice{
+			{Label: "Number", Shown: true, Locked: true},
+			{Label: "Customer", Shown: true, ToggleHref: "#hide-customer", DownHref: "#customer-down"},
+			{Label: "Amount", Shown: true, ToggleHref: "#hide-amount", UpHref: "#amount-up"},
+			{Label: "Memo", ToggleHref: "#show-memo"},
+		}})
+	}},
+	{"filterrows", "FilterRows", "Forms", "Rows of field, operator and value that a list's filter form submits as its query.", func() render.HTML {
+		return ui.FilterRows(ui.FilterRowsConfig{
+			ID: "demo-filter", FieldName: "f", OpName: "op", ValueName: "v",
+			Legend: "Filters", FieldLabel: "Field", OpLabel: "Operator", ValueLabel: "Value",
+			Fields:    []ui.SelectOption{{Value: "status", Text: "Status"}, {Value: "amount", Text: "Amount"}},
+			Operators: []ui.SelectOption{{Value: "eq", Text: "is"}, {Value: "gt", Text: "greater than"}},
+			Rows:      []ui.FilterRow{{Field: "status", Op: "eq", Value: "open"}},
+		})
+	}},
+	{"datetimefield", "DateTimeField", "Forms", "A labelled date-and-time input (datetime-local) with help and error text.", func() render.HTML {
+		return ui.DateTimeField(ui.DateTimeFieldConfig{Name: "due_at", Label: "Due at", Value: "2026-10-12T09:30", Help: "Your local time."})
 	}},
 	{"bottomsheet", "BottomSheet", "Overlays", "Mobile-friendly bottom-anchored variant of Drawer with drag-to-dismiss.", func() render.HTML {
 		return interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Open bottom sheet", Variant: ui.ButtonPrimary}), "site-demo-bottomsheet")

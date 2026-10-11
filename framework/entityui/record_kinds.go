@@ -2,6 +2,7 @@ package entityui
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -16,19 +17,31 @@ import (
 // read-only field uses. An app kind registered under the same name in
 // Extensions.Kinds replaces the built-in.
 
-// builtinKind is the input a built-in kind name draws. email, url and
-// color keep the storage (a String) and change the control; markdown
-// and code draw the monospace text area the kit's mono variant ships.
+// builtinKind is what a built-in kind name draws. email, url and color
+// keep the storage (a String) and change the control; markdown and code
+// draw the monospace text area the kit's mono variant ships; money draws
+// a number input behind the currency symbol and prints its value as an
+// amount in cells and read-only.
 func builtinKind(name string) Kind {
 	switch name {
+	case "money":
+		show := func(cc CellContext) render.HTML {
+			if s := cell(cc.Value); s != "" {
+				return render.Text(money(cc.Ctx, s))
+			}
+			return muted()
+		}
+		return Kind{Input: moneyInput, Cell: show}
 	case "email", "url", "color":
 		t := map[string]string{"email": "email", "url": "url", "color": "color"}[name]
 		return Kind{Input: func(ic InputContext) render.HTML {
 			return ui.FormField(ui.FormFieldConfig{
-				Label: kindLabel(ic), For: kindID(ic), Help: kindHelp(ic),
+				Label: ic.Label, For: ic.Control.ID, Help: ic.Help, Required: ic.Control.Required,
 				Input: func(c headless.FieldControl) render.HTML {
 					return ui.Control(ui.ControlConfig{
 						Field: c, Type: t, Name: ic.Name, Value: ic.Value, Placeholder: ic.Placeholder,
+						MinLength: minLength(ic.Field.Min), MaxLength: maxLength(ic.Field.Max),
+						ExtraAttrs: patternAttr(ic.Field.Pattern),
 					})
 				},
 			})
@@ -36,8 +49,10 @@ func builtinKind(name string) Kind {
 	case "markdown", "code":
 		return Kind{Input: func(ic InputContext) render.HTML {
 			return ui.TextArea(ui.TextAreaConfig{
-				Name: ic.Name, Label: kindLabel(ic), ID: kindID(ic), Value: ic.Value,
-				Rows: 8, Placeholder: ic.Placeholder, Help: kindHelp(ic), Monospace: true,
+				Name: ic.Name, Label: ic.Label, ID: ic.Control.ID, Value: ic.Value,
+				Rows: 8, Placeholder: ic.Placeholder, Help: ic.Help, Monospace: true,
+				Required:  ic.Control.Required,
+				MinLength: minLength(ic.Field.Min), MaxLength: maxLength(ic.Field.Max),
 			})
 		}}
 	default:
@@ -45,30 +60,33 @@ func builtinKind(name string) Kind {
 	}
 }
 
-// kindLabel and kindHelp resolve through the InputContext's own ctx:
-// the builder attaches the app's translator before calling a kind, so
-// the kind sees the same catalog the built-in fields do.
-func kindLabel(ic InputContext) string {
-	if ic.Field.Type == schema.Relation {
-		return i18nui.RelationLabel(ic.Ctx, nil, ic.Entity, ic.Field.Name, "")
+// moneyInput is the money kind's control: a number input whose step lets
+// the type's precision through, with the currency symbol prepended.
+func moneyInput(ic InputContext) render.HTML {
+	step := map[schema.FieldType]string{schema.Int: "1", schema.Float: "any"}[ic.Field.Type]
+	if step == "" {
+		step = "0.01"
 	}
-	return i18nui.FieldLabel(ic.Ctx, nil, ic.Entity, ic.Field.Name, "")
+	return ui.FormField(ui.FormFieldConfig{
+		Label: ic.Label, For: ic.Control.ID, Help: ic.Help, Required: ic.Control.Required,
+		Input: func(c headless.FieldControl) render.HTML {
+			return ui.InputGroup(ui.InputGroupConfig{
+				Prepend: render.Text(i18nui.T(ic.Ctx, i18nui.KeyEntityCurrency)),
+				Input: ui.Control(ui.ControlConfig{
+					Field: c, Type: "number", Name: ic.Name, Value: ic.Value, Placeholder: ic.Placeholder,
+					Min: bound(ic.Field.Min), Max: bound(ic.Field.Max), Step: step,
+				}),
+			})
+		},
+	})
 }
 
-func kindHelp(ic InputContext) string {
-	return i18nui.FieldHelp(ic.Ctx, nil, ic.Entity, ic.Field.Name, "")
-}
-
-// kindID is the control id a kind's field derives, the same scheme the
-// form's own fields use.
-func kindID(ic InputContext) string { return "eui-f-" + ic.Field.Name }
-
-// kindControl is the wiring a kind that builds its own control copies
-// from the InputContext: the label's target, the description chain and
-// the required flag, precomputed the way FormField would hand them
-// down.
-func kindControl(ic InputContext) headless.FieldControl {
-	return ic.Control
+// bound is a numeric bound as attribute text, empty when unset.
+func bound(b *float64) string {
+	if b == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*b, 'f', -1, 64)
 }
 
 // display renders a field's stored value for a read-only surface: the
@@ -112,6 +130,11 @@ func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[stri
 		}
 	case schema.Relation:
 		return fb.relationDisplay(ctx, f, v)
+	case schema.Image, schema.File:
+		if t := fb.b.ui.fileValue(f, fb.m.label(ctx, f.Name), cell(v), ui.ThumbnailMD); t != "" {
+			return t
+		}
+		return muted()
 	case schema.JSON:
 		if s := cell(v); s != "" {
 			return ui.JSONViewer(ui.JSONViewerConfig{Value: s, OpenDepth: 1})
@@ -153,18 +176,12 @@ func (fb *formBuilder) relationDisplay(ctx context.Context, f schema.Field, v an
 	if err != nil {
 		return muted()
 	}
-	fields := []string{om.pk}
-	if tf := om.titleField(); tf != "" && tf != om.pk {
-		fields = append(fields, tf)
-	}
 	row, err := om.ch.GetOne(crud.WithReadHooks(ctx), id, nil)
 	if err != nil || row == nil {
 		return render.Text(id)
 	}
-	if tf := om.titleField(); tf != "" {
-		if l := cell(rowValue(row, tf)); l != "" {
-			return render.Text(l)
-		}
+	if t := fb.b.ui.rowTitles(ctx, om, []map[string]any{row}, 0)[0]; t != "" {
+		return render.Text(t)
 	}
 	return render.Text(id)
 }

@@ -51,11 +51,18 @@ func (r labelResolver) title(col, id string) (string, bool) {
 // resolveLabels resolves the related records' titles for one relation
 // column's page ids: ONE IN read per relation, through the related
 // entity's own crud handle, after ITS read gate, with read hooks, reading
-// only the primary key and the title column. The rows belong to the
-// related entity, so its posture decides whether this caller may see its
-// names at all — a list for an open entity must not become a window onto
-// a gated one.
+// only the primary key and the title columns (a relation title part
+// costs one more read; see rowTitles). The rows belong to the related
+// entity, so its posture decides whether this caller may see its names
+// at all — a list for an open entity must not become a window onto a
+// gated one.
 func (u *UI) resolveLabels(ctx context.Context, m *meta, col string, ids []string) map[string]string {
+	return u.resolveLabelsAt(ctx, m, col, ids, 0)
+}
+
+// resolveLabelsAt is resolveLabels for titles reached through hops
+// relations already.
+func (u *UI) resolveLabelsAt(ctx context.Context, m *meta, col string, ids []string, hops int) map[string]string {
 	target, tm, ok := u.relationTarget(ctx, m, col)
 	if !ok {
 		// Refused: the caller may not read the related entity.
@@ -72,7 +79,21 @@ func (u *UI) resolveLabels(ctx context.Context, m *meta, col string, ids []strin
 		// A failed label read is redaction, not raw ids.
 		return nil
 	}
-	return titleMap(tm, rows)
+	return u.titleMap(ctx, tm, rows, hops)
+}
+
+// relatedBase is the base of a relation column's related-record screens,
+// when the UI has a record path for that entity and the caller may read
+// it.
+func (u *UI) relatedBase(ctx context.Context, m *meta, col string) (string, bool) {
+	if u.recordPath == nil {
+		return "", false
+	}
+	target, _, ok := u.relationTarget(ctx, m, col)
+	if !ok {
+		return "", false
+	}
+	return u.recordPath(target)
 }
 
 // relationFacetOptions lists a relation facet's options: the related
@@ -89,7 +110,7 @@ func (u *UI) relationFacetOptions(ctx context.Context, m *meta, col string) []ui
 		slog.WarnContext(ctx, "entityui: relation facet", "entity", m.name, "column", col, "target", target.GetName(), "error", err)
 		return nil
 	}
-	titles := titleMap(tm, rows)
+	titles := u.titleMap(ctx, tm, rows, 0)
 	out := make([]ui.FacetOption, 0, len(titles))
 	for id, title := range titles {
 		out = append(out, ui.FacetOption{Value: id, Label: title})
@@ -129,32 +150,13 @@ func (u *UI) relationTarget(ctx context.Context, m *meta, col string) (*entity.E
 }
 
 // readTitleFields are the columns a title read asks for: the primary key
-// plus the title field, nothing else.
+// plus the title fields, nothing else.
 func (m *meta) readTitleFields() []string {
 	fields := []string{m.pk}
-	if tf := m.titleField(); tf != "" && tf != m.pk {
-		fields = append(fields, tf)
+	for _, tf := range m.titleFields() {
+		if !slices.Contains(fields, tf) {
+			fields = append(fields, tf)
+		}
 	}
 	return fields
-}
-
-// titleMap turns title-read rows into id → title. A row with no title
-// value falls back to its id, the same value a picker would submit.
-func titleMap(m *meta, rows []map[string]any) map[string]string {
-	labels := make(map[string]string, len(rows))
-	tf := m.titleField()
-	for _, row := range rows {
-		id := cell(rowValue(row, m.pk))
-		if id == "" {
-			continue
-		}
-		title := id
-		if tf != "" {
-			if t := cell(rowValue(row, tf)); t != "" {
-				title = t
-			}
-		}
-		labels[id] = title
-	}
-	return labels
 }

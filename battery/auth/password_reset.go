@@ -255,6 +255,28 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+// dropLinks spends every outstanding reset link of the user, so none
+// sets the password again after a reset or a change. A token store
+// without MagicLinkTokenPurger keeps them, and that gap is logged.
+func (p *PasswordResetPlugin) dropLinks(ctx context.Context, userID, reason, remote string) {
+	n, supported, err := purgePurposeTokens(ctx, p.store, purposeReset, userID)
+	switch {
+	case err != nil:
+		slog.Warn("password-reset sibling token purge failed",
+			"plugin", "password-reset", "reason", reason, "user_hash", hashedIdentifier(userID), "err", err)
+	case !supported:
+		slog.Warn("password-reset could not drop sibling reset tokens: token store does not implement MagicLinkTokenPurger",
+			"plugin", "password-reset", "reason", reason, "user_hash", hashedIdentifier(userID))
+	case n > 0:
+		p.mgr.emitSecurity(ctx, SecurityEvent{
+			Kind:   "reset_tokens.purged",
+			UserID: userID,
+			Remote: remote,
+			Meta:   map[string]string{"reason": reason, "count": strconv.Itoa(n)},
+		})
+	}
+}
+
 func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Request) {
 	if p.limit != nil && !p.limit.guard(w, r) {
 		return
@@ -328,36 +350,8 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	// but leaving those spendable means a link phished or read from the
 	// mailbox an hour ago still sets the password again after the victim's
 	// own reset completes, and the account returns to the attacker.
-	if n, supported, err := purgePurposeTokens(r.Context(), p.store, purposeReset, userID); err != nil {
-		slog.Warn("password-reset sibling token purge failed",
-			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
-	} else if !supported {
-		slog.Warn("password-reset could not drop sibling reset tokens: token store does not implement MagicLinkTokenPurger",
-			"plugin", "password-reset", "user_hash", hashedIdentifier(userID))
-	} else if n > 0 {
-		p.mgr.emitSecurity(r.Context(), SecurityEvent{
-			Kind:   "reset_tokens.purged",
-			UserID: userID,
-			Remote: remoteHost(r),
-			Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
-		})
-	}
-	if purger, ok := p.mgr.SessionStore().(SessionUserPurger); ok {
-		if n, err := purger.DeleteByUser(r.Context(), userID); err != nil {
-			slog.Warn("password-reset session revocation failed",
-				"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
-		} else {
-			p.mgr.emitSecurity(r.Context(), SecurityEvent{
-				Kind:   "session.revoked",
-				UserID: userID,
-				Remote: remoteHost(r),
-				Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
-			})
-		}
-	} else {
-		slog.Warn("password-reset could not revoke existing sessions: session store does not implement SessionUserPurger",
-			"plugin", "password-reset", "user_hash", hashedIdentifier(userID))
-	}
+	p.dropLinks(r.Context(), userID, "password_reset", remoteHost(r))
+	p.mgr.revokeUserSessions(r.Context(), userID, "password_reset", remoteHost(r))
 	// API tokens are credentials too: one minted by whoever held the
 	// account before the reset kept working after it.
 	if n, supported, err := p.mgr.revokeUserAPITokens(r.Context(), userID); err != nil {

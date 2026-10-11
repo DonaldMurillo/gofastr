@@ -45,6 +45,15 @@ type beforeHookError struct{ err error }
 func (e *beforeHookError) Error() string { return e.err.Error() }
 func (e *beforeHookError) Unwrap() error { return e.err }
 
+// IsHookRefusal reports whether err is a BeforeCreate, BeforeUpdate or
+// BeforeDelete hook's rejection, the error the HTTP handlers answer 400.
+// An in-process caller that serves its own HTTP answer uses it to tell a
+// refusal from a failure.
+func IsHookRefusal(err error) bool {
+	_, ok := errors.AsType[*beforeHookError](err)
+	return ok
+}
+
 // tenantMissingError signals a Create attempt against a MultiTenant
 // entity with no tenant in the request context. Surfaces as 400 in
 // the HTTP handler so an orphan row can never be written.
@@ -603,7 +612,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// both paths inherit the same scope.
 		listPayload := &hook.ListPayload{Request: r}
 		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeList, listPayload); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.BeforeList, listPayload); err != nil {
 				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -768,7 +777,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// AfterList hook, host can redact / transform / drop rows.
 		if ch.Hooks != nil {
 			listPayload.Results = results
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterList, listPayload); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.AfterList, listPayload); err != nil {
 				log.Printf("crud: after-list hook failed: %v", err)
 				writeJSONError(w, http.StatusInternalServerError, "internal server error")
 				return
@@ -910,7 +919,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 
 		getPayload := &hook.GetPayload{Request: r, ID: id}
 		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeGet, getPayload); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.BeforeGet, getPayload); err != nil {
 				writeJSONError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -956,7 +965,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 
 		if ch.Hooks != nil {
 			getPayload.Result = result
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterGet, getPayload); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.AfterGet, getPayload); err != nil {
 				log.Printf("crud: after-get hook failed: %v", err)
 				writeJSONError(w, http.StatusInternalServerError, "internal server error")
 				return
@@ -1012,6 +1021,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 
 		var result map[string]any
 		var hidden bool
+		sent := sentKeys(body)
 		// The keys this request's multipart parse saved are the only
 		// storage keys it may write (media_provenance.go).
 		err = ch.inTx(WithUploadedKeys(WithAuditRequest(r.Context(), r), savedFiles...), func(ctx context.Context, ch *CrudHandler) error {
@@ -1031,7 +1041,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			// a caller who can repeat the failure). A successful
 			// write keeps every key.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
-			writeCRUDError(w, err)
+			writeCRUDError(w, ch.withConstraintFields(err, sent))
 			return
 		}
 
@@ -1107,6 +1117,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 
 		var result map[string]any
 		var hidden bool
+		sent := sentKeys(body)
 		err = ch.inTx(WithUploadedKeys(WithAuditRequest(r.Context(), r), savedFiles...), func(ctx context.Context, ch *CrudHandler) error {
 			res, err := ch.doUpdate(ctx, r, id, body)
 			if err != nil {
@@ -1123,7 +1134,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			// missing id strands the files unless they are deleted
 			// here.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
-			writeCRUDError(w, err)
+			writeCRUDError(w, ch.withConstraintFields(err, sent))
 			return
 		}
 
@@ -1297,10 +1308,9 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 	if isUniqueViolation(err) {
 		// Map UNIQUE-constraint failures to 409 Conflict so callers can
 		// distinguish duplicate-key errors from a real server fault.
-		// The error message itself is generic, we deliberately don't
-		// echo the violated column to avoid leaking schema details to
-		// an enumeration probe.
-		writeJSONError(w, http.StatusConflict, "conflict")
+		// The driver's text never reaches the body; the declared fields
+		// the caller sent do (conflict_fields.go).
+		writeConflict(w, err, "conflict")
 		return
 	}
 	if isForeignKeyViolation(err) {
@@ -1308,7 +1318,19 @@ func writeCRUDError(w http.ResponseWriter, err error) {
 		// other rows still point at, is a state conflict the caller can
 		// resolve, not a server fault. Same no-leak posture as above:
 		// the constraint and table names stay in the server log.
-		writeJSONError(w, http.StatusConflict, "conflict: the record is referenced by, or references, another record")
+		writeConflict(w, err, "conflict: the record is referenced by, or references, another record")
+		return
+	}
+	if cf, ok := errors.AsType[*constraintFieldsError](err); ok && isNotNullViolation(err) {
+		// A NOT NULL refusal on a declared field is the caller's to
+		// fix: the validation shape, naming it (conflict_fields.go).
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error":   "validation failed",
+			"success": false,
+			"fields":  cf.fields,
+		})
 		return
 	}
 	// Unrecognised error → 500 with a generic message. Returning

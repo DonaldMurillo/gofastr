@@ -1,314 +1,603 @@
 # Admin UI
 
-`battery/admin` is an admin back-office battery with two halves:
+`battery/admin` is the back office: a dashboard, the entity screens, and
+the operations pages (jobs, audit log, roles, user roles, process
+modules), drawn in one shell through your app's UI host. Every page is a
+host screen, so it renders with `runtime.js`, navigates client-side, and
+shows toasts from the host's toast stack. The battery ships no CSS and no
+JavaScript: the shell is `ui.Sidebar` beside a toolbar with breadcrumbs,
+the command palette, the theme toggle and the account menu.
 
-- **Entity CRUD**: generated list / create / edit / delete screens for
-  your entities, rendered **through your app's UI host** so they hydrate
-  with `runtime.js`: the list is a server-driven `DataTable` island
-  (paginate without a reload), delete is a `data-cui-confirm` button, and
-  forms are server-rendered. **No bespoke JavaScript.** The island
-  mechanics behind these (`data-cui-rpc`, signals, fragment swaps) are
-  catalogued in [interactive-patterns](interactive-patterns.md).
-- **Ops dashboards**: read-only **Queue** and **Audit log** pages on top
-  of data the framework already collects (`battery/queue`,
-  `framework.WithAuditLog`). These are self-contained HTML and don't need a
-  UI host.
-
-Every screen is gated: see [Authorization](#authorization).
+Every page and route sits behind one default-deny gate: see
+[Authorization](#authorization).
 
 ## Quick start
 
+<!-- gofastr:compile
+import "database/sql"
+var db *sql.DB
+import "github.com/DonaldMurillo/gofastr/battery/admin"
+import appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/framework/entity"
+import "github.com/DonaldMurillo/gofastr/framework/entityui"
+import "github.com/DonaldMurillo/gofastr/framework/uihost"
+var productsConfig, customersConfig entity.EntityConfig
+-->
 ```go
-import (
-    "github.com/DonaldMurillo/gofastr/battery/admin"
-    appui "github.com/DonaldMurillo/gofastr/core-ui/app"
-    "github.com/DonaldMurillo/gofastr/framework"
-    "github.com/DonaldMurillo/gofastr/framework/uihost"
-)
-
 site := appui.NewApp("My App")
-host := uihost.New(site)
-
-app := framework.NewUIHostApp(host, framework.WithDB(db))
-app.Use(auth.SessionMiddleware(mgr)) // puts the signed-in user on the request
+app := framework.NewUIHostApp(uihost.New(site), framework.WithDB(db))
 
 app.Entity("products", productsConfig)
 app.Entity("customers", customersConfig)
 
-app.RegisterBattery(admin.New(admin.Config{Title: "Back office", AllEntities: true}))
+app.RegisterBattery(admin.New(admin.Config{
+    Title:    "Back office",
+    UI:       app.EntityUI(entityui.Extensions{}),
+    Entities: []string{"products", "customers"},
+}))
 ```
 
-Exposure is **opt-in**. An empty `Entities` exposes nothing. A
-zero-value config must not silently turn every table into an editable
-back-office. Either name the entities:
+The admin needs a UI host: `Init` fails without one. It also needs
+`Config.UI` (the app's `App.EntityUI`) whenever it exposes an entity,
+because the entity screens are `framework/entityui`'s list and record.
+
+Exposure is opt-in. An empty `Entities` exposes none, so a zero-value
+config never turns every table into an editable back office. Name the
+entities, or set `AllEntities: true` for every registered entity whose
+CRUD is on. CRUD-off entities (`battery/auth`'s `users` and `sessions`)
+stay hidden, so `AllEntities` never exposes credential tables. Naming an
+entity in `Entities` exposes it even with CRUD off. A name the app does
+not register fails boot.
+
+## Pages and routes
+
+| Route | Page |
+|---|---|
+| `GET /admin` | Dashboard: the figures strip (with a Queue, Failed jobs last), a count card per entity with when its newest record was written, recent activity, Needs attention (watched views and failed jobs), the app's cards |
+| `GET /admin/search?q=` | Search results: the palette's scriptless twin |
+| `GET /admin/shortcuts` | The keyboard shortcuts: the help sheet's scriptless twin |
+| `GET /admin/account` | Account settings: the signed-in user's profile, theme and password |
+| `GET /admin/entities/<name>` | Entity list |
+| `GET /admin/entities/<name>/create` | Create form (opens as a drawer from the list) |
+| `GET /admin/entities/<name>/:id` | Record (opens as a drawer from the list, whose bar steps to the previous and next row, and as a drawer stacked over a related record; as a full page it offers Open in panel, back to the list with the record in a drawer) |
+| `GET /admin/queue` | Jobs, with `?status=` links and counts (needs `Queue`) |
+| `GET /admin/audit` | Audit log, newest first |
+| `GET /admin/rbac/roles` | Role permissions (needs `Policy` + `GrantStore`) |
+| `GET /admin/rbac/users` | User roles (needs `Auth`) |
+| `GET /admin/modules` | Process modules (needs `ProcessModules`) |
+
+A page whose backing is not wired is not mounted and has no sidebar
+entry. `Config.PathPrefix` moves everything off `/admin`.
+
+### Entity screens
+
+Each entity's sidebar row ends in how many records the admin can read,
+counted the way the list's "All" tab counts. The count is a route area
+of the shell layout, so it re-renders on every client navigation while
+the sidebar stays put: a record created in a drawer shows in it on the
+next click. A table too large to count per click sets
+`EntityNav{HideCount: true}` (`hide_count` in a declaration). The phone
+nav drawer, which no navigation re-renders, draws no counts.
+
+The list, record and create screens are `entityui` screens, so they
+carry everything the entity declares: its `Display` names, fields and
+nav group, its `States` transitions, relations (a Related tab on the
+record), bulk actions, CSV export, and the record's activity tab. The
+admin also turns on every optional `entityui` tool: the query box, the
+columns menu, the trash view of a soft-deleting entity and Undo on
+its delete toast, saved views
+(with `Config.SavedViews`), a row count on each view tab, relation
+cells that link to the related record when the admin exposes that
+entity, the record's API tab and the status
+override. The admin reads each entity under the caller's own context
+plus the elevation described below, and points the screens' writes at
+its own routes:
+
+| Route | Purpose |
+|---|---|
+| `POST /admin/api/<name>` | Create |
+| `PUT`/`PATCH /admin/api/<name>/{id}` | Update |
+| `DELETE /admin/api/<name>/{id}` | Delete |
+| `POST /admin/api/<name>/{id}/transitions/{key}` | A `States` transition |
+| `POST /admin/api/<name>/{id}/_override` | Status override (`States` only) |
+| `POST /admin/api/<name>/{id}/_restore` | Restore from the trash (`SoftDelete` only) |
+| `POST /admin/api/<name>/{id}/_purge` | Delete permanently (`SoftDelete` only) |
+| `POST /admin/api/<name>/_bulk` | Bulk action |
+| `GET /admin/api/<name>/_export.csv` | CSV export |
+| `POST /admin/api/<name>/_pick?field=<field>` | A relation picker's search |
+| `POST /admin/api/<name>/_views` | Save a view (`Config.SavedViews`) |
+| `POST /admin/api/<name>/_views/_delete/{id}` | Delete a saved view |
+| `GET /admin/_count/<name>` | A dashboard count card (polled every 60 s; a count past its 2-second deadline falls back to a 1-second read of at most 10,000 ids, "10k+" past it, and "—" only when that fails too) |
+
+Every write goes through the app's own CRUD handler, so validation,
+hooks, events, `WithAuditLog` rows, tenant and `OwnerField` scope, and
+the field write checks apply exactly as on the JSON API.
+
+**Elevation.** The admin routes and the admin's own screens run with
+`crud.WithElevation`, naming the entities the admin exposes, which lifts
+one check on those entities only: their `Exposure.Access` permissions.
+An entity locked to `posts:write` on the app API is still editable from
+the admin by a caller the gate admits; an entity the admin does not
+expose keeps its check, so a relation label, a picker or a stat that
+reaches it reads as the caller. Elevation never lifts tenant scope,
+owner scope, soft delete, the field read and write checks, a
+transition's `Permission` or the `<name>:override_state` capability the
+status override needs, and it never reaches app code: a `Page` or
+`Card` builds, and a page's `Access` answers, with the caller's own
+context; an entityui action, tab, view func or field kind, and the
+component it returns, gets the caller's context with the elevation
+removed (`crud.WithoutElevation`); and every lifecycle hook an admin
+write or read fires runs without it.
+
+### App pages, cards, links and commands
 
 <!-- gofastr:compile
+import "context"
+import "net/http"
+import "time"
+import "github.com/DonaldMurillo/gofastr/battery/admin"
+import "github.com/DonaldMurillo/gofastr/core-ui/component"
+import "github.com/DonaldMurillo/gofastr/framework/entity"
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+var reports, revenue func(*http.Request) (component.Component, error)
+var isFinance func(context.Context) bool
+-->
+```go
+admin.New(admin.Config{
+    Pages: []admin.Page{{
+        Path:   "/reports",
+        Title:  "Reports",
+        Nav:    &entity.EntityNav{Group: "insights", Icon: "chart"},
+        Access: isFinance, // optional, narrows beyond the gate
+        Build:  reports,
+    }},
+    Cards: []admin.Card{{Key: "revenue", Title: "Revenue", Build: revenue, Poll: 30 * time.Second}},
+    Links:    []admin.Link{{Group: "help", Label: "Docs", Href: "/docs"}},
+    Commands: []ui.PaletteCommand{{Label: "Open docs", Href: "/docs"}},
+})
+```
+
+- A **Page** draws in the shell under `<PathPrefix><Path>` with a crumb
+  and a palette entry. Its path may not take one of the admin's own
+  (`/`, `/search`, `/queue`, `/audit`, `/rbac`, `/modules`, `/entities`,
+  `/api`, or anything under `/_`); boot fails if it does. `Access`
+  refuses with 403, hides the nav entry and the palette entry, and Build
+  never runs for a refused caller. An `Access` that panics refuses too,
+  for that page alone; the rest of the admin draws. (A panicking
+  `EffectiveRoles` likewise leaves the User roles page showing direct
+  roles.)
+- A **Card** draws on the dashboard. A positive `Poll` redraws it from
+  `GET <PathPrefix>/_card/<key>` on that interval (`data-cui-poll`).
+- **Metrics** are the strip at the top of the dashboard, above the
+  entity cards: a count or a sum over an exposed entity, read in the
+  admin's scope under the same 2-second deadline as the entity cards,
+  each polled from `GET <PathPrefix>/_metric/<index>`, all in one
+  `ui.StatStrip`. `View` links the figure to one of the entity's list
+  views; `Detail` is a second figure under the value, its label after
+  the number, and the Detail's `Tone` colours it (`ui.TrendDown` red,
+  `ui.TrendUp` green). With a `Queue`, the strip ends with a Failed jobs
+  figure (polled from `GET <PathPrefix>/_metric/jobs`) that links to the
+  failed filter and says "Needs a replay" while any wait. The strip
+  holds six figures, so `Metrics` holds at most six, five with a Queue.
+  Boot fails on a metric that could only ever draw "—": an unknown
+  entity, agg, field, filter, format, view or icon, and on a Tone
+  anywhere but a Detail.
+
+  ```go
+  Metrics: []admin.Metric{
+      {Label: "MRR", Entity: "customers", Agg: "sum", Field: "mrr",
+          Where: `status = "active"`, Format: "money", View: "active"},
+      {Label: "Past-due invoices", Entity: "invoices", Where: `status = "past_due"`, View: "past_due",
+          Detail: &admin.Metric{Label: "outstanding", Agg: "sum", Field: "amount",
+              Where: `status = "past_due"`, Format: "money", Tone: ui.TrendDown}},
+  },
+  ```
+- **DashboardNew** names an exposed entity whose New button heads the
+  dashboard as its primary action (`DashboardNew: "customers"` draws
+  "New Customer"). `Init` refuses an entity the admin does not expose.
+- **Attention** is the Needs attention panel beside the recent activity.
+  Each `Watch` names an entity and one of its declared list views
+  (`View`); the panel previews the first `Rows` rows (5 by default, at
+  most 20) of every watched view that has any, with `Columns` replacing
+  the list's columns, a link to the full view, and no pager or sorting.
+  A view with no rows draws nothing. With a `Queue` the panel also lists
+  the newest failed jobs, each with Replay, under a link to the failed
+  filter. With nothing left it says "Nothing needs attention." The rows
+  sit in the card with no table frame (`ListBuilder.Flush`). Boot fails
+  on an unknown entity, view or column.
+
+  ```go
+  Attention: []admin.Watch{
+      {Entity: "invoices", View: "past_due", Columns: []string{"number", "customer_id", "amount"}},
+  },
+  ```
+- **Themes** are page themes offered as the Look, a `ui.ThemePicker`
+  (Default plus each choice) under the light and dark choice, in the
+  avatar's account panel and on the account page's Appearance card. The
+  toolbar row keeps the light and dark toggle alone, so it fits a phone
+  in any language. Each is a theme registered with
+  `style.RegisterThemeOverride`; `theme.Brutal()` is one. The choice is
+  per browser.
+
+  ```go
+  Themes: []ui.ThemeChoice{{Label: "Brutal", Theme: style.RegisterThemeOverride(theme.Brutal())}},
+  ```
+- Build failures are contained: an error, a panic or a nil component
+  draws a generic notice in the shell and logs `app slot failed` with
+  the slot name, never what the page read.
+- **Links** must be same-origin paths; boot refuses anything else.
+
+### Account settings
+
+The avatar opens the account panel, as the prototype's does: the
+signed-in user's name over their email and roles, the Theme switch and
+(with `Themes`) the Look picker, then Account settings and Sign out. It
+is a `ui.Dropdown` with an `Avatar` trigger, not a menu, because it
+holds the theme switches; its rows are a `ui.ActionList`.
+
+"Account settings" opens `<PathPrefix>/account`, the
+signed-in user's own page. It reads only the caller's record, so it is
+never elevated.
+
+- **Profile**: name and email, with a Verified or Unverified badge when
+  the auth store implements `auth.EmailVerifiedChecker`, and the roles
+  the caller holds. When the store implements `auth.NameStore` the name
+  is a form posting to `POST <PathPrefix>/account/_name`, which names
+  the caller only (a `user_id` in the body is not read) and refuses what
+  `auth.CleanName` refuses. The account menu and its avatar's initials
+  use that name, falling back to the email.
+- **Appearance**: the theme choice, `ui.ThemeToggle`'s pill, stored in
+  the browser like the toolbar's toggle.
+- **Password** (only with `Config.Auth`): current, new and confirm
+  fields posting to the auth battery's `POST <BasePath>/password`. The
+  route checks every field and answers a refusal per field, and the
+  form draws it beside the input. A change signs the user out of their
+  other sessions. An account with no password (a store implementing
+  `auth.PasswordChecker` reports none, as after an OAuth or magic-link
+  sign-up) is told to use "Forgot password" instead of seeing a form it
+  cannot pass.
+
+### Command palette
+
+The toolbar's search field opens the palette. It lists the pages, each
+entity's list and create screen, and your `Commands`. Typing searches the
+exposed entities' `SearchFields` through `entityui.SearchRecords`, in the
+caller's scope, and lists the matching records. The palette posts to
+`POST <PathPrefix>/_palette`; the body is capped at 4 KiB and the query
+at 200 runes. Without JavaScript the field submits to
+`<PathPrefix>/search`.
+
+### Keyboard shortcuts
+
+`⌘K` opens the palette, `/` focuses the list's search, `⌘S` saves the
+record, Escape closes a drawer or dialog, and `?` opens the keyboard
+help sheet (`ui.ShortcutSheet`) that lists them. Without JavaScript the
+sheet's trigger links to `<PathPrefix>/shortcuts`, which lists the same
+keys.
+
+## Operations pages
+
+The operations pages draw through the UI host like every other admin
+page: an app that mounts the admin only for its queue or audit log still
+builds with `framework.NewUIHostApp`, or `Init` fails.
+
+<!-- gofastr:compile
+import "database/sql"
+var db *sql.DB
+import "github.com/DonaldMurillo/gofastr/framework"
+import appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+import "github.com/DonaldMurillo/gofastr/framework/uihost"
+var app = framework.NewUIHostApp(uihost.New(appui.NewApp("Ops")))
+import "github.com/DonaldMurillo/gofastr/battery/admin"
+import "github.com/DonaldMurillo/gofastr/battery/queue"
+-->
+```go
+q, _ := queue.NewDBQueue(db)
+app.RegisterBattery(admin.New(admin.Config{
+    Queue: q,  // the Jobs page, the Failed jobs figure and Needs attention's failed jobs
+    DB:    db, // the audit log; defaults to the app's DB
+}))
+```
+
+| Route | Purpose |
+|---|---|
+| `POST /admin/queue/_replay/{id}` | Re-queue one failed job |
+| `POST /admin/queue/_replay_all` | Re-queue every failed job, up to 10,000 a click |
+
+The Jobs page filters by All, Pending, Running, Failed and Done, each
+a link with its count (a `ui.SegmentedLinks` strip, nothing to apply),
+and lists each job's id, type, status, attempts, when
+it last changed and its last error (one line, cut with an ellipsis).
+Done jobs show when the queue keeps them (`queue.WithDoneRetention`).
+Replay is offered on each failed row, and "Replay N failed" in the
+header whenever a job has failed, when the queue supports it (`DBQueue`
+does). Each replay writes an audit row (entity `queue`, op `replay`)
+naming the actor. A failed list or stats read shows a generic notice and
+logs the driver error; the page never prints it. The Jobs page shows
+`QueueListLimit` jobs a page (default 50), newest first; the pager
+under the table turns pages through `?p=` and keeps the status. The
+audit page reads
+`AuditTable` (default `audit_log`) and, when the request carries a
+tenant, only that tenant's rows, newest first, `AuditListLimit` to a
+page (default 50). The pager under the table turns pages through `?p=`
+and keeps the filter; a page past the end shows the last one.
+
+**Naming the actor and the record.** With `Auth` set, the audit page
+and the dashboard's recent activity name each actor by its account's
+email, the account the User roles page lists; an id no account matches,
+or every id without `Auth`, shows as written, and a row with no actor
+reads "System". The dashboard reads each row as a sentence, "**ada**
+updated Invoice INV-1010 · 5m ago": the actor in bold, an account by its
+email's local part with the full email on hover; then a record of an
+exposed entity after its entity's singular name, muted, so a payment
+titled by its invoice never reads as the invoice. A live record is
+named by its title, read the way its record screen's breadcrumb is, as
+a link to that screen; a deleted or purged one, unlinked, by the title
+in the row's stored copy, the way the audit page names it, else by the
+singular name alone. A delete row names what was deleted even after a
+restore brings the record back. An edit's line lists what it changed
+under it, as the audit page's Changes column does. A bulk run's summary
+row reads "**ada** deleted 2 payments in bulk": a delete or a restore by
+its own verb, a set or a move as an update, counting the records it went
+through on; an app's own bulk action, and a run that went through on
+none, read "ran a bulk action on Payment".
+
+The audit page's columns are Time ("2h ago", the exact UTC time on
+hover), Actor, Operation, Record and Changes. Record reads "Invoice ·
+INV-1010" for an exposed entity: a live record by the title its screen
+shows, linked there, and a deleted or purged one by the title in the
+row's stored copy, unlinked. An entity the admin does not expose shows
+its table name and the id. Changes lists the fields an update changed,
+through `entityui.UI.Changes`, so masked and hidden fields never show.
+A Roles change reads "Role · billing" and "Granted `plans:write`" (or
+Revoked, or Refused to grant or revoke); a User roles change names the
+account by its email and lists the roles it was given, or the one
+refused. A bulk run's row reads "2 payments" and what the run did,
+Deleted, Restored or Updated, with how many it skipped or failed on; an
+app's own bulk action keeps the run id. On a phone each row is a card.
+Both read elevated: the page is behind the admin gate, and the trail
+names records whatever the entity's own read permission says.
+
+**Audit filters.** The audit page carries a GET filter form, the list
+toolbar's Filters dropdown (`ui.FilterToolbar` with `Dropdown`), so a
+filter lives in the page's own query string and works without script:
+`?actor=<user id>`, `?entity=<exposed entity name>`, `?op=<operation>`,
+`?from=YYYY-MM-DD`, `?to=YYYY-MM-DD` (`to` inclusive; days run midnight
+to midnight UTC, whatever the server's zone). The operation select
+offers the fixed set the audit log writes — `create`, `update`,
+`delete`, `restore`, `purge`, `state_override` and entityui's `bulk`
+summary, then the operations pages' `replay`, `grant`, `revoke`,
+`assign-roles` and `module_enable`/`disable`/`bump`/`revoke` — plus
+"any". A state transition (`transition:<key>`) is found by entity, and a
+refused operation in the unfiltered log. The entity select offers the
+exposed entities.
+Every value is checked server-side before it reaches SQL, and values
+travel as placeholders. An invalid value is ignored with a warning
+naming the parameter, never a 500; a link clears the filter.
+
+### Saved views
+
+<!-- gofastr:compile
+import "database/sql"
+var db *sql.DB
 import "github.com/DonaldMurillo/gofastr/battery/admin"
 -->
 ```go
-admin.New(admin.Config{Entities: []string{"products", "orders"}})
+admin.New(admin.Config{SavedViews: true, DB: db})
 ```
 
-or set `AllEntities: true` for the whole back-office: every registered
-entity whose CRUD is enabled. Entities shipped with `CRUD=false`
-(e.g. `battery/auth`'s `users` / `sessions`) are skipped automatically,
-so `AllEntities` never exposes credential tables.
+`Config.SavedViews` turns on the admin's saved-view store over the
+admin's database (`Config.DB`, default the app's): one named
+filter/columns set per user per entity, in `admin_saved_views`
+(`Config.SavedViewsTable`; a lowercase identifier). The admin's lists
+offer it; `(*Battery).SavedViews()` returns the store for an app's own
+screens (`UI.WithSavedViews`). The store reads the owner and the tenant from the caller's
+context only, keeps every owner's and tenant's views apart, caps a user
+at `entityui.SavedViewCap` views per entity, and refuses blank, duplicate
+and over-long names, filters and column lists with the errors the
+`SavedViewStore` contract names. A generated app's admin config sets
+`SavedViews: true`.
 
-The entity screens mount at `<PathPrefix>/e/<table>`:
+### Bulk jobs in the background
 
-| Route                              | Screen                              |
-|------------------------------------|-------------------------------------|
-| `GET  /admin/e/<table>`            | List (DataTable island)             |
-| `GET  /admin/e/<table>/new`        | Create form                         |
-| `GET  /admin/e/<table>/edit/:id`   | Edit form                           |
-| `POST /admin/e/<table>/_create`    | Create (→ 303 to list)              |
-| `POST /admin/e/<table>/_update/{id}` | Update (→ 303 to list)            |
-| `DELETE /admin/e/<table>/_delete/{id}` | Delete RPC (returns refreshed table) |
-| `GET  /admin/e/<table>/_rows`      | DataTable island fragment           |
-
-> **A UI host is required for the entity screens.** The battery discovers
-> the host the app mounted (via `framework.App.Mountables()`) and registers
-> the screens on it. If you list `Entities` but no host is mounted,
-> `App.Start` returns an error from the battery's `Init`, because the
-> entity screens cannot render without a host. With `AllEntities` and no host, the
-> entity screens are simply skipped and you still get the ops dashboards.
-
-### How the interactions work (no JavaScript)
-
-Everything is a declarative `data-cui-*` primitive the runtime already
-understands. The battery ships zero JS:
-
-- **List** uses `ui.DataTable` with the typed `ui.Pagination` footer.
-  Its sort headers and page links are plain anchors the client router
-  intercepts, so the URL stays the list's state; a sort header's
-  direction indicator is drawn by CSS from `aria-sort`.
-- **Delete** is a `<button data-cui-confirm="…" data-cui-rpc="…/_delete/{id}"
-  data-cui-rpc-method="DELETE" data-cui-rpc-signal="…">`. The runtime runs
-  the native confirm, fires the DELETE, and swaps the returned (refreshed)
-  table into the list signal. (It does **not** navigate to the list path,
-  because that would hit the SPA cache and show a stale row.)
-- **Forms** are plain SSR `ui.Form`s (CSRF auto-stamped from context). On
-  success the handler 303-redirects to the list; on a validation error it
-  redirects back to the form with a flash token (`?e=…`) and a
-  short-lived **signed flash cookie** carrying the field errors + the
-  submitted values, so the re-render is a full host page with them
-  retained — and any replica renders it, not just the one that handled
-  the POST. The cookie is HMAC-signed with a key derived from
-  `admin.Config.Secret` (set it to the same value as
-  `framework.WithSecret` / `GOFASTR_SECRET` on every replica); a replica
-  that cannot verify it renders the empty form, never an unverified one.
-  The signed payload is capped at 4 KiB: a larger flash drops the
-  submitted values but keeps the error. Without `Config.Secret` the
-  battery self-mints a per-boot key (single-replica only, logged once) —
-  the same posture as unconfigured session signing. Submitted bodies are
-  capped at 1 MiB (over-cap is a `413`),
-  matching every other form surface in the stack, and a save whose
-  masked-field set cannot be recomputed (the read that diffed the
-  write-only columns failed) is **refused** with an error flash rather
-  than guessed at — a blank write-only checkbox must never flip a stored
-  `is_admin`-shaped column by accident.
-
-Because every write goes through the entity's **own `CrudHandler`** with the
-request context forwarded, validation, `OwnerField`/tenant scoping, hooks,
-and events all apply exactly as on the JSON API. The admin never
-re-implements CRUD, pagination, or filter logic.
-
-That includes `WithAuditLog`: configure it after registering entities, and
-create/update/delete actions from the admin write the same transactional audit
-rows as the JSON CRUD routes. The admin obtains its handler from the app; a
-separately constructed `crud.NewCrudHandler` would not carry the app's hook
-registry.
-
-The proxy preserves the app handler's configured `JSONCase`; it converts
-response rows back to entity field names only at the admin rendering boundary.
-Custom hooks and `AuditConfig.Redact` therefore receive the same key casing for
-admin and JSON API writes. The proxy also forwards the parent request's
-`RemoteAddr` and headers, so audit metadata records the real client IP and
-`User-Agent` rather than an in-process test-request default.
-
-## Ops dashboards (queue + audit)
+A bulk action over more than `entityui.InRequestCap` (100) records runs
+outside the request, on `Config.Queue`'s queue, through
+`admin.NewBulkJobs`:
 
 <!-- gofastr:compile
+import "database/sql"
+var db *sql.DB
+import "github.com/DonaldMurillo/gofastr/battery/admin"
+import "github.com/DonaldMurillo/gofastr/battery/auth"
 import "github.com/DonaldMurillo/gofastr/battery/queue"
+import "github.com/DonaldMurillo/gofastr/framework"
+import "github.com/DonaldMurillo/gofastr/framework/entityui"
+var app = framework.NewApp(framework.WithDB(db))
+var authManager *auth.AuthManager
+-->
+```go
+q, _ := queue.NewDBQueue(db)
+jobs, _ := admin.NewBulkJobs(q, admin.AuthPrincipal(authManager))
+
+app.RegisterBattery(admin.New(admin.Config{
+    UI:       app.EntityUI(entityui.Extensions{Jobs: jobs}),
+    Entities: []string{"posts"},
+    BulkJobs: jobs,
+}))
+```
+
+The wiring order is fixed by the two directions: the UI needs the
+runner at `app.EntityUI` time (`Extensions.Jobs`), and the runner needs
+the UI to run jobs, so `Config.BulkJobs` closes the cycle — the admin's
+`Init` binds the runner to `Config.UI` and then calls
+`UI.ResumeBulkJobs`, handing back any job a crash left between its
+snapshot and its `Enqueue`. The queue job's payload carries only the job
+id; the confirmed selection lives in the host's snapshot store.
+
+`PrincipalFunc` (the second argument) rebuilds the confirming user's
+request context before every chunk: the user and their current roles,
+read fresh, and the run's tenant. The tenant is the one the selection
+was confirmed in and stays fixed for the run, because the snapshot's
+records belong to it. An error stops the run, so a creator who is gone
+runs nothing. `admin.AuthPrincipal(am)` builds one from `battery/auth`,
+loading the user and their current roles through the manager's user
+store; it has no notion of tenant membership and stamps the run's
+tenant as given. An app that does track membership writes its own
+`PrincipalFunc` and returns an error when the user no longer belongs
+to the tenant it is handed. The admin then puts `Config.Policy` on a context that has no
+policy and runs its own gate again: a creator it admits runs elevated,
+as the admin's bulk route does; one whose admin role was revoked runs
+as a plain caller, so the writes pass only that user's own permissions.
+
+### Roles and user roles
+
+<!-- gofastr:compile
+import "context"
+var ctx context.Context
 import "database/sql"
 var db *sql.DB
 import "github.com/DonaldMurillo/gofastr/framework"
 var app = framework.NewApp()
 import "github.com/DonaldMurillo/gofastr/battery/admin"
+import "github.com/DonaldMurillo/gofastr/battery/auth"
+var authManager *auth.AuthManager
 -->
-```go
-q, _ := queue.NewDBQueue(db)
-app.RegisterBattery(admin.New(admin.Config{
-    Queue: q,   // enables /admin/queue
-    DB:    db,  // enables /admin/audit
-}))
-```
-
-| Route                          | Purpose                                            |
-|--------------------------------|----------------------------------------------------|
-| `GET /admin`                   | Overview with summary cards                        |
-| `GET /admin/queue`             | Jobs list with `?status=` filter chips             |
-| `POST /admin/queue/_replay/{id}` | Re-queue a failed job (gated; failed view only)  |
-| `GET /admin/audit`             | Audit log entries newest-first                     |
-
-On the `?status=failed` view, each row gets a **Replay** button when the
-wired queue supports it (`DBQueue` does; in-memory / Redis don't yet). The
-replay route mutates state, so it runs behind the same admin gate as every
-other route and is covered by the battery's cross-site refusal (see
-[CSRF](#csrf)), so there is no unauthenticated or forged way to re-fire
-jobs.
-
-When `Queue` is nil, the overview section and Queue navigation item are hidden;
-the direct route retains a "not wired" diagnostic. The audit page uses
-`Config.DB` when supplied and otherwise the app's DB; without either, it shows
-its own "not wired" diagnostic. Tune list caps via `QueueListLimit` /
-`AuditListLimit` (defaults 200, max 1000). The audit page shows
-`created_at`, `entity`, `op`, `record_id`, `actor_id`; the default table
-name is `audit_log` (`Config.AuditTable` to override).
-
-
-## RBAC management (roles + user roles)
-
-When `Config.Policy` + `Config.GrantStore` are wired, the admin exposes a
-**role→permission matrix** at `<PathPrefix>/rbac/roles`. When
-`Config.Auth` is wired, it exposes a **user→role assignment** screen at
-`<PathPrefix>/rbac/users`. Both are behind the same admin default-deny gate
-as every other route.
-
 ```go
 policy := framework.NewRolePolicy()
 store := framework.NewGrantStore(db, policy)
-store.EnsureSchema(ctx)
-store.LoadInto(ctx, policy)
+_ = store.EnsureSchema(ctx)
+_ = store.LoadInto(ctx, policy)
 
 app.RegisterBattery(admin.New(admin.Config{
-    DB:         db,
     Policy:     policy,
     GrantStore: store,
-    Auth:       authManager, // from battery/auth
+    Auth:       authManager, // the User roles page
 }))
 ```
 
-| Route                                | Purpose                              |
-|--------------------------------------|--------------------------------------|
-| `GET  /admin/rbac/roles`             | Role→permission matrix + grant forms |
-| `GET  /admin/rbac/users`             | User list + role-edit forms          |
-| `POST /admin/rbac/_grant`            | Grant a permission to a role (RPC)   |
-| `POST /admin/rbac/_revoke`           | Revoke a permission from a role (RPC)|
-| `POST /admin/rbac/_assign`           | Replace a user's roles (RPC)         |
+| Route | Purpose |
+|---|---|
+| `POST /admin/rbac/_permissions` | Save the Roles grid |
+| `POST /admin/rbac/_grant` | Grant a permission to a role (the "Add a role" form) |
+| `POST /admin/rbac/_assign` | Replace a user's roles |
 
-The selectable permissions shown in the grant dropdown are the **union of
-all currently-granted permissions**. There is no capability catalog.
-Free-text entry for new permission strings is allowed.
+The Roles page is a grid: a row per permission, a column per role, and a
+checkbox where they meet. Its rows are the policy's declared
+capabilities and every permission a role holds; one a role holds that
+the app does not declare is marked "Undeclared". A role holding the
+wildcard reads as holding everything, its boxes checked and locked.
+"Save permissions" posts the whole grid to `_permissions` (each role
+and permission it showed, and a `grant` value `<role>:<permission>` per
+checked box, as indexes into those lists); the admin grants and revokes
+only what changed, and a save that changed nothing writes nothing. With
+no `GrantStore` the grid is read-only. On a phone each permission is a
+card listing every role. The "Add a role" form under the grid gives a
+new role its first permission, offering the declared capabilities as a
+select. Under `StrictCapabilities` a grant of an undeclared permission
+is refused.
+The User roles page lists each user's roles once, as tags; the row's
+Edit roles dropdown holds the form that replaces them. It shows 50
+accounts a page (`?limit=`, up to 500), and the pager under the table
+turns pages through `?p=`.
 
-Every mutation (grant, revoke, assign-roles) writes an **audit row** via
-`framework.AppendAuditEvent` with entity `"access"` and op in
-`{"grant","revoke","assign-roles"}`, so changes appear at `/admin/audit`.
-The actor ID is the authenticated admin's user ID. A **refused**
-role assignment gets its own row (`assign-roles-refused`) naming the role
-that was rejected. The same tier binds `/rbac/_grant` and `/rbac/_revoke`: a caller may grant or revoke only a permission its own roles hold (or the wildcard); anything else is a 403 with a `grant-refused` / `revoke-refused` audit row, so a narrower admin tier cannot write the wildcard onto a role it holds.
+Every change writes an audit row (entity `access`, op `grant`, `revoke`
+or `assign-roles`), one per permission a save grants or revokes. A
+caller may grant or revoke only a permission its own roles hold (or the
+wildcard), and assign only roles it holds or whose permissions its own
+roles imply; a refusal is a 403 with a `grant-refused`,
+`revoke-refused` or `assign-roles-refused` row, so a narrower admin
+tier cannot mint a role above its own. A grid save is checked whole
+before it writes: one refused change refuses the save, and nothing in
+it is applied.
 
-`_assign` enforces caller tiering: a caller may only write roles it already
-holds, or roles whose granted permissions its own tier already implies (a
-caller holding a wildcard-granted role may assign anything; with no
-`Policy` wired, only held roles are assignable). Anything else is refused
-with `403` — a designated sub-admin role (via `Config.AdminRole`) cannot
-mint a role above its own tier through this RPC.
+### Process modules
 
-## Process-module lifecycle
+With `Config.ProcessModules` set to `app.ProcessModules()` (see
+[process-modules](process-modules.md)), `/admin/modules` lists each
+module's state, restart count, and the circuit-open and lease-failing
+flags. Its levers (enable, disable, bump generation, revoke a grant) post
+to `/admin/modules/_enable`, `_disable`, `_bump` and `_revoke`, and need
+the `modules:manage` permission on top of the gate, held through the
+caller's roles in `Config.Policy`; without it, or without a policy, the
+page is read-only. Each lever writes an audit row (`module_enable`, ...), and
+a refused one a `*_refused` row. A failed lever answers a generic
+notice and logs the error.
 
-When `Config.ProcessModules` is wired to `app.ProcessModules()` (the
-process-isolated module supervisor described in
-[process-modules](process-modules.md)), the admin exposes an operator
-lifecycle screen at `<PathPrefix>/modules`, behind the same default-deny
-gate. It lists every registered module's live state: the disabled (404)
-vs crashed-but-enabled (503) distinction, the restart count, and the
-prominent circuit-open / lease-failing flags. It offers guarded
-actions: enable, disable, **bump generation** (the circuit-reset recovery
-lever), and revoke a granted capability. Each action writes an audit row
-(`module_enable` / `module_disable` / `module_bump` / `module_revoke`) and
-never leaks a raw error or JSON. When `Config.ProcessModules` is nil the
-screen is not mounted.
+### How ops posts answer
+
+Each ops form posts two ways. With the runtime it is a form RPC: success
+is `204` with a toast, a refusal is JSON `{"error": ...}` with its
+status. A plain post redirects (`303`) back to the page with
+`?result=<name>`, which the page draws as a notice. Bodies are capped at
+1 MiB (`413` past it).
 
 ## Authorization
 
-Every admin page is gated and requires authentication by default: the battery
-requires an authenticated user that holds the **admin role** (default
-`"admin"`). A user satisfies this when its `GetRoles() []string` includes
-the role. `battery/auth`'s `User` does. Anonymous callers get `401`;
-authenticated users who lack the role get `403`, on both the SSR screens
-(via the host policy chain) and the RPC/form routes (via middleware).
+The gate admits an authenticated user whose `GetRoles()` holds
+`Config.AdminRole` (default `"admin"`); `battery/auth`'s `User` does.
+`Config.Authorize` replaces the role check with your own predicate; one
+that panics refuses, as `false` does, and the log names the callback and
+the panic's type. Two refusals run before either:
 
-> **BREAKING (since the admin default-deny change):** the default used to
-> accept **any** authenticated user, so a freshly-registered reader could
-> reach full admin CRUD. It now requires the admin role. If you relied on
-> the old behaviour, either grant users the `admin` role or supply a
-> custom `Config.Authorize`.
+- an `embed` grant on the request (an embedded surface never reaches the
+  back office);
+- an `access.Decider` on the request returning `DecisionDeny`.
 
-Change the required role with `Config.AdminRole`, or replace the check
-entirely with `Config.Authorize`. An `access.Decider` installed on the
-request context (via `access.DeciderMiddleware`) is the **outer** boundary:
-a `DecisionDeny` refuses the back office before the admin's internal
-wildcard policy is minted, so per-resource host denials bind here too.
+A signed-out caller gets `401`, a signed-in caller without the role
+`403`, on every page, route and shell widget (the nav drawer and the
+palette). With `Config.LoginPath` set, a signed-out GET redirects to
+`LoginPath?next=<path>` instead; a signed-out post is still a `401`.
 
+<!-- gofastr:compile
+import "context"
+import "slices"
+import "github.com/DonaldMurillo/gofastr/battery/admin"
+import "github.com/DonaldMurillo/gofastr/battery/auth"
+-->
 ```go
-admin.New(admin.Config{
-    AdminRole: "superuser", // default is "admin"
-})
+admin.New(admin.Config{AdminRole: "superuser", LoginPath: "/login"})
 
-// …or a fully custom predicate (overrides the role check):
+// ...or a custom predicate:
 admin.New(admin.Config{
     Authorize: func(ctx context.Context) bool {
         u := auth.GetCurrentUser(ctx)
-        return u != nil && slices.Contains(u.GetRoles(), "admin")
+        return u != nil && slices.Contains(u.GetRoles(), "staff")
     },
 })
 ```
 
-## Response caching
+`Config.SignOutPath` is where the account menu's Sign out posts; it
+defaults to `Auth`'s logout route.
 
-Every admin-owned response carries `Cache-Control: no-store`, stamped once
-at the gate before the auth decision, so screens, row fragments, RPC
-redirects, and even the `401`/`403` refusals are uncacheable by a shared
-proxy or the back/forward cache. The entity list fragment
-(`GET /admin/e/<t>/_rows`) and the refreshed table a delete returns carry
-tenant/owner-scoped row data, and cookie-authenticated GETs are not covered
-by HTTP's Authorization-only storage rules, so nothing on an admin URL may
-be retained. The one exception is `<PathPrefix>/admin.css`: it is
-deliberately ungated and served `public, max-age=3600` (it carries no data
-and lets the 401 page degrade gracefully).
+## Response headers
+
+Every response under the prefix, refusals included, carries
+`Cache-Control: no-store` and the security headers
+(`middleware.SecurityHeaders`), whether or not the app installs its
+default middleware. Admin pages hold per-caller, tenant-scoped data, and
+HTTP's storage rules cover Authorization headers, not cookie sessions.
 
 ## CSRF
 
-The battery enforces its own cross-site refusal on **every state-changing
-request** (POST/PUT/PATCH/DELETE on all admin routes): a browser form post
-whose `Sec-Fetch-Site` is `cross-site`, or — the sibling-subdomain shape a
-`SameSite` cookie does not stop — whose `Origin` host differs from the
-request host, is refused with `403` before the auth gate runs. Non-browser
-clients (curl, scripts, native apps) send neither header and pass. This
-holds whether or not you mount the optional CSRF middleware, because the
-battery's screens cannot rely on a token: without `middleware.CSRF` the
-rendered `_csrf` input is empty.
-
-For token-based defense in depth on top, mount the framework's CSRF
-middleware app-wide: forms embed the `_csrf` hidden field automatically
-(`ui.Form` reads the token from context), and the delete RPC carries the
-token via the `X-CSRF-Token` header, which the runtime reads from
-`<meta name="csrf-token">`. Make sure your layout emits that tag when CSRF
-is enforced.
+The battery refuses every forgeable cross-site request to a mutating
+route (a browser post whose `Sec-Fetch-Site` is `cross-site`, or whose
+`Origin` host differs from the request host) with `403`, before the gate
+runs. Non-browser clients send neither header and pass. This holds
+without the optional CSRF middleware. Mount `middleware.CSRF` app-wide
+for a token on top: the kit's forms stamp `_csrf` from the context and
+the runtime sends `X-CSRF-Token` from `<meta name="csrf-token">`.
 
 ## Common mistakes
 
-- **Don't expose `/admin` to the public.** It surfaces entity data, actor
-  ids, and job counts. The default gate requires auth; don't disable it.
-- **Per-user data needs `OwnerField`.** The admin honours it (a user only
-  sees/edits their own rows), but only if the entity declares it. See
+- **Don't expose `/admin` to the public.** It shows entity data, actor
+  ids and job counts.
+- **Per-user data needs `OwnerField`.** Elevation keeps owner scope, so
+  an admin sees only the rows the entity's scope allows; declare it. See
   [Entity Declarations](entity-declarations.md) → per-user scoping.
-- **The ops dashboards are read-only on purpose.** Retry / dequeue /
-  dead-letter workflows live in your app code.
+- **Set `UI`.** Exposing an entity without `Config.UI` fails boot.
 
 ## See also
 
-A runnable example lives in `examples/backoffice`: SQLite, two entities,
-a demo login, and `admin.New(admin.Config{})` generating the whole
-back-office.
+`examples/backoffice` is a runnable back office: SQLite, entities, a
+demo login, and the admin.

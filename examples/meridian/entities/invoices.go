@@ -262,7 +262,7 @@ func registerInvoices(app *framework.App) {
 			{Name: "idx_invoices_owner_number", Columns: []string{"user_id", "number"}, Unique: true},
 		},
 		States:     &framework.StatesConfig{Field: "status", Transitions: []framework.Transition{{Key: "mark_paid", Label: "Mark paid", From: []string{"draft", "open", "past_due"}, To: "paid", Stamp: "paid_on", Variant: "primary"}, {Key: "void", Label: "Void", From: []string{"draft", "open", "past_due"}, To: "void", Variant: "danger"}}, Advisory: true},
-		Display:    &framework.DisplayConfig{Facets: []string{"status", "customer_id"}},
+		Display:    &framework.DisplayConfig{TitleFields: []string{"number"}, Description: "Every invoice issued, paid or not.", Columns: []string{"number", "customer_id", "amount", "status", "issued_on", "due_on"}, Nav: &framework.EntityNav{Group: "billing", Icon: "receipt", Order: 3}, Views: []framework.ListView{{Key: "past_due", Label: "Past due", Where: "status = \"past_due\"", Sort: "due_on ASC"}, {Key: "open", Label: "Open", Where: "status = \"open\"", Sort: "due_on ASC"}}, Facets: []string{"status", "customer_id"}, Fields: map[string]framework.FieldDisplay{"amount": {Input: "money"}}},
 		Properties: map[string]any{"label": "Invoices"},
 	})
 	_ = Invoices{}

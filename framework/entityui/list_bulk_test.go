@@ -18,6 +18,7 @@ func TestBulkListDrawsBarAndSelect(t *testing.T) {
 		`id="eui-invoices-bulk"`,
 		`form="eui-invoices-bulk"`,
 		`name="ids"`,
+		`data-hui-table-select-all="ids"`,
 		`value="a1"`,
 		"Select A-1",
 		`name="page"`,
@@ -89,6 +90,28 @@ func TestBulkCardsHaveNoSelectedScope(t *testing.T) {
 	}
 	if !strings.Contains(html, `value="page">This page (2)</option>`) {
 		t.Errorf("cards lost the page scope:\n%s", html)
+	}
+	// No row checkboxes, so the bar must not wait for one.
+	if strings.Contains(html, `data-cui-comp="ui-selection"`) {
+		t.Errorf("cards hid their bar behind a selection they cannot make:\n%s", html)
+	}
+}
+
+// The table's rows and bar share one floating ui.Selection, rows first,
+// so the bar shows only while a row is checked, counts the rows above
+// it, and its clear button resets the bar's form.
+func TestBulkBarWaitsForASelection(t *testing.T) {
+	x := ownedInvoices(t, Extensions{})
+	html := listHTML(t, x.ui.List("invoices").Bulk(), x.userCtx("/invoices", "", "u1"))
+	sel := strings.Index(html, `fui-selection--floating`)
+	body := strings.Index(html, `class="fui-selection__body"`)
+	rows := strings.Index(html, `form="eui-invoices-bulk"`)
+	bar := strings.Index(html, `id="eui-invoices-bulk"`)
+	if sel < 0 || body < sel || rows < body || bar < rows {
+		t.Errorf("the rows and the bar are not one floating Selection, rows first:\n%s", html)
+	}
+	if !strings.Contains(html, `form="eui-invoices-bulk" type="reset"`) {
+		t.Errorf("the bar has no clear button for its form:\n%s", html)
 	}
 }
 

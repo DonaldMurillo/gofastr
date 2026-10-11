@@ -98,6 +98,16 @@ entities:
       delete: plans:admin
     properties:
       label: Plans
+    display:
+      title_fields: [name]
+      description: What a customer can subscribe to.
+      nav:
+        group: catalog
+        icon: box
+        order: 1
+      fields:
+        price:
+          input: money
     fields:
       - name: name
         type: string
@@ -153,11 +163,30 @@ entities:
         type: decimal
         min: 0
         default: "0"
+      - name: logo
+        type: image
     display:
+      title_fields: [name]
+      description: Every account that pays you.
+      nav:
+        group: billing
+        icon: users
+        order: 1
+      columns: [name, email, company, status, mrr]
+      views:
+        - key: active
+          label: Active
+          where: 'status = "active"'
+        - key: past_due
+          label: Past due
+          where: 'status = "past_due"'
       facets: [status]
       fields:
+        email:
+          input: email
         mrr:
           label: MRR
+          input: money
 
   - name: subscriptions
     crud: true
@@ -187,9 +216,27 @@ entities:
       - name: renews_on
         type: date
     display:
+      title_fields: [customer_id, plan_id]
+      description: Who is on which plan, and what they bring in.
+      nav:
+        group: billing
+        icon: repeat
+        order: 2
+      views:
+        - key: active
+          label: Active
+          where: 'status = "active"'
+        - key: trialing
+          label: Trialing
+          where: 'status = "trialing"'
+        - key: past_due
+          label: Past due
+          where: 'status = "past_due"'
+      facets: [status]
       fields:
         mrr:
           label: MRR
+          input: money
     relations:
       - type: belongs_to
         name: customer
@@ -272,14 +319,51 @@ entities:
           to: void
           variant: danger
     display:
+      title_fields: [number]
+      description: Every invoice issued, paid or not.
+      nav:
+        group: billing
+        icon: receipt
+        order: 3
+      columns: [number, customer_id, amount, status, issued_on, due_on]
+      views:
+        - key: past_due
+          label: Past due
+          where: 'status = "past_due"'
+          sort: due_on ASC
+        - key: open
+          label: Open
+          where: 'status = "open"'
+          sort: due_on ASC
       facets: [status, customer_id]
+      fields:
+        amount:
+          input: money
 
   - name: payments
     crud: true
     mcp: true
     owner_field: user_id
+    # A deleted payment goes to the admin's trash, where it can be
+    # restored or deleted for good.
+    soft_delete: true
     properties:
       label: Payments
+    display:
+      title_fields: [invoice_id, customer_id]
+      description: Money in, and the attempts that failed.
+      nav:
+        group: billing
+        icon: card
+        order: 4
+      views:
+        - key: failed
+          label: Failed
+          where: 'status = "failed"'
+      facets: [status, method]
+      fields:
+        amount:
+          input: money
     fields:
       - name: invoice_id
         type: relation
@@ -832,3 +916,45 @@ seed:
         issued_on: "2026-04-15"
         due_on: "2026-04-29"
 
+  - entity: payments
+    rows:
+      - invoice_id: "@invoices.number=INV-1001"
+        customer_id: "@customers.email=ada@acme.io"
+        amount: "99"
+        method: card
+        status: succeeded
+      - invoice_id: "@invoices.number=INV-1002"
+        customer_id: "@customers.email=grace@globex.com"
+        amount: "299"
+        method: card
+        status: succeeded
+      - invoice_id: "@invoices.number=INV-1004"
+        customer_id: "@customers.email=kj@umbrella.co"
+        amount: "99"
+        method: ach
+        status: succeeded
+      - invoice_id: "@invoices.number=INV-1006"
+        customer_id: "@customers.email=liskov@mit.edu"
+        amount: "99"
+        method: card
+        status: succeeded
+      - invoice_id: "@invoices.number=INV-1008"
+        customer_id: "@customers.email=knuth@stanford.edu"
+        amount: "299"
+        method: wire
+        status: succeeded
+      - invoice_id: "@invoices.number=INV-1011"
+        customer_id: "@customers.email=knuth@stanford.edu"
+        amount: "299"
+        method: wire
+        status: succeeded
+      - invoice_id: "@invoices.number=INV-1003"
+        customer_id: "@customers.email=alan@initech.io"
+        amount: "29"
+        method: card
+        status: failed
+      - invoice_id: "@invoices.number=INV-1012"
+        customer_id: "@customers.email=kj@umbrella.co"
+        amount: "99"
+        method: card
+        status: failed

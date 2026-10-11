@@ -1,6 +1,7 @@
 package entityui
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -61,11 +63,20 @@ const (
 // formatDate renders a date or timestamp. Drivers hand dates back as
 // time.Time or as one of a few string layouts; anything else prints as is.
 func formatDate(raw any, layout string) string {
-	if t, ok := raw.(time.Time); ok {
-		if t.IsZero() {
-			return ""
-		}
+	if t, ok := raw.(time.Time); ok && t.IsZero() {
+		return ""
+	}
+	if t, ok := parseTime(raw); ok {
 		return t.Format(layout)
+	}
+	return cell(raw)
+}
+
+// parseTime reads a date or timestamp in any of the shapes drivers hand
+// back: a time.Time or one of a few string layouts.
+func parseTime(raw any) (time.Time, bool) {
+	if t, ok := raw.(time.Time); ok {
+		return t, !t.IsZero()
 	}
 	val := cell(raw)
 	for _, l := range []string{
@@ -76,10 +87,10 @@ func formatDate(raw any, layout string) string {
 		time.DateOnly,
 	} {
 		if parsed, err := time.Parse(l, val); err == nil {
-			return parsed.Format(layout)
+			return parsed, true
 		}
 	}
-	return val
+	return time.Time{}, false
 }
 
 // formatNumber prints a float without trailing zeros on whole values and
@@ -109,7 +120,7 @@ func groupDigits(s string) string {
 }
 
 // decimal prints a Decimal or Float value with two places and grouping.
-// A currency is the app's kind to draw (Extensions.Kinds), not a guess.
+// A currency is drawn only where the field names the money kind.
 func decimal(val string) string {
 	f, err := strconv.ParseFloat(val, 64)
 	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
@@ -118,18 +129,39 @@ func decimal(val string) string {
 	return formatNumber(f, 2)
 }
 
-// enumVariant picks a badge colour for common status words; anything else
-// is neutral information.
+// enumVariant picks a badge colour for common status words: settled is
+// success, in flight is information, needing attention is a warning, a
+// failure is danger, and a closed or unstarted record is neutral.
+// Anything else is neutral information.
 func enumVariant(v string) ui.StatusVariant {
 	switch strings.ToLower(v) {
 	case "active", "paid", "succeeded", "completed", "done", "published", "approved":
 		return ui.StatusSuccess
-	case "open", "past_due", "pending", "trialing", "draft", "review":
+	case "open", "trialing", "running", "review":
+		return ui.StatusInfo
+	case "past_due", "pending", "refunded":
 		return ui.StatusWarning
-	case "canceled", "cancelled", "void", "failed", "refunded", "inactive", "archived", "rejected":
+	case "failed", "rejected":
+		return ui.StatusDanger
+	case "canceled", "cancelled", "void", "draft", "inactive", "archived":
 		return ui.StatusNeutral
 	}
 	return ui.StatusInfo
 }
 
 func muted() render.HTML { return ui.EmptyValue() }
+
+// money prints an amount as the catalog's currency symbol and two
+// grouped places: $1,234.00, and -$5.00 for a negative one. Text that
+// is not a number prints as stored.
+func money(ctx context.Context, val string) string {
+	sym := i18nui.T(ctx, i18nui.KeyEntityCurrency)
+	if _, err := strconv.ParseFloat(val, 64); err != nil {
+		return val
+	}
+	s := decimal(val)
+	if rest, ok := strings.CutPrefix(s, "-"); ok {
+		return "-" + sym + rest
+	}
+	return sym + s
+}

@@ -219,3 +219,12 @@ func TestPageHeaderSectionTitleKnob(t *testing.T) {
 		t.Errorf("the h2 title must not read the page-title knob, got:\n%s", body)
 	}
 }
+
+// A header at h3 or below is a section inside a section (a dashboard
+// panel's list): a step under h2, never back up at page-title size.
+func TestPageHeaderSubsectionTitleSteps(t *testing.T) {
+	body := ruleBody(t, pageHeaderCSS(style.DefaultTheme()), ":is(h3, h4, h5, h6).fui-page-header__title")
+	if !strings.Contains(body, "var(--ui-page-header-subsection-title-size, var(--text-base, 1rem))") {
+		t.Errorf("an h3+ title must size from --ui-page-header-subsection-title-size, got:\n%s", body)
+	}
+}

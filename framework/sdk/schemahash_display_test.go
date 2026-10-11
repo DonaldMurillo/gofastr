@@ -12,13 +12,13 @@ import (
 // client, so it must not move SchemaHash.
 func displayRich() *entity.DisplayConfig {
 	return &entity.DisplayConfig{
-		Singular:   "Invoice",
-		Plural:     "Invoices",
-		TitleField: "number",
-		Columns:    []string{"number", "amount", "status"},
-		Nav:        &entity.EntityNav{Group: "billing", Icon: "receipt", Order: 1},
-		Views:      []entity.ListView{{Key: "open", Where: `status = "open"`, Sort: "number ASC"}},
-		Facets:     []string{"status"},
+		Singular:    "Invoice",
+		Plural:      "Invoices",
+		TitleFields: []string{"number"},
+		Columns:     []string{"number", "amount", "status"},
+		Nav:         &entity.EntityNav{Group: "billing", Icon: "receipt", Order: 1},
+		Views:       []entity.ListView{{Key: "open", Where: `status = "open"`, Sort: "number ASC"}},
+		Facets:      []string{"status"},
 		Fields: map[string]entity.FieldDisplay{
 			"number": {Label: "No", Placeholder: "INV-1"},
 		},

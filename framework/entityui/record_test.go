@@ -2,6 +2,7 @@ package entityui
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -49,9 +50,9 @@ func invoiceEntities() map[string]entity.EntityConfig {
 			},
 		},
 		Display: &entity.DisplayConfig{
-			Singular:   "Invoice",
-			Plural:     "Invoices",
-			TitleField: "number",
+			Singular:    "Invoice",
+			Plural:      "Invoices",
+			TitleFields: []string{"number"},
 			Fields: map[string]entity.FieldDisplay{
 				"amount": {Locked: true},
 				"memo":   {Help: "Shown to the customer"},
@@ -204,6 +205,11 @@ func TestRecordLockedStateStampSubmitNothing(t *testing.T) {
 	}
 	if !strings.Contains(body, "120.00") {
 		t.Fatalf("the locked amount renders its value:\n%s", body)
+	}
+	// It sits in the form's column the way an input does.
+	locked := regexp.MustCompile(`<dl class="fui-detail-list fui-detail-list--stacked"[^>]*>\s*<div[^>]*>\s*<dt[^>]*>Amount</dt>`)
+	if !locked.MatchString(body) {
+		t.Fatalf("the locked amount is not a stacked value:\n%s", body)
 	}
 }
 

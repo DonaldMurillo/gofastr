@@ -102,7 +102,7 @@ cd "$(dirname "$0")/.."
 #   filter "nomatch:REGEX"  → only statements in files whose path does NOT match.
 # Buckets sharing a pkg reuse a single cached coverprofile (the suite runs once).
 FLOORS="
-./battery/admin/ 79.4
+./battery/admin/ 90.0
 ./battery/auth/ 77.5
 ./battery/cache/ 80.1
 ./battery/log/ 78.1

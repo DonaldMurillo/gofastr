@@ -25,7 +25,8 @@ import (
 // An entity registered after it gets the same checks at App.Entity.
 //
 // It mounts the bulk bar's routes beside each entity's write routes:
-// POST <api>/_bulk and GET <api>/_export.csv, for the entities registered
+// POST <api>/_bulk, GET <api>/_export.csv and the relation picker's
+// POST <api>/_pick?field=<field>, for the entities registered
 // before the call and for every one registered after it. With ext.Jobs set it also
 // creates the snapshot tables queued runs walk (gofastr_bulk_jobs and
 // gofastr_bulk_items), which needs a database, and at App.Start re-hands
@@ -84,7 +85,7 @@ func resumeAndPruneBulkJobs(ctx context.Context, u *entityui.UI) {
 	}
 }
 
-// mountEntityUIRoutes mounts e's bulk and export routes once EntityUI has
+// mountEntityUIRoutes mounts e's bulk, export and picker routes once EntityUI has
 // run, when e has write routes and its name resolves to it. recordCrudMount
 // calls it too, so an entity registered after EntityUI is not left with a
 // bar whose posts 404.
@@ -101,6 +102,7 @@ func (a *App) mountEntityUIRoutes(e *entity.Entity) {
 	m := a.crudMounts[e]
 	m.r.Post(m.rel+"/_bulk", a.entityUIOwned(e, a.entityUI.BulkHandler(e.GetName())))
 	m.r.Get(m.rel+"/_export.csv", a.entityUIOwned(e, a.entityUI.ExportHandler(e.GetName())))
+	m.r.Post(m.rel+"/_pick", a.entityUIOwned(e, a.entityUI.PickerHandler(e.GetName())))
 }
 
 // entityUIOwns reports whether e is the entity its name resolves to. The

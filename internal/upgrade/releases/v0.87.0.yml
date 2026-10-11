@@ -254,3 +254,54 @@ notes:
       imports:
         - gofastr/framework/ui/resource
     guidance: "Build the app's one UI after every entity registers, appUI := fwApp.EntityUI(entityui.Extensions{}) (import github.com/DonaldMurillo/gofastr/framework/entityui; a second EntityUI call panics), and render appUI.List(entity), appUI.Record(entity, id) and appUI.Create(entity) where resource screens rendered. Move the resource Config's labels, columns, filters and field hints to the entity's Display, its transitions to the entity's States, and a custom DataSource to an Extensions.Entities List or Record override. Stats and charts are appUI.StatValue, GroupBars, GroupSlices and LineChart. Drop PublicIsland: there are no island routes to open. A generated app regenerates with gofastr generate --force."
+  - change: "battery/admin's Config.Theme, Config.FontFaceCSS, Config.EntityListLimit and Config.Secret are removed, and so are Battery.RegisterRoutes and SortDirOf: the admin ships no CSS, takes the app's theme through the UI host, and pages its lists by each entity's Display.PageSizes"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/battery/admin.Config.Theme
+        - gofastr/battery/admin.Config.FontFaceCSS
+        - gofastr/battery/admin.Config.EntityListLimit
+        - gofastr/battery/admin.Config.Secret
+        - gofastr/battery/admin.Battery.RegisterRoutes
+        - gofastr/battery/admin.SortDirOf
+    guidance: "Replace admin.SortDirOf(v) with an inline check (v == \"desc\"); the admin's lists now sort through entityui and read no exported helper. Delete the Theme and FontFaceCSS fields: pass the theme and fonts to the UI host (framework.NewUIHostApp or uihost.New) and the admin draws with them. Replace EntityListLimit with display: page_sizes on the entity (entity.DisplayConfig.PageSizes in Go). Delete Secret: the admin signs no form flash, and an ops post answers with a ?result= name instead. Delete a RegisterRoutes call: app.RegisterBattery(admin.New(cfg)) mounts every admin route."
+  - change: "battery/admin draws entity screens through framework/entityui: they moved from /admin/e/<entity> (/new, /view/<id>, /edit/<id>) to /admin/entities/<entity> (/create, /<id>), writes post to /admin/api/<entity>, and Config.UI is required when the admin exposes any entity"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/battery/admin.New
+      strings:
+        match: '/admin/e/'
+    guidance: "Set Config.UI to the app's one entity UI, built after every entity registers: appUI := fwApp.EntityUI(entityui.Extensions{}) (import github.com/DonaldMurillo/gofastr/framework/entityui). Without it, Init fails naming the exposed entities. Point links and tests at /admin/entities/<entity>, /admin/entities/<entity>/create and /admin/entities/<entity>/<id>, which replace the /new, /view/<id> and /edit/<id> screens; the record page holds the edit form. Move the admin's column and label choices to the entity's Display."
+  - change: "battery/admin renders every page through the app's UI host: Init fails on an app without one, a queue- or audit-only admin included, and the admin's own stylesheet at /admin/admin.css is gone"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/battery/admin.New
+      strings:
+        match: '/admin/admin.css'
+    guidance: "Build the app with framework.NewUIHostApp(uihost.New(site), ...) or mount a uihost.New host before app.RegisterBattery(admin.New(cfg)); without one, Init fails with \"admin: every admin page renders through the app's UI host\". The admin draws with the host's theme and ships no stylesheet: remove links to /admin/admin.css and any CSS written against the old admin markup."
+  - change: "app.App.RenderOverlayResult takes the origin the overlay opens over, between the path and the presentation, so the screen can read it with app.OverlayOriginFromContext"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/core-ui/app.App.RenderOverlayResult
+    guidance: "Pass the location the overlay opens over as the third argument: a.RenderOverlayResult(ctx, path, r.Header.Get(\"X-Gofastr-From\"), as) in a host, or \"\" where there is none (a test). The screen reads its path with app.OverlayOriginFromContext(ctx)."
+  - change: "queue.Browsable.ListJobs takes an offset after the limit, so a caller can page past the newest jobs; the DB, memory and Redis queues implement it"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/battery/queue.Browsable.ListJobs
+          type: '^func\(\w+ context\.Context, status string, limit int\) \(\[\]queue\.Job, error\)$'
+        - symbol: gofastr/battery/queue.DBQueue.ListJobs
+          type: '^func\(\w+ context\.Context, status string, limit int\) \(\[\]queue\.Job, error\)$'
+        - symbol: gofastr/battery/queue.MemoryQueue.ListJobs
+          type: '^func\(\w+ context\.Context, status string, limit int\) \(\[\]queue\.Job, error\)$'
+        - symbol: gofastr/battery/queue.RedisQueue.ListJobs
+          type: '^func\(\w+ context\.Context, status string, limit int\) \(\[\]queue\.Job, error\)$'
+    guidance: "Pass 0 as the new last argument to keep the first page: q.ListJobs(ctx, status, limit, 0). A type of your own that implements Browsable takes the offset too, ListJobs(ctx, status string, limit, offset int), skipping the newest offset jobs and reading a negative offset as zero; a type assertion to queue.Browsable fails quietly until it does."

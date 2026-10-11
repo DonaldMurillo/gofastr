@@ -55,19 +55,20 @@ func resendExt(perm string, variant ui.ButtonVariant, ran *[]ActionContext, fail
 }
 
 // An action without Bulk is a record header button in its declared
-// variant. Its body names the record scope and the one record, and the
-// bulk route runs it on that record alone.
+// variant (a danger one goes in the menu: record_danger_test.go). Its
+// body names the record scope and the one record, and the bulk route
+// runs it on that record alone.
 func TestRecordActionRendersAndRuns(t *testing.T) {
 	var ran []ActionContext
-	x := newTestUIExt(t, invoiceEntities(), invoiceRows(), resendExt("", ui.ButtonPrimary, &ran, false),
+	x := newTestUIExt(t, invoiceEntities(), invoiceRows(), resendExt("", ui.ButtonGhost, &ran, false),
 		withAPI(map[string]string{"invoices": "/api/invoices"}))
 	page := renderRecord(t, x, "inv-1", nil)
 	body, path, tag := recordActionBody(t, page, "Resend receipt")
 	if body == nil {
 		t.Fatalf("no Resend receipt button on the record:\n%s", page)
 	}
-	if path != "/api/invoices/_bulk" || !strings.Contains(tag, "fui-button--primary") {
-		t.Fatalf("button posts to %q in %s, want the bulk route as a primary button", path, tag)
+	if path != "/api/invoices/_bulk" || !strings.Contains(tag, "fui-button--ghost") {
+		t.Fatalf("button posts to %q in %s, want the bulk route as a ghost button", path, tag)
 	}
 	if body["scope"] != "record" || body["ids"] != "inv-1" || body["action"] != "run:resend" {
 		t.Fatalf("button body = %v", body)
@@ -167,5 +168,34 @@ func TestActionVariantChecked(t *testing.T) {
 	_, err := New(x.host, resendExt("", ui.ButtonVariant("loud"), &ran, false))
 	if err == nil || !strings.Contains(err.Error(), `"resend"`) {
 		t.Fatalf("New = %v, want the bad variant refused naming resend", err)
+	}
+}
+
+// The record header keeps its moves and app actions as buttons and folds
+// Copy link, Duplicate and Delete into one icon-only menu named for the
+// record, so the header row fits a phone.
+func TestRecordHeaderMenu(t *testing.T) {
+	x := newInvoiceUI(t)
+	page := renderRecord(t, x, "inv-1", func(b *RecordBuilder) { b.Duplicate().Delete() })
+	trigger := strings.Index(page, "fui-menu__trigger--icon")
+	if trigger < 0 || !strings.Contains(page, "Actions for INV-1") {
+		t.Fatalf("no actions menu named for the record on its header:\n%s", page)
+	}
+	for _, want := range []string{
+		`data-hui-copy-target="eui-rec-link"`,
+		`href="/rec/invoices/create?duplicate=inv-1"`,
+		`data-cui-rpc-method="DELETE"`,
+	} {
+		if i := strings.Index(page, want); i < trigger {
+			t.Errorf("%s is not in the header menu:\n%s", want, page)
+		}
+	}
+	for _, tag := range rpcButtonRe.FindAllString(page, -1) {
+		if strings.Contains(tag, `data-cui-rpc-method="DELETE"`) && strings.Contains(tag, "fui-button") {
+			t.Errorf("Delete is still a header button: %s", tag)
+		}
+	}
+	if move := strings.Index(page, "/transitions/send"); move < 0 || move > trigger {
+		t.Errorf("the move is not a header button before the menu:\n%s", page)
 	}
 }

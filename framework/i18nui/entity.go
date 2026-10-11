@@ -18,17 +18,21 @@ const (
 	KeyEntityNotFoundBody   Key = "ui.entity.notFoundBody"   // "This {entity} does not exist."
 	KeyEntityNew            Key = "ui.entity.new"            // "New {entity}"
 	KeyEntityView           Key = "ui.entity.view"           // "View"
-	KeyEntityBack           Key = "ui.entity.back"           // "Back"
 	KeyEntityCancel         Key = "ui.entity.cancel"         // "Cancel"
 	KeyEntityDelete         Key = "ui.entity.delete"         // "Delete"
-	KeyEntityDeleteConfirm  Key = "ui.entity.deleteConfirm"  // "Delete this {entity}? This cannot be undone."
+	KeyEntityDeleteTitle    Key = "ui.entity.deleteTitle"    // "Delete this {entity}?"
+	KeyEntityDeleteConfirm  Key = "ui.entity.deleteConfirm"  // "This cannot be undone."
+	KeyEntityDeleteSoft     Key = "ui.entity.deleteSoft"     // "It can be restored afterwards."
+	KeyEntityUndo           Key = "ui.entity.undo"           // "Undo"
 	KeyEntityDeleteFailed   Key = "ui.entity.deleteFailed"   // "Could not delete this {entity}."
 	KeyEntityDeleted        Key = "ui.entity.deleted"        // "{entity} deleted"
 	KeyEntityDuplicate      Key = "ui.entity.duplicate"      // "Duplicate"
 	KeyEntityCopyLink       Key = "ui.entity.copyLink"       // "Copy link"
+	KeyEntityOpen           Key = "ui.entity.open"           // "Open {entity}"
 	KeyEntitySelect         Key = "ui.entity.select"         // "— Select —"
 	KeyEntityYes            Key = "ui.entity.yes"            // "Yes"
 	KeyEntityNo             Key = "ui.entity.no"             // "No"
+	KeyEntityCurrency       Key = "ui.entity.currency"       // "$"
 )
 
 var entityDefaults = map[Key]string{
@@ -40,22 +44,27 @@ var entityDefaults = map[Key]string{
 	KeyEntityNotFoundBody:   "This {entity} does not exist.",
 	KeyEntityNew:            "New {entity}",
 	KeyEntityView:           "View",
-	KeyEntityBack:           "Back",
 	KeyEntityCancel:         "Cancel",
 	KeyEntityDelete:         "Delete",
-	KeyEntityDeleteConfirm:  "Delete this {entity}? This cannot be undone.",
+	KeyEntityDeleteTitle:    "Delete this {entity}?",
+	KeyEntityDeleteConfirm:  "This cannot be undone.",
+	KeyEntityDeleteSoft:     "It can be restored afterwards.",
+	KeyEntityUndo:           "Undo",
 	KeyEntityDeleteFailed:   "Could not delete this {entity}.",
 	KeyEntityDeleted:        "{entity} deleted",
 	KeyEntityDuplicate:      "Duplicate",
 	KeyEntityCopyLink:       "Copy link",
+	KeyEntityOpen:           "Open {entity}",
 	KeyEntitySelect:         "— Select —",
 	KeyEntityYes:            "Yes",
 	KeyEntityNo:             "No",
+	KeyEntityCurrency:       "$",
 }
 
-// entityKeyBlocks are the entity screens' Defaults blocks, one per area.
-// AllKeys lists every key they hold; init merges them into Defaults.
-var entityKeyBlocks = []map[Key]string{entityDefaults, entityListDefaults, entityRecordDefaults, entityBulkDefaults}
+// entityKeyBlocks are the entity screens' and the admin's Defaults blocks,
+// one per area. AllKeys lists every key they hold; init merges them into
+// Defaults.
+var entityKeyBlocks = []map[Key]string{entityDefaults, entityListDefaults, entityRecordDefaults, entityBulkDefaults, adminDefaults}
 
 func init() {
 	for _, block := range entityKeyBlocks {

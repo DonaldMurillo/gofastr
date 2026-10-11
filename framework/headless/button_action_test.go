@@ -110,6 +110,11 @@ func TestButtonActionAdmitsTheWiringKeys(t *testing.T) {
 		"data-cui-rpc": "/x", "data-cui-rpc-error-toast": "Could not delete.",
 	}}, nil)
 	has(t, got, `data-cui-rpc-error-toast="Could not delete."`, "error-toast did not land")
+	got = Button(ButtonProps{Label: "Delete", Action: html.Attrs{
+		"data-cui-rpc": "/x", "data-cui-rpc-success-toast": "Deleted",
+		"data-cui-rpc-success-action": `{"label":"Undo","attrs":{"data-cui-rpc":"/x/_restore","data-cui-rpc-method":"POST"}}`,
+	}}, nil)
+	has(t, got, "data-cui-rpc-success-action=", "the success toast's action did not land")
 }
 
 // A wiring key that would fire something — none of them do — or a
@@ -139,6 +144,24 @@ func TestButtonLinkCarriesOnlyLinkLegalActions(t *testing.T) {
 				}
 			}()
 			Button(ButtonProps{Label: "Go", Href: "/apps", Action: html.Attrs{k: "secondary", "data-cui-open": "w"}}, nil)
+		}()
+	}
+}
+
+// data-cui-intercept-page and data-cui-intercept-swap say where a link
+// goes (its target, as the page or into the top layer), so they ride an
+// anchor; a button has no target, so each is refused there.
+func TestButtonInterceptMarksAreLinkOnly(t *testing.T) {
+	for _, k := range []string{"data-cui-intercept-page", "data-cui-intercept-swap"} {
+		got := Button(ButtonProps{Label: "Go", Href: "/rec/1", Action: html.Attrs{k: ""}}, nil)
+		has(t, got, k+`="" href="/rec/1"`, "the mark did not land on the anchor")
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("a button with no Href carried %s", k)
+				}
+			}()
+			Button(ButtonProps{Label: "Go", Action: html.Attrs{k: ""}}, nil)
 		}()
 	}
 }
@@ -182,6 +205,54 @@ func TestButtonActionChecksItsValues(t *testing.T) {
 			}()
 			Button(ButtonProps{Label: "x", Action: a}, nil)
 		}()
+	}
+}
+
+// A success toast's action is a label and an RPC, carrying RPC wiring
+// only and checked as a button's own, and it rides a success toast:
+// anything else is refused on a button and on a form alike.
+func TestSuccessToastActionChecked(t *testing.T) {
+	ok := `{"label":"Undo","attrs":{"data-cui-rpc":"/x"}}`
+	for _, a := range []html.Attrs{
+		{"data-cui-rpc": "/d", "data-cui-rpc-success-action": ok},
+		{"data-cui-rpc": "/d", "data-cui-rpc-success-toast": "Deleted", "data-cui-rpc-success-action": `{"label":"Undo","attrs":{"data-cui-rpc":"/x","data-cui-rpc-success-action":"{}"}}`},
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("a button took %v unchecked", a)
+				}
+			}()
+			Button(ButtonProps{Label: "x", Action: a}, nil)
+		}()
+	}
+	for _, v := range []string{
+		``,
+		`{"label":`,
+		`{"label":"","attrs":{"data-cui-rpc":"/x"}}`,
+		`{"label":"Undo","attrs":{}}`,
+		`{"label":"Undo","attrs":{"data-cui-rpc":"/x","onclick":"steal()"}}`,
+		`{"label":"Undo","attrs":{"data-cui-rpc":"/x","data-cui-signal-set":"a:b"}}`,
+		`{"label":"Undo","attrs":{"data-cui-rpc":"//evil/x"}}`,
+		`{"label":"Undo","attrs":{"data-cui-rpc":"/x","data-cui-rpc-navigate":"https://evil.example/"}}`,
+	} {
+		for seam, build := range map[string]func(){
+			"button": func() {
+				Button(ButtonProps{Label: "x", Action: html.Attrs{"data-cui-rpc": "/d", "data-cui-rpc-success-toast": "Deleted", "data-cui-rpc-success-action": v}}, nil)
+			},
+			"form": func() {
+				Form(FormProps{Action: "/d", Request: html.Attrs{"data-cui-rpc": "/d", "data-cui-rpc-success-toast": "Deleted", "data-cui-rpc-success-action": v}}, nil)
+			},
+		} {
+			func() {
+				defer func() {
+					if recover() == nil {
+						t.Errorf("%s took success action %s unchecked", seam, v)
+					}
+				}()
+				build()
+			}()
+		}
 	}
 }
 

@@ -36,6 +36,9 @@ type ThemeToggleConfig struct {
 	// Variant selects the visual style.
 	// Defaults to ThemeToggleIcon when empty.
 	Variant ThemeToggleVariant
+	// Fill stretches the pill across its container, the options sharing
+	// the width (a panel's full-width switch). Pill only.
+	Fill bool
 
 	// ID is an optional id for the root element.
 	ID string
@@ -167,7 +170,7 @@ func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
 	if rootAttrs == nil {
 		rootAttrs = map[string]string{}
 	}
-	rootAttrs["class"] = "fui-theme-toggle fui-theme-toggle--pill " + cfg.Class
+	rootAttrs["class"] = "fui-theme-toggle fui-theme-toggle--pill " + modifierClass("fui-theme-toggle--fill", cfg.Fill) + " " + cfg.Class
 	rootAttrs["data-hui-theme-toggle"] = ""
 	rootAttrs["role"] = "radiogroup"
 	rootAttrs["aria-label"] = i18nui.T(ctx, i18nui.KeyThemeColorScheme)

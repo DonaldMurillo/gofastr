@@ -198,6 +198,20 @@ type processConfig struct {
 	// stripMetadata opts the upload into StripMetadata's metadata
 	// removal; see strip.go.
 	stripMetadata bool
+	// allow, when set, is the list of sniffed MIME types the upload may
+	// have; see AllowTypes.
+	allow []string
+}
+
+// ImageTypes are the raster types an image field takes: PNG, JPEG, GIF
+// and WebP.
+var ImageTypes = []string{"image/png", "image/jpeg", "image/gif", "image/webp"}
+
+// AllowTypes refuses an upload whose type, sniffed from its bytes (never
+// its filename or a client header), is not one of mimes, with
+// ErrFileFieldType and before anything is saved.
+func AllowTypes(mimes ...string) ProcessOption {
+	return func(c *processConfig) { c.allow = mimes }
 }
 
 // WithImageDeriver runs deriver over the uploaded bytes and attaches the

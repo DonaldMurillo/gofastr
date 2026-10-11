@@ -3,9 +3,11 @@ package entityui
 import (
 	"context"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"slices"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
@@ -56,6 +58,59 @@ func TestStatUnknownAggIsRefused(t *testing.T) {
 	}
 	if got := x.ui.StatValue(ctx, "invoices", "sum", "memo", "", ""); got != "—" {
 		t.Errorf("sum of a text field = %q, want the empty placeholder", got)
+	}
+}
+
+// CheckStat refuses at boot every spec StatValue would draw as "—" for
+// a reason no request can change.
+func TestCheckStatRefusesWhatCannotCompute(t *testing.T) {
+	ents := invoiceEntities()
+	inv := ents["invoices"]
+	inv.Fields = append(slices.Clone(inv.Fields), schema.Field{Name: "cost", Type: schema.Decimal, NoQuery: true})
+	ents["invoices"] = inv
+	x := newTestUI(t, ents, invoiceRows())
+	for _, ok := range [][5]string{
+		{"invoices", "", "", "", ""},
+		{"invoices", "count", "", `status = "draft"`, ""},
+		{"invoices", "sum", "amount", `status = "draft"`, "money"},
+	} {
+		if err := x.ui.CheckStat(ok[0], ok[1], ok[2], ok[3], ok[4]); err != nil {
+			t.Errorf("CheckStat%q: %v", ok, err)
+		}
+	}
+	for name, bad := range map[string][5]string{
+		"unknown entity":     {"ghosts", "count", "", "", ""},
+		"unknown agg":        {"invoices", "avg", "amount", "", ""},
+		"sum with no field":  {"invoices", "sum", "", "", ""},
+		"sum of text":        {"invoices", "sum", "memo", "", ""},
+		"sum of no field":    {"invoices", "sum", "nope", "", ""},
+		"sum of no-query":    {"invoices", "sum", "cost", "", ""},
+		"count with a field": {"invoices", "count", "amount", "", ""},
+		"bad filter":         {"invoices", "count", "", `nope = 1`, ""},
+		"unknown format":     {"invoices", "sum", "amount", "", "euros"},
+		"money on a count":   {"invoices", "count", "", "", "money"},
+	} {
+		if err := x.ui.CheckStat(bad[0], bad[1], bad[2], bad[3], bad[4]); err == nil {
+			t.Errorf("%s: CheckStat%q passed", name, bad)
+		}
+	}
+}
+
+// Count is the list's count, and draws nothing when it cannot answer.
+func TestCountReportsWhatItCannotRead(t *testing.T) {
+	x := newInvoiceUI(t)
+	seedInvoiceRows(t, x, "c", 1233, "1.00")
+	if got, ok := x.ui.Count(x.userCtx("/dash", "", "u1"), "invoices", ""); !ok || got != "1,234" {
+		t.Fatalf("count = %q %v, want 1,234", got, ok)
+	}
+	if got, ok := x.ui.Count(x.userCtx("/dash", "", "u1"), "invoices", `status = "draft"`); !ok || got != "1" {
+		t.Fatalf("draft count = %q %v, want 1", got, ok)
+	}
+	if got, ok := x.ui.Count(x.userCtx("/dash", "", "u1"), "invoices", `nope = 1`); ok {
+		t.Fatalf("a bad filter counted %q", got)
+	}
+	if got, ok := x.ui.Count(x.ctx("/dash", ""), "invoices", ""); ok {
+		t.Fatalf("SECURITY: an anonymous caller read a count: %q", got)
 	}
 }
 
@@ -119,5 +174,24 @@ func TestStatGroupsOrderAndCap(t *testing.T) {
 	seedInvoiceRows(t, x, "g", statGroupCap, "1")
 	if bars := x.ui.GroupBars(ctx, "invoices", "number"); len(bars) != 0 {
 		t.Fatalf("a field with %d+ values drew %d bars, want none", statGroupCap, len(bars))
+	}
+}
+
+// CountUpTo reads at most limit+1 ids: the number under the cap, the cap
+// and more past it, in the caller's scope like Count.
+func TestCountUpTo(t *testing.T) {
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	ctx := x.ctx("/", "")
+	if n, more, ok := x.ui.CountUpTo(ctx, "orders", "", 5); !ok || more || n != 2 {
+		t.Errorf("CountUpTo(5) = %d, %v, %v", n, more, ok)
+	}
+	if n, more, ok := x.ui.CountUpTo(ctx, "orders", "", 1); !ok || !more || n != 1 {
+		t.Errorf("CountUpTo(1) = %d, %v, %v", n, more, ok)
+	}
+	if _, _, ok := x.ui.CountUpTo(ctx, "nope", "", 5); ok {
+		t.Errorf("an unknown entity counted")
 	}
 }

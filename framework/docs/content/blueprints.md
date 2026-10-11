@@ -722,7 +722,7 @@ entities:
     display:
       singular: Invoice
       plural: Invoices
-      title_field: number
+      title_fields: [number]
       columns: [number, amount, status]
       facets: [status]
       form:
@@ -1178,10 +1178,11 @@ validation, owner/tenant scope, hooks, and events apply. Access is gated by
 `login_form` screen) instead of a bare 401, and a signed-in user without the
 role gets 403. When `seed_email`/`seed_password` are set, the app bootstraps
 that admin account on a fresh database (idempotent: created only when absent),
-so the back-office is reachable on first boot. The generated `main.go` creates
-the `audit_log` table the audit page reads (`framework.EnsureAuditTable`), so
-the page and the admin's own RBAC and module audit writes work on a fresh
-database. Requires `app.auth.enabled`.
+so the back-office is reachable on first boot. The generated `main.go` turns
+on the audit log for every entity (`fwApp.WithAuditLog`, which creates
+`audit_log`), so each admin write leaves a row and the audit page and the
+dashboard's recent activity read them on a fresh database. Requires
+`app.auth.enabled`.
 The Queue navigation item appears only when the host explicitly supplies a
 `queue.Browsable` backend to the admin battery; generated apps do not imply a
 queue they have not configured.

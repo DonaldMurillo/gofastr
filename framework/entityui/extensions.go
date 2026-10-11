@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -31,6 +32,13 @@ type Extensions struct {
 	// A queued run needs the Host to keep snapshots (BulkHost); New
 	// refuses Jobs on a Host that does not.
 	Jobs JobRunner
+	// FilesURL is the same-origin path the app serves stored files
+	// under ("/uploads/" for upload.ServeHandler on /uploads/{key...}).
+	// A relative Image or File value is a storage key: the screens draw
+	// it at FilesURL + key, and draw nothing for one when FilesURL is
+	// empty. With file storage set on the app (framework.WithFileStorage),
+	// forms draw Image and File fields as uploads.
+	FilesURL string
 }
 
 // Kind draws one field kind: Input on forms, Cell in list cells and cards,
@@ -44,7 +52,10 @@ type Kind struct {
 
 // InputContext is what a Kind's Input receives: the field, the control
 // wiring the form field built (label association, description chain,
-// invalid state), the input name and the current value as text.
+// invalid state), the input name, the current value as text, and the
+// label and help the form resolved for the field (the catalog entry,
+// else the Display hint, else the humanized name), so a kind draws the
+// same words a built-in field would.
 type InputContext struct {
 	Ctx         context.Context
 	Entity      string
@@ -53,6 +64,8 @@ type InputContext struct {
 	Name        string
 	Value       string
 	Placeholder string
+	Label       string
+	Help        string
 }
 
 // CellContext is what a Kind's Cell and Detail receive. Row and Value
@@ -73,6 +86,9 @@ type Extension struct {
 	Views map[string]ViewFunc
 	// Tabs are record tabs drawn after the built-in ones.
 	Tabs []Tab
+	// Side are panels in the record's side column on the Edit tab,
+	// after the record's details. A create form draws none.
+	Side []SidePanel
 	// Actions are record header buttons and, with Bulk, list bulk actions.
 	Actions []Action
 	// List and Record replace the body of the entity's list or record
@@ -90,11 +106,31 @@ type ViewFunc struct {
 	Show   func(ctx context.Context) bool
 }
 
+// asCaller is the context an app's extension code runs under: the
+// caller's own, with a back office's elevation (crud.WithElevation)
+// removed. The admin vouches for its own reads and writes, not for an
+// action's Run, a tab's Build, a view func or a field kind, so those
+// see only what the caller's roles allow.
+func asCaller(ctx context.Context) context.Context {
+	return crud.WithoutElevation(ctx)
+}
+
 // Tab is an extra record tab.
 type Tab struct {
 	Key   string
 	Label string
 	Build func(TabContext) (component.Component, error)
+}
+
+// SidePanel is a panel in a record's side column: Title heads it and
+// Build draws its body, as the caller. The column sits inside the
+// record's form, so a panel is read-only or gives its own controls a
+// form attribute naming a form outside it. A panicking or erroring
+// panel fails that panel alone.
+type SidePanel struct {
+	Key   string
+	Title string
+	Build func(RecordContext) (component.Component, error)
 }
 
 // Record is the record a tab, action or replaced screen is drawn for, as
@@ -180,10 +216,12 @@ type JobRunner interface {
 	// nil once it has finished, so UI.ResumeBulkJobs can hand over again
 	// a job whose first Enqueue is not known to have happened.
 	Enqueue(ctx context.Context, job BulkJob) error
-	// Principal rebuilds the creator's request context as of now from
-	// job.Creator and job.Tenant: the user, their current roles and the
-	// tenant, read fresh, the way a request from them would carry them.
-	// RunBulkJob calls it before every chunk; an error stops the run.
+	// Principal rebuilds the creator's request context from job.Creator
+	// and job.Tenant: the user and their current roles, read fresh, and
+	// the run's tenant, fixed at confirm because the snapshot's records
+	// belong to it. RunBulkJob calls it before every chunk; an error
+	// stops the run, so a runner that tracks tenant membership refuses a
+	// creator who has left job.Tenant.
 	Principal(ctx context.Context, job BulkJob) (context.Context, error)
 }
 
@@ -295,6 +333,9 @@ type BulkHost interface {
 
 // check is New's name check. See New for the refusals.
 func (x Extensions) check(reg entity.Registry) error {
+	if x.FilesURL != "" && (!strings.HasPrefix(x.FilesURL, "/") || strings.HasPrefix(x.FilesURL, "//") || !strings.HasSuffix(x.FilesURL, "/")) {
+		return fmt.Errorf("entityui: FilesURL %q must be a same-origin path that starts and ends with /", x.FilesURL)
+	}
 	for _, name := range slices.Sorted(maps.Keys(x.Kinds)) {
 		k := x.Kinds[name]
 		if !entity.ValidKey(name) {
@@ -328,16 +369,28 @@ func (x Extensions) check(reg entity.Registry) error {
 	return nil
 }
 
-// checkInputs refuses a FieldDisplay.Input on e naming no kind.
+// checkInputs refuses a FieldDisplay.Input on e naming no kind, and a
+// built-in kind on a field type it does not fit (money on a String).
 func (x Extensions) checkInputs(e *entity.Entity) error {
 	d := e.Config.Display
 	if d == nil {
 		return nil
 	}
 	for _, f := range slices.Sorted(maps.Keys(d.Fields)) {
-		if in := d.Fields[f].Input; in != "" {
-			if _, ok := x.Kinds[in]; !ok && !isBuiltinKind(in) {
-				return fmt.Errorf("entityui: entity %q field %q: input %q names no kind; register it in Extensions.Kinds", e.GetName(), f, in)
+		in := d.Fields[f].Input
+		if in == "" {
+			continue
+		}
+		if _, ok := x.Kinds[in]; ok {
+			continue
+		}
+		fits, ok := builtinKinds[in]
+		if !ok {
+			return fmt.Errorf("entityui: entity %q field %q: input %q names no kind; register it in Extensions.Kinds", e.GetName(), f, in)
+		}
+		for _, sf := range e.Config.Fields {
+			if sf.Name == f && !slices.Contains(fits, sf.Type) {
+				return fmt.Errorf("entityui: entity %q field %q: input %q does not fit the field's type", e.GetName(), f, in)
 			}
 		}
 	}
@@ -407,6 +460,18 @@ func (x Extension) check(e *entity.Entity) error {
 		seen[t.Key] = true
 	}
 	seen = map[string]bool{}
+	for _, p := range x.Side {
+		switch {
+		case !entity.ValidKey(p.Key):
+			return fmt.Errorf("entityui: entity %q: side panel key %q is not a key", name, p.Key)
+		case seen[p.Key]:
+			return fmt.Errorf("entityui: entity %q: duplicate side panel %q", name, p.Key)
+		case p.Build == nil:
+			return fmt.Errorf("entityui: entity %q: side panel %q has no Build", name, p.Key)
+		}
+		seen[p.Key] = true
+	}
+	seen = map[string]bool{}
 	for _, a := range x.Actions {
 		_, knownVariant := ui.ParseButtonVariant(string(a.Variant))
 		switch {
@@ -427,10 +492,11 @@ func (x Extension) check(e *entity.Entity) error {
 // clone copies the maps and slices New keeps, so the caller changing its
 // value later changes nothing New checked.
 func (x Extensions) clone() Extensions {
-	out := Extensions{Jobs: x.Jobs, Kinds: maps.Clone(x.Kinds), Entities: map[string]Extension{}}
+	out := Extensions{Jobs: x.Jobs, FilesURL: x.FilesURL, Kinds: maps.Clone(x.Kinds), Entities: map[string]Extension{}}
 	for k, v := range x.Entities {
 		v.Views = maps.Clone(v.Views)
 		v.Tabs = slices.Clone(v.Tabs)
+		v.Side = slices.Clone(v.Side)
 		v.Actions = slices.Clone(v.Actions)
 		out.Entities[k] = v
 	}

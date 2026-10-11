@@ -1707,6 +1707,8 @@ func NewApp(opts ...AppOption) *App {
 		lc:            lifecycle.New(),
 		startupOutput: os.Stdout,
 	}
+	// A recovered battery start or stop panic logs where the App logs.
+	a.Batteries.logger = a.Logger
 
 	for _, opt := range opts {
 		opt(a)
@@ -2871,9 +2873,7 @@ func (a *App) runStartHooks() error {
 func (a *App) runStartHookSafe(fn func(ctx context.Context) error) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			// %T not %v: a panic(config) value must not leak a secret
-			// into the error chain (callModuleSafe precedent).
-			err = fmt.Errorf("start hook panicked (panic type %T): set GOTRACEBACK=all for details", v)
+			err = recoveredPanic(a.Logger(), "start hook", fmt.Sprintf("%T", v))
 		}
 	}()
 	return fn(a.appCtx)
@@ -3643,9 +3643,7 @@ func (a *App) Start(addr string) error {
 func (a *App) runReadyHookSafe(fn func(addr string), addr string) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			// %T not %v: a panic(config) value must not leak a secret
-			// into the error chain (callModuleSafe precedent).
-			err = fmt.Errorf("ready hook panicked (panic type %T): set GOTRACEBACK=all for details", v)
+			err = recoveredPanic(a.Logger(), "ready hook", fmt.Sprintf("%T", v))
 		}
 	}()
 	fn(addr)

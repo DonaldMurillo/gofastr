@@ -53,10 +53,11 @@ func interceptOverlayBody(path, query string) string {
 	}
 	switch path {
 	case "/rec/a":
-		return `<div id="rec-a"><p>REC-A</p>` +
+		return `<div id="rec-a"><p>REC-A</p><span data-cui-comp="intercept-probe"></span>` +
 			`<input id="rec-note" value="" aria-label="note">` +
 			`<a id="a-to-rel" href="/rel/r1">related</a>` +
 			`<a id="a-sort" href="/rec/a?sort=name">sort</a>` + interceptPager +
+			`<a id="a-page" href="/rec/a" data-cui-intercept-page>page</a>` +
 			`<button id="a-close" type="button" data-cui-intercept-close>Close</button></div>`
 	case "/rel/r1":
 		return `<div id="rel-r1"><p>REL-R1</p>` +
@@ -67,6 +68,11 @@ func interceptOverlayBody(path, query string) string {
 	case "/deep/d1":
 		return `<div id="deep-d1"><p>DEEP-D1</p>` +
 			`<a id="d-to-deepest" href="/deepest/x1">deepest</a></div>`
+	case "/rec/s":
+		return `<div id="rec-s"><p>REC-S</p><a id="s-next" href="/rec/t" data-cui-intercept-swap>next</a>` +
+			`<a id="s-plain" href="/rec/t">plain</a></div>`
+	case "/rec/t":
+		return `<div id="rec-t"><p>REC-T</p><a id="t-prev" href="/rec/s" data-cui-intercept-swap>previous</a></div>`
 	case "/deepest/x1":
 		return `<div id="deepest-x1"><p>DEEPEST-X1</p>` +
 			`<a id="x-to-beyond" href="/beyond/b1">beyond</a></div>`
@@ -99,10 +105,18 @@ func interceptFullPage(key string) string {
 	body := "FULL " + key
 	if key == "/list" {
 		id = "list-main"
-		body = `<a id="to-a" href="/rec/a">rec a</a>LIST`
+		body = `<a id="to-a" href="/rec/a">rec a</a><a id="to-s" href="/rec/s">rec s</a>LIST`
+	}
+	if key == "/rec/a" {
+		// The record as its own page: Open in panel goes back to the
+		// list with the record in a drawer; the second link names a
+		// route that does not open over /list.
+		body = `<a id="to-panel" href="/list" data-cui-intercept-panel="/rec/a">panel</a>` +
+			`<a id="to-panel-bad" href="/list" data-cui-intercept-panel="/rel/r1">panel</a>FULL /rec/a`
 	}
 	return `<!doctype html><html><head><title>stack</title>` +
 		`<script type="application/json" id="gofastr-routes">` + interceptStackRoutes + `</script>` +
+		`<script>window.__gofastr_catalog={"intercept-probe":{stylePath:"/css/intercept-probe.css"}};</script>` +
 		`</head><body><main id="` + id + `">` + body + `</main>` +
 		`<span id="ready">ready</span>` +
 		`<script src="/__gofastr/runtime.js"></script></body></html>`
@@ -137,6 +151,10 @@ func startInterceptStackServer(t *testing.T) *interceptStackServer {
 		w.Write([]byte(js))
 	})
 	handleRuntimeModules(t, mux)
+	mux.HandleFunc("/css/intercept-probe.css", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css")
+		fmt.Fprint(w, `[data-cui-comp="intercept-probe"]{display:block;inline-size:7px}`)
+	})
 	mux.HandleFunc("/save", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnprocessableEntity)
@@ -798,5 +816,190 @@ func TestInterceptLayersKeepOwnPresentation(t *testing.T) {
 	}
 	if strings.Join(got, ",") != "drawer,drawer,sheet" {
 		t.Errorf("layer presentations = %v, want [drawer drawer sheet]", got)
+	}
+}
+
+// A link in the top pane marked data-cui-intercept-page opens its target
+// as the page: the stack closes, the router loads the URL in the content
+// cell, and the page takes the layer's history entry, so Back returns to
+// what was under the stack instead of a layer that is gone. The link is
+// the pane's own path, which without the mark is a query move that
+// re-renders in the pane.
+func TestInterceptPageLinkLeavesStack(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/list"),
+		chromedp.WaitVisible(`#to-a`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	stackTo(t, ctx, 1)
+	if !interceptWait(ctx, `!!document.getElementById('a-page')`) {
+		t.Fatal("layer 1 never mounted")
+	}
+	var depth int
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`history.length`, &depth),
+		chromedp.Click("#a-page", chromedp.ByID),
+	); err != nil {
+		t.Fatalf("click page link: %v", err)
+	}
+	if !interceptWait(ctx, `!document.getElementById('cui-intercept') && /plain \/rec\/a/.test((document.querySelector('main p')||{}).textContent || '')`) {
+		t.Fatalf("the page link never loaded the record as the page: %+v", readStack(ctx))
+	}
+	var after int
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`history.length`, &after)); err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if after != depth {
+		t.Errorf("the page pushed an entry (%d → %d); it must take the layer's", depth, after)
+	}
+	if snap := readStack(ctx); snap.URL != "/rec/a" {
+		t.Errorf("url = %q, want /rec/a", snap.URL)
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`history.back()`, nil)); err != nil {
+		t.Fatalf("back: %v", err)
+	}
+	if !interceptWait(ctx, `location.pathname === '/list' && !document.getElementById('cui-intercept')`) {
+		t.Fatalf("Back did not return to the page under the stack: %+v", readStack(ctx))
+	}
+}
+
+// A data-cui-intercept-panel link on a record's own page goes back to
+// the list with the record in a drawer: the list takes the page's
+// history entry, the record mounts over it as the first layer (fetched
+// with the list as its origin), and Back from the layer lands on the
+// list, not on the page that is gone.
+func TestInterceptPanelLinkOpensOverList(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	var depth int
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/rec/a"),
+		chromedp.WaitVisible(`#to-panel`, chromedp.ByID),
+		chromedp.Evaluate(`history.length`, &depth),
+		chromedp.Click("#to-panel", chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !interceptWait(ctx, `location.pathname === '/rec/a' && !!document.querySelector('#cui-intercept #rec-a') && /plain \/list/.test((document.querySelector('main p')||{}).textContent || '')`) {
+		t.Fatalf("the record never opened over the list: %+v", readStack(ctx))
+	}
+	if snap := readStack(ctx); len(snap.Layers) != 1 {
+		t.Errorf("layers = %d, want 1", len(snap.Layers))
+	}
+	if froms := s.overlayFroms(); len(froms) != 1 || froms[0] != "/list" {
+		t.Errorf("overlay fetches named %v, want one from /list", froms)
+	}
+	var after int
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`history.length`, &after)); err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if after != depth+1 {
+		t.Errorf("history grew %d → %d; the list takes the page's entry and the layer adds one", depth, after)
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`history.back()`, nil)); err != nil {
+		t.Fatalf("back: %v", err)
+	}
+	if !interceptWait(ctx, `location.pathname === '/list' && !document.getElementById('cui-intercept')`) {
+		t.Fatalf("Back did not close the layer onto the list: %+v", readStack(ctx))
+	}
+}
+
+// A data-cui-intercept-panel naming a route that does not open over the
+// link's target is a plain navigation to the target: no layer, no
+// overlay fetch.
+func TestInterceptPanelLinkWrongOriginNavigates(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/rec/a"),
+		chromedp.WaitVisible(`#to-panel-bad`, chromedp.ByID),
+		chromedp.Click("#to-panel-bad", chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !interceptWait(ctx, `location.pathname === '/list' && /plain \/list/.test((document.querySelector('main p')||{}).textContent || '')`) {
+		t.Fatalf("the link never navigated to the list: %+v", readStack(ctx))
+	}
+	time.Sleep(300 * time.Millisecond)
+	if snap := readStack(ctx); len(snap.Layers) != 0 {
+		t.Errorf("a layer opened over the wrong origin: %+v", snap)
+	}
+	if froms := s.overlayFroms(); len(froms) != 0 {
+		t.Errorf("overlay fetches %v, want none", froms)
+	}
+}
+
+// A data-cui-intercept-swap link in the top pane renders its target in
+// that pane, the way a query link does, though the path differs: a
+// drawer steps from one record to the next without stacking a layer or
+// leaving the page under it. Each step is one history entry of the
+// layer, so Back steps back inside the pane, and closing the pane
+// consumes them all and lands on the list. The same link without the
+// marker is a plain navigation, since /rec/:id opens only over /list.
+func TestInterceptSwapLinkStaysInLayer(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/list"),
+		chromedp.WaitVisible(`#to-s`, chromedp.ByID),
+		chromedp.Click("#to-s", chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !interceptWait(ctx, `!!document.getElementById('s-next')`) {
+		t.Fatal("the record pane never mounted")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click("#s-next", chromedp.ByID)); err != nil {
+		t.Fatalf("click next: %v", err)
+	}
+	if !interceptWait(ctx, `!!document.getElementById('rec-t')`) {
+		t.Fatal("the swap link never rendered its target in the pane")
+	}
+	snap := readStack(ctx)
+	if len(snap.Layers) != 1 || !idListHas(snap.Layers[0].IDs, "rec-t") {
+		t.Fatalf("a swap link must render in the top pane, got %d layers %v", len(snap.Layers), snap.Layers)
+	}
+	if snap.URL != "/rec/t" || snap.Main != "list-main" {
+		t.Errorf("after the swap: url %q main %q, want /rec/t over list-main", snap.URL, snap.Main)
+	}
+	if froms := s.overlayFroms(); len(froms) < 2 || froms[len(froms)-1] != "/list" {
+		t.Errorf("swap fetch X-Gofastr-From = %v, want the layer's own origin /list", froms)
+	}
+	interceptHistory(t, ctx, -1, "/rec/s")
+	if !interceptWait(ctx, `!!document.getElementById('rec-s') && document.getElementById('cui-intercept').children.length === 1`) {
+		t.Fatal("Back never stepped back inside the pane")
+	}
+	interceptHistory(t, ctx, 1, "/rec/t")
+	if !interceptWait(ctx, `!!document.getElementById('rec-t')`) {
+		t.Fatal("Forward never stepped forward inside the pane")
+	}
+	interceptEscClosesToList(t, ctx)
+}
+
+// Without the marker, the same link from inside the pane is no swap:
+// /rec/:id does not open over /rec/:id, so the router takes it as a
+// page and the stack closes.
+func TestInterceptUnmarkedLinkLeavesPane(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/list"),
+		chromedp.WaitVisible(`#to-s`, chromedp.ByID),
+		chromedp.Click("#to-s", chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !interceptWait(ctx, `!!document.getElementById('s-plain')`) {
+		t.Fatal("the record pane never mounted")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click("#s-plain", chromedp.ByID)); err != nil {
+		t.Fatalf("click plain: %v", err)
+	}
+	if !interceptWait(ctx, `!!document.getElementById('plain-screen') && !document.getElementById('cui-intercept')`) {
+		snap := readStack(ctx)
+		t.Fatalf("an unmarked link must navigate the page; at %s with %d layers", snap.URL, len(snap.Layers))
 	}
 }

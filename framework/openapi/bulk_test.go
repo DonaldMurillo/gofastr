@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -22,8 +23,8 @@ func TestBulkPathsOnlyForMounted(t *testing.T) {
 		t.Errorf("bulk operationId = %v, want bulk_notes", bulk["operationId"])
 	}
 	body := requestBodyProps(t, bulk)
-	if got := propEnum(body["properties"].(map[string]any)["scope"]); len(got) != 4 || got[3] != "record" {
-		t.Errorf("bulk scope enum = %v, want selected/page/every/record", got)
+	if got := propEnum(body["properties"].(map[string]any)["scope"]); !slices.Equal(got, []string{"selected", "page", "every", "record", "deleted"}) {
+		t.Errorf("bulk scope enum = %v, want selected/page/every/record/deleted", got)
 	}
 	// A client built from the spec can encode every scope: every match
 	// needs the digest the bar carries.
