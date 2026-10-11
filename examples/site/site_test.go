@@ -177,6 +177,50 @@ func TestDocPageRendersEmbeddedMarkdown(t *testing.T) {
 	}
 }
 
+// TestPhilosophyContentsResolve pins the essay's contents rail to the ids
+// ui.Markdown derives from its headings: the rail's ids are written by
+// hand, so a renamed heading would leave a link that jumps nowhere.
+func TestPhilosophyContentsResolve(t *testing.T) {
+	html := body(t, "/philosophy")
+	for _, it := range phSections {
+		if !strings.Contains(html, `href="#`+it.ID+`"`) {
+			t.Errorf("/philosophy contents missing entry #%s", it.ID)
+		}
+		if !strings.Contains(html, `id="`+it.ID+`"`) {
+			t.Errorf("/philosophy contents entry #%s has no heading with that id", it.ID)
+		}
+	}
+}
+
+// TestGetStartedRailAnchorsResolve: every step-rail entry lands on a
+// step section of the same id.
+func TestGetStartedRailAnchorsResolve(t *testing.T) {
+	html := body(t, "/get-started")
+	for _, id := range []string{"s1", "s2", "s3", "s4", "s5", "s6"} {
+		if !strings.Contains(html, `href="#`+id+`"`) || !strings.Contains(html, `id="`+id+`"`) {
+			t.Errorf("/get-started rail entry #%s does not resolve to a step section", id)
+		}
+	}
+}
+
+// TestDocIndexRailAnchorsResolve: every intent-rail entry (and the A–Z
+// entry) lands on a section of the same id inside the observed region.
+func TestDocIndexRailAnchorsResolve(t *testing.T) {
+	html := body(t, "/docs/")
+	if !strings.Contains(html, `id="docs-sections"`) {
+		t.Fatal("/docs/ lost the #docs-sections region the rail observes")
+	}
+	ids := []string{"all-az"}
+	for _, it := range docIntents {
+		ids = append(ids, it.Slug)
+	}
+	for _, id := range ids {
+		if !strings.Contains(html, `href="#`+id+`"`) || !strings.Contains(html, `id="`+id+`"`) {
+			t.Errorf("/docs/ rail entry #%s does not resolve to a section", id)
+		}
+	}
+}
+
 // ── Titles: exactly one " — GoFastr" suffix (no doubling). ──────────────
 
 func TestPageTitlesSingleSuffix(t *testing.T) {

@@ -261,30 +261,20 @@ func allDocsSection() render.HTML {
 	if err != nil {
 		return render.HTML("")
 	}
-	cards := make([]render.HTML, 0, len(topics))
+	links := make([]render.HTML, 0, len(topics))
 	for _, t := range topics {
 		if t.Name == "README" {
 			continue
 		}
-		cards = append(cards, html.LinkHTML(html.LinkHTMLConfig{
-			Href:  "/docs/" + t.Name,
-			Class: "doc",
-			Content: render.Join(
-				html.Div(html.DivConfig{Class: "doc__title"}, render.Text(t.Title)),
-				html.Div(html.DivConfig{Class: "doc__meta"}, render.Text("/docs/"+t.Name)),
-			),
-		}))
+		links = append(links, ui.Link(ui.LinkConfig{Href: "/docs/" + t.Name, Text: t.Title}))
 	}
-	return html.Section(html.SectionConfig{ID: "all-az", Class: "intent", Label: "All docs A–Z"},
-		html.Div(html.DivConfig{Class: "intent__head"},
-			html.Span(html.TextConfig{Class: "intent__num"}, render.Text("∑")),
-			html.Heading(html.HeadingConfig{Level: 2, Class: "intent__title"}, render.Text("Every doc · A–Z")),
-			html.Span(html.TextConfig{Class: "intent__meta"}, render.Text(itoa(len(cards))+" docs")),
-		),
-		html.Paragraph(html.TextConfig{Class: "intent__lede"},
-			render.Text("The complete embedded reference: every page, alphabetical, featured or not. It is the same content as `gofastr docs`.")),
-		html.Div(html.DivConfig{Class: "docs"}, cards...),
-	)
+	return ui.Section(ui.SectionConfig{
+		ID:          "all-az",
+		Eyebrow:     "∑ · " + itoa(len(links)) + " docs",
+		Heading:     "Every doc · A–Z",
+		Description: "The complete embedded reference: every page, alphabetical, featured or not. It is the same content as `gofastr docs`.",
+		Compact:     true,
+	}, ui.Grid(ui.GridConfig{Min: "12rem", Gap: ui.GapSM}, links...))
 }
 
 // =============================================================================
@@ -337,7 +327,7 @@ func (s *DocPageScreen) Render() render.HTML {
 	if body, err := docs.Get(s.Entry.Slug); err == nil {
 		content = ui.Markdown(ui.MarkdownConfig{Source: string(body)})
 	} else {
-		content = html.Paragraph(html.TextConfig{Class: "doc-head__lede"},
+		content = html.Paragraph(html.TextConfig{},
 			render.Text("This doc isn't available yet. Browse the embedded docs with "),
 			codeText("gofastr docs"), render.Text(" or open the "),
 			html.Link(html.LinkConfig{Href: "/docs/", Text: "docs index"}), render.Text("."))
