@@ -119,7 +119,7 @@ func TestInterceptOpensAsDrawerAndClosesToList(t *testing.T) {
 	ctx := siteBrowserCtx(t)
 
 	const overlay = `!!document.querySelector('[data-cui-intercept-overlay]')`
-	const listAlive = `!!document.querySelector('.cat-list')`
+	const listAlive = `!!document.getElementById('catalog-list')`
 
 	var urlOpen, urlClosed, overlayAs, overlayText string
 	var overlayOpen, listStillThere, overlayGone, listAfter bool

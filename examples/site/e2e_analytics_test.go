@@ -422,7 +422,7 @@ func TestE2E_Analytics_SPANav(t *testing.T) {
 	// marker.
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`document.querySelector('[data-cui-scope="docsite-header"] .links a[href="/primitives"]').click()`, nil),
-		chromedp.WaitVisible(`section.ex-hero[aria-label="Primitives"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`section[data-cui-comp="ui-hero"][aria-label="Primitives"]`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("SPA nav to /primitives: %v", err)
 	}
