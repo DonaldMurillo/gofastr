@@ -23,9 +23,9 @@ package main
 //   - ComponentsIndexScreen and ComponentShowcaseScreen, the two screens
 //     registered in main.go.
 //
-// This is a pure move: no behavior, no markup, no styling changed. The
-// catalog iteration order, the rendered HTML, and the route shape are
-// byte-for-byte what they were when the catalog lived here.
+// Both screens compose framework/ui only (PageHeader, Section, Card, Grid,
+// Box, CodeBlock) and ship no CSS; the showcase article sits in the site's
+// owned docpage shell.
 // =============================================================================
 
 import (
@@ -124,7 +124,8 @@ func optimisticDeleteDemo(ctx context.Context) render.HTML {
 
 // =============================================================================
 // /components/, the index page listing every catalog entry as a card,
-// grouped by category. Re-uses .docs / .doc.. grid from the concepts page.
+// grouped by category: a ui.PageHeader, then one ui.Section per category
+// holding a ui.Grid of linked ui.Cards.
 // =============================================================================
 
 type ComponentsIndexScreen struct{}
@@ -141,50 +142,33 @@ func (s *ComponentsIndexScreen) Render() render.HTML {
 	// card grid, no rail (the sidebar is the persistent nav).
 	groups := groupCatalog()
 
-	hero := html.Div(html.DivConfig{Class: "components-overview__hero"},
-		html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Components · v"+siteVersion)),
-		html.Heading(html.HeadingConfig{Level: 1, Class: "components-overview__title"},
-			render.Text("Every component, "),
-			html.Span(html.TextConfig{Class: "amber"}, render.Text("as typed Go")),
-			render.Text("."),
-		),
-		html.Paragraph(html.TextConfig{Class: "components-overview__lede"},
-			render.Text("One page per constructor. Use the sidebar to jump between them; it tracks the page you're on."),
-		),
-	)
+	head := ui.PageHeader(ui.PageHeaderConfig{
+		Eyebrow:  "Components · v" + siteVersion,
+		Title:    "Every component, as typed Go.",
+		Subtitle: "One page per constructor. Use the sidebar to jump between them; it tracks the page you're on.",
+	})
 
-	sections := []render.HTML{}
+	sections := make([]render.HTML, 0, len(groups))
 	for _, g := range groups {
-		cards := []render.HTML{}
+		cards := make([]render.HTML, 0, len(g.Entries))
 		for _, c := range g.Entries {
-			cards = append(cards, html.LinkHTML(html.LinkHTMLConfig{
-				Href:  "/components/" + c.Slug,
-				Class: "doc",
-				Content: render.Join(
-					html.Div(html.DivConfig{Class: "doc__head"},
-						html.Span(html.TextConfig{Class: "pill ui"}, render.Text(g.Name)),
-					),
-					html.Div(html.DivConfig{Class: "doc__title"}, render.Text(c.Name)),
-					html.Div(html.DivConfig{Class: "doc__desc"}, render.Text(c.Desc)),
-					html.Div(html.DivConfig{Class: "doc__meta"}, render.Text("/components/"+c.Slug)),
-				),
+			cards = append(cards, ui.Card(ui.CardConfig{
+				Heading:      c.Name,
+				HeadingLevel: 3,
+				Description:  c.Desc,
+				Href:         "/components/" + c.Slug,
+				Variant:      ui.CardOutlined,
 			}))
 		}
-		sections = append(sections, ui.Section(
-			ui.SectionConfig{Heading: g.Name, Class: "intent", ID: categorySlug(g.Name)},
-			html.Span(html.TextConfig{Class: "intent__meta"}, render.Text(itoa(len(g.Entries))+" constructors")),
-			html.Div(html.DivConfig{Class: "docs"}, cards...),
-		))
+		sections = append(sections, ui.Section(ui.SectionConfig{
+			Heading:     g.Name,
+			Description: itoa(len(g.Entries)) + " constructors",
+			ID:          categorySlug(g.Name),
+		}, ui.Grid(ui.GridConfig{Min: "16rem", Gap: ui.GapMD}, cards...)))
 	}
 
-	return render.Join(hero, html.Div(html.DivConfig{Class: "components-overview__sections"}, sections...))
-}
-
-func twoDigit(n int) string {
-	if n < 10 {
-		return "0" + itoa(n)
-	}
-	return itoa(n)
+	return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide, Pad: ui.ContainerPadPage},
+		ui.Stack(ui.StackConfig{Gap: ui.Gap2XL}, head, ui.Stack(ui.StackConfig{Gap: ui.Gap2XL}, sections...)))
 }
 
 // =============================================================================
@@ -231,37 +215,34 @@ func (s *ComponentShowcaseScreen) renderDemo(ctx context.Context) render.HTML {
 	}
 }
 
-// demoStage renders the demo box with an honest label: "Live" for a
-// real interactive instance, "Note" for a wiring explanation.
+// demoStage renders the demo in a section with an honest heading: "Live"
+// for a real interactive instance, "Note" for a wiring explanation. The
+// demo sits in an outlined, padded Box so it reads as a stage apart from
+// the page's prose.
 func (s *ComponentShowcaseScreen) demoStage(ctx context.Context) render.HTML {
 	label := "Live"
 	if gallery.IsNoteOnly(s.Entry.Slug) {
 		label = "Note"
 	}
-	return html.Div(html.DivConfig{Class: "demo-stage"},
-		html.Heading(html.HeadingConfig{Level: 2, Class: "demo-stage__label"}, render.Text(label)),
-		html.Div(html.DivConfig{Class: "demo-stage__viewport"}, s.renderDemo(ctx)),
+	return ui.Section(ui.SectionConfig{Heading: label, Compact: true},
+		ui.Box(ui.BoxConfig{Pad: ui.BoxPadLG, Outlined: true}, s.renderDemo(ctx)),
 	)
 }
 
 func (s *ComponentShowcaseScreen) RenderCtx(ctx context.Context) render.HTML {
-	head := html.Div(html.DivConfig{Class: "doc-head"},
-		html.Heading(html.HeadingConfig{Level: 1},
-			render.Text(s.Entry.Name),
-		),
-		html.Div(html.DivConfig{Class: "doc-head__meta"},
-			tagAccent(s.Entry.Category),
-			// Real source package, linked to its API docs, this is
-			// the per-component "usage/reference" the page otherwise
-			// lacked. (Was hardcoded "framework/ui" for everything.)
-			html.LinkHTML(html.LinkHTMLConfig{
-				Href:       "https://pkg.go.dev/github.com/DonaldMurillo/gofastr/" + componentPkg(s.Entry.Slug),
-				ExtraAttrs: html.Attrs{"rel": "external"},
-				Content:    render.Join(render.Text(componentPkg(s.Entry.Slug)), render.Text(" ↗")),
-			}),
-		),
-		html.Paragraph(html.TextConfig{Class: "doc-head__lede"}, render.Text(s.Entry.Desc)),
-	)
+	pkg := componentPkg(s.Entry.Slug)
+	head := ui.PageHeader(ui.PageHeaderConfig{
+		Eyebrow:  s.Entry.Category,
+		Title:    s.Entry.Name,
+		Subtitle: s.Entry.Desc,
+		// Real source package, linked to its API docs: the per-component
+		// usage/reference link.
+		Actions: ui.Link(ui.LinkConfig{
+			Href:       "https://pkg.go.dev/github.com/DonaldMurillo/gofastr/" + pkg,
+			Text:       pkg + " ↗",
+			ExtraAttrs: html.Attrs{"rel": "external"},
+		}),
+	})
 
 	// Narrow (no-rail) docpage: breadcrumb + head + live demo + usage
 	// code, the article centered in the shell the site's docpage
@@ -274,17 +255,19 @@ func (s *ComponentShowcaseScreen) RenderCtx(ctx context.Context) render.HTML {
 		},
 		CrumbsLabel: "Components",
 	},
-		head,
-		// Demo panel. Components that render a self-contained live instance
-		// are labeled "Live"; ones that show an explanatory note (need
-		// per-page wiring) are labeled "Note" so the box is honest.
-		s.demoStage(ctx),
-		// The site-local registered behaviour (behavior_ping.go), on the
-		// Button page: proof a host package ships behaviour the same way
-		// it ships a stylesheet.
-		s.registeredBehaviorSection(),
-		// Example code, the Go that produced the live demo above.
-		s.usage(),
+		ui.Stack(ui.StackConfig{Gap: ui.Gap2XL},
+			head,
+			// Demo panel. Components that render a self-contained live
+			// instance are labeled "Live"; ones that show an explanatory
+			// note (need per-page wiring) are labeled "Note".
+			s.demoStage(ctx),
+			// The site-local registered behaviour (behavior_ping.go), on the
+			// Button page: proof a host package ships behaviour the same way
+			// it ships a stylesheet.
+			s.registeredBehaviorSection(),
+			// Example code, the Go that produced the live demo above.
+			s.usage(),
+		),
 	)
 }
 
@@ -293,16 +276,15 @@ func (s *ComponentShowcaseScreen) RenderCtx(ctx context.Context) render.HTML {
 // data-site-ping; the site-ping module (behavior_ping.go) is
 // demand-loaded by the runtime when it sees the marker, attaches, and
 // toggles aria-pressed on click. Composed entirely from design-system
-// pieces (hard rule 7): ui.Button + the page's existing doc-usage
-// framing, zero bespoke CSS.
+// pieces (hard rule 7): ui.Section + ui.Button, zero bespoke CSS.
 func (s *ComponentShowcaseScreen) registeredBehaviorSection() render.HTML {
 	if s.Entry.Slug != "button" {
 		return render.HTML("")
 	}
 	return ui.Section(ui.SectionConfig{
-		Class:       "doc-usage",
 		Heading:     "Registered behaviour",
 		Description: "This button's behaviour is registered by the site itself with registry.RegisterBehavior and demand-loaded by the runtime when it sees the data-site-ping marker.",
+		Compact:     true,
 	},
 		// A Cluster, so the button keeps its own width inside the
 		// section's stacked body.
@@ -320,15 +302,15 @@ func (s *ComponentShowcaseScreen) registeredBehaviorSection() render.HTML {
 	)
 }
 
-// usage renders the example-code block for the component, when one is
-// registered via gallery.CodeSnippet. Returns empty HTML otherwise.
+// usage renders the example-code section for the component, when one is
+// registered via gallery.CodeSnippet. Returns empty HTML otherwise. The
+// section carries id="example" so a link (and a test) can address it.
 func (s *ComponentShowcaseScreen) usage() render.HTML {
 	code := gallery.CodeSnippet(s.Entry.Slug)
 	if code == "" {
 		return render.HTML("")
 	}
-	return html.Div(html.DivConfig{Class: "doc-usage"},
-		html.Heading(html.HeadingConfig{Level: 2, Class: "doc-usage__title"}, render.Text("Example")),
+	return ui.Section(ui.SectionConfig{Heading: "Example", ID: "example", Compact: true},
 		ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: code}),
 	)
 }

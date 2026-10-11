@@ -1037,12 +1037,12 @@ func TestE2E_SignalAnimateTogglesClass(t *testing.T) {
 	// Initially the animated class should NOT be present.
 	var hasClass bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-cui-animate-signal]').classList.contains('fui-expanded')`, &hasClass),
+		chromedp.Evaluate(`document.querySelector('[data-cui-animate-signal]').classList.contains('is-open')`, &hasClass),
 	); err != nil {
 		t.Fatalf("check initial class: %v", err)
 	}
 	if hasClass {
-		t.Fatal("fui-expanded should NOT be present initially")
+		t.Fatal("is-open should NOT be present initially")
 	}
 
 	// Click the toggle button to set the signal to "true".
@@ -1056,12 +1056,12 @@ func TestE2E_SignalAnimateTogglesClass(t *testing.T) {
 	// Now the class should be present.
 	var afterToggle bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-cui-animate-signal]').classList.contains('fui-expanded')`, &afterToggle),
+		chromedp.Evaluate(`document.querySelector('[data-cui-animate-signal]').classList.contains('is-open')`, &afterToggle),
 	); err != nil {
 		t.Fatalf("check after toggle: %v", err)
 	}
 	if !afterToggle {
-		t.Fatal("fui-expanded should be present after toggle")
+		t.Fatal("is-open should be present after toggle")
 	}
 }
 

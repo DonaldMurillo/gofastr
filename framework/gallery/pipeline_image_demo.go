@@ -6,7 +6,6 @@ import (
 	"image/draw"
 	"sync"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -65,7 +64,7 @@ func demoMockup(w, h int) *fwimage.Image {
 func buildPipelineImageDemo() pipelineDemo {
 	fail := func(msg string) pipelineDemo {
 		return pipelineDemo{
-			image: html.Div(html.DivConfig{Class: "fact"}, render.Text(msg)),
+			image: note(render.Text(msg)),
 			hash:  "",
 		}
 	}
@@ -94,7 +93,7 @@ func buildPipelineImageDemo() pipelineDemo {
 					Src: placeholder, Alt: "The decoded BlurHash placeholder on its own.",
 					Width: 480, Height: 270, Aspect: ui.ImageAspect16x9, Rounded: true,
 				}),
-				html.Div(html.DivConfig{Class: "fact"}, render.Text("Placeholder, decoded from 28 characters")),
+				ui.Muted(render.Text("Placeholder, decoded from 28 characters")),
 			),
 			ui.Stack(ui.StackConfig{Gap: ui.GapXS},
 				ui.PipelineImage(ui.PipelineImageConfig{
@@ -102,7 +101,7 @@ func buildPipelineImageDemo() pipelineDemo {
 					Width: 480, Height: 270, Aspect: ui.ImageAspect16x9, Rounded: true,
 					Placeholder: placeholder,
 				}),
-				html.Div(html.DivConfig{Class: "fact"}, render.Text("Image with the placeholder behind it")),
+				ui.Muted(render.Text("Image with the placeholder behind it")),
 			),
 		),
 	}

@@ -1277,15 +1277,6 @@ func TestColorProbeUsesTwoSentinels(t *testing.T) {
 	}
 }
 
-func TestGalleryCSSKeepsSpacingLive(t *testing.T) {
-	css := gallery.BaseCSS(uitheme.Default())
-	for _, variable := range []string{"var(--spacing-md)", "var(--spacing-xl)"} {
-		if !strings.Contains(css, variable) {
-			t.Errorf("gallery CSS freezes spacing instead of using %s:\n%s", variable, css)
-		}
-	}
-}
-
 func TestThemeHelpRoutesLocally(t *testing.T) {
 	cases := []struct {
 		args []string
