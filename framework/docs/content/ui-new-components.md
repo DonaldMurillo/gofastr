@@ -500,6 +500,36 @@ added/removed, `--color-warning` for word marks) and are tunable through
 `--ui-code-block-highlight-bg`, `--ui-code-block-added-bg`,
 `--ui-code-block-removed-bg`, and `--ui-code-block-mark-bg`.
 
+### Syntax highlighting
+
+`ui.HighlightLines(code, lang)` is the kit's highlighter: a small
+single-pass scanner that returns one `render.HTML` per source line, ready
+for `CodeBlockConfig.Lines`. `ui.Markdown` fences and `ui.CodeTabs`
+samples go through it. It emits the kit's token classes (`tk-kw`,
+`tk-fn`, `tk-str`, `tk-num`, `tk-com`, `tk-type`, `tk-pn`), which the
+CodeBlock sheet colors from the theme's `Code` slots (`--tk-*`, dark
+values in `Theme.DarkCode`; see [theming](theming.md)).
+
+| Language key | What it classes |
+|---|---|
+| `go`, `golang` | keywords and builtins, predeclared types, call sites, and named types in type position: after `type`, an exported composite literal (`Pong{`), behind `*` or `[]`, package-qualified or not (`*http.Request`) |
+| `js`, `ts`, `jsx`, `tsx`, `javascript`, `typescript` | keywords, a few built-in types, call sites, object keys (`{ method: …}`, not a ternary's `a ? b : c`) |
+| `sql`, `postgres`, `sqlite` | keywords and column types, case-insensitive; `--` and `/* */` comments |
+| `sh`, `bash`, `shell`, `console` | keywords, the command word of each line or pipeline stage (after an optional `$ ` prompt), `#` comments at a word boundary |
+| `yaml`, `yml` | mapping keys (at line start, after an optional `- `), `true`/`false`/`null`, `#` comments; an apostrophe in an unquoted value opens no string |
+| `json` | keys (`tk-fn`) apart from string values (`tk-str`), `true`/`false`/`null` |
+| any other non-empty key | comments, strings and numbers |
+| `""`, `text`, `plain` | escaped text, no tokens |
+
+Hand-tokenized lines work too: pass `<span class="tk-…">` spans you
+escaped yourself as `Lines`, and they draw in the same palette.
+
+Go source is tab-indented, so the block renders a tab four columns wide
+(`--ui-code-block-tab-size`, default `4`; the browser's 8 pushed nested
+code off a hero-width panel). The line-number gutter draws in a mix of
+the code text and code surface colors (`--ui-code-block-gutter-color`),
+so it recedes on a dark or a light code surface alike.
+
 **Common mistake**: writing the line numbers as `highlight={2}`. The
 braces are the bare form; `highlight=` takes the bare list. Both
 `{2,5-7}` and `highlight=2,5-7` work, `{2,5-7}` after `highlight=` does
