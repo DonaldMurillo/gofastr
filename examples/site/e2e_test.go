@@ -224,8 +224,8 @@ func TestE2EDocCardNavigates(t *testing.T) {
 	var pathname, html string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/docs/"),
-		chromedp.WaitVisible(`a.doc[href="/docs/query-dsl"]`, chromedp.ByQuery),
-		chromedp.Click(`a.doc[href="/docs/query-dsl"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`a[data-cui-comp="ui-card"][href="/docs/query-dsl"]`, chromedp.ByQuery),
+		chromedp.Click(`a[data-cui-comp="ui-card"][href="/docs/query-dsl"]`, chromedp.ByQuery),
 		chromedp.WaitVisible(`.fui-markdown`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.location.pathname`, &pathname),
 		chromedp.OuterHTML(`[data-cui-scope="docsite-docpage"] article.content`, &html, chromedp.ByQuery),
