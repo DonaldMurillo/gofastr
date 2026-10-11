@@ -720,224 +720,194 @@ func (s *KilnScreen) ScreenDescription() string {
 func (s *KilnScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *KilnScreen) Render() render.HTML {
-	return html.Div(html.DivConfig{Class: "kiln-page"},
-		kHero(), kDemo(), kTimeline(), kCaps(), kCli(),
-	)
+	return container(ui.Stack(ui.StackConfig{Gap: ui.Gap2XL},
+		kHero(), kTimeline(), kCaps(), kCli(),
+	))
 }
 
+// kInstallCmd is the one-line install shown in the hero and the CLI section.
+const kInstallCmd = "go install github.com/DonaldMurillo/gofastr/cmd/kiln@latest"
+
 func kHero() render.HTML {
-	return html.Section(html.SectionConfig{Class: "k-hero", Label: "Kiln"},
-		container(
-			html.Div(html.DivConfig{Class: "k-hero__lockup"},
-				html.Span(html.TextConfig{Class: "mark"}, render.Text("K")),
-				html.Span(html.TextConfig{},
-					html.Span(html.TextConfig{},
-						html.Strong(html.TextConfig{}, render.Text("kiln"))),
-					html.Span(html.TextConfig{Class: "muted"}, render.Text(" — agent build mode")),
-				),
-				experimentalPill(),
-			),
-			html.Heading(html.HeadingConfig{Level: 1},
-				render.Text("Talk an app into "),
-				html.Span(html.TextConfig{Class: "amber"}, render.Text("being")),
-				render.Text("."),
-			),
-			html.Paragraph(html.TextConfig{Class: "lede"},
-				render.Text("Kiln is experimental: a separate binary that mounts a chat panel on your running GoFastr app. The agent calls typed tools; the in-memory IR mutates; the schema migrates; the app re-renders, all in-process. Freeze the journal when done to emit the canonical entity files you commit."),
-			),
-			html.Div(html.DivConfig{Class: "k-hero__ctas"},
-				ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/kiln", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeLarge}),
-				// tabindex: the command scrolls horizontally at narrow
-				// widths (wrapping breaks copy-paste), so the scroll
-				// region must be keyboard-reachable, same treatment as
-				// the home hero's install line.
-				html.Div(html.DivConfig{Class: "k-hero__cli", ExtraAttrs: html.Attrs{"tabindex": "0"}},
-					html.Span(html.TextConfig{Class: "p"}, render.Text("$")),
-					render.Text("go install github.com/DonaldMurillo/gofastr/cmd/kiln@latest"),
-				),
-			),
+	// The demo panel fills the hero's Media slot. The install command
+	// sits under the hero rather than in it: Hero's narrow-screen
+	// collapse is a bare 1fr track, so a long unbreakable line in the
+	// hero widens the page past the viewport. In the Stack it fills the
+	// column and scrolls inside its own frame, and the copy button
+	// carries it to the clipboard intact.
+	install := ui.CodeBlock(ui.CodeBlockConfig{
+		Filename: "install",
+		Language: "shell",
+		Lines:    []render.HTML{ln(pn("$ "), render.Text(kInstallCmd))},
+		ShowCopy: true,
+	})
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL}, ui.Hero(ui.HeroConfig{
+		Eyebrow:   "kiln: agent build mode",
+		Title:     "Talk an app into being.",
+		Subtitle:  "Kiln is experimental: a separate binary that mounts a chat panel on your running GoFastr app. The agent calls typed tools; the in-memory IR mutates; the schema migrates; the app re-renders, all in-process. Freeze the journal when done to emit the canonical entity files you commit.",
+		AriaLabel: "Kiln",
+		Media:     kDemo(),
+		Actions: []render.HTML{
+			ui.LinkButton(ui.LinkButtonConfig{Label: "Read the docs", Href: "/docs/kiln", Variant: ui.ButtonPrimary, Size: ui.ButtonSizeLarge}),
+			experimentalPill(),
+		},
+	}), install)
+}
+
+// kMessage is one turn in the demo chat: who spoke, what they said, and
+// the typed tool an agent turn called.
+func kMessage(who, body, tool string) render.HTML {
+	head := []render.HTML{html.Strong(html.TextConfig{}, render.Text(who))}
+	if tool != "" {
+		head = append(head, ui.Tag(ui.TagConfig{Label: "tool: " + tool, Variant: ui.StatusInfo}))
+	}
+	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignStart, NoWrap: true},
+		ui.Avatar(ui.AvatarConfig{Name: who, Size: ui.AvatarSm}),
+		ui.Stack(ui.StackConfig{Gap: ui.GapXS, TrimMargins: true},
+			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, head...),
+			html.Paragraph(html.TextConfig{}, render.Text(body)),
 		),
 	)
 }
 
 func kDemo() render.HTML {
-	chrome := html.Div(html.DivConfig{Class: "k-demo__chrome"},
-		html.Div(html.DivConfig{Class: "dots"},
-			html.Span(html.TextConfig{}), html.Span(html.TextConfig{}), html.Span(html.TextConfig{}),
-		),
-		html.Div(html.DivConfig{Class: "url"}, render.Text("localhost:8765")),
+	// Left: the app under construction. An illustration, not a live
+	// load, and the description says so.
+	appCard := ui.Card(ui.CardConfig{
+		Heading:      "Your app, being authored live",
+		HeadingLevel: 2,
+		Description:  "Illustration: your real app renders here as the agent edits it.",
+		Action:       ui.Tag(ui.TagConfig{Label: "localhost:8765"}),
+	})
+
+	plan := ui.CodeBlock(ui.CodeBlockConfig{
+		Filename: "Plan #4 · 3 ops",
+		Lines: []render.HTML{
+			ln(pn("+ "), fn_("add_entity"), render.Text("("), str_(`"posts"`), render.Text(")")),
+			ln(pn("+ "), fn_("add_field"), render.Text("("), str_(`"posts"`), render.Text(", title)")),
+			ln(pn("+ "), fn_("add_field"), render.Text("("), str_(`"posts"`), render.Text(", status)")),
+		},
+	})
+	// Real OptimisticAction buttons: the framework's runtime fires the
+	// POST, swaps the label to SuccessLabel on click, and rolls back if
+	// the endpoint returns non-2xx. Endpoints are no-op handlers
+	// registered in main.go.
+	actions := ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
+		ui.OptimisticAction(ui.OptimisticActionConfig{
+			Endpoint:     "/__site/kiln/approve",
+			IdleLabel:    "approve",
+			SuccessLabel: "applying…",
+			Variant:      ui.ButtonPrimary,
+		}),
+		ui.OptimisticAction(ui.OptimisticActionConfig{
+			Endpoint:     "/__site/kiln/reject",
+			IdleLabel:    "reject",
+			SuccessLabel: "rejected",
+			Variant:      ui.ButtonGhost,
+		}),
 	)
-	// Left pane is a stylized wireframe of the app under construction.
-	// NOT a live load. The bars are decorative (aria-hidden) and the
-	// caption says so, so it doesn't read as a skeleton stuck loading.
-	ghost := html.Div(html.DivConfig{Class: "ghost"},
-		html.Heading(html.HeadingConfig{Level: 2}, render.Text("Your app, being authored live")),
-		html.Paragraph(html.TextConfig{Class: "ghost__cap"},
-			render.Text("Illustration: your real app renders here as the agent edits it.")),
-		render.Tag("div", map[string]string{"class": "ghost__wire", "aria-hidden": "true"},
-			html.Div(html.DivConfig{Class: "ghost-row m"}),
-			html.Div(html.DivConfig{Class: "ghost-row s"}),
-			html.Div(html.DivConfig{Class: "ghost-row m"}),
-			html.Div(html.DivConfig{Class: "ghost-row"}),
-			html.Div(html.DivConfig{Class: "ghost-row s"}),
-			html.Div(html.DivConfig{Class: "ghost-row m"}),
+	ask := ui.TextField(ui.TextFieldConfig{
+		Name:        "ask",
+		ID:          "kiln-demo-ask",
+		Label:       "Ask the agent (demo)",
+		LabelHidden: true,
+		Placeholder: "Ask the agent…",
+		Disabled:    true,
+	})
+
+	panel := ui.Card(ui.CardConfig{
+		Header: ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Justify: ui.JustifyBetween},
+			ui.StatusPill(ui.StatusPillConfig{Label: "kiln", Tone: ui.StatusPillAccent, Dot: true}),
+			ui.Muted(render.Text("session #a1b3")),
 		),
-	)
-	km := func(who, role, body string, tool string) render.HTML {
-		whoCls := "km__who"
-		if role == "agent" {
-			whoCls += " agent"
-		} else {
-			whoCls += " you"
-		}
-		children := []render.HTML{
-			html.Span(html.TextConfig{Class: whoCls}, render.Text(who)),
-			html.Div(html.DivConfig{Class: "km__body"}, render.Text(body)),
-		}
-		if tool != "" {
-			children = append(children, html.Span(html.TextConfig{Class: "km__tool"}, render.Text(tool)))
-		}
-		return html.Div(html.DivConfig{Class: "km"}, children...)
-	}
-	kp := html.Div(html.DivConfig{Class: "kpanel"},
-		html.Div(html.DivConfig{Class: "kpanel__head"},
-			html.Span(html.TextConfig{Class: "dot"}),
-			render.Text("kiln"),
-			html.Span(html.TextConfig{Class: "session"}, render.Text("session #a1b3")),
-		),
-		html.Div(html.DivConfig{Class: "kpanel__chat"},
-			km("you", "you", "add a posts entity with title, body, status enum", ""),
-			km("claude-code", "agent", "Reading your existing schema. Three new tools required, no destructive changes.", "tool: add_entity"),
-			km("you", "you", "looks good, ship it", ""),
-			km("claude-code", "agent", "Proposing a plan. Approve below to apply.", "tool: propose_plan"),
-		),
-		html.Div(html.DivConfig{Class: "kpanel__plan"},
-			html.Div(html.DivConfig{Class: "lbl"}, render.Text("Plan #4 · 3 ops")),
-			html.Span(html.TextConfig{Class: "op add"}, render.Text("+ add_entity(\"posts\")")),
-			html.Span(html.TextConfig{Class: "op add"}, render.Text("+ add_field(\"posts\", title)")),
-			html.Span(html.TextConfig{Class: "op add"}, render.Text("+ add_field(\"posts\", status)")),
-			// Real OptimisticAction buttons, the framework's runtime fires
-			// the POST, swaps the label to SuccessLabel on click, rolls back
-			// if the endpoint returns non-2xx. Endpoints are no-op handlers
-			// registered in main.go.
-			html.Div(html.DivConfig{Class: "actions"},
-				ui.OptimisticAction(ui.OptimisticActionConfig{
-					Endpoint:     "/__site/kiln/approve",
-					IdleLabel:    "approve",
-					SuccessLabel: "applying…",
-					Variant:      ui.ButtonPrimary,
-					Class:        "approve",
-				}),
-				ui.OptimisticAction(ui.OptimisticActionConfig{
-					Endpoint:     "/__site/kiln/reject",
-					IdleLabel:    "reject",
-					SuccessLabel: "rejected",
-					Variant:      ui.ButtonGhost,
-					Class:        "reject",
-				}),
-			),
-		),
-		html.Div(html.DivConfig{Class: "kpanel__input"},
-			render.Tag("input", map[string]string{"type": "text", "placeholder": "Ask the agent…", "aria-label": "Ask the agent (demo)", "disabled": "disabled"}, render.Raw("")),
+		Footer: ask,
+	},
+		ui.Stack(ui.StackConfig{Gap: ui.GapLG},
+			kMessage("you", "add a posts entity with title, body, status enum", ""),
+			kMessage("claude-code", "Reading your existing schema. Three new tools required, no destructive changes.", "add_entity"),
+			kMessage("you", "looks good, ship it", ""),
+			kMessage("claude-code", "Proposing a plan. Approve below to apply.", "propose_plan"),
+			plan,
+			actions,
 		),
 	)
-	frame := html.Div(html.DivConfig{Class: "k-demo__frame"},
-		chrome,
-		html.Div(html.DivConfig{Class: "k-demo__body"}, ghost, kp),
-	)
-	return html.Section(html.SectionConfig{Class: "k-demo", Label: "Demo"}, container(frame))
+
+	return ui.Stack(ui.StackConfig{Gap: ui.GapMD}, appCard, panel)
 }
 
 func kTimeline() render.HTML {
-	evt := func(t, variant, title, body string) render.HTML {
-		cls := "tl-evt"
-		if variant != "" {
-			cls += " " + variant
-		}
-		return html.Div(html.DivConfig{Class: cls},
-			html.Span(html.TextConfig{Class: "tl-evt__t"}, render.Text(t)),
-			html.Div(html.DivConfig{Class: "tl-evt__dot"}, html.Span(html.TextConfig{}, render.Raw(""))),
-			html.Div(html.DivConfig{},
-				html.Strong(html.TextConfig{}, render.Text(title)),
-				html.Paragraph(html.TextConfig{}, render.Text(body)),
-			),
-		)
+	evt := func(t string, v ui.TimelineEventVariant, title, body string) ui.TimelineEvent {
+		return ui.TimelineEvent{Title: title, Meta: t, Variant: v, Body: render.Text(body)}
 	}
-	return html.Section(html.SectionConfig{Class: "timeline", Label: "Session timeline"},
-		container(
-			html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Anatomy of a session")),
-			html.Heading(html.HeadingConfig{Level: 2}, render.Text("Seven events from prompt to commit")),
-			html.Div(html.DivConfig{Class: "tl-rail"},
-				evt("0s", "", "Agent connects", "kiln subscribes to its own SSE bus and spawns the configured CLI."),
-				evt("3s", "tool", "Agent calls world_get", "Reads the in-memory IR: current entities, fields, hooks, routes."),
-				evt("8s", "tool", "Agent calls add_entity", "Mutates the IR: posts(title, body, status). No DB write yet."),
-				evt("12s", "tool", "Agent calls propose_plan", "Lists destructive targets (none) and the three add_* operations."),
-				evt("18s", "approve", "You click Approve", "Plan id is stamped onto the agent's retry call."),
-				evt("19s", "", "Schema auto-migrates", "The plan applies and the schema auto-migrates in-process; the posts table is live."),
-				evt("25s", "", "Journal freezable", "kiln freeze --dir build/ snapshots the world; graduate to Go via a gofastr.yml blueprint."),
-			),
-		),
+	return ui.Section(ui.SectionConfig{
+		Eyebrow: "Anatomy of a session",
+		Heading: "Seven events from prompt to commit",
+		Compact: true,
+	},
+		ui.Timeline(ui.TimelineConfig{Events: []ui.TimelineEvent{
+			evt("0s", ui.TimelineNeutral, "Agent connects", "kiln subscribes to its own SSE bus and spawns the configured CLI."),
+			evt("3s", ui.TimelineInfo, "Agent calls world_get", "Reads the in-memory IR: current entities, fields, hooks, routes."),
+			evt("8s", ui.TimelineInfo, "Agent calls add_entity", "Mutates the IR: posts(title, body, status). No DB write yet."),
+			evt("12s", ui.TimelineInfo, "Agent calls propose_plan", "Lists destructive targets (none) and the three add_* operations."),
+			evt("18s", ui.TimelineSuccess, "You click Approve", "Plan id is stamped onto the agent's retry call."),
+			evt("19s", ui.TimelineNeutral, "Schema auto-migrates", "The plan applies and the schema auto-migrates in-process; the posts table is live."),
+			evt("25s", ui.TimelineNeutral, "Journal freezable", "kiln freeze --dir build/ snapshots the world; graduate to Go via a gofastr.yml blueprint."),
+		}}),
 	)
 }
 
 func kCaps() render.HTML {
-	can := html.Div(html.DivConfig{Class: "cap can"},
-		html.Heading(html.HeadingConfig{Level: 3}, render.Text("What the agent can do")),
-		html.UnorderedList(html.ListConfig{},
-			html.ListItem(html.ListItemConfig{}, render.Text("Add entities, fields, hooks, routes")),
-			html.ListItem(html.ListItemConfig{}, render.Text("Migrate up + seed data")),
-			html.ListItem(html.ListItemConfig{}, render.Text("Edit pages and screens (non-destructively)")),
-			html.ListItem(html.ListItemConfig{}, render.Text("Inspect logs, run queries, browse docs")),
-		),
-	)
-	cant := html.Div(html.DivConfig{Class: "cap cant"},
-		html.Heading(html.HeadingConfig{Level: 3}, render.Text("Without an approved plan")),
-		html.UnorderedList(html.ListConfig{},
-			html.ListItem(html.ListItemConfig{}, render.Text("Drop entities, fields, hooks, routes")),
-			html.ListItem(html.ListItemConfig{}, render.Text("Migrate down")),
-			html.ListItem(html.ListItemConfig{}, render.Text("Touch credentials, secrets, .env")),
-			html.ListItem(html.ListItemConfig{}, render.Text("Spawn external processes you didn't allow")),
-		),
-	)
-	return html.Section(html.SectionConfig{Class: "caps", Label: "Capabilities"},
-		container(
-			html.Div(html.DivConfig{Class: "mb-lg"}, tagAccent("Plan-gated destructive ops")),
-			html.Heading(html.HeadingConfig{Level: 2}, render.Text("The agent acts within explicit limits")),
-			html.Div(html.DivConfig{Class: "caps__grid"}, can, cant),
-		),
+	list := func(items ...string) render.HTML {
+		lis := make([]render.HTML, len(items))
+		for i, it := range items {
+			lis[i] = html.ListItem(html.ListItemConfig{}, render.Text(it))
+		}
+		return html.UnorderedList(html.ListConfig{}, lis...)
+	}
+	can := ui.Card(ui.CardConfig{
+		Heading: "What the agent can do",
+		Action:  ui.StatusBadge(ui.StatusBadgeConfig{Label: "Allowed", Variant: ui.StatusSuccess, Dot: true}),
+	}, list(
+		"Add entities, fields, hooks, routes",
+		"Migrate up + seed data",
+		"Edit pages and screens (non-destructively)",
+		"Inspect logs, run queries, browse docs",
+	))
+	cant := ui.Card(ui.CardConfig{
+		Heading: "Without an approved plan",
+		Action:  ui.StatusBadge(ui.StatusBadgeConfig{Label: "Blocked", Variant: ui.StatusDanger, Dot: true}),
+	}, list(
+		"Drop entities, fields, hooks, routes",
+		"Migrate down",
+		"Touch credentials, secrets, .env",
+		"Spawn external processes you didn't allow",
+	))
+	return ui.Section(ui.SectionConfig{
+		Eyebrow: "Plan-gated destructive ops",
+		Heading: "The agent acts within explicit limits",
+		Compact: true,
+	},
+		ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapLG}, can, cant),
 	)
 }
 
 func kCli() render.HTML {
-	cmd := func(label string, lines ...render.HTML) render.HTML {
-		return html.Div(html.DivConfig{Class: "cli-cmd"},
-			html.Div(html.DivConfig{Class: "cli-cmd__head"}, render.Text(label)),
-			html.Div(html.DivConfig{Class: "cli-cmd__body"}, lines...),
-		)
-	}
-	p := func(s string) render.HTML { return html.Span(html.TextConfig{Class: "p"}, render.Text(s)) }
-	o := func(s string) render.HTML { return html.Span(html.TextConfig{Class: "o"}, render.Text(s)) }
-	ok := func(s string) render.HTML { return html.Span(html.TextConfig{Class: "ok"}, render.Text(s)) }
-	return html.Section(html.SectionConfig{Class: "cli-sect", Label: "CLI"},
-		container(
-			html.Heading(html.HeadingConfig{Level: 2},
-				render.Text("Two binaries. "),
-				html.Span(html.TextConfig{Class: "amber"}, render.Text("Two commands of setup")),
-				render.Text("."),
+	return ui.Section(ui.SectionConfig{
+		Eyebrow:     "Setup",
+		Heading:     "Two binaries. Two commands of setup.",
+		Description: "Install the kiln binary alongside the gofastr CLI. Pick the agent CLI you already use; kiln spawns it as a subprocess with KILN_URL injected.",
+		Compact:     true,
+	},
+		ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapLG},
+			ui.TerminalBlock(ui.TerminalBlockConfig{Label: "install"},
+				render.Text("$ "+kInstallCmd+"\n"),
+				ui.TerminalOK("→ installed kiln v"+siteVersion+"\n"),
 			),
-			html.Paragraph(html.TextConfig{Class: "lede"},
-				render.Text("Install the kiln binary alongside the gofastr CLI. Pick the agent CLI you already use; kiln spawns it as a subprocess with KILN_URL injected.")),
-			html.Div(html.DivConfig{Class: "cli-block"},
-				cmd("install",
-					p("$"), render.Text(" go install github.com/DonaldMurillo/gofastr/cmd/kiln@latest\n"),
-					ok("→ installed kiln v"+siteVersion+"\n"),
-				),
-				cmd("serve",
-					p("$"), render.Text(" kiln serve --agent claude-code\n"),
-					o("→ panel floats on http://localhost:8765\n"),
-					o("→ MCP server live at /mcp\n"),
-					ok("→ ready · waiting for the agent.\n"),
-				),
+			ui.TerminalBlock(ui.TerminalBlockConfig{Label: "serve"},
+				render.Text("$ kiln serve --agent claude-code\n"),
+				ui.TerminalOut("→ panel floats on http://localhost:8765\n"),
+				ui.TerminalOut("→ MCP server live at /mcp\n"),
+				ui.TerminalOK("→ ready · waiting for the agent.\n"),
 			),
 		),
 	)
