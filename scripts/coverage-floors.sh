@@ -257,7 +257,15 @@ trap 'rm -rf "$profdir"' EXIT
 # present.
 affected=""
 if [ -n "${COVERPROFILE:-}" ]; then
-  if [ ! -r "$COVERPROFILE" ]; then
+  if [ ! -e "$COVERPROFILE" ]; then
+    # The Test step writes no profile when its affected set is empty (a
+    # change that only touches packages its sweep excludes). Read that as
+    # an empty profile: an affected floor still fails closed below with
+    # "no statements", and a run with no affected floor passes.
+    echo "note  COVERPROFILE=$COVERPROFILE does not exist (no package tested); reading it as empty"
+    COVERPROFILE="$profdir/empty-cover.out"
+    : > "$COVERPROFILE"
+  elif [ ! -r "$COVERPROFILE" ]; then
     echo "FAIL  COVERPROFILE=$COVERPROFILE is not readable"; exit 2
   fi
   module_path=$(go list -m)

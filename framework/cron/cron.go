@@ -380,14 +380,22 @@ type cronExpr struct {
 	dom    uint64 // 1-31
 	month  uint64 // 1-12
 	dow    uint64 // 0-6 (Sun=0)
+	domAny bool   // day-of-month field begins with wildcard syntax
+	dowAny bool   // day-of-week field begins with wildcard syntax
 }
 
 func (e cronExpr) matches(t time.Time) bool {
+	domMatch := e.dom&(1<<uint(t.Day())) != 0
+	dowMatch := e.dow&(1<<uint(t.Weekday())) != 0
+	dayMatch := domMatch && dowMatch
+	if !e.domAny && !e.dowAny {
+		// Standard cron runs when either restricted day field matches.
+		dayMatch = domMatch || dowMatch
+	}
 	return e.minute&(1<<uint(t.Minute())) != 0 &&
 		e.hour&(1<<uint(t.Hour())) != 0 &&
-		e.dom&(1<<uint(t.Day())) != 0 &&
-		e.month&(1<<uint(t.Month())) != 0 &&
-		e.dow&(1<<uint(t.Weekday())) != 0
+		dayMatch &&
+		e.month&(1<<uint(t.Month())) != 0
 }
 
 // ParseCron accepts the standard 5-field syntax plus the shortcuts
@@ -429,6 +437,8 @@ func ParseCron(spec string) (cronExpr, error) {
 	if e.dow, err = parseField(fields[4], 0, 6); err != nil {
 		return cronExpr{}, fmt.Errorf("day-of-week: %w", err)
 	}
+	e.domAny = strings.HasPrefix(fields[2], "*")
+	e.dowAny = strings.HasPrefix(fields[4], "*")
 	return e, nil
 }
 
@@ -482,8 +492,14 @@ func parseFieldPart(part string, min, max int) (uint64, error) {
 	}
 
 	var mask uint64
-	for i := lo; i <= hi; i += step {
+	for i := lo; i <= hi; {
 		mask |= 1 << uint(i)
+		// Compare before adding: an otherwise valid but very large step
+		// can overflow int, wrap below hi, and set unrelated schedule bits.
+		if step > hi-i {
+			break
+		}
+		i += step
 	}
 	return mask, nil
 }

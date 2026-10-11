@@ -112,8 +112,9 @@ type OAuth2Plugin struct {
 	// nonce embedded in the state token; values are the token's
 	// signed expiry so periodic GC can drop entries past TTL. Only
 	// validateAndConsumeState mutates this map.
-	noncesMu   sync.Mutex
-	usedNonces map[string]time.Time
+	noncesMu       sync.Mutex
+	usedNonces     map[string]time.Time
+	lastNonceSweep time.Time
 }
 
 // minStateSecretLen is the floor for OAuth2Config.StateSecret, the HMAC
@@ -814,6 +815,14 @@ const stateTTL = 10 * time.Minute
 // harder to abuse than the redirect path under the old design.
 const nonceGCThreshold = 4096
 
+// nonceGCSweepInterval bounds cleanup work when a burst of valid states
+// keeps the nonce map full of live entries. nonceMaxEntries is a hard ceiling:
+// at capacity, callbacks fail closed until expired nonces can be reclaimed.
+const (
+	nonceGCSweepInterval = time.Minute
+	nonceMaxEntries      = 1 << 16
+)
+
 // generateState builds a stateless, HMAC-signed state token of the form
 //
 //	base64(nonce) "." providerName "." expiryUnix "." base64(userID) "." base64(hmac)
@@ -896,13 +905,12 @@ func (p *OAuth2Plugin) validateAndConsumeState(state, expectedProvider string) (
 	if _, replayed := p.usedNonces[nonceB64]; replayed {
 		return "", false
 	}
-	if len(p.usedNonces) >= nonceGCThreshold {
-		now := time.Now()
-		for k, exp := range p.usedNonces {
-			if now.After(exp) {
-				delete(p.usedNonces, k)
-			}
-		}
+	now := time.Now()
+	if len(p.usedNonces) >= nonceGCThreshold && now.Sub(p.lastNonceSweep) >= nonceGCSweepInterval {
+		p.purgeExpiredNoncesLocked(now)
+	}
+	if len(p.usedNonces) >= nonceMaxEntries {
+		return "", false
 	}
 	p.usedNonces[nonceB64] = expiry
 	return string(uidBytes), true
@@ -914,12 +922,16 @@ func (p *OAuth2Plugin) validateAndConsumeState(state, expectedProvider string) (
 func (p *OAuth2Plugin) purgeExpiredNonces() {
 	p.noncesMu.Lock()
 	defer p.noncesMu.Unlock()
-	now := time.Now()
+	p.purgeExpiredNoncesLocked(time.Now())
+}
+
+func (p *OAuth2Plugin) purgeExpiredNoncesLocked(now time.Time) {
 	for n, exp := range p.usedNonces {
-		if now.After(exp) {
+		if !now.Before(exp) {
 			delete(p.usedNonces, n)
 		}
 	}
+	p.lastNonceSweep = now
 }
 
 // randomPassword generates a random alphanumeric string of the given length.

@@ -198,10 +198,14 @@ func TestClosePublishesEmptyRosters(t *testing.T) {
 // TestRemoteStatusAndLeaveMirrored: status and leave events from the
 // other replica reach local members' wire.
 func TestRemoteStatusAndLeaveMirrored(t *testing.T) {
-	base1, base2, _, _ := twoReplicas(t, func() Config { return Config{} })
+	base1, base2, _, s2 := twoReplicas(t, func() Config { return Config{} })
 
 	a, _ := join(t, base1, "room1", "pA")
 	defer a.close()
+	// pB must join after S2 has taken in pA's join mirror. Joining
+	// first races it: pB's snapshot then lacks pA and pB is rightly
+	// sent a live join for pA ahead of the status this test waits for.
+	waitFor(t, 3*time.Second, func() bool { return hasPeer(s2, "room1", "pA") }, "S2 sees pA")
 	b, _ := join(t, base2, "room1", "pB")
 	defer b.close()
 

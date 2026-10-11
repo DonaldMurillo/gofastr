@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -68,11 +69,34 @@ type PasswordResetConfig struct {
 //   - POST /auth/reset-password (takes {token, password}; verifies the
 //     token; updates the user's password).
 type PasswordResetPlugin struct {
-	cfg   PasswordResetConfig
-	mgr   *AuthManager
-	store MagicLinkTokenStore
-	limit *RateLimiter
+	cfg             PasswordResetConfig
+	mgr             *AuthManager
+	store           MagicLinkTokenStore
+	limit           *RateLimiter
+	deliveryQueue   chan passwordResetDelivery
+	deliveryMu      sync.Mutex
+	deliveryStarted bool
+	deliveryStopped bool
+	deliveryCtx     context.Context
+	deliveryCancel  context.CancelFunc
+	deliveryWG      sync.WaitGroup
 }
+
+type passwordResetDelivery struct {
+	ctx      context.Context
+	to       string
+	resetURL string
+}
+
+// PasswordResetPlugin participates in AuthManager shutdown to drain its
+// asynchronous email workers.
+var _ AuthPluginOnStop = (*PasswordResetPlugin)(nil)
+
+const (
+	passwordResetDeliveryQueueCapacity = 1024
+	passwordResetDeliveryWorkers       = 8
+	passwordResetDeliveryTimeout       = 30 * time.Second
+)
 
 // NewPasswordResetPlugin builds the plugin with sensible defaults.
 func NewPasswordResetPlugin(cfg PasswordResetConfig) *PasswordResetPlugin {
@@ -96,9 +120,10 @@ func NewPasswordResetPlugin(cfg PasswordResetConfig) *PasswordResetPlugin {
 		}
 	}
 	p := &PasswordResetPlugin{
-		cfg:   cfg,
-		store: store,
-		limit: newScopedRateLimiter(*cfg.RateLimit, "password_reset"),
+		cfg:           cfg,
+		store:         store,
+		limit:         newScopedRateLimiter(*cfg.RateLimit, "password_reset"),
+		deliveryQueue: make(chan passwordResetDelivery, passwordResetDeliveryQueueCapacity),
 	}
 	return p
 }
@@ -222,22 +247,11 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 
 	switch {
 	case p.cfg.EmailSender != nil:
-		emailBody := resetURL
-		if p.cfg.BodyTemplate != nil {
-			emailBody = p.cfg.BodyTemplate(resetURL)
-		}
-		if err := p.cfg.EmailSender.Send(r.Context(), user.GetEmail(), emailBody); err != nil {
-			// The client still receives the anti-enumeration 200 (the deferred
-			// encode below), but the operator must see that delivery broke.
-			// Discarding the error silently makes a misconfigured sender
-			// invisibly break the whole reset pipeline. Log hashed identifiers
-			// only: the URL embeds the takeover token, and the email is
-			// request input.
-			slog.Warn("password-reset email send failed",
-				"plugin", "password-reset",
-				"email_hash", hashedIdentifier(user.GetEmail()),
-				"err", err)
-		}
+		// Keep the email provider and host-supplied body template off the
+		// request path. Otherwise the known-account branch takes as long as
+		// delivery while the unknown-account branch returns after token-store
+		// work, making the uniform response a timing oracle.
+		p.queueResetEmail(r.Context(), user.GetEmail(), resetURL)
 	case p.cfg.DevMode:
 		// SECURITY: do not log the live reset URL. The URL embeds the
 		// raw token, which is a takeover credential, anyone with read
@@ -252,6 +266,117 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 		// to preserve no-enumeration). This IS a known footgun: in this
 		// posture, the password-reset flow is non-functional in production
 		// without anyone noticing. Document it.
+	}
+}
+
+// queueResetEmail schedules delivery without tying the uniform forgot-password
+// response to provider latency. The bounded queue and fixed worker count keep a
+// flood from creating an unbounded number of goroutines. Request cancellation
+// is detached because the client has already received its response; each
+// provider call still gets a bounded deadline.
+func (p *PasswordResetPlugin) queueResetEmail(requestCtx context.Context, to, resetURL string) {
+	delivery := passwordResetDelivery{
+		ctx:      context.WithoutCancel(requestCtx),
+		to:       to,
+		resetURL: resetURL,
+	}
+
+	p.deliveryMu.Lock()
+	if p.deliveryStopped {
+		p.deliveryMu.Unlock()
+		slog.Warn("password-reset email delivery stopped",
+			"plugin", "password-reset",
+			"email_hash", hashedIdentifier(to))
+		return
+	}
+	if !p.deliveryStarted {
+		p.deliveryStarted = true
+		p.deliveryCtx, p.deliveryCancel = context.WithCancel(context.Background())
+		for i := 0; i < passwordResetDeliveryWorkers; i++ {
+			p.deliveryWG.Add(1)
+			go p.runResetEmailWorker()
+		}
+	}
+	queued := false
+	select {
+	case p.deliveryQueue <- delivery:
+		queued = true
+	default:
+	}
+	p.deliveryMu.Unlock()
+
+	if !queued {
+		slog.Warn("password-reset email delivery queue full",
+			"plugin", "password-reset",
+			"email_hash", hashedIdentifier(to))
+	}
+}
+
+// OnStop cancels active deliveries, closes the queue, and waits for workers to
+// exit. The caller's context bounds shutdown when a custom sender ignores
+// cancellation.
+func (p *PasswordResetPlugin) OnStop(ctx context.Context) error {
+	p.deliveryMu.Lock()
+	if !p.deliveryStopped {
+		p.deliveryStopped = true
+		if p.deliveryStarted {
+			p.deliveryCancel()
+			close(p.deliveryQueue)
+		}
+	}
+	started := p.deliveryStarted
+	p.deliveryMu.Unlock()
+
+	if !started {
+		return nil
+	}
+	done := make(chan struct{})
+	go func() {
+		p.deliveryWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (p *PasswordResetPlugin) runResetEmailWorker() {
+	defer p.deliveryWG.Done()
+	for delivery := range p.deliveryQueue {
+		if p.deliveryCtx.Err() == nil {
+			p.sendResetEmail(delivery)
+		}
+	}
+}
+
+func (p *PasswordResetPlugin) sendResetEmail(delivery passwordResetDelivery) {
+	defer func() {
+		if recover() != nil {
+			slog.Error("password-reset email delivery panicked",
+				"plugin", "password-reset",
+				"email_hash", hashedIdentifier(delivery.to))
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(delivery.ctx, passwordResetDeliveryTimeout)
+	stopCancel := context.AfterFunc(p.deliveryCtx, cancel)
+	defer stopCancel()
+	defer cancel()
+
+	body := delivery.resetURL
+	if p.cfg.BodyTemplate != nil {
+		body = p.cfg.BodyTemplate(delivery.resetURL)
+	}
+	if err := p.cfg.EmailSender.Send(ctx, delivery.to, body); err != nil {
+		// The client still receives the anti-enumeration 200. Log hashed
+		// identifiers only: the URL embeds the takeover token.
+		slog.Warn("password-reset email send failed",
+			"plugin", "password-reset",
+			"email_hash", hashedIdentifier(delivery.to),
+			"err", err)
 	}
 }
 
