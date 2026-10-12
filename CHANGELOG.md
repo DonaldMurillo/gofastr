@@ -8,6 +8,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **entityui lists warn when their row links lead nowhere.** The first
+  time a list renders rows whose `<base>/<id>` matches no registered
+  screen, it logs one warning per base naming the route to register.
+  Until now every row link 404ed with nothing in the log. The check runs
+  through `App.EntityUI` with a mounted `uihost` (`UIHost.HasScreen`);
+  a custom host opts in through `entityui.ScreenHost` (#503).
 - **The startup banner says how to get past the 401s.** When an entity
   requires auth and nothing on the app signs callers in, the banner
   prints one line: wire `battery/auth`, or set `Exposure.Public`.

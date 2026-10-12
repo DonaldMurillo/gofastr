@@ -49,7 +49,29 @@ Mount the exact create route: the default New, Duplicate, Create another,
 related-list Add and relation-picker New links use `<base>/create`.
 Mounting only `/deals/new` leaves those links pointing at a missing screen;
 with `/deals/{id}` registered, it can look like a missing record named
-"create". entityui cannot validate your app's screen registry at boot.
+"create". entityui cannot validate your app's screen registry at boot,
+because lists are built inside a screen's render. Instead, the first time
+a list renders rows whose `<base>/<id>` link matches no registered screen,
+it logs one warning per base naming the route to register
+(`entityui: list rows link to a path no screen serves`). The check runs
+through `App.EntityUI` with a mounted `uihost`; a custom `Host` opts in by
+implementing `entityui.ScreenHost`.
+
+The builders draw no page frame: no container, no max width, no gutter.
+Under a site header whose content sits in `ui.Container`, wrap the
+builder's output in the same container so the screen lines up with it:
+
+```go
+<!-- gofastr:compile
+import "context"
+import "github.com/DonaldMurillo/gofastr/framework/entityui"
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+var appUI *entityui.UI
+var ctx context.Context
+-->
+page := ui.Container(ui.ContainerConfig{}, appUI.List("deals").Base("/deals").RenderCtx(ctx))
+_ = page
+```
 
 To choose another route, use one create-path function for the screen
 registration and for the UI's links:
