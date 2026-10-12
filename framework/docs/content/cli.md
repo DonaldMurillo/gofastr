@@ -24,7 +24,9 @@ each command to the doc that covers it.
   freshly minted `JWT_SECRET`, which `main.go` reads from the
   environment. Auth dev mode (plain session cookie, relaxed login
   limiter) follows `GOFASTR_DEV`, which `gofastr dev` sets, so a copied
-  `.env` never relaxes a deployment. `init . --reinit` refreshes the
+  `.env` never relaxes a deployment. `init .` refuses to run when git
+  already tracks `.env` (untrack it with `git rm --cached .env` first),
+  since the new secret would land in the next commit. `init . --reinit` refreshes the
   AI-agent onboarding files in place (`--force` overwrites your edits);
   no Go code or git changes. A released CLI pins the generated `go.mod` to its
   matching GoFastr version. A local development build prints the exact

@@ -688,6 +688,12 @@ func (a *App) EntityCRUDMounted(e *entity.Entity) bool {
 // routes it serves instead of eight, five of which would 404/405.
 func (a *App) entityCrudMount(e *entity.Entity) crud.MountInfo {
 	if !a.entityCRUDEnabled(e) {
+		// No CRUD routes, but relative custom endpoints still mount under
+		// the API prefix (openapi.EntityEndpointRoutePath), so the index
+		// row's base path carries it. A versioned entity keeps its Version.
+		if a.apiPrefix() != "" && e.Version == "" {
+			return crud.MountInfo{Path: a.entityMountPath(e.GetTable())}
+		}
 		return crud.MountInfo{}
 	}
 	// Views registered with Columns become ORM entities and mount

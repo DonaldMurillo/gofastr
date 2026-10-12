@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -114,5 +115,46 @@ func TestInitNoEntitySkipsAuth(t *testing.T) {
 	}
 	if strings.Contains(readScaffold(t, root, ".env"), "JWT_SECRET") {
 		t.Error("--no-entity .env must not carry a JWT secret")
+	}
+}
+
+// `gofastr init .` rewrites .env with a fresh JWT_SECRET. In a repo that
+// already tracks .env, the .gitignore entry the scaffold adds does not
+// untrack it, so the next commit would publish the signing key. Init
+// must refuse before writing anything.
+func TestInitRefusesTrackedEnv(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q", ".")
+	const original = "DATABASE_URL=postgres://keep-me\n"
+	if err := os.WriteFile(".env", []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git("add", ".env")
+
+	var code int
+	out := covT_capStdout(t, func() { code = covT_capExit(t, func() { runInit([]string{"."}) }) })
+	if code != 1 {
+		t.Fatalf("init . over a tracked .env exited %d, want 1:\n%s", code, out)
+	}
+	if !strings.Contains(out, "git rm --cached .env") {
+		t.Errorf("refusal should name the fix:\n%s", out)
+	}
+	if b, _ := os.ReadFile(".env"); string(b) != original {
+		t.Errorf("tracked .env was rewritten:\n%s", b)
+	}
+	if _, err := os.Stat("main.go"); err == nil {
+		t.Error("init wrote main.go before refusing")
 	}
 }

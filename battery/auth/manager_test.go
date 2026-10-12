@@ -469,17 +469,63 @@ func measure(t *testing.T, r *router.Router, email, password string) time.Durati
 	return time.Since(start)
 }
 
-// Init is the one call both wirings make (RegisterBattery, or the app
-// calling Init itself), so it is where the banner learns auth is wired.
-func TestInitNotesAuthenticator(t *testing.T) {
-	app := framework.NewApp(framework.WithoutDefaultMiddleware())
-	if app.AuthenticatorNoted() {
-		t.Fatal("a fresh app must not report auth as wired")
+// The banner's "no auth is wired" line goes quiet only once callers can
+// actually be signed in: Init mounts the routes, but without a resolving
+// middleware every protected route still answers 401. Init alone must
+// leave the hint up; Init plus SessionMiddleware or Middleware(), in
+// either order, quiets it.
+func TestAuthNotedOnlyWithMiddleware(t *testing.T) {
+	newMgr := func() *AuthManager {
+		return New(AuthConfig{DevMode: true, UserStore: newMemoryUserStore()})
 	}
-	if err := New(AuthConfig{DevMode: true}).Init(app); err != nil {
-		t.Fatal(err)
+	initApp := func(t *testing.T, m *AuthManager, app *framework.App) {
+		t.Helper()
+		if err := m.Init(app); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if !app.AuthenticatorNoted() {
-		t.Fatal("AuthManager.Init must call App.NoteAuthenticator")
-	}
+
+	t.Run("init alone", func(t *testing.T) {
+		app := framework.NewApp(framework.WithoutDefaultMiddleware())
+		initApp(t, newMgr(), app)
+		if app.AuthenticatorNoted() {
+			t.Fatal("Init without a resolving middleware must not quiet the banner")
+		}
+	})
+	t.Run("middleware then init", func(t *testing.T) {
+		app := framework.NewApp(framework.WithoutDefaultMiddleware())
+		m := newMgr()
+		_ = SessionMiddleware(m)
+		initApp(t, m, app)
+		if !app.AuthenticatorNoted() {
+			t.Fatal("SessionMiddleware before Init must quiet the banner")
+		}
+	})
+	t.Run("init then middleware", func(t *testing.T) {
+		app := framework.NewApp(framework.WithoutDefaultMiddleware())
+		m := newMgr()
+		initApp(t, m, app)
+		_ = SessionMiddleware(m)
+		if !app.AuthenticatorNoted() {
+			t.Fatal("SessionMiddleware after Init must quiet the banner")
+		}
+	})
+	t.Run("manager middleware", func(t *testing.T) {
+		app := framework.NewApp(framework.WithoutDefaultMiddleware())
+		m := newMgr()
+		initApp(t, m, app)
+		_ = m.Middleware()
+		if !app.AuthenticatorNoted() {
+			t.Fatal("AuthManager.Middleware after Init must quiet the banner")
+		}
+	})
+	t.Run("require auth over the manager's JWT", func(t *testing.T) {
+		app := framework.NewApp(framework.WithoutDefaultMiddleware())
+		m := newMgr()
+		initApp(t, m, app)
+		_ = RequireAuth(m.JWT())
+		if !app.AuthenticatorNoted() {
+			t.Fatal("RequireAuth(mgr.JWT()) after Init must quiet the banner")
+		}
+	})
 }

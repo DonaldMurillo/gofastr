@@ -9,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
@@ -19,6 +20,14 @@ import (
 func TestLLMIndexLinksUnderAPIPrefix(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app := prefixedTicketsApp(t, db, "/api")
+		// CRUD off, one relative custom endpoint: it mounts under the
+		// prefix (/api/reports/summary), so its index row must too.
+		app.Entity("reports", entity.EntityConfig{
+			Fields:   []schema.Field{{Name: "title", Type: schema.String}},
+			Exposure: &entity.ExposureConfig{CRUD: new(false)},
+			Endpoints: []entity.Endpoint{{Method: http.MethodGet, Path: "summary",
+				Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {})}},
+		})
 		// A read-only view mounts under the prefix too, through App.View,
 		// which records no CRUD mount of its own.
 		app.View(migrate.View{
@@ -44,6 +53,9 @@ func TestLLMIndexLinksUnderAPIPrefix(t *testing.T) {
 		}
 		if !strings.Contains(md, "[open_tickets](/api/open_tickets/llm.md)") {
 			t.Errorf("index should link the view's prefixed page:\n%s", md)
+		}
+		if !strings.Contains(md, "`/api/reports`") {
+			t.Errorf("index should list the CRUD-off entity under the prefix:\n%s", md)
 		}
 		if !strings.Contains(md, "`/api/tickets`") {
 			t.Errorf("index Base Path should carry the prefix:\n%s", md)

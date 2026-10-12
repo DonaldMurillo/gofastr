@@ -18,9 +18,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **The startup banner says how to get past the 401s.** When an entity
   requires auth and nothing on the app signs callers in, the banner
   prints one line: wire `battery/auth`, or set `Exposure.Public`.
-  `AuthManager.Init` calls the new `App.NoteAuthenticator()`, so both
-  `RegisterBattery` and a direct `Init` count, and `battery/desktop` calls
-  it when its window identity takes effect; a custom auth layer calls it
+  `battery/auth` calls the new `App.NoteAuthenticator()` once `Init` has
+  run and a middleware that resolves callers exists
+  (`SessionMiddleware(mgr)`, `mgr.Middleware()`, or
+  `RequireAuth(mgr.JWT())`), so an `Init` with no middleware keeps the
+  hint up. `battery/desktop` calls it when its window identity takes
+  effect; a custom auth layer or a `TokenMiddleware`-only app calls it
   too, and `App.AuthenticatorNoted()` reads it back (#503).
 - **An unknown `?include=` names the relation it was close to.**
   `?include=issue` on an entity whose relation is `issue_id` now answers
@@ -37,7 +40,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Entity CRUD mounts under `/api`, so a screen can own `/posts`. `.env`
   gains a per-checkout `JWT_SECRET`. Auth dev mode follows `GOFASTR_DEV`
   (set by `gofastr dev`), never `.env`, so outside the dev loop auth
-  issues Secure cookies and refuses to boot without a secret (#503).
+  issues Secure cookies and refuses to boot without a secret. `init .`
+  refuses a directory whose `.env` git already tracks (#503).
 - **`ui.AuthCard` has a `Notice` slot.** It renders a `role="status"`
   message in the success color between the alert and the body, for
   outcomes like "account created" that the danger-styled `Alert` would

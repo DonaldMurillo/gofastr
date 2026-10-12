@@ -56,6 +56,7 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 	if mgr.UserStore() == nil {
 		panic("auth.SessionMiddleware: AuthManager has no UserStore: set AuthConfig.UserStore before constructing the middleware. Without it, every request would log a WARN and proceed anonymously, making the middleware useless.")
 	}
+	mgr.markResolving()
 	o := sessionMiddlewareOpts{logger: slog.Default()}
 	for _, fn := range opts {
 		fn(&o)

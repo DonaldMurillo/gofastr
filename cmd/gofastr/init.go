@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,6 +44,13 @@ func runInit(args []string) {
 			info("Use a different name, or cd into the existing directory and run 'gofastr init .'")
 			osExit(1)
 		}
+	} else if envTrackedByGit(".") {
+		// init . rewrites .env with a fresh JWT_SECRET. The .gitignore entry
+		// the scaffold adds does not untrack a file git already tracks, so
+		// the next commit would publish the key. Refuse before writing.
+		fail(".env is tracked by git; init would write a signing key into it.")
+		info("Untrack it first: git rm --cached .env")
+		osExit(1)
 	}
 
 	// Check for 'go' in PATH
@@ -621,6 +629,17 @@ func getEnv(key, fallback string) string {
 		fail("Failed to write main.go: %v", err)
 		osExit(1)
 	}
+}
+
+// envTrackedByGit reports whether dir/.env is in git's index. No git, or
+// no repository, means nothing is tracked.
+func envTrackedByGit(dir string) bool {
+	if _, err := os.Stat(filepath.Join(dir, ".env")); err != nil {
+		return false
+	}
+	cmd := exec.Command("git", "-C", dir, "ls-files", "--error-unmatch", "--", ".env")
+	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+	return cmd.Run() == nil
 }
 
 // writeEnvFile writes the scaffolded .env with owner-only permissions,
