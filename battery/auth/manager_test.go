@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // memoryUserStore is a simple in-memory UserStore for testing.
@@ -466,4 +467,19 @@ func measure(t *testing.T, r *router.Router, email, password string) time.Durati
 	start := time.Now()
 	r.ServeHTTP(w, req)
 	return time.Since(start)
+}
+
+// Init is the one call both wirings make (RegisterBattery, or the app
+// calling Init itself), so it is where the banner learns auth is wired.
+func TestInitNotesAuthenticator(t *testing.T) {
+	app := framework.NewApp(framework.WithoutDefaultMiddleware())
+	if app.AuthenticatorNoted() {
+		t.Fatal("a fresh app must not report auth as wired")
+	}
+	if err := New(AuthConfig{DevMode: true}).Init(app); err != nil {
+		t.Fatal(err)
+	}
+	if !app.AuthenticatorNoted() {
+		t.Fatal("AuthManager.Init must call App.NoteAuthenticator")
+	}
 }

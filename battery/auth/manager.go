@@ -600,6 +600,10 @@ func (m *AuthManager) Init(app *framework.App) error {
 
 	if app != nil {
 		m.RegisterRoutes(app.Router())
+		// Quiets the startup banner's "no auth is wired" line. Init is
+		// the one path both wirings take: RegisterBattery calls it at
+		// Start, and most apps call it themselves.
+		app.NoteAuthenticator()
 	}
 
 	return nil

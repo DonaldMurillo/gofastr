@@ -7,6 +7,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+- **The startup banner says how to get past the 401s.** When an entity
+  requires auth and nothing on the app signs callers in, the banner
+  prints one line: wire `battery/auth`, or set `Exposure.Public`.
+  `AuthManager.Init` calls the new `App.NoteAuthenticator()`, so both
+  `RegisterBattery` and a direct `Init` count; a custom auth layer calls
+  it too, and `App.AuthenticatorNoted()` reads it back (#503).
+
 ### Fixed
 - **`/api/llm.md` links honor `WithAPIPrefix`.** Under
   `WithAPIPrefix("/api")` the index linked each resource to

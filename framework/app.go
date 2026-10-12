@@ -449,6 +449,9 @@ type App struct {
 	// authMD, when set, serves /auth.md + merges an agent_auth block into
 	// the OAuth authorization-server metadata (WorkOS agentic-registration).
 	authMD *AuthMDConfig
+	// authenticatorNoted is set by NoteAuthenticator; the startup banner
+	// reads it to decide whether to print its "no auth is wired" line.
+	authenticatorNoted atomic.Bool
 	// webBotAuth/ucp/acp: opt-in commerce + bot-signing discovery docs
 	// (isitagentready.com production checks). Set via WithWebBotAuth /
 	// WithUCP / WithACP. webBotAuth.Verify additionally installs the
@@ -3680,7 +3683,7 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		fmt.Fprintf(w, "  %s Stats: http://%s/.debug/stats\n", arrow(), boundAddr)
 	}
 
-	skipped := 0
+	skipped, gated := 0, 0
 	for _, e := range a.Registry.AllSorted() {
 		// Same predicate as route registration: an entity without CRUD
 		// routes (Exposure.CRUD=false, or no DB) has no URL to
@@ -3705,6 +3708,8 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		gate := "  (requires auth)"
 		if e.Config.Exposure != nil && e.Config.Exposure.Public {
 			gate = ""
+		} else {
+			gated++
 		}
 		fmt.Fprintf(w, "  %s %-12s http://%s%s%s\n", arrow(), label, boundAddr, mountPath, gate)
 	}
@@ -3714,6 +3719,13 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 			noun = "entity"
 		}
 		fmt.Fprintf(w, "  %s %d more %s registered without CRUD routes\n", arrow(), skipped, noun)
+	}
+	// "(requires auth)" on every line says what an anonymous curl gets, not
+	// how to get past it. With nothing noted that signs callers in
+	// (NoteAuthenticator), the gated URLs are unreachable for everyone, so
+	// the banner names the two ways out once (#503).
+	if gated > 0 && !a.authenticatorNoted.Load() {
+		fmt.Fprintf(w, "  %s No auth is wired: anonymous requests to the URLs above answer 401. Wire battery/auth, or set Exposure.Public on an entity anyone may read.\n", arrow())
 	}
 
 	if hasAPI {
@@ -3750,6 +3762,17 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 	}
 	_, _ = fmt.Fprintln(w)
 }
+
+// NoteAuthenticator records that something on this app signs callers
+// in: battery/auth's AuthManager calls it from Init, whether the app
+// registers the battery or calls Init itself. A custom auth layer calls
+// it where it installs its middleware. Until one is noted, the startup
+// banner adds a line saying the auth-gated URLs it lists answer 401 to
+// everyone.
+func (a *App) NoteAuthenticator() { a.authenticatorNoted.Store(true) }
+
+// AuthenticatorNoted reports whether NoteAuthenticator has been called.
+func (a *App) AuthenticatorNoted() bool { return a.authenticatorNoted.Load() }
 
 // debugAllowed gates /.debug/*: 401 without a user, 403 for an embed grant
 // or a caller WithDebugAuthorize (default: the "admin" role) refuses. A
