@@ -14,6 +14,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `AuthManager.Init` calls the new `App.NoteAuthenticator()`, so both
   `RegisterBattery` and a direct `Init` count; a custom auth layer calls
   it too, and `App.AuthenticatorNoted()` reads it back (#503).
+- **An unknown `?include=` names the relation it was close to.**
+  `?include=issue` on an entity whose relation is `issue_id` now answers
+  `did you mean "issue_id"?`. Only a near miss (the `_id` form, the
+  foreign key, or the target entity) gets a suggestion; the error never
+  lists an entity's relations (#503).
 
 ### Fixed
 - **`/api/llm.md` links honor `WithAPIPrefix`.** Under
