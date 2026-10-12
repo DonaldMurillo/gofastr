@@ -7,6 +7,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+- **`entityui.UI.WithCreatePath` sets the create screen's route.** An app
+  that mounts its create screen at `/deals/new` instead of
+  `/deals/create` passes one path function, and New, Duplicate, Create
+  another, related-list Add and relation-picker New all link there.
+  Returning false or an empty path hides an entity's create links.
+  Without the option, links still use `<base>/create` (#502).
+
+### Fixed
+- **Entity state-move buttons no longer fail with HTTP 415.** The RPC
+  runtime now sends `Content-Type: application/json` on writes that have
+  no body, which the transition route requires. GET and HEAD send no
+  content type, and multipart forms keep the browser's boundary (#500).
+
 ## [0.87.1] - 2026-10-11
 
 ### Changed
