@@ -102,7 +102,10 @@ type StackConfig struct {
 	// last child to the bottom: the page-frame option a recipe uses to
 	// keep a short page's footer at the bottom of the screen, the way
 	// a shell's flex column does. The stack is the page column — do
-	// not nest one screen-tall stack inside another.
+	// not nest one screen-tall stack inside another, and put the site
+	// header inside it as the first child: a screen-tall stack below a
+	// header is a viewport plus the header tall, which opens a dead band
+	// above the last child on every page.
 	Screen bool
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,

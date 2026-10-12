@@ -45,6 +45,15 @@ myapp/
 
 `gofastr docs` lists every framework reference doc embedded in the
 binary; `gofastr docs --grep <term>` searches them. No internet needed.
+`gofastr docs ui-new-components` is the component catalog. For a
+component's exact config fields or a token's constants, ask `go doc`
+from the app directory; it reads the pinned module, so the answer
+matches the version you build against:
+
+```bash
+go doc github.com/DonaldMurillo/gofastr/framework/ui StatStripConfig
+go doc -all github.com/DonaldMurillo/gofastr/framework/ui Gap   # GapXS … Gap2XL
+```
 
 In Go tests, serving the UI host through `httptest.NewServer(app.Router())`
 returns HTTP 500 when rendering recovers a component or layout panic.

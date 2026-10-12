@@ -744,6 +744,14 @@ layout := app.NewLayout("app", app.LayoutSpec{}, func(ctx context.Context, l *ap
 site.SetDefaultLayout(layout)
 ```
 
+`Screen: true` makes the stack the page column: at least one viewport
+tall, with its last child pushed to the bottom (a footer on a short
+page). Put the header inside it as the first child, as `buildShell`
+above does. A screen-tall stack placed *below* a header is a viewport
+plus the header tall, so every page scrolls and a header-height dead
+band opens above the last child. Inside a layout that already provides
+the page column, use a plain `ui.Stack` for the screen's content.
+
 ### Context columns and list/detail panes
 
 `ui.ContentRowConfig.Aside` adds a labelled context column after main.
