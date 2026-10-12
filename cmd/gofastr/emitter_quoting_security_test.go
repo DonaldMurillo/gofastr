@@ -225,6 +225,76 @@ func irQuotingSites(payload string) []irSite {
 		}}
 	})
 
+	// ---- display and states ----
+	// The entity-level display:/states: groups are transcribed text too, and
+	// the entity emitter writes each of their strings into the registration
+	// literal, so every one of them gets the same sweep.
+	display := func(site string, mut func(*fwentity.DisplayConfig)) {
+		add(site, func(b *Blueprint) {
+			d := &fwentity.DisplayConfig{}
+			mut(d)
+			ent(b).Display = d
+		})
+	}
+	display("display.singular", func(d *fwentity.DisplayConfig) { d.Singular = payload })
+	display("display.plural", func(d *fwentity.DisplayConfig) { d.Plural = payload })
+	display("display.title_fields", func(d *fwentity.DisplayConfig) { d.TitleFields = []string{payload} })
+	display("display.description", func(d *fwentity.DisplayConfig) { d.Description = payload })
+	display("display.columns", func(d *fwentity.DisplayConfig) { d.Columns = []string{payload} })
+	display("display.nav_group", func(d *fwentity.DisplayConfig) { d.Nav = &fwentity.EntityNav{Group: payload} })
+	display("display.nav_icon", func(d *fwentity.DisplayConfig) { d.Nav = &fwentity.EntityNav{Icon: payload} })
+	display("display.view_label", func(d *fwentity.DisplayConfig) {
+		d.Views = []fwentity.ListView{{Key: "open", Label: payload, Where: `status = "open"`}}
+	})
+	display("display.view_where", func(d *fwentity.DisplayConfig) {
+		d.Views = []fwentity.ListView{{Key: "open", Where: payload}}
+	})
+	display("display.view_sort", func(d *fwentity.DisplayConfig) {
+		d.Views = []fwentity.ListView{{Key: "open", Sort: payload}}
+	})
+	display("display.facets", func(d *fwentity.DisplayConfig) { d.Facets = []string{payload} })
+	display("display.form_section", func(d *fwentity.DisplayConfig) {
+		d.Form = &fwentity.EntityForm{Main: []fwentity.FormItem{{Section: payload, Items: []fwentity.FormItem{{Field: "title"}}}}}
+	})
+	display("display.card_title", func(d *fwentity.DisplayConfig) { d.Card = &fwentity.CardFields{Title: payload} })
+	display("display.card_meta", func(d *fwentity.DisplayConfig) { d.Card = &fwentity.CardFields{Meta: []string{payload}} })
+	display("display.field_key", func(d *fwentity.DisplayConfig) {
+		d.Fields = map[string]fwentity.FieldDisplay{payload: {Label: "x"}}
+	})
+	display("display.field_label", func(d *fwentity.DisplayConfig) {
+		d.Fields = map[string]fwentity.FieldDisplay{"title": {Label: payload}}
+	})
+	display("display.field_help", func(d *fwentity.DisplayConfig) {
+		d.Fields = map[string]fwentity.FieldDisplay{"title": {Help: payload}}
+	})
+	display("display.field_placeholder", func(d *fwentity.DisplayConfig) {
+		d.Fields = map[string]fwentity.FieldDisplay{"title": {Placeholder: payload}}
+	})
+	display("display.field_show_when", func(d *fwentity.DisplayConfig) {
+		d.Fields = map[string]fwentity.FieldDisplay{"title": {ShowWhen: payload}}
+	})
+	display("display.field_input", func(d *fwentity.DisplayConfig) {
+		d.Fields = map[string]fwentity.FieldDisplay{"title": {Input: payload}}
+	})
+	states := func(site string, mut func(*fwentity.StatesConfig)) {
+		add(site, func(b *Blueprint) {
+			s := &fwentity.StatesConfig{Field: "status", Transitions: []fwentity.Transition{{
+				Key: "open_it", From: []string{"open"}, To: "closed",
+			}}}
+			mut(s)
+			ent(b).States = s
+		})
+	}
+	states("states.field", func(s *fwentity.StatesConfig) { s.Field = payload })
+	states("states.initial", func(s *fwentity.StatesConfig) { s.Initial = []string{payload} })
+	states("states.move_key", func(s *fwentity.StatesConfig) { s.Transitions[0].Key = payload })
+	states("states.move_label", func(s *fwentity.StatesConfig) { s.Transitions[0].Label = payload })
+	states("states.move_from", func(s *fwentity.StatesConfig) { s.Transitions[0].From = []string{payload} })
+	states("states.move_to", func(s *fwentity.StatesConfig) { s.Transitions[0].To = payload })
+	states("states.move_stamp", func(s *fwentity.StatesConfig) { s.Transitions[0].Stamp = payload })
+	states("states.move_variant", func(s *fwentity.StatesConfig) { s.Transitions[0].Variant = payload })
+	states("states.move_permission", func(s *fwentity.StatesConfig) { s.Transitions[0].Permission = payload })
+
 	// ---- seed ----
 	add("seed.row_value", func(b *Blueprint) {
 		b.Seed = []BlueprintSeedEntity{{Entity: "tickets", Rows: []map[string]any{{"title": payload}}}}
@@ -265,41 +335,9 @@ func irQuotingSites(payload string) []irSite {
 		})
 	}
 	block("block.mode", BlueprintBlock{Kind: "entity_form", Entity: "tickets", Mode: payload})
-	block("block.search", BlueprintBlock{Kind: "entity_list", Entity: "tickets", Search: payload})
-	block("block.filters", BlueprintBlock{Kind: "entity_list", Entity: "tickets", Filters: []string{payload}})
 	block("block.fields", BlueprintBlock{Kind: "entity_list", Entity: "tickets", Fields: []string{payload}})
 	block("block.island", BlueprintBlock{Kind: "island", Island: payload})
 	block("block.widget", BlueprintBlock{Kind: "widget", Widget: payload})
-	block("block.props_value", BlueprintBlock{Kind: "stack", Props: map[string]any{"gap": payload}})
-	block("block.props_key", BlueprintBlock{Kind: "stack", Props: map[string]any{payload: "1"}})
-	block("block.action_name", BlueprintBlock{
-		Kind: "text", Text: "hi",
-		Actions: []BlueprintAction{{Name: payload, Event: "click", ClientJS: "void 0"}},
-	})
-	block("block.action_event", BlueprintBlock{
-		Kind: "text", Text: "hi",
-		Actions: []BlueprintAction{{Name: "go", Event: payload, ClientJS: "void 0"}},
-	})
-	block("block.action_client_js", BlueprintBlock{
-		Kind: "text", Text: "hi",
-		Actions: []BlueprintAction{{Name: "go", Event: "click", ClientJS: payload}},
-	})
-	block("block.transition_label", BlueprintBlock{
-		Kind: "entity_detail", Entity: "tickets",
-		Transitions: []BlueprintTransition{{Label: payload, Status: "open"}},
-	})
-	block("block.transition_status", BlueprintBlock{
-		Kind: "entity_detail", Entity: "tickets",
-		Transitions: []BlueprintTransition{{Label: "Open it", Status: payload}},
-	})
-	block("block.transition_variant", BlueprintBlock{
-		Kind: "entity_detail", Entity: "tickets",
-		Transitions: []BlueprintTransition{{Label: "Open it", Status: "open", Variant: payload}},
-	})
-	block("block.transition_stamp", BlueprintBlock{
-		Kind: "entity_detail", Entity: "tickets",
-		Transitions: []BlueprintTransition{{Label: "Open it", Status: "open", Stamp: payload}},
-	})
 	// Typed block string fields the sweep never reached: they all flow into
 	// the uinode Props literal (renderGoLiteral), the catalog emitters, or
 	// the empty-state copy of a list block.

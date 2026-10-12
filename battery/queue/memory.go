@@ -589,8 +589,9 @@ func (q *MemoryQueue) retainDead(job Job) {
 // can enumerate is the retained dead-letter set, so it returns those jobs for
 // status "failed" (or an empty/"all" status), newest-first, and nothing for any
 // other status, pending/claimed jobs live transiently on the pending heap.
-// limit <= 0 defaults to 100.
-func (q *MemoryQueue) ListJobs(_ context.Context, status string, limit int) ([]Job, error) {
+// It skips the newest offset of them. limit <= 0 defaults to 100; a
+// negative offset reads as zero.
+func (q *MemoryQueue) ListJobs(_ context.Context, status string, limit, offset int) ([]Job, error) {
 	if status != "" && status != "failed" {
 		return nil, nil
 	}
@@ -599,9 +600,10 @@ func (q *MemoryQueue) ListJobs(_ context.Context, status string, limit int) ([]J
 	}
 	q.deadMu.Lock()
 	defer q.deadMu.Unlock()
-	out := make([]Job, 0, min(limit, len(q.dead)))
+	skip := min(max(offset, 0), len(q.dead))
+	out := make([]Job, 0, min(limit, len(q.dead)-skip))
 	// Newest-first: walk the oldest-first slice in reverse.
-	for i := len(q.dead) - 1; i >= 0 && len(out) < limit; i-- {
+	for i := len(q.dead) - 1 - skip; i >= 0 && len(out) < limit; i-- {
 		out = append(out, q.dead[i])
 	}
 	return out, nil

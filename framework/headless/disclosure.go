@@ -41,6 +41,11 @@ type DisclosureProps struct {
 	// the widget runtime's own (the kernel's focus selector), armed by
 	// the module while the disclosure is open.
 	Trap bool
+	// Dismiss makes the open disclosure a popup: a press anywhere
+	// outside it closes it (light dismiss), as a menu does. Leave it off
+	// for a section the reader opens to read beside the rest of the
+	// page; an accordion does not close because the reader clicked on.
+	Dismiss bool
 	// Name, when set, is the details element's name attribute: the
 	// browser groups disclosures that share it and opens one at a time
 	// (the native accordion) — opening one closes the others with no
@@ -82,6 +87,9 @@ func Disclosure(p DisclosureProps, s Classes) render.HTML {
 	if p.Trap {
 		Mark(own, "data-hui-disclosure-trap")
 	}
+	if p.Dismiss {
+		Mark(own, "data-hui-disclosure-dismiss")
+	}
 	if p.PersistKey != "" {
 		own["data-hui-disclosure-persist"] = p.PersistKey
 	}
@@ -89,12 +97,13 @@ func Disclosure(p DisclosureProps, s Classes) render.HTML {
 		Mark(own, "open")
 	}
 	content := b.Fill(PartPanel, p.Content)
-	// The panel is the caller's whenever there is content to show it;
-	// an empty panel renders nothing of the caller's, so the boundary
-	// sits on the panel wrapper itself.
+	// The panel is the caller's whenever there is content to show it,
+	// unless that content is a component's own (headless.Own), as the
+	// summary is; an empty panel renders nothing of the caller's, so the
+	// boundary sits on the panel wrapper itself.
 	panelOwn := Internal(nil)
 	if content != "" {
-		panelOwn = nil
+		panelOwn = internalIf(ownedSlot(content), nil)
 	}
 	return b.El("details", PartRoot, own,
 		b.El("summary", PartSummary, internalIf(ownedSlot(p.Summary), nil), b.Fill(PartSummary, p.Summary)),
@@ -106,7 +115,7 @@ func init() {
 	Register(Spec{
 		Name:     "Disclosure",
 		Anatomy:  []Part{PartRoot, PartSummary, PartPanel},
-		Hooks:    []string{"data-hui-disclosure", "data-hui-disclosure-trap", "data-hui-disclosure-persist"},
+		Hooks:    []string{"data-hui-disclosure", "data-hui-disclosure-trap", "data-hui-disclosure-dismiss", "data-hui-disclosure-persist"},
 		Fillable: []Part{PartSummary, PartPanel},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Disclosure(DisclosureProps{
@@ -132,6 +141,11 @@ func init() {
 				Why:  "a disclosure used as a drawer contains focus while open — Tab walks inside it — through the widget runtime's containment, released on close and on detach",
 				HTML: Disclosure(DisclosureProps{Summary: render.Text("Menu"), Trap: true,
 					Content: render.Text("A drawer-shaped disclosure.")}, s),
+			}, {
+				Name: "a popup",
+				Why:  "a disclosure that floats over the page closes on a click outside it, the way a menu does; a section read beside the page does not ask for it",
+				HTML: Disclosure(DisclosureProps{Summary: render.Text("Filters"), Dismiss: true,
+					Content: render.Text("A panel over the page.")}, s),
 			}, {
 				Name: "an exclusive group",
 				Why:  "two disclosures sharing a name open one at a time in the browser itself — the native accordion, no script on the page at all",

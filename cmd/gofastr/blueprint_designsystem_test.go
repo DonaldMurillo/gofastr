@@ -48,7 +48,7 @@ func TestGeneratorEmitsNoBespokeClasses(t *testing.T) {
 		}
 	}
 	screens := allScreenContent(mustRenderBlueprintFiles(t, bp))
-	if !strings.Contains(screens, `ui.Card(ui.CardConfig{Heading: "Orders by status"}`) {
+	if !strings.Contains(screens, `ui.Card(ui.CardConfig{Heading: "Orders by status", HeadingLevel: 2}`) {
 		t.Errorf("titled chart should compose ui.Card, got:\n%s", screens)
 	}
 }
@@ -64,8 +64,8 @@ func TestLineChartRenders(t *testing.T) {
 		t.Fatalf("loadBlueprint: %v", err)
 	}
 	screens := allScreenContent(mustRenderBlueprintFiles(t, bp))
-	if !strings.Contains(screens, `appResources.LineChart(ctx, "orders", "status")`) {
-		t.Fatalf("line_chart should render via framework/ui/resource, got:\n%s", screens)
+	if !strings.Contains(screens, `appUI.LineChart(ctx, "orders", "status")`) {
+		t.Fatalf("line_chart should render via appUI, got:\n%s", screens)
 	}
 	if strings.Contains(screens, "noderender") {
 		t.Fatalf("line_chart fell through to the node renderer:\n%s", screens)

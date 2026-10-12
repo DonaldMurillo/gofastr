@@ -108,14 +108,18 @@
     "--easing-ease-in", "--easing-ease-in-out", "--easing-ease-out", "--easing-spring",
     "--font-body", "--font-heading", "--font-mono",
     "--font-weight-bold", "--font-weight-medium", "--font-weight-normal", "--font-weight-semibold",
+    "--leading-normal", "--leading-relaxed", "--leading-snug", "--leading-tight",
+    "--opacity-disabled", "--opacity-faint", "--opacity-muted",
     "--radii-full", "--radii-lg", "--radii-md", "--radii-none", "--radii-sm", "--radii-xl",
-    "--shadow-lg", "--shadow-md", "--shadow-none", "--shadow-sm", "--shadow-xl",
+    "--shadow-lg", "--shadow-md", "--shadow-none", "--shadow-sm", "--shadow-xl", "--shadow-xs",
     "--size-content-width", "--size-header-height", "--size-narrow-width", "--size-page-gutter",
     "--size-page-width", "--size-wide-width",
     "--spacing-2xl", "--spacing-3xl", "--spacing-lg", "--spacing-md", "--spacing-sm",
     "--spacing-touch-target", "--spacing-xl", "--spacing-xs",
+    "--stroke-focus", "--stroke-focus-offset", "--stroke-thick", "--stroke-thin",
     "--text-2xl", "--text-3xl", "--text-base", "--text-lg", "--text-sm", "--text-xl", "--text-xs",
     "--tk-com", "--tk-fn", "--tk-kw", "--tk-num", "--tk-pn", "--tk-str", "--tk-type",
+    "--tracking-snug", "--tracking-tight", "--tracking-tighter", "--tracking-wide", "--tracking-wider",
     "--z-dropdown", "--z-modal", "--z-popover", "--z-sticky", "--z-toast"
   ];
 

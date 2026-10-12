@@ -69,7 +69,7 @@ func TestStaleTokensFileIs1814(t *testing.T) {
 }
 
 func TestDuplicateTokenValueAtVerify(t *testing.T) {
-	css := "@property --color-brand { syntax: \"<color>\"; inherits: true; initial-value: #4F46E5; }\n"
+	css := "@property --color-brand { syntax: \"<color>\"; inherits: true; initial-value: #18181B; }\n"
 	ds := fixture(t, tokensPair(t, "theme", "theme", "acme", css))
 	found := countRule(t, ds, contracts.RuleDuplicateTokenValue)
 	if len(found) != 1 || found[0].File != "theme/acme.tokens.css" || found[0].Line != 1 || found[0].Column != 11 {

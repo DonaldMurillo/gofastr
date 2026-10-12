@@ -20,6 +20,12 @@ import (
 // Options.AllowPrivateNetworks). prefix names the calling surface in
 // the error text ("a2a", "webhook", ...).
 //
+// A guarded transport ignores HTTP_PROXY, HTTPS_PROXY and ALL_PROXY: a
+// proxy would make the connection the dial check never sees. An app that
+// must egress through a proxy has to pass allowPrivate (the surface's own
+// opt-out) and accept that the proxy, not this package, decides what is
+// reachable.
+//
 // One constructor replaces the two byte-identical copies core/a2a's
 // guardedTransport and battery/webhook's ssrfGuardedTransport; a new
 // outbound-fetch surface calls this instead of growing a third.
@@ -49,5 +55,14 @@ func GuardedTransport(allowPrivate bool, prefix string) *http.Transport {
 	}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.DialContext = dialer.DialContext
+	if !allowPrivate {
+		// Clone() carries ProxyFromEnvironment. With HTTP_PROXY or
+		// HTTPS_PROXY set, the Control hook above only ever sees the
+		// proxy's address, while the proxy resolves and connects to the
+		// target, so an internal target sails through. The guard cannot
+		// inspect a connection a proxy makes, so a guarded transport
+		// never uses one (core/webbotauth made the same call).
+		tr.Proxy = nil
+	}
 	return tr
 }

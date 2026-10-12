@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -130,5 +131,31 @@ func TestToastTemplateCarriesTheKitSkin(t *testing.T) {
 	}
 	if !strings.HasPrefix(slot, `<div data-cui-comp="ui-toast-stack" data-cui-toast-stack="site-toasts">`) {
 		t.Errorf("the stack container carries more than the kernel name and the style id; the sheet keys on data-cui-comp:\n%s", slot)
+	}
+}
+
+// A server toast carries its one button as the runtime reads it: the
+// label and the RPC attributes.
+func TestAddToastCarriesAction(t *testing.T) {
+	rec := httptest.NewRecorder()
+	ui.AddToast(rec, ui.ToastTrigger{Title: "2 deleted", Action: interactive.NewToastAction("Undo",
+		interactive.Post("/api/notes/_bulk").WithBody(`{"ids":["a"]}`))})
+	var list []struct {
+		Action struct {
+			Label string            `json:"label"`
+			Attrs map[string]string `json:"attrs"`
+		} `json:"action"`
+	}
+	if err := json.Unmarshal([]byte(rec.Header().Get("X-Gofastr-Toast")), &list); err != nil || len(list) != 1 {
+		t.Fatalf("header = %q (%v)", rec.Header().Get("X-Gofastr-Toast"), err)
+	}
+	a := list[0].Action
+	if a.Label != "Undo" || a.Attrs["data-cui-rpc"] != "/api/notes/_bulk" || a.Attrs["data-cui-rpc-body"] != `{"ids":["a"]}` {
+		t.Fatalf("action = %+v", a)
+	}
+	plain := httptest.NewRecorder()
+	ui.AddToast(plain, ui.ToastTrigger{Title: "Saved"})
+	if strings.Contains(plain.Header().Get("X-Gofastr-Toast"), `"action"`) {
+		t.Fatal("a toast with no action carries the key")
 	}
 }

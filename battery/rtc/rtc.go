@@ -184,6 +184,15 @@ type Signaler struct {
 	cfg    Config
 	logger *slog.Logger
 
+	// testAtAnnounce / testAnnounceGate, when set, are a test seam on
+	// a joining socket's goroutine between its snapshot being queued
+	// and its join being announced: Serve sends the peer id on the
+	// first and waits on the second, so the join-ordering test can
+	// place a second socket inside the hydrate-then-announce window.
+	// Both nil outside tests.
+	testAtAnnounce   chan string
+	testAnnounceGate chan struct{}
+
 	// mu serializes every room mutation and every channel Publish, so
 	// event order on a room's channel equals mutation order (the
 	// sequence discipline StateChannel snapshots reconcile against).
@@ -296,6 +305,13 @@ func New(cfg Config) *Signaler {
 
 // Name implements framework.Plugin.
 func (s *Signaler) Name() string { return "rtc" }
+
+// ReservedEmbedPrefixes reports the path this Signaler actually mounted.
+// Authorize reads the request's user, and an embed grant installs its
+// subject as that user, so a grant living in a stranger's page would join
+// rooms as the subject. No embed surface may reach it. See
+// framework.EmbedReserving.
+func (s *Signaler) ReservedEmbedPrefixes() []string { return []string{s.cfg.Path} }
 
 // Init is the lifecycle path: Mount on the App (which registers the
 // route and, when the app has WithFanout, wires SetFanout) and Close

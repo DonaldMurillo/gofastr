@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -36,6 +37,9 @@ type TextFieldConfig struct {
 	// minlength, maxlength, required, disabled, aria-invalid, and
 	// aria-describedby.
 	ExtraAttrs html.Attrs
+	// LabelHidden keeps the label for assistive tech and hides it
+	// from view: a field whose place names it (a table cell's editor).
+	LabelHidden bool
 }
 
 // TextField renders a FormField containing an input[type=text].
@@ -57,7 +61,7 @@ func TextField(cfg TextFieldConfig) render.HTML {
 		extra["maxlength"] = strconv.Itoa(cfg.MaxLength)
 	}
 	return typedFormField(cfg.Label, cfg.Name, id, "text", cfg.Value, cfg.Placeholder,
-		cfg.Help, cfg.Error, cfg.Class, cfg.Required, cfg.Disabled, extra, nil)
+		cfg.Help, cfg.Error, labelHiddenClass(cfg.LabelHidden, cfg.Class), cfg.Required, cfg.Disabled, extra, nil)
 }
 
 // NumberFieldConfig configures a labelled native number field. Pointer bounds
@@ -83,6 +87,9 @@ type NumberFieldConfig struct {
 	// value, placeholder, min, max, step, required, disabled,
 	// aria-invalid, and aria-describedby.
 	ExtraAttrs html.Attrs
+	// LabelHidden keeps the label for assistive tech and hides it
+	// from view: a field whose place names it (a table cell's editor).
+	LabelHidden bool
 }
 
 // NumberField renders a FormField containing an input[type=number]. For the
@@ -99,7 +106,7 @@ func NumberField(cfg NumberFieldConfig) render.HTML {
 		"type", "name", "value", "placeholder", "min", "max", "step",
 		"required", "disabled", "aria-invalid", "aria-describedby")
 	return typedFormField(cfg.Label, cfg.Name, id, "number", cfg.Value, cfg.Placeholder,
-		cfg.Help, cfg.Error, cfg.Class, cfg.Required, cfg.Disabled, extra, owned)
+		cfg.Help, cfg.Error, labelHiddenClass(cfg.LabelHidden, cfg.Class), cfg.Required, cfg.Disabled, extra, owned)
 }
 
 // DateFieldConfig configures a labelled native date field. Min, Max, and Value
@@ -124,6 +131,9 @@ type DateFieldConfig struct {
 	// value, placeholder, min, max, required, disabled,
 	// aria-invalid, and aria-describedby.
 	ExtraAttrs html.Attrs
+	// LabelHidden keeps the label for assistive tech and hides it
+	// from view: a field whose place names it (a table cell's editor).
+	LabelHidden bool
 }
 
 // DateField renders a FormField containing an input[type=date].
@@ -140,7 +150,65 @@ func DateField(cfg DateFieldConfig) render.HTML {
 		"type", "name", "value", "placeholder", "min", "max",
 		"required", "disabled", "aria-invalid", "aria-describedby")
 	return typedFormField(cfg.Label, cfg.Name, id, "date", cfg.Value, cfg.Placeholder,
-		cfg.Help, cfg.Error, cfg.Class, cfg.Required, cfg.Disabled, extra, owned)
+		cfg.Help, cfg.Error, labelHiddenClass(cfg.LabelHidden, cfg.Class), cfg.Required, cfg.Disabled, extra, owned)
+}
+
+// DateTimeFieldConfig configures a DateTimeField: a moment, a date and
+// a time of day in one value, in the HTML local date-time format
+// (2026-07-22T09:30).
+type DateTimeFieldConfig struct {
+	Name        string
+	Label       string
+	ID          string
+	Value       string
+	Placeholder string
+	Help        string
+	Error       string
+	Class       string
+	Required    bool
+	Disabled    bool
+	Min         string
+	Max         string
+	// Step is the precision in seconds: 1 shows seconds. Zero leaves
+	// the browser's default of one minute.
+	Step int
+
+	// ExtraAttrs forwards additional attributes onto the field's
+	// <input>. Keys the input owns are dropped, as DateField's are, and
+	// step.
+	ExtraAttrs html.Attrs
+	// LabelHidden keeps the label for assistive tech and hides it
+	// from view: a field whose place names it (a table cell's editor).
+	LabelHidden bool
+}
+
+// DateTimeField renders a FormField containing an
+// input[type=datetime-local]: the browser owns the picker, the field
+// owns the label, the touch target and the focus ring, as DateField
+// and TimePicker do.
+func DateTimeField(cfg DateTimeFieldConfig) render.HTML {
+	id := fieldID("DateTimeField", cfg.Name, cfg.Label, cfg.ID)
+	owned := html.Attrs{}
+	if cfg.Min != "" {
+		owned["min"] = cfg.Min
+	}
+	if cfg.Max != "" {
+		owned["max"] = cfg.Max
+	}
+	if cfg.Step > 0 {
+		owned["step"] = strconv.Itoa(cfg.Step)
+	}
+	extra := html.SafeExtraAttrs(cfg.ExtraAttrs,
+		"type", "name", "value", "placeholder", "min", "max", "step",
+		"required", "disabled", "aria-invalid", "aria-describedby")
+	return typedFormField(cfg.Label, cfg.Name, id, "datetime-local", cfg.Value, cfg.Placeholder,
+		cfg.Help, cfg.Error, labelHiddenClass(cfg.LabelHidden, cfg.Class), cfg.Required, cfg.Disabled, extra, owned)
+}
+
+// labelHiddenClass is a field root's class with the hidden-label
+// modifier when asked for.
+func labelHiddenClass(hidden bool, class string) string {
+	return strings.TrimSpace(modifierClass("fui-field--label-hidden", hidden) + " " + class)
 }
 
 func fieldID(api, name, label, id string) string {

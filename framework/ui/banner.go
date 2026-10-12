@@ -184,9 +184,10 @@ func bannerCSS(_ style.Theme) string {
   column-gap: var(--spacing-md, 8px);
   row-gap: var(--spacing-xs, 2px);
   align-items: start;
-  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
-  border: 1px solid var(--ui-banner-accent, var(--color-info, #3B82F6));
-  border-radius: var(--radii-md, 8px);
+  padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
+  /* The variant tints the hairline; a full-strength ring shouts. */
+  border: var(--stroke-thin, 1px) solid color-mix(in oklab, var(--ui-banner-accent, var(--color-info, #3B82F6)) 35%, var(--color-border, #E4E4E7));
+  border-radius: var(--radii-lg, 10px);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
 }
@@ -215,7 +216,7 @@ func bannerCSS(_ style.Theme) string {
   min-width: 0;
   margin: 0;
   font-weight: var(--font-weight-semibold);
-  font-size: var(--text-base, 1rem);
+  font-size: var(--text-sm, 0.875rem);
 }
 [data-cui-comp="ui-banner"] .fui-banner__body {
   grid-column: 2;
@@ -224,7 +225,7 @@ func bannerCSS(_ style.Theme) string {
   margin: 0;
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.875rem);
-  line-height: 1.45;
+  line-height: var(--leading-normal, 1.5);
 }
 [data-cui-comp="ui-banner"] .fui-banner__action {
   grid-column: 3;
@@ -247,16 +248,16 @@ func bannerCSS(_ style.Theme) string {
   cursor: pointer;
   font-size: var(--text-lg, 1.125rem);
   line-height: 1;
-  border-radius: var(--radii-sm, 4px);
-  margin: -8px -8px -8px 0;
+  border-radius: var(--radii-sm, 6px);
+  margin: calc(var(--spacing-md, 8px) * -1) calc(var(--spacing-md, 8px) * -1) calc(var(--spacing-md, 8px) * -1) 0;
 }
 [data-cui-comp="ui-banner"] .fui-banner__dismiss:hover {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #18181B);
 }
 [data-cui-comp="ui-banner"] .fui-banner__dismiss:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 /* A phone has no room for four columns: the copy ends up the
    narrowest of them. Below 30rem the action drops under the body and
@@ -282,7 +283,7 @@ func bannerCSS(_ style.Theme) string {
 .fui-banner--warn .fui-banner__icon { color: var(--color-warning, #D97706); }
 .fui-banner--danger { --ui-banner-accent: var(--color-danger, #DC2626); }
 .fui-banner--danger .fui-banner__icon { color: var(--color-danger, #DC2626); }
-:where([data-cui-comp="ui-banner"]).fui-banner--strip { display: block; text-align: center; font-size: var(--text-sm); line-height: 1.5; border: 0; border-radius: 0; background: var(--color-surface-soft); padding: var(--spacing-sm) var(--spacing-lg); }
+:where([data-cui-comp="ui-banner"]).fui-banner--strip { display: block; text-align: center; font-size: var(--text-sm); line-height: var(--leading-normal, 1.5); border: 0; border-radius: 0; background: var(--color-surface-soft); padding: var(--spacing-sm) var(--spacing-lg); }
 [data-cui-comp="ui-banner"].fui-banner--strip .fui-banner__icon { display: none; }
 [data-cui-comp="ui-banner"].fui-banner--strip :is(.fui-banner__title, .fui-banner__body, .fui-banner__action) { display: inline; font-size: inherit; margin-inline-end: var(--spacing-sm); }
 

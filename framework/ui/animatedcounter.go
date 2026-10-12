@@ -77,10 +77,12 @@ func AnimatedCounter(cfg AnimatedCounterConfig) render.HTML {
 		Value:       cfg.To,
 		AnimateFrom: &from,
 		DurationMS:  dur,
-		ID:          cfg.ID,
-		ExtraAttrs:  headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
-		Parts:       parts,
-		Strings:     StringsFor(nil),
+		// A figure, not a control: no step buttons.
+		Display:    true,
+		ID:         cfg.ID,
+		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label"),
+		Parts:      parts,
+		Strings:    StringsFor(nil),
 	}, animatedCounterClasses)
 	// headless.Counter's root becomes a nested tag here, never reachable
 	// as one itself, so it is collapsed into a single mark the same way

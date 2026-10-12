@@ -171,7 +171,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		// hook that inspects Where (audit logging the applied scope, say)
 		// behave differently the moment a client appended ?cursor=.
 		payload := &hook.ListPayload{Request: r, Where: extraWhere, Results: page.Data}
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterList, payload); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.AfterList, payload); err != nil {
 			log.Printf("crud: after-list hook failed (cursor): %v", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal server error")
 			return

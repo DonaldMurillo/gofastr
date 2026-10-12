@@ -269,6 +269,12 @@ notes:
       shapes:
         - symbol: gofastr/core-ui/app.NewLayout
           type: '^func\(name string\) \*app\.Layout$'
+      uses:
+        - gofastr/core-ui/app.Layout.Header
+        - gofastr/core-ui/app.Layout.Sidebar
+        - gofastr/core-ui/app.Layout.Footer
+        - gofastr/core-ui/app.Layout.Container
+        - gofastr/core-ui/app.Layout.StickyHeader
     guidance: "Declare app.NewLayout(name, app.LayoutSpec{}, func(ctx, l *app.LayoutTree) render.HTML { ... }) whose build places l.Primary() and composes your chrome; see the layouts doc topic and `gofastr docs release-0-86` for the port spelled end to end."
   - change: "Layout.WithHeader is removed; the header renders in the layout build"
     breaking: true
@@ -345,6 +351,9 @@ notes:
         - gofastr/framework/ui.DocPager
         - gofastr/framework/ui.DocPrevNext
         - gofastr/framework/ui.DocCrumb
+        - gofastr/framework/ui.SiteHeaderDrawerVariant
+        - gofastr/framework/ui.SiteHeaderDrawerPopover
+        - gofastr/framework/ui.SiteHeaderDrawerSheet
     guidance: "Run gofastr generate package siteheader, sitefooter and docpage to copy owned packages (Go, owned style sheet, tests) into the app, then call siteheader.Render, sitefooter.Render and docpage.Render and change them freely. Crumbs are ui.Breadcrumbs (DocCrumb{Label, Href} is Crumb{Text, Href}); the pager is docpage.Pager."
   - change: "four unused exports are removed: html.ContainerType, style.DarkSchemeCSS, gallery.MustLookup and ui.ToastStackSignal"
     breaking: true
@@ -458,3 +467,88 @@ notes:
     breaking: true
     nodetect: "no line-level spelling: the refusal is a ratio computed over two hex values (primary x primary-fg, danger x danger-fg, light and dark), and a contrast ratio is not a spelling any line carries."
     guidance: "Boot the app once against the theme: Theme.Validate names the pair, the ratio and the palette it refused, and ColorSet.DangerFg gives the danger pair its own ink; oklch(), var() and rgb()/hsl() values are skipped rather than approximated."
+  - change: "core-ui/patterns/tabs is deleted; ui.Tabs replaces it"
+    breaking: true
+    hits: edit
+    find:
+      imports:
+        - gofastr/core-ui/patterns/tabs
+    guidance: "tabs.New(Config, ...Tab) becomes ui.Tabs(ui.TabsConfig{SignalName: ..., Tabs: []ui.TabItem{...}}): a WAI-ARIA tablist driven by a signal, where Config.Name becomes SignalName and Tab.Label/Content keep their names; the native <details name> strip and its tabs style name are gone."
+  - change: "core-ui/patterns/combobox is deleted; ui.Combobox replaces it"
+    breaking: true
+    hits: edit
+    find:
+      imports:
+        - gofastr/core-ui/patterns/combobox
+    guidance: "combobox.Render(Config) becomes ui.Combobox(ui.ComboboxConfig{...}): ID, Name, Label, LabelHidden, Placeholder and Options keep their names, and RPCPath plus SignalName become Island (*headless.Island{Endpoint, Signal}) with a same-origin NoScriptAction for readers without script."
+  - change: "core-ui/patterns/disclosure is deleted; ui.Collapsible replaces it"
+    breaking: true
+    hits: edit
+    find:
+      imports:
+        - gofastr/core-ui/patterns/disclosure
+    guidance: "disclosure.Render(Config{Title, Open}, body...) becomes ui.Collapsible(ui.CollapsibleConfig{Summary: title, Open: open}, body...); headless.Disclosure is the unstyled structure when the app draws its own."
+  - change: "core-ui/patterns/scrollspy is deleted; ui.TableOfContents and ui.AnchoredRail mark the in-view anchor"
+    breaking: true
+    hits: edit
+    find:
+      imports:
+        - gofastr/core-ui/patterns/scrollspy
+    guidance: "scrollspy.Wrap(Config{ObserveSelector, TargetSelector}, list) becomes ui.AnchoredRail(ui.AnchoredRailConfig{...}) with the same two selectors, or ui.TableOfContents(ui.TOCConfig{Items: ..., Target: ...}) for a heading list; both mark the in-view anchor through the headless-rail module (data-hui-rail) and keep the server-rendered links as the no-script path."
+  - change: "core-ui/patterns/skeleton is deleted; the ui skeleton presets replace it"
+    breaking: true
+    hits: edit
+    find:
+      imports:
+        - gofastr/core-ui/patterns/skeleton
+    guidance: "skeleton.New(Config) becomes the preset for the shape it stood in for: ui.SkeletonLine, ui.SkeletonCard (BodyLines), ui.SkeletonRow, ui.SkeletonTimeline (Rows) or ui.SkeletonAvatar. Variant, Width, Height and Count are gone with the inline style they wrote."
+  - change: "Layout.WrapNested and Layout.WrapNestedCtx are removed; a layout nested inside another is a ScreenGroup"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/core-ui/app.Layout.WrapNested
+        - gofastr/core-ui/app.Layout.WrapNestedCtx
+    guidance: "Mount the inner layout on a ScreenGroup (a URL prefix plus the layout that wraps every screen under it): groups nest under the app's default layout and the page keeps one <main>; see the ScreenGroup section of the layouts doc topic."
+  - change: "ui.ResponsiveConfig.Breakpoint is gone; Below takes ui.StackBelowMD (48rem, the zero value) or ui.StackBelowLG (64rem)"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/framework/ui.ResponsiveConfig.Breakpoint
+    guidance: "Replace Breakpoint: 1024 (the old default, and any value near it) with Below: ui.StackBelowLG, and a value near 768 with the zero Below (48rem); a Below outside those two constants panics at render."
+  - change: "ui.Responsive's default swap point moved from 1024px to 48rem"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/framework/ui.Responsive
+    guidance: "A ui.Responsive call that left Breakpoint unset swapped at 1024px and now swaps at 48rem (768px at the default font size); set Below: ui.StackBelowLG (64rem) to keep the old swap point."
+  - change: "ui.TOCConfig.Levels is gone; the table of contents renders the Items it is given"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/framework/ui.TOCConfig.Levels
+    guidance: "List the entries in TOCConfig.Items (Text, Href, in document order): the server renders them as the no-script contract and the module no longer harvests headings, so a level filter has nothing to pick from."
+  - change: "theme.Overrides.DarkColors is gone; Overrides.Dark is its typed twin"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/framework/ui/theme.Overrides.DarkColors
+    guidance: "Replace DarkColors: map[string]string{\"primary\": \"#5EEAD4\"} with Dark: &theme.Overrides{Primary: \"#5EEAD4\"}: each CSS name is the matching colour field (surface-soft is SurfaceSoft), and Dark takes colours only."
+  - change: "check.LintNoPatternBaseCSS is deleted with core-ui/patterns"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/core-ui/check.LintNoPatternBaseCSS
+    guidance: "Delete the call and the test around it: the rule it enforced (no exported BaseCSS in a core-ui/patterns package) has no packages left to check."
+  - change: "kiln/freeze.DSNHasSecret is removed; the DSN check moved to an internal package"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/kiln/freeze.DSNHasSecret
+    guidance: "No exported replacement: copy the check into the app. It reported a URL-form DSN with a userinfo password (or a userinfo section url.Parse rejects) and a key=value DSN with a password= pair; a SQLite file DSN has nothing to hide."

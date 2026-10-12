@@ -89,7 +89,15 @@ func TestCompactLayoutGeometry(t *testing.T) {
 			ui.Section(ui.SectionConfig{Compact: true, Heading: "Release one"}, render.Text("Changes")),
 			ui.Section(ui.SectionConfig{Compact: true, Heading: "Release two"}, render.Text("Changes")),
 		)))
-	for path, body := range map[string]render.HTML{"/workspace": workspace, "/docs": docs, "/releases": releases} {
+	// An app frame pads main itself, so a page header first in it adds
+	// no inset of its own.
+	frame := ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+		html.Header(html.HeaderConfig{Banner: true}, render.Text("App")),
+		ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, html.Main(html.MainConfig{},
+			ui.PageHeader(ui.PageHeaderConfig{Title: "Invoices", Subtitle: "3 invoices"}),
+			html.Paragraph(html.TextConfig{}, render.Text("Rows")),
+		)))
+	for path, body := range map[string]render.HTML{"/workspace": workspace, "/docs": docs, "/releases": releases, "/frame": frame} {
 		site.RegisterScreen(app.NewScreen(path, app.NewStaticComponent(body)), nil)
 	}
 	host := uihost.New(site)
@@ -154,6 +162,14 @@ if(!getComputedStyle(trigger,'::after').content.includes(trigger.getAttribute('a
 	})
 	t.Run("PhoneAnnouncement", func(t *testing.T) {
 		check(t, "/releases", 390, `if(r(q('[data-cui-comp="ui-banner"]')).height>56)return 'announcement adds empty rows'`)
+	})
+	t.Run("FrameHeaderInset", func(t *testing.T) {
+		check(t, "/frame", 1280, `
+const main=q('.fui-content-row main');
+const pad=parseFloat(getComputedStyle(main).paddingTop), inset=r(main.querySelector('h1')).top-r(main).top;
+if(pad<24)return 'the frame no longer pads main: '+pad;
+if(Math.abs(inset-pad)>1)return 'page header adds its own inset inside the padded main: '+inset+' for a '+pad+' pad';
+`)
 	})
 	t.Run("Document", func(t *testing.T) {
 		check(t, "/docs", 1280, `

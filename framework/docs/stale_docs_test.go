@@ -272,6 +272,45 @@ func changelogVersions(t *testing.T) []changelogSection {
 	return out
 }
 
+// TestUnreleasedMarksPendingBreaking: between releases the registry's
+// one pending file (the release above `through`) is what Unreleased
+// will become, so the two agree on BREAKING during the cycle, not only
+// once the section is rolled to its version.
+func TestUnreleasedMarksPendingBreaking(t *testing.T) {
+	reg, err := upgrade.Load()
+	if err != nil {
+		t.Fatalf("load the migration registry: %v", err)
+	}
+	pending, breaking := "", false
+	for _, r := range reg.Releases {
+		if upgrade.SemverLess(reg.Through, r.Version) {
+			pending = r.Version
+			breaking = slices.ContainsFunc(r.Notes, func(n *upgrade.Note) bool { return n.Breaking })
+		}
+	}
+	marked := marksBreaking(changelogUnreleased(t))
+	switch {
+	case breaking && !marked:
+		t.Errorf("internal/upgrade/releases/%s.yml is pending with a breaking note, but CHANGELOG.md's "+
+			"Unreleased section never says BREAKING", pending)
+	case marked && !breaking:
+		t.Errorf("CHANGELOG.md's Unreleased section says BREAKING, but no pending file above through %s "+
+			"carries a breaking note — `gofastr upgrade` will not surface the change", reg.Through)
+	}
+}
+
+// changelogUnreleased returns the body of CHANGELOG.md's `## [Unreleased]`
+// section.
+func changelogUnreleased(t *testing.T) string {
+	t.Helper()
+	_, rest, ok := strings.Cut(readRepo(t, "CHANGELOG.md"), "\n## [Unreleased]\n")
+	if !ok {
+		t.Fatal("CHANGELOG.md has no `## [Unreleased]` section")
+	}
+	body, _, _ := strings.Cut(rest, "\n## [")
+	return body
+}
+
 // upgradeRegistryBreaking reports, per release in the migration registry
 // (internal/upgrade), whether any of its notes is `breaking: true`.
 func upgradeRegistryBreaking(t *testing.T) map[string]bool {

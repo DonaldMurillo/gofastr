@@ -980,8 +980,11 @@ func registerScreens(site *app.App) {
 		nav, _ := component.SafeRenderCtx(ctx, &ComponentsSidebar{})
 		// The row (not a second screen-tall stack: this layer nests
 		// inside the default layout's page column) arranges the
-		// multi-level sidebar beside the primary slot.
-		return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary())
+		// multi-level sidebar beside the primary slot. Sticky +
+		// BelowHeader pin the sidebar under the site header at the
+		// height of what's left of the viewport, scrolling on its own
+		// while the page scrolls; the colophon stays full width below.
+		return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true, BelowHeader: true}, l.Primary())
 	})
 	componentsGroup := app.NewScreenGroup("/components", componentsLayout)
 	componentsGroup.Screen(app.NewScreen("/components/", &ComponentsIndexScreen{}).

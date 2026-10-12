@@ -477,7 +477,7 @@ func TestE2E_Full(t *testing.T) {
 			_ = mw.WriteField("title", "with avatar")
 			_ = mw.WriteField("author_id", "u1")
 			fw, _ := mw.CreateFormFile("avatar", "a.png")
-			_, _ = fw.Write([]byte("fake-png-bytes"))
+			_, _ = fw.Write([]byte("\x89PNG\r\n\x1a\nfake-png-bytes"))
 			_ = mw.Close()
 
 			req, _ := http.NewRequest("POST", env.server.URL+"/posts", &buf)

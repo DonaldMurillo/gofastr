@@ -419,7 +419,7 @@
   // finishNav.
   const finishNav = (path, prevPath, cached, root, ps) => {
     applyDocShell(root);
-    if (!ps) scrollToHash();
+    if (!ps && (location.hash || (prevPath || '').split('?')[0] != path.split('?')[0])) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
     if (ps) {
       // Restore AFTER the navigate listeners ran: overlay scroll-lock
@@ -605,8 +605,11 @@
 
       // Partial fetch. X-Gofastr-From names the origin route so the
       // server renders only the layers the two routes do NOT share and
-      // echoes the swap boundary in X-Gofastr-Swap.
-      const hdrs = { 'X-Gofastr-Navigate': '1' };
+      // echoes the swap boundary in X-Gofastr-Swap. X-Gofastr-Markup is
+      // the kernel's _markup, spelled as a literal here (it costs fewer
+      // gzip bytes than the property read; TestKernelMarkupMatchesGo
+      // holds both spellings to runtime.MarkupVersion).
+      const hdrs = { 'X-Gofastr-Navigate': '1', 'X-Gofastr-Markup': '2' };
       const fromPath = (prevPath || '').split('?')[0];
       if (fromPath && routeEntry(fromPath)) hdrs['X-Gofastr-From'] = fromPath;
       const resp = await fetch(path, { headers: hdrs });
@@ -617,7 +620,7 @@
       // threw first, the meta would keep the dead id and never recover
       // (the next OK nav presents the now-valid cookie, so no header).
       const rs = resp.headers.get('X-Gofastr-Session'), rm = rs && sseMeta();
-      if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, '$1' + rs));
+      if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, (_, p) => p + rs));
       if (!resp.ok && !respIsHTML(resp)) throw new Error(`HTTP ${resp.status}`);
       const notOk = !resp.ok;
 
@@ -843,7 +846,7 @@
     // An intercepting route presents as an overlay when reached from its
     // declared origin. The module owns the URL and the fetch in that
     // case; returning true means it took the navigation.
-    if (window.__gofastr._intercept && window.__gofastr._intercept(fullPath, navHash)) return;
+    if (window.__gofastr._intercept?.(fullPath, navHash)) return;
     // Capture the origin BEFORE _pushURL syncs currentPath to the
     // destination, loadPage's X-Gofastr-From must name where the user
     // came from.
@@ -898,6 +901,13 @@
   // with zero fetches. Reads history.state, never the event's: the
   // intercept module's synthetic PopStateEvent carries none.
   window.addEventListener('popstate', () => {
+    // An open intercept stack owns history moves within its layers: the
+    // module closes or refetches panes itself and re-pushes an entry a
+    // leave guard declined, and the stack's URLs never moved the
+    // router's currentPath, so the diff below would misread them. The
+    // module loads only when a route declares an intercept; without it
+    // this is one absent-property read.
+    if (window.__gofastr._interceptPopstate?.()) return;
     // With manual scrollRestoration the viewport still holds the LEAVING
     // page's position when popstate fires, record it under the old id
     // before switching, so the entry we just left can always restore

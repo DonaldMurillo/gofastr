@@ -105,9 +105,22 @@ func emitThemeGoSourceWithDoc(t style.Theme, pkgName string, doc []string) ([]by
 		b.WriteString("\t},\n")
 	}
 
+	// Knobs: the --ui-* overrides, sorted, only when non-empty.
+	if len(t.Knobs) > 0 {
+		b.WriteString("\tKnobs: map[string]string{\n")
+		for _, k := range slices.Sorted(maps.Keys(t.Knobs)) {
+			fmt.Fprintf(&b, "\t\t%q: %q,\n", k, t.Knobs[k])
+		}
+		b.WriteString("\t},\n")
+	}
+
 	emitColorSet(&b, &t.Colors)
 	emitSpacingScale(&b, &t.Spacing)
 	emitRadiusSet(&b, &t.Radii)
+	emitStrokeSet(&b, &t.Strokes)
+	emitLeadingSet(&b, &t.Leading)
+	emitTrackingSet(&b, &t.Tracking)
+	emitOpacitySet(&b, &t.Opacities)
 	emitFontSet(&b, &t.Fonts)
 	emitBreakpointSet(&b, &t.Breakpoints)
 	emitShadowSet(&b, &t.Shadows)
@@ -190,6 +203,70 @@ func emitRadiusSet(b *strings.Builder, r *style.RadiusSet) {
 	b.WriteString("\t},\n")
 }
 
+// emitStrokeSet writes only the strokes the theme sets: an unset one
+// stays unset in the file, so the kit's fallback width keeps applying.
+func emitStrokeSet(b *strings.Builder, s *style.StrokeSet) {
+	b.WriteString("\tStrokes: style.StrokeSet{\n")
+	emitStroke(b, "Thin", s.Thin)
+	emitStroke(b, "Thick", s.Thick)
+	emitStroke(b, "Focus", s.Focus)
+	emitStroke(b, "FocusOffset", s.FocusOffset)
+	b.WriteString("\t},\n")
+}
+
+func emitStroke(b *strings.Builder, field string, s style.Stroke) {
+	if s.Value != "" {
+		fmt.Fprintf(b, "\t\t%s: style.Stroke{Value: %q},\n", field, s.Value)
+	}
+}
+
+// emitLeadingSet, emitTrackingSet and emitOpacitySet write only the
+// tokens the theme sets, like emitStrokeSet.
+func emitLeadingSet(b *strings.Builder, s *style.LeadingSet) {
+	b.WriteString("\tLeading: style.LeadingSet{\n")
+	emitLineHeight(b, "Tight", s.Tight)
+	emitLineHeight(b, "Snug", s.Snug)
+	emitLineHeight(b, "Normal", s.Normal)
+	emitLineHeight(b, "Relaxed", s.Relaxed)
+	b.WriteString("\t},\n")
+}
+
+func emitLineHeight(b *strings.Builder, field string, l style.LineHeight) {
+	if l.Value != "" {
+		fmt.Fprintf(b, "\t\t%s: style.LineHeight{Value: %q},\n", field, l.Value)
+	}
+}
+
+func emitTrackingSet(b *strings.Builder, s *style.TrackingSet) {
+	b.WriteString("\tTracking: style.TrackingSet{\n")
+	emitLetterSpacing(b, "Tighter", s.Tighter)
+	emitLetterSpacing(b, "Tight", s.Tight)
+	emitLetterSpacing(b, "Snug", s.Snug)
+	emitLetterSpacing(b, "Wide", s.Wide)
+	emitLetterSpacing(b, "Wider", s.Wider)
+	b.WriteString("\t},\n")
+}
+
+func emitLetterSpacing(b *strings.Builder, field string, l style.LetterSpacing) {
+	if l.Value != "" {
+		fmt.Fprintf(b, "\t\t%s: style.LetterSpacing{Value: %q},\n", field, l.Value)
+	}
+}
+
+func emitOpacitySet(b *strings.Builder, s *style.OpacitySet) {
+	b.WriteString("\tOpacities: style.OpacitySet{\n")
+	emitOpacity(b, "Faint", s.Faint)
+	emitOpacity(b, "Disabled", s.Disabled)
+	emitOpacity(b, "Muted", s.Muted)
+	b.WriteString("\t},\n")
+}
+
+func emitOpacity(b *strings.Builder, field string, o style.Opacity) {
+	if o.Value != "" {
+		fmt.Fprintf(b, "\t\t%s: style.Opacity{Value: %q},\n", field, o.Value)
+	}
+}
+
 func emitFontSet(b *strings.Builder, f *style.FontSet) {
 	b.WriteString("\tFonts: style.FontSet{\n")
 	emitFont(b, "Body", f.Body)
@@ -215,6 +292,7 @@ func emitBreakpointSet(b *strings.Builder, bp *style.BreakpointSet) {
 func emitShadowSet(b *strings.Builder, s *style.ShadowSet) {
 	b.WriteString("\tShadows: style.ShadowSet{\n")
 	emitShadow(b, "None", s.None)
+	emitShadow(b, "XS", s.XS)
 	emitShadow(b, "SM", s.SM)
 	emitShadow(b, "MD", s.MD)
 	emitShadow(b, "LG", s.LG)

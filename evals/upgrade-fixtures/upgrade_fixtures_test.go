@@ -529,7 +529,10 @@ func sortChangesOrder(t *testing.T, url string) bool {
 		}
 		defer resp.Body.Close()
 		b, _ := io.ReadAll(resp.Body)
-		m := regexp.MustCompile(`<td[^>]*role="cell"[^>]*>([^<]+)</td>`).FindSubmatch(b)
+		// A cell's text sits in the value span DataTable draws inside
+		// every cell (so a phone card keeps a value of several parts
+		// together); the span is optional so the probe reads either shape.
+		m := regexp.MustCompile(`<td[^>]*role="cell"[^>]*>(?:<span class="fui-data-table__value">)?([^<]+)<`).FindSubmatch(b)
 		if m == nil {
 			return ""
 		}

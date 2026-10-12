@@ -120,7 +120,7 @@ func TestSSRPipelineContainsHostHookPanics(t *testing.T) {
 	aIx.SetDefaultLayout(bareShell("ctl"))
 	aIx.Register("/", ssrBoomScreen{}, nil)
 	ssrNoPanic(t, "ssr-containment", "RenderOverlayResult (drawer) on a panicking screen", func() {
-		if _, err := aIx.RenderOverlayResult(ctx, "/", ScreenDrawer); !errors.Is(err, ErrScreenPanicked) {
+		if _, err := aIx.RenderOverlayResult(ctx, "/", "", ScreenDrawer); !errors.Is(err, ErrScreenPanicked) {
 			t.Errorf("overlay arm must take the ErrScreenPanicked error channel, got: %v", err)
 		}
 	})

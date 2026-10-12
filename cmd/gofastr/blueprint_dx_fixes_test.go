@@ -117,9 +117,9 @@ func (e *stubErr) Error() string { return e.s }
 
 // ---- Item 2: chart/stat source registration ------------------------------
 
-// A chart sourced from an entity that has no list/detail screen still needs a
-// resource.Config; otherwise registry aggregates render a silent "—".
-func TestChartSourceRegistersResource(t *testing.T) {
+// A chart sourced from an entity that has no list/detail screen reads
+// through appUI.GroupBars with no registry entry to register.
+func TestChartSourceNeedsNoRegistry(t *testing.T) {
 	crudOn := true
 	bp := Blueprint{
 		App: BlueprintApp{Name: "Dash", Module: "example.com/dash"},
@@ -140,18 +140,19 @@ func TestChartSourceRegistersResource(t *testing.T) {
 			}},
 		}},
 	}
-	files := filesByName(mustRenderBlueprintFiles(t, bp))
-	// tickets has no list/detail screen, so its appResources wiring lands in a
-	// resource-only screen_tickets_crud.go (the dashboard sources it via a chart).
-	crud := files["screen_tickets_crud.go"]
-	if crud == "" {
-		t.Fatalf("missing screen_tickets_crud.go; files=%v", sortedFileNames(mustRenderBlueprintFiles(t, bp)))
+	files := mustRenderBlueprintFiles(t, bp)
+	// The chart reads through appUI.GroupBars, which resolves the entity at
+	// render time: a sourced entity with no screen needs no registry entry
+	// and no crud file. The dashboard renders through the app's one UI.
+	screens := allScreenContent(files)
+	if !strings.Contains(screens, `appUI.GroupBars(ctx, "tickets", "status")`) {
+		t.Fatalf("bar_chart must read through appUI.GroupBars:\n%s", screens)
 	}
-	if !strings.Contains(crud, `appResources["tickets"] = resource.Config{`) {
-		t.Fatalf("tickets must be registered in appResources even without a list screen:\n%s", crud)
+	if f := filesByName(files)["screen_tickets_crud.go"]; f != "" {
+		t.Fatalf("a screen-less sourced entity must not grow a crud file:\n%s", f)
 	}
-	if files["resource.go"] == "" {
-		t.Fatal("dashboard data source must emit the thin resource.go registry")
+	if f := filesByName(files)["resource.go"]; f != "" {
+		t.Fatalf("the resource registry is gone with the resource engine:\n%s", f)
 	}
 }
 

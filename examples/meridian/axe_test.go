@@ -61,11 +61,12 @@ func axeFirstDetailID(t *testing.T, browser context.Context, base, listPath, bas
 		chromedp.Evaluate(`(() => {
 			const sel = '.fui-data-table a[href^="`+basePath+`/"]';
 			const links = [...document.querySelectorAll(sel)];
-			// Skip /new and /edit paths — the table only renders View links,
-			// but guard against any toolbar link that slipped inside.
+			// Skip /create (and the retired /new, /edit) paths — the link
+			// column and row menu render record links, but guard against
+			// the toolbar's New button slipping inside the selector.
 			const view = links.find(a => {
 				const h = a.getAttribute('href') || '';
-				return !h.endsWith('/new') && !h.endsWith('/edit') && !h.includes('/edit/');
+				return !h.endsWith('/create') && !h.endsWith('/new') && !h.endsWith('/edit') && !h.includes('/edit/');
 			});
 			return view ? view.getAttribute('href') : '';
 		})()`, &href),
@@ -79,26 +80,25 @@ func axeFirstDetailID(t *testing.T, browser context.Context, base, listPath, bas
 }
 
 // axeAdminEntityTables discovers every entity exposed in the admin back-office
-// by scraping the entity-screen sidebar nav. The adminSidebar (an
-// interactive.SectionMenu) lists one link per exposed entity, built from the
-// same entitiesToExpose() that mounts the /admin/e/<table> routes, so this
-// derives the scan set from the running app's actual exposure rather than a
-// hand-maintained list: add an entity and its list/new screens are scanned
-// with no test edit. Must run AFTER e2eLogin (admin pages are auth-gated).
+// by scraping the admin sidebar, which lists one link per entity it mounts
+// at /admin/entities/<table>. The scan set comes from the running app's
+// actual exposure rather than a hand-maintained list: add an entity and its
+// list and create screens are scanned with no test edit. Must run AFTER
+// e2eLogin (admin pages are auth-gated).
 func axeAdminEntityTables(t *testing.T, browser context.Context, base string) []string {
 	t.Helper()
 	ctx, cancel := axetest.NewTab(t, browser)
 	defer cancel()
 	var raw string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(base+"/admin/e/customers"),
+		chromedp.Navigate(base+"/admin/entities/customers"),
 		axePageSettle(),
-		// Collect entity-base hrefs (exactly /admin/e/<table>, no /new|/view|/edit
-		// suffix) from the sidebar nav, dedupe, sort.
+		// Collect entity-base hrefs (exactly /admin/entities/<table>, no /create
+		// or /<id> suffix) from the page, dedupe, sort.
 		chromedp.Evaluate(`(() => {
-			const re = /^\/admin\/e\/[^/]+$/;
+			const re = /^\/admin\/entities\/[^/?]+$/;
 			const seen = new Set();
-			for (const a of document.querySelectorAll('a[href^="/admin/e/"]')) {
+			for (const a of document.querySelectorAll('a[href^="/admin/entities/"]')) {
 				const h = a.getAttribute('href') || '';
 				if (re.test(h)) seen.add(h.split('/')[3]);
 			}
@@ -112,36 +112,29 @@ func axeAdminEntityTables(t *testing.T, browser context.Context, base string) []
 		t.Fatalf("parse admin entities %q: %v", raw, err)
 	}
 	if len(tables) == 0 {
-		t.Fatal("no admin entities discovered from /admin/e/customers sidebar: is AllEntities wired?")
+		t.Fatal("no admin entities discovered from the /admin/entities/customers sidebar: is AllEntities wired?")
 	}
 	return tables
 }
 
-// axeAdminRowID navigates to an admin entity list and returns the id of the
-// first row's View link, the last path segment of /admin/e/<table>/view/<id>.
-// Used to scan a real seeded record's edit + view screens. (Distinct from
-// axeFirstDetailID: admin detail URLs carry an extra /view/ segment, so the
-// app-style TrimPrefix would yield "view/<id>" instead of "<id>".)
+// axeAdminRowID navigates to an admin entity list and returns the first
+// row's id (the row element's id attribute), so a real seeded record's
+// screen is scanned too.
 func axeAdminRowID(t *testing.T, browser context.Context, base, table string) string {
 	t.Helper()
-	listPath := "/admin/e/" + table
+	listPath := "/admin/entities/" + table
 	ctx, cancel := axetest.NewTab(t, browser)
 	defer cancel()
 	var id string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+listPath),
-		chromedp.WaitVisible(`.fui-data-table`, chromedp.ByQuery),
-		chromedp.Sleep(300*time.Millisecond),
-		chromedp.Evaluate(`(() => {
-			const sel = '.fui-data-table a[href^="`+listPath+`/view/"]';
-			const a = document.querySelector(sel);
-			return a ? (a.getAttribute('href') || '').split('/').pop() : '';
-		})()`, &id),
+		chromedp.WaitVisible(`tbody tr[id]`, chromedp.ByQuery),
+		chromedp.Evaluate(`document.querySelector('tbody tr[id]')?.id || ''`, &id),
 	); err != nil {
 		t.Fatalf("discover admin row id on %s: %v", listPath, err)
 	}
 	if id == "" {
-		t.Fatalf("no admin view link on %s: is %s seeded?", listPath, table)
+		t.Fatalf("no admin row on %s: is %s seeded?", listPath, table)
 	}
 	return id
 }
@@ -161,7 +154,7 @@ func axeReport(t *testing.T, label, path string, vs []axetest.Violation) bool {
 			if len(snippet) > 160 {
 				snippet = snippet[:160] + "…"
 			}
-			t.Errorf("    target=%v  html=%s", n.Target, snippet)
+			t.Errorf("    target=%v  html=%s\n%s", n.Target, snippet, n.FailureSummary)
 		}
 	}
 	return true
@@ -248,25 +241,20 @@ func TestAxeMeridianClean(t *testing.T) {
 	}
 
 	// Admin back-office. main.go wires the admin battery with AllEntities, so
-	// it serves a list + new per registered entity (5 CRUD entities today).
-	// Scan the lot: derive the entity tables from the running app's own sidebar
-	// (axeAdminEntityTables) so a newly added entity is covered with no test
-	// edit, then add customers edit + view for a real seeded row. target-size is
-	// enabled in axeScanPage so dense admin table links + sidebar nav are
-	// audited against the WCAG 2.2 24px floor.
+	// it serves a list and a create screen per registered entity. The tables
+	// come from the running app's own sidebar (axeAdminEntityTables) so a newly
+	// added entity is covered with no test edit, plus a seeded customer's
+	// record. target-size is enabled in axeScanPage so dense admin table links
+	// and sidebar nav are audited against the WCAG 2.2 24px floor.
 	adminTables := axeAdminEntityTables(t, browser, base)
 	adminCustomerID := axeAdminRowID(t, browser, base, "customers")
 	adminPages := []string{"/admin", "/admin/queue", "/admin/audit"}
 	for _, table := range adminTables {
-		adminPages = append(adminPages, "/admin/e/"+table, "/admin/e/"+table+"/new")
+		adminPages = append(adminPages, "/admin/entities/"+table, "/admin/entities/"+table+"/create")
 	}
-	// customers edit + view, seeded data exists, so exercise the form +
-	// read-only detail screens too. (The other entities' edit/view need a row
-	// we'd have to create; customers is the canonical seeded one.)
-	adminPages = append(adminPages,
-		"/admin/e/customers/view/"+adminCustomerID,
-		"/admin/e/customers/edit/"+adminCustomerID,
-	)
+	// A seeded customer's record screen (the other entities' records need a
+	// row we'd have to create; customers is the canonical seeded one).
+	adminPages = append(adminPages, "/admin/entities/customers/"+adminCustomerID)
 	sort.Strings(adminPages)
 	for _, p := range adminPages {
 		for _, scheme := range axetest.Schemes {

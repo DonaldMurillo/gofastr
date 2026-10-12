@@ -61,8 +61,11 @@ func (ch *CrudHandler) requestFrom(ctx context.Context) *http.Request {
 	return syntheticRequest(hookCtx(ctx), http.MethodGet, "/")
 }
 
-// WithReadHooks returns a context in which the in-process read API applies
-// AfterList/AfterGet, so callers see the same values the HTTP surface returns.
+// WithReadHooks returns a context in which the in-process read API runs the
+// read hooks the HTTP surface runs, so callers see the rows and values a
+// GET would return: BeforeList/BeforeGet scope the query (ListAll and
+// CountAll run BeforeList, GetOne runs BeforeGet), and AfterList/AfterGet
+// mask the result.
 //
 // Use it where rows are RENDERED, not where they are read to be written back:
 //
@@ -90,6 +93,34 @@ func hookCtx(ctx context.Context) context.Context {
 	return context.WithValue(ctx, readHooksKey{}, false)
 }
 
+// runBeforeList runs the BeforeList chain for an in-process read under
+// WithReadHooks and returns the WHERE clauses its hooks appended. The
+// HTTP List handler runs the same chain and ANDs the same clauses into
+// both its data and count queries; a hook error refuses the read there
+// with a 400 and refuses it here with the error.
+func (ch *CrudHandler) runBeforeList(ctx context.Context, r *http.Request) ([]hook.WhereClause, error) {
+	if ch.Hooks == nil || !readHooksEnabled(ctx) {
+		return nil, nil
+	}
+	payload := &hook.ListPayload{Request: hookRequest(r)}
+	if err := runHooks(ch.Hooks, hookCtx(ctx), hook.BeforeList, payload); err != nil {
+		return nil, fmt.Errorf("before-list hook: %w", err)
+	}
+	return payload.Where, nil
+}
+
+// runBeforeGet is runBeforeList for a by-id read: the BeforeGet chain.
+func (ch *CrudHandler) runBeforeGet(ctx context.Context, r *http.Request, id string) ([]hook.WhereClause, error) {
+	if ch.Hooks == nil || !readHooksEnabled(ctx) {
+		return nil, nil
+	}
+	payload := &hook.GetPayload{Request: hookRequest(r), ID: id}
+	if err := runHooks(ch.Hooks, hookCtx(ctx), hook.BeforeGet, payload); err != nil {
+		return nil, fmt.Errorf("before-get hook: %w", err)
+	}
+	return payload.Where, nil
+}
+
 // runAfterGet applies the AfterGet chain to a single in-process result and
 // returns the (possibly replaced) row.
 //
@@ -103,7 +134,7 @@ func (ch *CrudHandler) runAfterGet(ctx context.Context, r *http.Request, id stri
 		return result, nil
 	}
 	payload := &hook.GetPayload{Request: hookRequest(r), ID: id, Result: result}
-	if err := ch.Hooks.ExecuteHooks(hookCtx(ctx), hook.AfterGet, payload); err != nil {
+	if err := runHooks(ch.Hooks, hookCtx(ctx), hook.AfterGet, payload); err != nil {
 		return nil, fmt.Errorf("after-get hook: %w", err)
 	}
 	return payload.Result, nil
@@ -148,7 +179,7 @@ func (ch *CrudHandler) runAfterList(ctx context.Context, r *http.Request, result
 		return results, nil
 	}
 	payload := &hook.ListPayload{Request: hookRequest(r), Results: results}
-	if err := ch.Hooks.ExecuteHooks(hookCtx(ctx), hook.AfterList, payload); err != nil {
+	if err := runHooks(ch.Hooks, hookCtx(ctx), hook.AfterList, payload); err != nil {
 		return nil, fmt.Errorf("after-list hook: %w", err)
 	}
 	return payload.Results, nil
@@ -239,7 +270,7 @@ func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*Include
 				Request: ch.requestFrom(ctx),
 				Results: childRows,
 			}
-			if err := reg.ExecuteHooks(hookCtx(ctx), hook.AfterList, payload); err != nil {
+			if err := runHooks(reg, hookCtx(ctx), hook.AfterList, payload); err != nil {
 				return fmt.Errorf("include %s: after-list hook: %w", node.Relation.Name, err)
 			}
 			if err := reattachHookResults(node.Relation.Name, ch.convertKey(node.Target.PrimaryKey), before, payload.Results); err != nil {
@@ -268,7 +299,7 @@ func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*Include
 					id = fmt.Sprint(v)
 				}
 				payload := &hook.GetPayload{Request: req, ID: id, Result: child}
-				if err := reg.ExecuteHooks(hookCtx(ctx), hook.AfterGet, payload); err != nil {
+				if err := runHooks(reg, hookCtx(ctx), hook.AfterGet, payload); err != nil {
 					return fmt.Errorf("include %s: after-get hook: %w", node.Relation.Name, err)
 				}
 				// A hook that replaced the map instead of mutating it needs the
@@ -332,7 +363,7 @@ func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) 
 		id = fmt.Sprint(v)
 	}
 	payload := &hook.GetPayload{Request: r, ID: id, Result: row}
-	if err := ch.Hooks.ExecuteHooks(hookCtx(r.Context()), hook.AfterGet, payload); err != nil {
+	if err := runHooks(ch.Hooks, hookCtx(r.Context()), hook.AfterGet, payload); err != nil {
 		return nil, err
 	}
 	return payload.Result, nil

@@ -2,6 +2,7 @@ package openapi
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"net/http"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
@@ -41,7 +43,15 @@ import (
 // nil falls back to the Exposure-only check. Declared custom Endpoints
 // are documented either way; App mounts those outside its CRUD branch.
 func EntityOpenAPI(registry entity.Registry, title, version string, crudMounted func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
-	s := entityOpenAPI(registry, title, version, crudMounted, nil, basePath...)
+	return EntityOpenAPIWithBulk(registry, title, version, crudMounted, nil, basePath...)
+}
+
+// EntityOpenAPIWithBulk is EntityOpenAPI that also documents the routes
+// App.EntityUI mounts beside an entity's CRUD routes, POST <path>/_bulk
+// and GET <path>/_export.csv, for each entity bulkMounted reports. nil
+// documents neither, which is EntityOpenAPI.
+func EntityOpenAPIWithBulk(registry entity.Registry, title, version string, crudMounted, bulkMounted func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
+	s := entityOpenAPI(registry, title, version, crudMounted, bulkMounted, nil, basePath...)
 	// The auth-gated serving path (core/openapi Handler) rebuilds the
 	// document per request through RequestView, keeping only the
 	// entities THIS caller can read — llm.md parity: the spec is the
@@ -53,7 +63,7 @@ func EntityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 	// and keeps serving the full spec.
 	s.RequestView = func(r *http.Request) *openapi.Spec {
 		ctx := r.Context()
-		return entityOpenAPI(registry, title, version, crudMounted, func(ent *entity.Entity) bool {
+		return entityOpenAPI(registry, title, version, crudMounted, bulkMounted, func(ent *entity.Entity) bool {
 			return canReadSpecEntity(ctx, ent)
 		}, basePath...)
 	}
@@ -82,7 +92,7 @@ func objectSchemaWith(props map[string]any) map[string]any {
 
 // entityOpenAPI is EntityOpenAPI's builder: keep, when non-nil, filters
 // which registered entities reach the document.
-func entityOpenAPI(registry entity.Registry, title, version string, crudMounted func(*entity.Entity) bool, keep func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
+func entityOpenAPI(registry entity.Registry, title, version string, crudMounted, bulkMounted func(*entity.Entity) bool, keep func(*entity.Entity) bool, basePath ...string) *openapi.Spec {
 	s := openapi.NewSpec(title, version)
 	apiPrefix := ""
 	if len(basePath) > 0 && basePath[0] != "" && basePath[0] != "/" {
@@ -128,6 +138,25 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 	s.AddSchema("BatchResponse", objectSchemaWith(map[string]any{
 		"committed": map[string]any{"type": "boolean"},
 		"results":   map[string]any{"type": "array", "items": map[string]any{"$ref": "#/components/schemas/BatchResult"}},
+	}))
+
+	// 409 body of a transition whose From does not hold the record's
+	// current value: the current value and the moves open from it.
+	s.AddSchema("TransitionConflict", objectSchemaWith(map[string]any{
+		"error":   map[string]any{"type": "string"},
+		"success": map[string]any{"type": "boolean"},
+		"current": map[string]any{"type": "string", "description": "The record's current state value."},
+		"moves":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "The move keys open from the current value."},
+	}))
+
+	// 422 body of a create or update that tries to change the state field
+	// or a stamp outside a move: the field error in the validation shape,
+	// plus the moves the caller can run instead.
+	s.AddSchema("StateError", objectSchemaWith(map[string]any{
+		"error":   map[string]any{"type": "string"},
+		"success": map[string]any{"type": "boolean"},
+		"fields":  map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
+		"moves":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 	}))
 
 	// Track whether any entity is auth-gated so the shared security
@@ -249,7 +278,16 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		listRef := map[string]any{"$ref": "#/components/schemas/ListResponse"}
 		cursorRef := map[string]any{"$ref": "#/components/schemas/CursorPage"}
 		errorRef := map[string]any{"$ref": "#/components/schemas/Error"}
+		conflictRef := map[string]any{"$ref": "#/components/schemas/TransitionConflict"}
+		stateErrRef := map[string]any{"$ref": "#/components/schemas/StateError"}
 		batchRespRef := map[string]any{"$ref": "#/components/schemas/BatchResponse"}
+		// st is the entity's states block, nil without one. statesGuarded
+		// reports whether the CRUD handler enforces it: only then do the
+		// request schemas drop the guarded columns and the write operations
+		// answer 422. The moves are documented either way: the transition
+		// route is mounted for every non-system move, Advisory or not.
+		st := ent.Config.States
+		statesGuarded := st != nil && !st.Advisory
 		// apiPrefix first, then any per-entity version group: the router
 		// mounts /api/v2/posts, so the document has to key it that way.
 		// A versioned entity's group prefix is mounted absolutely by the
@@ -320,8 +358,8 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		}
 
 		// Add filter parameters matching the actual filter parser
-		// which accepts <field>, <field>_gt, <field>_gte, <field>_lt,
-		// <field>_lte, <field>_like, <field>_in.
+		// which accepts <field>, <field>_ne, <field>_gt, <field>_gte,
+		// <field>_lt, <field>_lte, <field>_like, <field>_in.
 		// Filter parameters use raw field names (e.g. "created_at_gt")
 		// because ParseFilters matches against the schema field names
 		// directly, plus a WireName alias when one is set. The wire key
@@ -338,24 +376,22 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 				name = f.WireName
 			}
 			filterSchema := fieldToFilterSchema(f)
-			// Exact match and _in apply to every field type.
-			listOp.AddParameter(name, "query", "Exact match on "+name, false, filterSchema)
-			// Range operators only make sense for ordered/comparable
-			// types (numbers, timestamps, dates). Advertising _gt/_lt on
-			// a boolean or JSON blob misleads SDK generators into
-			// proposing comparisons the field can't satisfy.
-			if fieldSupportsRange(f.Type) {
-				listOp.AddParameter(name+"_gt", "query", name+" greater than", false, filterSchema)
-				listOp.AddParameter(name+"_gte", "query", name+" greater than or equal", false, filterSchema)
-				listOp.AddParameter(name+"_lt", "query", name+" less than", false, filterSchema)
-				listOp.AddParameter(name+"_lte", "query", name+" less than or equal", false, filterSchema)
+			// The advertised set is derived from filter.OpSuitsType, the same
+			// type predicate CheckOpType applies to ?field_<op>= (and every
+			// other filter surface), so the spec can never list an operator
+			// the runtime answers 400 — or hide one it accepts. Description
+			// and schema per operator are the spec's own; which types see the
+			// operator is the filter package's call, one source of truth.
+			for _, o := range advertisedFilterOps {
+				if !filter.OpSuitsType(o.op, f.Type) {
+					continue
+				}
+				ps := filterSchema
+				if o.stringSchema {
+					ps = map[string]any{"type": "string"}
+				}
+				listOp.AddParameter(name+o.suffix, "query", o.desc(name), false, ps)
 			}
-			// _like is a substring match, only meaningful for text-ish
-			// fields, not booleans or JSON.
-			if fieldSupportsLike(f.Type) {
-				listOp.AddParameter(name+"_like", "query", name+" contains (LIKE)", false, filterSchema)
-			}
-			listOp.AddParameter(name+"_in", "query", name+" in comma-separated list", false, map[string]any{"type": "string"})
 		}
 
 		// ?q= free-text search: advertised only when the entity declares
@@ -383,11 +419,16 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		createOp.OperationID = "create_" + schemaName
 		createOp.Tags = []string{tagName}
 
-		// Create request body excludes auto-generated and read-only fields
-		createSchema := excludeFieldsByBehavior(entitySchema, fields)
+		// Create request body excludes auto-generated and read-only
+		// fields; enforced states narrow the state field's enum to the
+		// values a create may set and drop the stamps.
+		createSchema := requestSchema(entitySchema, fields, st, false)
 		createOp.SetRequestBody("application/json", createSchema, true)
 		createOp.AddResponse(201, "Created "+entityName, singleRef)
 		createOp.AddResponse(400, "Validation error", errorRef)
+		if statesGuarded {
+			createOp.AddResponse(422, "Tried to set the state field to a non-initial value, or to set a stamp", stateErrRef)
+		}
 		if gated {
 			createOp.AddResponse(401, "Authentication required", errorRef)
 			createOp.AddResponse(403, "Forbidden", errorRef)
@@ -419,9 +460,14 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		updateOp.Summary = "Update " + entityName
 		updateOp.OperationID = "update_" + schemaName
 		updateOp.Tags = []string{tagName}
-		updateOp.SetRequestBody("application/json", excludeFieldsByBehavior(entitySchema, fields), false)
+		// An enforced states block removes the state field and the stamps
+		// from the update body: they change only through a move's route.
+		updateOp.SetRequestBody("application/json", requestSchema(entitySchema, fields, st, true), false)
 		updateOp.AddResponse(200, "Updated "+entityName, singleRef)
 		updateOp.AddResponse(400, "Validation error", errorRef)
+		if statesGuarded {
+			updateOp.AddResponse(422, "Tried to change the state field or a stamp outside a move", stateErrRef)
+		}
 		if gated {
 			updateOp.AddResponse(401, "Authentication required", errorRef)
 			updateOp.AddResponse(403, "Forbidden", errorRef)
@@ -436,11 +482,14 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		patchOp.Summary = "Patch " + entityName
 		patchOp.OperationID = "patch_" + schemaName
 		patchOp.Tags = []string{tagName}
-		patchSchema := excludeFieldsByBehavior(entitySchema, fields)
+		patchSchema := requestSchema(entitySchema, fields, st, true)
 		delete(patchSchema, "required")
 		patchOp.SetRequestBody("application/json", patchSchema, true)
 		patchOp.AddResponse(200, "Patched "+entityName, singleRef)
 		patchOp.AddResponse(400, "Validation error", errorRef)
+		if statesGuarded {
+			patchOp.AddResponse(422, "Tried to change the state field or a stamp outside a move", stateErrRef)
+		}
 		if gated {
 			patchOp.AddResponse(401, "Authentication required", errorRef)
 			patchOp.AddResponse(403, "Forbidden", errorRef)
@@ -466,6 +515,53 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		}
 		deleteOp.AddResponse(404, entityName+" not found", errorRef)
 		s.AddPath("DELETE", path+"/:id", *deleteOp)
+
+		// --- POST /{table}/:id/transitions/{key}: one operation per move ---
+		// The router mounts the transition route when States holds a
+		// non-system move, and the key is a literal segment, so the spec
+		// documents one operation per move — the same set
+		// RoutableTransitions serves, Advisory entities included (their
+		// moves stay callable). System moves have no route and appear
+		// nowhere.
+		for _, t := range crud.RoutableTransitions(st) {
+			label := t.Label
+			if label == "" {
+				label = t.Key
+			}
+			moveOp := openapi.NewOperation()
+			moveOp.Summary = strings.ToUpper(label[:1]) + label[1:] + " " + entityName
+			moveOp.OperationID = t.Key + "_" + schemaName
+			moveOp.Tags = []string{tagName}
+			desc := fmt.Sprintf("Move %s from %s to %s", st.Field, strings.Join(t.From, " or "), t.To)
+			if t.Stamp != "" {
+				desc += fmt.Sprintf(", stamping %s with the server's current UTC date/time", t.Stamp)
+			}
+			if t.Permission != "" {
+				desc += ". Requires the entity's update permission and " + t.Permission
+			}
+			// The route takes no payload but answers 415 unless the request
+			// carries the JSON content type (its cross-site-form gate), so the
+			// operation declares the body a caller must send: a required,
+			// property-free JSON object. Generated clients post exactly that.
+			moveOp.SetRequestBody("application/json", map[string]any{
+				"type":                 "object",
+				"maxProperties":        0,
+				"additionalProperties": false,
+			}, true)
+			desc += ". Sends no payload but requires Content-Type: application/json: POST the declared empty object, {}."
+			moveOp.Description = desc
+			moveOp.AddResponse(200, "Moved "+entityName+" (Update's envelope)", singleRef)
+			moveOp.AddResponse(403, "Forbidden", errorRef)
+			moveOp.AddResponse(404, entityName+" not found, or unknown move key", errorRef)
+			moveOp.AddResponse(409, "The record's current value is not one the move starts from", conflictRef)
+			moveOp.AddResponse(415, "Content-Type must be application/json", errorRef)
+			if gated {
+				moveOp.AddResponse(401, "Authentication required", errorRef)
+				moveOp.AddSecurity("bearerAuth", nil)
+				moveOp.AddSecurity("cookieAuth", nil)
+			}
+			s.AddPath("POST", path+"/:id/transitions/"+t.Key, *moveOp)
+		}
 
 		// --- POST /{table}/_batch: BatchCreate ---
 		batchCreateBody := map[string]any{
@@ -497,7 +593,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 		// --- PATCH /{table}/_batch: BatchUpdate ---
 		batchUpdateItem := map[string]any{
 			"allOf": []any{
-				excludeFieldsByBehavior(entitySchema, fields),
+				requestSchema(entitySchema, fields, st, true),
 				map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []string{"id"}},
 			},
 		}
@@ -574,6 +670,9 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 			batchDeleteOp.AddSecurity("cookieAuth", nil)
 		}
 		s.AddPath("DELETE", path+"/_batch", *batchDeleteOp)
+		if bulkMounted != nil && bulkMounted(ent) {
+			addBulkPaths(s, path, entityName, schemaName, tagName, gated, errorRef)
+		}
 
 		addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix)
 	}
@@ -607,29 +706,97 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted 
 	return s
 }
 
-// fieldSupportsRange reports whether _gt/_gte/_lt/_lte filter operators are
-// meaningful for a field type. Booleans and JSON blobs have no useful
-// ordering, so advertising range comparisons on them only misleads SDK
-// generators. Every other scalar/text type keeps its range operators.
-func fieldSupportsRange(t schema.FieldType) bool {
-	switch t {
-	case schema.Bool, schema.JSON:
-		return false
-	default:
-		return true
+// requestSchema returns the write-request view of the entity schema:
+// excludeFieldsByBehavior, then the states rules. With enforced states
+// (declared and not Advisory) a create keeps the state field but narrows
+// its enum to the values a create may set, and drops every stamp; an
+// update drops the state field and the stamps entirely — they change
+// only through a move's own route. Without enforced states it is
+// excludeFieldsByBehavior unchanged.
+func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.StatesConfig, update bool) map[string]any {
+	cp := excludeFieldsByBehavior(specSchema, fields)
+	if st == nil || st.Advisory {
+		return cp
 	}
+	byName := make(map[string]schema.Field, len(fields))
+	for _, f := range fields {
+		byName[f.Name] = f
+	}
+	drop := map[string]bool{} // wire keys no write may carry
+	for _, t := range st.Transitions {
+		if t.Stamp == "" {
+			continue
+		}
+		if f, ok := byName[t.Stamp]; ok {
+			drop[wireKeyOf(f)] = true
+		}
+	}
+	stateKey := ""
+	if f, ok := byName[st.Field]; ok {
+		stateKey = wireKeyOf(f)
+	}
+	if update {
+		if stateKey != "" {
+			drop[stateKey] = true
+		}
+	}
+	props, ok := cp["properties"].(map[string]any)
+	if !ok {
+		return cp
+	}
+	for key := range drop {
+		delete(props, key)
+	}
+	if !update && stateKey != "" {
+		if p, ok := props[stateKey].(map[string]any); ok {
+			// Copy before narrowing: the property map is shared with the
+			// response schema, whose enum stays the field's full value set.
+			narrowed := make(map[string]any, len(p))
+			maps.Copy(narrowed, p)
+			narrowed["enum"] = st.InitialValues(fields)
+			props[stateKey] = narrowed
+		}
+	}
+	if reqs, ok := cp["required"].([]string); ok {
+		kept := make([]string, 0, len(reqs))
+		for _, r := range reqs {
+			if !drop[r] {
+				kept = append(kept, r)
+			}
+		}
+		if len(kept) > 0 {
+			cp["required"] = kept
+		} else {
+			delete(cp, "required")
+		}
+	}
+	return cp
 }
 
-// fieldSupportsLike reports whether the _like (substring) filter operator is
-// meaningful for a field type. A LIKE match makes no sense on a boolean or
-// an opaque JSON blob; all other types keep it.
-func fieldSupportsLike(t schema.FieldType) bool {
-	switch t {
-	case schema.Bool, schema.JSON:
-		return false
-	default:
-		return true
-	}
+// advertisedFilterOps is the spec's operator table: every
+// <field><suffix> query parameter the List operation describes, in
+// emission order. Membership per field type is NOT decided here — the
+// emitting loop consults filter.OpSuitsType, the one type predicate
+// behind filter.CheckOpType — so the spec and the runtime cannot drift
+// the way a local fieldSupportsLike once did (advertising _like on Int,
+// Float, Date and Decimal columns the filter parser refuses).
+var advertisedFilterOps = []struct {
+	suffix string
+	op     filter.FilterOp
+	desc   func(name string) string
+	// stringSchema selects the comma-list schema _in carries (a string
+	// whatever the column type); every other operator reuses the
+	// column's own filterSchema.
+	stringSchema bool
+}{
+	{"", filter.OpEq, func(n string) string { return "Exact match on " + n }, false},
+	{"_ne", filter.OpNe, func(n string) string { return n + " not equal (NULL matches neither = nor !=)" }, false},
+	{"_gt", filter.OpGt, func(n string) string { return n + " greater than" }, false},
+	{"_gte", filter.OpGte, func(n string) string { return n + " greater than or equal" }, false},
+	{"_lt", filter.OpLt, func(n string) string { return n + " less than" }, false},
+	{"_lte", filter.OpLte, func(n string) string { return n + " less than or equal" }, false},
+	{"_like", filter.OpLike, func(n string) string { return n + " contains (LIKE)" }, false},
+	{"_in", filter.OpIn, func(n string) string { return n + " in comma-separated list" }, true},
 }
 
 // fieldToFilterSchema returns an OpenAPI query parameter schema for filtering

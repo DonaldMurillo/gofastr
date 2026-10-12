@@ -218,6 +218,7 @@ var buttonClasses = headless.Classes{
 	"root--ghost":     "fui-button--ghost",
 	"root--small":     "fui-button--small",
 	"root--large":     "fui-button--large",
+	"root--icon":      "fui-button--icon",
 	headless.PartIcon: "fui-button__icon",
 }
 

@@ -626,7 +626,7 @@ func (c *WebSocketConn) startKeepalive() {
 func (c *WebSocketConn) keepalive() {
 	idle := c.config.ReadIdleTimeout
 	pongTimeout := c.config.PongTimeout
-	if pongTimeout <= 0 {
+	if pongTimeout == 0 {
 		pongTimeout = 10 * time.Second
 	}
 	// Check at a granularity finer than the smaller of the two thresholds.
@@ -654,7 +654,7 @@ func (c *WebSocketConn) keepalive() {
 			// If awaiting a pong, enforce PongTimeout.
 			if c.awaitingPong.Load() {
 				sent := time.Unix(0, c.pingSentAt.Load())
-				if now.Sub(sent) > pongTimeout {
+				if pongTimeout > 0 && now.Sub(sent) > pongTimeout {
 					c.Close()
 					return
 				}

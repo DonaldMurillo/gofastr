@@ -114,8 +114,9 @@ func parseMigrateGenOptions(args []string) migrateGenOptions {
 			opts.migrationsDir = strings.TrimPrefix(arg, "--migrations=")
 		case strings.HasPrefix(arg, "--snapshot="):
 			opts.snapshotPath = strings.TrimPrefix(arg, "--snapshot=")
-		case strings.HasPrefix(arg, "--driver="):
-			opts.driver = strings.TrimPrefix(arg, "--driver=")
+		case strings.HasPrefix(arg, "--db="), strings.HasPrefix(arg, "--driver="):
+			v, _ := migrateDriverFlag(arg)
+			opts.driver = canonicalDBDriver(v)
 		case strings.HasPrefix(arg, "--group="):
 			opts.group = strings.TrimPrefix(arg, "--group=")
 		case strings.HasPrefix(arg, "--"):

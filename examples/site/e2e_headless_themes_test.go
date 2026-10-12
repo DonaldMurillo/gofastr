@@ -17,8 +17,15 @@ import (
 	"testing"
 	"time"
 
+	cdruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
+
+// hlSettleTransitions resolves once every running CSS transition has
+// finished or been cancelled.
+const hlSettleTransitions = `Promise.all(document.getAnimations()
+	.filter(a => a instanceof CSSTransition)
+	.map(a => a.finished.catch(() => {}))).then(() => true)`
 
 // hlThemeProbe reads, from one page, everything the per-theme proofs
 // assert on: the primary button's geometry, background, border and the
@@ -83,6 +90,11 @@ func TestE2E_HeadlessLanding_NewThemeComputedStyles(t *testing.T) {
 					chromedp.Navigate(base+landingRoutePath(tc.seg)),
 					pageReady(),
 					chromedp.Evaluate(scheme.force, nil),
+					// The button transitions its colours, so a probe taken
+					// right after the scheme flip reads the old scheme's.
+					chromedp.Evaluate(hlSettleTransitions, nil, func(p *cdruntime.EvaluateParams) *cdruntime.EvaluateParams {
+						return p.WithAwaitPromise(true)
+					}),
 					chromedp.Evaluate(hlThemeProbe, &m),
 				); err != nil {
 					t.Fatalf("chromedp: %v", err)

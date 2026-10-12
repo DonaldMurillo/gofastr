@@ -222,8 +222,8 @@ func diffViewerCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-diff-viewer"] {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-sm, 0.875rem);
-  line-height: 1.5;
-  border: 1px solid var(--color-border, #E4E4E7);
+  line-height: var(--leading-normal, 1.5);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   overflow: hidden;
   background: var(--color-surface, #FFFFFF);
@@ -233,14 +233,14 @@ func diffViewerCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
   font-size: var(--text-xs, 0.75rem);
-  border-block: 1px solid var(--color-border, #E4E4E7);
+  border-block: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 [data-cui-comp="ui-diff-viewer"] .fui-diff-viewer__file {
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   color: var(--color-text, #18181B);
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
-  border-block-end: 1px solid var(--color-border, #E4E4E7);
+  border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 [data-cui-comp="ui-diff-viewer"] .fui-diff-viewer__line {
   display: grid;
@@ -278,16 +278,16 @@ func diffViewerCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text-muted, #52525B);
   font-weight: var(--font-weight-semibold);
-  border-block-end: 1px solid var(--color-border, #E4E4E7);
+  border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 .fui-diff-viewer--split .fui-diff-viewer__header-cell + .fui-diff-viewer__header-cell {
-  border-inline-start: 1px solid var(--color-border, #E4E4E7);
+  border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 .fui-diff-viewer--split .fui-diff-viewer__cell {
   padding: 0 var(--spacing-md, 8px);
 }
 .fui-diff-viewer--split .fui-diff-viewer__cell + .fui-diff-viewer__cell {
-  border-inline-start: 1px solid var(--color-border, #E4E4E7);
+  border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 .fui-diff-viewer--split .fui-diff-viewer__cell--add {
   background: color-mix(in srgb, var(--color-success, #16A34A) 12%, transparent);

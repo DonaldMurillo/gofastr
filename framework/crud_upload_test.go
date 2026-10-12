@@ -60,6 +60,10 @@ func runUploadTest(t *testing.T, body func(t *testing.T, db *sql.DB, ta *TestApp
 	})
 }
 
+// pngBytes is rest behind the PNG signature: an Image field sniffs its
+// upload and takes only a raster image.
+func pngBytes(rest string) string { return "\x89PNG\r\n\x1a\n" + rest }
+
 // buildMultipartBody assembles a multipart form body. files map field name →
 // (filename, content). values map name → string.
 func buildMultipartBody(t *testing.T, files map[string][2]string, values map[string]string) (*bytes.Buffer, string) {
@@ -94,7 +98,7 @@ func buildMultipartBody(t *testing.T, files map[string][2]string, values map[str
 func TestUpload_Create_StoresFileAndPersistsURL(t *testing.T) {
 	runUploadTest(t, func(t *testing.T, db *sql.DB, ta *TestApp, dir string) {
 		body, ct := buildMultipartBody(t,
-			map[string][2]string{"avatar": {"hello.png", "fake-png-bytes"}},
+			map[string][2]string{"avatar": {"hello.png", pngBytes("fake-png-bytes")}},
 			map[string]string{"title": "Hello"},
 		)
 
@@ -141,7 +145,7 @@ func TestUpload_NoStorage_RejectsMultipart(t *testing.T) {
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		body, ct := buildMultipartBody(t,
-			map[string][2]string{"avatar": {"hello.png", "fake"}},
+			map[string][2]string{"avatar": {"hello.png", pngBytes("fake")}},
 			map[string]string{"title": "Hello"},
 		)
 		resp := ta.Request(http.MethodPost, "/posts", nil).
@@ -160,7 +164,7 @@ func TestUpload_NoStorage_RejectsMultipart(t *testing.T) {
 func TestUpload_MissingRequiredField_400(t *testing.T) {
 	runUploadTest(t, func(t *testing.T, db *sql.DB, ta *TestApp, dir string) {
 		body, ct := buildMultipartBody(t,
-			map[string][2]string{"avatar": {"a.png", "ok"}},
+			map[string][2]string{"avatar": {"a.png", pngBytes("ok")}},
 			map[string]string{}, // no title
 		)
 		resp := ta.Request(http.MethodPost, "/posts", nil).
@@ -185,7 +189,7 @@ func TestUpload_Update_ReplacesURL(t *testing.T) {
 		ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
 
 		body, ct := buildMultipartBody(t,
-			map[string][2]string{"avatar": {"new.png", "new-bytes"}},
+			map[string][2]string{"avatar": {"new.png", pngBytes("new-bytes")}},
 			map[string]string{"title": "Updated"},
 		)
 		resp := ta.Request(http.MethodPut, "/posts/p1", nil).

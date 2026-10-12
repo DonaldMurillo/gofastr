@@ -89,7 +89,7 @@ var (
 //
 // The theme is deep-cloned BEFORE it is stored, and the hash is
 // computed from that clone on first use, never here. Theme travels by
-// value, but its maps (DarkColors, DarkCode, Components) are
+// value, but its maps (DarkColors, DarkCode, Components, Knobs) are
 // references: without the clone a caller-side write after registration
 // would change what every page serves while the hash — computed once,
 // from the bytes as they were — kept naming the old content, and the
@@ -102,6 +102,7 @@ func RegisterThemeOverride(t Theme) ThemeRef {
 	t.DarkColors = copyStringMap(t.DarkColors)
 	t.DarkCode = copyStringMap(t.DarkCode)
 	t.Components = copyStringMap(t.Components)
+	t.Knobs = copyStringMap(t.Knobs)
 	rec := &themeOverrideRecord{theme: t}
 	themeOverrideMu.Lock()
 	defer themeOverrideMu.Unlock()
@@ -132,6 +133,7 @@ func AllThemeOverrides() map[string]Theme {
 		t.DarkColors = copyStringMap(t.DarkColors)
 		t.DarkCode = copyStringMap(t.DarkCode)
 		t.Components = copyStringMap(t.Components)
+		t.Knobs = copyStringMap(t.Knobs)
 		out[h] = t
 	}
 	return out
@@ -139,6 +141,7 @@ func AllThemeOverrides() map[string]Theme {
 
 // ThemeOverrideCSS emits the class-scoped blocks for one override:
 //
+//	:root.cui-theme-<hash>,
 //	.cui-theme-<hash> {
 //	  --color-primary: …;
 //	  …every typed token…
@@ -150,10 +153,24 @@ func AllThemeOverrides() map[string]Theme {
 // and, when the theme carries a dark palette (DarkColors or DarkCode),
 // the same declarations under the document's dark scheme:
 //
+//	[data-color-scheme="dark"]:root.cui-theme-<hash>,
 //	[data-color-scheme="dark"] .cui-theme-<hash> { …dark tokens… }
 //	@media (prefers-color-scheme: dark) {
+//	  :root.cui-theme-<hash>:not([data-color-scheme="light"]),
 //	  :root:not([data-color-scheme="light"]) .cui-theme-<hash> { …dark tokens… }
 //	}
+//
+// # The class on <html>
+//
+// ui.ThemePicker puts the class on the document element itself, so
+// each block names a :root compound beside the descendant selector.
+// The compound carries the specificity of the canonical
+// :root[data-color-scheme="dark"] block and comes after it in app.css,
+// so on <html> the override's light tokens hold in dark mode (an
+// override without a dark palette stays light, as a wrapped subtree
+// does) and its dark tokens beat the canonical dark ones. The bare
+// descendant selectors could never match there: <html> is nobody's
+// descendant.
 //
 // The light block re-declares every typed token, AND sets `color` +
 // `background` on the wrapper itself. The `color` declaration is
@@ -173,6 +190,16 @@ func AllThemeOverrides() map[string]Theme {
 // lines (componentOptionDecls) after its own tokens, rebound to the
 // scope's palette.
 //
+// The lines compile the registered default set with the override's own
+// Components merged over it (withDefaultOptions), exactly as the :root
+// block does. A palette-only override — no Components, the common
+// ui.Themed band built from style.DefaultTheme — would otherwise emit
+// no option lines, and its primary button would draw the root's
+// resolved --color-primary instead of the scope's. The cost is that a
+// scope always declares the complete option set: a key it leaves out
+// takes the framework default, not an enclosing scope's value. That is
+// the same contract theme.Default already gives every theme it builds.
+//
 // # Dark mode follows the document, not the wrapper
 //
 // `data-color-scheme` is written on <html> (the color-scheme
@@ -190,9 +217,10 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 	var lines []string
 	collectTokenDecls(reflect.ValueOf(t), &lines)
 	sort.Strings(lines)
-	lines = append(lines, componentOptionDecls(t.Components)...)
+	lines = append(lines, knobDecls(t.Knobs)...)
+	lines = append(lines, componentOptionDecls(withDefaultOptions(t.Components))...)
 	var b strings.Builder
-	fmt.Fprintf(&b, ".cui-theme-%s {\n", hash)
+	fmt.Fprintf(&b, ":root.cui-theme-%s,\n.cui-theme-%s {\n", hash, hash)
 	writeScopeLines(&b, "  ", lines)
 	// The wrapper itself adopts the overridden palette so inherited
 	// `color` flows down. Without this, descendants that don't
@@ -205,11 +233,11 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 		return b.String()
 	}
 	darkLines := darkScopeLines(t)
-	b.WriteString("\n[data-color-scheme=\"dark\"] .cui-theme-" + hash + " {\n")
+	b.WriteString("\n[data-color-scheme=\"dark\"]:root.cui-theme-" + hash + ",\n[data-color-scheme=\"dark\"] .cui-theme-" + hash + " {\n")
 	writeScopeLines(&b, "  ", darkLines)
 	b.WriteString("}\n")
 	b.WriteString("@media (prefers-color-scheme: dark) {\n")
-	b.WriteString("  :root:not([data-color-scheme=\"light\"]) .cui-theme-" + hash + " {\n")
+	b.WriteString("  :root.cui-theme-" + hash + ":not([data-color-scheme=\"light\"]),\n  :root:not([data-color-scheme=\"light\"]) .cui-theme-" + hash + " {\n")
 	writeScopeLines(&b, "    ", darkLines)
 	b.WriteString("  }\n")
 	b.WriteString("}")
@@ -230,7 +258,7 @@ func darkScopeLines(t Theme) []string {
 	for _, name := range sortedMapKeys(t.DarkCode) {
 		lines = append(lines, fmt.Sprintf("--tk-%s: %s;", name, t.DarkCode[name]))
 	}
-	lines = append(lines, componentOptionDecls(t.Components)...)
+	lines = append(lines, componentOptionDecls(withDefaultOptions(t.Components))...)
 	return lines
 }
 

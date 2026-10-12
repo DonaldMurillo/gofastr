@@ -25,7 +25,7 @@ func TestCompactSidebarFitsNarrowColumn(t *testing.T) {
 		NavLabel: "Help", Compact: true, CurrentPath: "/help/long",
 		Items: []SidebarItem{
 			{Label: "Articles", Open: true, Children: []SidebarItem{
-				{Label: "Organizing work into projects", Href: "/help/long"},
+				{Label: "Organizing work into projects and shared team spaces", Href: "/help/long"},
 				{Label: "Short", Href: "/help/short"},
 			}},
 		},

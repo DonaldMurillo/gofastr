@@ -141,6 +141,7 @@ func TokenMiddleware(users UserStore, accounts ServiceAccountStore, tokens APITo
 			newCtx := handler.SetUser(ctx, principal)
 			newCtx = WithTokenScopes(newCtx, t.Scopes)
 			newCtx = WithTokenID(newCtx, t.ID)
+			newCtx = handler.WithPrincipalCheck(newCtx, tokenRecheck(cred, users, accounts, tokens, log))
 			if shouldTouchLastUsed(t.LastUsedAt) {
 				// Synchronous + best-effort: the write is fast (indexed PK
 				// UPDATE) and happens at most once per token per 60s. Doing
@@ -152,6 +153,30 @@ func TokenMiddleware(users UserStore, accounts ServiceAccountStore, tokens APITo
 			}
 			next.ServeHTTP(w, r.WithContext(newCtx))
 		})
+	}
+}
+
+// tokenRecheck re-runs the token lookup, the revoked and expired checks and
+// the owner resolution for a request that stays open (an _events stream), so
+// revoking the token, its expiry, or deleting or disabling its owner ends the
+// stream. See handler.WithPrincipalCheck.
+func tokenRecheck(cred string, users UserStore, accounts ServiceAccountStore, tokens APITokenStore, log *slog.Logger) handler.PrincipalCheck {
+	hash := sha256hex(cred)
+	return func(ctx context.Context) (context.Context, bool) {
+		t, err := tokens.FindByHash(ctx, hash)
+		if err != nil || t == nil || t.RevokedAt != nil {
+			return ctx, false
+		}
+		if t.ExpiresAt != nil && !t.ExpiresAt.After(time.Now()) {
+			return ctx, false
+		}
+		principal, failReason := resolveTokenOwner(ctx, t, users, accounts, log)
+		if failReason != "" {
+			return ctx, false
+		}
+		ctx = handler.SetUser(ctx, principal)
+		ctx = WithTokenScopes(ctx, t.Scopes)
+		return WithTokenID(ctx, t.ID), true
 	}
 }
 

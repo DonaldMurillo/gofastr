@@ -19,6 +19,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
@@ -113,10 +114,18 @@ func (s *EncryptedFileStore) Get(provider, account string) (string, error) {
 	if err := s.loadLocked(); err != nil {
 		return "", err
 	}
-	key := provider + "|" + account
+	if v, ok := s.data.Entries[credentialKey(provider, account)]; ok {
+		return v, nil
+	}
+	key := legacyCredentialKey(provider, account)
 	v, ok := s.data.Entries[key]
 	if !ok {
 		return "", ErrNotFound
+	}
+	if legacyKeyAmbiguous(key) {
+		// "p|a|b" was written by ("p|a", "b") or ("p", "a|b"); the
+		// legacy format cannot say which, so neither pair may read it.
+		return "", fmt.Errorf("%w: %q", ErrAmbiguousLegacyKey, key)
 	}
 	return v, nil
 }
@@ -130,7 +139,11 @@ func (s *EncryptedFileStore) Put(provider, account, secret string) error {
 	if s.data.Entries == nil {
 		s.data.Entries = make(map[string]string)
 	}
-	s.data.Entries[provider+"|"+account] = secret
+	s.data.Entries[credentialKey(provider, account)] = secret
+	// The re-entered secret supersedes the legacy entry, ambiguous or
+	// not: in the legacy format every pair that maps to this key shared
+	// one slot, and a Put by any of them overwrote it.
+	delete(s.data.Entries, legacyCredentialKey(provider, account))
 	return s.saveLocked()
 }
 
@@ -140,7 +153,8 @@ func (s *EncryptedFileStore) Delete(provider, account string) error {
 	if err := s.loadLocked(); err != nil {
 		return err
 	}
-	delete(s.data.Entries, provider+"|"+account)
+	delete(s.data.Entries, credentialKey(provider, account))
+	delete(s.data.Entries, legacyCredentialKey(provider, account))
 	return s.saveLocked()
 }
 
@@ -152,15 +166,71 @@ func (s *EncryptedFileStore) List() ([]Entry, error) {
 	}
 	out := make([]Entry, 0, len(s.data.Entries))
 	for k := range s.data.Entries {
-		// Split "provider|account"
-		for i := 0; i < len(k); i++ {
-			if k[i] == '|' {
-				out = append(out, Entry{Provider: k[:i], Account: k[i+1:]})
-				break
-			}
+		if entry, ok := parseCredentialKey(k); ok {
+			out = append(out, entry)
+		} else if legacyKeyAmbiguous(k) {
+			// List every pair that could own an ambiguous legacy key:
+			// Get on any of them answers ErrAmbiguousLegacyKey, and a
+			// Put or Delete on any of them replaces it. An encoded key
+			// never holds '|', so a legacy provider spelled "v1:..."
+			// lands here too.
+			out = append(out, legacyCandidates(k)...)
 		}
 	}
 	return out, nil
+}
+
+// credentialKey encodes each component independently. Raw URL base64 does
+// not contain ':', so the separator cannot occur inside either encoded field.
+func credentialKey(provider, account string) string {
+	enc := base64.RawURLEncoding
+	return "v1:" + enc.EncodeToString([]byte(provider)) + ":" + enc.EncodeToString([]byte(account))
+}
+
+func legacyCredentialKey(provider, account string) string {
+	return provider + "|" + account
+}
+
+func parseCredentialKey(key string) (Entry, bool) {
+	if strings.HasPrefix(key, "v1:") {
+		rest := strings.TrimPrefix(key, "v1:")
+		provider, account, ok := strings.Cut(rest, ":")
+		if ok {
+			enc := base64.RawURLEncoding
+			providerBytes, providerErr := enc.DecodeString(provider)
+			accountBytes, accountErr := enc.DecodeString(account)
+			if providerErr == nil && accountErr == nil {
+				return Entry{Provider: string(providerBytes), Account: string(accountBytes)}, true
+			}
+		}
+	}
+	return parseLegacyCredentialKey(key)
+}
+
+// parseLegacyCredentialKey splits an unambiguous "provider|account" key.
+// A key with more than one '|' has several possible splits and is not
+// parsed; see legacyCandidates.
+func parseLegacyCredentialKey(key string) (Entry, bool) {
+	provider, account, ok := strings.Cut(key, "|")
+	if !ok || legacyKeyAmbiguous(key) {
+		return Entry{}, false
+	}
+	return Entry{Provider: provider, Account: account}, true
+}
+
+func legacyKeyAmbiguous(key string) bool {
+	return strings.Count(key, "|") > 1
+}
+
+// legacyCandidates returns every (provider, account) split of a legacy key.
+func legacyCandidates(key string) []Entry {
+	var out []Entry
+	for i := 0; i < len(key); i++ {
+		if key[i] == '|' {
+			out = append(out, Entry{Provider: key[:i], Account: key[i+1:]})
+		}
+	}
+	return out
 }
 
 // loadLocked reads and decrypts the store on first use.
@@ -272,3 +342,9 @@ func decrypt(key, b64 []byte) ([]byte, error) {
 
 // ErrNotFound is returned by Get when the (provider, account) pair has no entry.
 var ErrNotFound = errors.New("credstore: not found")
+
+// ErrAmbiguousLegacyKey is returned by Get when the only entry for the pair
+// is a legacy "provider|account" key holding more than one '|': the old
+// format cannot say which pair wrote it, so the secret is not handed to
+// either. Re-enter it with Put (or remove it with Delete) on the right pair.
+var ErrAmbiguousLegacyKey = errors.New("credstore: ambiguous legacy credential key; re-enter the credential")

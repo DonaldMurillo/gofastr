@@ -231,7 +231,7 @@ func TestBoolFieldOmitsRangeFilters(t *testing.T) {
 	}
 }
 
-func TestJSONFieldOmitsRangeFilters(t *testing.T) {
+func TestJSONFieldOmitsRangeAndLike(t *testing.T) {
 	e := entity.Define("blobs", entity.EntityConfig{
 		Table: "blobs",
 		Fields: []schema.Field{
@@ -244,9 +244,17 @@ func TestJSONFieldOmitsRangeFilters(t *testing.T) {
 	get := getMap(t, base, "get")
 	params := get["parameters"]
 
+	// The spec mirrors CheckOpType exactly: eq/ne/in suit a JSON column;
+	// the ordered comparisons and _like do not (a blob has no order, and
+	// text-shape coercion on one is dialect luck).
+	for _, suffix := range []string{"", "_ne", "_in"} {
+		if findParam(params, "payload"+suffix) == nil {
+			t.Errorf("JSON field must advertise %q (CheckOpType accepts it)", "payload"+suffix)
+		}
+	}
 	for _, suffix := range []string{"_gt", "_gte", "_lt", "_lte", "_like"} {
 		if findParam(params, "payload"+suffix) != nil {
-			t.Errorf("JSON field must not advertise %q filter param", "payload"+suffix)
+			t.Errorf("JSON field must not advertise %q", "payload"+suffix)
 		}
 	}
 }
@@ -356,5 +364,10 @@ func TestComparableFieldsKeepRangeFilters(t *testing.T) {
 	}
 	if findParam(params, "label_like") == nil {
 		t.Error("string field must keep _like filter param")
+	}
+	for _, name := range []string{"count_ne", "label_ne"} {
+		if findParam(params, name) == nil {
+			t.Errorf("every queryable field advertises _ne; %q missing", name)
+		}
 	}
 }

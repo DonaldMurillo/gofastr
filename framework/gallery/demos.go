@@ -141,7 +141,7 @@ func RenderOptimisticDeleteList(notes []OptimisticNote) render.HTML {
 		items = append(items, html.ListItem(html.ListItemConfig{
 			ExtraAttrs: html.Attrs{"data-opt-id": n.ID},
 		},
-			html.Div(html.DivConfig{Class: "demo-row"},
+			ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyBetween},
 				render.Text(n.Title),
 				trigger,
 			),
@@ -242,7 +242,7 @@ func RenderOptimisticCreateDemoFor(notes []OptimisticNote) render.HTML {
     interactive.Post("/__site/optimistic/create").
         OnSuccess(interactive.SetSignal("opt-create-list")),
 )`}),
-		addBtn,
+		ui.Cluster(ui.ClusterConfig{}, addBtn),
 		listRegion,
 		html.Div(html.DivConfig{Class: "fact"},
 			render.Text("The full list HTML is the response body. A true temp-row pattern (row visible before the RPC resolves, then replaced by the authoritative row on 2xx) needs an island with a small bit of registered JS: see the optimistic-ui doc, Recipe 3."),
@@ -267,7 +267,7 @@ func RenderOptimisticDeleteDemoFor(notes []OptimisticNote) render.HTML {
 })
 widget.Mount(app.Router(), modal.Build()) // once, at startup`}),
 		listRegion,
-		OptimisticFailDeleteTrigger(),
+		ui.Cluster(ui.ClusterConfig{}, OptimisticFailDeleteTrigger()),
 		html.Div(html.DivConfig{Class: "fact"},
 			render.Text("Confirm → POST → on 2xx the response replaces the list region with the authoritative shorter list. On failure (4xx) the runtime skips the swap (html-mode + non-string value = no-op), so the row stays put; try “Delete n1 (will fail)” to see it. Pair with an Undo window for a true optimistic-remove pattern (Recipe 4)."),
 		),

@@ -69,8 +69,26 @@ func RequireAuth(jwt *JWTAuth) middleware.Middleware {
 				return
 			}
 			ctx := handler.SetUser(r.Context(), user)
+			ctx = handler.WithPrincipalCheck(ctx, jwtRecheck(jwt, tokenStr))
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
+	}
+}
+
+// jwtRecheck re-validates the token (signature and expiry) and re-resolves
+// its owner for a request that stays open (an _events stream), so expiry or
+// deleting the owner ends the stream. See handler.WithPrincipalCheck.
+func jwtRecheck(jwt *JWTAuth, tokenStr string) handler.PrincipalCheck {
+	return func(ctx context.Context) (context.Context, bool) {
+		claims, err := jwt.ValidateToken(tokenStr)
+		if err != nil {
+			return ctx, false
+		}
+		user, ok := jwt.resolveOwner(ctx, claims)
+		if !ok {
+			return ctx, false
+		}
+		return handler.SetUser(ctx, user), true
 	}
 }
 

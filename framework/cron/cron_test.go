@@ -73,6 +73,9 @@ func TestCron_Matches(t *testing.T) {
 		{"* * * * *", true},
 		{"30 9 * * *", true},
 		{"30 9 8 4 2", true},   // Tuesday=2
+		{"30 9 7 4 2", true},   // only the weekday matches: restricted day fields OR
+		{"30 9 8 4 1", true},   // only the day of month matches
+		{"30 9 7 4 1", false},  // neither restricted day field matches
 		{"0 9 * * *", false},   // minute 0 != 30
 		{"30 9 * * 1", false},  // Monday only
 		{"*/15 * * * *", true}, // 0,15,30,45

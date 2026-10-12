@@ -222,6 +222,15 @@ are `a2a.Config` knobs (`TerminalTaskRetention`, `MaxPushConfigsPerTask`;
 the optional `a2a.RetentionTrimmer` Store interface both built-in
 stores implement.
 
+Skill-handler runs are bounded per owner too:
+`Config.MaxConcurrentRunsPerOwner` caps how many runs one owner may
+have going at once, `returnImmediately` runs included (0 = 16,
+negative = unlimited for deployments that bound runs elsewhere). A new
+message past the cap, or a resume of an `INPUT_REQUIRED` task while
+every slot is taken, is refused with `-32004`
+(`maximum concurrent task runs reached`) before anything is written:
+no task row is created and the paused task stays as it was.
+
 ### Streaming
 
 `SendStreamingMessage` and `SubscribeToTask` answer
@@ -263,7 +272,9 @@ transport error is logged once. Reliable delivery with backoff is
 that is down. The SSRF posture: push URLs targeting internal hosts
 (loopback, RFC1918, CGNAT, link-local) are refused at registration
 unless `A2AConfig.AllowPrivatePush` is set, redirects are not followed,
-and the client is dial-time guarded.
+and the client is dial-time guarded. The guarded client never routes
+through an `HTTP_PROXY`/`HTTPS_PROXY` proxy, because the dial check
+cannot see the connection a proxy makes.
 
 ## Tasks are not jobs
 

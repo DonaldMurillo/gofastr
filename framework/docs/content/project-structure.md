@@ -19,7 +19,7 @@ myapp/
 ├── static/             # assets served as-is
 ├── gofastr.isolation.yml  # process-isolation config (local DB per worktree)
 ├── go.mod
-└── AGENTS.md, CLAUDE.md, DESIGN.md, agents/   # agent onboarding
+└── AGENTS.md, CLAUDE.md, DESIGN.md, .agents/   # agent onboarding
 ```
 
 That's the whole thing. One `main.go`, your declarations, and the generated

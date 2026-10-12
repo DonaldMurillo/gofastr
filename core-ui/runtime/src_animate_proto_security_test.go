@@ -77,7 +77,7 @@ func TestToastsRedReservedKeyWrite(t *testing.T) {
 	if start < 0 {
 		t.Fatalf("setup broken: could not locate _initToasts' id read in feedback.js")
 	}
-	endRel := strings.Index(src[start:], "for (const entry")
+	endRel := strings.Index(src[start:], "NS._toastTimers.forEach(")
 	if endRel < 0 {
 		t.Fatalf("setup broken: could not locate the cleanup pass after the id read in feedback.js")
 	}

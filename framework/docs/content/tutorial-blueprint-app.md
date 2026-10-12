@@ -97,6 +97,15 @@ go mod tidy                           # the scaffold pulls new imports; dev buil
 gofastr dev                           # dev server with hot reload; the loop for everything below
 ```
 
+When `go.mod` does not require GoFastr yet, `gofastr generate` pins the
+release matching the CLI (`go mod edit -require`, the same pin
+`gofastr init` writes), so `go mod tidy` keeps every dependency at the
+framework's version. A tidy with no GoFastr requirement resolves the
+generated `axe_test.go`'s `chromedp` import at its newest release, whose
+API `framework/testkit/axetest` does not compile against. A development
+build of the CLI has no release to pin: its next steps print the
+`go get github.com/DonaldMurillo/gofastr@vX.Y.Z` to run before tidy.
+
 The scaffold is normal, owned Go: a flat `package main` at the module root.
 `entities/` holds one `<entity>.go` per entity, each carrying its own
 `app.Entity(...)` registration, plus two thin seams: `entities/register.go`

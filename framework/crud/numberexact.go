@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -31,7 +33,7 @@ import (
 //   - bind: a float64 that REACHES an Int column through some other route
 //     (a host json.Unmarshal before CreateOne, the MCP argument bridge)
 //     cannot be trusted above 2^53 — the value may have been rounded on
-//     its way in and crud cannot tell. coerceIntColumnValues converts
+//     its way in and crud cannot tell. coerceNumberColumnValues converts
 //     exactly-representable integral floats to int64 and refuses the
 //     rest with 400. Send big integers as JSON integer literals or as
 //     strings; both spellings round-trip exactly.
@@ -141,9 +143,32 @@ func redecodeUseNumber(data []byte, v any) error {
 	return err
 }
 
-// coerceIntColumnValues normalizes the Int-typed columns present in a
-// write body so an integer column can never be bound from a value that
-// lost precision on its way in:
+// floatTextRe is the canonical decimal spelling a number input submits.
+// It refuses what strconv.ParseFloat would otherwise read: hex floats,
+// underscore separators, and the Inf/NaN words.
+var floatTextRe = regexp.MustCompile(`^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$`)
+
+// floatText reads s as a finite float in canonical decimal spelling.
+func floatText(s string) (float64, bool) {
+	if !floatTextRe.MatchString(s) {
+		return 0, false
+	}
+	n, err := strconv.ParseFloat(s, 64)
+	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
+		return 0, false
+	}
+	return n, true
+}
+
+// coerceNumberColumnValues normalizes the numeric columns present in a
+// write body. A Float column takes canonical decimal text as the number
+// it spells: an HTML form carries every value as a string, and the
+// runtime's form RPC posts it as one (dropEmptyFormValues has already
+// taken out the blanks). Any other string is left for schema validation,
+// which refuses it.
+//
+// An integer column can never be bound from a value that lost precision
+// on its way in:
 //
 //   - json.Number: integer literals become exact int64; other literals
 //     fall through to the float rule.
@@ -157,13 +182,19 @@ func redecodeUseNumber(data []byte, v any) error {
 //
 // Runs after Before-hooks (so hook-injected values are covered) and
 // before schema validation.
-func (ch *CrudHandler) coerceIntColumnValues(body map[string]any) error {
+func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 	for _, f := range ch.snapshotFields() {
-		if f.Type != schema.Int {
-			continue
-		}
 		raw, ok := body[f.Name]
 		if !ok {
+			continue
+		}
+		if s, isText := raw.(string); isText && f.Type == schema.Float {
+			if n, ok := floatText(s); ok {
+				body[f.Name] = n
+			}
+			continue
+		}
+		if f.Type != schema.Int {
 			continue
 		}
 		switch x := raw.(type) {

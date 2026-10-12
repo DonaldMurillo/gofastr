@@ -31,8 +31,8 @@ func TestEntityModelPreservesNoQueryAndSuppressesFilterKinds(t *testing.T) {
 	if !field.NoQuery {
 		t.Fatal("buildEntityModel dropped NoQuery")
 	}
-	if field.Likeable || field.Comparable {
-		t.Fatalf("NoQuery field gained filter kinds: %+v", field)
+	if len(field.FilterOps) != 0 {
+		t.Fatalf("NoQuery field gained operator flags: %+v", field.FilterOps)
 	}
 }
 
@@ -162,9 +162,8 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
-	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
 )
 
 func TestGeneratedNoQueryResourceBehavior(t *testing.T) {
@@ -176,28 +175,21 @@ func TestGeneratedNoQueryResourceBehavior(t *testing.T) {
 	if _, err := db.Exec("CREATE TABLE cards (id TEXT PRIMARY KEY, label TEXT, number TEXT); INSERT INTO cards VALUES ('c1','gold','4111')"); err != nil {
 		t.Fatal(err)
 	}
-	// Public: this fixture is about column rendering, not authorization. Screen
-	// renders now run the entity's full read posture (resource.Config.canRead),
-	// and auto-CRUD requires a session for an entity declaring no
-	// OwnerField/Access/Public, so a background context would be refused, and
-	// the table under test would never render.
-	ent := entity.Define("cards", entity.EntityConfig{
+	// Public: this fixture is about column rendering, not authorization.
+	// The list reads through the entity's own gates, and auto-CRUD
+	// requires a session for an entity declaring no OwnerField/Access/
+	// Public, so a background context would be refused and the table
+	// under test would never render.
+	fwApp := framework.NewApp(framework.WithDB(db))
+	fwApp.Entity("cards", entity.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "label", Type: schema.String},
 			{Name: "number", Type: schema.String, NoQuery: true},
 		},
 		Exposure: &entity.ExposureConfig{Public: true},
 	}.WithTimestamps(false))
-	ent.SetDB(db)
-	cfg := resource.Config{
-		Entity: "cards", Title: "Cards", Singular: "Card", BasePath: "/cards",
-		Crud: crud.NewCrudHandler(ent, db),
-		Fields: []resource.Field{
-			{Key: "label", Label: "Label", Type: "string"},
-			{Key: "number", Label: "Number", Type: "string", NoQuery: true},
-		},
-	}
-	html := cfg.List(context.Background()).String()
+	ui := fwApp.EntityUI(appExtensions)
+	html := ui.List("cards").RenderCtx(context.Background()).String()
 	if !strings.Contains(html, "4111") {
 		t.Fatalf("NoQuery field was not rendered: %s", html)
 	}

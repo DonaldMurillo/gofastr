@@ -199,6 +199,15 @@
   // Public API (what compiled JS calls)
   // -----------------------------------------------------------------------
   window.__gofastr = {
+    /** The markup generation this kernel reads (2 = the data-cui-*
+        spelling). Every navigation fetch names it in X-Gofastr-Markup;
+        a server whose markup differs answers with a body that reloads
+        the document instead of a partial this kernel cannot read (see
+        core-ui/runtime.MarkupVersion). Modules read it from here, so a
+        module loaded into an older kernel sends none; nav.js spells the
+        same value as a literal. */
+    _markup: '2',
+
     /** Global document state module. See the DOC_MANIFEST block at the
         top of this file. Split modules (widgets, toasts, backtotop)
         reach it via NS.doc for every persistent <html>/<body> write. */
@@ -384,7 +393,8 @@
       const resp = await fetch('/__gofastr/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action, params, session, componentId }),
+        // page: the owning screen's Policy reads this page's route params.
+        body: JSON.stringify({ action, params, session, componentId, page: location.pathname }),
       });
       if (resp.ok) {
         const result = await resp.json();

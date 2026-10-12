@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -113,5 +114,41 @@ func TestToastReparseDropsControlByteEntries(t *testing.T) {
 				t.Errorf("SECURITY: [toast-ctl-bytes] poisoned manual entry survived the re-parse (want only the clean \"Saved\" toast): %q", got)
 			}
 		})
+	}
+}
+
+// An action's label and attributes reach the header too: an entry whose
+// action carries a control byte drops the same way, fresh or re-parsed.
+func TestToastActionCtlBytesDropped(t *testing.T) {
+	undo := func(label, back string) *interactive.ToastAction {
+		return interactive.NewToastAction(label, interactive.Post("/api/notes/_bulk").WithBody(`{}`).OnSuccess(interactive.Navigate(back)))
+	}
+	for name, a := range map[string]*interactive.ToastAction{
+		"label": undo("Un\x7fdo", "/notes"),
+		"attr":  undo("Undo", "/notes\x0b"),
+		"key":   {Label: "Undo", Attrs: map[string]string{"data-cui-rpc": "/x", "data-cui-rpc-\x7f": "y"}},
+	} {
+		rec := httptest.NewRecorder()
+		ui.AddToast(rec, ui.ToastTrigger{Title: "Saved"})
+		ui.AddToast(rec, ui.ToastTrigger{Title: "Deleted", Action: a})
+		raw := rec.Header().Get("X-Gofastr-Toast")
+		if i := toastCtlRawByte(raw); i >= 0 {
+			t.Errorf("SECURITY: %s: the header carries a raw control byte 0x%02x: %q", name, raw[i], raw)
+		}
+		var list []ui.ToastTrigger
+		if err := json.Unmarshal([]byte(raw), &list); err != nil || len(list) != 1 || list[0].Title != "Saved" {
+			t.Errorf("SECURITY: %s: want only the clean toast, got %q (%v)", name, raw, err)
+		}
+
+		rec = httptest.NewRecorder()
+		enc, err := json.Marshal([]ui.ToastTrigger{{Title: "Deleted", Action: a}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec.Header().Set("X-Gofastr-Toast", string(enc))
+		ui.AddToast(rec, ui.ToastTrigger{Title: "Saved"})
+		if got := rec.Header().Get("X-Gofastr-Toast"); strings.Contains(got, "Deleted") {
+			t.Errorf("SECURITY: %s: the re-parse kept the poisoned action: %q", name, got)
+		}
 	}
 }

@@ -20,7 +20,7 @@ func TestBlueprintOwnedFilesHaveNoGeneratedHeader(t *testing.T) {
 		t.Fatalf("loadBlueprint: %v", err)
 	}
 	files := filesByName(mustRenderBlueprintFiles(t, bp))
-	for _, want := range []string{"main.go", "resource.go", "e2e_test.go"} {
+	for _, want := range []string{"main.go", "extensions.go", "e2e_test.go"} {
 		if files[want] == "" {
 			t.Fatalf("fixture no longer emits %s; the check would not cover it", want)
 		}

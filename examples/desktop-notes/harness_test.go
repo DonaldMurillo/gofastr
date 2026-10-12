@@ -93,13 +93,14 @@ func TestFileMenuNewNoteNavigates(t *testing.T) {
 	h.Wait("the navigate eval", func() bool { return len(h.Navigations()) == 1 })
 	h.PressKey("cmd+n")
 	h.Wait("the accelerator's eval", func() bool { return len(h.Navigations()) == 2 })
-	if got := h.Navigations(); got[0] != "/notes/new" || got[1] != "/notes/new" {
+	if got := h.Navigations(); got[0] != "/notes/create" || got[1] != "/notes/create" {
 		t.Fatalf("navigations = %v", got)
 	}
 	h.ClickTray("New note")
 	h.Wait("the tray item's eval", func() bool { return len(h.Navigations()) == 3 })
 	// The screen the item opens renders through the window's session.
-	h.Get("/notes/new").AssertStatus(t, http.StatusOK).AssertContains(t, "Copy link")
+	h.Get("/notes/create").AssertStatus(t, http.StatusOK).AssertContains(t, "New Note")
+	h.Get("/notes/create").AssertStatus(t, http.StatusOK).AssertContains(t, `data-cui-rpc="/api/notes"`)
 }
 
 func TestExportAllWritesMarkdownAndEmits(t *testing.T) {

@@ -525,8 +525,8 @@ func TestAddEntityFragmentEmitsCrudScreenFile(t *testing.T) {
 	})
 	// The reviews entity + its per-entity crud screen file are both written.
 	reviewsCrud := readFile(t, dir, "screen_reviews_crud.go")
-	if !strings.Contains(reviewsCrud, `appResources["reviews"] = resource.Config{`) {
-		t.Errorf("screen_reviews_crud.go must wire the reviews resource:\n%s", reviewsCrud)
+	if !strings.Contains(reviewsCrud, `appUI.List("reviews")`) {
+		t.Errorf("screen_reviews_crud.go must render the reviews list through appUI:\n%s", reviewsCrud)
 	}
 	if !strings.Contains(reviewsCrud, "type ReviewsScreen struct") {
 		t.Errorf("screen_reviews_crud.go must define the ReviewsScreen:\n%s", reviewsCrud)
@@ -542,7 +542,7 @@ func TestAddEntityFragmentEmitsCrudScreenFile(t *testing.T) {
 	}
 }
 
-func TestAddEntityFragmentPreservesResourceSeam(t *testing.T) {
+func TestAddEntityFragmentPreservesExtensionSeam(t *testing.T) {
 	base := addScreenBaseBlueprint("example.com/addtest") + `
   - name: posts
     route: /posts
@@ -554,9 +554,9 @@ func TestAddEntityFragmentPreservesResourceSeam(t *testing.T) {
 `
 	dir, bp := addSetup(t, base)
 	covT_capStdout(t, func() { generateFromBlueprint(generateOptions{from: bp}) })
-	resourcePath := filepath.Join(dir, "resource.go")
-	resourceBefore := readFile(t, dir, "resource.go") + "\n// app-owned hook\n"
-	if err := os.WriteFile(resourcePath, []byte(resourceBefore), 0o644); err != nil {
+	extensionsPath := filepath.Join(dir, "extensions.go")
+	extensionsBefore := readFile(t, dir, "extensions.go") + "\n// app-owned hook\n"
+	if err := os.WriteFile(extensionsPath, []byte(extensionsBefore), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -568,12 +568,12 @@ func TestAddEntityFragmentPreservesResourceSeam(t *testing.T) {
 		generateFromBlueprint(generateOptions{from: fragment, add: true})
 	})
 
-	if got := readFile(t, dir, "resource.go"); got != resourceBefore {
-		t.Fatal("--add rewrote the app-owned resource.go seam")
+	if got := readFile(t, dir, "extensions.go"); got != extensionsBefore {
+		t.Fatal("--add rewrote the app-owned extensions.go seam")
 	}
 	reviews := readFile(t, dir, "screen_reviews_crud.go")
-	if !strings.Contains(reviews, `appResources["reviews"] = resource.Config{`) {
-		t.Fatalf("added entity did not append its resource config in its own file:\n%s", reviews)
+	if !strings.Contains(reviews, `appUI.List("reviews")`) {
+		t.Fatalf("added entity did not land its screens in its own file:\n%s", reviews)
 	}
 }
 
@@ -793,12 +793,13 @@ screens:
 func TestAddScreenCollidesWithSynthesizedRoute(t *testing.T) {
 	dir, bp := addSetup(t, addSynthRouteBase("example.com/addtest"))
 	covT_capStdout(t, func() { generateFromBlueprint(generateOptions{from: bp}) })
-	// The base's entity_list with create:true synthesizes a /posts/new form
-	// route. A fragment authoring a DIFFERENT screen at /posts/new collides.
+	// The base's entity_list with create:true synthesizes a /posts/create
+	// form route. A fragment authoring a DIFFERENT screen at /posts/create
+	// collides.
 	frag := filepath.Join(dir, "fragment.yml")
 	os.WriteFile(frag, []byte(`screens:
   - name: custompostform
-    route: /posts/new
+    route: /posts/create
     title: Custom
 `), 0o644)
 	code := covT_capExit(t, func() {
@@ -807,7 +808,7 @@ func TestAddScreenCollidesWithSynthesizedRoute(t *testing.T) {
 		})
 	})
 	if code != 1 {
-		t.Fatalf("want exit 1 for collision with the synthesized /posts/new route, got %d", code)
+		t.Fatalf("want exit 1 for collision with the synthesized /posts/create route, got %d", code)
 	}
 	if fileExists(dir, "screen_custompostform.go") {
 		t.Error("screen written despite colliding with a synthesized form route")

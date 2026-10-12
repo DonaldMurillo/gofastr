@@ -130,14 +130,14 @@ func (s *preferencesScreen) RenderCtx(ctx context.Context) render.HTML {
 
 // boolField builds a bool preference's control from v, the
 // stored-or-default value the typed reader (Preferences.Bool)
-// answers: the hidden+checkbox pair. Field ids follow the resource
-// engine's "f-<key>" convention.
+// answers: the hidden+checkbox pair. Field ids follow the
+// "f-<key>" shape this screen has always used.
 func boolField(d Preference, v bool) render.HTML {
 	id := "f-" + d.Key
 	// A bare checkbox cannot round-trip a bool through the form
 	// intercept, so the hidden "false" comes first and the checked
 	// box follows with "true"; the runtime's serializer collapses
-	// exactly this pair to one scalar (resource.go's formField,
+	// exactly this pair to one scalar (entityui's bool control,
 	// core-ui/runtime/src/rpc.js).
 	return render.Join(
 		html.Input(html.InputConfig{Type: "hidden", Name: d.Key, Value: "false"}),

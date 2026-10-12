@@ -451,13 +451,45 @@ func hasFlag(args []string, flag string) bool {
 	return false
 }
 
+// canonicalDBDriver maps the database spellings the CLI accepts to the
+// database/sql driver name: the docs-canonical sqlite and postgres
+// plus the aliases sqlite3 and postgresql. It is the one alias table
+// `gofastr init --db=` and `gofastr migrate --db=/--driver=` share. Any
+// other value comes back trimmed, unchanged, for the caller to refuse
+// (init) or check against the registered drivers (migrate).
+func canonicalDBDriver(name string) string {
+	name = strings.TrimSpace(name)
+	switch strings.ToLower(name) {
+	case "sqlite", "sqlite3":
+		return "sqlite3"
+	case "postgres", "postgresql":
+		return "postgres"
+	case "mysql":
+		return "mysql"
+	}
+	return name
+}
+
+// getMigrateDriver resolves the driver from --db= (the spelling
+// `gofastr migrate --help` and `gofastr init` use) or its older alias
+// --driver=, through canonicalDBDriver. Before --db= was read here,
+// `migrate --db=postgres` fell through to the sqlite3 default and
+// created a SQLite file named after the Postgres URL.
 func getMigrateDriver(args []string) string {
 	for _, a := range args {
-		if strings.HasPrefix(a, "--driver=") {
-			return strings.TrimPrefix(a, "--driver=")
+		if v, ok := migrateDriverFlag(a); ok {
+			return canonicalDBDriver(v)
 		}
 	}
 	return "sqlite3"
+}
+
+// migrateDriverFlag reports the value of a --db= or --driver= argument.
+func migrateDriverFlag(arg string) (string, bool) {
+	if v, ok := strings.CutPrefix(arg, "--db="); ok {
+		return v, true
+	}
+	return strings.CutPrefix(arg, "--driver=")
 }
 
 // getGroups extracts repeatable --group=<name> flags from args. Returns nil

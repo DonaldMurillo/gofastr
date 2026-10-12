@@ -53,6 +53,15 @@ type TwoFAConfig struct {
 	// session can brute-force the 6-digit TOTP (~333k expected attempts
 	// at skew=1). Loosen by passing a config with a large MaxAttempts.
 	RateLimit *RateLimiterConfig
+
+	// ChallengeAttemptsPerSession caps how many codes one pending login
+	// may submit to /2fa/challenge, whatever address they come from. The
+	// next attempt deletes the session and the user signs in again. The
+	// per-address RateLimit alone let a password holder spread guesses
+	// over many addresses (one IPv6 /64 is plenty) without limit.
+	// Defaults to 10. The counter shares RateLimit.Store, so it holds
+	// across replicas when that store is shared.
+	ChallengeAttemptsPerSession int
 }
 
 func (c *TwoFAConfig) defaults() {
@@ -82,6 +91,9 @@ func (c *TwoFAConfig) defaults() {
 			Window:        time.Minute,
 			BlockDuration: 15 * time.Minute,
 		}
+	}
+	if c.ChallengeAttemptsPerSession <= 0 {
+		c.ChallengeAttemptsPerSession = 10
 	}
 }
 
@@ -275,6 +287,9 @@ type TwoFAPlugin struct {
 	mgr            *AuthManager
 	store          TwoFAStore
 	challengeLimit *RateLimiter
+	// sessionGuesses counts /2fa/challenge attempts per session token
+	// (hashed), across addresses. Built in Init, where SessionTTL is known.
+	sessionGuesses *RateLimiter
 }
 
 // NewTwoFAPlugin creates a new 2FA plugin with the given (optional) config.
@@ -334,6 +349,24 @@ func (p *TwoFAPlugin) Name() string { return "twofa" }
 // AuthConfig.AllowInMemoryStores.
 func (p *TwoFAPlugin) Init(mgr *AuthManager) error {
 	p.mgr = mgr
+	// The window spans the session's whole life, so waiting gains no
+	// fresh guesses: a pending session gets ChallengeAttemptsPerSession
+	// codes in total. DevMode is deliberately not inherited from
+	// RateLimit; ten wrong codes on one login is not tooling traffic.
+	ttl := mgr.Config().SessionTTL
+	if ttl <= 0 {
+		ttl = 24 * time.Hour
+	}
+	guessCfg := RateLimiterConfig{
+		MaxAttempts:   p.config.ChallengeAttemptsPerSession,
+		Window:        ttl,
+		BlockDuration: ttl,
+		Scope:         "twofa_session",
+	}
+	if p.config.RateLimit != nil {
+		guessCfg.Store = p.config.RateLimit.Store
+	}
+	p.sessionGuesses = NewRateLimiter(guessCfg)
 	if p.config.Store != nil {
 		p.store = p.config.Store
 	} else {
@@ -376,18 +409,6 @@ func (p *TwoFAPlugin) RegisterRoutes(r *router.Router, basePath string) {
 
 // ─── Route helpers ─────────────────────────────────────────────────────
 
-// getSessionUser extracts the user ID from the session cookie. It also
-// reports whether the session is still in the PendingTwoFactor (pre-step-up)
-// state, callers that mutate the second factor MUST refuse pending sessions
-// (see requireStepUpUser). A pending session proves only the password.
-func (p *TwoFAPlugin) getSessionUser(r *http.Request) (userID string, pending bool, err error) {
-	sess, err := p.sessionFrom(r)
-	if err != nil {
-		return "", false, err
-	}
-	return sess.UserID, sess.PendingTwoFactor, nil
-}
-
 // swapTwoFAState performs a handler's read-modify-write through the
 // TwoFAStateSwapper seam when the store offers it: the write lands only
 // over the state the handler read, so a racing disable (or a competing
@@ -416,35 +437,21 @@ func (p *TwoFAPlugin) swapTwoFAState(w http.ResponseWriter, r *http.Request, use
 	return true
 }
 
-// sessionFrom resolves the session behind the request's cookie.
-func (p *TwoFAPlugin) sessionFrom(r *http.Request) (*Session, error) {
-	cfg := p.mgr.Config()
-	cookie, err := r.Cookie(cfg.SessionCookie)
-	if err != nil {
-		return nil, fmt.Errorf("no session cookie")
-	}
-	sess, err := p.mgr.SessionStore().Get(r.Context(), cookie.Value)
-	if err != nil || sess == nil {
-		return nil, fmt.Errorf("invalid session")
-	}
-	return sess, nil
-}
-
-// requireStepUpUser resolves the session user and refuses any session that
+// requireStepUpSession resolves the session and refuses any session that
 // is still PendingTwoFactor. Used by every 2FA self-service handler except
 // challengeHandler, a pending session (password only) must not be able to
 // disable, re-enroll, verify, or refresh backup codes, which would defeat
 // 2FA with the password alone. Writes the 401/403 response and returns ok=false
 // when the caller must abort.
-func (p *TwoFAPlugin) requireStepUpUser(w http.ResponseWriter, r *http.Request) (userID string, ok bool) {
-	sess, err := p.sessionFrom(r)
+func (p *TwoFAPlugin) requireStepUpSession(w http.ResponseWriter, r *http.Request) (*Session, bool) {
+	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "not authenticated")
-		return "", false
+		return nil, false
 	}
 	if sess.PendingTwoFactor {
 		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
-		return "", false
+		return nil, false
 	}
 	// Positive check, not only the absence of the pending flag. A session
 	// minted BEFORE the user enrolled carries PendingTwoFactor=false
@@ -457,10 +464,20 @@ func (p *TwoFAPlugin) requireStepUpUser(w http.ResponseWriter, r *http.Request) 
 		// Unreadable 2FA state is refused, never assumed absent,
 		// assuming it would hand exactly the bypass back.
 		writeAuthError(w, http.StatusInternalServerError, "2FA state lookup failed")
-		return "", false
+		return nil, false
 	}
 	if state != nil && state.Enabled && !sess.TwoFactorVerified {
 		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+		return nil, false
+	}
+	return sess, true
+}
+
+// requireStepUpUser is requireStepUpSession for handlers that need only the
+// user id.
+func (p *TwoFAPlugin) requireStepUpUser(w http.ResponseWriter, r *http.Request) (userID string, ok bool) {
+	sess, ok := p.requireStepUpSession(w, r)
+	if !ok {
 		return "", false
 	}
 	return sess.UserID, true
@@ -536,10 +553,11 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 	if p.challengeLimit != nil && !p.challengeLimit.guard(w, r) {
 		return
 	}
-	userID, ok := p.requireStepUpUser(w, r)
+	sess, ok := p.requireStepUpSession(w, r)
 	if !ok {
 		return
 	}
+	userID := sess.UserID
 
 	var body struct {
 		Code string `json:"code"`
@@ -598,13 +616,11 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 	// check would lock the enrolling user out of their own 2FA settings
 	// until they logged in again, the session that did the enrolling
 	// would have Enabled=true and TwoFactorVerified=false.
-	if marker, ok := p.mgr.SessionStore().(SessionTwoFAMarker); ok {
-		if sess, err := p.sessionFrom(r); err == nil {
-			if err := marker.MarkTwoFactorVerified(r.Context(), sess.Token); err != nil {
-				writeAuthError(w, http.StatusInternalServerError, "failed to record verification")
-				return
-			}
-		}
+	// The mark lands on the session requireStepUpSession judged, never on
+	// another cookie the request happens to carry.
+	if err := p.markSessionTwoFA(r.Context(), sess.Token); err != nil {
+		writeAuthError(w, http.StatusInternalServerError, "failed to record verification")
+		return
 	}
 
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -630,12 +646,14 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// challengeHandler is the ONLY endpoint a PendingTwoFactor session may
 	// reach, it is how the session completes step-up. Hence it uses the raw
-	// getSessionUser (pending is allowed here) rather than requireStepUpUser.
-	userID, _, err := p.getSessionUser(r)
+	// requestSession (pending is allowed, and preferred) rather than
+	// requireStepUpSession.
+	sess, err := p.mgr.requestSession(r, true)
 	if err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
+	userID := sess.UserID
 
 	var body struct {
 		Code string `json:"code"`
@@ -654,6 +672,35 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-session budget, counted before the code is checked. The
+	// per-address limiter above is no bound for a password holder with
+	// many addresses; this one is keyed by the session itself. Once it is
+	// spent, the session is deleted: the next guesses need a fresh login,
+	// which the login limiters meter. A store error refuses this attempt
+	// and keeps the session: an outage is not a spent budget.
+	if p.sessionGuesses != nil {
+		allowed, retry, err := p.sessionGuesses.Admit(r.Context(), sha256hex(sess.Token))
+		if err != nil {
+			slog.Default().Warn("auth: 2fa session budget store error: failing closed", "err", err)
+			w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
+			writeAuthError(w, http.StatusServiceUnavailable, "try again shortly")
+			return
+		}
+		if !allowed {
+			if err := p.mgr.SessionStore().Delete(r.Context(), sess.Token); err != nil {
+				writeAuthError(w, http.StatusInternalServerError, "could not end the sign-in")
+				return
+			}
+			p.mgr.emitSecurity(r.Context(), SecurityEvent{
+				Kind:   "2fa.challenge_locked",
+				UserID: userID,
+				Remote: remoteHost(r),
+			})
+			writeAuthError(w, http.StatusUnauthorized, "too many attempts: sign in again")
+			return
+		}
+	}
+
 	// Try TOTP code first. A code is valid across the whole ±skew window,
 	// so accepting the same step twice lets anyone who observed one code
 	// open a second session inside that window (RFC 6238 §5.2 forbids it).
@@ -669,7 +716,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		if !p.swapTwoFAState(w, r, userID, state, consumed) {
 			return
 		}
-		if err := p.markSessionTwoFA(r); err != nil {
+		if err := p.markSessionTwoFA(r.Context(), sess.Token); err != nil {
 			// The session is still pending: answering 200 here
 			// would report a step-up that did not happen.
 			writeAuthError(w, http.StatusInternalServerError, "could not complete the step-up")
@@ -693,7 +740,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if consumed {
-		if err := p.markSessionTwoFA(r); err != nil {
+		if err := p.markSessionTwoFA(r.Context(), sess.Token); err != nil {
 			// The session is still pending: answering 200 here
 			// would report a step-up that did not happen.
 			writeAuthError(w, http.StatusInternalServerError, "could not complete the step-up")
@@ -732,53 +779,64 @@ func (p *TwoFAPlugin) HasTwoFactorEnabled(ctx context.Context, userID string) (b
 	return state.Enabled, nil
 }
 
-// markSessionTwoFA flips the TwoFactorVerified flag on the caller's
-// session, if the session store supports SessionTwoFAMarker. No-op
-// otherwise (RequireTwoFA fails closed in that case).
-// markSessionTwoFA records that this session cleared its second factor.
+// markSessionTwoFA records that the session behind token cleared its second
+// factor, if the session store supports SessionTwoFAMarker. The caller
+// passes the token of the session it judged, never whichever cookie comes
+// first on the request.
 //
 // The error is returned, not swallowed. RequireTwoFA gates on the marker,
 // so a failed write means the session is still pending — answering the
 // challenge with 200 verified:true would tell the caller they are through
 // a door that is still shut, and every later request would bounce with no
 // explanation. A store without SessionTwoFAMarker keeps its old behaviour:
-// there is no marker to fail to write.
-func (p *TwoFAPlugin) markSessionTwoFA(r *http.Request) error {
-	cfg := p.mgr.Config()
-	cookie, err := r.Cookie(cfg.SessionCookie)
-	if err != nil {
-		return nil
-	}
+// there is no marker to fail to write (RequireTwoFA fails closed for
+// enrolled users in that case).
+func (p *TwoFAPlugin) markSessionTwoFA(ctx context.Context, token string) error {
 	if marker, ok := p.mgr.SessionStore().(SessionTwoFAMarker); ok {
-		return marker.MarkTwoFactorVerified(r.Context(), cookie.Value)
+		return marker.MarkTwoFactorVerified(ctx, token)
 	}
 	return nil
 }
 
-// RequireTwoFA returns middleware that:
+// RequireTwoFA returns middleware that gates a route on the second factor
+// of the request's principal, the user GetCurrentUser(ctx) returns:
 //
-//   - Lets requests through if the user has not enrolled in 2FA.
-//   - Lets requests through if the session has TwoFactorVerified=true.
-//   - Returns 403 in all other cases (enrolled but not verified, or no session).
+//   - 401 when there is no principal, or the request carries no live,
+//     non-pending session cookie of that same user.
+//   - Lets the request through when the principal has not enrolled in 2FA.
+//   - Lets the request through when one of the principal's session
+//     cookies has TwoFactorVerified=true.
+//   - 403 otherwise.
 //
-// Install this on every route that requires step-up authentication. Note
-// that it relies on the SessionStore implementing SessionTwoFAMarker,
-// otherwise RequireTwoFA fails closed (always 403 for enrolled users).
+// Install it behind SessionMiddleware or RequireAuth, which put the
+// principal in the context. The gate judges that principal and not the
+// first cookie: the handler runs as the principal, so a session of any
+// other user proves nothing about it. A JWT or API-token principal carries
+// no step-up state of its own, so it passes only next to a stepped-up
+// session cookie of the same user.
+//
+// It relies on the SessionStore implementing SessionTwoFAMarker, otherwise
+// RequireTwoFA fails closed (always 403 for enrolled users).
 func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cfg := p.mgr.Config()
-			cookie, err := r.Cookie(cfg.SessionCookie)
-			if err != nil {
+			u := GetCurrentUser(r.Context())
+			if u == nil {
+				writeAuthError(w, http.StatusUnauthorized, "not authenticated")
+				return
+			}
+			userID := u.GetID()
+			var mine []*Session
+			for _, s := range p.mgr.requestSessions(r) {
+				if s.UserID == userID && !s.PendingTwoFactor {
+					mine = append(mine, s)
+				}
+			}
+			if len(mine) == 0 {
 				writeAuthError(w, http.StatusUnauthorized, "no session")
 				return
 			}
-			sess, err := p.mgr.SessionStore().Get(r.Context(), cookie.Value)
-			if err != nil {
-				writeAuthError(w, http.StatusUnauthorized, "invalid session")
-				return
-			}
-			state, err := p.store.GetTwoFA(r.Context(), sess.UserID)
+			state, err := p.store.GetTwoFA(r.Context(), userID)
 			if err != nil {
 				writeAuthError(w, http.StatusInternalServerError, "2FA state lookup failed")
 				return
@@ -788,12 +846,15 @@ func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			// Enrolled, must have verified for this session.
-			if !sess.TwoFactorVerified {
-				writeAuthError(w, http.StatusForbidden, "two-factor verification required")
-				return
+			// Enrolled: one of the principal's own sessions must have
+			// cleared the challenge.
+			for _, s := range mine {
+				if s.TwoFactorVerified {
+					next.ServeHTTP(w, r)
+					return
+				}
 			}
-			next.ServeHTTP(w, r)
+			writeAuthError(w, http.StatusForbidden, "two-factor verification required")
 		})
 	}
 }
@@ -809,6 +870,16 @@ func (p *TwoFAPlugin) disableHandler(w http.ResponseWriter, r *http.Request) {
 	if err := p.store.DeleteTwoFA(r.Context(), userID); err != nil {
 		writeAuthError(w, http.StatusInternalServerError, "failed to disable 2FA")
 		return
+	}
+	// A pending session (password proven, challenge not yet passed) is
+	// inert while the factor is off, but it would complete with whatever
+	// factor the user enrolls next: a login finishing on a factor it never
+	// saw. Drop them with the factor.
+	if purger, ok := p.mgr.SessionStore().(SessionPendingPurger); ok {
+		if _, err := purger.DeletePendingByUser(r.Context(), userID); err != nil {
+			writeAuthError(w, http.StatusInternalServerError, "2FA disabled, but pending sign-ins could not be revoked")
+			return
+		}
 	}
 
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{

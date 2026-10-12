@@ -600,6 +600,7 @@ var crudExposureClassified = map[string]string{
 	"framework/sdkdocs/sdkdocs.go":    "takes a CRUDMounted predicate; the bare read is the Exposure-only prefilter",
 	"battery/admin/entity_admin.go":   "admin mounts only with a DB attached, so nil really is auto-true here",
 	"battery/auth/verify_private.go":  "warns that an auth entity is exposed; omitting the DB check makes it warn in the SAFE direction",
+	"framework/crud/owner.go":         "relationReachable refuses an explicit CRUD:false opt-out on another entity's mounted route; a DB-less app mounts no route that could reach it, so nil stays reachable",
 }
 
 // crudExposureRederivedLines reports lines where an unclassified file reads

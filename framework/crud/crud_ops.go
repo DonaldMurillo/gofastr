@@ -28,6 +28,12 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 			return nil, err
 		}
 	}
+	// A storage key in a file field must be one this request uploaded
+	// (media_provenance.go). Checked on the caller's body, before hooks
+	// add their own values.
+	if err := ch.checkMediaProvenance(ctx, body, nil); err != nil {
+		return nil, err
+	}
 	ch.InjectTenant(body, ctx)
 	ch.InjectOwner(body, ctx)
 	for _, f := range ch.Entity.GetFields() {
@@ -37,7 +43,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeCreate, body); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.BeforeCreate, body); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
 	}
@@ -53,7 +59,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	// Blank form values go first: a "" for a number must read as "not
 	// provided" before the integer coercion sees it.
 	dropEmptyFormValues(ch.entitySchema(), body)
-	if err := ch.coerceIntColumnValues(body); err != nil {
+	if err := ch.coerceNumberColumnValues(body); err != nil {
 		return nil, err
 	}
 	vr := schema.ValidateAll(ch.entitySchema(), body)
@@ -66,6 +72,11 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	// boundary exactly as ?include= is a read-side one (issue: order_items
 	// targeting another customer's order).
 	if err := ch.checkBelongsToScope(ctx, body); err != nil {
+		return nil, err
+	}
+	// The state field starts at an Initial value and no stamp is set
+	// (states.go). After the hooks, so a hook cannot set them either.
+	if err := ch.checkStateCreate(ctx, body); err != nil {
 		return nil, err
 	}
 
@@ -96,7 +107,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 			continue
 		}
 		if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.Scope.OwnerField {
-			if !serverWrites(ctx) {
+			if !serverWrites(ctx) && !ch.stateOverrideColumn(ctx, f.Name) {
 				continue
 			}
 		}
@@ -168,7 +179,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterCreate, result); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.AfterCreate, result); err != nil {
 			return nil, fmt.Errorf("after-create hook: %w", err)
 		}
 	}
@@ -186,6 +197,11 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 			return nil, err
 		}
 	}
+	// A storage key in a file field must be one this request uploaded or
+	// one already on this row (media_provenance.go).
+	if err := ch.checkMediaProvenance(ctx, body, ch.currentMediaKeys(ctx, r, id)); err != nil {
+		return nil, err
+	}
 	// Snapshot the pre-change row inside the same transaction so the audit
 	// hook can diff old vs new. Best-effort, a SELECT failure here must
 	// not block the update itself (the audit log already tolerates a
@@ -193,9 +209,13 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	if pre, err := ch.selectPreImage(ctx, r, id); err == nil && pre != nil {
 		ctx = WithAuditPreImage(ctx, pre)
 	}
+	// A hook cannot move this record mid-write (RunTransition).
+	if ch.Entity != nil {
+		ctx = withRecordWrite(ctx, ch.Entity.GetName(), id)
+	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeUpdate, body); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.BeforeUpdate, body); err != nil {
 			return nil, &beforeHookError{err: err}
 		}
 	}
@@ -216,7 +236,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	// Blank form values go first: a "" for a number must read as "not
 	// provided" before the integer coercion sees it.
 	dropEmptyFormValues(ch.entitySchema(), body)
-	if err := ch.coerceIntColumnValues(body); err != nil {
+	if err := ch.coerceNumberColumnValues(body); err != nil {
 		return nil, err
 	}
 	vr := schema.ValidatePartial(ch.entitySchema(), body)
@@ -229,6 +249,12 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	if err := ch.checkBelongsToScope(ctx, body); err != nil {
 		return nil, err
 	}
+	// The state field and stamps change only through a move: the stored
+	// value written back is dropped, any other is refused (states.go).
+	ctx, err = ch.checkStateUpdate(ctx, r, id, body)
+	if err != nil {
+		return nil, err
+	}
 
 	ub := query.Update(ch.Entity.GetTable())
 	anySet := false
@@ -238,8 +264,9 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 			continue
 		}
 		// ReadOnly/Hidden fields are client-unsettable and skipped unless
-		// the caller opted in via WithServerWrites(ctx).
-		if (f.ReadOnly || f.Hidden) && !serverWrites(ctx) {
+		// the caller opted in via WithServerWrites(ctx), or a state
+		// override releases them.
+		if (f.ReadOnly || f.Hidden) && !serverWrites(ctx) && !ch.stateOverrideColumn(ctx, f.Name) {
 			continue
 		}
 		// Refuse to let a client reassign ownership through an update body.
@@ -330,7 +357,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterUpdate, result); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.AfterUpdate, result); err != nil {
 			return nil, fmt.Errorf("after-update hook: %w", err)
 		}
 	}
@@ -436,6 +463,62 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, body map[string]
 	return nil
 }
 
+// readScopeHidesRow reports whether the caller's read scope hides the row a
+// write just produced. A write's RETURNING is a read handed to the caller,
+// and the write gates (owner, tenant, Access) do not carry ReadScope, so a
+// caller allowed to write a row outside its scope would otherwise read every
+// column of a row GET answers 404 for. Callers answer with identityOnly when
+// this is true; the write itself stands.
+//
+// It asks the database rather than evaluating the predicates in Go, under
+// the same readScopeFilters every read path renders, so the answer is the
+// one GET would give for this row. Run it on the tx-bound handler so it sees
+// the uncommitted write. Unrestricted callers and entities without a
+// ReadScope cost nothing: no predicates, no query. A WithServerWrites
+// caller is trusted server Go and reads back the whole row.
+func (ch *CrudHandler) readScopeHidesRow(ctx context.Context, row map[string]any) (bool, error) {
+	if serverWrites(ctx) {
+		return false, nil
+	}
+	preds := readScopeFilters(ctx, ch.Entity)
+	if len(preds) == 0 {
+		return false, nil
+	}
+	pk, ok := row[ch.convertKey(ch.PrimaryKey)]
+	if !ok {
+		pk, ok = row[ch.PrimaryKey]
+	}
+	if !ok || pk == nil {
+		return true, nil // cannot name the row: fail closed
+	}
+	qb := query.Select(ch.PrimaryKey).
+		From(ch.Entity.GetTable()).
+		Where(ch.PrimaryKey+" = $1", pk)
+	applyReadScopeWhere(func(sql string, args ...any) { qb.Where(sql, args...) }, preds)
+	sqlStr, args := qb.Build()
+	var hit any
+	if err := ch.DB.QueryRowContext(ctx, sqlStr, args...).Scan(&hit); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return true, nil
+		}
+		return false, fmt.Errorf("read-scope check: %w", err)
+	}
+	return false, nil
+}
+
+// scopedReadBack returns row, or only its id when the caller's read scope
+// hides it. See readScopeHidesRow.
+func (ch *CrudHandler) scopedReadBack(ctx context.Context, row map[string]any) (map[string]any, error) {
+	hidden, err := ch.readScopeHidesRow(ctx, row)
+	if err != nil {
+		return nil, err
+	}
+	if hidden {
+		return ch.identityOnly(row), nil
+	}
+	return row, nil
+}
+
 // autoUpdatedAtColumn returns the name of the entity's auto-timestamp
 // "updated_at" column, or "" when the entity has no such field. Used to
 // restamp updated_at on every UPDATE / bulk update.
@@ -459,7 +542,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeDelete, id); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.BeforeDelete, id); err != nil {
 			return &beforeHookError{err: err}
 		}
 	}
@@ -500,7 +583,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 	}
 
 	if ch.Hooks != nil {
-		if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterDelete, id); err != nil {
+		if err := runHooks(ch.Hooks, ctx, hook.AfterDelete, id); err != nil {
 			return fmt.Errorf("after-delete hook: %w", err)
 		}
 	}

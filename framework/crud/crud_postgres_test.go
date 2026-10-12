@@ -564,3 +564,39 @@ func TestPG_JSONBFieldRoundTrips(t *testing.T) {
 		t.Errorf("JSONB round trip changed the value: %v", obj)
 	}
 }
+
+// TestPG_ForeignKeyViolation409 is the Postgres twin of
+// TestForeignKeyViolation_Returns409: SQLSTATE 23503 on create and on
+// delete answers 409 with no table name in the body.
+func TestPG_ForeignKeyViolation409(t *testing.T) {
+	ch, db := pgCrudSetup(t, entity.EntityConfig{
+		Name:   "pgfk_children",
+		Table:  "pgfk_children",
+		Fields: []schema.Field{{Name: "parent_id", Type: schema.String}},
+	}.WithTimestamps(false),
+		`CREATE TABLE pgfk_parents (id TEXT PRIMARY KEY);
+		 CREATE TABLE pgfk_children (id TEXT PRIMARY KEY, parent_id TEXT NOT NULL REFERENCES pgfk_parents(id))`)
+	parentEnt := entity.Define("pgfk_parents", entity.EntityConfig{
+		Name: "pgfk_parents", Table: "pgfk_parents",
+	}.WithTimestamps(false))
+	parentEnt.SetDB(db)
+	parents := NewCrudHandler(parentEnt, db).WithJSONCase(CaseSnake)
+
+	req := makeRequest(t, RequestOpts{Method: http.MethodPost, Path: "/pgfk_children",
+		Body: `{"parent_id":"missing"}`, UserID: "u1"})
+	rr := httptest.NewRecorder()
+	ch.Create()(rr, req)
+	if rr.Code != http.StatusConflict || strings.Contains(rr.Body.String(), "pgfk_") {
+		t.Fatalf("dangling FK create = %d %s, want a 409 naming no table", rr.Code, rr.Body.String())
+	}
+
+	pgSeed(t, db, "pgfk_parents", []map[string]any{{"id": "p1"}})
+	pgSeed(t, db, "pgfk_children", []map[string]any{{"id": "c1", "parent_id": "p1"}})
+	req = makeRequest(t, RequestOpts{Method: http.MethodDelete, Path: "/pgfk_parents/p1", UserID: "u1"})
+	req.SetPathValue("id", "p1")
+	rr = httptest.NewRecorder()
+	parents.Delete()(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("delete referenced parent = %d %s, want 409", rr.Code, rr.Body.String())
+	}
+}

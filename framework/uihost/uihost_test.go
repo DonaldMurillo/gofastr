@@ -659,6 +659,29 @@ func TestUIHostCustomCSS(t *testing.T) {
 // F. Route Graph Injection
 // ---------------------------------------------------------------------------
 
+// A screen that opens over more than one origin ships every pattern in
+// the manifest, and the host agrees to the overlay from each.
+func TestRouteGraphCarriesAlsoFrom(t *testing.T) {
+	ds := newTestUIHostWithMultipleRoutes()
+	ds.App.RegisterScreen(app.NewScreen("/about/new", &testHomeComp{}), nil)
+	scr, _ := ds.App.Router.ScreenByPattern("/about/new")
+	scr.Intercept = &app.Intercept{From: "/about", AlsoFrom: []string{"/"}, As: app.ScreenDrawer}
+
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	assertContains(t, rec.Body.String(), `"intercept":{"from":"/about","also":["/"],"as":"drawer"}`)
+
+	req := httptest.NewRequest("GET", "/about/new", nil)
+	req.Header.Set("X-Gofastr-Navigate", "1")
+	req.Header.Set("X-Gofastr-Intercept", "1")
+	req.Header.Set("X-Gofastr-From", "/?tab=x")
+	rec = httptest.NewRecorder()
+	ds.ServeHTTP(rec, req)
+	if got := rec.Header().Get("X-Gofastr-Overlay"); got != "drawer" {
+		t.Errorf("overlay from an also origin = %q, want drawer", got)
+	}
+}
+
 func TestUIHostRouteGraph(t *testing.T) {
 	ds := newTestUIHostWithMultipleRoutes()
 

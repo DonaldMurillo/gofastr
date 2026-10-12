@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"maps"
 	"net/http"
+	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -49,6 +51,32 @@ type ToastTrigger struct {
 	// Defaults to the first stack mounted on the page. Set explicitly
 	// when an app hosts multiple stacks (e.g. per-tenant).
 	Stack string `json:"stack,omitempty"`
+	// Action is the toast's one button (interactive.NewToastAction): an
+	// Undo the server offers in its answer. The button carries RPC
+	// wiring only; the runtime drops any other attribute. A toast with
+	// a button stays up at least ten seconds.
+	Action *interactive.ToastAction `json:"action,omitempty"`
+}
+
+// toastPoisoned reports whether t carries a control byte anywhere it
+// reaches the header: its text, its stack, or its action's label and
+// attributes.
+func toastPoisoned(t ToastTrigger) bool {
+	if textsafe.HasControlBytes(t.Title) || textsafe.HasControlBytes(t.Body) || textsafe.HasControlBytes(t.Stack) {
+		return true
+	}
+	if t.Action == nil {
+		return false
+	}
+	if textsafe.HasControlBytes(t.Action.Label) {
+		return true
+	}
+	for k, v := range t.Action.Attrs {
+		if textsafe.HasControlBytes(k) || textsafe.HasControlBytes(v) {
+			return true
+		}
+	}
+	return false
 }
 
 // AddToast appends a toast trigger to the X-Gofastr-Toast response
@@ -73,7 +101,7 @@ func AddToast(w http.ResponseWriter, t ToastTrigger) {
 	// one. C0 bytes round-trip \u-escaped on the wire but still decode
 	// back into the client-side toast text. Drop the entry, keep the
 	// header.
-	if textsafe.HasControlBytes(t.Title) || textsafe.HasControlBytes(t.Body) || textsafe.HasControlBytes(t.Stack) {
+	if toastPoisoned(t) {
 		return
 	}
 	if t.Variant == "" {
@@ -103,7 +131,7 @@ func AddToast(w http.ResponseWriter, t ToastTrigger) {
 		// whole accumulated value.
 		kept := list[:0]
 		for _, e := range list {
-			if !textsafe.HasControlBytes(e.Title) && !textsafe.HasControlBytes(e.Body) && !textsafe.HasControlBytes(e.Stack) {
+			if !toastPoisoned(e) {
 				kept = append(kept, e)
 			}
 		}
@@ -142,17 +170,38 @@ var toastTemplateClasses = func() headless.Classes {
 
 // toastTemplate renders the row template preset's toast slot ships
 // inside every stack, in the request's language.
+//
+// Every status variant beyond the four tones rides the template too:
+// neutral and each registered status variant, with the class and glyph
+// a server Notification of that variant wears, so a runtime toast
+// carrying one is drawn as itself and not as info.
 func toastTemplate(ctx context.Context) render.HTML {
+	glyphs := map[string]string{
+		"info":    notificationGlyph(StatusInfo),
+		"success": notificationGlyph(StatusSuccess),
+		"warning": notificationGlyph(StatusWarning),
+		"danger":  notificationGlyph(StatusDanger),
+	}
+	variants := append([]string{string(StatusNeutral)}, registeredStatusNames()...)
+	classes := maps.Clone(toastTemplateClasses)
+	for _, v := range variants {
+		glyphs[v] = notificationGlyph(StatusVariant(v))
+		classes[headless.Part("root--"+v)] = "fui-notification--" + v
+	}
 	return headless.ToastTemplate(headless.ToastTemplateProps{
-		Glyphs: map[string]string{
-			"info":    notificationGlyph(StatusInfo),
-			"success": notificationGlyph(StatusSuccess),
-			"warning": notificationGlyph(StatusWarning),
-			"danger":  notificationGlyph(StatusDanger),
-		},
+		Glyphs:    glyphs,
+		Variants:  variants,
 		StyleName: notificationStyle.Name(),
 		Strings:   StringsFor(ctx),
-	}, toastTemplateClasses)
+	}, classes)
+}
+
+// registeredStatusNames lists the registered status variants in
+// stable order, without sealing the set.
+func registeredStatusNames() []string {
+	statusMods.mu.RLock()
+	defer statusMods.mu.RUnlock()
+	return slices.Sorted(maps.Keys(statusMods.status))
 }
 
 var _ = registry.RegisterTemplate(preset.ToastTemplate, toastTemplate)

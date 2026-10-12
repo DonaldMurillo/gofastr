@@ -148,10 +148,13 @@ func BackToTop(cfg BackToTopConfig) render.HTML {
 	// module resolves by id.
 	target := strings.TrimPrefix(cfg.ScrollTarget, "#")
 
-	var mods []string
-	if cfg.Position != "" {
-		mods = append(mods, "fui-back-to-top--"+string(cfg.Position))
+	// The corner class carries the offsets: without one, position: fixed
+	// leaves the button where it fell in the flow.
+	position := cfg.Position
+	if position == "" {
+		position = BackToTopBottomRight
 	}
+	mods := []string{"fui-back-to-top--" + string(position)}
 	if cfg.Size != "" {
 		mods = append(mods, "fui-back-to-top--"+string(cfg.Size))
 	}

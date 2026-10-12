@@ -194,7 +194,7 @@ func fileUploadCSS(_ style.Theme) string {
   gap: var(--spacing-xs, 2px);
 }
 .fui-upload-field:has(.fui-upload__input:disabled) {
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
 }
 .fui-upload {
   display: grid;
@@ -208,22 +208,22 @@ func fileUploadCSS(_ style.Theme) string {
   justify-content: center;
   gap: var(--spacing-xs, 2px);
   padding: var(--spacing-xl, 24px);
-  border: 2px dashed var(--color-border, #E4E4E7);
-  border-radius: var(--radii-lg, 12px);
+  border: var(--stroke-thick, 2px) dashed var(--color-border, #E4E4E7);
+  border-radius: var(--radii-lg, 10px);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text-muted, #52525B);
   text-align: center;
   cursor: pointer;
-  transition: border-color var(--duration-fast, 150ms) ease,
+  transition: border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease),
               background var(--duration-fast, 150ms) ease;
   min-block-size: calc(var(--spacing-touch-target, 44px) * 2);
 }
 .fui-upload__zone:hover,
 .fui-upload[data-hui-drop-over] .fui-upload__zone {
-  border-color: var(--color-primary, #4F46E5);
+  border-color: var(--color-primary, #18181B);
 }
 .fui-upload[data-hui-drop-over] .fui-upload__zone {
-  background: color-mix(in oklab, var(--color-primary, #4F46E5) 10%, var(--color-surface, #FFFFFF) 90%);
+  background: color-mix(in oklab, var(--color-primary, #18181B) 10%, var(--color-surface, #FFFFFF) 90%);
 }
 .fui-upload-field:has(.fui-upload__input[aria-invalid="true"]) .fui-upload__zone {
   border-color: var(--color-danger, #DC2626);
@@ -254,8 +254,8 @@ func fileUploadCSS(_ style.Theme) string {
 /* The zone is the visual control, so it is what the focus ring drawn
    for the input's focus has to sit on. */
 .fui-upload:has(.fui-upload__input:focus-visible) .fui-upload__zone {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 4px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(2 * var(--stroke-focus-offset, 2px));
 }
 .fui-upload__list {
   list-style: none;

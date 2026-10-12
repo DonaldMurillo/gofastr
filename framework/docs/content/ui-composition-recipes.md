@@ -203,6 +203,9 @@ status and assignee metadata. It remains one keyboard-focusable link.
 Use `DetailListConfig.Inline` for short label/value pairs in a narrow
 detail pane; long values wrap in their column. The default still stacks
 fields in narrow containers, which suits avatar groups and long values.
+`DetailListConfig.Stacked` puts a read-only value inside a form: the label
+sits above like a field's, and the value takes a control's box on the soft
+surface, so it lines up with the inputs around it and reads as locked.
 `FilterToolbarConfig.Compact` keeps its search and actions on one row down
 to an 18rem container, retaining the 44px controls and server-side GET
 submission; narrower containers still stack.

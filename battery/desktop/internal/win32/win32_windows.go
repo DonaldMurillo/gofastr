@@ -27,6 +27,7 @@ const (
 	WM_SIZE             = 0x0005
 	WM_COMMAND          = 0x0111
 	WM_CLOSE            = 0x0010
+	WM_COPYDATA         = 0x004A
 	WM_APP              = 0x8000
 	PM_REMOVE           = 0x0001
 	SW_SHOW             = 5
@@ -111,6 +112,40 @@ func PostThreadMessage(threadID uint32, msg uint32, wp, lp uintptr) error {
 	return nil
 }
 
+func CreateNamedMutex(name string) (handle uintptr, alreadyExists bool, err error) {
+	wideName, err := UTF16(name)
+	if err != nil {
+		return 0, false, err
+	}
+	// CreateMutexW sets ERROR_ALREADY_EXISTS when it opens an existing
+	// object. Clear any earlier thread error so that value is reliable.
+	_, _, _ = call(kernel32, "SetLastError", 0)
+	handle, _, callErr := call(kernel32, "CreateMutexW", 0, 0, uintptr(unsafe.Pointer(wideName)))
+	runtime.KeepAlive(wideName)
+	if handle == 0 {
+		return 0, false, fmt.Errorf("CreateMutexW(%q): %w", name, lastError(callErr))
+	}
+	if errno, ok := callErr.(syscall.Errno); ok && errno == 183 { // ERROR_ALREADY_EXISTS
+		return handle, true, nil
+	}
+	if callErr != nil {
+		_ = CloseHandle(handle)
+		return 0, false, fmt.Errorf("CreateMutexW(%q): %w", name, callErr)
+	}
+	return handle, false, nil
+}
+
+func CloseHandle(handle uintptr) error {
+	if handle == 0 {
+		return nil
+	}
+	r, _, callErr := call(kernel32, "CloseHandle", handle)
+	if r == 0 {
+		return fmt.Errorf("CloseHandle: %w", lastError(callErr))
+	}
+	return nil
+}
+
 func lastError(err error) error {
 	if err != nil {
 		return err
@@ -123,6 +158,7 @@ type WindowClass struct {
 	WndProc    uintptr
 	ClassName  string
 	Icon       uintptr
+	IconSmall  uintptr
 	Cursor     uintptr
 	Background uintptr
 	Instance   uintptr
@@ -158,6 +194,7 @@ func RegisterWindowClass(c WindowClass) error {
 		WndProc:    c.WndProc,
 		Instance:   instance,
 		Icon:       c.Icon,
+		IconSmall:  c.IconSmall,
 		Cursor:     c.Cursor,
 		Background: c.Background,
 		ClassName:  name,
@@ -171,6 +208,24 @@ func RegisterWindowClass(c WindowClass) error {
 		return fmt.Errorf("RegisterClassExW(%q): %w", c.ClassName, lastError(callErr))
 	}
 	return nil
+}
+
+// LoadIconResource loads an icon group from the current executable. A zero
+// width and height asks Windows for the default large-icon size. Shared icons
+// stay valid for the lifetime of the process and must not be destroyed.
+func LoadIconResource(id uint16, width, height int32) uintptr {
+	const (
+		imageIcon     = 1
+		lrDefaultSize = 0x00000040
+		lrShared      = 0x00008000
+	)
+	flags := uintptr(lrShared)
+	if width == 0 && height == 0 {
+		flags |= lrDefaultSize
+	}
+	r, _, _ := call(user32, "LoadImageW", ModuleHandle(), uintptr(id), imageIcon,
+		uintptr(uint32(width)), uintptr(uint32(height)), flags)
+	return r
 }
 
 func CreateWindow(className, title string, style uint32, x, y, width, height int32, parent uintptr) (uintptr, error) {
@@ -207,6 +262,18 @@ func DefWindowProc(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 func SendMessage(hwnd uintptr, msg uint32, wp, lp uintptr) uintptr {
 	r, _, _ := call(user32, "SendMessageW", hwnd, uintptr(msg), wp, lp)
 	return r
+}
+
+func SendMessageTimeout(hwnd uintptr, msg uint32, wp, lp uintptr, timeout uint32) (uintptr, error) {
+	var result uintptr
+	// SMTO_ABORTIFHUNG prevents a launching copy from waiting forever on
+	// an existing process whose UI thread is stuck.
+	r, _, callErr := call(user32, "SendMessageTimeoutW", hwnd, uintptr(msg), wp, lp,
+		uintptr(0x0002), uintptr(timeout), uintptr(unsafe.Pointer(&result)))
+	if r == 0 {
+		return 0, fmt.Errorf("SendMessageTimeoutW: %w", lastError(callErr))
+	}
+	return result, nil
 }
 
 type keyboardInput struct {

@@ -31,8 +31,8 @@ func softDeleteOnlyBlueprint() Blueprint {
 }
 
 // The dead ui.ConfirmAction mount (trigger discarded, RPCPath wrong on three
-// axes, nothing referencing it) must not be emitted. The resource engine ships
-// the working delete (framework/ui/resource/resource.go).
+// axes, nothing referencing it) must not be emitted. The entityui record
+// page ships the working delete.
 func TestSoftDeleteAppOmitsDeadConfirmAction(t *testing.T) {
 	app := renderBlueprintApp(softDeleteOnlyBlueprint())
 	if strings.Contains(app, "ConfirmAction") {

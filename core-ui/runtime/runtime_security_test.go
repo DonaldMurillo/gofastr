@@ -600,7 +600,11 @@ func TestResponseHTMLMountedOnlyAfterOK(t *testing.T) {
 	}{
 		{"../../framework/headless/sortablelist.js", "fetch(crpc", "dest.innerHTML = html", "conflict-recovery refresh"},
 		{"src/poll.js", "fetch(src", "el.innerHTML = html", "poll region swap"},
-		{"src/intercept.js", "fetch(path", "mount(res.html", "intercept overlay mount"},
+		{"src/intercept.js", "fetch(path", "mountLayer(res", "intercept overlay mount"},
+		// Both refetches mount through swap, fed only by fetchOverlay,
+		// whose !r.ok arm answers null before any text is read.
+		{"src/intercept.js", "fetchOverlay(path, t.fromURL)", "swap(t, res)", "intercept pane query refetch"},
+		{"src/intercept.js", "fetchOverlay(u, lay.fromURL)", "swap(lay, res)", "intercept history refetch"},
 	}
 
 	for _, s := range surfaces {

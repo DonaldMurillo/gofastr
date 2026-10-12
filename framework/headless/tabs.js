@@ -21,12 +21,21 @@
     return out;
   }
 
+  // own: the wrapper's own tabs, panels or stash. A strip nested in one
+  // of its panels is another wrapper's, and a click, an arrow or a
+  // resync on the outer strip must not touch it.
+  function own(wrapper, sel) {
+    return Array.from(wrapper.querySelectorAll(sel)).filter(function (el) {
+      return el.closest('[data-hui-tabs]') === wrapper;
+    });
+  }
+
   const wired = new WeakSet();   // strips with an observer installed
   const live = new WeakMap();    // panel -> DocumentFragment of its vacated live nodes
   const parsed = new WeakMap();  // stash script -> decoded {index: html}
 
   function stashMap(wrapper) {
-    for (const s of wrapper.querySelectorAll('script[data-hui-tabs-stash]')) {
+    for (const s of own(wrapper, 'script[data-hui-tabs-stash]')) {
       let m = parsed.get(s);
       if (!m) {
         try { m = JSON.parse(s.textContent || '{}'); } catch (_) { m = {}; }
@@ -37,20 +46,33 @@
     return null;
   }
 
+  // syncTabs makes the strip's own tabs say what data-active says: the
+  // selected tab is aria-selected and the one roving tabindex 0, and
+  // with data-hui-tabs-state the data-state mirror follows. A
+  // selection can arrive with no click (setSignal, a deep link, an
+  // island), so this runs on every data-active change.
+  function syncTabs(wrapper) {
+    const idx = String(parseInt(wrapper.getAttribute('data-active') || '0', 10));
+    const state = wrapper.hasAttribute('data-hui-tabs-state');
+    for (const t of own(wrapper, '[role="tab"]')) {
+      const on = t.getAttribute('data-cui-tab-index') === idx;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.setAttribute('tabindex', on ? '0' : '-1');
+      if (state) t.setAttribute('data-state', on ? 'active' : 'inactive');
+    }
+  }
+
   function apply(wrapper) {
     const idx = parseInt(wrapper.getAttribute('data-active') || '0', 10);
-    if (wrapper.hasAttribute('data-hui-tabs-state')) {
-      for (const t of wrapper.querySelectorAll('[role="tab"]')) {
-        const on = t.getAttribute('data-cui-signal-set') === wrapper.getAttribute('data-cui-signal') + ':' + idx ||
-          t.closest('[data-hui-tabs]') === wrapper && t.getAttribute('aria-selected') === 'true';
-        t.setAttribute('data-state', on ? 'active' : 'inactive');
-        t.setAttribute('aria-selected', on ? 'true' : 'false');
-        t.setAttribute('tabindex', on ? '0' : '-1');
-      }
-    }
+    syncTabs(wrapper);
+    // The kernel's data-active mirror (core-ui/runtime frag/signals.js)
+    // writes aria-selected on every [role=tab][data-cui-tab-index]
+    // under the wrapper whose signal changed, nested strips included:
+    // each nested strip is put back from its own data-active.
+    for (const inner of wrapper.querySelectorAll('[data-hui-tabs]')) syncTabs(inner);
     if (!wrapper.hasAttribute('data-hui-tabs-vacate')) return;
     const stash = stashMap(wrapper);
-    for (const panel of wrapper.querySelectorAll('[role="tabpanel"]')) {
+    for (const panel of own(wrapper, '[role="tabpanel"]')) {
       const i = panel.id ? panel.id.replace(/-panel-([0-9]+)$/, '$2') : '';
       const m = panel.id && /-panel-\d+$/.test(panel.id)
         ? panel.id.slice(panel.id.lastIndexOf('-panel-') + 7) : '';
@@ -63,7 +85,7 @@
         panel.innerHTML = stash[m];
         delete stash[m];
         if (Object.keys(stash).length === 0) {
-          for (const s of wrapper.querySelectorAll('script[data-hui-tabs-stash]')) s.remove();
+          for (const s of own(wrapper, 'script[data-hui-tabs-stash]')) s.remove();
         }
         if (NS.scanAndLoadCSS) { try { NS.scanAndLoadCSS(panel); } catch (_) {} }
       } else if (mine && live.has(panel)) {
@@ -100,7 +122,7 @@
     if (!tab) return;
     const wrapper = tab.closest('[data-hui-tabs]');
     if (!wrapper) return;
-    const tabs = Array.from(wrapper.querySelectorAll('[role="tab"]')).filter(function (t) {
+    const tabs = own(wrapper, '[role="tab"]').filter(function (t) {
       return t.getAttribute('aria-disabled') !== 'true';
     });
     if (tabs.length === 0) return;
@@ -133,7 +155,7 @@
     if (!tab) return;
     const wrapper = tab.closest('[data-hui-tabs]');
     if (!wrapper) return;
-    for (const t of wrapper.querySelectorAll('[role="tab"]')) {
+    for (const t of own(wrapper, '[role="tab"]')) {
       const on = t === tab;
       t.setAttribute('aria-selected', on ? 'true' : 'false');
       t.setAttribute('tabindex', on ? '0' : '-1');
@@ -150,7 +172,7 @@
     if (!tab) return;
     const wrapper = tab.closest('[data-hui-tabs]');
     if (!wrapper) return;
-    for (const t of wrapper.querySelectorAll('[role="tab"]')) {
+    for (const t of own(wrapper, '[role="tab"]')) {
       const on = t === tab;
       t.setAttribute('tabindex', on ? '0' : '-1');
     }

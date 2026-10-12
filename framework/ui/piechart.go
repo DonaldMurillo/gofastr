@@ -288,7 +288,7 @@ func pieChartCSS(_ style.Theme) string {
   stroke: var(--color-background, #FFFFFF);
   stroke-width: 1;
 }
-.fui-pie-chart__slice--primary { fill: var(--color-primary, #4F46E5); }
+.fui-pie-chart__slice--primary { fill: var(--color-primary, #18181B); }
 .fui-pie-chart__slice--info    { fill: var(--color-info, #3B82F6); }
 .fui-pie-chart__slice--success { fill: var(--color-success, #16A34A); }
 .fui-pie-chart__slice--warning { fill: var(--color-warning, #D97706); }

@@ -62,7 +62,7 @@ func GenerateFile(name string, kind Kind, css string, m *SheetModel, pkg string,
 	g := &fileGen{
 		name:      name,
 		kind:      kind,
-		css:       css,
+		css:       stripBOM(css),
 		model:     m,
 		pkg:       pkg,
 		sharedPkg: sharedPkg,

@@ -49,16 +49,14 @@ func (ch *CrudHandler) permissionForOp(op crudOp) string {
 // caller while GET /api/<entity> answers 401.
 //
 // Prefer CanReadScoped, or CanReadRecordScoped for a single record. Those are
-// what framework/ui/resource gates on, including its island handler. CanRead
-// survives there only as the compatibility fallback for a custom DataSource
-// written before CanReadScoped existed, load-bearing, not dead. Reach for it
-// directly only when you specifically want the RBAC question in isolation.
+// what framework/entityui gates its screens on. Reach for CanRead directly
+// only when you specifically want the RBAC question in isolation.
 func (ch *CrudHandler) CanRead(ctx context.Context) bool {
 	perm := ch.permissionForOp(opRead)
 	if perm == "" {
 		return true
 	}
-	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName()})
+	return ch.accessAllows(ctx, perm, "")
 }
 
 // CanReadScoped reports whether ctx may read this entity's rows: the baseline
@@ -88,10 +86,10 @@ func (ch *CrudHandler) CanRead(ctx context.Context) bool {
 // exactly what generated list screens did.
 //
 // Use this from any surface that renders the same rows outside the CRUD routes
-// (a server-rendered table, an island fragment, a report). See
-// framework/ui/resource.
+// (a server-rendered table, a report, a dashboard aggregate). See
+// framework/entityui.
 func (ch *CrudHandler) CanReadScoped(ctx context.Context) bool {
-	return ch.canReadScopedRecord(ctx, "")
+	return ch.canScopedRecord(ctx, opRead, "")
 }
 
 // CanReadRecordScoped is CanReadScoped for ONE record.
@@ -106,49 +104,24 @@ func (ch *CrudHandler) CanReadScoped(ctx context.Context) bool {
 // Pass the record id for a detail or edit view. With no decider installed this
 // answers exactly what CanReadScoped answers.
 func (ch *CrudHandler) CanReadRecordScoped(ctx context.Context, id string) bool {
-	return ch.canReadScopedRecord(ctx, id)
-}
-
-func (ch *CrudHandler) canReadScopedRecord(ctx context.Context, id string) bool {
-	cfg := ch.Entity.Config
-	// Baseline session requirement, the boolean mirror of requireAuthenticated.
-	if cfg.Scope.OwnerField == "" && !cfg.Exposure.Access.Declared() && !cfg.Exposure.Public {
-		if _, ok := handler.GetUser(ctx); !ok {
-			return false
-		}
-	}
-	// Deliberately NOT requireOwnerContext: that honours owner.AllowCrossOwner,
-	// and the HTTP route's RequireOwner does not. The divergence used to be
-	// unreachable trivia; three rendering surfaces now trust this boolean, so a
-	// host applying the exported marker to a request context would make screens
-	// render rows the REST route refuses. Answer the stricter of the two.
-	if field := cfg.Scope.OwnerField; field != "" {
-		if _, ok := owner.Get(ctx); !ok {
-			return false
-		}
-	}
-	if err := ch.requireTenantContext(ctx); err != nil {
-		return false
-	}
-	perm := ch.permissionForOp(opRead)
-	if perm == "" {
-		return true
-	}
-	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName(), ID: id})
+	return ch.canScopedRecord(ctx, opRead, id)
 }
 
 // canCascadeWrite reports whether a cascade write from a parent may create or
 // update this entity's record. It is the context-only twin of requireScope,
 // for a write that reaches this entity without passing its own route: owner,
 // tenant, the baseline session gate, then RBAC. WithServerWrites skips all of
-// them. The session gate is skipped for the in-process API (r built by
-// syntheticRequest), which never applies it to a parent either; every route,
-// MCP included, arrives with a real request. Checking RBAC alone let an
-// anonymous write to a Public parent create rows in a child whose own route
-// answers 401.
+// them. The session gate and relationReachable are skipped for the in-process
+// API (r built by syntheticRequest), which never applies them to a parent
+// either; every route, MCP included, arrives with a real request. Checking
+// RBAC alone let an anonymous write to a Public parent create rows in a child
+// whose own route answers 401.
 func (ch *CrudHandler) canCascadeWrite(ctx context.Context, r *http.Request, op crudOp, id string) bool {
 	if serverWrites(ctx) {
 		return true
+	}
+	if (r == nil || !inProcess(r)) && !ch.relationReachable(ctx, "write") {
+		return false
 	}
 	if ch.requireOwnerContext(ctx) != nil || ch.requireTenantContext(ctx) != nil {
 		return false
@@ -162,7 +135,32 @@ func (ch *CrudHandler) canCascadeWrite(ctx context.Context, r *http.Request, op 
 	if perm == "" {
 		return true
 	}
-	return access.CanResource(ctx, access.Permission(perm), access.Ref{Type: ch.Entity.GetName(), ID: id})
+	return ch.accessAllows(ctx, perm, id)
+}
+
+// relationReachable answers the rule that binds a route reaching THIS entity
+// from another entity's route (?include=, ?rel.field= filters, cascade writes)
+// and that the entity's own posture checks cannot see, because it is about how
+// the request arrived rather than who made it.
+//
+// Exposure.CRUD=false means no generated surface reaches the rows. The
+// entity's own routes are never mounted, and a relation from a mounted entity
+// must not become the generated surface it opted out of. auth.UserEntityConfig
+// is the case that matters: users with CRUD off were still readable through
+// any ?include=author and filterable through ?author.email_like=.
+//
+// A scope-restricted request (an API token or an embed grant, see
+// access.WithHeldScopes) must also hold "<table>:<verb>" for this entity.
+// auth.RequireAPIScopes checks only the entity in the path, so a
+// ["customers:read"] token read every invoice through
+// /api/customers?include=invoices and wrote them through a cascade. The
+// resource is the table name, the same segment RequireAPIScopes derives from
+// the route. Unscoped requests (sessions, JWT, server code) are unaffected.
+func (ch *CrudHandler) relationReachable(ctx context.Context, verb string) bool {
+	if crud := ch.Entity.Config.Exposure.CRUD; crud != nil && !*crud {
+		return false
+	}
+	return access.ScopeAllows(ctx, access.Permission(ch.Entity.GetTable()+":"+verb))
 }
 
 // canReadEntityGate answers the part of the read posture that is a GATE rather
@@ -203,19 +201,33 @@ func (ch *CrudHandler) canReadEntityGate(ctx context.Context) bool {
 // consulted before the role policy, the issue #80 seam for per-resource
 // authority ("member may edit project 42"). recordID is the path id for
 // item-scoped ops (read-one/update/delete) and "" for collection-level ops
-// (list/create/batch/the SSE feed); with no decider configured, CanResource
+// (list/create/batch/the SSE feed); batch update and delete re-ask per item
+// through itemPermitted. With no decider configured, CanResource
 // answers exactly what access.Can answered, so behaviour is byte-identical.
 func (ch *CrudHandler) requirePermission(w http.ResponseWriter, r *http.Request, op crudOp, recordID string) bool {
 	perm := ch.permissionForOp(op)
 	if perm == "" {
 		return true
 	}
-	resource := access.Ref{Type: ch.Entity.GetName(), ID: recordID}
-	if !access.CanResource(r.Context(), access.Permission(perm), resource) {
+	if !ch.accessAllows(r.Context(), perm, recordID) {
 		writeJSONError(w, http.StatusForbidden, "access denied: missing permission "+perm)
 		return false
 	}
 	return true
+}
+
+// itemPermitted re-asks op's permission about one record: the per-item twin
+// of requirePermission for routes whose path carries no id. The _batch
+// update and delete routes pass requireScope with Ref{ID: ""} and then write
+// caller-named ids, so a Decider that denies one record by id was never asked
+// about it. Each item is asked here, inside the batch transaction, and a
+// refusal rolls the whole batch back.
+func (ch *CrudHandler) itemPermitted(ctx context.Context, op crudOp, id string) bool {
+	perm := ch.permissionForOp(op)
+	if perm == "" {
+		return true
+	}
+	return ch.accessAllows(ctx, perm, id)
 }
 
 // tenantIDFromCtx is a thin wrapper so owner.go doesn't drag the

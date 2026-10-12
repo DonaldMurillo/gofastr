@@ -244,6 +244,35 @@ func TestAreaLoadingTemplateRidesBesideCell(t *testing.T) {
 	}
 }
 
+// TestInlineAreaRendersASpan: an Inline area's cell is a span, so a
+// route area can sit inside phrasing content (a count in a nav link);
+// an area that is not Inline keeps its div.
+func TestInlineAreaRendersASpan(t *testing.T) {
+	shell := app.NewLayout("shell", app.LayoutSpec{
+		Areas: []app.AreaSpec{{Name: "count", Inline: true}, {Name: "crumbs"}},
+	}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+		return render.Join(
+			l.RouteArea("count", func(ctx context.Context, m app.Match) render.HTML { return render.Text("12") }),
+			l.RouteArea("crumbs", func(ctx context.Context, m app.Match) render.HTML { return render.Text("trail") }),
+			l.Primary(),
+		)
+	})
+	a := app.NewApp("t")
+	a.SetDefaultLayout(shell)
+	a.RegisterScreen(app.NewScreen("/", &stubComp{html: "HOME"}), nil)
+	res, err := a.RenderPageResult(context.Background(), "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(res.HTML)
+	if !strings.Contains(s, `<span data-cui-area="l:shell~count">12</span>`) {
+		t.Errorf("an Inline area must render a span cell:\n%s", s)
+	}
+	if !strings.Contains(s, `<div data-cui-area="l:shell~crumbs">trail</div>`) {
+		t.Errorf("an area that is not Inline keeps its div cell:\n%s", s)
+	}
+}
+
 func TestPartialFromResultExportsKeptLayerFills(t *testing.T) {
 	a := app.NewApp("t")
 	shell, outlets := labShell()

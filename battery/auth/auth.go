@@ -51,8 +51,12 @@ type Credentials struct {
 //     their password and add the provider via the authenticated link flow
 //     (GET /auth/oauth/{provider}/link), protects the local credential
 //     from IdP-email takeover.
-//     - account is PASSWORDLESS → AUTO-LINK + login (safe migration: a prior
-//     OAuth-created account re-binds to the same verified identity).
+//     - account is PASSWORDLESS and its address unproven
+//     (EmailVerifiedChecker) → REFUSED (409): the owner claims it with a
+//     magic link or a password reset first.
+//     - account is PASSWORDLESS and proven → AUTO-LINK + login (safe
+//     migration: a prior OAuth-created account re-binds to the same
+//     verified identity).
 //  3. Email is UNVERIFIED, or no email match → CreateUser + LinkOAuth (a
 //     fresh distinct account; an unverified email never binds to an existing
 //     one). See framework/docs/content/auth.md for the full contract.

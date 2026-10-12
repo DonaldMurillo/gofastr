@@ -74,7 +74,7 @@ func TestCodeTabsCSSHidesInactivePanelsAndUnderlinesTheActiveTab(t *testing.T) {
 	// the per-index pair all panels stack (review item 19).
 	for _, want := range []string{
 		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__nav {`,
-		`border-bottom: 1px solid var(--color-border`,
+		`border-bottom: var(--stroke-thin, 1px) solid var(--color-border`,
 		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__panel { display: none;`,
 		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="0"] .fui-code-tabs__panel[data-cui-tab-index="0"]{display:block}`,
 		`[data-cui-comp="ui-code-tabs"] .fui-code-tabs__strip[data-active="1"] .fui-code-tabs__tab[data-cui-tab-index="1"]{color:var(--color-primary`,
@@ -82,5 +82,22 @@ func TestCodeTabsCSSHidesInactivePanelsAndUnderlinesTheActiveTab(t *testing.T) {
 		if !strings.Contains(css, want) {
 			t.Errorf("codeTabsCSS lost the rule %q — the strip or the panel visibility regressed:\n%s", want, css)
 		}
+	}
+}
+
+func TestCodeTabsLabelNamesTablist(t *testing.T) {
+	out := string(CodeTabs(CodeTabsConfig{Name: "install", Label: "Install snippets"},
+		CodeSample{Label: "Go", Code: "go get x"}))
+	i := strings.Index(out, `role="tablist"`)
+	if i < 0 {
+		t.Fatalf("no tablist:\n%s", out)
+	}
+	start := strings.LastIndex(out[:i], "<")
+	tablist := out[start : i+strings.Index(out[i:], ">")+1]
+	if !strings.Contains(tablist, `aria-label="Install snippets"`) {
+		t.Errorf("tablist is not named by Label: %s", tablist)
+	}
+	if n := strings.Count(out, `aria-label="Install snippets"`); n != 1 {
+		t.Errorf("Label rendered %d times, want once", n)
 	}
 }

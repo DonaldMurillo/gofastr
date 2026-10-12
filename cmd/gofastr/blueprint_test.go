@@ -278,6 +278,19 @@ screens:
 			want: `unsupported block type "chart"`,
 		},
 		{
+			name: "bulk only on entity list",
+			yml: `
+screens:
+  - name: home
+    route: /
+    body:
+      - kind: heading
+        text: Hi
+        bulk: true
+`,
+			want: `bulk applies only to an entity_list block`,
+		},
+		{
 			name: "entity list unknown entity",
 			yml: `
 entities:
@@ -726,11 +739,9 @@ func TestRenderBlueprintFilesContentCoversAllSections(t *testing.T) {
 	assertContains(t, screenContent, `func (s *HomeScreen) ComponentID() string { return "screen-home" }`)
 	assertContains(t, screenContent, `component.On("save_click"`)
 	assertContains(t, screenContent, `"data-action": "save_click"`)
-	// The island refinement (.WithIsland/.WithIslandPolicy) is appended
-	// after the block's own options and before .List(ctx), so assert the
-	// authored chain and the terminal call separately.
-	assertContains(t, screenContent, `appResources["posts"].WithColumns("title", "status").WithLimit(5).WithHeading("Latest posts").WithEmpty("No posts yet.")`)
-	assertContains(t, screenContent, `.WithIsland("/api/tables/home/posts").WithIslandPolicy(resource.PublicIsland()).List(ctx)`)
+	// The list renders through the appUI builder; the list follows the
+	// screen's heading block, so its title drops to a section (level 2).
+	assertContains(t, screenContent, `appUI.List("posts").Columns("title", "status").PageSize(5).NoCreate().Heading("Latest posts", 2).Empty("No posts yet.")`)
 	assertContains(t, byName["stubs.go"], `func PublishPost(w http.ResponseWriter, r *http.Request)`)
 	assertContains(t, byName["stubs.go"], `func RequestLoggerMiddleware(next http.Handler) http.Handler`)
 	assertContains(t, byName["stubs.go"], `type AnalyticsPlugin struct{}`)

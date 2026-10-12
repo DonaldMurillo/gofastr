@@ -119,7 +119,11 @@ What this changes for an app:
 | `sortablelist` | `ui.SortableList`, `ui.SortableListItems` | `Item` is `SortableItem` |
 | `tree` | `ui.Tree` | `Node` is `TreeItem`; `SignalPrefix` is `LazySignalPrefix` |
 | `pagination` | `ui.Pagination` | `Total`/`Current`/`HrefPattern` are `Pages`/`Page` plus `Path` and `Query` |
-| `skeleton` | the `ui` skeleton presets | none |
+| `skeleton` | the `ui` skeleton presets | `Variant`, `Width`, `Height` and `Count` are gone |
+| `tabs` | `ui.Tabs` | `Name` is `SignalName`; `Tab` is `TabItem` |
+| `combobox` | `ui.Combobox` | `RPCPath` and `SignalName` are `Island`; `NoScriptAction` is the no-script form target |
+| `disclosure` | `ui.Collapsible` | `Title` is `Summary` |
+| `scrollspy` | `ui.AnchoredRail` or `ui.TableOfContents` | the selectors keep their names on `AnchoredRailConfig` |
 | `accordion` | `ui.Collapsible` | an exclusive group shares `CollapsibleConfig.Name` |
 | `nestedlist` | `ui.Tree` or `ui.Collapsible` | none |
 | `infinitescroll` | no replacement | append with a poll or an island |
@@ -147,12 +151,12 @@ The hooks moved with the modules. A few that apps wrote by hand:
 
 | Old | New |
 | --- | --- |
-| `data-cui-menu-*`, `data-cui-tabs`, `data-cui-tab` | `data-hui-menu-*`, `data-hui-tabs`, `data-hui-tab` |
-| `data-cui-disclosure`, `data-cui-disclosure-persist` | `data-hui-disclosure`, `data-hui-disclosure-persist` |
+| `data-fui-menu-*`, `data-fui-tabs`, `data-fui-tab` | `data-hui-menu-*`, `data-hui-tabs`, `data-hui-tab` |
+| `data-fui-disclosure`, `data-fui-disclosure-persist` | `data-hui-disclosure`, `data-hui-disclosure-persist` |
 | `data-fui-pane-open`, `-close`, `-key`, `-swap` | `data-hui-pane-open-control`, `-close`, `-key`, `-swap` |
-| `data-fui-pane-deeplink`, `data-cui-scrollspy` | `data-hui-pane-deeplink`, `data-hui-rail` |
-| `data-cui-sidebar*`, `data-cui-combobox*` | `data-hui-sidebar*`, `data-hui-combobox*` |
-| `data-cui-tree-toggle`, `data-cui-multiselect*`, `data-cui-sortable*` | `data-hui-tree-toggle`, `data-hui-multiselect*`, `data-hui-sortable*` |
+| `data-fui-pane-deeplink`, `data-fui-scrollspy` | `data-hui-pane-deeplink`, `data-hui-rail` |
+| `data-fui-sidebar*`, `data-fui-combobox*` | `data-hui-sidebar*`, `data-hui-combobox*` |
+| `data-fui-tree-toggle`, `data-fui-multiselect*`, `data-fui-sortable*` | `data-hui-tree-toggle`, `data-hui-multiselect*`, `data-hui-sortable*` |
 | `data-when-name`, `data-when-value` | `data-hui-when`, `data-hui-when-value` |
 
 ### Components whose markup or config changed
@@ -165,6 +169,8 @@ The hooks moved with the modules. A few that apps wrote by hand:
 | `ui.ValidationSummary` | `ID` is required |
 | `ui.StepWizard` | Takes `Errors`, `Summary` and `ID` like `ui.Form`, and focuses the summary on a failed step |
 | `FormFieldConfig.Input` | A builder, `func(headless.FieldControl) render.HTML`. Build the control with `ui.Control`, a typed field or `ui.PasswordInput`'s `Field`. A closure that ignores its `FieldControl` compiles and loses the field's wiring |
+| `ui.Responsive` | `Breakpoint` is gone: `Below` takes `ui.StackBelowMD` (48rem, the zero value) or `ui.StackBelowLG` (64rem, the old 1024px default) |
+| `ui.TableOfContents` | `Levels` is gone: the list is the `Items` you pass |
 | `ui.PasswordInput` | `Error` is gone (put it on the enclosing field); `ID` is optional when `Field` carries one |
 | `ui.ColorField` | `SwatchValue` is gone and `Name` is required; an invalid value marks the shell `data-invalid` |
 | `ui.ConditionalField` | Renders visible and hides once its module arms; `ConditionalFieldVisible` and `EvaluateInitialState` are gone |
@@ -273,6 +279,8 @@ shell, list/detail, marketing site and docs site end to end.
 | `WithSidebar` | `ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary())` |
 | `WithContainer` | `ui.Container` around `l.Primary()`, the header and the footer |
 | `WithStickyHeader`, `Layout.Wrap`, `app.LayoutBaseCSS` | compose the frame; `WithKey` and `WrapCtx` stay |
+| the `Header`, `Sidebar`, `Footer`, `Container` and `StickyHeader` fields | the same chrome, composed in the build |
+| `Layout.WrapNested`, `WrapNestedCtx` | a `ScreenGroup`, which nests its layout under the default |
 | `ui.SiteHeader`, `ui.SiteFooter`, `ui.DocLayout` and their parts | `gofastr generate package siteheader`, `sitefooter`, `docpage` |
 | `DocCrumb{Label, Href}` | `ui.Crumb{Text, Href}` in `ui.Breadcrumbs` |
 | `DocPager`, `DocPrevNext` | `docpage.Pager` |
@@ -381,6 +389,8 @@ reason waives nothing. [Theming](theming.md) and
 - **`style.ThemeRef.Hash` is a method.** Read `ref.Hash()`.
   Registering a theme override in a package `init` is now safe.
 - **`style.DarkSchemeCSS` is gone.** Set `Theme.DarkColors`.
+- **`theme.Overrides.DarkColors` is gone.** Set `Overrides.Dark`, the
+  typed twin of the colour fields: `Dark: &theme.Overrides{Primary: "#5EEAD4"}`.
 - **Ten legacy colour aliases are gone.** Read the canonical token:
 
   | Removed | Replacement |

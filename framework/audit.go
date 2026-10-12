@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -32,6 +33,8 @@ type AuditConfig struct {
 
 	// Actor resolves the actor id (typically a user id) from the request
 	// context. Return "" when no actor is attached (e.g. system writes).
+	// Nil reads the request's user: its GetID() when the user on the
+	// context (handler.GetUser) has one, else no actor.
 	Actor func(context.Context) string
 
 	// Entities restricts auditing to the named entities. Empty means audit
@@ -97,47 +100,49 @@ func EnsureAuditTable(db *sql.DB, table string) error {
 		actor_id    TEXT,
 		tenant_id   TEXT,
 		created_at  %s NOT NULL,
-		diff        TEXT
+		diff        TEXT,
+		reason      TEXT
 	)`, query.QuoteIdent(safeTable), tsType)
 	if _, err = db.Exec(stmt); err != nil {
 		return err
 	}
-	// Backward-compat: a table created by an older binary has no tenant_id
-	// column. Add it (nullable) so multi-tenant stamping works against an
-	// existing audit table without a manual migration. ADD COLUMN IF NOT
-	// EXISTS keeps this idempotent on both dialects (Postgres + SQLite 3.35+).
-	alter := fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS tenant_id TEXT", query.QuoteIdent(safeTable))
-	if _, err = db.Exec(alter); err != nil {
-		// Fall back to a probe-then-add for dialects without IF NOT EXISTS
-		// on ADD COLUMN. A failure here means the column already exists
-		// (the common case) or the dialect rejects the syntax; either way
-		// we only surface an error if the column is genuinely missing.
-		if !auditColumnExists(db, safeTable, "tenant_id") {
-			plain := fmt.Sprintf("ALTER TABLE %s ADD COLUMN tenant_id TEXT", query.QuoteIdent(safeTable))
-			if _, addErr := db.Exec(plain); addErr != nil {
-				return fmt.Errorf("audit: add tenant_id column: %w", addErr)
+	// A table created by an older binary lacks the columns added since:
+	// tenant_id (multi-tenant stamping) and reason (crud.WithStateOverride).
+	// Add each (nullable) so an existing audit table needs no manual
+	// migration. The live columns come from the catalog (PRAGMA
+	// table_info, information_schema): SQLite has no ADD COLUMN IF NOT
+	// EXISTS, and a "SELECT col ... WHERE 1=0" probe reports no error for
+	// a missing column on this driver.
+	live, err := migrate.ReadLiveColumns(context.Background(), db, safeTable, dialect)
+	if err != nil {
+		return fmt.Errorf("audit: read %s columns: %w", safeTable, err)
+	}
+	return addAuditColumns(db, safeTable, dialect, live)
+}
+
+// addAuditColumns adds each audit column live does not hold. live may be
+// stale: two replicas booting on one old table both read the column as
+// missing, and the one that adds second must not fail. Postgres says ADD
+// COLUMN IF NOT EXISTS; SQLite has no such clause, so a failed ADD COLUMN
+// rereads the catalog and passes when the column is there now.
+func addAuditColumns(db *sql.DB, safeTable string, dialect migrate.Dialect, live map[string]string) error {
+	for _, col := range []string{"tenant_id", "reason"} {
+		if _, ok := live[col]; ok {
+			continue
+		}
+		clause := "ADD COLUMN"
+		if dialect == migrate.DialectPostgres {
+			clause = "ADD COLUMN IF NOT EXISTS"
+		}
+		alter := fmt.Sprintf("ALTER TABLE %s %s %s TEXT", query.QuoteIdent(safeTable), clause, col)
+		if _, err := db.Exec(alter); err != nil {
+			now, rerr := migrate.ReadLiveColumns(context.Background(), db, safeTable, dialect)
+			if _, ok := now[col]; rerr != nil || !ok {
+				return fmt.Errorf("audit: add %s column: %w", col, err)
 			}
 		}
 	}
 	return nil
-}
-
-// auditColumnExists reports whether the named column is present on table.
-// Used as a dialect-agnostic fallback when ADD COLUMN IF NOT EXISTS isn't
-// supported: a plain "SELECT col FROM table WHERE 1=0" succeeds only when
-// the column exists.
-func auditColumnExists(db *sql.DB, table, col string) bool {
-	safeCol, err := query.SafeIdent(col)
-	if err != nil {
-		return false
-	}
-	q := fmt.Sprintf("SELECT %s FROM %s WHERE 1=0", query.QuoteIdent(safeCol), query.QuoteIdent(table))
-	rows, err := db.Query(q)
-	if err != nil {
-		return false
-	}
-	_ = rows.Close()
-	return true
 }
 
 // WithAuditLog enables audit logging on every entity registered on the app
@@ -157,10 +162,21 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 	if err := EnsureAuditTable(a.DB, table); err != nil {
 		panic(fmt.Sprintf("framework: EnsureAuditTable: %v", err))
 	}
+	a.auditTable = table
+	a.auditActor = cfg.actor
 
 	want := map[string]bool{}
 	for _, name := range cfg.Entities {
 		want[name] = true
+	}
+
+	// A state override now has a trail to land in. Every version of a
+	// grouped entity is marked: the hooks below are keyed by name, so all
+	// versions write to them, while Registry.All returns one per name.
+	for _, ent := range a.Registry.AllSorted() {
+		if len(want) == 0 || want[ent.GetName()] {
+			ent.MarkAudited()
+		}
 	}
 
 	for name, ent := range a.Registry.All() {
@@ -181,7 +197,14 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			id := stringifyPK(row, pk)
 			redacted := cfg.applyRedact(ent.GetName(), row)
 			diff := buildAuditCreateDiff(redacted, row, auditMeta(ctx))
-			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpCreate, id, cfg.actor(ctx), diff)
+			// crud.UpsertOne fires AfterCreate for both arms; an override
+			// upsert onto an existing row carries a keyed "state_override"
+			// on ctx, the same seam AfterUpdate reads.
+			op := auditOpCreate
+			if o := crud.AuditOperationFor(ctx, ent.GetName(), id); o != "" {
+				op = auditOp(sanitizeAuditField(o))
+			}
+			return writeAuditRow(ctx, a.DB, table, ent.GetName(), op, id, cfg.actor(ctx), diff)
 		})
 		hr.RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
 			row, ok := data.(map[string]any)
@@ -197,7 +220,16 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 				redactedOld = cfg.applyRedact(ent.GetName(), pre)
 			}
 			diff := buildAuditUpdateDiff(redactedOld, redactedNew, originalOld, row, auditMeta(ctx))
-			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpUpdate, id, cfg.actor(ctx), diff)
+			// A write that is an update in mechanism but its own operation
+			// in meaning (crud.RestoreOne) carries a keyed override on ctx:
+			// it answers only for this entity and record id, so a hook
+			// that writes ANOTHER entity's row mid-restore leaves that
+			// row's audit entry saying "update".
+			op := auditOpUpdate
+			if o := crud.AuditOperationFor(ctx, ent.GetName(), id); o != "" {
+				op = auditOp(sanitizeAuditField(o))
+			}
+			return writeAuditRow(ctx, a.DB, table, ent.GetName(), op, id, cfg.actor(ctx), diff)
 		})
 		hr.RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
 			originalID, ok := data.(string)
@@ -234,7 +266,14 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			} else if meta != nil {
 				diff = buildAuditDeleteDiff(nil, nil, meta)
 			}
-			return writeAuditRow(ctx, a.DB, table, ent.GetName(), auditOpDelete, sanitizeAuditField(recordID), cfg.actor(ctx), diff)
+			// Same override seam as AfterUpdate: crud.PurgeOne's delete of
+			// THIS record is recorded as "purge"; a nested delete of another
+			// entity's row keeps "delete".
+			op := auditOpDelete
+			if o := crud.AuditOperationFor(ctx, ent.GetName(), originalID); o != "" {
+				op = auditOp(sanitizeAuditField(o))
+			}
+			return writeAuditRow(ctx, a.DB, table, ent.GetName(), op, sanitizeAuditField(recordID), cfg.actor(ctx), diff)
 		})
 	}
 	return a
@@ -246,8 +285,9 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 // or to losing audit coverage entirely). The result is passed through
 // sanitizeAuditField to defuse log-injection via control characters.
 func (c AuditConfig) actor(ctx context.Context) string {
-	if c.Actor == nil {
-		return ""
+	resolve := c.Actor
+	if resolve == nil {
+		resolve = requestUserID
 	}
 	var out string
 	func() {
@@ -256,9 +296,22 @@ func (c AuditConfig) actor(ctx context.Context) string {
 				out = ""
 			}
 		}()
-		out = c.Actor(ctx)
+		out = resolve(ctx)
 	}()
 	return sanitizeAuditField(out)
+}
+
+// requestUserID is the default audit actor: the id of the user on the
+// request, "" when there is none or it has no GetID.
+func requestUserID(ctx context.Context) string {
+	u, ok := handler.GetUser(ctx)
+	if !ok || u == nil {
+		return ""
+	}
+	if id, ok := u.(interface{ GetID() string }); ok {
+		return id.GetID()
+	}
+	return ""
 }
 
 // sanitizeAuditField strips control bytes (including newlines and NUL)
@@ -546,6 +599,16 @@ func writeAuditRow(ctx context.Context, db *sql.DB, table, ent string, op auditO
 	// audit trail per tenant. Sanitised like the other TEXT columns to
 	// defuse log-injection via control characters.
 	tenantID := sanitizeAuditField(tenant.GetTenantID(ctx))
+	// A write under crud.WithStateOverride records its reason. The column
+	// is named only then, so a table EnsureAuditTable has not yet widened
+	// keeps taking every other row.
+	if reason := sanitizeAuditField(crud.StateOverrideReason(ctx)); reason != "" {
+		_, err = exec.ExecContext(ctx,
+			fmt.Sprintf("INSERT INTO %s (id, entity, op, record_id, actor_id, tenant_id, created_at, diff, reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)", query.QuoteIdent(safeTable)),
+			id, ent, string(op), recordID, nullIfEmpty(actor), nullIfEmpty(tenantID), time.Now().UTC(), diffArg, reason,
+		)
+		return err
+	}
 	_, err = exec.ExecContext(ctx,
 		fmt.Sprintf("INSERT INTO %s (id, entity, op, record_id, actor_id, tenant_id, created_at, diff) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)", query.QuoteIdent(safeTable)),
 		id, ent, string(op), recordID, nullIfEmpty(actor), nullIfEmpty(tenantID), time.Now().UTC(), diffArg,

@@ -16,7 +16,7 @@ const devMCPExposeEnv = "GOFASTR_DEV_MCP_EXPOSE"
 // bindIsLoopback reports whether a listen address will only accept
 // connections from this machine.
 //
-// The empty host, ":8080", "8080", "", is NOT loopback: Go binds every
+// The empty host (":8080", "8080", and "" itself) is NOT loopback: Go binds every
 // interface for it, which is precisely the exposed case. A hostname that
 // is not a loopback literal is treated as exposed without resolving it;
 // a name that happens to resolve to 127.0.0.1 today can resolve
@@ -25,9 +25,10 @@ const devMCPExposeEnv = "GOFASTR_DEV_MCP_EXPOSE"
 func bindIsLoopback(addr string) bool {
 	addr = strings.TrimSpace(addr)
 	if addr == "" {
-		// No address at all means the caller has not chosen yet; the
-		// server-side default is loopback ("localhost:8080").
-		return true
+		// Start("") binds ":http", every interface on port 80 (see
+		// listenAddrFor). An empty address is the widest bind there is,
+		// not a choice left for later.
+		return false
 	}
 	host := addr
 	if h, _, err := net.SplitHostPort(addr); err == nil {
@@ -49,6 +50,17 @@ func bindIsLoopback(addr string) bool {
 		return ip.IsLoopback()
 	}
 	return false
+}
+
+// listenAddrFor is the address Start actually binds for addr: net/http's
+// default for an empty Addr is ":http", and net.Listen needs it spelled
+// out. The dev MCP guard judges this value, the bind itself, so the guard
+// and the listener cannot disagree about what an empty address means.
+func listenAddrFor(addr string) string {
+	if addr == "" {
+		return ":http"
+	}
+	return addr
 }
 
 // devMCPExposeAllowed reports whether the operator explicitly accepted

@@ -122,7 +122,7 @@ func (pm *PluginManager) InitAll(app *App) error {
 			continue
 		}
 		plugin := pm.plugins[name]
-		if err := callModuleSafe("plugin", name, "init", func() error { return plugin.Init(app) }); err != nil {
+		if err := callModuleSafe(app.logger.Load(), "plugin", name, "init", func() error { return plugin.Init(app) }); err != nil {
 			return err
 		}
 		pm.initialized[name] = true

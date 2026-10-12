@@ -54,6 +54,11 @@ type CounterProps struct {
 	// DurationMS bounds the animation. Zero takes the module's
 	// default; negative is refused.
 	DurationMS int
+	// Display renders the value alone, without the two step buttons:
+	// a figure that animates in (ui.AnimatedCounter), not a control.
+	// The root then carries no group role and ignores Label, and the
+	// value is not a live region.
+	Display bool
 
 	ID         string
 	ExtraAttrs html.Attrs
@@ -82,6 +87,9 @@ func Counter(p CounterProps, s Classes) render.HTML {
 	if p.DurationMS < 0 {
 		panic("headless: Counter DurationMS " + strconv.Itoa(p.DurationMS) + " is negative — a countdown is not an animation duration")
 	}
+	if p.Display && p.Name != "" {
+		panic("headless: Counter Display with Name " + strconv.Quote(p.Name) + " — a display figure is not a form field; drop Name, or Display for a control")
+	}
 	w := p.Strings.Resolve()
 	b := p.Parts.Box(s)
 	// Trimmed: a label of spaces names nothing, so it falls to the
@@ -95,7 +103,17 @@ func Counter(p CounterProps, s Classes) render.HTML {
 		"aria-label": label,
 		"id":         p.ID,
 	}))
-	if p.AnimateFrom != nil {
+	if p.Display {
+		// A figure is text in its sentence, not a group of controls: the
+		// page around it names it (a stat card's label), and a role here
+		// would announce "Counter, group" before the number.
+		delete(own, "role")
+		delete(own, "aria-label")
+	}
+	// The module counts in JavaScript numbers, exact only to 2^53-1:
+	// past that it would round the server's figure, so a value out of
+	// that range renders without the animation.
+	if p.AnimateFrom != nil && jsSafeInt(p.Value) && jsSafeInt(*p.AnimateFrom) {
 		// The animation is presentation: the module that binds these
 		// hooks writes the value from AnimateFrom toward Value and
 		// leaves the number the signal owns alone.
@@ -131,12 +149,19 @@ func Counter(p CounterProps, s Classes) render.HTML {
 			"data-cui-signal-attr": "value",
 		}))
 	} else {
-		value = b.El("span", PartCounterValue, Internal(html.Attrs{
-			"aria-live":       "polite",
-			"data-cui-signal": p.Signal,
-		}), render.Text(strconv.Itoa(p.Value)))
+		live := html.Attrs{"aria-live": "polite", "data-cui-signal": p.Signal}
+		if p.Display {
+			// No step button changes a figure, so there is nothing to
+			// announce, and a live region would read out every frame of
+			// the tick-up animation.
+			delete(live, "aria-live")
+		}
+		value = b.El("span", PartCounterValue, Internal(live), render.Text(strconv.Itoa(p.Value)))
 	}
 
+	if p.Display {
+		return b.El("div", PartRoot, own, value)
+	}
 	return b.El("div", PartRoot, own,
 		b.El("button", PartCounterDecrement, Internal(Merge(dec, Attrs(map[string]string{
 			"type":       "button",
@@ -171,6 +196,11 @@ func init() {
 				HTML: Counter(CounterProps{Signal: "deployed", Label: "Deployed", Value: 4820,
 					AnimateFrom: &zero, DurationMS: 600}, s),
 			}, {
+				Name: "display only",
+				Why:  "a figure that animates in is read, not operated: no step buttons, no group role, and no live region to read out each frame of the tick-up; the page around it names the number",
+				HTML: Counter(CounterProps{Signal: "signups", Value: 12483,
+					AnimateFrom: &zero, Display: true}, s),
+			}, {
 				Name: "the unlabelled group names itself",
 				Why:  "a counter with no label of its own still names its group — the default word is the one Strings carries, so a translated page says it in the reader's language",
 				HTML: Counter(CounterProps{Signal: "hits", Value: 7}, s),
@@ -181,4 +211,10 @@ func init() {
 			}}
 		},
 	})
+}
+
+// jsSafeInt reports whether n survives a JavaScript number unchanged.
+func jsSafeInt(n int) bool {
+	const max = 1<<53 - 1
+	return n >= -max && n <= max
 }

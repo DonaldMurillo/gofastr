@@ -7,11 +7,11 @@ import (
 	"net"
 	"net/http"
 	"runtime/debug"
-	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
 // Caps on the size of pieces that flow into a log entry. Without these,
@@ -174,21 +174,22 @@ func (rw *countingResponseWriter) Unwrap() http.ResponseWriter { return rw.Respo
 // X-Forwarded-For / X-Real-IP are still emitted as a separate
 // `forwarded_for` field but never override `remote`.
 //
-// When trustXFF is true the returned value is the FIRST comma-separated
-// segment of X-Forwarded-For (or X-Real-IP) with surrounding whitespace
-// trimmed, without the trim, a value like "  attacker.example, real"
-// could sneak past downstream allow-list string matching.
+// When trustXFF is true the returned value is the RIGHTMOST
+// X-Forwarded-For entry (then X-Real-IP), the address the proxy in
+// front of the app observed. Entries to its left are whatever the
+// client sent when the proxy appends, so logging the leftmost one let a
+// client choose its own `remote`. A value that does not parse as an IP
+// falls back to r.RemoteAddr; the raw header stays in `forwarded_for`.
 func remoteAddr(r *http.Request, trustXFF bool) string {
 	if trustXFF {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			// First entry is the client; subsequent entries are proxies.
-			if before, _, ok := strings.Cut(xff, ","); ok {
-				return textsafe.Truncate(strings.TrimSpace(before), maxPathLen)
+		if r.Header.Get("X-Forwarded-For") != "" {
+			if ip, ok := clientip.Forwarded(r.Header, clientip.Proxies{}); ok {
+				return ip.String()
 			}
-			return textsafe.Truncate(strings.TrimSpace(xff), maxPathLen)
+			return r.RemoteAddr
 		}
-		if real := r.Header.Get("X-Real-IP"); real != "" {
-			return textsafe.Truncate(strings.TrimSpace(real), maxPathLen)
+		if ip := clientip.ParseHop(r.Header.Get("X-Real-IP")); ip != nil {
+			return ip.String()
 		}
 	}
 	return r.RemoteAddr

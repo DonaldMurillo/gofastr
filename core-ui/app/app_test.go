@@ -460,7 +460,7 @@ func TestStandaloneGroupSkipsDefaultLayout(t *testing.T) {
 
 	// Standalone group with its own shell (e.g. the admin back-office).
 	adminLayout := sidebarShell("admin", &stubComponent{html: render.Raw("<nav>Admin nav</nav>")})
-	admin := NewScreenGroup("/admin/e", adminLayout).Standalone()
+	admin := NewScreenGroup("/admin/entities", adminLayout).Standalone()
 	admin.Screen(NewScreen("customers", &stubComponent{html: render.Raw("<p>Customers</p>")}), nil)
 	a.Router.ScreenGroup(admin)
 
@@ -471,7 +471,7 @@ func TestStandaloneGroupSkipsDefaultLayout(t *testing.T) {
 	plain.Screen(NewScreen("home", &stubComponent{html: render.Raw("<p>Home</p>")}), nil)
 	a.Router.ScreenGroup(plain)
 
-	html, err := a.RenderPage(context.Background(), "/admin/e/customers")
+	html, err := a.RenderPage(context.Background(), "/admin/entities/customers")
 	if err != nil {
 		t.Fatalf("RenderPage admin failed: %v", err)
 	}

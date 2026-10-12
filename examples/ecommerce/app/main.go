@@ -89,6 +89,7 @@ func main() {
 	site := uiapp.NewApp(appName)
 	RegisterGenerated(fwApp, site, db)
 	fwApp.WithSeed(func(ctx context.Context) error {
+		ctx = framework.WithStateOverride(ctx, "seed")
 		// Resolve the bootstrap admin (created by the earlier-registered
 		// admin seed hook) so the demo rows are owned by them; a fresh
 		// signup then starts with an empty workspace and adds its own.

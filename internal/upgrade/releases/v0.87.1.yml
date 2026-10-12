@@ -1,0 +1,11 @@
+version: v0.87.1
+title: Agent detail files move to .agents/, and a sidebar can stay pinned under a sticky header
+notes:
+  - change: "gofastr init, gofastr agents sync and gofastr init --reinit write the generated agent detail files to .agents/ instead of agents/; AGENTS.md, CLAUDE.md and the gofastr-host skill link there"
+    nodetect: "run gofastr agents sync once; it writes .agents/, deletes the old generated files in agents/ and removes the folder when nothing else is in it"
+    breaking: false
+    guidance: "Run `gofastr agents sync` (or `gofastr init --reinit`) once. A hand-written file you kept in agents/ stays where it is; move it if you want it beside the generated ones."
+  - change: "ui.ContentRowConfig.BelowHeader (with Sticky) pins the nav column under a sticky page header, the rest of the viewport tall; interactive.SectionMenuConfig.FillColumn makes a section menu fill that column"
+    nodetect: "additive options; nothing to change unless you want a pinned sidebar under a sticky header"
+    breaking: false
+    guidance: "Optional. For a sidebar that stays put while the page scrolls under a sticky header, set Sticky and BelowHeader on the row, and FillColumn on a SectionMenu inside it."

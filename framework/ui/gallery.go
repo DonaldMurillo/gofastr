@@ -238,9 +238,13 @@ func galleryCSS(_ style.Theme) string {
   list-style: none;
   margin: 0;
   padding: 0;
-  --ui-gallery-cols: 3;
-  --ui-gallery-min: 9.5rem;
-  --ui-gallery-gap: var(--spacing-md, 8px);
+  --_gallery-cols: var(--ui-gallery-cols, 3);
+  --_gallery-min: var(--ui-gallery-min, 9.5rem);
+  /* Knob: --ui-gallery-gap, over the md layout gap step. The root
+     resolves it into a private property rather than setting the knob
+     itself, so a theme's value on :root reaches it and a Gap preset
+     still wins. */
+  --_gallery-gap: var(--ui-gallery-gap, var(--ui-layout-gap-md, var(--spacing-md, 8px)));
 }
 [data-cui-comp="ui-gallery"] .fui-gallery__row {
   margin: 0;
@@ -250,19 +254,28 @@ func galleryCSS(_ style.Theme) string {
   display: block;
   border-radius: var(--radii-md, 8px);
   overflow: hidden;
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   background: var(--color-surface, #FFFFFF);
   text-decoration: none;
   color: inherit;
   cursor: zoom-in;
-  transition: border-color 120ms ease, transform 120ms ease;
+  transition: border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
+/* Knobs: --ui-gallery-item-hover-shadow / -active-shadow and
+   --ui-gallery-item-hover-translate / -active-translate over the
+   shared --ui-press-* knobs. */
 [data-cui-comp="ui-gallery"] .fui-gallery__item:hover {
-  border-color: var(--color-primary, #4F46E5);
+  border-color: var(--color-primary, #18181B);
+  box-shadow: var(--ui-gallery-item-hover-shadow, var(--ui-press-hover-shadow, none));
+  translate: var(--ui-gallery-item-hover-translate, var(--ui-press-hover-translate, none));
+}
+[data-cui-comp="ui-gallery"] .fui-gallery__item:active {
+  box-shadow: var(--ui-gallery-item-active-shadow, var(--ui-press-active-shadow, var(--ui-gallery-item-hover-shadow, var(--ui-press-hover-shadow, none))));
+  translate: var(--ui-gallery-item-active-translate, var(--ui-press-active-translate, var(--ui-gallery-item-hover-translate, var(--ui-press-hover-translate, none))));
 }
 [data-cui-comp="ui-gallery"] .fui-gallery__item:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-gallery"] .fui-gallery__figure {
   margin: 0;
@@ -283,10 +296,10 @@ func galleryCSS(_ style.Theme) string {
 }
 
 /* Gap presets. */
-[data-cui-comp="ui-gallery"].fui-gallery--gap-xs { --ui-gallery-gap: var(--spacing-xs, 2px); }
-[data-cui-comp="ui-gallery"].fui-gallery--gap-sm { --ui-gallery-gap: var(--spacing-sm, 4px); }
-[data-cui-comp="ui-gallery"].fui-gallery--gap-lg { --ui-gallery-gap: var(--spacing-lg, 16px); }
-[data-cui-comp="ui-gallery"].fui-gallery--gap-xl { --ui-gallery-gap: var(--spacing-xl, 24px); }
+[data-cui-comp="ui-gallery"].fui-gallery--gap-xs { --_gallery-gap: var(--ui-layout-gap-xs, var(--spacing-xs, 2px)); }
+[data-cui-comp="ui-gallery"].fui-gallery--gap-sm { --_gallery-gap: var(--ui-layout-gap-sm, var(--spacing-sm, 4px)); }
+[data-cui-comp="ui-gallery"].fui-gallery--gap-lg { --_gallery-gap: var(--ui-layout-gap-lg, var(--spacing-lg, 16px)); }
+[data-cui-comp="ui-gallery"].fui-gallery--gap-xl { --_gallery-gap: var(--ui-layout-gap-xl, var(--spacing-xl, 24px)); }
 
 /* Columns presets — 1..12. */
 [data-cui-comp="ui-gallery"].fui-gallery--cols-1 { --ui-gallery-cols: 1; }
@@ -309,8 +322,8 @@ func galleryCSS(_ style.Theme) string {
    media queries. */
 [data-cui-comp="ui-gallery"]:where(:not(.fui-gallery--strip):not(.fui-gallery--masonry)) {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--ui-gallery-min), calc((100% - (var(--ui-gallery-cols) - 1) * var(--ui-gallery-gap)) / var(--ui-gallery-cols)))), 1fr));
-  gap: var(--ui-gallery-gap);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--_gallery-min), calc((100% - (var(--_gallery-cols) - 1) * var(--_gallery-gap)) / var(--_gallery-cols)))), 1fr));
+  gap: var(--_gallery-gap);
 }
 
 /* ── Strip variant: horizontal scroll-snap ── */
@@ -319,12 +332,12 @@ func galleryCSS(_ style.Theme) string {
   flex-wrap: nowrap;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
-  gap: var(--ui-gallery-gap);
+  gap: var(--_gallery-gap);
   padding-block-end: var(--spacing-xs, 2px);
 }
 .fui-gallery--strip > .fui-gallery__row {
   flex: 0 0 auto;
-  inline-size: 240px;
+  inline-size: var(--ui-gallery-strip-item-width, 240px);
   scroll-snap-align: start;
 }
 
@@ -333,14 +346,14 @@ func galleryCSS(_ style.Theme) string {
    browser drops columns as the container narrows — same responsive contract
    as the grid variant. */
 .fui-gallery--masonry {
-  column-width: var(--ui-gallery-min);
-  column-count: var(--ui-gallery-cols);
-  column-gap: var(--ui-gallery-gap);
+  column-width: var(--_gallery-min);
+  column-count: var(--_gallery-cols);
+  column-gap: var(--_gallery-gap);
   display: block;
 }
 .fui-gallery--masonry > .fui-gallery__row {
   break-inside: avoid;
-  margin-block-end: var(--ui-gallery-gap);
+  margin-block-end: var(--_gallery-gap);
 }
 
 /* ── Caption overlay mode ── */
@@ -353,11 +366,14 @@ func galleryCSS(_ style.Theme) string {
   inset-block-end: 0;
   margin: 0;
   padding: var(--spacing-md, 8px) var(--spacing-sm, 4px) var(--spacing-sm, 4px);
-  color: white;
-  background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+  /* Knobs: --ui-gallery-strip-item-width (240px) is one strip cell;
+     --ui-gallery-caption-fg (white) colours the overlay caption over
+     the shared scrim gradient (--ui-scrim, this site's own 0.7 black). */
+  color: var(--ui-gallery-caption-fg, white);
+  background: linear-gradient(to top, var(--ui-scrim, rgba(0,0,0,0.7)), transparent);
   font-size: var(--text-sm, 0.875rem);
   opacity: 0;
-  transition: opacity 150ms ease;
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 /* The caption is the anchor's sibling in the primitive's markup, so
    the row (the li) carries the hover/focus-within surface. */

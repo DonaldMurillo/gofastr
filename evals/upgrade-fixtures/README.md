@@ -102,6 +102,19 @@ fails the job instead of silently matching nothing. It needs the repo's tags:
 locally `git fetch --tags origin`; the CI job checks out with
 `fetch-depth: 0`.
 
+`TestRemovedExportsHaveNotes` is the inverse. It diffs the exported API of
+the module's public packages (everything outside `internal/`, `cmd/`,
+`examples/`, `evals/`, `benchmarks/`, `testdata/` and nested modules)
+between each release from v0.86.0 on and the tag below it, then between the
+newest tag and the working tree. Every removed package, package-level name,
+or field or method of a surviving type must be found by a note in the
+releases between the two: a `uses`, `shapes` or `fields` entry naming it, or
+an `imports` entry covering its package. v0.86.0 removed 68 exported
+identifiers and shipped notes for 48 of them, so `gofastr upgrade` stayed
+silent on the other twenty while the code that used them no longer
+compiled. Releases before v0.86.0 are not audited. Without the tags
+it fails with how to fetch them, the same as the symbol gate.
+
 ## The shape zoo
 
 `fixtures/shape-zoo/` is a small app pinned to `gofastr@v0.63.0` that holds

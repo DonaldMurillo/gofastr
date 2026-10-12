@@ -32,8 +32,9 @@ type FilterChip struct {
 	// Label is the visible chip text. Required.
 	Label string
 
-	// DismissPath is the POST endpoint that removes this filter on
-	// click of the × button. Required.
+	// DismissPath is the endpoint that removes this filter. With
+	// script the × POSTs here (with DismissBody) and the bar swaps in
+	// the response; without script the × is a link to it. Required.
 	DismissPath string
 
 	// DismissBody is an optional static JSON body sent with the
@@ -133,10 +134,11 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		if f.DismissPath == "" {
 			panic("ui: FilterChip requires DismissPath")
 		}
-		// A chip's dismissal is an in-page state change: the typed
-		// Island carries the endpoint and the signal, and the same
-		// anchor keeps its href for no script. The signal defaults to
-		// the bar's own region.
+		// A chip's dismissal is an in-page state change and a
+		// mutation: the typed Island carries the endpoint and the
+		// signal, the request is a POST with the chip's body (so no
+		// URL is pushed), and the same anchor keeps its href for no
+		// script. The signal defaults to the bar's own region.
 		signal := cfg.RPCSignal
 		if signal == "" {
 			signal = "filter-bar"
@@ -144,11 +146,13 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		// Every chip is built from FilterChip's strings, so the whole
 		// Tag is the component's own.
 		items = append(items, headless.Own(Tag(TagConfig{
-			Label:        f.Label,
-			Variant:      f.Variant,
-			Dismiss:      f.DismissPath,
-			DismissLabel: i18nui.TVars(ctx, i18nui.KeyFilterChipRemove, map[string]string{"label": f.Label}),
-			Island:       headless.Island{Endpoint: f.DismissPath, Signal: signal},
+			Label:         f.Label,
+			Variant:       f.Variant,
+			Dismiss:       f.DismissPath,
+			DismissLabel:  i18nui.TVars(ctx, i18nui.KeyFilterChipRemove, map[string]string{"label": f.Label}),
+			Island:        headless.Island{Endpoint: f.DismissPath, Signal: signal},
+			DismissMethod: "POST",
+			DismissBody:   f.DismissBody,
 		})))
 	}
 
@@ -190,20 +194,24 @@ func filterChipBarCSS(_ style.Theme) string {
   min-height: var(--spacing-touch-target, 44px);
   padding: 0 var(--spacing-md, 8px);
   margin-inline-start: var(--spacing-sm, 4px);
-  border: 1px solid var(--color-border, #d0d0d8);
+  /* A ghost button: the chips carry the state, Clear all stays quiet. */
+  border: 0;
   border-radius: var(--radii-md, 8px);
   background: transparent;
-  color: var(--color-text, #111);
+  color: var(--color-text-muted, #52525B);
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
+  text-decoration: none;
   cursor: pointer;
 }
 [data-cui-comp="ui-filter-bar"] .fui-filter-bar__clear:hover {
-  background: var(--color-surface-soft, #f1f1f3);
+  color: var(--color-text, #09090B);
+  background: var(--color-surface-soft, #F4F4F5);
 }
 [data-cui-comp="ui-filter-bar"] .fui-filter-bar__clear:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 `
 }

@@ -6,8 +6,9 @@
    theming surface (see `gofastr docs theming`). */
 
 /* Editorial display titles: PageHeader titles scale up with tight
-   leading + negative tracking so app screens read as display type. */
-:root {
+   leading + negative tracking so app screens read as display type. The
+   admin keeps the kit's working size. */
+.layout-app, .layout-marketing {
   --ui-page-header-title-size: clamp(1.75rem, 3.5vw, 2.25rem);
   --ui-page-header-title-leading: 1.05;
   --ui-page-header-title-tracking: -0.03em;

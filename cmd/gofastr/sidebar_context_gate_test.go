@@ -209,6 +209,20 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 	if strings.Contains(authedBody, "Sign in") {
 		t.Errorf("a signed-in user is still offered Sign in — the sidebar is not seeing the session:\n%s", snippetAround(authedBody, "Sign in"))
 	}
+
+	// The phone drawer is the same sidebar, fetched as widget chrome per
+	// request. A drawer mounted from a config built once at startup renders
+	// the anonymous footer for everyone, so a signed-in phone user has no
+	// Sign out anywhere in the app shell.
+	chromeResp, err := client.Get(baseURL + "/core-ui/widget/ui-sidebar-drawer/chrome")
+	if err != nil {
+		t.Fatalf("authenticated GET drawer chrome: %v", err)
+	}
+	chrome := readAllBody(chromeResp)
+	chromeResp.Body.Close()
+	if !strings.Contains(chrome, "Sign out") {
+		t.Errorf("the signed-in drawer chrome offers no Sign out — the drawer footer was resolved once at startup:\n%s", chrome)
+	}
 }
 
 func readAllBody(resp *http.Response) string {

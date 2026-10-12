@@ -128,6 +128,8 @@ an app ends up with a bug the framework would have prevented:
   and no later option restored. Replace semantics are deliberate: a merge
   could not tell an explicit zero from an unset field, so `WithConfig` could
   never turn a boolean back off.
-- **Adding a route for in-page state.** Sorting and paginating are islands,
-  not routes. That is a UI question. See
+- **Adding a route for in-page state.** In-page state stays on its route:
+  a list screen's sort, page and filter live in its query string, and a
+  region embedded in a page is an island. Neither gets a path of its own.
+  That is a UI question. See
   [ui-capability-map.md](ui-capability-map.md).

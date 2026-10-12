@@ -118,12 +118,14 @@
       const toastBtn = e.target.closest && e.target.closest('[data-cui-toast]');
       if (toastBtn) {
         e.preventDefault();
-        window.__gofastr.loadModule('headless-feedback').then(() => {
-          try {
-            const cfg = JSON.parse(toastBtn.getAttribute('data-cui-toast'));
-            window.__gofastr.toast(cfg);
-          } catch (_) {}
-        }).catch(() => {});
+        // The header path's dispatcher: it loads the module, and a
+        // page with no stack (NS.toast answers null) or a module that
+        // fails to load still shows the toast in the kernel's
+        // fallback region instead of nothing.
+        try {
+          const cfg = JSON.parse(toastBtn.getAttribute('data-cui-toast'));
+          window.__gofastr._toastOrFallback(cfg);
+        } catch (_) {}
         return;
       }
       const btn = e.target.closest && e.target.closest('[data-cui-open]');
@@ -165,3 +167,21 @@
     });
   }
   _installEagerWidgetDelegators();
+
+  // SPA navigation. widgets-boot re-fetches the live per-page catalog
+  // here; a serverless export has no such endpoint, and the dumped
+  // catalog loaded at boot already holds every widget. So the pass is
+  // local: once that catalog is in, mount any non-hidden widget the
+  // swap left unmounted (_mountByName is idempotent) and open whatever
+  // the destination URL's deep link names.
+  window.addEventListener('gofastr:navigate', () => {
+    _wready.then(() => {
+      const G = window.__gofastr;
+      if (!G || !G._widgetCatalog) return;
+      for (const item of Object.values(G._widgetCatalog)) {
+        if (item.hidden) continue;
+        if (G._mountByName) G._mountByName(item.cfg.name);
+      }
+      if (G._syncDeepLinks) G._syncDeepLinks();
+    });
+  });

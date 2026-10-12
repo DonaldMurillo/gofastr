@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/framework/ui/resource"
+	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/internal/scratchdir"
 )
 
@@ -332,7 +332,7 @@ func assertScreenServesNoRows(t *testing.T, name, baseURL, table string) {
 	// like a data table; a screen that listed the same rows as cards would
 	// pass it. Require the refusal POSITIVELY instead: the screen has to say
 	// it declined, which no renderer of actual rows does.
-	if !strings.Contains(string(body), resource.AccessDeniedTitle) {
+	if !strings.Contains(string(body), entityui.AccessDeniedTitle) {
 		t.Fatalf("%s: GET /%s returned 200 without the access notice while GET /api/%s refuses the same "+
 			"anonymous caller — a screen for refused rows must render the refusal, not merely omit a table",
 			name, table, table)
@@ -393,7 +393,7 @@ func assertScreenServesRows(t *testing.T, name, baseURL, table, restPath string)
 		return restHadRows, false
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if strings.Contains(string(body), resource.AccessDeniedTitle) {
+	if strings.Contains(string(body), entityui.AccessDeniedTitle) {
 		t.Fatalf("%s: GET /%s renders a permission notice while GET /api/%s serves the same anonymous caller — "+
 			"the read gate is tighter than the entity's declared posture", name, table, table)
 	}

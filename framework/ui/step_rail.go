@@ -160,17 +160,15 @@ func stepRailCSS(_ style.Theme) string {
   flex-direction: column;
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, rgba(0,0,0,0.1));
+  border: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.1));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, transparent);
 }
 [data-cui-comp="ui-step-rail"] .fui-step-rail__title {
   margin: 0;
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: var(--font-weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--color-text-subtle, currentColor);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text, currentColor);
 }
 [data-cui-comp="ui-step-rail"] .fui-step-rail__list {
   list-style: none;
@@ -187,7 +185,7 @@ func stepRailCSS(_ style.Theme) string {
   padding: var(--spacing-xs, 2px) var(--spacing-sm, 4px);
   color: var(--color-text-subtle, currentColor);
   text-decoration: none;
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
 }
 [data-cui-comp="ui-step-rail"] .fui-step-rail__link:hover,
 [data-cui-comp="ui-step-rail"] .fui-step-rail__link:focus-visible {
@@ -212,7 +210,7 @@ func stepRailCSS(_ style.Theme) string {
 [data-cui-comp="ui-step-rail"] .fui-step-rail__meta {
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, currentColor);
-  line-height: 1.5;
+  line-height: var(--leading-normal, 1.5);
   /* Long URLs in the meta line must wrap rather than overrun the
      rail's narrow column. The arbitrary break is acceptable because
      the meta line is supplemental copy, not a navigation target. */

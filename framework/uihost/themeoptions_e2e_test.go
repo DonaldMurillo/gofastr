@@ -67,16 +67,17 @@ func TestScopedDarkModeFollowsTheDocument(t *testing.T) {
 	if testing.Short() {
 		t.Skip("browser e2e: needs a real Chrome")
 	}
-	root := theme.Default() // complete dark palette; dark background #111113
+	root := theme.Default() // complete dark palette
+	rootDark := root.DarkColors["background"]
 	scoped := theme.Default()
 	// The scope is visually its own: a primary distinct from the root
-	// theme's (#4F46E5). That also keeps the process-wide override
+	// theme's near-black. That also keeps the process-wide override
 	// registry from re-declaring the app default's primary inside this
 	// test's scope block, which themevariant_test's leak assertion
 	// (correctly) treats as foreign in a variant's app.css.
 	scoped.Colors.Primary = style.Color{Name: "primary", Value: "#7C3AED"}
 	scoped.Colors.Background = style.Color{Name: "background", Value: "#F0FDF4"}
-	scoped.DarkColors["background"] = "#052E16" // distinct from the root's #111113
+	scoped.DarkColors["background"] = "#052E16" // distinct from the root's dark background
 	ref := style.RegisterThemeOverride(scoped)
 
 	body := fmt.Sprintf(
@@ -123,8 +124,8 @@ func TestScopedDarkModeFollowsTheDocument(t *testing.T) {
 	if readVars["in"] != "#052E16" {
 		t.Errorf("dark: scoped --color-background = %q, want the SCOPE's dark #052E16 (the scope must follow the document with its own palette)", readVars["in"])
 	}
-	if !strings.EqualFold(readVars["out"], "#111113") {
-		t.Errorf("dark: root --color-background = %q, want the root theme's #111113", readVars["out"])
+	if !strings.EqualFold(readVars["out"], rootDark) {
+		t.Errorf("dark: root --color-background = %q, want the root theme's %s", readVars["out"], rootDark)
 	}
 }
 
@@ -140,7 +141,7 @@ func TestNestedScopedThemeOptionsWinByProximity(t *testing.T) {
 		t.Skip("browser e2e: needs a real Chrome")
 	}
 	a := theme.Default(theme.Overrides{
-		Primary:    "#7C3AED",          // distinct from the app default's #4F46E5 (see the dark-scope test)
+		Primary:    "#7C3AED",          // distinct from the app default's primary (see the dark-scope test)
 		Dark:       &theme.Overrides{}, // these tests vary options, not the dark palette
 		Components: theme.ComponentOptions{Density: theme.Compact, Button: theme.ButtonOptions{Treatment: theme.Outline, Radius: theme.Square}},
 	})

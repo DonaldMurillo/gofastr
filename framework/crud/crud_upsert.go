@@ -69,20 +69,13 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		delete(body, ch.Entity.Config.TenantColumn())
 	}
 
-	var result map[string]any
+	var result, out map[string]any
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
-		// Preflight against the pre-existing row (matched by PK only, the
-		// same key the ON CONFLICT target uses). Three properties are
-		// enforced here, all FAIL-CLOSED:
-		//   1. A row owned by a different owner / tenant must not be taken
-		//      over (ON CONFLICT DO UPDATE would re-stamp ownership from the
-		//      caller's context and overwrite the victim's data).
-		//   2. A soft-deleted row must not be silently resurrected (it would
-		//      bypass the audit / retention story).
-		// The SELECT is intentionally unscoped by owner/tenant so a foreign
-		// row is DETECTED rather than treated as absent (which would fall
-		// through to a hijacking ON CONFLICT).
-		if err := ch.upsertPreflight(ctx, body); err != nil {
+		// A storage key in a file field must be one this caller uploaded
+		// or one already on the row it is writing (media_provenance.go).
+		// Checked on the caller's body, before hooks add their own values.
+		if err := ch.checkMediaProvenance(ctx, body,
+			ch.currentMediaKeys(ctx, req, body[ch.PrimaryKey])); err != nil {
 			return err
 		}
 		ch.InjectTenant(body, ctx)
@@ -104,16 +97,51 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			}
 		}
 		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.BeforeCreate, body); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.BeforeCreate, body); err != nil {
 				return &beforeHookError{err: err}
 			}
 		}
-		if err := ch.coerceIntColumnValues(body); err != nil {
+		if err := ch.coerceNumberColumnValues(body); err != nil {
 			return err
 		}
 		vr := schema.ValidateAll(ch.entitySchema(), body)
 		if !vr.Valid {
 			return &ValidationError{fields: vr.Errors}
+		}
+
+		// Preflight against the pre-existing row (matched by PK only, the
+		// same key the ON CONFLICT target uses). Both properties are
+		// FAIL-CLOSED:
+		//   1. A row owned by a different owner / tenant must not be taken
+		//      over (ON CONFLICT DO UPDATE would re-stamp ownership from the
+		//      caller's context and overwrite the victim's data).
+		//   2. A soft-deleted row must not be silently resurrected (it would
+		//      bypass the audit / retention story).
+		// The SELECT is intentionally unscoped by owner/tenant so a foreign
+		// row is DETECTED rather than treated as absent (which would fall
+		// through to a hijacking ON CONFLICT).
+		//
+		// It runs AFTER the BeforeCreate hooks and integer coercion, so it
+		// reads the key the INSERT will actually conflict on: a hook that
+		// derives or normalizes the PK used to move the conflict onto
+		// another owner's row after the check. It is still a separate read,
+		// so a row another session commits in between is caught by the
+		// scope predicate on the DO UPDATE below, not here.
+		if err := ch.upsertPreflight(ctx, body); err != nil {
+			return err
+		}
+		// The same belongs_to write-side boundary doCreate and doUpdate
+		// enforce: an FK in the body must resolve under the target's own
+		// owner / tenant / read scopes for this caller. Covers both the
+		// insert arm and the update arm, which share this body.
+		if err := ch.checkBelongsToScope(ctx, body); err != nil {
+			return err
+		}
+		// The state check, as an update of the existing row or a create
+		// (states.go).
+		var err error
+		if ctx, err = ch.checkStateUpsert(ctx, req, body); err != nil {
+			return err
 		}
 
 		// Build the column + value lists, same shape Create uses: auto-gen
@@ -126,6 +154,10 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// WithServerWrites(ctx).
 		var cols []string
 		var vals []any
+		// sent holds the columns the body carried, before a Default fills
+		// an omitted one: DO UPDATE SET may name a guarded column only when
+		// the caller sent it.
+		sent := map[string]bool{}
 		for _, f := range ch.Entity.GetFields() {
 			if f.AutoGenerate == schema.AutoIncrement {
 				// Omit when no real pk was supplied: the DB assigns it
@@ -157,11 +189,12 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				continue
 			}
 			if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.Scope.OwnerField {
-				if !serverWrites(ctx) {
+				if !serverWrites(ctx) && !ch.stateOverrideColumn(ctx, f.Name) {
 					continue
 				}
 			}
 			val, ok := body[f.Name]
+			sent[f.Name] = ok
 			if !ok {
 				if f.Default != nil {
 					val = f.Default
@@ -187,6 +220,11 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				continue
 			}
 			if isAutoField(ch.Entity, c) {
+				continue
+			}
+			// A stored state stays put on conflict unless the caller sent
+			// the column under a state override (states.go).
+			if !ch.upsertSetsGuarded(ctx, c, sent[c]) {
 				continue
 			}
 			setParts = append(setParts, fmt.Sprintf("%s = EXCLUDED.%s", c, c))
@@ -216,12 +254,27 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		} else {
 			sb.WriteString("UPDATE SET ")
 			sb.WriteString(strings.Join(setParts, ", "))
+			if guard := ch.upsertConflictGuard(); guard != "" {
+				sb.WriteString(" WHERE ")
+				sb.WriteString(guard)
+			}
 		}
 		sb.WriteString(" RETURNING ")
 		sb.WriteString(strings.Join(visFields, ", "))
 
 		row := ch.DB.QueryRowContext(ctx, sb.String(), vals...)
 		res, err := ch.scanOne(row, visFields)
+		if errors.Is(err, sql.ErrNoRows) && len(setParts) > 0 {
+			// The conflict row failed the DO UPDATE scope guard: it
+			// belongs to another owner or tenant, or is soft-deleted, and
+			// was left untouched. Re-run the preflight to report which;
+			// it can only come back clean if the row changed again in
+			// between, and that is still a refusal.
+			if perr := ch.upsertPreflight(ctx, body); perr != nil {
+				return perr
+			}
+			return errUpsertForeignRow
+		}
 		if errors.Is(err, sql.ErrNoRows) && len(setParts) == 0 {
 			// DO NOTHING fired against an existing row (nothing to update),
 			// so RETURNING produced zero rows. The contract is "return the
@@ -255,7 +308,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		result = res
 
 		if ch.Hooks != nil {
-			if err := ch.Hooks.ExecuteHooks(ctx, hook.AfterCreate, result); err != nil {
+			if err := runHooks(ch.Hooks, ctx, hook.AfterCreate, result); err != nil {
 				return fmt.Errorf("after-create hook: %w", err)
 			}
 		}
@@ -264,13 +317,17 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err := ch.StageEvent(ctx, event.EntityCreated, result); err != nil {
 			return fmt.Errorf("stage event: %w", err)
 		}
-		return nil
+		// The DO UPDATE RETURNING is a read handed to the caller: a row
+		// the caller's ReadScope hides comes back as its id only, as the
+		// DO NOTHING fallback's scoped SELECT already ensures for its arm.
+		out, err = ch.scopedReadBack(ctx, result)
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
 	ch.EmitEvent(ctx, event.EntityCreated, result)
-	return result, nil
+	return out, nil
 }
 
 // upsertPreflight inspects the pre-existing row (if any) matching the body's
@@ -340,6 +397,36 @@ func (ch *CrudHandler) upsertPreflight(ctx context.Context, body map[string]any)
 		}
 	}
 	return nil
+}
+
+// upsertConflictGuard renders the WHERE predicate for UpsertOne's ON
+// CONFLICT DO UPDATE, so the statement enforces scope itself: the existing
+// row is updated only when its owner and tenant equal the incoming row's
+// (both stamped from ctx) and it is not soft-deleted. A conflict row that
+// fails the predicate is left alone and RETURNING yields nothing, which
+// UpsertOne maps to a refusal. Empty when the entity has no such scope.
+//
+// The preflight cannot give this guarantee alone: it is a separate read,
+// and under READ COMMITTED a row another session commits after it is
+// still the row ON CONFLICT resolves against.
+func (ch *CrudHandler) upsertConflictGuard() string {
+	scope := ch.Entity.Config.Scope
+	// The existing row is named by the target table; Postgres requires the
+	// qualifier (an unqualified column is ambiguous with EXCLUDED) and
+	// SQLite accepts it.
+	tbl := ch.Entity.GetTable()
+	var guards []string
+	if of := scope.OwnerField; of != "" {
+		guards = append(guards, fmt.Sprintf("%s.%s = EXCLUDED.%s", tbl, of, of))
+	}
+	if scope.MultiTenant {
+		tc := ch.Entity.Config.TenantColumn()
+		guards = append(guards, fmt.Sprintf("%s.%s = EXCLUDED.%s", tbl, tc, tc))
+	}
+	if scope.SoftDelete {
+		guards = append(guards, tbl+".deleted_at IS NULL")
+	}
+	return strings.Join(guards, " AND ")
 }
 
 // isAutoField reports whether a field name corresponds to an auto-generated

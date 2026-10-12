@@ -125,6 +125,32 @@ func TestFilesMapToImportClosure(t *testing.T) {
 	}
 }
 
+// A test that runs one of the module's commands (go run <module>/cmd/x)
+// depends on that command's source and everything it imports, with no
+// import edge for go list to report.
+func TestGoRunOfACommandIsATestEdge(t *testing.T) {
+	root := newRepo(t)
+	extra := map[string]string{
+		"g/main.go":   "package main\n\nimport \"example.com/m/c\"\n\nfunc main() { _ = c.C() }\n",
+		"h/h.go":      "package h\n",
+		"h/h_test.go": "package h\n\nimport (\n\t\"os/exec\"\n\t\"testing\"\n)\n\nfunc TestH(t *testing.T) { _ = exec.Command(\"go\", \"run\", \"example.com/m/g\") }\n",
+	}
+	for name, body := range extra {
+		p := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want(t, run(t, options{root: root, files: []string{"g/main.go"}}), "g", "h")
+	want(t, run(t, options{root: root, files: []string{"c/c.go"}}), "c", "d", "g", "h")
+	// A non-main package named in a string is not a run: e names b only
+	// through its import, and a library path in a string adds nothing.
+	want(t, run(t, options{root: root, files: []string{"f/f.go"}}), "f")
+}
+
 func TestModuleFilesWidenToEverything(t *testing.T) {
 	root := newRepo(t)
 	all := []string{"a", "b", "c", "d", "e", "f"}

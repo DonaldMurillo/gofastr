@@ -6,6 +6,7 @@ package headless
 // happened. Same harness as behavior_e2e_test.go.
 
 import (
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -232,5 +233,44 @@ func TestE2E_TagInputEnterCommitsWithoutSubmittingTheForm(t *testing.T) {
 	// IS the implicit submission.
 	if submits != 0 {
 		t.Fatalf("an Enter in the field submitted the form (%d submit(s)) — the keydown's preventDefault is the guard and it did not hold", submits)
+	}
+}
+
+// A chip value carrying replacement-pattern bytes ($&, $$) lands in
+// the chip's labels and the live region literally: the templates are
+// filled with a function, so String.prototype.replace never expands
+// the user's text against the template.
+func TestE2E_TagInputDollarValueIsLiteral(t *testing.T) {
+	body := TagInput(TagInputProps{Name: "tags", Label: "Tags"}, nil)
+	b := startBehaviorServer(t, string(body))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, controlsLoadedExpr(CollectionsBehaviorName)) {
+		t.Fatal("the tag field marker never loaded headless-collections")
+	}
+	const v = `a$&b$$c`
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`(function(){const f=document.querySelector('[data-hui-tag-input-field]');f.value='a$&b$$c';f.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));})()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `document.querySelectorAll('[data-hui-tag-input-remove]').length === 1 &&
+		document.querySelector('[data-hui-tag-input-status]').textContent !== ''`) {
+		t.Fatal("Enter did not commit the draft as a chip and announce it")
+	}
+	var got struct {
+		Chip, Button, Status string
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`({
+		Chip: document.querySelector('li[data-hui-tag-input-remove]').getAttribute('aria-label'),
+		Button: document.querySelector('li[data-hui-tag-input-remove] button').getAttribute('aria-label'),
+		Status: document.querySelector('[data-hui-tag-input-status]').textContent,
+	})`, &got)); err != nil {
+		t.Fatal(err)
+	}
+	want := fmt.Sprintf(DefaultStrings().RemoveLabelled, v)
+	if got.Chip != want || got.Button != want {
+		t.Errorf("remove labels expanded the value: chip %q, button %q, want %q", got.Chip, got.Button, want)
+	}
+	if got.Status != v+" added" {
+		t.Errorf("added sentence expanded the value: %q, want %q", got.Status, v+" added")
 	}
 }

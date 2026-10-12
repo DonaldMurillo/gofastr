@@ -363,15 +363,22 @@ func (rp *RolePolicy) ReplaceRole(role string, perms ...Permission) error {
 	if err != nil {
 		return err
 	}
+	rp.replacePrepared(role, prepared)
+	return nil
+}
+
+// replacePrepared installs an already prepared (expanded, validated,
+// de-duplicated) set as role's permissions. GrantStore's reload paths
+// prepare first so they can subtract tombstones from the EXPANDED set, then
+// install through here instead of preparing a second time.
+func (rp *RolePolicy) replacePrepared(role string, prepared []Permission) {
 	rp.mu.Lock()
 	defer rp.mu.Unlock()
-	// prepareGrants already deduped and allocated fresh backing, but copy
-	// so future append-style mutations of rolePermissions[role] can't
+	// Copy so future append-style mutations of rolePermissions[role] can't
 	// retroactively edit the caller's slice.
 	out := make([]Permission, len(prepared))
 	copy(out, prepared)
 	rp.rolePermissions[role] = out
-	return nil
 }
 
 // permissionsFor returns a defensive snapshot of permissions for the
@@ -505,6 +512,12 @@ func Middleware(policy *RolePolicy, roles func(ctx context.Context) []string) fu
 			ctx := WithPolicy(r.Context(), policy)
 			if roles != nil {
 				ctx = WithRoles(ctx, roles(ctx))
+				// A request that stays open re-resolves its roles for the
+				// refreshed principal (handler.RecheckPrincipal), so a role
+				// dropped mid-stream is seen at the next check.
+				ctx = handler.AddPrincipalCheck(ctx, func(c context.Context) (context.Context, bool) {
+					return WithRoles(c, roles(c)), true
+				})
 			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})

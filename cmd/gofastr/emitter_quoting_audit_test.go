@@ -165,6 +165,22 @@ entities:
         name: __RELATION_NAME__
         entity: users
         foreign_key: __RELATION_FK__
+    states:
+      field: status
+      advisory: true
+      transitions:
+        - key: publish
+          label: __TRANS_LABEL__
+          from: [__TRANS_STATUS__]
+          to: published
+          variant: __TRANS_VARIANT__
+    display:
+      singular: __DISPLAY_SINGULAR__
+      facets: [__LIST_SEARCH__]
+      fields:
+        ctrlmark:
+          label: __FIELDHINT_LABEL__
+          show_when: 'status = "published"'
   - name: users
     crud: true
     fields:
@@ -300,8 +316,6 @@ screens:
         fields: [__LIST_FIELD__, status]
         limit: 5
         empty_text: __LIST_EMPTY__
-        search: __LIST_SEARCH__
-        filters: [status]
         create: true
 
   - name: ticket
@@ -309,11 +323,6 @@ screens:
     body:
       - kind: entity_detail
         entity: tickets
-        transitions:
-          - label: __TRANS_LABEL__
-            status: __TRANS_STATUS__
-            variant: __TRANS_VARIANT__
-            stamp: published_on
 
   - name: form
     route: /form
@@ -447,11 +456,13 @@ var auditControlValues = map[string]string{
 	"__LIST_HEADING__":      "Tickets",
 	"__LIST_FIELD__":        "ctrlmark",
 	"__LIST_EMPTY__":        "none yet",
-	"__LIST_SEARCH__":       "ctrlmark",
+	"__FORM_TITLE__":        "New ticket",
 	"__TRANS_LABEL__":       "Publish",
 	"__TRANS_STATUS__":      "published",
 	"__TRANS_VARIANT__":     "primary",
-	"__FORM_TITLE__":        "New ticket",
+	"__DISPLAY_SINGULAR__":  "Ticket",
+	"__LIST_SEARCH__":       "ctrlmark",
+	"__FIELDHINT_LABEL__":   "Mark",
 	"__FORM_MODE__":         "create",
 	"__LOGIN_TEXT__":        "Sign in",
 	"__LOGIN_ACTION__":      "/auth/login",
@@ -637,9 +648,10 @@ func siteMarker(name string) string {
 		"props.section.id": "__SECTION_ID__", "props.card.heading": "__CARD_HEADING__",
 		"props.card.text": "__CARD_TEXT__", "block.child.text": "__CHILD_TEXT__",
 		"entity_list.heading": "__LIST_HEADING__", "entity_list.fields[]": "__LIST_FIELD__",
-		"entity_list.empty_text": "__LIST_EMPTY__", "entity_list.search": "__LIST_SEARCH__",
-		"entity_detail.transition.label": "__TRANS_LABEL__", "entity_detail.transition.status": "__TRANS_STATUS__",
-		"entity_detail.transition.variant": "__TRANS_VARIANT__", "entity_form.title": "__FORM_TITLE__",
+		"entity_list.empty_text": "__LIST_EMPTY__", "entity_form.title": "__FORM_TITLE__",
+		"entity.states.move.label": "__TRANS_LABEL__", "entity.states.move.from[]": "__TRANS_STATUS__",
+		"entity.states.move.variant": "__TRANS_VARIANT__", "entity.display.singular": "__DISPLAY_SINGULAR__",
+		"entity.display.facets[]": "__LIST_SEARCH__", "entity.display.field.label": "__FIELDHINT_LABEL__",
 		"entity_form.mode": "__FORM_MODE__", "login_form.text": "__LOGIN_TEXT__",
 		"login_form.props.action": "__LOGIN_ACTION__", "login_form.props.next": "__LOGIN_NEXT__",
 		"nav.label": "__NAV_LABEL__", "nav.icon": "__NAV_ICON__", "nav.role": "__NAV_ROLE__",

@@ -156,8 +156,8 @@ func TestSetRetry(t *testing.T) {
 	sse.SetRetry(5)
 
 	body := rec.Body.String()
-	if !strings.Contains(body, "retry: 5\n") {
-		t.Errorf("expected retry field in body, got %q", body)
+	if !strings.Contains(body, "retry: 5000\n\n") {
+		t.Errorf("expected millisecond retry field and event terminator in body, got %q", body)
 	}
 }
 

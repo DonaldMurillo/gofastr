@@ -231,8 +231,15 @@ func TestMarketingChromeThemeExtendWithoutPalette(t *testing.T) {
 	}
 	files := filesByName(mustRenderBlueprintFiles(t, bp))
 	appGo := files["app.go"]
-	if !strings.Contains(appGo, "style.DefaultTheme().Extend(siteheader.Tokens)") {
-		t.Errorf("theme-less marketing app does not Extend the default theme with siteheader.Tokens:\n%s", appGo)
+	// theme.Default, not style.DefaultTheme: the core-ui baseline is
+	// light-only, so a generated app told the browser it was dark and
+	// painted a white page (caught screenshotting a generated landing
+	// page under prefers-color-scheme: dark).
+	if !strings.Contains(appGo, "theme.Default().Extend(siteheader.Tokens)") {
+		t.Errorf("theme-less marketing app does not Extend the adaptive default theme with siteheader.Tokens:\n%s", appGo)
+	}
+	if !strings.Contains(appGo, `"github.com/DonaldMurillo/gofastr/framework/ui/theme"`) {
+		t.Errorf("app.go does not import framework/ui/theme:\n%s", appGo)
 	}
 }
 

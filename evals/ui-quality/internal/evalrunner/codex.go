@@ -175,7 +175,8 @@ Rules for evaluation integrity:
   shell commands still work, inspect the apply_patch wrapper and invoke its
   signed codex executable with --codex-run-as-apply-patch. Split large patches
   if needed. Do not abandon the implementation because of that known tool path.
-- Do not merely describe the work. Make the workspace runnable with go run .
+- Do not merely describe the work. The harness builds the main package with
+  go build and starts the binary itself, so leave the workspace building.
 `
 }
 

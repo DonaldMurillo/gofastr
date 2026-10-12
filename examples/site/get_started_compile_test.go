@@ -105,6 +105,7 @@ func gsSplitLines(body string) []string {
 	for _, p := range parts[1:] { // [0] is the preamble before the first line
 		line := html.UnescapeString(gsStripTags(p))
 		line = strings.ReplaceAll(line, "\u200b", "") // blank-line zero-width space
+		line = strings.TrimSuffix(line, "\n")         // every line but the last ends in its own newline
 		lines = append(lines, line)
 	}
 	return lines

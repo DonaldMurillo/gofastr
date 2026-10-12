@@ -330,7 +330,7 @@ func TestCard_NilBodyHandled(t *testing.T) {
 	// The primitive keeps the body element in the tree (its contract:
 	// the body is where a swap lands), and the sheet collapses it
 	// when empty, so a bodiless card gains no space.
-	if !strings.Contains(s, `<div class="fui-card__body"></div>`) {
+	if !strings.Contains(s, `<div class="fui-card__body" data-cui-internal=""></div>`) {
 		t.Errorf("SECURITY: [card-nil-body] the body element is not the empty node the sheet collapses:\n  %s", s)
 	}
 }

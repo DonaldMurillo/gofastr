@@ -384,6 +384,19 @@ func TestStreamWithoutFlusher32004(t *testing.T) {
 	if rec.Header().Get("Content-Type") != "application/json" {
 		t.Fatalf("content type = %q", rec.Header().Get("Content-Type"))
 	}
+	_, total, err := h.srv.store.ListTasks(context.Background(), "alice", ListQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 0 {
+		t.Fatalf("non-streaming response writer left %d task rows behind", total)
+	}
+	h.srv.mu.Lock()
+	activeRuns := len(h.srv.runs)
+	h.srv.mu.Unlock()
+	if activeRuns != 0 {
+		t.Fatalf("non-streaming response writer leaked %d run registrations", activeRuns)
+	}
 }
 
 // nonFlusher hides the recorder's Flush method behind the bare

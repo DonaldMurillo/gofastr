@@ -138,7 +138,7 @@ var repeaterStyle = registry.RegisterStyle("ui-repeater", repeaterCSS)
 func repeaterCSS(t style.Theme) string {
 	return `[data-cui-comp="ui-repeater"] { display: flex; flex-direction: column; gap: var(--spacing-sm); }
 [data-cui-comp="ui-repeater"] .fui-repeater__items { display: flex; flex-direction: column; gap: var(--spacing-md); }
-[data-cui-comp="ui-repeater"] .fui-repeater__item { display: flex; gap: var(--spacing-sm); align-items: flex-start; padding: var(--spacing-sm); border: 1px solid var(--color-border); border-radius: var(--radii-md); }
+[data-cui-comp="ui-repeater"] .fui-repeater__item { display: flex; gap: var(--spacing-sm); align-items: flex-start; padding: var(--spacing-sm); border: var(--stroke-thin, 1px) solid var(--color-border); border-radius: var(--radii-md); }
 [data-cui-comp="ui-repeater"] .fui-repeater__item-fields { flex: 1; display: grid; gap: var(--spacing-sm); }
 [data-cui-comp="ui-repeater"] .fui-repeater__add { align-self: flex-start; }
 /* Scoped copy of the visually-hidden recipe: the status live region

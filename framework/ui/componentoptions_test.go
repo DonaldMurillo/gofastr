@@ -44,7 +44,7 @@ func TestCompilerEmitsRadiusVariables(t *testing.T) {
 	}{
 		{theme.Round, "var(--radii-md)"},
 		{theme.Square, "0"},
-		{theme.Pill, "9999px"},
+		{theme.Pill, "var(--radii-full)"},
 	} {
 		css := rootOptionCSS(theme.ComponentOptions{Button: theme.ButtonOptions{Radius: tc.radius}})
 		if !strings.Contains(css, "--fui-button-radius: "+tc.value+";") {
@@ -99,9 +99,9 @@ func TestCompilerEmitsTreatmentVariables(t *testing.T) {
 		bg, fg    string
 		border    string
 	}{
-		{theme.Filled, "var(--color-primary)", "var(--color-primary-fg)", "transparent"},
+		{theme.Filled, "var(--color-primary)", "var(--color-primary-fg)", buttonEdge},
 		{theme.Outline, "transparent", "var(--color-primary)", "var(--color-primary)"},
-		{theme.Soft, "color-mix(in srgb, var(--color-primary) 15%, transparent)", "var(--color-primary)", "transparent"},
+		{theme.Soft, "color-mix(in srgb, var(--color-primary) 15%, transparent)", "var(--color-primary)", buttonEdge},
 	} {
 		css := rootOptionCSS(theme.ComponentOptions{Button: theme.ButtonOptions{Treatment: tc.treatment}})
 		for _, variant := range []struct {
@@ -176,10 +176,10 @@ func TestOptionlessThemeCarriesTheRootFloor(t *testing.T) {
 		"--fui-button-radius: var(--radii-md);",
 		"--fui-button-primary-bg: var(--color-primary);",
 		"--fui-button-primary-fg: var(--color-primary-fg);",
-		"--fui-button-primary-border: transparent;",
+		"--fui-button-primary-border: var(--ui-button-edge, transparent);",
 		"--fui-button-danger-bg: var(--color-danger);",
 		"--fui-button-danger-fg: var(--color-danger-fg);",
-		"--fui-button-danger-border: transparent;",
+		"--fui-button-danger-border: var(--ui-button-edge, transparent);",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("optionless theme's :root floor missing %s\nroot options block:\n%s", want, css)
@@ -196,12 +196,98 @@ func TestOptionlessThemeCarriesTheRootFloor(t *testing.T) {
 	}
 }
 
-// A scoped theme with no options emits no option variables and inherits
-// its parent's — the nesting contract. The floor is a :root-only
-// guarantee; leaking it into scope blocks would block inheritance.
-func TestOptionlessScopeBlockEmitsNoOptions(t *testing.T) {
-	if css := style.ThemeOverrideCSS("probe", style.Theme{}); strings.Contains(css, "--fui-") {
-		t.Errorf("an optionless scope block emitted option variables:\n%s", css)
+// A partial root map — Components{"density": "compact"}, the shape the
+// `gofastr theme init` scaffold invites ("declare Components only to
+// deviate") — must keep the rest of the default floor at :root. When
+// the floor applied only to an EMPTY map, this theme emitted the
+// density pair and nothing else: no --fui-button-primary-* trio and no
+// --fui-field-*, so primary and danger buttons drew with no fill and
+// Validate still returned nil.
+func TestPartialRootThemeKeepsDefaultFloor(t *testing.T) {
+	th := style.DefaultTheme()
+	th.Components = map[string]string{"density": "compact"}
+	css := th.CSSCustomProperties()
+	for _, want := range []string{
+		"--fui-density-control-h: 36px;",
+		"--fui-button-primary-bg: var(--color-primary);",
+		"--fui-button-danger-bg: var(--color-danger);",
+		"--fui-button-radius: var(--radii-md);",
+		"--fui-field-radius: var(--radii-md);",
+		"--fui-field-columns: minmax(0, 1fr);",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("partial Components dropped %s from the :root floor:\n%s", want, css)
+		}
+	}
+	if strings.Contains(css, "--fui-density-control-h: var(--spacing-touch-target);") {
+		t.Error("the default floor overrode the theme's own compact density")
+	}
+}
+
+// A scoped theme with no options declares the complete default set,
+// the same floor :root gets. This replaced an earlier contract in which
+// an optionless scope emitted nothing and inherited its parent's
+// variables: those variables arrive already resolved against the
+// parent's palette (var() computes where it is declared), so a scope
+// with its own palette drew the parent's colours. Unset keys now reset
+// to the framework defaults at every boundary instead of inheriting an
+// enclosing scope's choice, which is what theme.Default themes already
+// did.
+func TestOptionlessScopeDeclaresDefaults(t *testing.T) {
+	css := style.ThemeOverrideCSS("probe", style.Theme{})
+	for _, want := range []string{
+		"--fui-density-control-h: var(--spacing-touch-target);",
+		"--fui-button-radius: var(--radii-md);",
+		"--fui-button-primary-bg: var(--color-primary);",
+		"--fui-field-radius: var(--radii-md);",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("optionless scope block missing default %s:\n%s", want, css)
+		}
+	}
+}
+
+// paletteOnlyTheme is examples/meridian's ink band in miniature: a
+// scoped override built from style.DefaultTheme with its own primary
+// pair and a dark palette, and no Components of its own.
+func paletteOnlyTheme() style.Theme {
+	th := style.DefaultTheme()
+	th.Colors.Primary.Value = "#8B80F2"
+	th.Colors.PrimaryFg.Value = "#15141B"
+	th.DarkColors = map[string]string{"primary": "#8B80F2", "primary-fg": "#15141B"}
+	return th
+}
+
+// A palette-only scope must still re-declare the palette-referencing
+// option variables. --fui-button-primary-bg: var(--color-primary)
+// resolves where it is declared, so with the declaration only at :root
+// a primary button inside ui.Themed(inkBand, …) drew the ROOT's primary
+// (indigo, white ink) instead of the scope's.
+func TestPaletteOnlyScopeRebindsOptions(t *testing.T) {
+	css := style.ThemeOverrideCSS("h", paletteOnlyTheme())
+	for _, probe := range []struct{ block, opener string }{
+		{"light", ".cui-theme-h {\n"},
+		{"explicit dark", "\n[data-color-scheme=\"dark\"] .cui-theme-h {\n"},
+		{"media dark", "  :root:not([data-color-scheme=\"light\"]) .cui-theme-h {\n"},
+	} {
+		i := strings.Index(css, probe.opener)
+		if i < 0 {
+			t.Fatalf("%s scope block missing its opener %q in:\n%s", probe.block, probe.opener, css)
+		}
+		end := strings.Index(css[i:], "\n}")
+		if end < 0 {
+			t.Fatalf("%s scope block missing its closer in:\n%s", probe.block, css)
+		}
+		body := css[i : i+end]
+		for _, want := range []string{
+			"--fui-button-primary-bg: var(--color-primary);",
+			"--fui-button-primary-fg: var(--color-primary-fg);",
+			"--fui-button-danger-bg: var(--color-danger);",
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s scope block missing %s:\n%s", probe.block, want, body)
+			}
+		}
 	}
 }
 

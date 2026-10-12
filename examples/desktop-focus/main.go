@@ -43,7 +43,7 @@ import (
 var pageJS []byte
 
 // appID is the reverse-DNS identity: it names the data directory under
-// the OS user config dir and the bundle identifier of a built .app.
+// the OS user config dir and the identifier of a built desktop app.
 const appID = "dev.gofastr.desktop-focus"
 
 var serveFlag = flag.String("serve", "", "serve the same app over HTTP at this address instead of opening a desktop window")
@@ -192,7 +192,7 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, *Engine, e
 		},
 		Menu: &desktop.Menu{Items: []desktop.MenuItem{
 			{Title: "File", Children: []desktop.MenuItem{
-				{Title: "New task", Key: "cmd+n", Navigate: "/tasks/new"},
+				{Title: "New task", Key: "cmd+n", Navigate: "/tasks/create"},
 				{Title: "Start / Pause", Key: "cmd+shift+s", Handler: func(ctx context.Context) error {
 					return toggleTimer(ctx, eng)
 				}},

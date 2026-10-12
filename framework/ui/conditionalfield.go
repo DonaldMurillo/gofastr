@@ -27,8 +27,17 @@ type ConditionalFieldConfig struct {
 	WhenName string
 
 	// WhenValue is the value that triggers showing the children.
-	// For checkboxes/radios, this matches the value attribute. Required.
+	// For checkboxes/radios, this matches the value attribute.
+	// Mutually exclusive with WhenValues. Required unless WhenValues
+	// is set.
 	WhenValue string
+
+	// WhenValues shows the children while the watched field's value is
+	// ANY of the listed values — the "field in [v1, v2]" condition.
+	// Mutually exclusive with WhenValue; per-value rules match
+	// WhenValue's (no empty strings). Select, radio-group and checkbox
+	// controllers work the same as they do for WhenValue.
+	WhenValues []string
 
 	// Children is the content to show when the condition is met.
 	Children []render.HTML
@@ -46,20 +55,25 @@ type ConditionalFieldConfig struct {
 
 // ConditionalField renders a container that is visible on first paint
 // and hidden by the headless runtime module until the watched field
-// matches WhenValue. The watched field is resolved the way the form
+// matches WhenValue, or any value in WhenValues. The watched field is
+// resolved the way the form
 // would submit it: the checked radio's value, a checkbox's value when
 // checked, any other control's value.
 func ConditionalField(cfg ConditionalFieldConfig) render.HTML {
 	if cfg.WhenName == "" {
 		panic("ui: ConditionalField requires WhenName")
 	}
-	if cfg.WhenValue == "" {
-		panic("ui: ConditionalField requires WhenValue")
+	if cfg.WhenValue != "" && len(cfg.WhenValues) > 0 {
+		panic("ui: ConditionalField takes WhenValue or WhenValues, not both")
+	}
+	if cfg.WhenValue == "" && len(cfg.WhenValues) == 0 {
+		panic("ui: ConditionalField requires WhenValue or WhenValues")
 	}
 	return conditionalFieldStyle.WrapHTML(headless.ConditionalField(
 		headless.ConditionalFieldProps{
-			When:  cfg.WhenName,
-			Value: cfg.WhenValue,
+			When:   cfg.WhenName,
+			Value:  cfg.WhenValue,
+			Values: cfg.WhenValues,
 			// hidden and aria-hidden are owned by the runtime module,
 			// which sets and clears them as the watched field changes;
 			// a caller-set value would fight it.

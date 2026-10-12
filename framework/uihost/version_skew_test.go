@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -107,5 +108,60 @@ func TestFillslessClientWithoutKeptFillsKeepsSwap(t *testing.T) {
 	w := partialGet(t, ds, "/docs/intro", "/about")
 	if got := w.Header().Get("X-Gofastr-Swap"); got != "l:site" {
 		t.Fatalf("X-Gofastr-Swap = %q, want l:site (no fills to lose)", got)
+	}
+}
+
+// TestStaleMarkupClientGetsReloadBody: a browser navigation fetch that
+// names no markup generation (a runtime from before the data-cui-*
+// rename) gets a 409 partial carrying a meta refresh to the
+// destination, at the swap key its DOM holds; the generation the host
+// renders, or a non-browser caller, gets the ordinary partial.
+func TestStaleMarkupClientGetsReloadBody(t *testing.T) {
+	ds := New(chainTestApp())
+	get := func(markup, mode, target string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("GET", target, nil)
+		r.Header.Set("X-Gofastr-Navigate", "1")
+		r.Header.Set("X-Gofastr-From", "/about")
+		if markup != "" {
+			r.Header.Set(runtime.MarkupHeader, markup)
+		}
+		if mode != "" {
+			r.Header.Set("Sec-Fetch-Mode", mode)
+		}
+		w := httptest.NewRecorder()
+		ds.ServeHTTP(w, r)
+		return w
+	}
+
+	stale := get("", "cors", "/docs/intro?q=it's")
+	if stale.Code != 409 {
+		t.Fatalf("stale client: status %d, want 409", stale.Code)
+	}
+	if got := stale.Header().Get("X-Gofastr-Swap"); got != "l:site" {
+		t.Errorf("stale client: X-Gofastr-Swap = %q, want the l:site cell its DOM holds", got)
+	}
+	if got := stale.Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("stale client: Cache-Control = %q, want no-store", got)
+	}
+	body := stale.Body.String()
+	if !strings.Contains(body, `<meta http-equiv="refresh" content="0; url='/docs/intro?q=it%27s'">`) {
+		t.Errorf("stale client body lacks the refresh to the destination (quote kept inside the URL): %s", body)
+	}
+	if strings.Contains(body, "data-cui-") {
+		t.Errorf("stale client body carries markup its kernel cannot read: %s", body)
+	}
+
+	for _, tc := range []struct{ name, markup, mode string }{
+		{"current generation", runtime.MarkupVersion, "cors"},
+		{"no fetch metadata", "", ""},
+	} {
+		w := get(tc.markup, tc.mode, "/docs/intro")
+		if w.Code != 200 || strings.Contains(w.Body.String(), "http-equiv") {
+			t.Errorf("%s: status %d body %q, want the ordinary partial", tc.name, w.Code, w.Body.String())
+		}
+	}
+	// An older generation named outright is stale too.
+	if w := get("1", "same-origin", "/docs/intro"); w.Code != 409 {
+		t.Errorf("generation 1: status %d, want 409", w.Code)
 	}
 }

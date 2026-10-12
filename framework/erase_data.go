@@ -3,7 +3,6 @@ package framework
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/datexport"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
@@ -212,7 +212,7 @@ type resolvedEraser struct {
 func (a *App) resolveEraserIdentities(ctx context.Context, dialect migrate.Dialect, userID string, erasers []datexport.DataEraser) (resolved []resolvedEraser, skipped []string, err error) {
 	for _, e := range erasers {
 		if e.Identity == datexport.IdentityUserID {
-			resolved = append(resolved, resolvedEraser{eraser: e, value: userID})
+			resolved = append(resolved, resolvedEraser{eraser: e, value: e.ValuePrefix + userID})
 			continue
 		}
 		r, ok := datexport.ResolveIdentity(e.Identity)
@@ -227,7 +227,7 @@ func (a *App) resolveEraserIdentities(ctx context.Context, dialect migrate.Diale
 			skipped = append(skipped, e.Name)
 			continue
 		}
-		resolved = append(resolved, resolvedEraser{eraser: e, value: val})
+		resolved = append(resolved, resolvedEraser{eraser: e, value: e.ValuePrefix + val})
 	}
 	return resolved, skipped, nil
 }
@@ -521,7 +521,15 @@ func (a *App) eraseWrite(ctx context.Context, dialect migrate.Dialect, userID st
 	// more. Doing it before the commit would delete a user's files and then
 	// leave the rows behind if the transaction rolled back, which is the
 	// worse of the two failures.
-	if err := a.eraseStoredObjects(ctx, storedKeys); err != nil {
+	//
+	// Only keys erasure can attribute to this user are deleted: never an
+	// external URL, and never a key a surviving row still names (see
+	// erase_shared_keys.go). If that check fails, nothing is deleted.
+	deletable, err := a.unsharedObjectKeys(ctx, dialect, storedKeys)
+	if err != nil {
+		return report, fmt.Errorf("framework: erase: rows deleted but no stored objects were removed: checking which keys other rows still name: %w", err)
+	}
+	if err := a.eraseStoredObjects(ctx, deletable); err != nil {
 		return report, err
 	}
 	return report, nil
@@ -589,15 +597,12 @@ func (a *App) collectStoredObjectKeys(ctx context.Context, userID string, ents [
 					continue
 				}
 				if slices.Contains(src.variantCols, col) {
-					var variants []struct {
-						StorageRef string `json:"storage_ref"`
-					}
 					// A column that does not parse is not a rendition
 					// list; leaving it alone is better than guessing.
-					if json.Unmarshal([]byte(vals[i].String), &variants) == nil {
-						for _, v := range variants {
-							add(v.StorageRef)
-						}
+					// The CRUD write path parses with the same function.
+					refs, _ := file.VariantStorageRefs([]byte(vals[i].String))
+					for _, ref := range refs {
+						add(ref)
 					}
 					continue
 				}

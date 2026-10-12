@@ -21,7 +21,7 @@ func TestRuntimeModule_FormErrors(t *testing.T) {
 		`[data-hui-choice]`,      // a standalone choice's root
 		`[data-hui-field-error]`, // the error node: rendered, reserved or live
 		`"live"`,                 // the module's own nodes, told apart for clear()
-		`"filled"`,               // a rendered node the module wrote into
+		`'filled'`,               // a rendered node the module wrote into
 		"aria-invalid",
 		"aria-describedby",
 		"role", // role=alert on the message

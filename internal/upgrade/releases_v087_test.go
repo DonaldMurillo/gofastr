@@ -197,3 +197,239 @@ func TestV087ExamplesStaySilent(t *testing.T) {
 		}
 	}
 }
+
+// The XS shadow note, through the shipped YAML: the ShadowSet literal an
+// earlier `gofastr theme init` wrote (no XS, so Validate now refuses it)
+// is a review hit, and a theme that starts from style.DefaultTheme() and
+// sets no ShadowSet step is silent.
+func TestV087ShadowXSNoteHitsShadowLiteral(t *testing.T) {
+	reg, err := upgrade.Load()
+	if err != nil {
+		t.Fatalf("upgrade.Load: %v", err)
+	}
+	n := scantest.Only(scantest.Note(t, reg, "v0.87.0", 5), "fields")
+	if !n.Review || !n.Breaking {
+		t.Fatalf("v0.87.0/5 must be breaking and review-tier: review=%v breaking=%v", n.Review, n.Breaking)
+	}
+	kit := map[string]string{"core-ui/style/style.go": `package style
+
+type Shadow struct{ Name, Value string }
+type ShadowSet struct{ None, XS, SM, MD, LG, XL Shadow }
+type Theme struct {
+	Name    string
+	Shadows ShadowSet
+}
+
+func DefaultTheme() Theme   { return Theme{} }
+func AutoFillNames(t *Theme) {}
+`}
+	old := scantest.App(t, map[string]string{"theme/theme.go": `package theme
+
+import "github.com/DonaldMurillo/gofastr/core-ui/style"
+
+var App = style.Theme{
+	Name: "acme",
+	Shadows: style.ShadowSet{
+		None: style.Shadow{Value: "none"},
+		SM:   style.Shadow{Value: "0 1px 2px rgba(0,0,0,.05)"},
+		MD:   style.Shadow{Value: "0 4px 6px rgba(0,0,0,.1)"},
+		LG:   style.Shadow{Value: "0 10px 15px rgba(0,0,0,.1)"},
+		XL:   style.Shadow{Value: "0 20px 25px rgba(0,0,0,.1)"},
+	},
+}
+
+func init() { style.AutoFillNames(&App) }
+`}, scantest.Options{Kit: kit})
+	res := scantest.Run(t, old, []*upgrade.Note{n}, upgrade.MarkerSinks{})
+	if !res.TypeChecked {
+		t.Fatalf("app did not type-check: broken=%v unexplained=%v", res.Broken, res.Unexplained)
+	}
+	if got := scantest.Hits(res, n); len(got) != 1 {
+		t.Fatalf("hits = %v, want the one ShadowSet literal", got)
+	}
+
+	quiet := scantest.App(t, map[string]string{"theme/theme.go": `package theme
+
+import "github.com/DonaldMurillo/gofastr/core-ui/style"
+
+func App() style.Theme {
+	t := style.DefaultTheme()
+	t.Name = "acme"
+	return t
+}
+`}, scantest.Options{Kit: kit})
+	if got := scantest.Hits(scantest.Run(t, quiet, []*upgrade.Note{n}, upgrade.MarkerSinks{}), n); len(got) != 0 {
+		t.Fatalf("fires on a DefaultTheme-based theme: %v", got)
+	}
+}
+
+// The stroke-width note, through the shipped YAML. Its hit is a line of
+// an owned <name>.style.css sheet: the focus rule every blueprint-written
+// siteheader sheet carries is an edit hit, since the owned-style check
+// now refuses outline-offset: 2px, and the same rule on the stroke tokens
+// is silent. A width in the kit's own Go-string CSS is not the host's.
+func TestV087StrokeNoteHitsOwnedSheet(t *testing.T) {
+	reg, err := upgrade.Load()
+	if err != nil {
+		t.Fatalf("upgrade.Load: %v", err)
+	}
+	n := scantest.Only(scantest.Note(t, reg, "v0.87.0", 6), "css")
+	if n.Review || !n.Breaking {
+		t.Fatalf("v0.87.0/6 must be breaking and edit-tier: review=%v breaking=%v", n.Review, n.Breaking)
+	}
+	gen := func(css string) map[string]string {
+		return map[string]string{
+			"siteheader/siteheader.style.css": css,
+			// The kit's own CSS rides in Go strings; a 1px width there is
+			// not the host's to fix and must stay quiet.
+			"widgets/badge.go": "package widgets\n\nconst badgeCSS = `.badge { border-width: 1px; }`\n",
+		}
+	}
+	old := scantest.App(t, gen(".toggle { border: 1px solid var(--color-border); }\n"+
+		".toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }\n"), scantest.Options{})
+	if got := scantest.Hits(scantest.Run(t, old, []*upgrade.Note{n}, upgrade.MarkerSinks{}), n); len(got) != 1 {
+		t.Fatalf("hits = %v, want the sheet constant", got)
+	}
+	// The check reads 1.0px as 1px, so the note does too.
+	spelled := scantest.App(t, gen(".toggle { border-width: 1.0px; }\n"), scantest.Options{})
+	if got := scantest.Hits(scantest.Run(t, spelled, []*upgrade.Note{n}, upgrade.MarkerSinks{}), n); len(got) != 1 {
+		t.Fatalf("1.0px: hits = %v, want the declaration", got)
+	}
+	quiet := scantest.App(t, gen(".toggle:focus-visible { outline: var(--stroke-focus) solid var(--color-primary); outline-offset: var(--stroke-focus-offset); }\n"+
+		".lift { outline-offset: -2px; border-width: 3px; --outline-offset: 2px; }\n"), scantest.Options{})
+	if got := scantest.Hits(scantest.Run(t, quiet, []*upgrade.Note{n}, upgrade.MarkerSinks{}), n); len(got) != 0 {
+		t.Fatalf("fires on a sheet already on the stroke tokens: %v", got)
+	}
+}
+
+// The type-scale note, through the shipped YAML: line-height 1.6,
+// letter-spacing -0.01em and opacity 0.6 in an owned sheet are edit
+// hits in any spelling the check reads as the token's (.6, 1.60), and
+// the same sheet on the leading, tracking and opacity tokens, or with
+// values off their scale, is silent.
+func TestV087TypeScaleNoteHitsOwnedSheet(t *testing.T) {
+	reg, err := upgrade.Load()
+	if err != nil {
+		t.Fatalf("upgrade.Load: %v", err)
+	}
+	n := scantest.Only(scantest.Note(t, reg, "v0.87.0", 7), "css")
+	if n.Review || !n.Breaking {
+		t.Fatalf("v0.87.0/7 must be breaking and edit-tier: review=%v breaking=%v", n.Review, n.Breaking)
+	}
+	gen := func(css string) map[string]string {
+		return map[string]string{"sitefooter/sitefooter.style.css": css}
+	}
+	for _, css := range []string{
+		".lead { line-height: 1.6; }\n",
+		".lead { line-height: 1.60 !important; }\n",
+		".brand { letter-spacing: -0.01em; }\n",
+		".brand { letter-spacing: -.01em; }\n",
+		".hint { opacity: 0.6 }\n",
+		".hint { opacity: .6 }\n",
+	} {
+		old := scantest.App(t, gen(css), scantest.Options{})
+		if got := scantest.Hits(scantest.Run(t, old, []*upgrade.Note{n}, upgrade.MarkerSinks{}), n); len(got) != 1 {
+			t.Fatalf("%q: hits = %v, want the sheet constant", css, got)
+		}
+	}
+	quiet := scantest.App(t, gen(".lead { line-height: var(--leading-relaxed); }\n"+
+		".brand { letter-spacing: var(--tracking-snug); opacity: var(--opacity-muted); }\n"+
+		".odd { line-height: 1.75; letter-spacing: 0.02em; opacity: 0.85; line-height: 11.6; opacity: 0.65; }\n"), scantest.Options{})
+	if got := scantest.Hits(scantest.Run(t, quiet, []*upgrade.Note{n}, upgrade.MarkerSinks{}), n); len(got) != 0 {
+		t.Fatalf("fires on a sheet already on the type-scale tokens: %v", got)
+	}
+}
+
+// The zinc reskin note, through the shipped YAML: a call to either
+// default-theme constructor is a review hit, and so is a sheet that
+// reads --color-secondary, whose role flipped from grey ink to a light
+// fill. A hover edge on --color-border-strong, its new role, is silent.
+func TestV087ZincNoteHitsDefaultTheme(t *testing.T) {
+	reg, err := upgrade.Load()
+	if err != nil {
+		t.Fatalf("upgrade.Load: %v", err)
+	}
+	var note *upgrade.Note
+	for _, rel := range reg.Releases {
+		for _, c := range rel.Notes {
+			if rel.Version == "v0.87.0" && strings.HasPrefix(c.Change, "style.DefaultTheme() and theme.Default() are reskinned") {
+				note = c
+			}
+		}
+	}
+	if note == nil {
+		t.Fatal("v0.87.0 has no zinc reskin note")
+	}
+	if !note.Review || !note.Breaking {
+		t.Fatalf("the zinc note must be breaking and review-tier: review=%v breaking=%v", note.Review, note.Breaking)
+	}
+	n := scantest.Only(note, "uses", "css")
+	kit := map[string]string{
+		"core-ui/style/style.go":      "package style\n\ntype Theme struct{ Name string }\n\nfunc DefaultTheme() Theme { return Theme{} }\n",
+		"framework/ui/theme/theme.go": "package theme\n\nimport \"github.com/DonaldMurillo/gofastr/core-ui/style\"\n\nfunc Default() style.Theme { return style.DefaultTheme() }\n",
+	}
+	app := scantest.App(t, map[string]string{
+		"theme/theme.go": `package theme
+
+import (
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
+)
+
+var A = style.DefaultTheme()
+var B = uitheme.Default()
+`,
+		"web/app.css": ".tag { color: var(--color-secondary); }\n.page:hover { border-color: var(--color-border-strong); }\n",
+	}, scantest.Options{Kit: kit})
+	res := scantest.Run(t, app, []*upgrade.Note{n}, upgrade.MarkerSinks{})
+	if !res.TypeChecked {
+		t.Fatalf("app did not type-check: broken=%v unexplained=%v", res.Broken, res.Unexplained)
+	}
+	got := strings.Join(scantest.Hits(res, n), "\n")
+	for _, want := range []string{"theme/theme.go:8:", "theme/theme.go:9:", "web/app.css:1:"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("hits = %s\nwant one at %s", got, want)
+		}
+	}
+	if strings.Contains(got, "web/app.css:2:") {
+		t.Errorf("a hover edge on --color-border-strong is the token's new role, yet it hit: %s", got)
+	}
+}
+
+// The logical-spacing note: padding-inline: 16px in an owned sheet is
+// an edit hit in any spelling the check reads as --spacing-lg, and the
+// token, an off-scale value and a plain stylesheet are silent.
+func TestV087LogicalSpacingNoteHitsOwnedSheet(t *testing.T) {
+	reg, err := upgrade.Load()
+	if err != nil {
+		t.Fatalf("upgrade.Load: %v", err)
+	}
+	var note *upgrade.Note
+	for _, rel := range reg.Releases {
+		for _, c := range rel.Notes {
+			if rel.Version == "v0.87.0" && strings.Contains(c.Change, "reads padding-inline, padding-block") {
+				note = c
+			}
+		}
+	}
+	if note == nil {
+		t.Fatal("v0.87.0 has no logical-spacing note")
+	}
+	if note.Review || !note.Breaking {
+		t.Fatalf("the logical-spacing note must be breaking and edit-tier: review=%v breaking=%v", note.Review, note.Breaking)
+	}
+	n := scantest.Only(note, "css")
+	for _, css := range []string{".a { padding-inline: 16px; }\n", ".a { margin-block-start: 16.0px; }\n"} {
+		app := scantest.App(t, map[string]string{"siteheader/siteheader.style.css": css}, scantest.Options{})
+		if got := scantest.Hits(scantest.Run(t, app, []*upgrade.Note{n}, upgrade.MarkerSinks{}), n); len(got) != 1 {
+			t.Fatalf("%q: hits = %v, want the declaration", css, got)
+		}
+	}
+	quiet := scantest.App(t, map[string]string{
+		"siteheader/siteheader.style.css": ".a { padding-inline: var(--spacing-lg); margin-block: 12px; padding-inline: 8px 16px; }\n",
+		"static/app.css":                  ".a { padding-inline: 16px; }\n",
+	}, scantest.Options{})
+	if got := scantest.Hits(scantest.Run(t, quiet, []*upgrade.Note{n}, upgrade.MarkerSinks{}), n); len(got) != 0 {
+		t.Fatalf("fires on a sheet the check passes: %v", got)
+	}
+}

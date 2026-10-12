@@ -448,11 +448,18 @@ type SectionMenuConfig struct{ DrawerName string }
 
 import "context"
 
-type Layout struct{}
+type Layout struct {
+	Header, Sidebar, Footer any
+	Container, StickyHeader bool
+}
 
 type LayoutSpec struct{}
 
 func NewLayout(name string) *Layout { return nil }
+
+func (l *Layout) WrapNested(content any) any { return content }
+
+func (l *Layout) WrapNestedCtx(ctx context.Context, content any) any { return content }
 
 func LayoutBaseCSS() string { return "" }
 
@@ -567,9 +574,33 @@ func Control(cfg ControlConfig) string { return "" }
 
 func ToastStackSignal(name string) string { return "" }
 
-type SiteHeaderConfig struct{ Brand string }
+type SiteHeaderDrawerVariant string
+
+const (
+	SiteHeaderDrawerPopover SiteHeaderDrawerVariant = ""
+	SiteHeaderDrawerSheet   SiteHeaderDrawerVariant = "sheet"
+)
+
+type SiteHeaderConfig struct {
+	Brand  string
+	Drawer SiteHeaderDrawerVariant
+}
 
 func SiteHeader(cfg SiteHeaderConfig) string { return "" }
+
+type ResponsiveConfig struct {
+	Breakpoint int
+	Class      string
+}
+
+func Responsive(cfg ResponsiveConfig, desktop, mobile string) string { return "" }
+
+type TOCConfig struct {
+	Target string
+	Levels int
+}
+
+func TableOfContents(cfg TOCConfig) string { return "" }
 
 type SiteFooterConfig struct{}
 
@@ -668,6 +699,57 @@ func Render(cfg Config) string { return "" }
 type Config struct{ SignalPrefix string }
 
 func Render(cfg Config) string { return "" }
+`,
+	"core-ui/patterns/tabs/tabs.go": `package tabs
+
+type Config struct{ Name string }
+
+type Tab struct{ Label string }
+
+func New(cfg Config, tabs ...Tab) string { return "" }
+`,
+	"core-ui/patterns/combobox/combobox.go": `package combobox
+
+type Config struct{ ID, Name, Label, RPCPath, SignalName string }
+
+func Render(cfg Config) string { return "" }
+`,
+	"core-ui/patterns/disclosure/disclosure.go": `package disclosure
+
+type Config struct{ Title string }
+
+func Render(cfg Config, body ...string) string { return "" }
+`,
+	"core-ui/patterns/scrollspy/scrollspy.go": `package scrollspy
+
+type Config struct{ ObserveSelector string }
+
+func Wrap(cfg Config, child string) string { return "" }
+`,
+	"core-ui/patterns/skeleton/skeleton.go": `package skeleton
+
+type Config struct{ Count int }
+
+func New(cfg Config) string { return "" }
+`,
+	"framework/ui/theme/theme.go": `package theme
+
+type Overrides struct {
+	Primary    string
+	DarkColors map[string]string
+}
+
+func Default(overrides ...Overrides) string { return "" }
+`,
+	"core-ui/check/check.go": `package check
+
+type Result struct{}
+
+func LintNoPatternBaseCSS(root string) (*Result, error) { return nil, nil }
+`,
+	"kiln/freeze/freeze.go": `package freeze
+
+func DSNHasSecret(dsn string) bool { return false }
 `,
 	"core/render/render.go": `package render
 
@@ -781,7 +863,44 @@ func Carousel(cfg CarouselConfig) string { return "" }
 type SkeletonAvatarConfig struct{}
 
 func SkeletonAvatar(cfg SkeletonAvatarConfig) string { return "" }
+
+type StackBreakpoint int
+
+const (
+	StackBelowMD StackBreakpoint = iota
+	StackBelowLG
+)
+
+type ResponsiveConfig struct {
+	Below StackBreakpoint
+	Class string
+}
+
+type TOCItem struct{ Text, Href string }
+
+type TOCConfig struct {
+	Items  []TOCItem
+	Target string
+}
+
+func TableOfContents(cfg TOCConfig) string { return "" }
 `
+	kit["framework/ui/theme/theme.go"] = `package theme
+
+type Overrides struct {
+	Primary string
+	Dark    *Overrides
+}
+
+func Default(overrides ...Overrides) string { return "" }
+`
+	for _, gone := range []string{
+		"core-ui/patterns/tabs/tabs.go", "core-ui/patterns/combobox/combobox.go",
+		"core-ui/patterns/disclosure/disclosure.go", "core-ui/patterns/scrollspy/scrollspy.go",
+		"core-ui/patterns/skeleton/skeleton.go", "core-ui/check/check.go", "kiln/freeze/freeze.go",
+	} {
+		delete(kit, gone)
+	}
 	return kit
 }()
 
@@ -931,6 +1050,10 @@ import "github.com/DonaldMurillo/gofastr/core-ui/app"
 var layoutName = "app"
 
 var appLayout = app.NewLayout(layoutName)
+
+var fixedShell = &app.Layout{Header: "hdr", Container: true}
+
+func chrome(l *app.Layout) { l.Sidebar, l.Footer, l.StickyHeader = "nav", "foot", true }
 `,
 	"n29.go": `package app
 
@@ -989,6 +1112,10 @@ var docPager = ui.DocPager{}
 var docPN = ui.DocPrevNext(docPager)
 
 var docCrumb = ui.DocCrumb{Label: "Tags", Href: "/tags"}
+
+var sheetDrawer = ui.SiteHeaderDrawerSheet
+
+var popHdr ui.SiteHeaderDrawerVariant = ui.SiteHeaderDrawerPopover
 `,
 	"n38.go": `package app
 
@@ -1058,6 +1185,79 @@ var covers = ui.Carousel(ui.CarouselConfig{Label: "Covers", VirtualScroll: true,
 import "github.com/DonaldMurillo/gofastr/framework/ui"
 
 var who = ui.SkeletonAvatar(ui.SkeletonAvatarConfig{Size: "3rem"})
+`, "n53.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/core-ui/patterns/tabs"
+
+var installTabs = tabs.New(tabs.Config{Name: "install"}, tabs.Tab{Label: "Go"})
+`,
+	"n54.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/core-ui/patterns/combobox"
+
+var picker = combobox.Render(combobox.Config{ID: "c", Name: "q", Label: "Find", RPCPath: "/s", SignalName: "s"})
+`,
+	"n55.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/core-ui/patterns/disclosure"
+
+var more = disclosure.Render(disclosure.Config{Title: "More"}, "body")
+`,
+	"n56.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/core-ui/patterns/scrollspy"
+
+var spied = scrollspy.Wrap(scrollspy.Config{ObserveSelector: "main"}, "nav")
+`,
+	"n57.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/core-ui/patterns/skeleton"
+
+var lines = skeleton.New(skeleton.Config{Count: 3})
+`,
+	"n58.go": `package app
+
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+)
+
+func inner(l *app.Layout, body string) any { return l.WrapNested(body) }
+
+func innerCtx(l *app.Layout, body string) any { return l.WrapNestedCtx(context.Background(), body) }
+`,
+	"n59.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var swapCfg = ui.ResponsiveConfig{Breakpoint: 900}
+
+var swap = ui.Responsive(swapCfg, "desk", "mob")
+`,
+	"n61.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var toc = ui.TableOfContents(ui.TOCConfig{Target: "main", Levels: 2})
+`,
+	"n62.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui/theme"
+
+var brand = theme.Default(theme.Overrides{Primary: "#0F766E", DarkColors: map[string]string{"primary": "#5EEAD4"}})
+`,
+	"n63.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/core-ui/check"
+
+var lint, lintErr = check.LintNoPatternBaseCSS(".")
+`,
+	"n64.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/kiln/freeze"
+
+var leaks = freeze.DSNHasSecret("postgres://u:p@h/db")
 `,
 }
 
@@ -1080,7 +1280,7 @@ var v086GoOldMarks = map[int][]string{
 	25: {"patterns/multiselect"},
 	26: {"patterns/sortablelist"},
 	27: {"patterns/tree", "SignalPrefix:"},
-	28: {"app.NewLayout(layoutName)"},
+	28: {"app.NewLayout(layoutName)", "Header: \"hdr\"", "Container: true", "l.Sidebar, l.Footer, l.StickyHeader"},
 	29: {"l.WithHeader(hdr)"},
 	30: {"l.WithSidebar(nav)"},
 	31: {"l.WithFooter(foot)"},
@@ -1088,7 +1288,7 @@ var v086GoOldMarks = map[int][]string{
 	33: {"l.WithStickyHeader()"},
 	34: {"app.LayoutBaseCSS()"},
 	35: {"l.Wrap(body)"},
-	37: {"ui.SiteHeader(", "ui.SiteFooter(", "ui.DocLayout(", "ui.DocPager{}", "ui.DocPrevNext(", "ui.DocCrumb{"},
+	37: {"ui.SiteHeader(", "ui.SiteFooter(", "ui.DocLayout(", "ui.DocPager{}", "ui.DocPrevNext(", "ui.DocCrumb{", "= ui.SiteHeaderDrawerSheet", "ui.SiteHeaderDrawerVariant ="},
 	38: {"html.ContainerType(", "style.DarkSchemeCSS(", "gallery.MustLookup", "ui.ToastStackSignal("},
 	40: {"core-ui/patterns/pagination\"", "&pagination.Config{", "pagination.New("},
 	41: {"SortHrefPattern:", "IslandSignal:", "IslandEndpoint:"},
@@ -1099,6 +1299,18 @@ var v086GoOldMarks = map[int][]string{
 	46: {"FailureThreshold: 5", "SSESilenceMs:"},
 	47: {"VirtualScroll: true", "VirtualWindow: 8", `VirtualPlaceholderHeight: "240px"`},
 	48: {`Size: "3rem"`},
+	53: {"patterns/tabs"},
+	54: {"patterns/combobox"},
+	55: {"patterns/disclosure"},
+	56: {"patterns/scrollspy"},
+	57: {"patterns/skeleton"},
+	58: {"l.WrapNested(body)", "l.WrapNestedCtx("},
+	59: {"Breakpoint: 900"},
+	60: {"ui.Responsive(swapCfg"},
+	61: {"Levels: 2"},
+	62: {"DarkColors: map"},
+	63: {"check.LintNoPatternBaseCSS("},
+	64: {"freeze.DSNHasSecret("},
 }
 
 // v086GoNewFiles is the same app after the migration the notes
@@ -1294,6 +1506,20 @@ var covers = ui.Carousel(ui.CarouselConfig{Label: "Covers"})
 import "github.com/DonaldMurillo/gofastr/framework/ui"
 
 var who = ui.SkeletonAvatar(ui.SkeletonAvatarConfig{})
+`,
+	"m53.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui"
+
+var swapCfg = ui.ResponsiveConfig{Below: ui.StackBelowLG}
+
+var toc = ui.TableOfContents(ui.TOCConfig{Items: []ui.TOCItem{{Text: "Intro", Href: "#intro"}}, Target: "main"})
+`,
+	"m62.go": `package app
+
+import "github.com/DonaldMurillo/gofastr/framework/ui/theme"
+
+var brand = theme.Default(theme.Overrides{Primary: "#0F766E", Dark: &theme.Overrides{Primary: "#5EEAD4"}})
 `,
 	"mailer/mailer.go":         `package mailer` + "\n" + `func WithHeader(key, value string) string { return "" }` + "\n",
 	"uiown/uiown.go":           "package uiown\n\nfunc Stack(children ...string) string { return \"\" }\n",

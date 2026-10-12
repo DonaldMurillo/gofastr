@@ -34,7 +34,7 @@ import (
 func TestReplayKeepsJobWhenEnqueueFails(t *testing.T) {
 	assertRetained := func(t *testing.T, q *MemoryQueue, id string, replayErr error) {
 		t.Helper()
-		dead, err := q.ListJobs(context.Background(), "failed", 0)
+		dead, err := q.ListJobs(context.Background(), "failed", 0, 0)
 		if err != nil {
 			t.Fatalf("list failed jobs: %v", err)
 		}
@@ -192,7 +192,7 @@ func TestMemoryNackKeepsJobWhenEnqueueFails(t *testing.T) {
 	cancel()
 	nackErr := q.Nack(ctx, job)
 
-	dead, err := q.ListJobs(context.Background(), "failed", 10)
+	dead, err := q.ListJobs(context.Background(), "failed", 10, 0)
 	if err != nil {
 		t.Fatalf("list failed: %v", err)
 	}

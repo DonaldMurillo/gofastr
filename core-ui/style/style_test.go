@@ -82,8 +82,8 @@ func TestResolveSpacingReturnsVarRef(t *testing.T) {
 func TestCSSCustomPropertiesEmitsAllCategories(t *testing.T) {
 	css := DefaultTheme().CSSCustomProperties()
 	wants := []string{
-		"--color-primary: #4F46E5;",
-		"--color-text: #18181B;",
+		"--color-primary: #18181B;",
+		"--color-text: #09090B;",
 		"--spacing-md: 8px;",
 		"--radii-md: 8px;",
 		"--font-body:",
@@ -412,6 +412,18 @@ func TestThemeValidate_SkipsUnparseableInkPairs(t *testing.T) {
 // contrast arithmetic must read it as CSS does — each digit doubled —
 // not as a bare nibble divided by 255, which read #FFF as near-black
 // and a valid #000 × #FFF pair as ~1.1:1.
+// A host that overrides only Primary keeps the default primary-fg, so
+// that ink must be pure white: an off-white #FAFAFA dropped #3366ff,
+// which clears AA under white, to 4.49:1 and failed Validate (kiln's
+// set_theme panicked on it).
+func TestPrimaryOnlyOverrideKeepsAA(t *testing.T) {
+	th := DefaultTheme()
+	th.Colors.Primary.Value = "#3366ff"
+	if err := th.Validate(); err != nil {
+		t.Errorf("a primary that clears AA under white is refused: %v", err)
+	}
+}
+
 func TestContrastRatio_ShortFormHex(t *testing.T) {
 	r, ok := contrastRatio("#FFF", "#000")
 	if !ok || math.Abs(r-21.0) > 0.01 {
@@ -525,7 +537,6 @@ func TestThemeValidate_RejectsZeroNumericValues(t *testing.T) {
 		setup func(*Theme)
 	}{
 		{"Spacing.MD=0", func(t *Theme) { t.Spacing.MD = Spacing{Name: "md", Value: 0} }},
-		{"Radii.MD=0", func(t *Theme) { t.Radii.MD = Radius{Name: "md", Value: 0} }},
 		{"Breakpoints.MD=0", func(t *Theme) { t.Breakpoints.MD = Breakpoint{Name: "md", Value: 0} }},
 		{"ZIndex.Modal=0", func(t *Theme) { t.ZIndex.Modal = ZIndexValue{Name: "modal", Value: 0} }},
 		{"Durations.Normal=0", func(t *Theme) { t.Durations.Normal = Duration{Name: "normal", Value: 0} }},
@@ -538,6 +549,34 @@ func TestThemeValidate_RejectsZeroNumericValues(t *testing.T) {
 				t.Errorf("%s should fail validation (zero Value)", c.name)
 			}
 		})
+	}
+}
+
+// A zero radius is a design, not a broken token: a square theme sets
+// every step to 0. Validate refused Radii.SM=0 (only a step named
+// "none" could be 0), so a theme could not square --radii-sm/md/lg.
+func TestZeroRadiusStepsValidate(t *testing.T) {
+	th := DefaultTheme()
+	th.Radii.SM = Radius{Name: "sm", Value: 0}
+	th.Radii.MD = Radius{Name: "md", Value: 0}
+	th.Radii.LG = Radius{Name: "lg", Value: 0}
+	th.Radii.XL = Radius{Name: "xl", Value: 0}
+	if err := th.Validate(); err != nil {
+		t.Fatalf("a square theme must validate: %v", err)
+	}
+	css := th.CSSCustomProperties()
+	for _, step := range []string{"sm", "md", "lg", "xl"} {
+		if !strings.Contains(css, "--radii-"+step+": 0px;") {
+			t.Errorf("--radii-%s is not emitted as 0px:\n%s", step, css)
+		}
+	}
+}
+
+func TestNegativeRadiusIsRefused(t *testing.T) {
+	th := DefaultTheme()
+	th.Radii.MD = Radius{Name: "md", Value: -2}
+	if err := th.Validate(); err == nil {
+		t.Fatal("a negative radius must fail validation")
 	}
 }
 

@@ -325,6 +325,10 @@ func TestOAuth2Plugin_Callback_SuccessExistingUser(t *testing.T) {
 	if hasPw {
 		t.Fatalf("seeded user must be passwordless for the auto-link path")
 	}
+	// ...and proven: a prior verified login recorded the address.
+	if err := userStore.MarkEmailVerified(ctx, existing.GetID()); err != nil {
+		t.Fatalf("MarkEmailVerified: %v", err)
+	}
 
 	// First, hit redirect to get a valid state
 	redirectReq := httptest.NewRequest(http.MethodGet, "/auth/oauth/mock", nil)

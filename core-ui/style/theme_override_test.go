@@ -34,6 +34,29 @@ func TestThemeOverrideCSSWrapsInClass(t *testing.T) {
 	}
 }
 
+// The class also works on <html> itself (ui.ThemePicker puts it there):
+// each block names a :root compound beside the descendant selector, so
+// the root match outranks the canonical :root[data-color-scheme="dark"]
+// block instead of tying with it, and the dark blocks match a document
+// whose own element carries the class.
+func TestThemeOverrideCSSMatchesRootElement(t *testing.T) {
+	th := DefaultTheme()
+	th.Colors.Primary = Color{Name: "primary", Value: "#00AA00"}
+	th.DarkColors = map[string]string{"primary": "#AAFFAA"}
+	ref := RegisterThemeOverride(th)
+	css := ThemeOverrideCSS(ref.Hash(), th)
+	c := ".cui-theme-" + ref.Hash()
+	for _, want := range []string{
+		":root" + c + ",\n" + c + " {\n",
+		"\n[data-color-scheme=\"dark\"]:root" + c + ",\n[data-color-scheme=\"dark\"] " + c + " {\n",
+		"  :root" + c + ":not([data-color-scheme=\"light\"]),\n  :root:not([data-color-scheme=\"light\"]) " + c + " {\n",
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("override CSS lacks the selector group %q:\n%s", want, css)
+		}
+	}
+}
+
 // Registering must not hash: the documented package-level pattern
 // (`var Dark = style.RegisterThemeOverride(...)` in a library package
 // that does not import framework/ui) runs during init, before the

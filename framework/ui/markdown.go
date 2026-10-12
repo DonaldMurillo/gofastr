@@ -256,7 +256,7 @@ func markdownCSS(_ style.Theme) string {
   display: block;
   color: var(--color-text, #18181B);
   font-size: var(--text-base, 1rem);
-  line-height: 1.7;
+  line-height: calc(var(--leading-relaxed, 1.6) + 0.1);
   text-wrap: pretty;
 }
 
@@ -272,25 +272,25 @@ func markdownCSS(_ style.Theme) string {
 [data-cui-comp="ui-markdown"] h3,
 [data-cui-comp="ui-markdown"] h4 {
   color: var(--color-text, #18181B);
-  line-height: 1.25;
+  line-height: var(--leading-tight, 1.2);
   text-wrap: balance;
 }
-[data-cui-comp="ui-markdown"] h1 { font-size: var(--text-3xl, 1.875rem);  font-weight: var(--font-weight-bold); letter-spacing: -0.014em; margin-block: 0 0.5em; }
-[data-cui-comp="ui-markdown"] h2 { font-size: var(--text-2xl, 1.5rem); font-weight: var(--font-weight-bold); letter-spacing: -0.01em;  margin-block: 2.6em 0.55em; }
-[data-cui-comp="ui-markdown"] h3 { font-size: var(--text-lg, 1.125rem); font-weight: 650; margin-block: 1.9em 0.45em; }
-[data-cui-comp="ui-markdown"] h4 { font-size: var(--text-base, 1rem);    font-weight: 650; margin-block: 1.5em 0.35em; }
+[data-cui-comp="ui-markdown"] h1 { font-size: var(--text-3xl, 1.875rem);  font-weight: var(--font-weight-bold); letter-spacing: var(--tracking-snug, -0.01em); margin-block: 0 0.5em; }
+[data-cui-comp="ui-markdown"] h2 { font-size: var(--text-2xl, 1.5rem); font-weight: var(--font-weight-bold); letter-spacing: var(--tracking-snug, -0.01em);  margin-block: 2.6em 0.55em; }
+[data-cui-comp="ui-markdown"] h3 { font-size: var(--text-lg, 1.125rem); font-weight: calc(var(--font-weight-semibold, 600) + 50); margin-block: 1.9em 0.45em; }
+[data-cui-comp="ui-markdown"] h4 { font-size: var(--text-base, 1rem);    font-weight: calc(var(--font-weight-semibold, 600) + 50); margin-block: 1.5em 0.35em; }
 /* A heading straight after another heading shouldn't double the gap. */
 [data-cui-comp="ui-markdown"] h2 + h3,
 [data-cui-comp="ui-markdown"] h3 + h4 { margin-block-start: 0.9em; }
 [data-cui-comp="ui-markdown"] > :first-child:is(h1,h2,h3,h4) { margin-block-start: 0; }
 
 [data-cui-comp="ui-markdown"] a {
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
   text-decoration: underline;
   text-underline-offset: 0.18em;
   text-decoration-thickness: from-font;
 }
-[data-cui-comp="ui-markdown"] strong { font-weight: 650; color: var(--color-text, #18181B); }
+[data-cui-comp="ui-markdown"] strong { font-weight: calc(var(--font-weight-semibold, 600) + 50); color: var(--color-text, #18181B); }
 
 /* Lists — hang the marker, give items room, tighten nested levels. */
 [data-cui-comp="ui-markdown"] ul,
@@ -307,7 +307,7 @@ func markdownCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #18181B);
   padding: 0.12em 0.4em;
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
   font-size: 0.875em;
 }
 
@@ -320,15 +320,15 @@ func markdownCSS(_ style.Theme) string {
 /* Any RAW <pre> that slipped through unframed (no class) still reads well. */
 [data-cui-comp="ui-markdown"] pre:not([class]) {
   margin-block-start: 1.5em;
-  padding: var(--spacing-lg, 1rem) 1.1rem;
+  padding: var(--spacing-lg, 1rem) calc(var(--spacing-sm, 4px) * 4.4);
   background: var(--color-code-surface, #18181B);
   color: var(--color-code-text, #E4E4E7);
-  border: 1px solid var(--color-code-border, var(--color-border, #E4E4E7));
+  border: var(--stroke-thin, 1px) solid var(--color-code-border, var(--color-border, #E4E4E7));
   border-radius: var(--radii-md, 8px);
   overflow-x: auto;
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-sm, 0.875rem);
-  line-height: 1.65;
+  line-height: var(--leading-relaxed, 1.6);
   tab-size: 2;
 }
 [data-cui-comp="ui-markdown"] pre:not([class]) code {
@@ -343,7 +343,7 @@ func markdownCSS(_ style.Theme) string {
 [data-cui-comp="ui-markdown"] blockquote {
   padding: 0.85em 1.1em;
   background: var(--color-surface-soft, #F4F4F5);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   color: var(--color-text-muted, #52525B);
 }
@@ -351,7 +351,7 @@ func markdownCSS(_ style.Theme) string {
 
 [data-cui-comp="ui-markdown"] hr {
   border: 0;
-  border-block-start: 1px solid var(--color-border, #E4E4E7);
+  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   margin-block: 2.75em;
 }
 
@@ -365,21 +365,21 @@ func markdownCSS(_ style.Theme) string {
 [data-cui-comp="ui-markdown"] th,
 [data-cui-comp="ui-markdown"] td {
   padding: 0.5em 0.85em;
-  border-block-end: 1px solid var(--color-border, #E4E4E7);
+  border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   text-align: start;
   vertical-align: top;
 }
 [data-cui-comp="ui-markdown"] thead th {
-  font-weight: 650;
+  font-weight: calc(var(--font-weight-semibold, 600) + 50);
   color: var(--color-text, #18181B);
-  border-block-end-width: 2px;
+  border-block-end-width: var(--stroke-thick, 2px);
 }
 [data-cui-comp="ui-markdown"] tbody tr:last-child td { border-block-end: 0; }
 
 [data-cui-comp="ui-markdown"] img { max-width: 100%; height: auto; border-radius: var(--radii-md, 8px); }
 
 /* Compact variant — tighter rhythm for inline previews. */
-.fui-markdown.fui-markdown--compact { line-height: 1.6; }
+.fui-markdown.fui-markdown--compact { line-height: var(--leading-relaxed, 1.6); }
 :where(.fui-markdown).fui-markdown--measure { max-inline-size: var(--ui-markdown-measure, 72ch); }
 .fui-markdown.fui-markdown--compact > * + * { margin-block-start: 0.7em; }
 .fui-markdown.fui-markdown--compact h2 { font-size: var(--text-lg, 1.125rem); margin-block: 1.4em 0.4em; }

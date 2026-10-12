@@ -26,6 +26,11 @@ func registerLLMMDRoutes(r *router.Router, ch *CrudHandler, path string, readOnl
 type CrudRouteOptions struct {
 	NoLLMMD  bool // disable auto-generated /path/llm.md
 	ReadOnly bool // register only the read routes (List/Get/events), for views and other read-only objects
+	// States is the entity's states config, read by CrudRoutePatterns:
+	// POST /path/{id}/transitions/{key} is mounted when it holds a
+	// non-system move. RegisterCrudRoutes reads the handler's entity
+	// instead, so it needs no value here.
+	States *entity.StatesConfig
 }
 
 // CrudRoutePatterns returns the "METHOD /pattern" set RegisterCrudRoutes
@@ -63,6 +68,9 @@ func CrudRoutePatterns(path string, opts ...CrudRouteOptions) []string {
 			"PATCH "+path+"/_batch",
 			"DELETE "+path+"/_batch",
 		)
+		if len(RoutableTransitions(opt.States)) > 0 {
+			patterns = append(patterns, "POST "+path+"/{id}/transitions/{key}")
+		}
 	}
 	patterns = append(patterns, "GET "+path+"/_events")
 	if !opt.NoLLMMD {
@@ -83,6 +91,8 @@ func CrudRoutePatterns(path string, opts ...CrudRouteOptions) []string {
 //	POST   /path/_batch      → BatchCreate (atomic; all-or-nothing)
 //	PATCH  /path/_batch      → BatchUpdate (atomic; all-or-nothing)
 //	DELETE /path/_batch      → BatchDelete (atomic; all-or-nothing)
+//	POST   /path/{id}/transitions/{key} → RunTransition (entities whose
+//	                           States hold a non-system move)
 //
 // The batch routes use a "_batch" segment, which Go 1.22's ServeMux ranks
 // above the wildcard /{id} so they take precedence over Get/Update/Delete
@@ -107,6 +117,9 @@ func RegisterCrudRoutes(r *router.Router, handler *CrudHandler, path string, opt
 		r.Post(path+"/_batch", handler.BatchCreate())
 		r.Patch(path+"/_batch", handler.BatchUpdate())
 		r.Delete(path+"/_batch", handler.BatchDelete())
+		if len(RoutableTransitions(handler.Entity.Config.States)) > 0 {
+			r.Post(path+"/{id}/transitions/{key}", handler.Transition())
+		}
 	}
 
 	r.Get(path+"/_events", handler.EventStream())

@@ -1,21 +1,30 @@
 package runtime_test
 
-// Version-skew e2e: the envelope version is negotiated in both
-// directions and a mismatch always ends in a full load.
+// Version-skew e2e across the data-fui-* → data-cui-* rename (#467):
+// a tab still running the v0.86.0 runtime keeps intercepting links
+// after the upgrade, because its click handler checks only a[href],
+// the route manifest and the opt-outs. Swapping today's data-cui-*
+// markup into that kernel leaves every interactive marker unread: a
+// data-cui-rpc form then submits as a native GET, fields in the URL.
 //
-// TestNewRuntimeOnOldServer: today's runtime navigates against a
-// server that answers plain partials (no X-Gofastr-Envelope, no fill
-// templates). A partial whose document holds an outlet or area outside
-// the target slot full-loads instead of applying; the outlets never go
-// stale. The other direction, a stale runtime on today's server, holds
-// no pinned bundle of an earlier release: a client that speaks none of
-// the page's attributes intercepts nothing, and the browser's own
-// navigation is the full load.
+//   - TestOldRuntimeClickFullLoads: the v0.86.0 bundle (pinned as a
+//     testdata fixture, taken with `git show v0.86.0:…`) on a first
+//     document in the old spelling clicks a same-chain link. The
+//     navigate fetch carries no X-Gofastr-Markup, so uihost answers
+//     the reload body; the click ends in a full document load with
+//     today's runtime, and the destination's data-cui-rpc form posts
+//     to its endpoint.
+//   - TestNewRuntimeClickSoftSwaps: the control. Today's runtime sends
+//     the header, gets the ordinary partial, swaps in place, and the
+//     same form posts.
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -23,125 +32,195 @@ import (
 
 	"github.com/chromedp/chromedp"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
-// oldServerRig serves today's runtime against a hand-rolled "old
-// server" that answers plain partials: X-Gofastr-Partial + Swap, no
-// X-Gofastr-Envelope, no fill templates — the pre-layout wire shape.
-type oldServerRig struct {
+// skewRig is a real uihost app (the NEW server). With old set, the
+// first document for /home is rewritten to the v0.86.0 spelling and
+// loads the pinned v0.86.0 bundle, the shape of a tab opened before
+// the deploy. Every page request is counted by (path, partial?) and
+// every hit on the form's endpoint by method and query.
+type skewRig struct {
 	srv *httptest.Server
 
 	mu      sync.Mutex
 	partial map[string]int
 	full    map[string]int
+	posts   int
+	gets    []string
 }
 
-func (r *oldServerRig) partials(p string) int {
+func (r *skewRig) counts(path string) (partial, full int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.partial[p]
+	return r.partial[path], r.full[path]
 }
 
-func (r *oldServerRig) fulls(p string) int {
+func (r *skewRig) api() (posts int, gets []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.full[p]
+	return r.posts, append([]string(nil), r.gets...)
 }
 
-func newOldServerRig(t *testing.T) *oldServerRig {
+func newSkewRig(t *testing.T, old bool) *skewRig {
 	t.Helper()
-	coreJS, err := runtime.RuntimeJS()
+	oldJS, err := os.ReadFile("testdata/v0.86.0-runtime.js")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("v0.86.0 fixture: %v", err)
 	}
-	r := &oldServerRig{partial: map[string]int{}, full: map[string]int{}}
-	page := func(inner, aside string) string {
-		return `<!doctype html><html lang="en"><head><title>old-server</title>` +
-			`<script type="application/json" id="gofastr-routes">[{"path":"/"},{"path":"/a","layouts":["l:site"]}]</script>` +
-			`</head><body><div data-cui-layout="site" data-cui-layout-key="l:site">` +
-			`<nav><a id="goA" href="/a">A</a></nav>` +
-			`<div data-cui-outlet="l:site#aside" id="aside">` + aside + `</div>` +
-			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main">` + inner + `</main>` +
-			`</div><script src="/__gofastr/runtime.js"></script></body></html>`
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/javascript")
-		_, _ = w.Write([]byte(coreJS))
+
+	a := app.NewApp("skew-rig")
+	site := app.NewLayout("site", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+		return render.Join(
+			render.HTML(`<nav><a id="to-home" href="/home">Home</a> <a id="to-other" href="/other">Other</a></nav>`),
+			l.Primary(),
+		)
 	})
-	mux.HandleFunc("/__gofastr/runtime/", func(w http.ResponseWriter, req *http.Request) {
-		name := strings.TrimSuffix(strings.TrimPrefix(req.URL.Path, "/__gofastr/runtime/"), ".js")
-		src, ok := runtime.Module(name)
-		if !ok {
-			http.NotFound(w, req)
-			return
-		}
+	a.SetDefaultLayout(site)
+	a.RegisterScreen(app.NewScreen("/home", app.NewStaticComponent(`<p id="screen-home">HOME</p>`)), nil)
+	a.RegisterScreen(app.NewScreen("/other", app.NewStaticComponent(
+		`<p id="screen-other">OTHER</p>`+
+			`<form id="f" data-cui-rpc="/api/save" data-cui-rpc-method="POST">`+
+			`<input name="secret" value="s3cret"><button type="submit" id="go">Save</button></form>`)), nil)
+
+	ds := uihost.New(a)
+	rt := router.New()
+	ds.Mount(rt)
+
+	r := &skewRig{partial: map[string]int{}, full: map[string]int{}}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/__old/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
-		_, _ = w.Write([]byte(src))
+		_, _ = w.Write(oldJS)
+	})
+	mux.HandleFunc("/api/save", func(w http.ResponseWriter, req *http.Request) {
+		r.mu.Lock()
+		if req.Method == http.MethodPost {
+			r.posts++
+		} else {
+			r.gets = append(r.gets, req.URL.RawQuery)
+		}
+		r.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true}`)
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
+		navigate := req.Header.Get("X-Gofastr-Navigate") == "1"
 		r.mu.Lock()
-		if req.Header.Get("X-Gofastr-Navigate") == "1" {
+		if navigate {
 			r.partial[req.URL.Path]++
+		} else if req.URL.Path == "/other" && req.URL.RawQuery != "" {
+			// A native GET submit of the form lands here.
+			r.gets = append(r.gets, req.URL.RawQuery)
 		} else {
 			r.full[req.URL.Path]++
 		}
 		r.mu.Unlock()
-		if req.Header.Get("X-Gofastr-Navigate") == "1" && req.URL.Path == "/a" {
-			// The pre-layout answer: a plain partial, swap at the shell.
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Header().Set("X-Gofastr-Partial", "true")
-			w.Header().Set("X-Gofastr-Title", "A")
-			w.Header().Set("X-Gofastr-Swap", "l:site")
-			fmt.Fprint(w, `<p id="screen-a">A-CONTENT</p>`)
+		if !old || navigate || req.URL.Path != "/home" {
+			rt.ServeHTTP(w, req)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html")
-		if req.URL.Path == "/a" {
-			fmt.Fprint(w, page(`<p id="screen-a">A-CONTENT</p>`, `A-ASIDE`))
-			return
+		// The tab opened before the deploy: today's /home document in
+		// the v0.86.0 spelling, loading the v0.86.0 bundle.
+		rec := httptest.NewRecorder()
+		rt.ServeHTTP(rec, req)
+		body, _ := io.ReadAll(rec.Body)
+		doc := strings.ReplaceAll(string(body), "data-cui-", "data-fui-")
+		doc = strings.ReplaceAll(doc, "/__gofastr/runtime.js", "/__old/runtime.js")
+		for k, v := range rec.Header() {
+			if k == "Content-Length" {
+				continue
+			}
+			w.Header()[k] = v
 		}
-		fmt.Fprint(w, page(`<p id="screen-home">HOME</p>`, `HOME-ASIDE`))
+		w.WriteHeader(rec.Code)
+		_, _ = io.WriteString(w, doc)
 	})
 	r.srv = httptest.NewServer(mux)
 	t.Cleanup(r.srv.Close)
 	return r
 }
 
-// TestNewRuntimeOnOldServer: today's runtime meets a plain partial (no
-// envelope header, no fills) while the document holds an outlet
-// outside the target slot. Applying it would swap the primary and
-// leave the outlet stale with no repair; the runtime full-loads
-// instead — a second, non-partial request for the destination, and
-// the outlet carries the destination document's content.
-func TestNewRuntimeOnOldServer(t *testing.T) {
-	rig := newOldServerRig(t)
+// runSkewClick loads /home, clicks through to /other, then submits the
+// form. It reports whether the window survived the click (a soft swap)
+// and whether today's runtime is the one running on /other.
+func runSkewClick(t *testing.T, rig *skewRig) (soft, newRuntime bool) {
+	t.Helper()
 	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
-
-	var aside, mainTxt string
+	var path string
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(rig.srv.URL+"/"),
-		chromedp.WaitVisible(`#goA`, chromedp.ByID),
-
-		chromedp.Click(`#goA`, chromedp.ByID),
+		chromedp.Navigate(rig.srv.URL+"/home"),
+		chromedp.WaitVisible(`#screen-home`, chromedp.ByID),
+		chromedp.Poll(`document.readyState === 'complete' && !!window.__gofastr`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Evaluate(`window.__beforeClick = 1`, nil),
+		chromedp.Click(`#to-other`, chromedp.ByID),
+		chromedp.WaitVisible(`#screen-other`, chromedp.ByID),
+		chromedp.Poll(`document.readyState === 'complete' && location.pathname === '/other'`, nil, chromedp.WithPollingTimeout(10*time.Second)),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Evaluate(`document.getElementById('aside')?.textContent || ''`, &aside),
-		chromedp.Evaluate(`document.getElementById('main')?.textContent || ''`, &mainTxt),
+		chromedp.Evaluate(`location.pathname`, &path),
+		chromedp.Evaluate(`window.__beforeClick === 1`, &soft),
+		// data-cui-rpc forms are read by today's kernel only: the old
+		// one scans for data-fui-rpc and never loads the rpc module.
+		chromedp.Evaluate(`!!(document.querySelector('script[src^="/__gofastr/runtime.js"]') && !document.querySelector('script[src^="/__old/"]'))`, &newRuntime),
+		chromedp.Click(`#go`, chromedp.ByID),
+		chromedp.Sleep(800*time.Millisecond),
 	); err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if rig.partials("/a") < 1 {
-		t.Errorf("partial requests for /a = %d, want >= 1 (the click's fetch)", rig.partials("/a"))
+	if path != "/other" {
+		t.Errorf("URL after the click = %s, want /other", path)
 	}
-	if rig.fulls("/a") < 1 {
-		t.Errorf("full-document requests for /a = %d, want >= 1 (a plain partial with outlets outside the slot must full-load, not apply)", rig.fulls("/a"))
+	return soft, newRuntime
+}
+
+// TestOldRuntimeClickFullLoads: a v0.86.0 tab clicking a same-chain
+// link after the upgrade ends in a full document load of /other with
+// today's runtime, and the form there posts to its endpoint. Before
+// the fix the old kernel soft-swapped today's markup in and the form
+// submitted as a native GET with its fields in the URL.
+func TestOldRuntimeClickFullLoads(t *testing.T) {
+	rig := newSkewRig(t, true)
+	soft, newRuntime := runSkewClick(t, rig)
+
+	partial, full := rig.counts("/other")
+	if partial != 1 {
+		t.Errorf("partial requests for /other = %d, want exactly 1 (the click's fetch)", partial)
 	}
-	if !strings.Contains(mainTxt, "A-CONTENT") {
-		t.Errorf("main = %q, want the destination's content A-CONTENT", mainTxt)
+	if soft || full < 1 {
+		t.Errorf("the click soft-swapped (window kept=%v, full loads of /other=%d): an old kernel got today's markup", soft, full)
 	}
-	if !strings.Contains(aside, "A-ASIDE") {
-		t.Errorf("aside = %q, want the destination document's A-ASIDE (never the origin's HOME-ASIDE)", aside)
+	if !newRuntime {
+		t.Errorf("/other is not running today's runtime after the click")
+	}
+	posts, gets := rig.api()
+	if len(gets) > 0 {
+		t.Errorf("the form submitted as a native GET with its fields in the URL: %q", gets)
+	}
+	if posts != 1 {
+		t.Errorf("POSTs to /api/save = %d, want 1 (the data-cui-rpc submit)", posts)
+	}
+}
+
+// TestNewRuntimeClickSoftSwaps: the control. Today's runtime names its
+// markup version on the navigate fetch, gets the ordinary partial,
+// swaps in place (no full load of /other) and the form posts.
+func TestNewRuntimeClickSoftSwaps(t *testing.T) {
+	rig := newSkewRig(t, false)
+	soft, newRuntime := runSkewClick(t, rig)
+
+	partial, full := rig.counts("/other")
+	if partial != 1 || full != 0 || !soft {
+		t.Errorf("today's runtime did not soft-swap: partial=%d full=%d window kept=%v", partial, full, soft)
+	}
+	if !newRuntime {
+		t.Errorf("the control page is not running today's runtime")
+	}
+	posts, gets := rig.api()
+	if len(gets) > 0 || posts != 1 {
+		t.Errorf("form submit: posts=%d native GETs=%q, want 1 POST and no GET", posts, gets)
 	}
 }

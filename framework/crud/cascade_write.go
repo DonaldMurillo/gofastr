@@ -253,12 +253,18 @@ func (ch *CrudHandler) findExistingHasOneChild(ctx context.Context, target *enti
 
 // checkTargetRowScope verifies that a target entity row exists and is readable
 // under the caller's tenant and owner scopes before linking via ManyToMany.
-func (ch *CrudHandler) checkTargetRowScope(ctx context.Context, target *entity.Entity, targetPK string, idVal any) error {
+// A target the request may not reach through a relation at all (see
+// relationReachable) answers the same not-found as an unreadable row, so a
+// link attempt is not an existence oracle over it.
+func (ch *CrudHandler) checkTargetRowScope(ctx context.Context, r *http.Request, target *entity.Entity, targetPK string, idVal any) error {
 	if serverWrites(ctx) {
 		return nil
 	}
 	if target == nil {
 		return nil
+	}
+	if (r == nil || !inProcess(r)) && !(&CrudHandler{Entity: target}).relationReachable(ctx, "read") {
+		return fmt.Errorf("%w: target %s/%v is not readable by this caller", errNotFound, target.GetName(), idVal)
 	}
 	if targetPK == "" {
 		targetPK = "id"
@@ -592,7 +598,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 							return nil, err
 						}
 						childID = coerced
-						if err := ch.checkTargetRowScope(ctx, target, targetPK, childID); err != nil {
+						if err := ch.checkTargetRowScope(ctx, r, target, targetPK, childID); err != nil {
 							return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 						}
 						if len(childMap) == 1 {
@@ -638,7 +644,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					}
 					childID = coerced
 					childResult = map[string]any{childHandler.convertKey(targetPK): childID}
-					if err := ch.checkTargetRowScope(ctx, target, targetPK, childID); err != nil {
+					if err := ch.checkTargetRowScope(ctx, r, target, targetPK, childID); err != nil {
 						return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 					}
 				case json.Number:
@@ -648,7 +654,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					}
 					childID = coerced
 					childResult = map[string]any{childHandler.convertKey(targetPK): childID}
-					if err := ch.checkTargetRowScope(ctx, target, targetPK, childID); err != nil {
+					if err := ch.checkTargetRowScope(ctx, r, target, targetPK, childID); err != nil {
 						return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 					}
 				default:

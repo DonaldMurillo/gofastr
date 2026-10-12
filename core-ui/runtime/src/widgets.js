@@ -424,8 +424,9 @@
       if (!form || !w.contains(form)) return;
       const sub = e.submitter;
       const msg = (sub && sub.getAttribute('data-cui-confirm')) || form.getAttribute('data-cui-confirm');
-      if (msg && typeof window.confirm === 'function' && !window.confirm(msg)) {
+      if (msg && !form._ok) {
         e.preventDefault();
+        NS.loadModule('confirm').then(() => NS.confirm(form, sub));
         return;
       }
       if (!form.hasAttribute('data-cui-rpc')) return;

@@ -1,40 +1,32 @@
 package admin
 
-// Process-module operator lifecycle screen (issue #37, design §5/§8). Lists
-// every supervised process module with its introspection fields and exposes
-// the four operator levers: enable, disable, bump-generation (the circuit
-// reset / recovery lever), and per-grant revoke. Every mutation is a CSRF'd
-// POST that writes an audit row (via framework.AppendAuditEvent, exactly as
-// the RBAC grant/revoke handlers do) and 303-redirects back to the list.
-//
-// The screen is the same standalone SSR pipeline as the RBAC screens,
-// b.writePage + section(...) + core-ui/html typed configs, and gates behind
-// b.gate (admin-only), so it inherits the admin battery's default-deny. No
-// data brokering and no secrets are shown: operator control only.
-//
-// The supervisor itself is never spawned here. The screen consumes a narrow
-// processModuleController interface satisfied by *framework.ProcessModuleSupervisor;
-// tests inject a fake so the screen is exercised without a real child.
+// The Modules page lists each supervised process module and offers the
+// operator levers: enable, disable, bump generation (the circuit reset)
+// and revoke one capability. Each lever needs the modulesManage
+// permission on the caller's own roles, and each change, or refusal,
+// writes an audit row. Outcomes come from the fixed result names, so
+// the page never prints request text.
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
+	"strconv"
 	"strings"
 
-	html "github.com/DonaldMurillo/gofastr/core-ui/html"
-	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// processModuleController is the seam the screen consumes, over exactly the
-// supervisor methods the handlers call. The real *framework.ProcessModuleSupervisor
-// satisfies it; tests pass a fake so no child process is spawned. nil on
-// Config.ProcessModules means the screen is not mounted (route 404s).
+// processModuleController is what the page uses of the supervisor;
+// *framework.ProcessModuleSupervisor satisfies it, and tests pass a fake
+// so no child process is spawned.
 type processModuleController interface {
 	List() []framework.ProcessModuleInfo
 	Enable(ctx context.Context, name string) error
@@ -43,144 +35,119 @@ type processModuleController interface {
 	BumpGeneration(ctx context.Context, name string) (uint64, error)
 }
 
-// Compile-time proof that the real supervisor satisfies the seam. If a
-// framework edit changes a signature this package consumes, the build fails
-// here rather than at a host wiring site.
 var _ processModuleController = (*framework.ProcessModuleSupervisor)(nil)
 
-// modulesBase is the action→audit-op mapping (entity "module"). Centralized
-// so the POST handlers and any future introspection stay in lockstep.
+// modulesManage is the permission every module lever needs, held through
+// the caller's own roles in Config.Policy (Wildcard counts). Without a
+// policy nothing can be proven held, so every lever is refused.
+const modulesManage access.Permission = "modules:manage"
+
+// The audit entity and operations module changes record.
 const (
-	modulesListPath = "/modules"
+	modulesAuditEnt = "module"
 	opModuleEnable  = "module_enable"
 	opModuleDisable = "module_disable"
 	opModuleBump    = "module_bump"
 	opModuleRevoke  = "module_revoke"
-	modulesAuditEnt = "module"
 )
 
-// handleProcessModules renders the operator lifecycle screen. The list comes
-// from the controller; an empty list renders a friendly empty state (never a
-// panic, the generated-app rule). A controller error on a prior POST is
-// surfaced via the ?err= query param as a danger Callout flash above the
-// table, never a raw 500 or JSON leak.
-func (b *Battery) handleProcessModules(w http.ResponseWriter, r *http.Request) {
+// renderModules draws the Modules page. A caller without modulesManage
+// sees the table without its levers.
+func (b *Battery) renderModules(ctx context.Context, _ map[string]string) render.HTML {
 	modules := b.cfg.ProcessModules.List()
-
-	csrf := middleware.TokenFromContext(r.Context())
-
-	var parts []render.HTML
-	if errMsg := strings.TrimSpace(r.URL.Query().Get("err")); errMsg != "" {
-		// Operator-facing flash. The message is operator-safe (controller
-		// errors name the module/state, never secrets); the Callout renders
-		// it HTML-escaped.
-		parts = append(parts, adminError(errMsg))
-	}
-
-	if len(modules) == 0 {
-		parts = append(parts, ui.Muted(render.Text("No process modules registered.")))
-		b.writePage(w, b.cfg.Title, "Modules",
-			adminSection("Process Modules", ui.Stack(ui.StackConfig{Gap: ui.GapMD}, parts...)))
-		return
-	}
-
+	manage := b.callerHoldsPermission(ctx, modulesManage)
 	cols := []ui.Column{
-		{Key: "module", Header: "Module"},
-		{Key: "trust", Header: "Trust"},
-		{Key: "state", Header: "State"},
-		{Key: "gen", Header: "Generation"},
-		{Key: "restarts", Header: "Restarts"},
-		{Key: "routes", Header: "Routes / Tools"},
-		{Key: "exit", Header: "Last exit"},
-		{Key: "actions", Header: "Actions"},
+		{Key: "module", Header: i18nui.T(ctx, i18nui.KeyAdminColModule)},
+		{Key: "trust", Header: i18nui.T(ctx, i18nui.KeyAdminColTrust)},
+		{Key: "state", Header: i18nui.T(ctx, i18nui.KeyAdminColState)},
+		{Key: "gen", Header: i18nui.T(ctx, i18nui.KeyAdminColGeneration), Align: "end"},
+		{Key: "restarts", Header: i18nui.T(ctx, i18nui.KeyAdminColRestarts), Align: "end"},
+		{Key: "routes", Header: i18nui.T(ctx, i18nui.KeyAdminColRoutes), Align: "end"},
+		{Key: "exit", Header: i18nui.T(ctx, i18nui.KeyAdminColLastExit)},
+	}
+	if manage {
+		cols = append(cols, ui.Column{Key: "actions", Header: i18nui.T(ctx, i18nui.KeyAdminColActions)})
 	}
 	rows := make([]ui.Row, len(modules))
 	for i, m := range modules {
-		rows[i] = ui.Row{Cells: map[string]render.HTML{
+		cells := map[string]render.HTML{
 			"module":   moduleNameCell(m),
 			"trust":    render.Text(m.TrustTier.String()),
-			"state":    moduleStateCell(m),
+			"state":    moduleStateCell(ctx, m),
 			"gen":      moduleGenerationCell(m),
-			"restarts": render.Text(fmt.Sprintf("%d", m.RestartCount)),
+			"restarts": render.Text(strconv.Itoa(m.RestartCount)),
 			"routes":   render.Text(fmt.Sprintf("%d / %d", m.RouteCount, m.ToolCount)),
 			"exit":     moduleLastExitCell(m.LastExit),
-			"actions":  moduleActionsCell(b.cfg.PathPrefix, csrf, m),
-		}}
+		}
+		if manage {
+			cells["actions"] = b.moduleActions(ctx, m)
+		}
+		rows[i] = ui.Row{ID: m.Name, Cells: cells}
 	}
-	parts = append(parts, ui.DataTable(ui.DataTableConfig{
-		Columns: cols,
-		Rows:    rows,
-		Empty:   ui.EmptyStateConfig{Title: "No modules", HeadingLevel: 3},
-	}))
-	b.writePage(w, b.cfg.Title, "Modules",
-		adminSection("Process Modules", ui.Stack(ui.StackConfig{Gap: ui.GapMD}, parts...)))
+	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
+		ui.PageHeader(ui.PageHeaderConfig{
+			Title:    i18nui.T(ctx, i18nui.KeyAdminModules),
+			Subtitle: i18nui.T(ctx, i18nui.KeyAdminModulesSub),
+		}),
+		resultNotice(ctx),
+		ui.DataTable(ui.DataTableConfig{
+			Columns:       cols,
+			Rows:          rows,
+			Caption:       i18nui.T(ctx, i18nui.KeyAdminModules),
+			CaptionHidden: true,
+			Responsive:    ui.ResponsiveScroll,
+			Ctx:           ctx,
+			Empty:         ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyAdminNoModules), HeadingLevel: 2},
+		}),
+	)
 }
 
-// moduleNameCell renders the name (monospace, matching the RBAC role cell)
-// plus a quiet version line when the descriptor carries one.
+// moduleNameCell is the name, with the version beside it when set.
 func moduleNameCell(m framework.ProcessModuleInfo) render.HTML {
+	name := html.Code(html.TextConfig{}, render.Text(m.Name))
 	if m.Version == "" {
-		return monoCell(m.Name)
+		return name
 	}
-	return render.HTML(string(monoCell(m.Name)) + " " + string(ui.Muted(render.Text(m.Version))))
+	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, name, ui.Muted(render.Text(m.Version)))
 }
 
-// moduleStateCell renders the state name plus the 404-vs-503 meaning
-// (design §8 decision D, the operator must read a disabled module
-// differently from a crashed one). Ready renders plain; disabled renders
-// muted; enabled-but-not-serving renders a warning StatusBadge. Circuit-open
-// and lease-failing render danger StatusBadges since both mean serving
-// failures right now.
-func moduleStateCell(m framework.ProcessModuleInfo) render.HTML {
+// moduleStateCell is the state and what the module's routes answer
+// while in it: a disabled module serves 404 (it reads as uninstalled), an
+// enabled one that is not ready serves 503. An open circuit and a failing
+// lease are flagged.
+func moduleStateCell(ctx context.Context, m framework.ProcessModuleInfo) render.HTML {
 	var items []render.HTML
-	switch m.State {
-	case framework.StateReady:
+	switch {
+	case m.State == framework.StateReady:
 		items = append(items, render.Text(m.State.String()))
-	case framework.StateInstalledDisabled, framework.StateDrainingDisable, framework.StateAbsent:
+	case moduleIsDisabled(m.State) && m.State != framework.StateFailed:
 		items = append(items, ui.Muted(render.Text(m.State.String())))
 	default:
-		// Starting/Handshaking/Crashed/Backoff/DrainingUpgrade/Failed,
-		// enabled but not serving; reads as trouble.
-		items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{
-			Label: m.State.String(), Variant: ui.StatusWarning,
-		}))
+		items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{Label: m.State.String(), Variant: ui.StatusWarning}))
 	}
-
-	// The 404-vs-503 semantics, in copy. This is the operator-readable
-	// signal that distinguishes "uninstalled-looking" from "retryable".
-	_, code := moduleHTTPSemantics(m.State)
-	items = append(items, ui.Muted(render.Text(code)))
-
+	items = append(items, ui.Muted(render.Text(i18nui.T(ctx, moduleServes(m.State)))))
 	if m.CircuitOpen {
-		items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{Label: "Circuit open", Variant: ui.StatusDanger}))
+		items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, i18nui.KeyAdminCircuitOpen), Variant: ui.StatusDanger}))
 	}
 	if m.LeaseFailing {
-		// Lease-failing means fail-closed / serving 503 right now, the
-		// loudest signal on the page short of a crash.
-		items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{Label: "Lease failing", Variant: ui.StatusDanger}))
+		items = append(items, ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, i18nui.KeyAdminLeaseFailing), Variant: ui.StatusDanger}))
 	}
-	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS}, items...)
+	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, items...)
 }
 
-// moduleHTTPSemantics maps a ProcessState to the HTTP meaning an operator
-// reasons about (design §8 decision D): disabled → 404 (indistinguishable
-// from uninstalled); enabled-but-not-Ready → 503 + Retry-After; Ready →
-// serving. Returns a short label and the code/phrase shown in copy.
-func moduleHTTPSemantics(state framework.ProcessState) (label, code string) {
+// moduleServes is what a module's routes answer in state.
+func moduleServes(state framework.ProcessState) i18nui.Key {
 	switch state {
 	case framework.StateInstalledDisabled, framework.StateDrainingDisable, framework.StateAbsent:
-		return "disabled", "serves 404"
+		return i18nui.KeyAdminServes404
 	case framework.StateReady:
-		return "ready", "serving"
-	case framework.StateFailed:
-		return "failed", "serves 503"
-	default:
-		return "down", "serves 503"
+		return i18nui.KeyAdminServing
 	}
+	return i18nui.KeyAdminServes503
 }
 
-// moduleGenerationCell shows desired vs observed generation. A lagging
-// observed generation means convergence is in flight (design §8).
+// moduleGenerationCell is desired / observed; a lagging observed
+// generation means convergence is in flight.
 func moduleGenerationCell(m framework.ProcessModuleInfo) render.HTML {
 	text := fmt.Sprintf("%d / %d", m.DesiredGeneration, m.ObservedGeneration)
 	if m.ObservedGeneration < m.DesiredGeneration {
@@ -189,8 +156,7 @@ func moduleGenerationCell(m framework.ProcessModuleInfo) render.HTML {
 	return render.Text(text)
 }
 
-// moduleLastExitCell renders the last exit reason quietly, or an em-dash when
-// the module has never exited.
+// moduleLastExitCell is the last exit reason, or a dash.
 func moduleLastExitCell(last string) render.HTML {
 	if strings.TrimSpace(last) == "" {
 		return ui.Muted(render.Text("—"))
@@ -198,28 +164,8 @@ func moduleLastExitCell(last string) render.HTML {
 	return ui.Muted(render.Text(last))
 }
 
-// moduleActionsCell renders the per-row lifecycle levers as CSRF'd inline
-// POST forms (same shape as the RBAC grant/revoke forms). Disable and Revoke
-// carry data-cui-confirm, the existing destructive-action affordance, no
-// new JS. Enable/Disable choose based on state so the operator is offered
-// the action that actually changes something.
-func moduleActionsCell(prefix, csrf string, m framework.ProcessModuleInfo) render.HTML {
-	var forms []render.HTML
-	if moduleIsDisabled(m.State) {
-		forms = append(forms, moduleActionForm(prefix, csrf, m.Name, "enable", "Enable", "", ui.ButtonSecondary))
-	} else {
-		forms = append(forms, moduleActionForm(prefix, csrf, m.Name, "disable", "Disable",
-			"Disable module "+m.Name+"? It will drain and stop serving.", ui.ButtonDanger))
-	}
-	// Bump generation = the recovery / circuit-reset lever (design §8).
-	forms = append(forms, moduleActionForm(prefix, csrf, m.Name, "bump", "Bump generation", "", ui.ButtonGhost))
-	// Revoke a single capability (free-text resource:verb; bumps generation).
-	forms = append(forms, moduleRevokeForm(prefix, csrf, m.Name))
-	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, forms...)
-}
-
-// moduleIsDisabled reports whether the current state means "not serving,
-// route gate 404s", i.e. Enable is the meaningful action.
+// moduleIsDisabled reports a state in which Enable is the lever that
+// changes something.
 func moduleIsDisabled(state framework.ProcessState) bool {
 	switch state {
 	case framework.StateInstalledDisabled, framework.StateDrainingDisable, framework.StateAbsent, framework.StateFailed:
@@ -228,148 +174,102 @@ func moduleIsDisabled(state framework.ProcessState) bool {
 	return false
 }
 
-// moduleActionForm renders a single-submit inline form for a named action.
-// confirm, when non-empty, sets data-cui-confirm (the existing runtime
-// affordance, no new JS). variant picks the ui.Button treatment.
-func moduleActionForm(prefix, csrf, name, action, label, confirm string, variant ui.ButtonVariant) render.HTML {
-	attrs := html.Attrs{}
-	if confirm != "" {
-		attrs["data-cui-confirm"] = confirm
+// moduleActions are one module's levers.
+func (b *Battery) moduleActions(ctx context.Context, m framework.ProcessModuleInfo) render.HTML {
+	page := b.cfg.PathPrefix + "/modules"
+	op := func(action string, label i18nui.Key, variant ui.ButtonVariant, confirm string) render.HTML {
+		return b.opForm(ctx, opSpec{
+			path: page + "/_" + action, page: page,
+			label: i18nui.T(ctx, label), variant: variant, small: true, confirm: confirm,
+			fields: map[string]string{"module": m.Name},
+		})
 	}
-	return render.HTML(html.Form(html.FormConfig{
-		Method: "post",
-		Action: prefix + modulesListPath + "/_" + action,
-		Class:  "admin-inline",
-	},
-		html.Input(html.InputConfig{Type: "hidden", Name: "_csrf", Value: csrf}),
-		html.Input(html.InputConfig{Type: "hidden", Name: "module", Value: name}),
-		ui.Button(ui.ButtonConfig{
-			Label: label, Type: "submit", Variant: variant,
-			Size:       ui.ButtonSizeSmall,
-			ExtraAttrs: attrs,
-		}),
-	))
+	vars := map[string]string{"module": m.Name}
+	var forms []render.HTML
+	if moduleIsDisabled(m.State) {
+		forms = append(forms, op("enable", i18nui.KeyAdminEnable, ui.ButtonSecondary, ""))
+	} else {
+		forms = append(forms, op("disable", i18nui.KeyAdminDisable, ui.ButtonDanger, i18nui.TVars(ctx, i18nui.KeyAdminDisableConfirm, vars)))
+	}
+	forms = append(forms, op("bump", i18nui.KeyAdminBump, ui.ButtonGhost, ""))
+	forms = append(forms, b.opForm(ctx, opSpec{
+		path: page + "/_revoke", page: page,
+		label: i18nui.T(ctx, i18nui.KeyAdminRevoke), variant: ui.ButtonDanger, small: true,
+		confirm: i18nui.TVars(ctx, i18nui.KeyAdminRevokeConfirm, vars),
+		fields:  map[string]string{"module": m.Name},
+		body: []render.HTML{ui.TextField(ui.TextFieldConfig{
+			Name: "grant", Label: i18nui.T(ctx, i18nui.KeyAdminCapability), ID: "admin-grant-" + m.Name,
+			Placeholder: "resource:verb", Required: true,
+		})},
+	}))
+	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignEnd}, forms...)
 }
 
-// moduleRevokeForm renders the revoke-grant inline form: a free-text
-// resource:verb input plus the revoke submit. Destructive → data-cui-confirm.
-func moduleRevokeForm(prefix, csrf, name string) render.HTML {
-	return render.HTML(html.Form(html.FormConfig{
-		Method: "post",
-		Action: prefix + modulesListPath + "/_revoke",
-		Class:  "admin-inline",
-	},
-		html.Input(html.InputConfig{Type: "hidden", Name: "_csrf", Value: csrf}),
-		html.Input(html.InputConfig{Type: "hidden", Name: "module", Value: name}),
-		html.Input(html.InputConfig{
-			Type:        "text",
-			Name:        "grant",
-			Placeholder: "resource:verb",
-			Class:       "admin-input",
-			ExtraAttrs:  html.Attrs{"required": "required", "aria-label": "Capability to revoke from " + name},
-		}),
-		ui.Button(ui.ButtonConfig{
-			Label:      "Revoke",
-			Type:       "submit",
-			Variant:    ui.ButtonDanger,
-			Size:       ui.ButtonSizeSmall,
-			ExtraAttrs: html.Attrs{"data-cui-confirm": "Revoke this capability from " + name + "? Its generation bumps and the child restarts."},
-		}),
-	))
-}
-
-// ----- POST handlers --------------------------------------------------------
-//
-// Each handler validates the module name, calls the controller, writes an
-// audit row, and 303-redirects to the list. On any error (validation,
-// controller, unknown module) it 303-redirects with ?err=<message> so the
-// failure surfaces as a flash on the list page, never a raw 500 or JSON
-// leak (generated-app rule).
+// ----- posts --------------------------------------------------------------------
 
 func (b *Battery) handleModuleEnable(w http.ResponseWriter, r *http.Request) {
-	b.moduleToggle(w, r, "enable", opModuleEnable, func(ctx context.Context, name string) error {
-		return b.cfg.ProcessModules.Enable(ctx, name)
+	b.moduleOp(w, r, opModuleEnable, "module-enabled", func(ctx context.Context, name, _ string) (map[string]any, error) {
+		return nil, b.cfg.ProcessModules.Enable(ctx, name)
 	})
 }
 
 func (b *Battery) handleModuleDisable(w http.ResponseWriter, r *http.Request) {
-	b.moduleToggle(w, r, "disable", opModuleDisable, func(ctx context.Context, name string) error {
-		return b.cfg.ProcessModules.Disable(ctx, name)
+	b.moduleOp(w, r, opModuleDisable, "module-disabled", func(ctx context.Context, name, _ string) (map[string]any, error) {
+		return nil, b.cfg.ProcessModules.Disable(ctx, name)
 	})
 }
 
-// moduleToggle is the shared POST body of the enable/disable levers,
-// which were two copies differing only in the controller method, action
-// label, and audit op: parse the capped form, require a module name,
-// run the call, write the audit row, 303 back to the list.
-func (b *Battery) moduleToggle(w http.ResponseWriter, r *http.Request, action, op string, call func(ctx context.Context, name string) error) {
-	if !parseCappedForm(w, r) {
-		return
-	}
-	name := strings.TrimSpace(r.FormValue("module"))
-	if name == "" {
-		moduleBounce(w, r, b.cfg.PathPrefix, "module name required")
-		return
-	}
-	if err := call(r.Context(), name); err != nil {
-		moduleBounce(w, r, b.cfg.PathPrefix, moduleErrText(action, name, err))
-		return
-	}
-	actor := adminActorID(r.Context())
-	b.appendAudit(r.Context(), modulesAuditEnt, op, name, actor, nil)
-	http.Redirect(w, r, b.cfg.PathPrefix+modulesListPath, http.StatusSeeOther)
-}
-
 func (b *Battery) handleModuleBump(w http.ResponseWriter, r *http.Request) {
-	if !parseCappedForm(w, r) {
-		return
-	}
-	name := strings.TrimSpace(r.FormValue("module"))
-	if name == "" {
-		moduleBounce(w, r, b.cfg.PathPrefix, "module name required")
-		return
-	}
-	gen, err := b.cfg.ProcessModules.BumpGeneration(r.Context(), name)
-	if err != nil {
-		moduleBounce(w, r, b.cfg.PathPrefix, moduleErrText("bump generation", name, err))
-		return
-	}
-	actor := adminActorID(r.Context())
-	b.appendAudit(r.Context(), modulesAuditEnt, opModuleBump, name, actor,
-		map[string]any{"generation": gen})
-	http.Redirect(w, r, b.cfg.PathPrefix+modulesListPath, http.StatusSeeOther)
+	b.moduleOp(w, r, opModuleBump, "module-bumped", func(ctx context.Context, name, _ string) (map[string]any, error) {
+		gen, err := b.cfg.ProcessModules.BumpGeneration(ctx, name)
+		return map[string]any{"generation": gen}, err
+	})
 }
 
 func (b *Battery) handleModuleRevoke(w http.ResponseWriter, r *http.Request) {
-	if !parseCappedForm(w, r) {
+	b.moduleOp(w, r, opModuleRevoke, "module-revoked", func(ctx context.Context, name, grant string) (map[string]any, error) {
+		if grant == "" {
+			return nil, errNoGrant
+		}
+		gen, err := b.cfg.ProcessModules.RevokeGrants(ctx, name, []access.Permission{access.Permission(grant)})
+		return map[string]any{"grant": grant, "generation": gen}, err
+	})
+}
+
+// errNoGrant is a revoke that names no capability.
+var errNoGrant = errors.New("admin: revoke names no capability")
+
+// moduleOp is the shared body of the module levers: read the post,
+// require a module and modulesManage, run the call, audit, answer.
+func (b *Battery) moduleOp(w http.ResponseWriter, r *http.Request, op, ok string,
+	call func(ctx context.Context, name, grant string) (map[string]any, error)) {
+	page := b.cfg.PathPrefix + "/modules"
+	vals, read := b.readOps(w, r, page)
+	if !read {
 		return
 	}
-	name := strings.TrimSpace(r.FormValue("module"))
-	grant := strings.TrimSpace(r.FormValue("grant"))
-	if name == "" || grant == "" {
-		moduleBounce(w, r, b.cfg.PathPrefix, "module name and capability required")
-		return
-	}
-	gen, err := b.cfg.ProcessModules.RevokeGrants(r.Context(), name, []access.Permission{access.Permission(grant)})
-	if err != nil {
-		moduleBounce(w, r, b.cfg.PathPrefix, moduleErrText("revoke", name, err))
+	name := strings.TrimSpace(vals.Get("module"))
+	grant := strings.TrimSpace(vals.Get("grant"))
+	if name == "" {
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 		return
 	}
 	actor := adminActorID(r.Context())
-	b.appendAudit(r.Context(), modulesAuditEnt, opModuleRevoke, name, actor,
-		map[string]any{"grant": grant, "generation": gen})
-	http.Redirect(w, r, b.cfg.PathPrefix+modulesListPath, http.StatusSeeOther)
-}
-
-// moduleBounce redirects (303) back to the list with an ?err= flash. The
-// message is query-encoded; the GET handler renders it HTML-escaped.
-func moduleBounce(w http.ResponseWriter, r *http.Request, prefix, msg string) {
-	http.Redirect(w, r, prefix+modulesListPath+"?err="+url.QueryEscape(msg), http.StatusSeeOther)
-}
-
-// moduleErrText reduces a controller error to an operator-safe message. The
-// framework already returns curated errors (e.g. ErrNoDesiredRow); we prefix
-// the action so the flash reads "enable billing: no desired-state row".
-func moduleErrText(action, name string, err error) string {
-	return fmt.Sprintf("%s %s: %v", action, name, err)
+	if !b.callerHoldsPermission(r.Context(), modulesManage) {
+		b.appendAudit(r.Context(), modulesAuditEnt, op+"_refused", name, actor, nil)
+		b.refuse(w, r, page, http.StatusForbidden, "module-refused")
+		return
+	}
+	diff, err := call(r.Context(), name, grant)
+	if errors.Is(err, errNoGrant) {
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
+		return
+	}
+	if err != nil {
+		b.logger().Error("admin: module lever", "op", op, "module", textsafe.ScrubControlBytes(name), "error", textsafe.ScrubControlBytes(err.Error()))
+		b.refuse(w, r, page, http.StatusConflict, "module-failed")
+		return
+	}
+	b.appendAudit(r.Context(), modulesAuditEnt, op, name, actor, diff)
+	b.done(w, r, page, ok)
 }

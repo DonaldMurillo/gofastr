@@ -88,6 +88,13 @@ func TestPaginationRefusesAnUnnamedNav(t *testing.T) {
 	})
 }
 
+// A header holds one control: a select-all column cannot also sort.
+func TestTableRefusesASortingSelectAll(t *testing.T) {
+	refuse(t, "SelectAll", func() {
+		Table(TableProps{Path: "/x", Columns: []Column{{Key: "pick", SelectAll: "ids", Sortable: true}}}, nil)
+	})
+}
+
 // The choice family's other required props: a control with no name
 // submits nothing; radios without distinct values all submit "on";
 // a fieldset with no legend names nothing inside it.

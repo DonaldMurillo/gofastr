@@ -61,14 +61,14 @@ func PageCSS(t style.Theme) string {
 			"color", "{colors.text}",
 			"font-family", "{fonts.body}",
 			"font-size", "{text.base}",
-			"line-height", "1.5",
+			"line-height", "var(--leading-normal, 1.5)",
 			"-webkit-font-smoothing", "antialiased",
 		).
 		End()
 	ss.Rule("body.kiln-app a").Set("color", "{colors.text}", "text-decoration", "none").End()
 	ss.Rule("body.kiln-app a:hover").Set("text-decoration", "underline").End()
 	ss.Rule("body.kiln-app h1, body.kiln-app h2, body.kiln-app h3, body.kiln-app h4, body.kiln-app h5, body.kiln-app h6").
-		Set("margin", "0", "line-height", "1.2", "letter-spacing", "-0.02em").
+		Set("margin", "0", "line-height", "var(--leading-tight, 1.2)", "letter-spacing", "var(--tracking-tight, -0.02em)").
 		End()
 
 	// Layout containers.
@@ -125,16 +125,16 @@ func PageCSS(t style.Theme) string {
 	ss.Rule(".kiln-subtle").Set("color", "{colors.text-subtle}").End()
 	ss.Rule(".kiln-eyebrow").
 		Set(
-			"text-transform", "uppercase",
-			"letter-spacing", "0.08em",
+			"text-transform", "var(--ui-kiln-eyebrow-case, uppercase)",
+			"letter-spacing", "var(--tracking-wider, 0.08em)",
 			"font-size", "{text.xs}",
 			"font-weight", "{font-weight.bold}",
 			"color", "{colors.text}",
 			"margin", "0 0 {spacing.sm}",
 		).
 		End()
-	ss.Rule(".kiln-display").Set("font-size", "3rem", "font-weight", "{font-weight.bold}").End()
-	ss.Rule(".kiln-title").Set("font-size", "2.25rem", "font-weight", "{font-weight.bold}").End()
+	ss.Rule(".kiln-display").Set("font-size", "calc(var(--text-3xl, 1.875rem) * 1.6)", "font-weight", "{font-weight.bold}").End()
+	ss.Rule(".kiln-title").Set("font-size", "calc(var(--text-3xl, 1.875rem) * 1.2)", "font-weight", "{font-weight.bold}").End()
 	ss.Rule(".kiln-h2").Set("font-size", "{text.2xl}", "font-weight", "{font-weight.bold}").End()
 
 	// Hero.
@@ -142,7 +142,7 @@ func PageCSS(t style.Theme) string {
 		Set("text-align", "center", "padding", "calc({spacing.3xl} * 1.5) {spacing.lg} {spacing.3xl}").
 		End()
 	ss.Rule(".kiln-hero h1").
-		Set("font-size", "3rem", "font-weight", "{font-weight.bold}", "max-width", "24ch", "margin", "0 auto {spacing.md}").
+		Set("font-size", "calc(var(--text-3xl, 1.875rem) * 1.6)", "font-weight", "{font-weight.bold}", "max-width", "24ch", "margin", "0 auto {spacing.md}").
 		End()
 	ss.Rule(".kiln-hero p").
 		Set("font-size", "{text.lg}", "color", "{colors.text-muted}", "max-width", "60ch", "margin", "0 auto {spacing.lg}").
@@ -152,7 +152,7 @@ func PageCSS(t style.Theme) string {
 	ss.Rule(".kiln-card").
 		Set(
 			"background", "{colors.surface}",
-			"border", "1px solid {colors.border}",
+			"border", "{strokes.thin} solid {colors.border}",
 			"border-radius", "{radii.lg}",
 			"padding", "{spacing.lg}",
 			"box-shadow", "{shadow.sm}",
@@ -161,7 +161,7 @@ func PageCSS(t style.Theme) string {
 	ss.Rule(".kiln-card-soft").
 		Set(
 			"background", "{colors.surface-soft}",
-			"border", "1px solid {colors.border}",
+			"border", "{strokes.thin} solid {colors.border}",
 			"border-radius", "{radii.lg}",
 			"padding", "{spacing.lg}",
 		).
@@ -175,8 +175,8 @@ func PageCSS(t style.Theme) string {
 			"gap", "{spacing.sm}",
 			"background", "{colors.primary}",
 			"color", "{colors.primary-fg}",
-			"border", "1px solid {colors.primary}",
-			"padding", "10px 18px",
+			"border", "{strokes.thin} solid {colors.primary}",
+			"padding", "calc(var(--spacing-sm, 4px) * 2.5) calc(var(--spacing-sm, 4px) * 4.5)",
 			"border-radius", "{radii.md}",
 			"font-weight", "{font-weight.semibold}",
 			"cursor", "pointer",
@@ -199,7 +199,7 @@ func PageCSS(t style.Theme) string {
 			"justify-content", "space-between",
 			"gap", "{spacing.lg}",
 			"padding", "{spacing.md} {spacing.lg}",
-			"border-bottom", "1px solid {colors.border}",
+			"border-bottom", "{strokes.thin} solid {colors.border}",
 		).
 		End()
 	ss.Rule(".kiln-nav-links").
@@ -208,7 +208,7 @@ func PageCSS(t style.Theme) string {
 	ss.Rule(".kiln-nav-links a").Set("color", "{colors.text-muted}").End()
 	ss.Rule(".kiln-footer").
 		Set(
-			"border-top", "1px solid {colors.border}",
+			"border-top", "{strokes.thin} solid {colors.border}",
 			"background", "{colors.surface-soft}",
 			"padding", "{spacing.3xl} {spacing.lg} {spacing.lg}",
 		).
@@ -219,11 +219,11 @@ func PageCSS(t style.Theme) string {
 		Set(
 			"display", "inline-flex",
 			"align-items", "center",
-			"gap", "6px",
+			"gap", "calc(var(--spacing-sm, 4px) * 1.5)",
 			"background", "{colors.surface-soft}",
-			"border", "1px solid {colors.border}",
-			"border-radius", "999px",
-			"padding", "4px 10px",
+			"border", "{strokes.thin} solid {colors.border}",
+			"border-radius", "{radii.full}",
+			"padding", "var(--spacing-sm, 4px) calc(var(--spacing-sm, 4px) * 2.5)",
 			"font-size", "{text.xs}",
 			"font-weight", "{font-weight.semibold}",
 			"color", "{colors.text-muted}",
@@ -237,7 +237,7 @@ func PageCSS(t style.Theme) string {
 	ss.Rule(".kiln-quote").
 		Set(
 			"font-size", "{text.2xl}",
-			"line-height", "1.5",
+			"line-height", "var(--leading-normal, 1.5)",
 			"color", "{colors.text}",
 			"font-weight", "{font-weight.medium}",
 			"max-width", "60ch",
@@ -258,9 +258,9 @@ func PageCSS(t style.Theme) string {
 		Set(
 			"width", "100%",
 			"background", "{colors.surface}",
-			"border", "1px solid {colors.border}",
+			"border", "{strokes.thin} solid {colors.border}",
 			"border-radius", "{radii.md}",
-			"padding", "8px 12px",
+			"padding", "var(--spacing-md, 8px) calc(var(--spacing-sm, 4px) * 3)",
 			"color", "{colors.text}",
 			"font", "inherit",
 		).
@@ -272,7 +272,7 @@ func PageCSS(t style.Theme) string {
 	ss.Rule("body.kiln-app th, body.kiln-app td").
 		Set(
 			"padding", "{spacing.sm} {spacing.md}",
-			"border-bottom", "1px solid {colors.border}",
+			"border-bottom", "{strokes.thin} solid {colors.border}",
 			"text-align", "left",
 		).
 		End()

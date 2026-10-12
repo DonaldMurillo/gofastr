@@ -225,3 +225,20 @@ func TestAfterListHookCanMutateResults(t *testing.T) {
 		t.Errorf("AfterList mutation lost: %+v", resp.Data)
 	}
 }
+
+// An empty list on the hooks/includes scan path must still encode
+// "data":[]; clients typed data: T[] break on null.
+func TestHookedEmptyListIsArrayNotNull(t *testing.T) {
+	ch, _ := setupHookableHandler(t)
+	ch.Hooks.RegisterHook(hook.AfterList, func(ctx context.Context, data any) error { return nil })
+
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/notes", nil), "u1")
+	rec := httptest.NewRecorder()
+	ch.List()(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"data":[]`) {
+		t.Errorf("empty hooked list body = %s, want \"data\":[]", rec.Body.String())
+	}
+}

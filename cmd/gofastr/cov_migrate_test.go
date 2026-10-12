@@ -89,6 +89,26 @@ func TestMigrateHelperFlags(t *testing.T) {
 	}
 }
 
+// migrate --help documents --db=; it selects the driver like --driver=,
+// through init's alias table, never falling back to SQLite.
+func TestMigrateAcceptsDBFlag(t *testing.T) {
+	for in, want := range map[string]string{
+		"--db=postgres":       "postgres",
+		"--db=postgresql":     "postgres",
+		"--db=sqlite":         "sqlite3",
+		"--db=sqlite3":        "sqlite3",
+		"--db=mysql":          "mysql",
+		"--driver=postgresql": "postgres",
+	} {
+		if got := getMigrateDriver([]string{in}); got != want {
+			t.Errorf("getMigrateDriver(%s) = %q, want %q", in, got, want)
+		}
+		if got := parseMigrateGenOptions([]string{"n", in}).driver; got != want {
+			t.Errorf("migrate generate %s: driver = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // TestDialectForDriverPureGoSQLite selects the SQLite dialect for BOTH the
 // mattn/go-sqlite3 driver name ("sqlite3") and the pure-Go engine name
 // ("sqlite"). Before the helper, only "sqlite3" matched and "sqlite" fell

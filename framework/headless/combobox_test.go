@@ -116,3 +116,55 @@ func TestComboboxScrubbedCarriedStrings(t *testing.T) {
 		}
 	}
 }
+
+// Pick mode: the input searches and a hidden input carries the picked
+// value. The search input is detached from any host form (its form
+// attribute names no form), so only the hidden value submits; the
+// first rows ride the island listbox without the static marker, and
+// there is no no-script form to nest inside the host form.
+func TestComboboxPickRendersHiddenValue(t *testing.T) {
+	h := renderCombobox(ComboboxProps{ID: "f-customer", Name: "q", Label: "Customer",
+		Island:  &Island{Endpoint: "/api/invoices/_options/customer_id", Signal: "pick-customer"},
+		Pick:    &ComboboxPick{Name: "customer_id", Value: "c1", Label: "Ada"},
+		Options: []ComboboxOption{{Value: "c1", Label: "Ada"}, {Value: "c2", Label: "Grace"}},
+	})
+	for _, want := range []string{
+		`<input data-cui-internal="" data-hui-combobox-value="" name="customer_id" type="hidden" value="c1">`,
+		`form="f-customer-search"`,
+		`value="Ada"`,
+		`data-hui-combobox-pick=""`,
+		`data-cui-rpc="/api/invoices/_options/customer_id"`,
+		`<li data-label="Grace" data-value="c2" id="f-customer-listbox-opt-1" role="option">`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("pick combobox missing %q:\n%s", want, h)
+		}
+	}
+	for _, bad := range []string{"<form", "data-hui-combobox-static"} {
+		if strings.Contains(h, bad) {
+			t.Errorf("pick combobox carries %q:\n%s", bad, h)
+		}
+	}
+	// A pick with a no-script form would nest a form in its host.
+	defer func() {
+		if recover() == nil {
+			t.Fatal("a pick combobox with a NoScriptAction did not panic")
+		}
+	}()
+	renderCombobox(ComboboxProps{ID: "f", Name: "q", Label: "C",
+		Island: &Island{Endpoint: "/o", Signal: "s"}, NoScriptAction: "/x",
+		Pick: &ComboboxPick{Name: "c"}})
+}
+
+// ComboboxRows renders an island answer's rows with the listbox's ids.
+func TestComboboxRows(t *testing.T) {
+	h := string(ComboboxRows("f-listbox", []ComboboxOption{{Value: "c1", Label: "Ada"}, {Label: "More", Disabled: true}}, nil))
+	for _, want := range []string{
+		`<li data-label="Ada" data-value="c1" id="f-listbox-opt-0" role="option">`,
+		`aria-disabled="true"`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("rows missing %q:\n%s", want, h)
+		}
+	}
+}

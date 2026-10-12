@@ -1,14 +1,13 @@
 package ownstyle
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
 
@@ -48,13 +47,7 @@ func TestDarkChainMatchesInBrowser(t *testing.T) {
 		fmt.Fprintf(w, `<!doctype html><html data-color-scheme="%s"><meta charset=utf-8><style>%s</style>%s`, r.URL.Query().Get("s"), css, body)
 	}))
 	t.Cleanup(srv.Close)
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
-		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.NoSandbox)...)
-	t.Cleanup(cancelAlloc)
-	ctx, cancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(cancel)
-	ctx, c2 := context.WithTimeout(ctx, 60*time.Second)
-	t.Cleanup(c2)
+	ctx := chromedptest.Context(t)
 	const js = `Object.fromEntries([...document.querySelectorAll('[id]')].map(e => [e.id, getComputedStyle(e).color === 'rgb(255, 0, 0)']))`
 	want := map[string]bool{"t1": true, "t2": true, "t3": false, "u1": true, "u2": true, "u3": false, "v1": true, "v2": true, "v3": false, "w1": true, "w2": false, "z1": true}
 	for _, scheme := range []string{"dark", "light"} {

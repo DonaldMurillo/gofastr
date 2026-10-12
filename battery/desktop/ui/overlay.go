@@ -137,7 +137,7 @@ func sheetCSS(_ style.Theme) string {
   justify-content: flex-end;
   gap: var(--spacing-sm, 4px);
   padding-top: var(--spacing-md, 8px);
-  border-top: 1px solid var(--color-border, #E4E4E7);
+  border-top: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 `
 }

@@ -72,8 +72,9 @@ type Violation struct {
 
 // ViolatedNode is one element that tripped a rule.
 type ViolatedNode struct {
-	HTML   string   `json:"html"`
-	Target []string `json:"target"`
+	HTML           string   `json:"html"`
+	Target         []string `json:"target"`
+	FailureSummary string   `json:"failureSummary"`
 }
 
 // NewBrowser returns one chromedp browser context shared across all axe runs

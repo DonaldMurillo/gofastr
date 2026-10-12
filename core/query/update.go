@@ -11,7 +11,6 @@ type UpdateBuilder struct {
 	sets      []setClause
 	wheres    []whereClause
 	returning []string
-	args      []any
 }
 
 type setClause struct {
@@ -27,7 +26,6 @@ func Update(table string) *UpdateBuilder {
 // Set adds a column = value assignment.
 func (ub *UpdateBuilder) Set(column string, value any) *UpdateBuilder {
 	ub.sets = append(ub.sets, setClause{column: column, value: value})
-	ub.args = append(ub.args, value)
 	return ub
 }
 
@@ -38,7 +36,6 @@ func (ub *UpdateBuilder) Where(condition string, args ...any) *UpdateBuilder {
 		condition: condition,
 		args:      args,
 	})
-	ub.args = append(ub.args, args...)
 	return ub
 }
 
@@ -48,7 +45,9 @@ func (ub *UpdateBuilder) Returning(cols ...string) *UpdateBuilder {
 	return ub
 }
 
-// Build produces the final parameterized SQL and argument slice.
+// Build produces the final parameterized SQL and argument slice. The
+// args follow the placeholders, every SET value before every WHERE arg,
+// whatever order Set and Where were called in.
 func (ub *UpdateBuilder) Build() (string, []any) {
 	var sb strings.Builder
 
@@ -60,18 +59,23 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 	// non-injection token.
 	sb.WriteString(" SET ")
 	paramIdx := 1
+	args := make([]any, 0, len(ub.sets))
 	for i, s := range ub.sets {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
 		fmt.Fprintf(&sb, "%s = $%d", sanitizeColumn(s.column), paramIdx)
 		paramIdx++
+		args = append(args, s.value)
 	}
 
 	// WHERE
 	if len(ub.wheres) > 0 {
 		sb.WriteString(" WHERE ")
 		appendWhereClauses(&sb, ub.wheres, paramIdx)
+		for _, w := range ub.wheres {
+			args = append(args, w.args...)
+		}
 	}
 
 	// Returning: each column sanitized.
@@ -84,5 +88,5 @@ func (ub *UpdateBuilder) Build() (string, []any) {
 		sb.WriteString(strings.Join(sanitizedRet, ", "))
 	}
 
-	return sb.String(), ub.args
+	return sb.String(), args
 }

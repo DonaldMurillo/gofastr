@@ -105,14 +105,20 @@ func TestPerScreenFileLayout(t *testing.T) {
 	for _, want := range []string{
 		"type CustomersScreen struct",
 		"type CustomerDetailScreen struct",
-		"type CustomersNewScreen struct",
-		"type CustomersEditScreen struct",
+		"type CustomersCreateScreen struct",
 		"mountCustomersScreen(",
-		"mountCustomersNewScreen(",
-		"mountCustomersEditScreen(",
+		"mountCustomersCreateScreen(",
+		"mountCustomerDetailScreen(",
 	} {
 		if !strings.Contains(crud, want) {
 			t.Fatalf("screen_customers_crud.go missing %q:\n%s", want, crud)
+		}
+	}
+	// The edit screen is gone with its route: the record page holds the
+	// edit form, so no edit type or mount exists anywhere.
+	for _, gone := range []string{"CustomersEditScreen", "CustomersNewScreen", "/edit"} {
+		if strings.Contains(crud, gone) {
+			t.Fatalf("screen_customers_crud.go still carries %q:\n%s", gone, crud)
 		}
 	}
 	app := fileContent(files, "app.go")
@@ -126,23 +132,20 @@ func TestPerScreenFileLayout(t *testing.T) {
 	}
 }
 
-// TestAppResourcesLivesInCrudFile is the critical additive invariant: an
-// entity's resource wiring (appResources entry) lives in its per-entity crud
-// screen file, never in app.go.
-func TestAppResourcesLivesInCrudFile(t *testing.T) {
+// TestCrudScreensLiveInCrudFile is the critical additive invariant: an
+// entity's screens live in its per-entity crud screen file, never in
+// app.go, and render through the appUI builders.
+func TestCrudScreensLiveInCrudFile(t *testing.T) {
 	files, err := renderBlueprintFiles(perscreenBP())
 	if err != nil {
 		t.Fatal(err)
 	}
 	crud := fileContent(files, "screen_customers_crud.go")
-	if !strings.Contains(crud, `appResources["customers"] = resource.Config{`) {
-		t.Fatalf("screen_customers_crud.go must carry the customers appResources wiring:\n%s", crud)
+	if !strings.Contains(crud, `appUI.List("customers")`) {
+		t.Fatalf("screen_customers_crud.go must render the customers list through appUI:\n%s", crud)
 	}
-	if !strings.Contains(crud, `fwApp.MustCrudHandler("customers")`) {
-		t.Fatalf("screen_customers_crud.go must wire the CrudHandler via fwApp:\n%s", crud)
-	}
-	if strings.Contains(fileContent(files, "app.go"), `appResources["customers"]`) {
-		t.Fatal("app.go must NOT carry the customers appResources entry")
+	if strings.Contains(fileContent(files, "app.go"), `appUI.List("customers")`) {
+		t.Fatal("app.go must NOT carry the customers screen render")
 	}
 }
 

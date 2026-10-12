@@ -26,7 +26,7 @@ each command to the doc that covers it.
 - `gofastr new handler <name>` / `gofastr new route <path>`: scaffold
   one handler or route registration into an existing app.
 - `gofastr agents init|sync|skill`: generate or refresh `AGENTS.md`
-  and the per-battery detail files under `agents/`.
+  and the per-battery detail files under `.agents/`.
 - `gofastr theme edit`: a local theme configurator with every token as a
   control, the whole component gallery as a live preview, and write-back to
   `theme/theme.go`.
@@ -305,12 +305,20 @@ Each matcher reads the code the way its language means it:
 - `css`: `.css` files through the CSS tokenizer. `classes` matches a
   class selector, `properties` a custom property, and `selectors` a
   whole compound selector such as `.cui-pos-center > .cui-slot`
-  (whitespace around combinators does not matter). Escapes decode
-  first: `.ui\2d button` is `.ui-button`.
+  (whitespace around combinators does not matter). `declarations`
+  lists `properties` (standard names, never a `--x`) with a `value`
+  regex, matched against the declaration's value with whitespace
+  collapsed and `!important` dropped: `outline-offset: 2px` against
+  `'^[12]px$'`. An optional `glob` limits an entry to matching
+  stylesheets (`"**/*.style.css"` for owned sheets only). Escapes decode first: `.ui\2d button` is `.ui-button`.
 - `config`: `gofastr.yml` keys (`*` matches any one key or list item),
   with an optional `value` regex over the scalar or a `refused` URL
   policy, as in `fields`.
 - `gomod`: the `go` directive; `go_below: "1.27"` flags an older one.
+  Versions order the way Go's own `go` command orders them: a bare
+  language version sits below every release of that minor, and a
+  prerelease below the final release, so `1.26` < `1.26rc1` < `1.26.0`
+  < `1.27`; a `go 1.27rc1` directive is not below `1.27`.
 - `text`: a per-line regex over files matching a glob, for languages
   nothing above reads (shell, JS). Go and CSS files are refused: their
   matchers read them structurally. So is a glob that would never

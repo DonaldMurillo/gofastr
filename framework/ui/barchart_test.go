@@ -149,11 +149,12 @@ func TestBarChartFitHeightHugsTallestBar(t *testing.T) {
 		{Label: "Done", Value: 6},
 	}
 	fit := string(BarChart(BarChartConfig{Bars: bars, FitHeight: true, ShowLabels: true}))
-	// SVG height: top gutter 15 + labels gutter 16 + plot where the
-	// tallest (6) lands at 96px. dataMax 6 → valueMax niceCeil(6/0.85)=8
-	// → plot = 96*8/6 = 128 → height = 15+128+16 = 159.
-	if !strings.Contains(fit, `height="159"`) {
-		t.Errorf("FitHeight svg height should hug the bars (want 159):\n%s", fit)
+	// SVG height: top gutter 15 + labels gutter 22 (one 12px line, the
+	// 6px baseline clearance, 4px under) + plot where the tallest (6)
+	// lands at 96px. dataMax 6 → valueMax niceCeil(6/0.85)=8 → plot =
+	// 96*8/6 = 128 → height = 15+128+22 = 165.
+	if !strings.Contains(fit, `height="165"`) {
+		t.Errorf("FitHeight svg height should hug the bars (want 165):\n%s", fit)
 	}
 	// The tallest bar rect itself: (6/8)*128 = 96.
 	if !strings.Contains(fit, ` height="96"`) {
@@ -161,7 +162,7 @@ func TestBarChartFitHeightHugsTallestBar(t *testing.T) {
 	}
 	// Ratios unchanged: the fixed-height chart's tallest/fixed-plot
 	// ratio equals the fitted chart's 96/128.
-	if !strings.Contains(fit, `viewBox="0 0 320 159"`) {
+	if !strings.Contains(fit, `viewBox="0 0 320 165"`) {
 		t.Errorf("FitHeight must resize the viewBox with the height:\n%s", fit)
 	}
 	// A fixed Height still wins over FitHeight (explicit sizing).

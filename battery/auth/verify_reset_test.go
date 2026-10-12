@@ -20,22 +20,54 @@ import (
 // stubEmailSender records the most recent email sent. Reused for both
 // verification and reset flows.
 type stubEmailSender struct {
-	mu       sync.Mutex
-	lastTo   string
-	lastBody string
+	mu            sync.Mutex
+	lastTo        string
+	lastBody      string
+	sent          chan struct{}
+	sendCount     int
+	observedCount int
 }
 
 func (s *stubEmailSender) Send(_ context.Context, to, body string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.lastTo = to
 	s.lastBody = body
+	s.sendCount++
+	if s.sent == nil {
+		s.sent = make(chan struct{}, 1)
+	}
+	sent := s.sent
+	s.mu.Unlock()
+	select {
+	case sent <- struct{}{}:
+	default:
+	}
 	return nil
 }
+
 func (s *stubEmailSender) snapshot() (string, string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.lastTo, s.lastBody
+	deadline := time.After(time.Second)
+	for {
+		s.mu.Lock()
+		if s.sendCount > s.observedCount {
+			s.observedCount = s.sendCount
+			to, body := s.lastTo, s.lastBody
+			s.mu.Unlock()
+			return to, body
+		}
+		if s.sent == nil {
+			s.sent = make(chan struct{}, 1)
+		}
+		sent := s.sent
+		to, body := s.lastTo, s.lastBody
+		s.mu.Unlock()
+
+		select {
+		case <-sent:
+		case <-deadline:
+			return to, body
+		}
+	}
 }
 
 // extractTokenFromBody pulls the token query-string value out of the
@@ -150,6 +182,7 @@ func TestEmailVerification_Flow(t *testing.T) {
 
 	// Verify.
 	verifyReq := httptest.NewRequest(http.MethodGet, "/auth/verify-email?token="+tok, nil)
+	verifyReq.AddCookie(&http.Cookie{Name: "session_id", Value: sessTok})
 	verifyW := httptest.NewRecorder()
 	r.ServeHTTP(verifyW, verifyReq)
 	if verifyW.Code != http.StatusOK {

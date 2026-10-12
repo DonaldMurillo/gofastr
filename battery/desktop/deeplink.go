@@ -1,12 +1,15 @@
 package desktop
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"net/url"
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Deep links: the OS hands the app a URL on its custom scheme
@@ -18,9 +21,10 @@ import (
 
 // DeepLinkConfig enables deep links for the app. Zero value: none.
 type DeepLinkConfig struct {
-	// Scheme is the URL scheme the app claims ("notes"). The bundle
-	// builder registers it (CFBundleURLTypes); the battery refuses
-	// links on any other scheme.
+	// Scheme is the URL scheme the app claims ("notes"). The macOS
+	// bundle builder registers it in Info.plist. A Windows build made
+	// with `gofastr desktop build --scheme` registers it for the current
+	// user whenever the app starts. The battery refuses links on other schemes.
 	Scheme string
 
 	// OnDeepLink, when set, replaces the default mapping: return the
@@ -99,10 +103,30 @@ func scrubDeepLink(raw string) string {
 	return b.String()
 }
 
-// deepLinkQueue is the per-battery pre-window queue (Battery.deepLinks).
+// deepLinkQueue is the per-battery pre-window queue (Battery.deepLinks)
+// and, once the window is up, the ordered delivery line: links are
+// delivered by one goroutine in arrival order, never on the shell's
+// own thread, because delivery waits for the page's runtime through
+// the page evaluator and that answer arrives on the shell's thread.
 type deepLinkQueue struct {
-	mu     sync.Mutex
-	queued []string
+	mu       sync.Mutex
+	queued   []queuedDeepLink
+	pending  []deepLinkDelivery
+	draining bool
+}
+
+// deepLinkDelivery is one link bound for one window.
+type deepLinkDelivery struct {
+	w         Window
+	raw, path string
+}
+
+// queuedDeepLink is a link that passed validation and mapping before the
+// window was up. The mapped path is kept so the flush delivers it
+// without running the host OnDeepLink a second time.
+type queuedDeepLink struct {
+	raw  string
+	path string
 }
 
 // deepLinkQueueState returns this battery's queue.
@@ -123,11 +147,11 @@ func (b *Battery) handleDeepLink(rawURL string) {
 	if !ok {
 		q := b.deepLinkQueueState()
 		q.mu.Lock()
-		q.queued = append(q.queued, rawURL)
+		q.queued = append(q.queued, queuedDeepLink{raw: rawURL, path: path})
 		over := len(q.queued) > maxQueuedDeepLinks
 		var dropped string
 		if over {
-			dropped = q.queued[0]
+			dropped = q.queued[0].raw
 			q.queued = q.queued[1:]
 		}
 		q.mu.Unlock()
@@ -137,7 +161,7 @@ func (b *Battery) handleDeepLink(rawURL string) {
 		}
 		return
 	}
-	b.deliverDeepLink(w, rawURL, path)
+	b.enqueueDeepLink(deepLinkDelivery{w: w, raw: rawURL, path: path})
 }
 
 // mapDeepLink validates rawURL against DeepLinkConfig and maps it to an
@@ -193,13 +217,90 @@ func (b *Battery) mapDeepLink(rawURL string) (string, bool) {
 	return path, true
 }
 
-// deliverDeepLink focuses the main window, navigates it with the same
-// client-side call a menu Navigate item uses, and reports the link to
-// every page listener through the deep_link event.
+// enqueueDeepLink puts a link on the delivery line and starts the
+// drain when none is running. Deliveries run in arrival order on one
+// goroutine; the caller (the shell's deep-link callback or Run's
+// ready callback) returns at once.
+func (b *Battery) enqueueDeepLink(d deepLinkDelivery) {
+	q := b.deepLinkQueueState()
+	q.mu.Lock()
+	q.pending = append(q.pending, d)
+	start := !q.draining
+	q.draining = true
+	q.mu.Unlock()
+	if start {
+		go b.drainDeepLinks()
+	}
+}
+
+// drainDeepLinks delivers pending links one at a time until the line
+// is empty, then retires; the next enqueue starts a fresh drain.
+func (b *Battery) drainDeepLinks() {
+	q := b.deepLinkQueueState()
+	for {
+		q.mu.Lock()
+		if len(q.pending) == 0 {
+			q.draining = false
+			q.mu.Unlock()
+			return
+		}
+		d := q.pending[0]
+		q.pending = q.pending[1:]
+		q.mu.Unlock()
+		b.deliverDeepLink(d.w, d.raw, d.path)
+	}
+}
+
+// deepLinkPageWait bounds how long a delivery waits for the page's
+// runtime: a window whose document never boots (a dead server, a page
+// with no runtime) still gets the eval, and the log says it waited.
+const deepLinkPageWait = 15 * time.Second
+
+// awaitPageRuntime waits until the window's page holds the runtime's
+// navigate, polling through the page evaluator. On a cold launch the
+// queued link is flushed right after the boot navigation, before
+// /enter has answered, and a link can arrive while any document
+// loads; an eval against that window throws and the link is lost. A
+// window that cannot be asked (the fake shell) is taken as ready.
+func (b *Battery) awaitPageRuntime(w Window) {
+	pe, ok := w.(PageEvaluator)
+	if !ok {
+		return
+	}
+	deadline := time.Now().Add(deepLinkPageWait)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		r, err := pe.EvalAsync(ctx, "return typeof (window.__gofastr && window.__gofastr.navigate) === 'function'")
+		cancel()
+		if err == nil && string(r) == "true" {
+			return
+		}
+		if time.Now().After(deadline) {
+			b.logger.Warn("desktop: the page's runtime did not appear before the deep link was delivered",
+				"waited", deepLinkPageWait.String())
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// deliverDeepLink focuses the main window, waits for its page's
+// runtime, navigates it with the same client-side call a menu
+// Navigate item uses, and reports the link to every page listener
+// through the deep_link event.
 func (b *Battery) deliverDeepLink(w Window, rawURL, path string) {
+	// Delivery runs on the drain's bare goroutine through host-installed
+	// window methods (Focus, Eval, the page evaluator): recover so one
+	// panic drops that link and cannot kill the process.
+	defer func() {
+		if v := recover(); v != nil {
+			b.logger.Error("desktop: deep-link delivery panicked", "path", path, "panic", textsafe.Recovered(v))
+		}
+	}()
 	if err := w.Focus(); err != nil {
 		b.logger.Warn("desktop: focusing the main window for a deep link failed", "error", err.Error())
 	}
+	b.awaitPageRuntime(w)
 	pathJSON, err := json.Marshal(path)
 	if err != nil {
 		b.logger.Error("desktop: deep-link path marshal failed", "error", err.Error())
@@ -215,14 +316,16 @@ func (b *Battery) deliverDeepLink(w Window, rawURL, path string) {
 }
 
 // flushDeepLinks delivers links queued before the window opened, in
-// arrival order. Run calls it right after the boot navigation.
-func (b *Battery) flushDeepLinks() {
+// arrival order, to w. Run calls it right after the boot navigation.
+// Each link was validated and mapped when it arrived, so the flush
+// delivers the stored path and never re-runs the host OnDeepLink.
+func (b *Battery) flushDeepLinks(w Window) {
 	q := b.deepLinkQueueState()
 	q.mu.Lock()
 	queued := q.queued
 	q.queued = nil
 	q.mu.Unlock()
-	for _, raw := range queued {
-		b.handleDeepLink(raw)
+	for _, l := range queued {
+		b.enqueueDeepLink(deepLinkDelivery{w: w, raw: l.raw, path: l.path})
 	}
 }

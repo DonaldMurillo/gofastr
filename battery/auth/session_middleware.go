@@ -105,12 +105,27 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 				user, ok := resolveSessionUser(ctx, mgr, token, log)
 				if ok {
 					ctx = handler.SetUser(ctx, user)
+					ctx = handler.WithPrincipalCheck(ctx, sessionRecheck(mgr, token, log))
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
 			}
 			anon(w, r, next)
 		})
+	}
+}
+
+// sessionRecheck re-resolves the session token for a request that stays open
+// (an _events stream), so a deleted session, a pending-2FA downgrade or a
+// deleted user ends the stream the way it would refuse a fresh request. See
+// handler.WithPrincipalCheck.
+func sessionRecheck(mgr *AuthManager, token string, log *slog.Logger) handler.PrincipalCheck {
+	return func(ctx context.Context) (context.Context, bool) {
+		user, ok := resolveSessionUser(ctx, mgr, token, log)
+		if !ok {
+			return ctx, false
+		}
+		return handler.SetUser(ctx, user), true
 	}
 }
 

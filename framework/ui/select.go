@@ -6,6 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"strings"
 )
 
 // ─── Select ─────────────────────────────────────────────────────────
@@ -45,6 +46,13 @@ type SelectConfig struct {
 	Error string
 	ID    string
 	Class string
+	// LabelHidden keeps the label for assistive tech and hides it from
+	// view: a select in a toolbar or a bar whose place names it.
+	LabelHidden bool
+	// Action is a control drawn after the select on its row: a link to
+	// the chosen record, an add button. It is the caller's markup and
+	// stays reachable by an owned style sheet.
+	Action render.HTML
 	// ExtraAttrs forwards additional attributes to the <select>
 	// element (a relation's data-rel-entity among them). Keys the
 	// component owns are dropped: class and id (use Class / ID),
@@ -96,7 +104,11 @@ func Select(cfg SelectConfig) render.HTML {
 		// field whose marker fetches the field sheet. Field sees the
 		// control as slot content; it is this component's own, so it
 		// is marked here.
-		return headless.Own(sel)
+		sel = headless.Own(sel)
+		if cfg.Action == "" {
+			return sel
+		}
+		return render.Tag("div", map[string]string{"class": "fui-select__row"}, sel, cfg.Action)
 	}
 	return formFieldStyle.WrapHTML(headless.Field(headless.FieldProps{
 		Label:    cfg.Label,
@@ -104,7 +116,7 @@ func Select(cfg SelectConfig) render.HTML {
 		Hint:     cfg.Help,
 		Error:    cfg.Error,
 		Required: cfg.Required,
-		Parts:    rootClassParts(cfg.Class),
+		Parts:    rootClassParts(strings.TrimSpace(modifierClass("fui-field--label-hidden", cfg.LabelHidden) + " " + cfg.Class)),
 	}, fieldClasses, control))
 }
 
@@ -113,9 +125,11 @@ var selectStyle = registry.RegisterStyle("ui-select", selectCSS)
 func selectCSS(_ style.Theme) string {
 	return `.fui-select {
   font: inherit;
-  font-size: var(--text-base, 1rem);
-  padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  font-size: var(--text-sm, 0.875rem);
+  padding: var(--ui-control-padding-y, 10px) calc(var(--spacing-sm, 4px) * 3);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  box-shadow: var(--shadow-xs);
+  transition: border-color var(--duration-fast, 150ms);
   /* Same field surface as the text inputs (.fui-input): without an
      explicit background the UA paints its own base colour, which in
      dark schemes is a lighter grey than --color-surface. */
@@ -124,25 +138,34 @@ func selectCSS(_ style.Theme) string {
   color: var(--color-text, #18181B);
   appearance: none;
   -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2371717A' d='M2 4l4 4 4-4'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%2371717A' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
-  padding-right: 36px;
+  padding-right: calc(var(--spacing-sm, 4px) * 9);
   cursor: pointer;
   min-block-size: var(--fui-density-control-h);
   max-inline-size: 100%;
 }
 .fui-select:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 1px;
-  border-color: var(--color-primary, #4F46E5);
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-select[aria-invalid="true"] {
   border-color: var(--color-danger, #DC2626);
-  box-shadow: inset 0 0 0 1px var(--color-danger, #DC2626);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
 }
 .fui-select:disabled {
-  opacity: 0.6;
+  opacity: var(--opacity-disabled, 0.5);
   cursor: not-allowed;
-}`
+}
+/* Phones keep text-base so iOS does not zoom into the focused control. */
+@media (max-width: 767.98px) { .fui-select { font-size: var(--text-base, 1rem); } }
+/* An Action sits after the select on one row; the select takes the
+   rest of it. */
+.fui-select__row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm, 4px);
+}
+.fui-select__row > .fui-select { flex: 1; min-inline-size: 0; }`
 }

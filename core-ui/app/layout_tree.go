@@ -148,9 +148,10 @@ type AreaSpec struct {
 	// Transition is the area cell's view transition; the cell renders
 	// data-cui-vt="<name>" (the author's raw Name, or a generated
 	// vt-<layout>-<area> one) and Layout.TransitionCSS generates the
-	// rules. FadeThrough is the fit for text the root crossfade would
-	// ghost over itself (breadcrumbs); the zero value transitions
-	// nothing (the area rides the root crossfade).
+	// rules. Instant suits a region that keeps most of its pixels
+	// (a breadcrumb trail whose root never changes); FadeThrough suits
+	// text that changes whole and must not ghost over itself; the zero
+	// value transitions nothing (the area rides the root crossfade).
 	Transition Transition
 	// Policy is the area's region guard it
 	// runs in the policy phase, before any Load. A Redirect moves the
@@ -164,6 +165,10 @@ type AreaSpec struct {
 	// outlet's (2026-09-26, DESIGN-layout-outlets.md Open). nil (or
 	// nil Show) keeps the busy dim only, as before.
 	Loading *Loading
+	// Inline renders the area's cell as a span instead of a div, so
+	// the area can sit inside phrasing content: a row count inside a
+	// nav link, a figure inside a heading.
+	Inline bool
 }
 
 // OutletFallback is what an outlet shows when no candidate fills it.
@@ -514,6 +519,7 @@ func (t *LayoutTree) RouteArea(name string, fn func(ctx context.Context, m Match
 	}
 	attrs := html.Attrs{"data-cui-area": addr}
 	var ld *Loading
+	inline := false
 	if t.spec != nil {
 		for _, a := range t.spec.Areas {
 			if a.Name != name {
@@ -522,7 +528,7 @@ func (t *LayoutTree) RouteArea(name string, fn func(ctx context.Context, m Match
 			for k, v := range t.vtCellAttrs(a.Transition, a.Name) {
 				attrs[k] = v
 			}
-			ld = a.Loading
+			ld, inline = a.Loading, a.Inline
 			break
 		}
 	}
@@ -531,10 +537,11 @@ func (t *LayoutTree) RouteArea(name string, fn func(ctx context.Context, m Match
 	// innerHTML, so a child template would not survive the first
 	// navigation it exists for (2026-09-26, "Areas take loading
 	// content").
-	return render.Join(
-		html.Div(html.DivConfig{ExtraAttrs: attrs}, area),
-		loadingTemplate(t.ctx, addr, ld),
-	)
+	cell := html.Div(html.DivConfig{ExtraAttrs: attrs}, area)
+	if inline {
+		cell = html.Span(html.TextConfig{ExtraAttrs: attrs}, area)
+	}
+	return render.Join(cell, loadingTemplate(t.ctx, addr, ld))
 }
 
 // containedArea runs an area fn under the same panic-to-error
@@ -619,6 +626,11 @@ func checkBuildInventory(l *Layout, key string, i int, body, primary render.HTML
 	count := func(needle string) int {
 		return strings.Count(string(body), needle) - strings.Count(string(primary), needle)
 	}
+	// The markers are attribute VALUES, written through the attribute
+	// escaper: a {param} group key holding ' & " or < lands in the
+	// output as entities, so the needles must carry the same spelling
+	// or a valid /projects/o'neil page fails its own inventory.
+	key = render.Escape(key)
 	wantMain := 0
 	if i == 0 {
 		wantMain = 1 // Primary's <main id="main-content">
@@ -632,12 +644,12 @@ func checkBuildInventory(l *Layout, key string, i int, body, primary render.HTML
 		}
 	}
 	for _, o := range l.spec.Outlets {
-		if n := count(`data-cui-outlet="` + key + "#" + o.Name() + `"`); n != 1 {
+		if n := count(`data-cui-outlet="` + key + "#" + render.Escape(o.Name()) + `"`); n != 1 {
 			return fmt.Errorf("app: layout %q (layer key %q): the build placed outlet %q %d times, want exactly 1 — a duplicated outlet marker makes the region's fill address ambiguous", l.Name, key, o.Name(), n)
 		}
 	}
 	for _, a := range l.spec.Areas {
-		if n := count(`data-cui-area="` + key + "~" + a.Name + `"`); n != 1 {
+		if n := count(`data-cui-area="` + key + "~" + render.Escape(a.Name) + `"`); n != 1 {
 			return fmt.Errorf("app: layout %q (layer key %q): the build placed route area %q %d times, want exactly 1", l.Name, key, a.Name, n)
 		}
 	}

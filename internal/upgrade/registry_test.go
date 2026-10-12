@@ -56,6 +56,9 @@ releases:
           css:
             classes: [ui-button]
             properties: [--color-muted, --spacing-xxl]
+            declarations:
+              - properties: [outline-offset, border-width]
+                value: '^[12]px$'
           config:
             - key: entities.*.api_prefix
             - key: auth
@@ -169,6 +172,10 @@ func TestParseFullDocument(t *testing.T) {
 	if strings.Join(c.Classes, ",") != "ui-button" || strings.Join(c.Properties, ",") != "--color-muted,--spacing-xxl" {
 		t.Errorf("CSS = %+v", c)
 	}
+	if len(c.Declarations) != 1 || strings.Join(c.Declarations[0].Properties, ",") != "outline-offset,border-width" ||
+		c.Declarations[0].Value == nil || c.Declarations[0].Value.String() != "^[12]px$" {
+		t.Errorf("CSS.Declarations = %+v", c.Declarations)
+	}
 	if len(find.Config) != 2 {
 		t.Fatalf("Config: %d, want 2", len(find.Config))
 	}
@@ -243,6 +250,11 @@ func TestParseRefuses(t *testing.T) {
 		{"unknown find key", note("        find:\n          bogus: 1\n"), "unknown key"},
 		{"unknown strings key", note("        find:\n          strings:\n            bogus: []\n"), "unknown key"},
 		{"unknown css key", note("        find:\n          css:\n            bogus: []\n"), "unknown key"},
+		{"unknown css declaration key", note("        find:\n          css:\n            declarations:\n              - properties: [a]\n                value: x\n                bogus: 1\n"), "unknown key"},
+		{"css declaration without value", note("        find:\n          css:\n            declarations:\n              - properties: [a]\n"), "value"},
+		{"css declaration without properties", note("        find:\n          css:\n            declarations:\n              - value: x\n"), "properties"},
+		{"css declaration glob off css", note("        find:\n          css:\n            declarations:\n              - properties: [a]\n                value: x\n                glob: '**/*.js'\n"), "must name .css files"},
+		{"css declaration custom property", note("        find:\n          css:\n            declarations:\n              - properties: [--x]\n                value: x\n"), "custom property"},
 		{"unknown gomod key", note("        find:\n          gomod:\n            bogus: 1\n"), "unknown key"},
 		{"unknown fields item key", note("        find:\n          fields:\n            - field: gofastr/framework/ui.C.F\n              bogus: 1\n"), "unknown key"},
 		{"unknown config item key", note("        find:\n          config:\n            - key: a\n              bogus: 1\n"), "unknown key"},

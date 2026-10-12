@@ -3,6 +3,8 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
 func TestCopyButtonBasic(t *testing.T) {
@@ -72,6 +74,34 @@ func TestCopyButtonIconOnly(t *testing.T) {
 	}
 }
 
+// Inline adds its class, and its rule sets the knobs on the button
+// itself with the 24px floor.
+func TestCopyButtonInline(t *testing.T) {
+	if out := string(CopyButton(CopyButtonConfig{Target: "x", IconOnly: true, Inline: true})); !classTokenPresent(out, "fui-copy-btn--inline") {
+		t.Errorf("Inline lacks its class: %s", out)
+	}
+	if out := string(CopyButton(CopyButtonConfig{Target: "x", IconOnly: true})); classTokenPresent(out, "fui-copy-btn--inline") {
+		t.Errorf("the default draws the inline class: %s", out)
+	}
+	if !strings.Contains(copyButtonCSS(style.Theme{}), ".fui-copy-btn--inline {\n  --ui-copy-btn-size: 1.5rem;") {
+		t.Error("the inline rule does not set the 24px size knob")
+	}
+}
+
+// Ghost adds its class, and its rule drops the outline and the
+// touch-target floor a small icon Button also drops.
+func TestCopyButtonGhost(t *testing.T) {
+	if out := string(CopyButton(CopyButtonConfig{Target: "x", IconOnly: true, Ghost: true})); !classTokenPresent(out, "fui-copy-btn--ghost") {
+		t.Errorf("Ghost lacks its class: %s", out)
+	}
+	if out := string(CopyButton(CopyButtonConfig{Target: "x", IconOnly: true})); classTokenPresent(out, "fui-copy-btn--ghost") {
+		t.Errorf("the default draws the ghost class: %s", out)
+	}
+	if !strings.Contains(copyButtonCSS(style.Theme{}), ".fui-copy-btn--ghost {\n  --ui-copy-btn-size: auto;\n  --ui-copy-btn-border: transparent;") {
+		t.Error("the ghost rule does not clear the size floor and the border")
+	}
+}
+
 func TestCopyButtonAriaLabelOverride(t *testing.T) {
 	out := string(CopyButton(CopyButtonConfig{
 		Target:    "#x",
@@ -91,5 +121,44 @@ func TestCopyButtonExtraAttrsOnRoot(t *testing.T) {
 	root := string(h)[:strings.Index(string(h), ">")+1]
 	if !strings.Contains(root, `data-test="hook"`) {
 		t.Errorf("wrapper root missing data-test:\n%s", root)
+	}
+}
+
+func TestCopyButtonTargetRefusesSelector(t *testing.T) {
+	for _, target := range []string{
+		"#code .line", ".code", "pre > code", "[data-x]", "code:first-child", "div#code",
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Target %q: expected a panic, got a render", target)
+				}
+			}()
+			CopyButton(CopyButtonConfig{Target: target})
+		}()
+	}
+}
+
+func TestCopyButtonIDOnButtonOnly(t *testing.T) {
+	out := string(CopyButton(CopyButtonConfig{Target: "code", ID: "x"}))
+	if n := strings.Count(out, `id="x"`); n != 1 {
+		t.Fatalf("id=\"x\" appears %d times, want once on the button:\n%s", n, out)
+	}
+	btn := out[strings.Index(out, "<button"):]
+	btn = btn[:strings.Index(btn, ">")+1]
+	if !strings.Contains(btn, `id="x"`) {
+		t.Errorf(`id="x" is not on the button: %s`, btn)
+	}
+	if out := string(CopyButton(CopyButtonConfig{Target: "code"})); strings.Contains(out, ` id=`) {
+		t.Errorf("no ID set, yet an id attribute rendered:\n%s", out)
+	}
+}
+
+func TestCopyButtonTargetAcceptsID(t *testing.T) {
+	for _, target := range []string{"code-1", "#code-1"} {
+		out := string(CopyButton(CopyButtonConfig{Target: target}))
+		if !strings.Contains(out, `data-hui-copy-target="code-1"`) {
+			t.Errorf("Target %q: want data-hui-copy-target=\"code-1\"\nout: %s", target, out)
+		}
 	}
 }

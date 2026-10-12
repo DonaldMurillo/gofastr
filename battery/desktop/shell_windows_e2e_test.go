@@ -3,13 +3,20 @@
 package desktop_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"golang.org/x/sys/windows/registry"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/desktoptest"
@@ -21,6 +28,8 @@ import (
 )
 
 const windowsE2EAppID = "windows-shell-e2e.gofastr.dev"
+const windowsE2EScheme = "gofastr-windows-shell-e2e"
+const windowsActivationE2EEnv = "GOFASTR_DESKTOP_TEST_URL_ACTIVATION"
 
 type windowsE2EPage struct{}
 
@@ -57,20 +66,105 @@ func buildWindowsE2EApp() (*framework.App, *desktop.Battery, error) {
 	battery := native.New(desktop.Config{
 		ID: windowsE2EAppID, Title: "Windows WebView2 E2E", DataDir: dataDir,
 		Width: 900, Height: 640, RememberWindows: true,
-		Style: desktop.WindowStyle{Chrome: desktop.ChromeUnified, Material: desktop.MaterialWindow},
-		Menu:  &desktop.Menu{Items: []desktop.MenuItem{{Title: "Go", Children: []desktop.MenuItem{{Title: "Two", Navigate: "/two"}}}}},
-		Tray:  &desktop.Tray{Title: "WindowsE2E", Tooltip: "Windows WebView2 test", Menu: &desktop.Menu{Items: []desktop.MenuItem{{Title: "Show Window", Role: desktop.RoleShow}}}},
+		DeepLink: &desktop.DeepLinkConfig{Scheme: windowsE2EScheme},
+		Style:    desktop.WindowStyle{Chrome: desktop.ChromeUnified, Material: desktop.MaterialWindow},
+		Menu:     &desktop.Menu{Items: []desktop.MenuItem{{Title: "Go", Children: []desktop.MenuItem{{Title: "Two", Navigate: "/two"}}}}},
+		Tray:     &desktop.Tray{Title: "WindowsE2E", Tooltip: "Windows WebView2 test", Menu: &desktop.Menu{Items: []desktop.MenuItem{{Title: "Show Window", Role: desktop.RoleShow}}}},
 	})
 	app.RegisterBattery(battery)
 	return app, battery, nil
 }
 
 func TestMain(m *testing.M) {
+	if isWindowsActivationChild() {
+		app, battery, err := buildWindowsE2EApp()
+		if err == nil {
+			err = battery.Run(app)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Windows activation child: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	if os.Getenv(windowsActivationE2EEnv) == "1" {
+		if err := ensureWindowsE2EProtocolAvailable(); err != nil {
+			fmt.Fprintf(os.Stderr, "Windows activation test: %v\n", err)
+			os.Exit(1)
+		}
+	}
 	code := m.Run()
 	if code == 0 {
 		code = desktoptest.NativePhase(buildWindowsE2EApp, runWindowsE2E)
 	}
+	if os.Getenv(windowsActivationE2EEnv) == "1" {
+		removeWindowsE2EProtocol()
+	}
 	os.Exit(code)
+}
+
+func isWindowsActivationChild() bool {
+	if os.Getenv(windowsActivationE2EEnv) != "1" {
+		return false
+	}
+	prefix := strings.ToLower(windowsE2EScheme + "://")
+	for _, arg := range os.Args[1:] {
+		if strings.HasPrefix(strings.ToLower(arg), prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func removeWindowsE2EProtocol() {
+	classPath := `Software\Classes\` + windowsE2EScheme
+	root, err := registry.OpenKey(registry.CURRENT_USER, classPath, registry.QUERY_VALUE)
+	if err != nil {
+		return
+	}
+	owner, _, ownerErr := root.GetStringValue("GoFastrAppID")
+	_ = root.Close()
+	if ownerErr != nil || owner != windowsE2EAppID {
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	exe, err = filepath.Abs(exe)
+	if err != nil {
+		return
+	}
+	command, err := registry.OpenKey(registry.CURRENT_USER, classPath+`\shell\open\command`, registry.QUERY_VALUE)
+	if err != nil {
+		return
+	}
+	registered, _, commandErr := command.GetStringValue("")
+	_ = command.Close()
+	if commandErr != nil || registered != fmt.Sprintf(`"%s" "%%1"`, exe) {
+		return
+	}
+	for _, path := range []string{
+		classPath + `\shell\open\command`,
+		classPath + `\shell\open`,
+		classPath + `\shell`,
+		classPath,
+	} {
+		_ = registry.DeleteKey(registry.CURRENT_USER, path)
+	}
+}
+
+func ensureWindowsE2EProtocolAvailable() error {
+	classPath := `Software\Classes\` + windowsE2EScheme
+	key, err := registry.OpenKey(registry.CURRENT_USER, classPath, registry.QUERY_VALUE)
+	if err == nil {
+		_ = key.Close()
+		return fmt.Errorf("URL scheme %q is already registered for this user; refusing to replace it", windowsE2EScheme)
+	}
+	if !errors.Is(err, registry.ErrNotExist) {
+		return fmt.Errorf("inspect URL scheme %q: %w", windowsE2EScheme, err)
+	}
+	return nil
 }
 
 // TestWindowsWebView2E2E is the selection point for the manual Windows
@@ -187,6 +281,9 @@ func runWindowsE2E(h *desktoptest.NativeHarness) bool {
 			h.Wait("the secondary window to close", func() bool { return h.Window(opened.ID) == nil })
 		}
 	}
+	if os.Getenv(windowsActivationE2EEnv) == "1" {
+		phaseWindowsDeepLinkActivation(h, log)
+	}
 
 	// This invokes the production ICoreWebView2::CapturePreview path.
 	img := h.Snapshot(log)
@@ -216,4 +313,32 @@ func runWindowsE2E(h *desktoptest.NativeHarness) bool {
 	}
 
 	return !log.Failed()
+}
+
+func phaseWindowsDeepLinkActivation(h *desktoptest.NativeHarness, log *windowsPhaseLog) {
+	h.RecordEvents(log, "deep_link")
+	exe, err := os.Executable()
+	if err != nil {
+		log.Fatalf("locate the e2e executable: %v", err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, windowsE2EScheme+"://two")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Fatalf("second app activation failed: %v; output: %s", err, output)
+		return
+	}
+	h.WaitLocation("/two")
+	event := h.WaitEvent("deep_link")
+	var payload struct {
+		URL  string `json:"url"`
+		Path string `json:"path"`
+	}
+	if err := event.Unmarshal(&payload); err != nil || payload.URL != windowsE2EScheme+"://two" || payload.Path != "/two" {
+		log.Fatalf("deep_link event = %+v (decoded %+v, err %v)", event, payload, err)
+		return
+	}
+	h.Navigate("/")
 }

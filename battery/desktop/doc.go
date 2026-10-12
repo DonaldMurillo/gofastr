@@ -18,8 +18,10 @@
 //
 //   - battery/desktop/macos: the real shell (AppKit + WKWebView) on
 //     darwin/arm64, the unsupported shell elsewhere.
-//   - battery/desktop/windows, battery/desktop/linux: the unsupported
-//     shell today (WebView2 and WebKitGTK when their phases land).
+//   - battery/desktop/windows: the real shell on windows/amd64
+//     (Win32 + WebView2); unsupported elsewhere.
+//   - battery/desktop/linux: the unsupported shell today (WebKitGTK
+//     when its phase lands).
 //   - battery/desktop/native: Shell() picks the platform package by
 //     GOOS; New(cfg) is desktop.New with that shell as the default.
 //

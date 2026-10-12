@@ -57,7 +57,7 @@ func TestDBQueue_ReplayPendingIsNoop(t *testing.T) {
 	if err := q.Enqueue(ctx, Job{Type: "x", Payload: json.RawMessage(`{}`), MaxAttempts: 3}); err != nil {
 		t.Fatal(err)
 	}
-	jobs, err := q.ListJobs(ctx, "pending", 10)
+	jobs, err := q.ListJobs(ctx, "pending", 10, 0)
 	if err != nil || len(jobs) != 1 {
 		t.Fatalf("listjobs pending: %v len=%d", err, len(jobs))
 	}

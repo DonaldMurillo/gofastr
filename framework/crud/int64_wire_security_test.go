@@ -110,7 +110,7 @@ func TestIntJSONRoundTripsOrRefuses(t *testing.T) {
 		{
 			// A host that json.Unmarshals its own body loses the literal to
 			// float64 before crud sees it; the only correct answer left is
-			// refusal (coerceIntColumnValues, the |f| >= 2^53 gate).
+			// refusal (coerceNumberColumnValues, the |f| >= 2^53 gate).
 			name: "in-process create with json-decoded body",
 			run: func(t *testing.T) (int64, bool) {
 				ch, db := intLedger(t)

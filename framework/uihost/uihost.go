@@ -43,6 +43,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
@@ -107,6 +108,7 @@ type UIHost struct {
 	actionHash          map[string]string                    // componentID → content hash of the compiled JS (?v= addressing)
 	actionHandlers      map[string]*component.ActionRegistry // componentID → action registry for server-side handlers
 	actionComps         map[string]component.Component       // componentID → the component the registry was compiled FROM (embed_actions.go walks it)
+	actionScreens       map[string]*app.Screen               // componentID → the screen whose Policy chain gates its actions (AutoCompileActions)
 	customCSS           string                               // extra CSS to inject (e.g. demo.css)
 	extraScripts        []externalScript                     // extra <script src="…"> rail before </body>; every-page + document-lifetime entries (register_script.go)
 	scriptMu            sync.Mutex                           // guards post-construction extraScripts appends + the servingStarted latch (see register_script.go)
@@ -396,8 +398,9 @@ type routeInfoJSON struct {
 // string form ("drawer"/"sheet"), not the Go enum's number: the
 // manifest is a wire format and must not encode iota positions.
 type interceptJSON struct {
-	From string `json:"from"`
-	As   string `json:"as"`
+	From string   `json:"from"`
+	Also []string `json:"also,omitempty"`
+	As   string   `json:"as"`
 }
 
 // Option configures a UIHost.
@@ -804,7 +807,7 @@ body {
   background-color: var(--color-background, #fff);
   color: var(--color-text, #18181b);
   font-family: var(--font-body, 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif);
-  line-height: 1.5;
+  line-height: var(--leading-normal, 1.5);
   -webkit-text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
 }
@@ -862,18 +865,18 @@ main[tabindex="-1"]:focus:not(:focus-visible),
 }
 .skip-link:focus {
   position: fixed !important;
-  top: 8px; left: 8px;
+  top: var(--spacing-md, 8px); left: var(--spacing-md, 8px);
   width: auto; height: auto;
-  padding: 8px 16px;
+  padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   margin: 0;
   overflow: visible;
   clip: auto;
   white-space: normal;
-  z-index: 9999;
+  z-index: calc(var(--z-toast, 500) + 1);
   background: var(--color-text, #18181B);
   color: var(--color-background, #FAFAFA);
-  border-radius: var(--radii-sm, 4px);
-  font: 0.9rem system-ui, -apple-system, sans-serif;
+  border-radius: var(--radii-sm, 6px);
+  font: var(--text-sm, 0.875rem) var(--font-body, system-ui, -apple-system, sans-serif);
   text-decoration: none;
 }
 /* SPA-nav failure toast — shown when loadPage can't fetch the new
@@ -881,10 +884,10 @@ main[tabindex="-1"]:focus:not(:focus-visible),
    after 4s via the runtime. Strict-CSP-clean (no inline styles). */
 .cui-nav-toast {
   position: fixed;
-  right: 16px; bottom: 16px;
-  z-index: 9999;
-  max-width: calc(100vw - 32px);
-  padding: 12px 16px;
+  right: var(--spacing-lg, 16px); bottom: var(--spacing-lg, 16px);
+  z-index: var(--z-toast, 500);
+  max-width: calc(100vw - var(--spacing-2xl, 32px));
+  padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
   /* Reuses the theme's always-dark inkwell pair rather than hardcoding a
      palette or inventing an inverse-surface token. CodeSurface/CodeText are
      deliberately non-inverting and contrast-tuned in both schemes, which is
@@ -893,16 +896,29 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   background: var(--color-code-surface, #18181B);
   color: var(--color-code-text, #FAFAFA);
   border-radius: var(--radii-md, 8px);
-  font: 0.9rem system-ui, -apple-system, sans-serif;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+  font: var(--text-sm, 0.875rem) var(--font-body, system-ui, -apple-system, sans-serif);
+  box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,0.10), 0 4px 6px -4px rgba(0,0,0,0.10));
   opacity: 0;
   transform: translateY(8px);
-  transition: opacity 0.18s, transform 0.18s;
+  transition: opacity var(--duration-fast, 150ms), transform var(--duration-fast, 150ms);
   pointer-events: none;
 }
 .cui-nav-toast.is-visible {
   opacity: 1;
   transform: translateY(0);
+}
+/* data-cui-flash-on-update: the runtime adds .cui-flash to a
+   signal-bound element after each update and removes it after
+   data-cui-flash-duration-ms. The highlight fades from a primary tint
+   back to the element's own background. Motion-averse users get no
+   animation (the runtime also skips the class for them). */
+@media (prefers-reduced-motion: no-preference) {
+  .cui-flash {
+    animation: cui-flash var(--duration-slow, 400ms) var(--easing-ease-out, ease-out);
+  }
+}
+@keyframes cui-flash {
+  from { background-color: color-mix(in srgb, var(--color-primary, #18181B) 25%, transparent); }
 }
 /* Progress indicator on slow SPA navigation. The bar tracks the theme's
    primary color via the token — a literal hex here would keep the bar
@@ -919,16 +935,18 @@ html[aria-busy="true"] {
 // drops it in favor of frameworkPageLoadingCSS when the host sets a
 // page-wide loading component (WithPageLoading): two simultaneous
 // page-wide indicators is never what an author meant.
+//
+// Knobs: --ui-nav-progress-height (2px, the strip's thickness).
 const frameworkProgressStripCSS = `html[aria-busy="true"]::after {
   content: '';
   position: fixed;
   inset: 0 0 auto 0;
-  height: 2px;
+  height: var(--ui-nav-progress-height, 2px);
   background: linear-gradient(90deg, transparent, currentColor 50%, transparent);
   animation: fui-nav-progress 1s linear infinite;
-  z-index: 9999;
+  z-index: calc(var(--z-toast, 500) + 1);
   pointer-events: none;
-  color: var(--color-primary, #4F46E5);
+  color: var(--color-primary, #18181B);
 }
 @keyframes fui-nav-progress {
   0% { transform: translateX(-100%); }
@@ -945,7 +963,7 @@ const frameworkProgressStripCSS = `html[aria-busy="true"]::after {
 const frameworkPageLoadingCSS = `[data-fui-page-loading] {
   visibility: hidden;
   opacity: 0;
-  transition: opacity .18s ease, visibility .18s;
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), visibility var(--duration-fast, 150ms);
   pointer-events: none;
 }
 html[aria-busy="true"] [data-fui-page-loading] {
@@ -967,13 +985,13 @@ const frameworkDimCSS = `
    NOT dimmed — the loading content replaces the old content, dimming
    it would double the signal. */
 [data-cui-outlet], [data-cui-area], [data-cui-layout-slot] {
-  transition: opacity .12s ease;
+  transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-outlet][aria-busy="true"],
 [data-cui-area][aria-busy="true"],
 [data-cui-layout-slot][aria-busy="true"] {
-  opacity: .55;
-  transition-delay: .12s;
+  opacity: var(--opacity-muted, 0.6);
+  transition-delay: var(--duration-fast, 150ms);
 }
 [data-cui-outlet][data-cui-loadstate],
 [data-cui-area][data-cui-loadstate],
@@ -990,12 +1008,12 @@ const frameworkDimCSS = `
 [data-cui-outlet][data-cui-loadstate="shown"],
 [data-cui-area][data-cui-loadstate="shown"],
 [data-cui-layout-slot][data-cui-loadstate="shown"] {
-  animation: fui-load-in .18s ease both;
+  animation: fui-load-in var(--duration-fast, 150ms) var(--easing-ease-in-out, ease) both;
 }
 [data-cui-outlet][data-cui-loadstate="exit"],
 [data-cui-area][data-cui-loadstate="exit"],
 [data-cui-layout-slot][data-cui-loadstate="exit"] {
-  animation: fui-load-out .18s ease both;
+  animation: fui-load-out var(--duration-fast, 150ms) var(--easing-ease-in-out, ease) both;
 }
 @keyframes fui-load-in { from { opacity: 0; } }
 @keyframes fui-load-out { to { opacity: 0; } }
@@ -1033,6 +1051,7 @@ func New(application *app.App, opts ...Option) *UIHost {
 		actionHash:     make(map[string]string),
 		actionHandlers: make(map[string]*component.ActionRegistry),
 		actionComps:    make(map[string]component.Component),
+		actionScreens:  make(map[string]*app.Screen),
 	}
 	for _, opt := range opts {
 		opt(ds)
@@ -1071,6 +1090,12 @@ func New(application *app.App, opts ...Option) *UIHost {
 
 // CompileActions compiles a component's action methods to JS and caches them.
 // It also stores the action registry so handleServerAction can invoke Go handlers.
+//
+// The boot walk over registered screens calls this and records each id's
+// screen, whose Policy chain handleServerAction then runs before the
+// handler. An action a host compiles by calling this directly has no screen
+// recorded, so no Policy runs for it: its Go handler must check the caller
+// itself.
 func (ds *UIHost) CompileActions(componentID string, comp component.Component) string {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
@@ -1134,6 +1159,9 @@ func (ds *UIHost) AutoCompileActions() {
 			}
 			claimed[id] = route.Path
 			ds.CompileActions(id, screen.Component)
+			ds.mu.Lock()
+			ds.actionScreens[id] = screen
+			ds.mu.Unlock()
 		}
 	}
 }
@@ -1211,6 +1239,7 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 		if r.Intercept != nil {
 			infos[i].Intercept = &interceptJSON{
 				From: r.Intercept.From,
+				Also: r.Intercept.AlsoFrom,
 				As:   r.Intercept.As.String(),
 			}
 		}
@@ -1641,7 +1670,10 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 		// comment stays for the threat model.
 	}
 
-	out := ds.injectChromeFor(string(page), path, sessionID, boundedPresenceParam(r), comp)
+	// The confirm dialog goes in before the chrome: the head's
+	// component-stylesheet scan must see the markers inside it.
+	out := injectConfirmTemplate(string(page), r)
+	out = ds.injectChromeFor(out, path, sessionID, boundedPresenceParam(r), comp)
 	out = injectSignalSeed(ctx, out)
 	// SSR-inline registered widgets: non-hidden auto-mount widgets
 	// always go in, and a Hidden deep-link widget goes in when the
@@ -1722,6 +1754,22 @@ func injectWidgetSSR(page string, r *http.Request) string {
 		return page
 	}
 	return replaceChromeMarker(page, "</body>", b.String()+"</body>", "widget chrome")
+}
+
+// injectConfirmTemplate emits the kit's confirm dialog
+// (preset.ConfirmTemplateHTML) once per document, just inside </body>,
+// outside every layout shell, so a client navigation that swaps the
+// shell keeps it. Every page carries it, not just pages with a
+// data-cui-confirm control: a page reached by client navigation runs
+// on the first document's body. Its component markers sit inside the
+// inert template, so the head links the dialog's and the buttons'
+// sheets the way it links any rendered component's.
+func injectConfirmTemplate(page string, r *http.Request) string {
+	tpl := preset.ConfirmTemplateHTML(r.Context())
+	if tpl == "" {
+		return page
+	}
+	return replaceChromeMarker(page, "</body>", string(tpl)+"</body>", "confirm dialog")
 }
 
 // replaceChromeMarker replaces the first occurrence of marker in page, the way
@@ -2212,7 +2260,8 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		if s.scope != nil {
 			docAttr = " data-cui-doc"
 		}
-		fmt.Fprintf(bodyClose, `<script src=%q%s></script>`+"\n", s.src, docAttr)
+		//gofastr:allow(GOFASTR1412) src passed validExternalScriptSrc at registration: a same-origin path, no scheme or host.
+		fmt.Fprintf(bodyClose, `<script src="%s"%s></script>`+"\n", stdhtml.EscapeString(s.src), docAttr)
 	}
 
 	// Color-scheme bootstrap runs SYNCHRONOUSLY at the top of <head>
@@ -2753,7 +2802,7 @@ func (ds *UIHost) handlePartRequest(w http.ResponseWriter, r *http.Request, path
 	if seed := partialSeedIslandDelta(ctx, string(fill.HTML), sent); seed != "" {
 		b.WriteString(seed)
 	}
-	fmt.Fprintf(&b, `<template data-cui-fill=%q>%s</template>`, addr, fill.HTML)
+	fmt.Fprintf(&b, `<template data-cui-fill="%s">%s</template>`, stdhtml.EscapeString(addr), fill.HTML)
 	fmt.Fprint(w, b.String())
 }
 
@@ -2853,7 +2902,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	var res app.RenderResult
 	var err error
 	if overlay != nil {
-		res, err = ds.App.RenderOverlayResult(ctx, path, overlay.As)
+		res, err = ds.App.RenderOverlayResult(ctx, path, r.Header.Get("X-Gofastr-From"), overlay.As)
 	} else if from := r.Header.Get("X-Gofastr-From"); from != "" {
 		// Subtree partial: the client names the route it is navigating
 		// FROM; the server renders only the layout layers the two routes
@@ -2931,6 +2980,12 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 // http.StatusNotFound so a missed navigation answers partial-shaped
 // with the error status.
 func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx context.Context, path string, res app.RenderResult, overlay *app.Intercept, status int) {
+	// Deploy skew: a runtime that reads another markup generation must
+	// not receive this body (markupskew.go).
+	if staleMarkupClient(r) {
+		writeStaleMarkupReload(w, r, path, res.SwapLayer)
+		return
+	}
 	// The status is decided ONCE, here, before any body byte (DESIGN
 	// "Render algorithm"): the 404-outlet outcome (Decided 5), else
 	// the component's own ScreenStatusCode (the same contract the
@@ -3025,9 +3080,12 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 		if seed := partialSeedIsland(ctx, scanned); seed != "" {
 			b.WriteString(seed)
 		}
-		fmt.Fprintf(&b, `<template data-cui-fill=%q>%s</template>`, res.SwapLayer, res.HTML)
+		// HTML attribute escaping, not Go quoting (%q): a {param} group's
+		// layer key carries the resolved route value, and %q's `\"` ends an
+		// HTML attribute.
+		fmt.Fprintf(&b, `<template data-cui-fill="%s">%s</template>`, stdhtml.EscapeString(res.SwapLayer), res.HTML)
 		for _, f := range res.Fills {
-			fmt.Fprintf(&b, `<template data-cui-fill=%q>%s</template>`, f.Addr, f.HTML)
+			fmt.Fprintf(&b, `<template data-cui-fill="%s">%s</template>`, stdhtml.EscapeString(f.Addr), f.HTML)
 		}
 		if status != 0 {
 			w.WriteHeader(status)
@@ -3362,6 +3420,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 		Params      map[string]string `json:"params"`
 		Session     string            `json:"session"`
 		ComponentID string            `json:"componentId"`
+		Page        string            `json:"page"`
 	}
 	if !decodeBounded(w, r, &body) {
 		return
@@ -3409,13 +3468,45 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	// Read the guarantee narrowly. A uihost session is SELF-MINTED: any
 	// same-origin caller can POST /__gofastr/session and get one with no
 	// credential, because island state needs an id before any user exists. So
-	// this check does not make server actions privileged, and a server action
-	// is NOT an authorization boundary: a handler that mutates anything must
-	// check authorization itself. What the check does buy is that a grant
-	// confers nothing here that an anonymous visitor did not already have,
-	// which is exactly what handleCreateSession's matching refusal preserves.
+	// this check does not make server actions privileged. The owning screen's
+	// Policy chain runs next, which keeps a caller the page refuses away from
+	// its actions; anything finer than that page-level gate (per record, per
+	// param) the handler must still check itself. What the session check
+	// does buy is that a grant confers nothing here that an anonymous
+	// visitor did not already have, which is exactly what
+	// handleCreateSession's matching refusal preserves.
 	if _, ok := ds.requireValidSession(w, r); !ok {
 		return
+	}
+
+	// The owning screen's Policy chain. The page render runs it before Load,
+	// and the actions are compiled from that same screen's component, so a
+	// caller the policy keeps off the page must not run them either. The
+	// runtime sends the page path the action came from; when it resolves to
+	// this screen, the policy sees that page's route params, and so decides
+	// what a render of that URL would. A path the client picks gains nothing
+	// a page load would not: it names a page the policy then judges. Any
+	// other path leaves the params empty, and a policy that reads one
+	// refuses. A redirect decision is a refusal here, since an RPC cannot
+	// follow it.
+	ds.mu.RLock()
+	screen := ds.actionScreens[componentID]
+	ds.mu.RUnlock()
+	if screen != nil {
+		ctx := app.WithRequest(r.Context(), r)
+		if body.Page != "" {
+			if m, ok := ds.App.Router.MatchFor(body.Page); ok && m.ScreenID() == screen.Path {
+				ctx = app.WithMatch(ctx, m)
+			}
+		}
+		if d := app.ResolvePolicy(ctx, screen); d.Kind != app.DecisionAllow {
+			status := http.StatusForbidden
+			if d.Kind == app.DecisionBlock && d.Status >= 400 && d.Status < 600 {
+				status = d.Status
+			}
+			http.Error(w, http.StatusText(status), status)
+			return
+		}
 	}
 
 	// Invoke the Go handler if one exists

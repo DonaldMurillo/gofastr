@@ -1,11 +1,33 @@
 package ui
 
 import (
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 
 	"strings"
 	"testing"
 )
+
+// The dismiss is a button, so without a reset it wears the browser's
+// border and fill. It draws as a small ghost icon button and keeps its
+// 44px tap target on a pseudo-element.
+func TestNotificationDismissIsGhost(t *testing.T) {
+	css := notificationCSS(style.DefaultTheme())
+	sel := `[data-cui-comp="ui-notification"] .fui-notification__dismiss`
+	body := ruleBody(t, css, sel)
+	for _, want := range []string{"border: 0;", "background: transparent;", "inline-size: var(--ui-notification-dismiss-size, 1.75rem);"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("dismiss rule lacks %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "touch-target") {
+		t.Errorf("the drawn box is the tap target:\n%s", body)
+	}
+	hit := ruleBody(t, css, sel+"::after")
+	if !strings.Contains(hit, "var(--spacing-touch-target, 44px)") {
+		t.Errorf("no 44px hit area:\n%s", hit)
+	}
+}
 
 func TestNotificationRequiresTitle(t *testing.T) {
 	defer func() { recover() }()

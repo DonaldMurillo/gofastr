@@ -177,7 +177,7 @@ func resolveUtilityClass(class string, theme Theme) string {
 		return fmt.Sprintf("border-color: var(--color-%s);", token)
 	}
 	if class == "border" {
-		return "border-width: 1px;"
+		return "border-width: var(--stroke-thin);"
 	}
 
 	// Border radius

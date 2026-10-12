@@ -47,24 +47,30 @@
     }
   }
 
-  function say(lb, what) {
+  function statusOf(lb) {
     const input = inputOf(lb);
     const root = input && input.closest('[data-hui-combobox]');
-    const status = root && root.querySelector('[data-hui-combobox-status]');
+    return root && root.querySelector('[data-hui-combobox-status]');
+  }
+
+  function say(lb, what) {
+    const status = statusOf(lb);
     if (status) status.textContent = what || '';
   }
 
   function announce(lb) {
     // The count sentence travels on the listbox; {n} is written in
-    // when the count is known. No sentence, no announcement.
+    // when the count is known. No sentence, no announcement. The
+    // no-results word travels on the status region it is said in.
     const fmt = lb.getAttribute('data-hui-combobox-count');
     if (!fmt) return;
     const n = lb.querySelectorAll('[role="option"]:not([hidden])').length;
     if (n === 0) {
-      say(lb, lb.getAttribute('data-hui-combobox-no-results') || '');
+      const status = statusOf(lb);
+      say(lb, (status && status.getAttribute('data-hui-combobox-no-results')) || '');
       return;
     }
-    say(lb, fmt.replace('{n}', String(n)));
+    say(lb, fmt.replace('{n}', () => String(n)));
   }
 
   function closeListbox(input, lb) {
@@ -89,8 +95,39 @@
     catch (_) { return false; }
   }
 
+  // A picker's hidden value input, or null for a search combobox.
+  function pickValueOf(input) {
+    const root = input.closest('[data-hui-combobox-pick]');
+    return root && root.querySelector('[data-hui-combobox-value]');
+  }
+
+  // The label a picker last committed: what the input showed when the
+  // page drew it, then each pick. Typing that is not a pick goes back
+  // to it on blur; clearing the input clears the value.
+  const committed = new WeakMap();
+  function committedLabel(input) {
+    return committed.has(input) ? committed.get(input) : input.defaultValue;
+  }
+
+  function setPicked(input, hidden, value, label) {
+    committed.set(input, label);
+    input.value = label;
+    if (hidden.value === value) return;
+    hidden.value = value;
+    // The host form hears the edit (its leave guard, its watchers).
+    hidden.dispatchEvent(new Event('input', { bubbles: true }));
+    hidden.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
   function pickOption(input, lb, opt) {
     if (!opt) return;
+    const hidden = pickValueOf(input);
+    if (hidden) {
+      setPicked(input, hidden, opt.getAttribute('data-value') || '',
+        opt.getAttribute('data-label') || (opt.textContent || '').trim());
+      closeListbox(input, lb);
+      return;
+    }
     const val = opt.getAttribute('data-value') || (opt.textContent || '').trim();
     input.value = val;
     input.dispatchEvent(new Event('change', { bubbles: true }));
@@ -195,9 +232,24 @@
   document.addEventListener('focusin', function (e) {
     const input = e.target && e.target.closest && e.target.closest('[data-hui-combobox-input]');
     if (!input) return;
+    // A picker selects its label on focus: typing searches afresh
+    // rather than appending to the picked name.
+    if (pickValueOf(input) && input.select) input.select();
     const lbId = input.getAttribute('aria-controls');
     const lb = lbId ? document.getElementById(lbId) : null;
     if (lb && lb.querySelector('[role="option"]')) openListbox(input, lb);
+  });
+
+  // A picker's input leaving focus keeps the value it shows: typed
+  // text that was never picked goes back to the committed label, and
+  // an emptied input clears the value.
+  document.addEventListener('focusout', function (e) {
+    const input = e.target && e.target.closest && e.target.closest('[data-hui-combobox-input]');
+    if (!input) return;
+    const hidden = pickValueOf(input);
+    if (!hidden) return;
+    if (!(input.value || '').trim()) setPicked(input, hidden, '', '');
+    else if (input.value !== committedLabel(input)) input.value = committedLabel(input);
   });
 
   // Outside-click closes any open combobox.
@@ -246,12 +298,26 @@
     announce(lb);
   });
 
-  // The arrival pass: announce the static list's count, and close any
-  // listbox whose island region was swapped empty.
+  // An island listbox's rows arrive by the kernel's html signal swap,
+  // which replaces the listbox's children: the arrival pass sees the
+  // new rows (or nothing at all, for an empty swap), never the listbox.
+  // An observer on the listbox's own children hears every swap and
+  // replaces the "Loading…" the input wrote with the count, or the
+  // no-results word.
+  const watched = new WeakSet();
+  function watchIsland(lb) {
+    if (watched.has(lb) || typeof MutationObserver !== 'function') return;
+    watched.add(lb);
+    new MutationObserver(function () { announce(lb); }).observe(lb, { childList: true });
+  }
+
+  // The arrival pass: announce the static list's count, and watch each
+  // island listbox for its swaps.
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
     for (const lb of within(scope, '[data-hui-combobox-listbox]')) {
       if (lb.hasAttribute('data-hui-combobox-static')) announce(lb);
+      else watchIsland(lb);
     }
   }
 

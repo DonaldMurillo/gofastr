@@ -151,7 +151,7 @@ func colorFieldCSS(_ style.Theme) string {
   inline-size: var(--spacing-touch-target, 44px);
   block-size: var(--spacing-touch-target, 44px);
   padding: var(--spacing-xs, 2px);
-  border: 1px solid var(--color-border, #e4e4e7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
   border-radius: var(--fui-field-radius);
   background-color: var(--color-surface, #fff);
   cursor: pointer;
@@ -167,24 +167,24 @@ func colorFieldCSS(_ style.Theme) string {
   min-block-size: var(--fui-density-control-h);
   font-family: var(--font-mono, ui-monospace, monospace);
   padding: var(--ui-control-padding-y, 10px) var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #e4e4e7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #fff);
   color: var(--color-text, #18181b);
   font-size: var(--text-base, 1rem);
 }
 .fui-color__text:focus-visible {
-  outline: 2px solid var(--color-primary, #4f46e5);
-  outline-offset: 1px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(var(--stroke-focus-offset, 2px) / 2);
 }
 .fui-color__text[aria-invalid="true"],
 .fui-color[data-invalid] .fui-color__text {
   border-color: var(--color-danger, #dc2626);
-  box-shadow: inset 0 0 0 1px var(--color-danger, #dc2626);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #dc2626);
 }
 .fui-color__swatch:disabled,
 .fui-color__text:disabled {
-  opacity: 0.55;
+  opacity: var(--opacity-muted, 0.6);
   cursor: not-allowed;
 }`
 }

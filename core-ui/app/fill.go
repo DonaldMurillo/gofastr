@@ -35,8 +35,8 @@ import (
 var ErrNoFill = errors.New("app: no fill for this route")
 
 // Fill is one resolved non-primary fill on the wire: the outlet or area
-// address, its HTML, and the FNV-64a hash of that HTML (hex). The hash
-// lets the client skip re-applying an unchanged fill.
+// address and its HTML. There is no hash: the runtime re-applies every
+// kept-layer fill on each navigation.
 type Fill struct {
 	Addr string
 	HTML render.HTML

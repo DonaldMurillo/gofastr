@@ -23,8 +23,12 @@ func TestExampleFilterFieldSkipsNoQueryFields(t *testing.T) {
 		{Name: "number", Type: schema.Int, NoQuery: true},
 		{Name: "label", Type: schema.String},
 	}}
-	if got := exampleFilterField(cfg); got != "label" {
-		t.Fatalf("exampleFilterField = %q, want queryable label", got)
+	field, op := exampleFilter(cfg)
+	if field != "label" {
+		t.Fatalf("exampleFilter field = %q, want queryable label", field)
+	}
+	if op != "_gte" {
+		t.Fatalf("exampleFilter op = %q, want _gte on a String column", op)
 	}
 }
 
@@ -32,7 +36,8 @@ func TestExampleFilterFieldRejectsNoQueryCreatedAtFallback(t *testing.T) {
 	cfg := entity.EntityConfig{Fields: []schema.Field{
 		{Name: "created_at", Type: schema.Timestamp, NoQuery: true, AutoGenerate: schema.AutoTimestamp},
 	}}
-	if got := exampleFilterField(cfg); got != "id" {
-		t.Fatalf("exampleFilterField = %q, want id fallback", got)
+	field, op := exampleFilter(cfg)
+	if field != "id" || op != "" {
+		t.Fatalf("exampleFilter = (%q, %q), want id with plain equality", field, op)
 	}
 }

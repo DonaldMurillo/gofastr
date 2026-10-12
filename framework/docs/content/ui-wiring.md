@@ -308,7 +308,12 @@ marked no-store before any branch can return.
   drawer never opens on mobile.** `ui.Sidebar(cfg)` only renders the
   desktop rail; the `< md` drawer is a widget that must be mounted
   once via `ui.MountSidebar(routerMounter{fwApp.Router()}, cfg)` with
-  the *same* config value.
+  the *same* config value. When the layout builds the sidebar per
+  request (`ui.Sidebar(sidebarConfig(ctx))`, because the footer shows
+  Sign out to a signed-in user), mount the drawer with the same builder:
+  `ui.MountSidebarFunc(routerMounter{fwApp.Router()}, sidebarConfig)`.
+  A config built once with `context.Background()` renders the
+  anonymous footer in the phone drawer for everyone.
 - **Registering a screen at an entity's CRUD path.** An entity named
   `posts` already owns `/posts`; a screen at the same path is a
   route-conflict panic at startup. Set an `APIPrefix` or give screens

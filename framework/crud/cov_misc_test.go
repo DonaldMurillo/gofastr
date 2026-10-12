@@ -139,8 +139,8 @@ func TestUniqueViolation_Returns409(t *testing.T) {
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("dup create = %d, want 409", rec.Code)
 	}
-	if strings.Contains(rec.Body.String(), "email") {
-		t.Error("409 body leaked violated column name")
+	if strings.Contains(rec.Body.String(), "uq.") || strings.Contains(rec.Body.String(), "UNIQUE") {
+		t.Errorf("409 body leaked driver detail: %s", rec.Body.String())
 	}
 }
 

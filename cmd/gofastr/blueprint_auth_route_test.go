@@ -88,17 +88,18 @@ screens:
 	if !strings.Contains(out, "authPolicy(") {
 		t.Fatalf("fixture generated no auth gate; the test would pass vacuously")
 	}
-	// Both emitters must be in play: the screen mount and the island policy.
-	// Without the entity_list block the island site never renders, and a
-	// mutation restoring its literal survives — which it did, first time.
-	//
-	// Both entity_list call sites too: dashboard mounts one flat in its body
-	// (blueprintScreenBody's direct call), archive nests one inside a section
-	// child (renderBlueprintBlockForScreen's call). The nested site threads
-	// bp separately — a mutation passing Blueprint{} there compiles, and only
-	// this screen's island policy exposes it.
-	if !strings.Contains(out, "WithIslandPolicy(authPolicy(") {
-		t.Fatalf("fixture generated no island policy; the island half of the "+
+	// Both gated screens must carry the policy in their mount statement:
+	// the dashboard (list flat in its body) and the archive (list nested in
+	// a section). A list renders inside its screen, so the screen's own
+	// policy is the only gate its reads pass besides the entity's — the
+	// island that used to duplicate it is gone.
+	for _, gated := range []string{`"/dashboard"`, `"/archive"`} {
+		if !strings.Contains(out, gated) {
+			t.Fatalf("fixture generated no registration for %s; the guard would be untested:\n%s", gated, gateLines(out))
+		}
+	}
+	if strings.Count(out, "authPolicy(") < 2 {
+		t.Fatalf("both gated screens must register their own policy; the per-screen half of the "+
 			"guard would be untested:\n%s", gateLines(out))
 	}
 	if strings.Contains(out, `authPolicy("/login"`) {

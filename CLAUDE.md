@@ -57,8 +57,11 @@ expose them to agents connected to a live app.**
 
 ## Hard rules
 
-1. Never make in-page state changes (sort, paginate, expand) into routes.
-   They are islands.
+1. In-page state stays on its route: query params or islands, never a
+   new route. A list screen's own sort, page and filter live in its query
+   string, and its links are navigations the client router intercepts; a
+   region embedded in a page (a pager inside a card, an expand) is an
+   island. Neither gets a path of its own.
 2. Never re-implement pagination/sort/filter math in JS. Server-side.
 3. Never use SSE to deliver responses to user actions. SSE is push-only,
    lives on the single `/__gofastr/sse` bus (never a bespoke

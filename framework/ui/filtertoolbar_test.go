@@ -249,3 +249,49 @@ func TestFilterToolbarExtraAttrsCannotOverrideOwned(t *testing.T) {
 		}
 	}
 }
+
+func TestFilterToolbarHiddenCarriesRequestState(t *testing.T) {
+	out := string(FilterToolbar(FilterToolbarConfig{
+		Action: "/orders",
+		Search: &FilterSearch{Name: "q"},
+		Hidden: []HiddenField{{Name: "view", Value: "open"}, {Name: "tab", Value: "due_sort=amount"}},
+	}))
+	for _, want := range []string{
+		`<input data-cui-internal="" name="view" type="hidden" value="open">`,
+		`name="tab"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("hidden input %q missing:\n%s", want, out)
+		}
+	}
+	// A hidden field duplicating a control's name would submit twice with
+	// the browser's last value winning, so it is a render-time refusal.
+	defer func() {
+		if recover() == nil {
+			t.Error("a Hidden name colliding with a control must panic")
+		}
+	}()
+	FilterToolbar(FilterToolbarConfig{
+		Action: "/orders",
+		Search: &FilterSearch{Name: "q"},
+		Hidden: []HiddenField{{Name: "q", Value: "stale"}},
+	})
+}
+
+// A search with a Shortcut takes focus on that chord: the facet carries
+// the shortcut hooks, aimed at its input, and a chip shows the key.
+func TestFilterSearchShortcut(t *testing.T) {
+	h := string(FilterToolbar(FilterToolbarConfig{
+		Action: "/orders",
+		Search: &FilterSearch{Name: "q", Shortcut: "/"},
+	}))
+	for _, want := range []string{`data-hui-shortcut-focus="/"`, `data-hui-shortcut-target="#filter-search-q"`, `data-cui-comp="ui-shortcut-hint"`} {
+		if !strings.Contains(h, want) {
+			t.Errorf("search shortcut misses %q:\n%s", want, h)
+		}
+	}
+	plain := string(FilterToolbar(FilterToolbarConfig{Action: "/orders", Search: &FilterSearch{Name: "q"}}))
+	if strings.Contains(plain, "data-hui-shortcut") {
+		t.Errorf("a search with no Shortcut binds one:\n%s", plain)
+	}
+}

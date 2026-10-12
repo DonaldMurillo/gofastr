@@ -80,10 +80,10 @@ func TestInitDropsAIAgentFiles(t *testing.T) {
 	for _, rel := range []string{
 		"smoke/AGENTS.md",
 		"smoke/DESIGN.md",
-		"smoke/agents/framework.md",
-		"smoke/agents/battery-admin.md",
-		"smoke/agents/battery-log.md",
-		"smoke/agents/battery-print.md",
+		"smoke/.agents/framework.md",
+		"smoke/.agents/battery-admin.md",
+		"smoke/.agents/battery-log.md",
+		"smoke/.agents/battery-print.md",
 		"smoke/.claude/skills/gofastr-host/SKILL.md",
 	} {
 		path := filepath.Join(work, rel)
@@ -100,9 +100,9 @@ func TestInitDropsAIAgentFiles(t *testing.T) {
 
 	// A detail file must carry the AUTO-GENERATED sentinel. That proves
 	// writeAgentDetailFiles ran with the right header.
-	detail, _ := os.ReadFile(filepath.Join(work, "smoke", "agents", "framework.md"))
+	detail, _ := os.ReadFile(filepath.Join(work, "smoke", ".agents", "framework.md"))
 	if !strings.HasPrefix(string(detail), "<!-- AUTO-GENERATED") {
-		t.Error("agents/framework.md missing AUTO-GENERATED header — header writer regressed")
+		t.Error(".agents/framework.md missing AUTO-GENERATED header — header writer regressed")
 	}
 }
 

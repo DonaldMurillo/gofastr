@@ -45,6 +45,12 @@ the whole transaction.
 - **Atomic.** One transaction; one commit or one rollback.
 - **Hooks run inside the transaction.** `BeforeCreate`, `AfterUpdate`,
   etc. fire per item. A hook error rolls back the whole batch.
+- **Permission is checked per item.** With an `Exposure.Access` block, the
+  route checks the op's permission once up front, then `PATCH` and `DELETE`
+  ask again for every item with `Ref{Type: <entity>, ID: <item id>}`, so a
+  resource-aware Decider that denies one record refuses it here as it does
+  on `PATCH /<entity>/{id}`. A refused item reports `"error": "access denied"`
+  and the batch rolls back.
 - **Events fire only on commit.** `entity.created` etc. fire after a
   successful commit, in input order, one per item. They never fire on
   rollback.

@@ -65,6 +65,13 @@ type ContainerConfig struct {
 	Width ContainerWidth
 	// Pad picks the block padding. Defaults to ContainerPadNone.
 	Pad ContainerPad
+	// Start pins the column to the inline start and drops the
+	// container's own gutter: a measure inside a frame that already
+	// pads its content, such as a settings page in an app shell's
+	// content pane, whose text must start on the same edge as the
+	// shell's other pages. Default centers the column inside its
+	// gutter.
+	Start bool
 	// As lets the caller pick a non-<div> tag (e.g. "section", "main").
 	// Defaults to "div".
 	As    string
@@ -114,6 +121,9 @@ func Container(cfg ContainerConfig, children ...render.HTML) render.HTML {
 		panic("ui: Container unknown Pad " + string(cfg.Pad) +
 			`. Pick one of: "" (none), page, end`)
 	}
+	if cfg.Start {
+		class = strings.TrimSpace("fui-container--start " + class)
+	}
 	return containerStyle.WrapHTML(headless.Container(headless.ContainerProps{
 		Size:       size,
 		Tag:        cfg.As,
@@ -161,6 +171,10 @@ func containerCSS(_ style.Theme) string {
   padding-inline: var(--ui-layout-gutter);
 }
 :where([data-cui-comp="ui-container"]).fui-container--full { max-inline-size: none; }
+/* Start: pinned to the inline start inside a frame that owns the
+   gutter. Later than the breakpoint padding rules at the same weight,
+   so it wins at every width. */
+:where([data-cui-comp="ui-container"]).fui-container--start { margin-inline: 0 auto; padding-inline: 0; }
 [data-cui-comp="ui-container"].fui-container--pad-page { padding-block: var(--ui-container-pad-start, clamp(40px, 6vw, 64px)) var(--ui-container-pad-end, clamp(48px, 7vw, 80px)); }
 [data-cui-comp="ui-container"].fui-container--pad-end { padding-block-end: var(--ui-container-pad-end, clamp(48px, 7vw, 80px)); }`
 }

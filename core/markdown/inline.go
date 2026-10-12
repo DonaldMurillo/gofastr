@@ -51,6 +51,33 @@ func renderInlineDepth(input string, depth int) string {
 	for i < len(input) {
 		ch := input[i]
 		switch {
+		case ch == '\\' && i+1 < len(input) && input[i+1] == '\n':
+			// Backslash hard break (CommonMark): the one spelling of a
+			// <br> that survives an editor stripping trailing spaces.
+			sb.WriteString("<br>\n")
+			i += 2
+		case ch == ' ':
+			// A space run is consumed whole so the lookahead stays O(n).
+			// Before a newline it decides the break: two or more spaces
+			// are a hard break, fewer are dropped in front of a soft
+			// break. At the end of the block it is trailing whitespace
+			// and is dropped.
+			j := i
+			for j < len(input) && input[j] == ' ' {
+				j++
+			}
+			switch {
+			case j == len(input):
+			case input[j] == '\n' && j-i >= 2:
+				sb.WriteString("<br>\n")
+				j++
+			case input[j] == '\n':
+				sb.WriteByte('\n')
+				j++
+			default:
+				sb.WriteString(input[i:j])
+			}
+			i = j
 		case ch == '\\' && i+1 < len(input) && isPunct(input[i+1]):
 			sb.WriteString(escapeHTML(string(input[i+1])))
 			i += 2
@@ -136,7 +163,10 @@ func renderInlineDepth(input string, depth int) string {
 			sb.WriteString(escapeHTML(string(ch)))
 			i++
 		case ch == '\n':
-			sb.WriteString("<br>\n")
+			// Soft break: source text is hard-wrapped, so a plain newline
+			// is not a line break. Emit it as-is; the browser folds it
+			// into a space.
+			sb.WriteByte('\n')
 			i++
 		case ch == '<', ch == '>', ch == '&', ch == '"', ch == '\'':
 			sb.WriteString(escapeHTML(string(ch)))

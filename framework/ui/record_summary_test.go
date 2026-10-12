@@ -61,10 +61,10 @@ func TestRecordSummaryCSSControlsMobileScaleAndActionWidth(t *testing.T) {
 	css := recordSummaryCSS(style.Theme{})
 	for _, want := range []string{
 		`[data-cui-comp="ui-record-summary"]`,
-		`border-inline-start: 4px solid`,
+		`border: var(--stroke-thin, 1px) solid color-mix(in oklab, var(--ui-record-summary-accent,`,
 		`inline-size: fit-content`,
 		`grid-template-columns: minmax(0, 1fr) minmax(15rem, 0.55fr)`,
-		`border-inline-start: 1px solid var(--color-border, #e4e4e7)`,
+		`border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7)`,
 		`@media (max-width: 720px)`,
 		`font-size: var(--ui-record-summary-title-size-mobile, var(--text-2xl, 1.5rem))`,
 		`order: -1`,
@@ -72,6 +72,11 @@ func TestRecordSummaryCSSControlsMobileScaleAndActionWidth(t *testing.T) {
 		if !strings.Contains(css, want) {
 			t.Errorf("RecordSummary CSS missing %q\ncss=%s", want, css)
 		}
+	}
+	// The tone tints the frame; a thick side stripe is the template tell
+	// the callout and notification sheets also refuse.
+	if strings.Contains(css, "4px solid") {
+		t.Errorf("RecordSummary CSS must not paint a side stripe\ncss=%s", css)
 	}
 }
 

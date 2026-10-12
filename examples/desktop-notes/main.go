@@ -38,7 +38,7 @@ import (
 var pageJS []byte
 
 // appID is the reverse-DNS identity: it names the data directory under
-// the OS user config dir and the bundle identifier of a built .app.
+// the OS user config dir and the identifier of a built desktop app.
 const appID = "dev.gofastr.desktop-notes"
 
 var serveFlag = flag.String("serve", "", "serve the same app over HTTP at this address instead of opening a desktop window")
@@ -140,7 +140,7 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, error) {
 			Icon:    appIconPNG(),
 			Menu: &desktop.Menu{Items: []desktop.MenuItem{
 				{Title: "Show Notes", Role: desktop.RoleShow},
-				{Title: "New note", Navigate: "/notes/new"},
+				{Title: "New note", Navigate: "/notes/create"},
 				{Title: "Quick note…", Handler: func(ctx context.Context) error {
 					// The widget is a styled window, not a navigation:
 					// a Navigate row would move the MAIN window.
@@ -157,7 +157,7 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, error) {
 		},
 		Menu: &desktop.Menu{Items: []desktop.MenuItem{
 			{Title: "File", Children: []desktop.MenuItem{
-				{Title: "New note", Key: "cmd+n", Navigate: "/notes/new"},
+				{Title: "New note", Key: "cmd+n", Navigate: "/notes/create"},
 				{Title: "Export all…", Key: "cmd+e", Handler: func(ctx context.Context) error {
 					return exportAll(ctx, app, d)
 				}},

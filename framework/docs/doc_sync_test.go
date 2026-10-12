@@ -57,3 +57,50 @@ func TestRuntimeContractCoversArchitectureAttrs(t *testing.T) {
 		t.Errorf("content/runtime-contract.md is out of sync with core-ui/ARCHITECTURE.md — missing attributes: %s\n(the extract must be updated in the same commit as the ARCHITECTURE table; see the SYNC NOTE in runtime-contract.md)", strings.Join(missing, ", "))
 	}
 }
+
+// TestRuntimeContractAttrsExistUpstream is the inverse sync: every
+// data-cui-* attribute that leads a row of the embedded extract must
+// lead a row of core-ui/ARCHITECTURE.md too. The extract once kept a
+// `data-cui-fill-hash` row after the fill hash was dropped (nothing
+// emitted or read it; every kept-layer fill is re-applied), so a
+// reader built a client around a skip the runtime never performs.
+func TestRuntimeContractAttrsExistUpstream(t *testing.T) {
+	arch, err := os.ReadFile(filepath.Join("..", "..", "core-ui", "ARCHITECTURE.md"))
+	if err != nil {
+		t.Skipf("core-ui/ARCHITECTURE.md not readable: %v", err)
+	}
+	embedded, err := Get("runtime-contract")
+	if err != nil {
+		t.Fatalf("embedded runtime-contract doc missing: %v", err)
+	}
+	attrRe := regexp.MustCompile(`data-cui-[a-z0-9-]+`)
+	upstream := map[string]bool{}
+	for ln := range strings.SplitSeq(string(arch), "\n") {
+		if !strings.HasPrefix(ln, "| `data-cui-") {
+			continue
+		}
+		if cells := strings.SplitN(ln, "|", 3); len(cells) >= 3 {
+			for _, attr := range attrRe.FindAllString(cells[1], -1) {
+				upstream[attr] = true
+			}
+		}
+	}
+	var phantom []string
+	for ln := range strings.SplitSeq(string(embedded), "\n") {
+		if !strings.HasPrefix(ln, "| `data-cui-") {
+			continue
+		}
+		cells := strings.SplitN(ln, "|", 3)
+		if len(cells) < 3 {
+			continue
+		}
+		for _, attr := range attrRe.FindAllString(cells[1], -1) {
+			if !upstream[attr] {
+				phantom = append(phantom, attr)
+			}
+		}
+	}
+	if len(phantom) > 0 {
+		t.Errorf("content/runtime-contract.md documents attributes core-ui/ARCHITECTURE.md does not: %s", strings.Join(phantom, ", "))
+	}
+}

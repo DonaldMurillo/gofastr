@@ -202,9 +202,8 @@ var ratingStyle = registry.RegisterStyle("ui-rating", ratingCSS)
 
 func ratingCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-rating"] {
-  --ui-rating-glyph: 24px;
-  --ui-rating-cell: var(--spacing-touch-target, 44px);
-  --ui-rating-color: var(--color-warning, #F59E0B);
+  --_rating-glyph: var(--ui-rating-glyph, 24px);
+  --_rating-cell: var(--ui-rating-cell, var(--spacing-touch-target, 44px));
   display: inline-flex;
   /* Flex-direction:row-reverse turns our reverse-DOM order back
      into 1..N visual order, while keeping the ~ sibling cascade. */
@@ -235,16 +234,16 @@ func ratingCSS(_ style.Theme) string {
      driven by --ui-rating-cell which Gap variants can shrink for
      tighter density. */
   min-block-size: var(--spacing-touch-target, 44px);
-  min-inline-size: var(--ui-rating-cell);
+  min-inline-size: var(--_rating-cell);
   color: var(--color-border, #E4E4E7);
   cursor: pointer;
-  transition: color 120ms ease, transform 120ms ease;
+  transition: color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), transform var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 /* Glyph (svg) size is driven by a custom property so size variants
    only have to override the property, not duplicate the rule. */
 [data-cui-comp="ui-rating"] .fui-rating__star svg {
-  width: var(--ui-rating-glyph, 24px);
-  height: var(--ui-rating-glyph, 24px);
+  width: var(--_rating-glyph);
+  height: var(--_rating-glyph);
 }
 [data-cui-comp="ui-rating"].fui-rating--small { --ui-rating-glyph: 16px; }
 [data-cui-comp="ui-rating"].fui-rating--large { --ui-rating-glyph: 32px; }
@@ -256,18 +255,18 @@ func ratingCSS(_ style.Theme) string {
    stays ≥24px (WCAG 2.5.8 AA), but AAA is intentionally relaxed for
    dense inline ratings. */
 [data-cui-comp="ui-rating"].fui-rating--gap-tight {
-  --ui-rating-cell: max(24px, calc(var(--ui-rating-glyph) + 8px));
+  --_rating-cell: max(24px, calc(var(--_rating-glyph) + 8px));
   gap: 0;
 }
 [data-cui-comp="ui-rating"].fui-rating--gap-loose { gap: var(--spacing-md, 8px); }
-[data-cui-comp="ui-rating"].fui-rating--gap-wide { gap: 20px; }
+[data-cui-comp="ui-rating"].fui-rating--gap-wide { gap: calc(var(--spacing-sm, 4px) * 5); }
 [data-cui-comp="ui-rating"] .fui-rating__choice:hover {
   transform: scale(1.08);
 }
 [data-cui-comp="ui-rating"] .fui-rating__input:focus-visible + .fui-rating__choice {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
-  border-radius: var(--radii-sm, 4px);
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
+  border-radius: var(--radii-sm, 6px);
 }
 
 /* Highlight: the checked input + every later (in DOM = earlier-in-
@@ -277,19 +276,24 @@ func ratingCSS(_ style.Theme) string {
 [data-cui-comp="ui-rating"] .fui-rating__input:checked ~ .fui-rating__choice,
 [data-cui-comp="ui-rating"]:not(.is-disabled) .fui-rating__choice:hover,
 [data-cui-comp="ui-rating"]:not(.is-disabled) .fui-rating__choice:hover ~ .fui-rating__choice {
-  color: var(--ui-rating-color);
+  /* Amber-600 unset, not --color-warning: the warning token is tuned
+     dark for text on a chip and paints a star brown. The default lives
+     in the fallback, not on the root, so a page or theme that sets
+     --ui-rating-color on an ancestor reaches every rating under it; a
+     shape's own colour is the default beneath it. */
+  color: var(--ui-rating-color, var(--_rating-shape-color, #D97706));
 }
 
 /* Per-shape color overrides — heart / fire feel red, thumb feels
    primary, diamond feels info. Star (default) and circle / square
-   stay on the warning yellow. */
-.fui-rating--heart   { --ui-rating-color: var(--color-danger, #DC2626); }
-.fui-rating--fire    { --ui-rating-color: var(--color-danger, #DC2626); }
-.fui-rating--thumb   { --ui-rating-color: var(--color-primary, #4F46E5); }
-.fui-rating--diamond { --ui-rating-color: var(--color-info, #3B82F6); }
+   stay on the default amber. */
+.fui-rating--heart   { --_rating-shape-color: var(--color-danger, #DC2626); }
+.fui-rating--fire    { --_rating-shape-color: var(--color-danger, #DC2626); }
+.fui-rating--thumb   { --_rating-shape-color: var(--color-primary, #18181B); }
+.fui-rating--diamond { --_rating-shape-color: var(--color-info, #3B82F6); }
 
 [data-cui-comp="ui-rating"].is-disabled .fui-rating__choice {
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: var(--opacity-muted, 0.6);
 }`
 }

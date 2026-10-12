@@ -83,11 +83,62 @@ Every key is **camelCase**, like the rest of the framework:
 attacker-controlled multipart header), and `key` is the storage key the
 backend wrote the file under.
 
+`upload.Config.MaxSize` caps the request body before the multipart form is
+parsed, and a larger body gets `413`. Zero (the field's default) means
+`upload.DefaultMaxSize`, 32 MiB, the same cap `file.MaxProcessFileSize`
+sets on the auto-CRUD path. It does not mean "no limit". Set `MaxSize`
+to accept larger files.
+
 The key is not the client's filename. `upload.UniqueFilename` sanitizes
 the name and appends a nanosecond timestamp and 8 random bytes, so two
 users uploading `report.txt` get two objects instead of the second
 silently overwriting the first. Read `key` from the response; do not
 reconstruct it from `originalName`.
+
+A client cannot send that `key` back in a JSON write to an entity's
+`Image`/`File` field: the CRUD write path accepts only keys the same request
+uploaded (next section). Upload through the entity's own multipart route
+instead, or save the object in host code and write the row there with
+`crud.WithUploadedKeys`.
+
+## Storage keys on JSON and in-process writes
+
+A relative value in an `Image`/`File` field is a storage key, and
+`App.EraseUserData` deletes the keys the erased user's rows name. So the CRUD
+write path (create, update, upsert, batch, nested writes, and the in-process
+`CreateOne` / `UpdateOne` / `UpsertOne` / `TypedQuery.UpdateAll`) accepts a
+relative value, in the field or in a `<field>_variants` `storage_ref`, only
+when:
+
+- this request's multipart parse saved it (the multipart routes do this for
+  you, renditions included);
+- host code saved it and says so with `crud.WithUploadedKeys(ctx, keys...)`;
+- it is already on the row being written, read under the caller's owner,
+  tenant and soft-delete scope (sending an unchanged value back on update is
+  fine); or
+- the context carries `crud.WithServerWrites` (trusted host code).
+
+Anything else answers `400` with `{"fields": {"<field>": ["storage key was
+not uploaded by this request"]}}`. An absolute `http(s)` URL is always
+accepted: it is an external link, and erasure never deletes it.
+`file.IsExternalURL(s)` is the check both sides use, and
+`file.VariantStorageRefs(raw)` reads the keys a `<field>_variants` value
+names.
+
+```go
+ff, err := file.ProcessFileField(ctx, store, r, name, "profiles", "avatar")
+if err != nil { return err }
+_, err = profiles.CreateOne(crud.WithUploadedKeys(ctx, ff.StorageRef),
+    map[string]any{"avatar": ff.URL})
+```
+
+Pass `WithUploadedKeys` only keys your own code just saved. A key taken from
+request data is what the check exists to refuse: without it, a user could
+copy another user's key (published in their `/uploads/<key>` URLs) into their
+own row, erase their account, and delete the other user's file.
+
+`TypedQuery.UpdateAll` writes one value onto many rows, so "already on the
+row" cannot apply there; it needs `WithUploadedKeys` or `WithServerWrites`.
 
 ## Field-name casing
 
@@ -103,10 +154,24 @@ config. (JSON requests are reverse-cased; multipart is not.)
 | `schema.Image`  | multipart file part | `TEXT` URL    |
 | `schema.File`   | multipart file part | `TEXT` URL    |
 
-The two differ in two ways: the UI host emits an image-aware widget for
-`Image` fields, and only `Image` fields run the image pipeline described
-below. A `File` field is any binary, a PDF or a CSV, so decoding it as an
-image would fail every upload.
+The two differ in three ways: the UI host emits an image-aware widget for
+`Image` fields, only `Image` fields run the image pipeline described
+below, and an `Image` field takes only a raster image (PNG, JPEG, GIF or
+WebP, sniffed from the bytes; anything else answers 400 and nothing is
+stored). A `File` field is any binary, a PDF or a CSV, so decoding it as
+an image would fail every upload. `file.AllowTypes(mimes...)` is the
+same check for your own `ProcessFileField` calls; `file.ImageTypes` is
+the image list. In a multipart body a `Decimal` field stays the decimal
+string, as on the JSON path, and a `Bool` field's hidden `"false"`
+followed by its checked box (the HTML checkbox idiom) is one value, the
+box's; any other repeated scalar is still refused.
+
+Entity screens (`framework/entityui`, and so the admin) draw an `Image`
+or `File` field as an upload when the app has file storage: the stored
+file (a thumbnail, or a link named by its file name) above a file input.
+Leaving the input empty keeps the stored file. Set
+`entityui.Extensions.FilesURL` to the path you serve stored files under
+(below), so the screens can draw a stored key.
 
 ## Automatic renditions and placeholders
 
@@ -338,6 +403,9 @@ uploading their own avatar or a cover image) and needs no queue.
 
 Uploads are bounded and content-checked before anything is stored:
 
+- **Type** is checked for `Image` fields (above) and wherever
+  `file.AllowTypes` is passed, from the sniffed type before the filename
+  fallback, so an unknown blob named `logo.png` is not an image.
 - **Size** is capped at `file.MaxProcessFileSize` (32 MiB), and the
   multipart parser buffers at most `crud.MaxMultipartMemory` (32 MiB) in
   memory before spilling to a temp file. An oversize body returns
@@ -576,12 +644,16 @@ characters.
   `File` entity will error. JSON requests still work; they just can't
   set those fields.
 - **Sending a JSON body with a base64 file.** Not supported. Use
-  multipart, or store the file out-of-band and PATCH the URL in.
+  multipart, or host the file elsewhere and PATCH its absolute `https`
+  URL in.
+- **PATCHing a storage key from a separate upload.** A JSON write refuses
+  a relative key the same request did not upload, including one
+  `upload.Handler` returned. See
+  [Storage keys on JSON and in-process writes](#storage-keys-on-json-and-in-process-writes).
 - **Trusting client-supplied URLs.** Multipart writes the URL the
   server gets back from `Storage.Save`, not anything the client sent.
-  Don't try to set a file URL via a JSON request expecting the server
-  to honour it as-is; that path uses the column verbatim and won't
-  validate or upload anything.
+  A JSON request can set an absolute `http(s)` URL, which the server
+  stores as an external link without fetching or uploading anything.
 - **Camelcasing multipart names.** They are literal column names. Use
   snake_case if your DB columns are snake_case.
 - **Expecting sibling columns to appear on their own.** `WithImagePipeline`

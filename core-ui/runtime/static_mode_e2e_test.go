@@ -34,6 +34,14 @@ import (
 // guard). Counters record live widget, RPC-module, and dead RPC requests so
 // static mode proves it neither loads nor dispatches RPC.
 func startStaticModeServer(t *testing.T, static bool) (base string, widgetHits, moduleHits, rpcHits *int32) {
+	base, widgetHits, moduleHits, rpcHits, _ = startStaticModeServerNav(t, static)
+	return base, widgetHits, moduleHits, rpcHits
+}
+
+// startStaticModeServerNav is startStaticModeServer that also reports
+// the live catalog requests made for /next, the destination of the
+// page's #nav link: the gofastr:navigate catalog refresh.
+func startStaticModeServerNav(t *testing.T, static bool) (base string, widgetHits, moduleHits, rpcHits, navHits *int32) {
 	t.Helper()
 	var js string
 	var err error
@@ -45,7 +53,7 @@ func startStaticModeServer(t *testing.T, static bool) (base string, widgetHits, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	var wh, mh, rh int32
+	var wh, mh, rh, nh int32
 	mux := http.NewServeMux()
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
@@ -66,6 +74,9 @@ func startStaticModeServer(t *testing.T, static bool) (base string, widgetHits, 
 	})
 	mux.HandleFunc("/__gofastr/widgets", func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&wh, 1)
+		if r.URL.Query().Get("page") == "/next" {
+			atomic.AddInt32(&nh, 1)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte("[]"))
 	})
@@ -85,16 +96,18 @@ func startStaticModeServer(t *testing.T, static bool) (base string, widgetHits, 
 		if static {
 			htmlAttr = " data-cui-static"
 		}
-		fmt.Fprintf(w, `<!doctype html><html%s><head><title>static</title></head><body>
+		fmt.Fprintf(w, `<!doctype html><html%s><head><title>static</title>
+  <script type="application/json" id="gofastr-routes">[{"path":"/"},{"path":"/next"}]</script></head><body><main>
   <button id="rpc" data-cui-rpc="/dead-rpc">rpc</button>
   <button id="opener" data-cui-open="palette">open</button>
+  <a id="nav" href="/next">next</a>
   <span id="ready">ready</span>
-  <script src="/__gofastr/runtime.js"></script>
+  </main><script src="/__gofastr/runtime.js"></script>
 </body></html>`, htmlAttr)
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return srv.URL, &wh, &mh, &rh
+	return srv.URL, &wh, &mh, &rh, &nh
 }
 
 // TestStaticMode_SkipsServerBackedRequests: the `static` composition
@@ -109,16 +122,28 @@ func TestStaticMode_SkipsServerBackedRequests(t *testing.T) {
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	var ready string
+	var stayed bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitVisible(`#ready`, chromedp.ByID),
 		chromedp.Evaluate(`document.getElementById('ready').textContent`, &ready),
 		chromedp.Click(`#rpc`, chromedp.ByID),
 		chromedp.Click(`#opener`, chromedp.ByID),
+		// One client-side navigation: gofastr:navigate must not reach
+		// the live catalog endpoint either. The window mark proves the
+		// navigation stayed in the document (a hard load would pass
+		// vacuously).
+		chromedp.Evaluate(`window.__staticNavMark = 1`, nil),
+		chromedp.Click(`#nav`, chromedp.ByID),
+		chromedp.Poll(`location.pathname === '/next'`, nil, chromedp.WithPollingTimeout(10*time.Second)),
 		// Let any in-flight fetches land.
 		chromedp.Sleep(600*time.Millisecond),
+		chromedp.Evaluate(`window.__staticNavMark === 1`, &stayed),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
+	}
+	if !stayed {
+		t.Fatal("the #nav click was a full page load, not a client-side navigation: the navigate path went untested")
 	}
 	if got := atomic.LoadInt32(widgetHits); got != 0 {
 		t.Errorf("static composition must not hit the live /__gofastr/widgets?page endpoint (it fetches the dumped /__gofastr/widgets.json instead), got %d hits", got)
@@ -135,7 +160,7 @@ func TestStaticMode_SkipsServerBackedRequests(t *testing.T) {
 // guard must be a no-op on a live page (no marker), the catalog fetch
 // fires on boot and an RPC click still reaches the server.
 func TestStaticMode_LiveStillFiresRequests(t *testing.T) {
-	base, widgetHits, moduleHits, rpcHits := startStaticModeServer(t, false)
+	base, widgetHits, moduleHits, rpcHits, navHits := startStaticModeServerNav(t, false)
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
 
 	if err := chromedp.Run(ctx,
@@ -145,8 +170,15 @@ func TestStaticMode_LiveStillFiresRequests(t *testing.T) {
 		chromedp.Sleep(400*time.Millisecond),
 		chromedp.Click(`#rpc`, chromedp.ByID),
 		chromedp.Sleep(400*time.Millisecond),
+		// A client-side navigation re-fetches the page-scoped catalog.
+		chromedp.Click(`#nav`, chromedp.ByID),
+		chromedp.Poll(`location.pathname === '/next'`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Sleep(400*time.Millisecond),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
+	}
+	if got := atomic.LoadInt32(navHits); got == 0 {
+		t.Error("live mode should re-fetch the widget catalog for the destination page on gofastr:navigate")
 	}
 	if got := atomic.LoadInt32(widgetHits); got == 0 {
 		t.Error("live mode should fetch the widget catalog (guard must be a no-op without the marker)")
@@ -259,6 +291,7 @@ func TestStaticMode_WidgetOpensFromStaticCatalog(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, `<!doctype html><html data-cui-static><head><title>static</title></head><body>
   <button id="opener" data-cui-open="palette">open</button>
+  <a id="nav" href="/next">next</a>
   <span id="ready">ready</span>
   <script src="/__gofastr/runtime.js"></script>
 </body></html>`)

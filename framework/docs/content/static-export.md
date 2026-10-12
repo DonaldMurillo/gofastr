@@ -60,7 +60,8 @@ go build -o site ./examples/site/
 - With `uihost.WithSitemap` / `uihost.WithRobots`: `sitemap.xml` and
   `robots.txt`, byte-identical to what the live handlers serve (same
   route expansion via `StaticPathsProvider`, same `ExcludePaths`, same
-  AI-bot rules). Under `--export-base` every sitemap `<loc>` and the
+  AI-bot rules). A gated screen the export skips is not in the sitemap
+  either. Under `--export-base` every sitemap `<loc>` and the
   derived `Sitemap:` line in robots.txt include the subpath. A
   `sitemap.xml` or `robots.txt` in the app's static dir wins over the
   generated one. Note that on a subpath deploy (e.g. a GitHub Pages

@@ -56,6 +56,7 @@ func Modal(name string) *widget.Builder {
 //
 //	window.__gofastr.toast({variant:"success", title:"Saved", ttl:5000});
 //
+// The stack sits bottom-right, clear of a page's header actions;
 // Position can be overridden after the preset returns. Backdrop is
 // intentionally OFF, toasts are non-blocking.
 func ToastStack(name string) *widget.Builder {
@@ -64,7 +65,7 @@ func ToastStack(name string) *widget.Builder {
 	// renders the empty `data-cui-toast-stack="<name>"` container
 	// the runtime appends items into.
 	return widget.New(name).
-		Mount(widget.TopRight).
+		Mount(widget.BottomRight).
 		Slot("items", clientToastSlot{name: name})
 }
 
@@ -77,6 +78,26 @@ func ToastStack(name string) *widget.Builder {
 // is the kit's and the module names hooks only. With no template
 // registered the module builds a bare, hook-only row.
 const ToastTemplate = "toast-stack"
+
+// ConfirmTemplate is the registry name of the dialog a kit registers
+// (registry.RegisterTemplate) for data-cui-confirm. The runtime's
+// confirm module clones it for every gated control, fills the parts it
+// names by hook (data-cui-confirm-part="title|message|accept|
+// accept-danger|cancel") and opens it modal, so a destructive action
+// asks in the kit's own dialog instead of the browser's. With no
+// template registered the module falls back to window.confirm.
+const ConfirmTemplate = "confirm-dialog"
+
+// ConfirmTemplateHTML renders the registered confirm dialog inside the
+// inert <template data-cui-confirm-dialog> the runtime clones from, or
+// nothing when no kit registered one. The host emits it once per page.
+func ConfirmTemplateHTML(ctx context.Context) render.HTML {
+	tpl, ok := registry.Template(ctx, ConfirmTemplate)
+	if !ok || tpl == "" {
+		return ""
+	}
+	return render.Tag("template", map[string]string{"data-cui-confirm-dialog": ""}, tpl)
+}
 
 // ToastSlotHTML renders the stack container the runtime appends toast
 // rows into: the kernel's data-cui-toast-stack name, the style id the

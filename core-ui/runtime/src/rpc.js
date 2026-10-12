@@ -63,6 +63,14 @@
     await _kilnPost(node, body);
   }
 
+
+  // formResult tells one shared "changed" state (headless-leaveguard's
+  // data-hui-leave-guard hook) whether a form submit committed: ok on a
+  // 2xx, ok:false on a refusal, so a refused save puts the dirt back.
+  const formResult = (form, ok) => {
+    if (form) { try { form.dispatchEvent(new CustomEvent('gofastr:formresult', { bubbles: true, detail: { ok } })); } catch (_) {} }
+  };
+
   async function _dispatchPlainForm(form) {
     const action = form.getAttribute('action');
     // Re-check in the module even though core checks before preventing the
@@ -109,6 +117,9 @@
         redirect: 'follow',
         credentials: 'same-origin',
       });
+      // Reported before the redirect below: a committed form must be
+      // clean by the time the page unloads.
+      formResult(form, resp.ok);
       if (resp.redirected && resp.url) {
         // A hard navigation preserves the original form contract: the target
         // may not be in the SPA route table, and rebuilding also resets SSE.
@@ -117,6 +128,7 @@
     } catch (err) {
       // The write may have committed. Surface the failure so the user does not
       // press submit again and duplicate it.
+      formResult(form, false);
       console.error('[gofastr] form submit could not complete', err);
       if (typeof NS.toast === 'function') {
         NS.toast({ variant: 'error', title: 'Could not complete that submission.', ttl: 6000 });
@@ -124,20 +136,23 @@
     }
   }
 
+
   async function _dispatchRPC(node, opts) {
     const path = node.getAttribute('data-cui-rpc');
     const method = (node.getAttribute('data-cui-rpc-method') || 'POST').toUpperCase();
     const responseSignal = node.getAttribute('data-cui-rpc-signal');
     const closeOnSuccess = node.hasAttribute('data-cui-rpc-close');
     const resetOnSuccess = node.hasAttribute('data-cui-rpc-reset') && node.tagName === 'FORM';
+    const errToast = node.getAttribute('data-cui-rpc-error-toast');
+    const successToast = node.getAttribute('data-cui-rpc-success-toast');
 
     // Confirm before touching abort state. Canceling must not abort an older
     // request or leave an unused controller in the per-signal map.
     // opts.confirmed === true means the caller (a submit bridge) already ran
     // the gate on this submit; skip so the user is not prompted twice.
-    const confirmMsg = node.getAttribute('data-cui-confirm');
-    if (confirmMsg && !(opts && opts.confirmed === true) && typeof window.confirm === 'function') {
-      if (!window.confirm(confirmMsg)) return;
+    if (node.getAttribute('data-cui-confirm') && !(opts && opts.confirmed === true)) {
+      await NS.loadModule('confirm');
+      if (!(await NS.ask(node))) return;
     }
 
     if (responseSignal) {
@@ -149,7 +164,6 @@
 
     let body = node.getAttribute('data-cui-rpc-body');
     let resolvedPath = path;
-    let bodyIsFormData = false;
     // A form control that belongs to a form (every radio/input/select/
     // textarea with node.form set) carries its value exactly like a FORM
     // node: serialize the enclosing form so the handler sees name=value.
@@ -190,7 +204,6 @@
         if (qs) resolvedPath = path + (path.includes('?') ? '&' : '?') + qs;
       } else if (formSource && (formSource.enctype === 'multipart/form-data' || formSource.querySelector('input[type="file"]'))) {
         body = fd;
-        bodyIsFormData = true;
       } else {
         // Repeated keys become arrays; one value stays scalar. getAll avoids
         // inherited names such as constructor and toString on the plain object.
@@ -212,9 +225,10 @@
     const wentry = widgetName && NS._widgets
       && Object.prototype.hasOwnProperty.call(NS._widgets, widgetName)
       && NS._widgets[widgetName];
-    const headers = _csrf({});
+    // Bodyless writes also need JSON content type; fetch owns multipart boundaries.
+    const headers = _csrf(body instanceof FormData || method === 'GET' || method === 'HEAD'
+      ? {} : { 'Content-Type': 'application/json' });
     if (widgetName) headers['X-FUI-Widget'] = widgetName;
-    if (body && !bodyIsFormData) headers['Content-Type'] = 'application/json';
 
     // Signal-targeted requests stay clickable because their abort controller
     // makes rapid replacement safe. Other button/input triggers are disabled.
@@ -238,11 +252,27 @@
         // module renders the server's validation envelope into the
         // fields (demand-loaded; the happy path never pays for it).
         if (formSource) {
+          formResult(formSource, false);
           NS.loadModule('formerrors')
             .then(() => NS._formErrors.report(formSource, r.status, txt))
             .catch(() => {});
+        } else if (errToast !== null) {
+          // An opted-in button: the attribute is the title, the server's
+          // JSON "error" (textContent in the toast, never markup) the body.
+          let msg = '';
+          try {
+            const d = JSON.parse(txt);
+            if (d && typeof d.error === 'string') msg = d.error.slice(0, 300);
+          } catch (_) {}
+          NS._toastOrFallback?.({ variant: 'error', title: errToast || ('Request failed (' + r.status + ')'), body: msg, ttl: 6000 });
         }
         return;
+      }
+      formResult(formSource, true);
+      // A form the server rendered with errors (aria-invalid) clears
+      // them on success too, loading the module if no refusal has yet.
+      if (formSource && formSource.querySelector('[aria-invalid="true"]')) {
+        NS.loadModule('formerrors').then(() => NS._formErrors.clear(formSource)).catch(() => {});
       }
 
       // nav is absent from the embed composition, so invalidation is optional.
@@ -309,14 +339,28 @@
           NS.openWidget(openWidgetName);
         }).catch(() => {});
       }
-
+      // A success toast fires BEFORE the navigate below: the stack lives
+      // outside the swapped region, so the toast outlives the navigation
+      // its RPC triggered — a save that lands on the record page still
+      // says "Saved". _toastOrFallback keeps it reachable when the
+      // feedback module cannot load.
+      // Its action (Undo) passes through as the attribute's JSON: the
+      // feedback module parses it and puts it on the toast's button.
+      if (successToast !== null) {
+        NS._toastOrFallback?.({ variant: 'success', title: successToast || 'Done', ttl: 6000, action: node.getAttribute('data-cui-rpc-success-action') });
+      }
       const navigatePath = node.getAttribute('data-cui-rpc-navigate');
-      if (navigatePath) {
+      // A save inside an intercept layer returns to the layer (or the
+      // page under the stack) it names instead of leaving the stack.
+      if (navigatePath && !NS._interceptReturn?.(navigatePath, node)) {
         try { NS.navigate(navigatePath, { force: true }); }
         catch (_) {}
       }
     } catch (err) {
       if (err && err.name === 'AbortError') return;
+      if (errToast !== null) {
+        NS._toastOrFallback?.({ variant: 'error', title: errToast || 'Request failed', body: 'Network error — please try again', ttl: 6000 });
+      }
       if (responseSignal) {
         NS.setSignal(responseSignal, {
           ok: false,

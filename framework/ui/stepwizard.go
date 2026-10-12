@@ -190,6 +190,9 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 // stepWizardStyle is registered in styles_components.go
 
 func stepWizardCSS(_ style.Theme) string {
+	// Knobs: --ui-step-wizard-step-dot-height (4px) is the progress
+	// rail thickness; --ui-step-wizard-action-min-height (40px) is the
+	// back/next button floor.
 	return `[data-cui-comp="ui-step-wizard"] {
   display: grid;
   gap: var(--spacing-lg, 16px);
@@ -213,14 +216,14 @@ func stepWizardCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__step-dot {
   flex: 1;
-  height: 4px;
-  border-radius: 2px;
+  height: var(--ui-step-wizard-step-dot-height, 4px);
+  border-radius: calc(var(--radii-sm, 6px) / 3);
   background: var(--color-border, #E4E4E7);
-  transition: background 150ms ease;
+  transition: background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__step-dot[data-state="done"],
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__step-dot[data-state="current"] {
-  background: var(--color-primary, #4F46E5);
+  background: var(--color-primary, #18181B);
 }
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__heading {
   margin: 0;
@@ -246,7 +249,7 @@ func stepWizardCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-block-size: 40px;
+  min-block-size: var(--ui-step-wizard-action-min-height, 40px);
   padding: 0 var(--spacing-lg, 16px);
   border-radius: var(--radii-md, 8px);
   font: inherit;
@@ -254,7 +257,7 @@ func stepWizardCSS(_ style.Theme) string {
   cursor: pointer;
 }
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__back {
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   background: var(--color-surface, #FFFFFF);
   color: var(--color-text, #18181B);
 }
@@ -262,8 +265,8 @@ func stepWizardCSS(_ style.Theme) string {
   background: var(--color-surface-soft, #F4F4F5);
 }
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__next {
-  border: 1px solid var(--color-primary, #4F46E5);
-  background: var(--color-primary, #4F46E5);
+  border: var(--stroke-thin, 1px) solid var(--color-primary, #18181B);
+  background: var(--color-primary, #18181B);
   color: var(--color-primary-fg, #FFFFFF);
 }
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__next:hover {
@@ -271,8 +274,8 @@ func stepWizardCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__back:focus-visible,
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__next:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 1px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(var(--stroke-focus-offset, 2px) / 2);
 }
 `
 }

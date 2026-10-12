@@ -2,6 +2,7 @@ package stream
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -57,10 +58,17 @@ func (s *SSEWriter) SetRetry(seconds int) {
 	if seconds <= 0 {
 		return
 	}
+	retryMS := int64(seconds)
+	if retryMS > math.MaxInt64/1000 {
+		retryMS = math.MaxInt64
+	} else {
+		retryMS *= 1000
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ensureHeaders()
-	fmt.Fprintf(s.w, "retry: %d\n", seconds)
+	fmt.Fprintf(s.w, "retry: %d\n\n", retryMS)
+	s.flush.Flush()
 }
 
 // SetID queues an "id:" field to be emitted before the next event.

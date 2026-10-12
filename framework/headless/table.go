@@ -32,6 +32,9 @@ const (
 	PartSort   Part = "sort"
 	PartCell   Part = "cell"
 	PartEmpty  Part = "empty"
+	// PartTableSelect is the label around a select-all header's
+	// checkbox (PartControl).
+	PartTableSelect Part = "table-select"
 )
 
 // Column describes one table column.
@@ -58,6 +61,14 @@ type Column struct {
 	// spellings is refused.
 	HeaderAttrs html.Attrs
 	CellAttrs   html.Attrs
+
+	// SelectAll makes the header a checkbox that governs the row
+	// checkboxes named SelectAll inside this table: checking it checks
+	// them, and their states show it checked, clear or mixed. The
+	// headless module binds it; it is named by Header, or by
+	// Strings.TableSelectAll when Header is empty, and never submitted.
+	// A select-all column cannot sort.
+	SelectAll string
 
 	// Variant is class-map vocabulary for the whole column: looked
 	// up as "<part>--<variant>" on this column's <th> (PartHeader)
@@ -362,6 +373,24 @@ func tableHead(b Box, p TableProps, w *Strings, sortParam, dirParam string) rend
 // (View, Edit, Delete) and an empty column header announces nothing,
 // the axe empty-table-header rule included.
 func tableHeaderCell(b Box, p TableProps, w *Strings, col Column, sortParam, dirParam string) render.HTML {
+	if col.SelectAll != "" {
+		if col.Sortable {
+			panic("headless: Table Column " + strconv.Quote(col.Key) + " is SelectAll and Sortable; a header holds one control")
+		}
+		th := Attrs(map[string]string{"scope": "col", "role": "columnheader"})
+		if cls := b.Classes.Variant(PartHeader, col.Variant); cls != "" {
+			th["class"] = cls
+		}
+		name := col.Header
+		if name == "" {
+			name = w.TableSelectAll
+		}
+		box := Mark(Attrs(map[string]string{"type": "checkbox", "aria-label": name}), "data-hui-table-select-all")
+		box["data-hui-table-select-all"] = col.SelectAll
+		return b.El("th", PartHeader,
+			Merge(Safe(col.HeaderAttrs, "scope", "role", "aria-sort", "aria-hidden", "class"), th),
+			b.El("label", PartTableSelect, nil, b.El("input", PartControl, box)))
+	}
 	if !col.Sortable {
 		th := Attrs(map[string]string{"scope": "col", "role": "columnheader"})
 		if col.Header == "" {
@@ -538,13 +567,15 @@ func init() {
 	Register(Spec{
 		Name: "Table",
 		Anatomy: []Part{PartRoot, PartScroll, PartTable, PartCaption, PartHead, PartRow, PartHeader,
-			PartSort, PartBody, PartCell, PartEmpty, PartStatus},
+			PartSort, PartBody, PartCell, PartEmpty, PartStatus, PartTableSelect, PartControl},
 		Hooks: []string{"data-hui-table", "data-hui-table-signal", "data-hui-table-sort",
-			"data-hui-table-scroll", "data-hui-table-status", "data-hui-table-announcement"},
+			"data-hui-table-scroll", "data-hui-table-status", "data-hui-table-announcement",
+			"data-hui-table-select-all"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Table(TableProps{
 				Caption: "Applications", Path: "/apps",
 				Columns: []Column{
+					{Key: "pick", SelectAll: "ids"},
 					{Key: "name", Header: "Name", Sortable: true},
 					{Key: "env", Header: "Environment", Sortable: true},
 				},
@@ -572,6 +603,20 @@ func init() {
 					Rows: []Row{
 						{ID: "app-1", Cells: map[string]render.HTML{"name": render.Text("blog"), "env": render.Text("production"), "region": render.Text("eu-1")}},
 						{ID: "app-2", Cells: map[string]render.HTML{"name": render.Text("shop"), "env": render.Text("staging"), "region": render.Text("us-1")}},
+					},
+				}, s),
+			}, {
+				Name: "with a select-all column",
+				Why: "the header checkbox governs the row checkboxes its column names, inside this table only; it carries " +
+					"no name, so the form never submits it, and it is named from Strings when its column has no header",
+				HTML: Table(TableProps{
+					Caption: "Applications", Path: "/apps",
+					Columns: []Column{
+						{Key: "pick", SelectAll: "ids"},
+						{Key: "name", Header: "Name"},
+					},
+					Rows: []Row{
+						{ID: "app-1", Cells: map[string]render.HTML{"pick": Choice(ChoiceProps{Type: "checkbox", Name: "ids", Value: "app-1", Label: "Select blog"}, k.For("Choice")), "name": render.Text("blog")}},
 					},
 				}, s),
 			}, {

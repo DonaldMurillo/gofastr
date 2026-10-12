@@ -1,6 +1,7 @@
 package headless
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"regexp"
@@ -30,6 +31,10 @@ const (
 	// from the toast root the tone colours. Only ToastTemplate draws
 	// it; a server-rendered Toast sits in the stack bare.
 	PartToastItem Part = "toast-item"
+	// PartToastAction is a runtime toast's one action button (Undo,
+	// View): only ToastTemplate draws it, and the module removes it
+	// from a row whose toast names no action.
+	PartToastAction Part = "toast-action"
 )
 
 // ToastProps configures one toast.
@@ -183,9 +188,17 @@ func Toast(p ToastProps, s Classes) render.HTML {
 // renders it inside the stack.
 type ToastTemplateProps struct {
 	// Glyphs are the decorative icons per tone (info, success,
-	// warning, danger). A tone with no glyph renders no icon on its
-	// rows.
+	// warning, danger) and per Variants name. A tone or variant with
+	// no glyph renders no icon on its rows.
 	Glyphs map[string]string
+	// Variants are the variant names beyond the four tones a runtime
+	// toast may carry: a kit's neutral, an app's registered status
+	// variants. Each is listed on the template with its class (the
+	// class map's root--<name>) and its glyph (Glyphs[name]); a row of
+	// that variant wears both, is polite, and says no tone word, since
+	// the tone words name the four tones only. A name outside
+	// [a-z0-9-] or one of the four tones is refused.
+	Variants []string
 	// StyleName, when set, is the registered style (the name given to
 	// registry.RegisterStyle) the cloned row loads: rendered as the
 	// kernel's data-cui-comp marker on the row's root, the way the
@@ -200,13 +213,23 @@ type ToastTemplateProps struct {
 	Strings *Strings
 }
 
+// toastVariant is one Variants entry as the module reads it.
+type toastVariant struct {
+	Class string `json:"class"`
+	Glyph string `json:"glyph"`
+}
+
+// toastVariantRe is the charset of a variant name, the one
+// framework/ui's registered status variants use.
+var toastVariantRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
 // styleNameRe is the charset of a registered style's name, the one
 // core-ui/registry's marker scan accepts.
 var styleNameRe = regexp.MustCompile(`^[a-zA-Z0-9_:.-]+$`)
 
 // ToastTemplate renders the row template. Every part the module may
 // fill is present and empty: the tone word, the icon, the title, the
-// body, the dismiss. A part with nothing to say is removed at clone
+// body, the action, the dismiss. A part with nothing to say is removed at clone
 // time, so the rendered row matches what Toast renders for the same
 // content.
 func ToastTemplate(p ToastTemplateProps, s Classes) render.HTML {
@@ -224,6 +247,9 @@ func ToastTemplate(p ToastTemplateProps, s Classes) render.HTML {
 		b.El("span", PartIcon, Mark(Internal(Attrs(map[string]string{"aria-hidden": "true"})), "data-hui-toast-icon")),
 		b.El("span", PartTitle, Mark(Internal(nil), "data-hui-toast-title")),
 		b.El("span", PartBody, Mark(Internal(nil), "data-hui-toast-body")),
+		// Hidden until the module fills it: the template's action has
+		// no label of its own.
+		b.El("button", PartToastAction, Mark(Internal(Attrs(map[string]string{"type": "button"})), "data-hui-toast-action", "hidden")),
 		b.El("button", PartDismiss, Mark(Internal(Attrs(map[string]string{"type": "button"})), "data-hui-toast-dismiss"),
 			render.Text("×")),
 	)
@@ -251,6 +277,25 @@ func ToastTemplate(p ToastTemplateProps, s Classes) render.HTML {
 		"data-hui-toast-tone-success":    w.ToneSuccess,
 		"data-hui-toast-tone-warning":    w.ToneWarning,
 		"data-hui-toast-tone-danger":     w.ToneDanger,
+	}
+	if len(p.Variants) > 0 {
+		// One JSON map for the open set: the names are the kit's and
+		// the app's, so they cannot each be an attribute the hook gates
+		// know by name.
+		extra := map[string]toastVariant{}
+		for _, v := range p.Variants {
+			if !toastVariantRe.MatchString(v) {
+				panic("headless: ToastTemplate Variants " + strconv.Quote(v) + " is not a variant name ([a-z0-9-])")
+			}
+			switch v {
+			case "info", "success", "warning", "danger":
+				panic("headless: ToastTemplate Variants " + strconv.Quote(v) + " is a tone: the template lists the tones already")
+			}
+			extra[v] = toastVariant{Class: s.Variant(PartRoot, v), Glyph: p.Glyphs[v]}
+		}
+		if b, err := json.Marshal(extra); err == nil {
+			attrs["data-hui-toast-variants"] = string(b)
+		}
 	}
 	return render.Tag("template", attrs, item)
 }
@@ -466,12 +511,12 @@ func init() {
 
 	Register(Spec{
 		Name:    "ToastTemplate",
-		Anatomy: []Part{PartToastItem, PartRoot, PartToastToneWord, PartIcon, PartTitle, PartBody, PartDismiss},
+		Anatomy: []Part{PartToastItem, PartRoot, PartToastToneWord, PartIcon, PartTitle, PartBody, PartToastAction, PartDismiss},
 		Hooks: []string{"data-hui-toast-template", "data-hui-toast-item", "data-hui-toast",
-			"data-hui-toast-tone", "data-hui-toast-icon", "data-hui-toast-title", "data-hui-toast-body", "data-hui-toast-dismiss",
+			"data-hui-toast-tone", "data-hui-toast-icon", "data-hui-toast-title", "data-hui-toast-body", "data-hui-toast-action", "data-hui-toast-dismiss",
 			"data-hui-toast-glyph-info", "data-hui-toast-glyph-success", "data-hui-toast-glyph-warning", "data-hui-toast-glyph-danger",
 			"data-hui-toast-variant-info", "data-hui-toast-variant-success", "data-hui-toast-variant-warning", "data-hui-toast-variant-danger",
-			"data-hui-toast-dismiss-label",
+			"data-hui-toast-dismiss-label", "data-hui-toast-variants",
 			"data-hui-toast-tone-info", "data-hui-toast-tone-success", "data-hui-toast-tone-warning", "data-hui-toast-tone-danger"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return ToastTemplate(ToastTemplateProps{Parts: parts}, s)
@@ -483,6 +528,11 @@ func init() {
 				Why:  "an inert template inside the stack carries every class, glyph and word a runtime toast wears, so the module that builds a row from a response header names hooks only and the kit keeps its skin to itself",
 				HTML: ToastTemplate(ToastTemplateProps{
 					Glyphs: map[string]string{"info": "i", "success": "✓", "warning": "!", "danger": "✕"}}, s),
+			}, {
+				Name: "a variant beyond the tones",
+				Why:  "neutral and an app's registered status variants are not tones: the template lists each with its class and glyph so a runtime row of that variant wears them and says no tone word instead of passing for info",
+				HTML: ToastTemplate(ToastTemplateProps{Variants: []string{"neutral"},
+					Glyphs: map[string]string{"neutral": "•"}}, s),
 			}, {
 				Name: "no glyphs",
 				Why:  "a kit without icons leaves the glyph attributes empty and the module drops the icon part at clone time; the tone word still tells a reader the kind of news",

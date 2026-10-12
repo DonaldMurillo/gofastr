@@ -10,18 +10,19 @@ The `battery/desktop` dogfood app: a local-first notes app whose one
   injects) serves the identical app to a browser. The desktop battery
   stays registered in both modes; its boot gate is armed only by `Run`.
 - One owner-scoped entity (`notes`) with `SearchFields` on title and
-  body, so `?q=` free-text search works on the API and the list
-  screen's search box.
-- The list is an island: sorting and pagination swap the table by RPC,
-  no reload. `/notes/{id}` is the engine's detail view (Edit, Delete,
-  Back); the editor (`/notes/new`, `/notes/{id}/edit`) is its form,
-  saving through the runtime's form intercept to `POST/PUT /api/notes`
-  and returning to the detail page.
+  body, so `?q=` free-text search works on the API and the list.
+- The entity screens come from `app.EntityUI` (`framework/entityui`):
+  the list with its search box, view state and sort/page state riding
+  the page's own query string, `/notes/create` the create form, and
+  `/notes/{id}` the record page whose Edit tab holds the editor
+  (saving is a form RPC to `POST/PUT /api/notes` that navigates back).
+  No islands: every state change is a query-param navigation or a
+  form RPC.
 - Every core capability once: File > New note (menu Navigate),
-  File > Export all (save dialog, Markdown file, native event), Copy
-  link (clipboard), a saved note fires a notification (gated by the
-  owner's `notify_on_save` preference), and the window title follows
-  the open note.
+  File > Export all (save dialog, Markdown file, native event), the
+  record page's Copy link, a saved note fires a notification (gated
+  by the owner's `notify_on_save` preference), and the window title
+  follows the open note.
 - A settings window: `desktop.PreferencesScreen`, the battery's form
   over the declared preferences (`notify_on_save`, `export_folder`,
   stored in the app state; no settings entity). `Config.Settings`
@@ -44,7 +45,7 @@ go run ./examples/desktop-notes                    # native window (darwin/arm64
 go run ./examples/desktop-notes --serve :8080      # same app in a browser
 gofastr desktop run  --pkg ./examples/desktop-notes        # build + run, dev tools on
 gofastr desktop build --id dev.gofastr.desktop-notes \
-  --name Notes --scheme gofastr-notes --pkg ./examples/desktop-notes  # dist/Notes.app; gofastr-notes:// links open it
+  --name Notes --scheme gofastr-notes --pkg ./examples/desktop-notes  # Notes.app on macOS; Notes.exe on Windows
 ```
 
 `--serve` mode is also what `gofastr dev` drives (it sets `$PORT`), so
@@ -67,11 +68,10 @@ user reaches them.
 
 ## What needs a bundle
 
-Notifications require a signed `.app`: macOS refuses
-`UNUserNotificationCenter` from `go run`. An ad-hoc signature is
-enough, and `gofastr desktop build` applies one by default when
-`codesign` is on PATH, so the built bundle notifies (the first save
-triggers the system's Allow prompt). Everything else, including the
-clipboard, dialogs, and the export, works unbundled. On hosts without
-a native shell, `Run` reports the named `unsupported` error, and a
-configured tray logs a Warn.
+On macOS, notifications need a signed `.app` because the system refuses
+`UNUserNotificationCenter` from `go run`. An ad-hoc signature is enough,
+and the build command applies one by default when `codesign` is on PATH.
+Windows notifications use tray balloons. Windows deep links need a
+build made with `--scheme`; the app registers the scheme for the current
+user when it starts. On hosts without a native shell, `Run` reports the named
+`unsupported` error, and a configured tray logs a Warn.

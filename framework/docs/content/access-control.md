@@ -412,23 +412,23 @@ specific row, which matters when a resource-aware `Decider` allows the listing
 and denies one record; the collection-level predicate would render a row the
 read-one route refuses.
 
-A custom `DataSource` that implements neither predicate is ungated: the
-interface guarantees only the three read methods, so a computed report or
-search index has no posture to consult. A custom source fronting real entity
-rows must implement `CanReadScoped` itself.
+`framework/entityui` (the list, record and create screens generated apps
+and the admin draw) calls these for you, so a screen inherits the check:
+`List` runs `CanReadScoped` before any read, `Record` runs
+`CanReadScoped` and `CanReadRecordScoped`, and every read of a DIFFERENT
+entity — relation cell labels, the create form's relation picker, a
+relation facet's options, the Related tab's lists, and the stats and
+charts — passes that entity's own gate first.
 
-`framework/ui/resource` calls these for you, so generated screens
-inherit the check: on `List`, `Table`, `Detail`, and the pre-filled edit
-`Form` for the screen's own entity, and separately on the RELATED entity
-behind relation labels, reverse-relation sections, and dashboard aggregates.
-A relation to an entity the caller may not read renders muted (an em dash),
-never the raw foreign key. A bare id is useless to a reader and discloses an
-internal identifier. A reverse-relation section the caller may not read is
-omitted entirely rather than replaced with a notice, because a notice on a
-public page tells every visitor which entities exist.
+A relation to an entity the caller may not read renders muted (an em
+dash), never the raw foreign key. A bare id is useless to a reader and
+discloses an internal identifier. A relation facet whose entity is
+refused draws no options, so the facet is absent rather than an empty
+control. A related list the caller may not read draws the same
+"not available" notice its own list would, never its rows.
 
-`battery/admin` does not go through `ui/resource`; it enforces its own admin
-gate.
+`battery/admin` does not draw entity screens through your app's builders;
+it enforces its own admin gate.
 
 ## Common mistakes
 
@@ -542,6 +542,12 @@ revoked grant stays revoked on every replica:
 - **Tombstone wins on conflict.** If a permission is somehow both granted
   and tombstoned (an inconsistent write), reloads fail closed: the
   tombstone wins.
+- **Wildcards expand before tombstones apply.** A grant made while the
+  registry did not know a resource persists the wildcard literally
+  (`reports:*`). Reloads and `LoadInto` both expand that row against the
+  current registry first and subtract tombstones second, so revoking one
+  capability it covers (`reports:delete`) keeps it revoked on every
+  reload.
 
 **Consistency window.** Fanout is lossy best-effort. A publish that
 doesn't reach a peer (the peer's queue overflowed, the bus was briefly
@@ -619,7 +625,7 @@ role policy on resource-aware checks, so it can tighten *or* loosen the coarse
 // access.Ref identifies the resource a check is about.
 type Ref struct {
     Type string // entity name: "projects"
-    ID   string // record id; "" for collection-level checks (List/Create/batch/feed)
+    ID   string // record id; "" for collection-level checks (List/Create/batch gate/feed)
 }
 
 type Decision int
@@ -642,6 +648,12 @@ type Decider func(ctx context.Context, roles []string, capability Permission, re
 `access.Can` itself is untouched: there is no wildcard or resource-segment
 logic in the hot path. The resource-aware path is a separate entrypoint you opt
 into; with no decider installed, `CanResource` answers byte-identically to `Can`.
+
+`access.CanResourceExact(ctx, capability, resource)` asks the `Decider` the
+same way, but on abstain passes only when the caller's roles hold `capability`
+by name: a role granted the Wildcard does not satisfy it. A state move's
+`Permission` is checked this way, so a superuser role does not pick up every
+narrow capability an app declares.
 
 The seam binds **every** permission gate, not only resource-scoped ones:
 `access.RequirePermission` consults it too, passing the zero `Ref` (a
@@ -698,9 +710,14 @@ func decideProjectAccess(ctx context.Context, roles []string, cap access.Permiss
 Auto-CRUD consults this automatically: `Exposure.Access` gates route through
 `CanResource`, passing `Ref{Type: <entity name>, ID: <path id>}` for item-scoped
 ops (read-one/update/delete) and `Ref{Type: <entity name>, ID: ""}` for
-collection-level ops (list/create/batch/the `_events` feed). No handler change
-is needed: declaring the `Access` block and mounting `DeciderMiddleware` is the
-whole wiring.
+collection-level ops (list/create/batch/the `_events` feed). The `_batch`
+update and delete routes then ask again for every item, with
+`Ref{Type: <entity name>, ID: <item id>}`, inside the batch transaction: a Deny
+on any one item fails the batch (`committed: false`, that item's error is
+`access denied`) and nothing is written. A per-record Deny therefore covers
+`PATCH /<entity>/_batch` and `DELETE /<entity>/_batch` as well as the single
+routes. No handler change is needed: declaring the `Access` block and mounting
+`DeciderMiddleware` is the whole wiring.
 
 ### When to Deny vs Abstain
 

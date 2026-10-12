@@ -279,8 +279,12 @@ type tokenScopesKey struct{}
 type tokenIDKey struct{}
 
 // WithTokenScopes stashes a token's scopes in ctx. TokenMiddleware calls
-// this on success; request handlers read it via TokenScopes / HasScope.
+// this on success; request handlers read it via TokenScopes / HasScope. It
+// also marks ctx as scoped for the framework (access.WithHeldScopes), which
+// is how the CRUD layer holds ?include=, ?rel.field= filters and cascade
+// writes to the same scopes RequireAPIScopes applies to the path.
 func WithTokenScopes(ctx context.Context, scopes []string) context.Context {
+	ctx = access.WithHeldScopes(ctx, scopes)
 	return context.WithValue(ctx, tokenScopesKey{}, scopes)
 }
 

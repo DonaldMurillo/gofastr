@@ -45,6 +45,15 @@ type ComboboxOption struct {
 	Disabled bool
 }
 
+// ComboboxPick is a picker's submitted value.
+type ComboboxPick struct {
+	// Name is the hidden input's form name. Required.
+	Name string
+	// Value is the picked option's value; Label is the text the input
+	// shows for it. Both empty when nothing is picked.
+	Value, Label string
+}
+
 // ComboboxProps configures the combobox.
 type ComboboxProps struct {
 	// ID is the input's element id. Required; the listbox takes
@@ -74,6 +83,19 @@ type ComboboxProps struct {
 	// precedence over the Island (no round-trip fires).
 	Options []ComboboxOption
 
+	// Pick turns the combobox into a picker inside a host form: the
+	// input searches (its Name is the query the Island endpoint reads)
+	// and a hidden input submits the picked option's Value. Requires
+	// Island; refuses NoScriptAction, whose form would nest inside the
+	// host form. Options become the listbox's first rows, replaced by
+	// each search.
+	Pick *ComboboxPick
+
+	// Control hands the input to a host Field: the field's label
+	// names it (the combobox draws none of its own; Label still names
+	// the listbox), and its hint and error describe it.
+	Control *FieldControl
+
 	// DebounceMS bounds the input debounce. Zero takes 250; negative
 	// is refused.
 	DebounceMS int
@@ -95,19 +117,32 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 		panic("headless: Combobox requires Name — the no-script form submits the query under it")
 	}
 	checkLabel("Combobox", "Label", p.Label)
-	hasStatic := len(p.Options) > 0
+	hasStatic := len(p.Options) > 0 && p.Pick == nil
+	if p.Pick != nil {
+		if p.Island == nil {
+			panic("headless: Combobox Pick requires Island — a picker searches the server")
+		}
+		if p.NoScriptAction != "" {
+			panic("headless: Combobox Pick refuses NoScriptAction — its form would nest inside the host form the picker submits with")
+		}
+		if p.Pick.Name == "" {
+			panic("headless: Combobox Pick requires Name — the hidden input submits the picked value under it")
+		}
+	}
 	if p.Island == nil && !hasStatic {
 		panic("headless: Combobox requires Island or Options — a combobox whose results come from nowhere is a text field")
 	}
 	if p.Island != nil {
 		p.Island.check()
-		if p.NoScriptAction == "" {
+		if p.NoScriptAction == "" && p.Pick == nil {
 			panic("headless: Combobox requires NoScriptAction when Island is set — a reader without script must still reach the results")
 		}
 		if p.NoScriptAction == "#" {
 			panic("headless: Combobox NoScriptAction must be a real same-origin destination, not #")
 		}
-		checkSameOrigin("Combobox", "NoScriptAction", p.NoScriptAction)
+		if p.Pick == nil {
+			checkSameOrigin("Combobox", "NoScriptAction", p.NoScriptAction)
+		}
 	}
 	if p.DebounceMS < 0 {
 		panic("headless: Combobox DebounceMS " + strconv.Itoa(p.DebounceMS) + " is negative — a negative debounce fires before the keystroke")
@@ -146,6 +181,27 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 	if p.Placeholder != "" {
 		inputAttrs["placeholder"] = scrubControlBytes(p.Placeholder)
 	}
+	if c := p.Control; c != nil {
+		if c.ID != p.ID {
+			panic("headless: Combobox Control.ID " + c.ID + " is not the input's ID " + p.ID + " — the field's label would name nothing")
+		}
+		if c.DescribedBy != "" {
+			inputAttrs["aria-describedby"] = c.DescribedBy
+		}
+		if c.Invalid {
+			inputAttrs["aria-invalid"] = "true"
+		}
+		if c.Required {
+			inputAttrs["aria-required"] = "true"
+		}
+	}
+	if p.Pick != nil {
+		// The search input names a form that does not exist, so the
+		// host form never submits the query; the RPC carrier still
+		// reads it.
+		inputAttrs["form"] = p.ID + "-search"
+		inputAttrs["value"] = scrubControlBytes(p.Pick.Label)
+	}
 
 	// The carrier is a DIV, not a FORM: the HTML parser drops a nested
 	// <form> open tag but honors its </form>, closing any host form the
@@ -183,7 +239,12 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 		Mark(listboxAttrs, "data-hui-combobox-static")
 		Mark(listboxAttrs, "hidden")
 		for _, o := range p.Options {
-			rows = append(rows, comboboxOptionEl(b, o))
+			rows = append(rows, comboboxOptionEl(b, o, false, false))
+		}
+	}
+	if p.Pick != nil {
+		for _, o := range p.Options {
+			rows = append(rows, comboboxOptionEl(b, o, true, false))
 		}
 	}
 
@@ -209,17 +270,28 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 	}
 	status := b.El("span", PartComboboxStatus, statusAttrs, render.HTML(""))
 
-	body := []render.HTML{
-		b.El("label", PartLabel, labelAttrs,
-			render.Text(scrubControlBytes(p.Label))),
+	var body []render.HTML
+	if p.Control == nil {
+		body = append(body, b.El("label", PartLabel, labelAttrs,
+			render.Text(scrubControlBytes(p.Label))))
+	}
+	if p.Pick != nil {
+		value := Attrs(map[string]string{"type": "hidden", "name": p.Pick.Name, "value": p.Pick.Value})
+		Mark(value, "data-hui-combobox-value")
+		body = append(body, render.VoidTag("input", Internal(value)))
+	}
+	body = append(body,
 		b.El("div", PartComboboxForm, carrierAttrs,
 			b.El("input", PartComboboxInput, inputAttrs)),
 		b.El("ul", PartComboboxListbox, listboxAttrs, rows...),
 		status,
-	}
+	)
 
 	rootAttrs := Merge(Safe(p.ExtraAttrs, "role"), nil)
 	Mark(rootAttrs, "data-hui-combobox")
+	if p.Pick != nil {
+		Mark(rootAttrs, "data-hui-combobox-pick")
+	}
 	if wrapped {
 		rootAttrs = Internal(rootAttrs)
 	}
@@ -239,7 +311,26 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 }
 
 // comboboxOptionEl renders one static option row.
-func comboboxOptionEl(b Box, o ComboboxOption) render.HTML {
+// ComboboxRows renders the option rows an island endpoint answers for
+// the listbox whose id is listboxID: ids "<listboxID>-opt-<n>" unless
+// set, and each row's label as data-label, which a picker writes into
+// its input.
+func ComboboxRows(listboxID string, opts []ComboboxOption, s Classes) render.HTML {
+	b := Parts{}.Box(s)
+	rows := make([]render.HTML, 0, len(opts))
+	for i, o := range opts {
+		if o.ID == "" {
+			o.ID = listboxID + "-opt-" + strconv.Itoa(i)
+		}
+		checkFragmentID("Combobox option", "ID", o.ID)
+		// Each row is a root of the answer: its parts are the
+		// component's own.
+		rows = append(rows, comboboxOptionEl(b, o, true, true))
+	}
+	return render.Join(rows...)
+}
+
+func comboboxOptionEl(b Box, o ComboboxOption, labelled, root bool) render.HTML {
 	attrs := Attrs(map[string]string{
 		"id": o.ID,
 	})
@@ -248,6 +339,9 @@ func comboboxOptionEl(b Box, o ComboboxOption) render.HTML {
 		o.Value = o.Label
 	}
 	attrs["data-value"] = scrubControlBytes(o.Value)
+	if labelled {
+		attrs["data-label"] = scrubControlBytes(o.Label)
+	}
 	if o.Disabled {
 		attrs["aria-disabled"] = "true"
 	}
@@ -256,9 +350,13 @@ func comboboxOptionEl(b Box, o ComboboxOption) render.HTML {
 		// href drops the navigation affordance entirely.
 		attrs["data-cui-push-state"] = href
 	}
-	kids := []render.HTML{b.El("span", PartText, nil, render.Text(scrubControlBytes(o.Label)))}
+	var own html.Attrs
+	if root {
+		own = Internal(Attrs(map[string]string{}))
+	}
+	kids := []render.HTML{b.El("span", PartText, own, render.Text(scrubControlBytes(o.Label)))}
 	if o.Meta != "" {
-		kids = append(kids, b.El("span", PartComboboxOption, nil, render.Text(scrubControlBytes(o.Meta))))
+		kids = append(kids, b.El("span", PartComboboxOption, own, render.Text(scrubControlBytes(o.Meta))))
 	}
 	return b.El("li", PartComboboxOption, attrs, kids...)
 }
@@ -272,7 +370,8 @@ func init() {
 			"data-hui-combobox-listbox", "data-hui-combobox-static",
 			"data-hui-combobox-loader", "data-hui-combobox-status",
 			"data-hui-combobox-count", "data-hui-combobox-no-results",
-			"data-hui-combobox-loading"},
+			"data-hui-combobox-loading", "data-hui-combobox-pick",
+			"data-hui-combobox-value"},
 		WithParts: func(s Classes, parts Parts) render.HTML {
 			return Combobox(ComboboxProps{ID: "q", Name: "q", Label: "Search",
 				Options: []ComboboxOption{{Label: "Docs"}, {Label: "Examples"}}, Parts: parts}, s)
@@ -293,6 +392,25 @@ func init() {
 				HTML: Combobox(ComboboxProps{ID: "site-q", Name: "q", Label: "Search",
 					Island:         &Island{Endpoint: "/island/search", Signal: "search"},
 					NoScriptAction: "/search"}, s),
+			}, {
+				Name: "a picker",
+				Why:  "the search input is detached from the host form and a hidden input submits the picked value, so a picker sits inside a record form",
+				HTML: Combobox(ComboboxProps{ID: "f-customer", Name: "q", Label: "Customer",
+					Island:  &Island{Endpoint: "/api/invoices/_options/customer_id", Signal: "pick-customer"},
+					Pick:    &ComboboxPick{Name: "customer_id", Value: "c1", Label: "Ada"},
+					Options: []ComboboxOption{{Value: "c1", Label: "Ada"}}}, s),
+			}}
+		},
+	})
+	Register(Spec{
+		Name:    "ComboboxRows",
+		Anatomy: []Part{PartComboboxOption, PartText},
+		Cases: func(k Kit) []Case {
+			return []Case{{
+				Name: "an island answer",
+				Why:  "the rows an endpoint swaps into a listbox carry the listbox's ids and each label a picker writes back",
+				HTML: render.Tag("ul", map[string]string{"role": "listbox", "id": "f-listbox", "aria-label": "Customers"},
+					ComboboxRows("f-listbox", []ComboboxOption{{Value: "c1", Label: "Ada"}}, k.Classes)),
 			}}
 		},
 	})

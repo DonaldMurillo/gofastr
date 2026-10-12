@@ -143,7 +143,7 @@ func TestDBQueueGateNoHotLoop(t *testing.T) {
 	// The job must NOT have been dead-lettered (attempts must not have
 	// been consumed by gate-failures). Verify by checking it's still
 	// eligible (pending, attempts < max).
-	jobs, err := q.ListJobs(ctx, "", 10)
+	jobs, err := q.ListJobs(ctx, "", 10, 0)
 	if err != nil {
 		t.Fatalf("list jobs: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestDBQueueGateNoClaimChurn(t *testing.T) {
 	// Several claim/release cycles (~100ms apart) would have fired here.
 	time.Sleep(300 * time.Millisecond)
 
-	jobs, err := q.ListJobs(ctx, "", 10)
+	jobs, err := q.ListJobs(ctx, "", 10, 0)
 	if err != nil {
 		t.Fatalf("list jobs: %v", err)
 	}

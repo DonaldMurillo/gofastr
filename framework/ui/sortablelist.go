@@ -116,12 +116,13 @@ func SortableListItems(cfg SortableListConfig) render.HTML {
 var sortablelistStyle = registry.RegisterStyle("ui-sortablelist", sortablelistCSS)
 
 func sortablelistCSS(_ style.Theme) string {
+	// Knobs: --ui-sortablelist-grip-size (28px) is the drag handle box.
 	return `[data-cui-comp="ui-sortablelist"] {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: var(--spacing-xs, 2px);
+  gap: var(--spacing-sm, 4px);
 }
 :where([data-cui-comp="ui-sortablelist"]) .fui-sortablelist__item {
   display: flex;
@@ -129,33 +130,35 @@ func sortablelistCSS(_ style.Theme) string {
   gap: var(--spacing-sm, 4px);
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   background: var(--color-surface, #FFFFFF);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
+  box-shadow: var(--shadow-xs);
+  font-size: var(--text-sm, 0.875rem);
   cursor: default;
   user-select: none;
   min-block-size: var(--spacing-touch-target, 44px);
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 2px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: var(--stroke-focus-offset, 2px);
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-grabbed {
-  background: color-mix(in srgb, var(--color-primary, #4F46E5) 12%, transparent);
-  border-color: var(--color-primary, #4F46E5);
+  background: color-mix(in srgb, var(--color-primary, #18181B) 12%, transparent);
+  border-color: var(--color-primary, #18181B);
   cursor: grabbing;
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-dragging {
-  opacity: 0.5;
+  opacity: var(--opacity-disabled, 0.5);
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__item.is-drop-target {
-  border-top: 2px solid var(--color-primary, #4F46E5);
+  border-top: var(--stroke-thick, 2px) solid var(--color-primary, #18181B);
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__grip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: var(--ui-sortablelist-grip-size, 28px);
+  height: var(--ui-sortablelist-grip-size, 28px);
   padding: 0;
   background: transparent;
   border: 0;

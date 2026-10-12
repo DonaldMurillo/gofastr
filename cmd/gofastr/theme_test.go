@@ -32,6 +32,17 @@ func TestThemeStarterBoots(t *testing.T) {
 	bootThemeModule(t, themeStarterSource())
 }
 
+// The starter's header named the old indigo primary as the value of
+// Primary while the same file set the neutral one (caught in review).
+// The header quotes the primary the file sets.
+func TestThemeStarterDocQuotesPrimary(t *testing.T) {
+	src := themeStarterSource()
+	want := uitheme.Default().Colors.Primary.Value
+	if !strings.Contains(src, fmt.Sprintf("Primary.Value  → %q (literal)", want)) {
+		t.Errorf("starter header does not quote the primary it sets (%s):\n%s", want, src[:min(len(src), 900)])
+	}
+}
+
 // TestThemeEditWritebackBoots runs the `theme edit` write-back source
 // through the same boot: emitThemeGoSource is what a user's edited
 // theme/theme.go is rewritten from, so its output must validate too —

@@ -28,6 +28,11 @@ const maxMultipartMemory = 1 << 20 // 1 MiB
 // the body cap and trigger a spurious 413.
 const multipartFramingSlack = 4 << 10 // 4 KiB
 
+// DefaultMaxSize is the upload cap Handler applies when Config.MaxSize is
+// zero or negative: 32 MiB, the same ceiling framework/file uses. Set
+// MaxSize to allow larger files.
+const DefaultMaxSize int64 = 32 << 20
+
 // UniqueFilename derives a collision-proof storage name from a client
 // filename: the sanitized base name, a UnixNano timestamp, and 16 hex
 // chars of crypto/rand. The random component is the real uniqueness
@@ -82,7 +87,7 @@ type Metadata struct {
 
 // Config holds configuration for the upload handler.
 type Config struct {
-	MaxSize      int64    // Maximum file size in bytes (0 = no limit)
+	MaxSize      int64    // Maximum file size in bytes (0 or less = DefaultMaxSize)
 	AllowedTypes []string // MIME type whitelist (empty = allow all)
 	AllowedExts  []string // Extension whitelist (empty = allow all)
 	Storage      Storage  // Storage backend implementation
@@ -103,10 +108,13 @@ func Handler(cfg Config) http.HandlerFunc {
 		// disk before the size check runs. MaxBytesReader caps total
 		// body bytes (with a small slack for multipart framing); the
 		// maxMemory arg to ParseMultipartForm is a separate RAM-vs-disk
-		// spill threshold, not a body cap.
-		if cfg.MaxSize > 0 {
-			r.Body = http.MaxBytesReader(w, r.Body, cfg.MaxSize+multipartFramingSlack)
+		// spill threshold, not a body cap. A zero MaxSize gets
+		// DefaultMaxSize: an unset field must not mean "spool anything".
+		maxSize := cfg.MaxSize
+		if maxSize <= 0 {
+			maxSize = DefaultMaxSize
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxSize+multipartFramingSlack)
 
 		// Parse multipart form. Use a small fixed in-memory threshold so
 		// large parts spill predictably; do NOT pass MaxSize here.
@@ -141,7 +149,7 @@ func Handler(cfg Config) http.HandlerFunc {
 		}
 
 		// Validate size
-		if err := ValidateSize(header.Size, cfg.MaxSize); err != nil {
+		if err := ValidateSize(header.Size, maxSize); err != nil {
 			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 			return
 		}

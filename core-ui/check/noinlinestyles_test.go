@@ -153,3 +153,80 @@ var y = "this stylesheet is fine"
 		t.Errorf("words containing 'style' substring should not match: %s", res.Error())
 	}
 }
+
+// The computed-value spelling the string and composite scans cannot
+// see: an attrs map built empty and filled with attrs["style"] = …
+// ships exactly the attribute the CSP strips. The fixture is the
+// pre-fix ui.FormFrame spelling verbatim; the detection must fire on
+// it.
+func TestLintNoInlineStyles_FlagsIndexAssignment(t *testing.T) {
+	dir := writeStyleFixture(t, `
+func frame(cfg struct{ width string }) string {
+	attrs := map[string]string{"class": "fui-form-frame"}
+	if w := cssLengthOr(cfg.width, ""); w != "" {
+		attrs["style"] = "--ui-form-frame-side: " + w
+	}
+	return attrs["style"]
+}
+
+func cssLengthOr(s, fallback string) string { return s }
+`)
+	res, err := LintNoInlineStyles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.HasErrors() {
+		t.Fatal("expected violation for attrs[\"style\"] index assignment, got none")
+	}
+	if !strings.Contains(res.Error(), "index assignment") {
+		t.Errorf("violation message missing expected phrase: %s", res.Error())
+	}
+}
+
+// A non-string value keyed by "style" is metadata about the attribute
+// name (a sanitizer denylist), not an emission of one; the index arm
+// skips it exactly as the composite arm does.
+func TestLintNoInlineStyles_SkipsNonStringValueIndex(t *testing.T) {
+	dir := writeStyleFixture(t, `
+var forbidden = map[string]bool{}
+
+func mark() { forbidden["style"] = true }
+`)
+	res, err := LintNoInlineStyles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("a bool-valued style key is metadata, not an emission: %s", res.Error())
+	}
+}
+
+// Parentheses change no value: a wrapped string on either arm still
+// ships the attribute, and a wrapped bool is still metadata.
+func TestLintNoInlineStyles_SeesThroughParens(t *testing.T) {
+	dir := writeStyleFixture(t, `
+var forbidden = map[string]bool{}
+
+func mark() { forbidden["style"] = (true) }
+
+func frame(w string) map[string]string {
+	attrs := map[string]string{}
+	attrs["style"] = (computeStyle(w))
+	return attrs
+}
+
+func card(w string) map[string]string {
+	return map[string]string{"style": ("--x: " + w)}
+}
+
+func computeStyle(w string) string { return w }
+`)
+	res, err := LintNoInlineStyles(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := res.Error()
+	if got := strings.Count(msg, "forbidden"); got != 2 {
+		t.Fatalf("want the index and composite arms to fire once each and the bool to stay quiet; got %d:\n%s", got, msg)
+	}
+}

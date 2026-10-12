@@ -20,10 +20,11 @@
 // two owned trees; it belongs in the hand-maintained part of the app.
 //
 // Everything else in this package is hand-maintained: inkTheme,
-// appIconPNG, the sdkdocs mount, ResourceConfig's ExtraActions
-// / WithIsland / TableHandler, the quick-add customer modal, the
-// keyboard / visual / API-token test suites, and every screen and app
-// file at the root. For those surfaces `gofastr generate --force` must
+// appIconPNG, the sdkdocs mount, the appUI builders' app-side options
+// (the customers list's Quick add action, the customer record's Related
+// tab), the quick-add customer modal, the keyboard / visual / API-token
+// test suites, and every screen and app file at the root. For those
+// surfaces `gofastr generate --force` must
 // never be run in this directory: it would clobber hand-written code
 // the generator does not emit. To refresh the two owned trees, generate
 // into a scratch directory (the gate test shows the exact steps) and

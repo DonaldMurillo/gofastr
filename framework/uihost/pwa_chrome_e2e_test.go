@@ -121,9 +121,9 @@ func TestPWAChromeE2E(t *testing.T) {
 	// branch, which must pass it to the network every time, never
 	// answer it from Cache Storage. Two fetches, two server hits.
 	if err := chromedp.Run(ctx, chromedp.Evaluate(
-		`fetch('/other', {headers: {'X-Gofastr-Navigate': '1', 'X-Gofastr-From': '/'}})
+		`fetch('/other', {headers: {'X-Gofastr-Navigate': '1', 'X-Gofastr-Markup': '2', 'X-Gofastr-From': '/'}})
 			.then(r => { window.__p1 = r.headers.get('X-Gofastr-Partial'); })
-			.then(() => fetch('/other', {headers: {'X-Gofastr-Navigate': '1', 'X-Gofastr-From': '/'}}))
+			.then(() => fetch('/other', {headers: {'X-Gofastr-Navigate': '1', 'X-Gofastr-Markup': '2', 'X-Gofastr-From': '/'}}))
 			.then(r => { window.__p2 = r.headers.get('X-Gofastr-Partial'); }); true`, nil)); err != nil {
 		t.Fatal(err)
 	}

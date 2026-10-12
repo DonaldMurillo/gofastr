@@ -180,7 +180,7 @@ func TestPartial404NotCached(t *testing.T) {
 
 		// The partial branch answers 404-shaped; the status is the
 		// server's own decision (writePartialResult).
-		chromedp.Evaluate(`fetch('/help/gone', {headers: {'X-Gofastr-Navigate': '1', 'X-Gofastr-Fills': '2', 'X-Gofastr-From': '/help/present'}}).then(r => r.status).then(s => { window.__nfStatus = s; }), 0`, &status),
+		chromedp.Evaluate(`fetch('/help/gone', {headers: {'X-Gofastr-Navigate': '1', 'X-Gofastr-Markup': '2', 'X-Gofastr-Fills': '2', 'X-Gofastr-From': '/help/present'}}).then(r => r.status).then(s => { window.__nfStatus = s; }), 0`, &status),
 
 		// Same-chain click: the envelope partial applies the 404 page
 		// into the live shell (no full reload).

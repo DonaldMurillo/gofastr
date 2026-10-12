@@ -9,7 +9,6 @@
 # Regenerate (only when the change to the fragments is intentional):
 #   GOFASTR_UPDATE_RUNTIME_SYMBOLS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeIsSymbolComplete
 #
-boot	10	cfg
 boot	10	lm2
 boot	2	_bootstrapComponentCSS
 boot	2	_initialPass
@@ -49,7 +48,6 @@ boot	4	name
 boot	4	names
 boot	4	node
 boot	4	observeNode
-boot	4	path
 boot	4	rIC
 boot	4	replay
 boot	4	scope
@@ -82,7 +80,6 @@ boot	6	sub
 boot	6	target
 boot	6	url
 boot	6	v
-boot	8	G
 boot	8	lb
 boot	8	lbId
 boot	8	node
@@ -363,11 +360,13 @@ signals	6	s
 signals	6	sep
 signals	6	sep
 signals	8	mode
+widgets-boot	10	cfg
+widgets-boot	10	cfg
 widgets-boot	10	eq
-widgets-boot	12	cfg
 widgets-boot	2	_installEagerWidgetDelegators
 widgets-boot	2	_wcr
 widgets-boot	2	_wready
+widgets-boot	4	path
 widgets-boot	6	anchorPref
 widgets-boot	6	btn
 widgets-boot	6	name
@@ -375,11 +374,13 @@ widgets-boot	6	overrides
 widgets-boot	6	raw
 widgets-boot	6	toastBtn
 widgets-boot	6	tryMount
+widgets-boot	8	G
+widgets-boot-static	10	cfg
 widgets-boot-static	10	eq
-widgets-boot-static	12	cfg
 widgets-boot-static	2	_installEagerWidgetDelegators
 widgets-boot-static	2	_wcr
 widgets-boot-static	2	_wready
+widgets-boot-static	6	G
 widgets-boot-static	6	anchorPref
 widgets-boot-static	6	btn
 widgets-boot-static	6	name

@@ -191,6 +191,27 @@ func TestTagCarriesTheContractOnItsDismiss(t *testing.T) {
 	hasNoContract(t, fixed, "a tag with nothing to dismiss carries the contract anyway")
 }
 
+// A dismissal that removes server state is a mutation: it carries its
+// method and JSON body, and writes no URL of its own.
+func TestTagDismissMutationPostsBody(t *testing.T) {
+	got := Tag(TagProps{Label: "env=prod", DismissHref: "/apps/filters", Island: fixtureIsland,
+		DismissMethod: "post", DismissBody: `{"env":"prod"}`}, nil)
+	has(t, got, `data-cui-rpc-method="POST"`, "the dismiss lost its method")
+	has(t, got, `data-cui-rpc-body="{&quot;env&quot;:&quot;prod&quot;}"`, "the dismiss lost its body")
+	if strings.Contains(string(got), "data-cui-push-state") {
+		t.Errorf("a mutation dismissal pushed a URL:\n%s", got)
+	}
+	refuse(t, "DismissMethod", func() {
+		Tag(TagProps{Label: "x", DismissHref: "/x", Island: fixtureIsland, DismissMethod: "TRACE"}, nil)
+	})
+	refuse(t, "GET", func() {
+		Tag(TagProps{Label: "x", DismissHref: "/x", Island: fixtureIsland, DismissBody: `{}`}, nil)
+	})
+	refuse(t, "JSON", func() {
+		Tag(TagProps{Label: "x", DismissHref: "/x", Island: fixtureIsland, DismissMethod: "POST", DismissBody: `{x}`}, nil)
+	})
+}
+
 // The one "wired and is not" failure Island.check exists to catch: a
 // signal the kernel refuses to write. The runtime warns and drops the
 // write, so the RPC fires and the region never updates. Refused at

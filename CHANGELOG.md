@@ -8,619 +8,140 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
-- **`gofastr docs serve`**: browse the docs website offline. The first
-  run downloads the static export of the docs site for the binary's
-  release, verifies its SHA-256, and caches it in the user cache
-  directory; the CLI serves it from a GoFastr app on `127.0.0.1:8083`.
-  `--full` builds and runs the live site with `go install` so the
-  server-backed demos work too; `--dir` serves a local export;
-  `--release`, `--refresh`, `--port` and `--open` do what they say.
-  Releases now attach `gofastr-site-<tag>.tar.gz` and its `.sha256`;
-  releases before this one carry no archive, so use `--full` with them
-  (v0.82.0 and later).
-- **`core/static.Config.NotFoundFile`**: answer a miss with a file from
-  the served `FS` (a static export's `404.html`) under status 404. A
-  conditional request cannot turn it into a 304, and SPA mode ignores it.
-- **`static.Builder.Handler` and `UIHost.ExtraScriptSrcs(routes)`**: the
-  export fetches each extra-script rail entry the exported pages load and
-  the build has not already written (a script the app serves from its
-  own router, the plugin broker, a document-scoped script whose scope
-  accepts a rendered route) through `Handler`, query included, and writes
-  it into the tree, replacing a stale copy in a reused output directory;
-  `App.ExportStatic` passes the app's router. A same-origin rail script
-  that does not answer 200, or whose path is an exported page, fails the
-  build; a CDN or relative src is left to the browser.
-- **`gofastr generate screen <name> --from-a11y=<file>`** builds an
-  owned screen from a Playwright aria snapshot (#434). The YAML that
-  `locator.ariaSnapshot()` returns (a file, or `-` for stdin) is
-  parsed and each role maps to a design-system component:
-  the first level-1 heading becomes `ui.PageHeader`, a run of fields
-  and buttons (with the help text between them and any fieldset holding
-  a control) becomes one `ui.Form` posting to the screen's route,
-  textbox/spinbutton/checkbox/switch/combobox/radiogroup become the
-  matching `ui` field, a fieldset of radios becomes a `ui.RadioGroup`
-  with the fieldset's name as legend, tables become `ui.DataTable`,
-  lists become lists, navigation becomes a labelled `<nav>` of its
-  links, and links keep their `/url` behind the unsafe-scheme guard.
-  Banners, footers and images are skipped with a warning; a role with
-  no mapping keeps its children, or its text when it has none, also
-  with a warning, and so does content a mapping leaves out (text in a
-  nav, links in table cells, a textbox's value). The screen is written
-  through the additive blueprint path, so it is ordinary editable Go.
-  The input is capped at 4 MiB, 128 levels and 50,000 nodes.
-- **Blueprint catalog kinds for controls, tables and lists**:
-  `action_button`, `text_field`, `number_field`, `checkbox`, `switch`,
-  `select_field`, `radio_group`, `custom_form`, `data_table`,
-  `item_list` and `nav_links`, rendering `ui.Button`, `ui.TextField`,
-  `ui.NumberField`, `ui.Checkbox`, `ui.Switch`, `ui.Select`,
-  `ui.RadioGroup`, `ui.Form` (with the request context, so it carries
-  the CSRF token), `ui.DataTable`, `html.UnorderedList`/`OrderedList`
-  and `html.Nav` around a `ui.Cluster`. Validation refuses a field
-  without a label or name, a choice control without options, a form
-  action that fails the anchor URL check, a `custom_form` inside
-  another, an unlabelled `nav_links`, and a table row wider than its
-  columns.
-- **`framework.WithMCPTools(register)`**: runs a `func(*mcp.Server) error`
-  against the app's MCP server during init, after plugins and before the
-  introspection set, so a package below the framework root can add tools
-  without importing it. A registrar error, a name collision included,
-  fails the boot.
-- **`framework/docs/mcptools`**: `Register`, the registrar that installs
-  `framework_docs_list`, `framework_docs_get` and `framework_docs_search`.
-  The blueprint and the examples pass it to `WithMCPTools` beside
-  `framework.WithMCPIntrospection()`.
-- **Affected-only test scope.** `go run ./cmd/affected` prints the
-  packages whose tests could change outcome given what differs between
-  the working tree and `origin/main`: the changed packages, their
-  transitive importers, and the packages whose tests import one of
-  those. Files under `testdata` and embedded assets mark their owning
-  package. With a command after `--` it runs that command with the set
-  appended and skips it when the set is empty. `make test`,
-  `make analyze`, `make test-race`, `make test-pg`, the pre-commit and
-  pre-push hooks, `make red-tests`, `scripts/coverage-floors.sh` and CI's
-  pull-request run (vet, the deterministic sweep, the coverage floors
-  and each browser-e2e shard) all use it. `GOFASTR_TEST_ALL=1`,
-  `./scripts/test-all.sh` and the new `make test-all` run everything;
-  pushes to main and the merge queue always do. A change to go.mod,
-  go.sum or the tool itself, or a base ref that cannot be resolved,
-  widens to the full run rather than skipping anything.
-- **`battery/desktop` (experimental)**: a desktop host that runs a
-  GoFastr app inside the OS WebView from a `CGO_ENABLED=0` binary.
-  The macOS arm ships (WKWebView through a pure-Go Objective-C bridge
-  in `internal/objc`, a fake-cgo layer in `internal/fakecgo` so
-  `runtime.cgocall` works without cgo, darwin/arm64 only); Windows and
-  Linux return a named `unsupported` error until their phases land).
-  The battery is split by platform: platform packages under
-  `battery/desktop/{macos,windows,linux}` (each compiling on every
-  GOOS) plus `battery/desktop/native`, whose `New`/`Shell()` pick one
-  by GOOS as `desktop.New`'s nil-`Shell` default (nil now answers the
-  unsupported shell on every platform).
-  The OS-independent half: `desktop.AppOptions` (app-data dir, SQLite,
-  secret file), the loopback boot handshake (single-use token,
-  HttpOnly session cookie, Host pin), a capability registry with a
-  frozen manifest, the generated typed JS bridge (`__gofastr.desktop.*`)
-  behind one permission-gated POST chokepoint with persisted grants and
-  an OS prompt, the `desktop` runtime module, native menus, five core
-  capabilities (window, dialogs, clipboard, notifications, fs on a
-  dialog allow-list), and plugin-registered capabilities. Secondary
-  windows (`Config.Settings` plus `Battery.OpenWindow`/`OpenSettings`/
-  `Windows` and the `windows` capability: a page opens the app's own
-  screens, second windows share the main one's boot cookie), a
-  menu-bar tray (`Config.Tray` with `RoleShow` and `RoleSettings`
-  rows, `CloseHidesWindow`, `HideDock`, the `tray` capability; macOS
-  only), and notifications that work from an ad-hoc-signed bundle
-  (`Notification.Subtitle`, `Battery.Notify`, and `gofastr desktop
-  build` signing ad-hoc by default with `--sign`/`--no-sign` to
-  override). New example `examples/desktop-notes` (notes plus a
-  settings screen and a tray); new CLI verbs `gofastr desktop
-  run|build|types` (the `.app` bundle is written in pure Go). Pin a
-  version. `battery/desktop/desktoptest.Run` is the test harness: it
-  runs the real `Run` flow with the fake shell as the OS and plays
-  both sides (`Get`/`Post`/`Call` as the page, `ClickMenu`/`ClickTray`/
-  `PressKey`/`OpenSettings`/`CloseWindow`/`Answer` as the user;
-  `Notifications`/`Events`/`Navigations`/`WindowIDs` as the record),
-  with `desktop.BootstrapJS()` and `Window.SetEvalHook` for driving a
-  real browser against it. The harness found two bugs before release: a
-  second desktop battery in one process took the first one's owner
-  extractor for battery/auth's and ran its window anonymous, and the
-  example's export event carried a dotted name the event grammar
-  refuses (now `notes_exported`).
-- Desktop (experimental): window styles. `WindowSpec.Style` and
-  `Config.Style` shape a window's chrome (borderless, hidden title bar,
-  floating, non-activating panel, transparent, fixed size, all-Spaces,
-  explicit origin), `Config.Widgets` opens floating widget windows at
-  launch, `desktop.Widget(path, w, h)` builds the typical spec, and
-  `windows.open` accepts a `style` object from the page. A borderless
-  window drags through the page: the `data-cui-window-drag` attribute
-  on any element makes mousedown there start a native window drag.
-  Every window now carries its own user script, so a page can learn
-  which window it lives in (`window.__gofastr_desktop.window`).
-  darwin/arm64 only; the contracts are OS-neutral and other hosts
-  answer `unsupported`.
-- Desktop (experimental): cross-window events and messages. `Emit` now
-  delivers a native event to every open window (main first; a failure
-  in one window is logged and skipped) and the new `EmitTo(windowID,
-  name, payload)` targets one (`not_found` when it is not open). Every
-  window learns its own id from its bootstrap script
-  (`__gofastr.desktop.windowID`), and pages can message each other
-  through the server with `windows.post({to, name, payload})`,
-  `windows.broadcast({name, payload})` (every window except the
-  caller's), and `windows.self()`; event names follow the event grammar
-  and payloads are capped at 64 KiB of compact JSON. The calling window
-  is a page-reported claim (the `X-Gofastr-Window` header), used only
-  for broadcast exclusion and `self`. The test harness gained
-  per-window event records and `h.CallFrom`.
-- Desktop deep links: `desktop.Config.DeepLink` claims a custom URL
-  scheme (`gofastr-notes`), `gofastr desktop build --scheme gofastr-notes` registers it
-  in the bundle's Info.plist, and the app answers `gofastr-notes://host/path?q`
-  by focusing the main window, navigating it to `/host/path?q`, and
-  emitting a `deep_link` event with `{url, path}`. Links are refused on
-  any other scheme, userinfo, or length over 2048 bytes; links before
-  the window opens are queued (16) and flushed after the boot
-  navigation. macOS arm64 only; experimental, like the rest of
-  `battery/desktop`.
-- `gofastr desktop build --notarize` (with `--notary-profile`, default
-  `gofastr`, and `--entitlements`, default a generated empty-dict
-  plist): signs under the hardened runtime with a timestamp, zips the
-  bundle in pure Go (modes kept, mtimes zeroed, no symlinks), submits
-  through `xcrun notarytool submit --wait`, staples with `xcrun
-  stapler`, and re-zips so the archive carries the staple. Requires
-  `--sign` with a Developer ID Application identity; any step failing
-  fails the build. Tested against fakes; not run against Apple's
-  service.
-- Auto-update for desktop apps (experimental): `desktop.UpdateConfig`
-  points an app at a signed ed25519 feed; the battery verifies the
-  signature before parsing, compares semver against the running bundle,
-  downloads and sha256-verifies the archive, extracts it with
-  zip-escape refusal, codesign-verifies the new bundle, swaps it in,
-  and relaunches. New `updates` capability (`check`, gated `install`),
-  the `update_available` page event, scheduled checks every 6 h (first
-  after 30 s), `gofastr desktop keygen` and `gofastr desktop feed` for
-  the release side. darwin only; unbundled runs never update.
-- `battery/desktop`: `Config.RememberWindows` persists every window's
-  frame and the main window's last path in the app state store's
-  `windows` entry (`state.json`, 0600, data dir) and restores them on
-  relaunch: windows reopen where the user left them, on whichever
-  monitor, the boot redirect returns to the last screen, and a frame
-  from an unplugged monitor is dropped in favor of centered. New
-  contracts `Frame`, `WindowConfig.Frame` and `OnWindowFrame`,
-  `WindowSpec.Frame`, `Window.Frame` and `SetFrame`, the ungated
-  `window.setPath` bridge method, and the `Harness.MoveWindow` /
-  `NativeHarness.MoveWindow` test seams.
-  `examples/desktop-focus` turns it on.
-- `battery/desktop`: app state. `battery/desktop/appstate` is a durable
-  key/value store over one JSON file in the data dir (`state.json`,
-  0600, debounced 500 ms writes, flush on quit, raw-JSON values capped
-  at 64 KiB, namespaced keys, a `Watch` change hook); `Run` opens it
-  and `Battery.State()` hands it to Go code. The remembered windows,
-  the preferences, and a new ungated `state` capability share it: the
-  page's keys are confined to the `page.` prefix
-  (`get`/`set`/`delete`/`keys`), and every successful `set`/`delete`
-  broadcasts `state_changed` with `{key}` to every open window.
-- `battery/desktop`: declared preferences. `Config.Preferences` takes
-  a `desktop.Preference` list (kinds bool, int, string, choice;
-  validated at `New` with a defensive copy), stores the values typed
-  in the app state under `settings`, serves them to Go through
-  `d.Preferences()` (`Bool`/`Int`/`String`/`All`/`Declared`/`Set`) and
-  to the page through an ungated `preferences` capability
-  (all-or-nothing `set`, `preferences_changed` with `{keys}`), and
-  renders them as a form through `desktop.PreferencesScreen`, a screen
-  builder the host mounts; the form saves through
-  `POST /__gofastr/desktop/preferences` with the runtime's validation
-  envelope on refusal. Both desktop examples dropped their hand-built
-  settings entity and screen for it.
-- `battery/desktop`: single-user mode documented. The local identity
-  (the `identity` file, minted 0600, revalidated on read) is the
-  offering a desktop app uses instead of `battery/auth`:
-  `LocalUser` middleware maps every gated request to that one user
-  while the boot gate is armed, and the battery installs its own owner
-  extractor only when nothing else has (linked `battery/auth` owns
-  identity end to end instead). Documented in
-  `framework/docs/content/desktop.md`.
-- **Desktop: the app-shell test harness.** Desktop tests no longer run
-  against a browser stand-in: `desktoptest.NativeMain` boots the app
-  once per test binary inside the real shell (WKWebView), and
-  `desktoptest.Native(t)` drives it from both sides, the page's
-  JavaScript through `Window.EvalAsync` (a new `PageEvaluator` seam
-  built on `callAsyncJavaScript`, which awaits promises natively) and
-  the native UI through the shell's new `NativeDriver` (menu and tray
-  activation by title, scripted permission answers, real alert clicks,
-  GetURL deep-link delivery, `performClose`, and an OS-truth
-  `WindowState`). The headless-Chrome desktop tests
-  (`browser_harness_e2e_test.go`, the desktop-notes browser pair) are
-  deleted, replaced by native e2e suites under the existing
-  `desktop_e2e` tag; the fake shell and its harness are unchanged.
-- New example `examples/desktop-focus`: a local-first pomodoro timer
-  that exercises the full `battery/desktop` surface (hidden-title
-  window, floating always-on-top widget with a live countdown, tray
-  countdown, session-end notifications, `gofastr-focus://` deep links,
-  cross-window messages, a `focus` plugin capability, and the opt-in
-  updater) and runs unchanged over HTTP behind `--serve`. The timer's
-  state lives in the `sessions` table, so restarts resume and the
-  interactive layer stays stateless.
-- `battery/desktop`: a macOS look. `WindowStyle.Material`
-  (`MaterialSidebar`, `MaterialWindow`, `MaterialGlass`) puts the
-  native material under the page, `ChromeUnified` is the Notes and
-  Finder title bar, `Config.SidebarWidth` and
-  `window.setChrome({sidebarWidth})` size the sidebar zone, and
-  `WindowStyle.TrafficLightInset` moves the window buttons. Pages get
-  `window_focus`, `window_blur`, and `reduce_transparency` events and
-  the `desktop-inactive` / `desktop-reduce-transparency` classes on
-  `<html>`. New package `battery/desktop/ui` ships the `desktop` theme
-  (SF fonts, the HIG type scale, the system blue accent, a dark
-  palette), three layouts on `app.NewLayout` (`Layout(sidebar)` for
-  the main window, `WindowLayout()` for a window with no sidebar such
-  as a settings window, `WidgetLayout()` for a floating widget), and
-  `SourceList`, `Glass`, `FloatingToolbar`, `Inspector`,
-  `InspectorSplit`, `Sheet`, and `Popover`.
-  The desktop layouts size framework controls near native (a 24-point
-  touch target and 4px control padding). `examples/desktop-focus` uses
-  all of it; its settings live in the settings window only, and its
-  history shows task titles.
-- `framework/ui`: two `--ui-*` knobs. `--ui-control-padding-y` (default
-  `10px`) is the block padding every text control and button shares,
-  and `--ui-detail-list-label-track` (default `minmax(7rem, 13rem)`) is
-  `ui.DetailList`'s label column. Unset, both render as before.
+- **`entityui.UI.WithCreatePath` sets the create screen's route.** An app
+  that mounts its create screen at `/deals/new` instead of
+  `/deals/create` passes one path function, and New, Duplicate, Create
+  another, related-list Add and relation-picker New all link there.
+  Returning false or an empty path hides an entity's create links.
+  Without the option, links still use `<base>/create` (#502).
 
-- **`gofastr upgrade` matches surviving symbols by shape.** A registry
-  note's `find.shapes` entry names a symbol and a regex over the type
-  its use resolves to, written for the shape the release replaced, so a
-  note on a symbol that survives with a new signature or field type
-  hits before the port and goes silent after it. `uses` fired on both
-  spellings, so a ported app could never go clean on such a note. An
-  app type implementing an interface method is read against its own
-  signature, and when the app no longer compiles against the version it
-  is moving to, a compile error on a line where the symbol resolved to
-  another shape is reported under the note with the error attached. The
-  notes on these symbols moved to it: v0.3.0 `Policy.Can` and
-  `RolePolicy.Can`, v0.30.0 `RolePolicy.Grant`, v0.38.0
-  `Manager.Subscribe` and `ConnectSession`, v0.50.0 `Host.MintNonce`,
-  `VerifyGrant` and `Refresh`, v0.54.0 `EntityConfig.Timestamps`,
-  v0.64.0 `IdempotencyStore.Finish`, v0.66.0 `Queue.Ack` and `Nack`,
-  v0.74.0 `EntityOpenAPI`, `RegistryLLMMD` and `RegistryLLMMDHandler`,
-  v0.78.0's llm.md generators, v0.82.0 `NewEntityTwoFAStore`, v0.86.0
-  `ThemeRef.Hash`, `FormFieldConfig.Input` and `app.NewLayout`. The
-  upgrade-fixtures symbol gate checks a `shapes` symbol against the
-  prior tag the way it checks `uses`, so a misspelled one fails instead
-  of passing silently. Documented in `gofastr docs cli` (#456, #457).
-- **Registry notes for changes the registry never carried.** v0.54.0:
-  the deleted `ui.BaseCSS` and `interactive.Confirm`, the bare pattern
-  component names (`disclosure`, `multiselect`, `sortablelist`), the
-  retired `data-fui-sticky` and `data-fui-viewport` markers, the deleted
-  experimental redis stores, harness `failover`/`routing`/`copilot`
-  providers, `render.Deferred` and `freeze.ErrGenerateViaBlueprint`,
-  the facade re-exports becoming functions, and `WithConfig` replacing
-  `AppConfig` wholesale. v0.62.0: the strict flat `multi_tenant`,
-  `soft_delete` and `app.auth.enabled` booleans. v0.74.0: the
-  `crudMounted` parameter on `openapi.EntityOpenAPI` and the llm.md
-  registry generators. v0.86.0: the deleted `PasswordInputConfig.Error`,
-  `ColorFieldConfig.SwatchValue`, `CalloutConfig.Landmark`,
-  `SectionConfig.Ctx`, `NetworkRetryBannerConfig.FailureThreshold` and
-  `SSESilenceMs`, `CarouselConfig`'s `VirtualScroll` family and
-  `SkeletonAvatarConfig.Size` fields, the checkbox/radio/switch family's
-  retired `ui-toggle*` classes, and nodetect notes for the required
-  no-script destinations on NotificationBell, GlobalSearch and
-  CommandPalette, StepWizard's `Errors`/`Summary`/`ID`, and the 4.5:1
-  contrast refusal at `WithTheme` (#456).
-- **`make dupl`: duplicate-code gate** (dupl v1.1.0, threshold 100;
-  examples, evals, testdata and `*.gen.go` excluded) over the repo's Go
-  files, baseline-gated by `scripts/dupl-baseline.txt`: it fails when
-  the clone-group count grows, and `scripts/dupl.sh --rebaseline`
-  rewrites the baseline. CI runs it in the blocking job beside the vet
-  gates (#413).
-- **`scripts/test-all.sh` runs in CI's shape**: the non-heavy packages
-  in parallel, then the heavy chromedp suites and the four `cmd/gofastr`
-  browser tests serialized at `-p 1`, with the port-exhaustion self-heal
-  retrying only a pass's failed packages. `GOFASTR_TESTALL_DRYRUN=1`
-  prints the commands. The pre-push hook keeps excluding those suites;
-  CI runs each on its own runner (#413).
-- **`ui.ParseButtonVariant`** resolves a caller-supplied variant string,
-  built-in or registered through `ui.RegisterButtonVariant`, and answers
-  `ok=false` for any other spelling; kiln's node renderer, the generated
-  resource screens and uihost's trusted node renderer share it instead
-  of three lookup tables, each of which knew only the four built-ins
-  and drew a registered variant as its default. **`schema.FieldTypeLabel`**
-  is the one table behind the field-type prose in the entity llm.md
-  reference and the SDK reference screens, which carried two copies
-  (#417).
-- **`gofastr dev` prints a `Building <dir> (Ns)...` progress line every
-  ten seconds while a rebuild runs.** `go build` is silent however long
-  it takes and the startup banner already names an address, so a slow
-  build under load no longer looks like a hang; the dev-loop examples
-  e2e waits on the dev child's own behaviour (the answer, process exit,
-  a build-failure line, or output silence) instead of a fixed clock,
-  and prewarms each example's build cache first (#413, #456).
+### Fixed
+- **Entity state-move buttons no longer fail with HTTP 415.** The RPC
+  runtime now sends `Content-Type: application/json` on writes that have
+  no body, which the transition route requires. GET and HEAD send no
+  content type, and multipart forms keep the browser's boundary (#500).
+
+## [0.87.1] - 2026-10-11
 
 ### Changed
-- **A blueprint `type: link` block renders `ui.Link`** instead of
-  `html.Link`, so generated links pick up the design system's link
-  style, and validation now refuses an unsafe `href` (`javascript:`,
-  `data:`, `//host`). Before, the generator accepted one and the page
-  rendered the link with no `href`.
-- **BREAKING: the `framework_docs_*` MCP tools are opt-in** (#470).
-  `framework.WithMCPIntrospection()` no longer registers
-  `framework_docs_list` / `framework_docs_get` / `framework_docs_search`,
-  and neither does the `gofastr dev` loop: an app whose agents read the
-  framework docs over `/mcp` adds
-  `framework.WithMCPTools(mcptools.Register)` from
-  `framework/docs/mcptools` (the blueprint, `gofastr init` and the
-  examples do). Package framework no longer imports the docs corpus.
-  `gofastr upgrade` flags every `WithMCPIntrospection` call for review
-  with that guidance.
-- **`gofastr upgrade` reports fewer review-tier hits.** Five registry
-  notes whose matcher was a bare symbol every app uses (`App.Entity`,
-  the v0.48 `CrudHandler.ListAll` / `GetOne` / `CountAll` read-hook
-  note, the field `Default`, the v0.65 owner-column and the v0.68
-  `migrate repair` notes) now carry a `nodetect` reason instead of a
-  `find`, and the text matcher skips minified scripts, by name
-  (`.min.js`, `.min.mjs`, `.min.cjs`) and by line (a script line over
-  1000 bytes), so a vendored maplibre or monaco build no longer
-  produces hits. Long lines in data files (a `.jsonl` journal) still
-  count.
-- **BREAKING: every class and attribute carries the prefix of the
-  tree that defines it** (#467). The kernel's attribute vocabulary is
-  `data-cui-*`: every `data-fui-*` the runtime read is renamed
-  (`data-cui-rpc`, `data-cui-open`, `data-cui-signal`, `data-cui-comp`,
-  `data-cui-toast-stack`, `data-cui-window-drag`, …), and so are the
-  camelCase dataset reads (`dataset.cuiRpc`). The keys that stay
-  `data-fui-*` are the framework's own modules' and hosts':
-  `data-fui-lightbox*`, `data-fui-zoomed`, `data-fui-dropzone-preview*`,
-  `data-fui-pane*`, `data-fui-z-tier`, `data-fui-network-retry-*`,
-  `data-fui-plugin*` and `data-fui-page-loading`. The class families
-  `core-ui` mints are `cui-*`: `cui-widget`, `cui-slot`, `cui-pos-*`,
-  `cui-panel`, `cui-backdrop`, `cui-hidden`, `cui-reveal`,
-  `cui-dropdown`, `cui-section-menu`, `cui-flash`, `cui-loading`,
-  `cui-sse-up`/`cui-sse-down`, `cui-css-*`, `cui-vt-*`,
-  `cui-intercept`, `cui-render-error`, `cui-screen-group`,
-  `cui-route-announce`, `cui-theme-<hash>`, the enter animations
-  (`cui-top-in`, `cui-bottom-in`, `cui-edge-left-in`,
-  `cui-edge-right-in`, `cui-overlay-scale-in`), and the document
-  singletons `#cui-backtotop-sentinel`, `#cui-nav-toast` and
-  `#cui-toast-fallback`; `core-ui/app`'s skip link is
-  `cui-visually-hidden`. `fui-*` is `framework/ui`'s alone. The
-  ownership table is in `core-ui/ARCHITECTURE.md` ("Who owns which
-  prefix"), and `core-ui/check.LintLayerPrefixJS` / `LintLayerPrefixGo`
-  hold the kernel and headless trees to it. `gofastr upgrade` lists
-  every hit in an app's Go, JS, HTML and CSS. Plugins move their
-  attributes to their own prefix (tracked in `gofastr-plugins`).
-- **BREAKING: the kernel and headless modules name no kit class.**
-  The form-errors module places a refused submission's messages by
-  hook: a `ui.FormField` renders `data-hui-field` on the group and a
-  `data-hui-field-error` node for the message (reserved or live, the
-  value `"filled"` or `"live"`); a bare `ui.Choice`/`ui.Switch` label
-  carries `data-hui-choice` and the message follows it. The kit's
-  sheets style the hooks; `fui-field__error` and
-  `fui-choice-field__error` markup placed by the module are gone. The
-  copy control marks a successful copy `data-hui-copy-state="done"`
-  instead of the `fui-copied` class. The search input's clear-button
-  behaviour is `framework/ui`'s own registered module
-  (`framework/ui/searchinput.js`); the kernel's `searchinput` module is
-  deleted.
-- **BREAKING: runtime toasts are cloned from a registered template,
-  and the host guarantees a stack.** `headless-feedback` no longer
-  mounts the `fui-toast-stack-auto` singleton or builds rows out of
-  `fui-notification*` classes. `framework/ui` registers a row template
-  under `preset.ToastTemplate` (`registry.RegisterTemplate`, rendered
-  by the new `headless.ToastTemplate`), `preset.ToastSlotHTML` ships it
-  inside every stack, and the module clones it (`data-hui-toast-item`,
-  `data-hui-toast-tone/-icon/-title/-body`, the glyph and variant
-  class from the template's attributes). With no stack on the page the
-  module returns `null` and the kernel's fallback region shows the
-  toast; `framework/uihost` mounts `uihost.DefaultToastStack`
-  (`gofastr-toasts`) at boot when the app mounted none, so that path
-  is for pages a host did not boot. A dismissed row is marked
-  `data-hui-toast-leaving` (was the `is-leaving` class); the stack
-  container carries no class of its own (`data-cui-comp="ui-toast-stack"`
-  is what the sheet keys on). `ui.ToastSlot` delegates to the preset.
-  New: `registry.Template`, `preset.IsToastStack`,
-  `widget.IsolateForTest`.
-- The pinned v0.85.0 runtime fixture and the test that drove it against
-  today's server are gone: a client that speaks none of the page's
-  attributes intercepts nothing, so the browser's own navigation is the
-  full load the skew contract demands, with no bundle to pin.
+- **`gofastr init` writes the agent detail files to `.agents/`.** They
+  went to a visible `agents/` folder at the project root, beside
+  `entities/`, `migrations/` and the app's own packages. They now go to
+  a hidden `.agents/` folder, and `AGENTS.md`, `CLAUDE.md` and the
+  gofastr-host skill link there. Run `gofastr agents sync` (or
+  `gofastr init --reinit`) once in an existing project: it writes
+  `.agents/`, deletes the old generated files in `agents/` (only files
+  with the auto-generated header, so a hand-written file there stays)
+  and removes the folder once nothing else is in it. It also points the
+  generated `agents/` references in `AGENTS.md`'s intro at `.agents/`,
+  and `--reinit` refreshes a stock `CLAUDE.md` from the earlier release.
+  An `agents` symlink is left as it is.
 
-- **examples/meridian: `entities/` and `cmd/meridian/` are
-  generator-owned again and gated for byte drift** (#416).
-  `TestGeneratedTreesMatchGenerator` regenerates both trees from
-  `gofastr.yml` with the in-tree generator and fails on any committed
-  file that differs or that the generator no longer emits;
-  `cmd/meridian/custom.go` stays the hand-owned seam and is excluded.
-  Both trees were refreshed to current generator output: per-entity
-  event helpers moved to `entities/events.go`, CLI verb bodies to
-  `cmd/meridian/verbs.go`, the generated CLI dropped the `--token` flag
-  (tokens never ride argv), refuses a corrupt `config.json` and runs
-  verbs under a Ctrl-C signal context, and the generated client no
-  longer carries `UserId` on owner-scoped entities (the owner column is
-  hidden and server-assigned). `doc.go` documents the split: two
-  generator-owned trees plus the hand-maintained surfaces.
-- **`gofastr generate cli` emits create, update and patch as one shared
-  body each** in the generated `verbs.go`, driven by a per-entity
-  `mutationField` table in `<entity>.go` (#417). Flags, defaults, usage
-  text, request bodies and exit codes are unchanged and pinned
-  byte-for-byte by a golden test; an entity whose selected verbs are
-  only create, update and patch now emits a file with no imports.
-- **The `gofastr upgrade` registry was audited against the changelog,
-  v0.3.0 to v0.86.0.** Matchers that fired on unaffected spellings were
-  narrowed: `_like=` hits only a value that sends a wildcard, `?cursor=`
-  only when a `sort=` rides along, `_in=` only a list of 500 or more
-  entries, the v0.85.0 widget-lifecycle note an observer attached to the
-  document rather than every `MutationObserver`, and `--token` no
-  longer matches another tool's `--tokens`. The v0.54.0 upload-metadata
-  note gained `uploaded_at` and bare `mime_type`; the v0.55.0 bootstrap
-  note names the `BootstrapMode` constants. The v0.3.0 access note
-  describes the dropped `Can` parameter instead of a helper that never
-  existed and is edit-tier; the v0.7.0 `api_prefix` note is nodetect
-  (the key was new in that release, so no earlier blueprint carried
-  it); the v0.60.0 catalog-scraping note is review-tier because static
-  export and embeds keep the endpoints it names. The v0.86.0
-  class-rename notes no longer tell an app to rename `.ui-*` selectors
-  to `.fui-*` (an owned sheet may not select kit classes, GOFASTR1810)
-  and point at the component's config, a variant or a theme option.
-  Guidance on the v0.6.0, v0.11.0, v0.16.0, v0.23.0 and v0.49.0 notes
-  names the actual remedy (#456).
-### Fixed
-- **A catalog block under a node block is refused at validation.** A
-  `type: div` (or any node-tree block) holding a `card`, `stack`, form
-  control or other catalog kind passed validation and rendered as an
-  `unknown kind` HTML comment, so the content vanished from the page.
-  Validation now names the block and says to use a `stack`, `cluster`,
-  `card` or `section` instead.
-- **`gofastr generate screen` runs again.** v0.86.0 dropped the
-  `screen` case from the `generate` dispatch, so the command printed
-  "Unknown resource type: screen" and exited 1, while its own help
-  listed `screen` as supported.
-- **A process module that dies mid-handshake restarts instead of
-  failing for good.** The supervisor classed any error whose text held
-  `handshake:` as an integrity fault, so a child that crashed while the
-  host was still writing the handshake (broken pipe, EOF, peer closed)
-  went to terminal `Failed` with no restart and no circuit-breaker
-  charge. Transport errors are crashes now, as is a handshake call the
-  child never answered, which carries the new
-  `moduleproto.ErrHandshakeUnanswered`; a handshake mismatch, a failed
-  negotiation, an RPC error reply or an executable SHA mismatch is
-  still terminal.
-- **Static export shipped pages that load a missing script.** The docs
-  site loads `/__site/livedash-reducers.js` on every page from an app
-  route; the export skipped it, so every exported page (GitHub Pages
-  included) logged a 404 and a refused script. It is now exported.
-- **`examples/site` startup banner** printed `http://localhost127.0.0.1:…`
-  when `PORT` held a host:port. A wildcard bind (`0.0.0.0`, `[::]`) now
-  prints localhost.
-- **`battery/rtc`: a late join mirror no longer kicks a peer that already
-  moved** (#474). With two replicas, a peer that joined R1 and
-  reconnected to R2 before R1's join mirror reached R2 had its live R2
-  socket closed when the mirror landed, and the room heard a second
-  leave. Lane messages carry the sender's clock now; a mirror older than
-  the local socket it would displace is dropped, and a socket that closes
-  while a live remote seat holds the same id publishes no leave.
-- **`textsafe.SanitizeControlBytes` dropped the continuation bytes of
-  non-ASCII text** (since v0.86.0): once a control byte had to be
-  removed, a rune-indexed loop copied only the first byte of each
-  multi-byte character, so `hé\tllo` came back as `h\xc3llo`. Input with
-  no control byte was returned unchanged and never showed it. The loop
-  walks bytes again, and the package is under a coverage floor.
-- **A sidebar's first-paint mark no longer survives a navigation that
-  lands before the active-link module loads.** `headless.Sidebar` marks
-  every leaf link `data-cui-activelink`, the handover by which the
-  server's `aria-current="page"` becomes the idle-loaded `activelink`
-  module's to clear. Before, the module only cleared links it had
-  stamped itself or that carried `data-cui-match-prefix`, so a click
-  made in the gap before it loaded left two lit entries (the acme-site
-  help nav e2e failed about one run in ten on Linux).
-- **A screen that panics is a logged 500, never a silent 404.** A
-  render or `Load` panic on any serving path (full page with or
-  without a layout, partial navigation, overlay, and the embed content
-  route) used to answer 404 with nothing in the server log, and the
-  layout-less page even shipped the panic text inside a 200 body. It
-  now answers 500 with an error log line naming the path and the
-  scrubbed panic, and the app's error page, which echoes neither. A `Load` that
-  returns an error keeps the 404 it contracted but is logged at Warn;
-  a path no route owns still 404s silently. Hosts can discriminate via
-  the new `app.ErrScreenPanicked` sentinel. A screen implementing
-  `component.ErrorBoundary` answers its own `RenderError` markup on
-  every serving path, still logged; before, the layout path dropped it
-  for a 404. A static export
-  (`framework/static`) now fails on such a screen instead of
-  publishing the error box; a screen with a layout already failed it.
-  The llm.md render path scrubs the path and panic it logs. Covered by the
-  `screen_panic_500_test.go` suite in `framework/uihost`.
-- **A checked `ui.Checkbox` draws a check mark.** The two strokes were
-  angle gradients (45deg, 135deg), which only run corner to corner in
-  a square tile; in the long leg's 12x9 tile they missed each other
-  and every checked box showed a crossed mark. They are now
-  corner-keyword gradients, which meet in any tile.
-- `ui.TextArea` floors at `--fui-density-control-h` like `ui.Select`
-  and the text inputs instead of a literal `44px`, so density and
-  `Layout.TouchTarget` change it too.
-- **`App.Shutdown` no longer stalls on a connection that never sent a
-  request.** A browser's speculative preconnect or an HTTP client's
-  spare dial leaves a connection in `net/http`'s StateNew, which
-  `Server.Shutdown` spares for five seconds; a bounded drain then ran
-  to its deadline and reported `draining http server: context deadline
-  exceeded` (the desktop test harness hit it on quit). Shutdown now
-  closes those connections itself before the drain: they carry no
-  work.
-- **A blank form field no longer fails validation by type.** An HTML
-  form posts `""` for a number, date, or relation the user left blank,
-  and CRUD create/update answered `must be an integer` for a field the
-  user never touched (the resource-engine forms hit this on every
-  optional number). A blank non-text field now counts as not provided:
-  the declared default applies on create, the column is left alone on
-  update, and a blank required field says `is required`.
-- **A refused form submission is no longer silent.** The runtime's
-  `data-fui-rpc` form path dropped every non-2xx answer unless a
-  response signal was set; a user pressing Save saw nothing move. The
-  server's validation envelope now marks each named field's control
-  (`aria-invalid`, `aria-describedby`) and places a `role="alert"`
-  message in the kit's own error markup (`fui-field__error` in a
-  `ui.FormField`, `fui-choice-field__error` beside a standalone
-  checkbox) and, when no field matched, the error text is toasted.
-- **Runtime form intercept: the hidden-input-plus-checkbox pair
-  serializes as one value.** A `data-fui-rpc` form turned every
-  repeated name into an array, so the HTML checkbox idiom (hidden
-  `false` followed by a checkbox `true`) posted `["false","true"]` when
-  checked and the bool validator answered 400: a bool field could be
-  saved off but never back on. The pair (exactly one hidden input then
-  one checkbox of the same name) now posts the last value as a scalar;
-  checkbox groups and multi-selects are still arrays. The resource
-  engine's bool field renders that pair.
-- **`headless.NumberInput` / `ui.NumberInput` and `headless.Slider`: a
-  configured `ID` landed on both the group wrapper and the `<input>`**
-  (#460). The page then had two elements with one id, the label's `for`
-  resolved to the wrapper, and so did the stepper module's own
-  `getElementById` — a `NumberInput` with an `ID` stepped nothing. The
-  id is now the control's alone.
-- **`ui.Button` can close its widget without a request** (#461).
-  `data-fui-action="close"` — what the widget runtime's scoped click
-  handler reads — is admitted into `headless.ButtonProps.Action` (and so
-  into `ui.Button`'s `ExtraAttrs`), the one wiring key that fires no
-  request. `close` is the only value the runtime reads, so any other
-  value is refused at render, and so is a link carrying it or a close
-  beside a `data-fui-rpc` (after a request, `data-fui-rpc-close`).
-- **`ui.Banner` stacks below 30rem** (#462). The four-column grid gave a
-  390px-wide banner a 94px title column beside a 149px action; the
-  action now drops under the body and the dismiss spans the stack.
+### Added
+- **A sidebar can stay pinned under a sticky page header.**
+  `ui.ContentRowConfig.BelowHeader`, with `Sticky`, sticks the nav
+  column and the toolbar below `--size-header-height` instead of behind
+  the header, and makes the column the rest of the viewport tall, so a
+  long menu scrolls on its own while the page scrolls beside it.
+  `interactive.SectionMenuConfig.FillColumn` makes a section menu fill
+  that column. The docs site's `/components` menu uses both.
 
-- **`gofastr generate package docpage`: a rail left unset (zero `Nav`
-  or `Toc`) collapses like an empty one**, and a page with no rails
-  renders one centred reading column at the prose measure, the shape
-  the deleted `ui.DocLayout(ui.DocLayoutConfig{}, body)` gave blog
-  posts and standalone pages. A rail collapses only when its sole child
-  is empty: a nav holding its list beside an empty outlet stays (#457).
-- **Generated CLIs write `batch-delete` usage errors to stderr.** The
-  missing-ids and flag-after-id messages went to stdout, so a script
-  reading the JSON batch result got prose; every other verb error
-  already went to stderr.
-- **The upgrade scanner's build-constraint solver matches the go
-  command**, proven by a differential test against `go list`: it offers
-  only GOOS/GOARCH pairs the toolchain builds (a `//go:build solaris`
-  file on an arm64 host scans under solaris/amd64 instead of failing
-  the load), knows the `zos` filename suffix and satisfies pairless
-  platform names through `-tags`, honours the android/illumos/ios
-  filename-matching direction (`x_darwin.go` with `//go:build ios` scans
-  under GOOS=ios), and no longer claims `-tags boringcrypto` satisfies
-  `//go:build boringcrypto` (go/build remaps it to
-  `goexperiment.boringcrypto`) (#456).
-- **The uihost plaintext-origin session warning scrubs the request
-  Host with the full textsafe set** (C1 and bidi runes included), which
-  slog's JSON handler otherwise leaves raw in the logged line (#417).
+## [0.87.0] - 2026-10-10
+
+**BREAKING.** v0.87.0 reskins the default theme, gives entities screen
+hints and state machines, draws entity screens through the new
+`framework/entityui`, and rebuilds the admin on it. It deprecates
+nothing: a removed API is gone. [What changed in
+v0.87.0](https://github.com/DonaldMurillo/gofastr/blob/v0.87.0/framework/docs/content/release-0-87.md)
+(`gofastr docs release-0-87`) is the full account, with every breaking
+change, what replaces it, and the fixes this release carries. Run
+`gofastr upgrade --to v0.87.0` before you bump `go.mod`: it points at
+each line of an app that needs an edit.
+
+### Highlights
+- **Zinc default theme.** `style.DefaultTheme()` and `theme.Default()`
+  draw a near-black primary on white with 6/8/10/14px radii. Stroke,
+  line-height, letter-spacing and opacity are tokens (`Theme.Strokes`,
+  `Leading`, `Tracking`, `Opacities`), `Theme.Knobs` sets any
+  `--ui-*` knob, and every kit dimension reads a token or knob, so a
+  theme alone can redraw the kit (`theme.Brutal()`).
+- **`ui.ThemePicker`** switches a page between registered themes and
+  remembers the choice.
+- **Entity `Display`.** `EntityConfig.Display` holds names, title
+  fields, columns, named views, facets, form layout and field hints,
+  checked at registration. `dsl.ParsePredicate`/`ParseSort`, a `ne`
+  filter, `crud.ListOptions.Where`, `SumAll` and `GroupCountAll` back
+  it.
+- **Entity `States`.** `EntityConfig.States` names a state field and
+  its moves. Every write path enforces them; a move runs through
+  `RunTransition`, `POST <api>/<entity>/<id>/transitions/<key>` or an
+  MCP tool, and is audited. `crud.WithStateOverride` writes outside a
+  move with a recorded reason.
+- **`framework/entityui`.** `App.EntityUI` draws list, record and create
+  screens with no islands: views, facets, filter chips, saved views,
+  inline editing, bulk actions, CSV export, a trash view and status
+  overrides. `framework/ui/resource` is deleted.
+- **The admin, rebuilt.** `battery/admin` draws entity screens through
+  entityui at `/admin/entities/<entity>`, renders every page through the
+  app's UI host, and ships no CSS. New dashboard, command palette,
+  saved views and queued bulk runs.
+- **Prefixes.** Kernel attributes are `data-cui-*` and kernel classes
+  `cui-*`; `fui-*` is `framework/ui`'s alone.
+- **Security audit.** The 2026-10-04 audit of the request path fixed
+  scope, relation, upload, 2FA, verification and rate-limit gaps, each
+  with a security test. The contract catalog holds 78 rules.
+
+### Breaking, in brief
+- A `ShadowSet` built field by field (every `theme.go` an earlier
+  `gofastr theme init` wrote) needs `Shadows.XS`, or it panics at boot.
+  `--color-secondary`, `--color-border-strong` and `--color-accent`
+  change role.
+- Owned sheets must read the stroke, leading, tracking, opacity and
+  logical spacing tokens: GOFASTR1807 refuses the matching literals.
+- `data-fui-*` kernel attributes and the kernel's `fui-*` classes are
+  renamed to `data-cui-*` and `cui-*`; `.fui-copied`,
+  `fui-toast-stack-auto` and `is-leaving` are hooks now.
+- `framework/ui/resource` is removed; `battery/admin` needs `Config.UI`
+  and a UI host, moved its routes, and lost `Theme`, `FontFaceCSS`,
+  `EntityListLimit`, `Secret`, `RegisterRoutes`, `SortDirOf` and
+  `/admin/rbac/_revoke`.
+- The blueprint's screen `filters:`, `transitions:`, `search:`,
+  `island:` and `widget:` keys and the `entity_create`/`entity_edit`
+  blocks are gone.
+- The `framework_docs_*` MCP tools need
+  `framework.WithMCPTools(mcptools.Register)`.
+- Filter operators must suit the column type, and
+  `crud.ListOptions.Filters` is validated.
+- `i18nui.LabelForField`, `RenderOverlayResult`'s arity,
+  `queue.Browsable.ListJobs`'s arity, `WorkbenchConfig.RailWidth` and
+  `CopyButtonConfig.Target` changed.
+- Auth and access: unverified accounts are claimed on mailbox proof,
+  `RequireTwoFA` judges the request principal, scoped tokens and embed
+  grants are held to their scopes across relations, `X-Forwarded-For`
+  is read from the right, `/.debug` needs the admin role, and
+  `upload.Handler` caps bodies at 32 MiB.
+- `App.WithAuditLog` adds a `reason` column to an existing audit table
+  at boot.
+
 ### Security
-- **Entity MCP tools list only for callers who may use them.** Each
-  generated `<entity>_list/get/create/update/delete` tool carries its
-  operation's `Exposure.Access` permission as a `WithToolGate` gate. A
-  signed-in caller without `posts:write` no longer sees `posts_create`
-  or its input schema in `tools/list`, and calling it by name is refused
-  before the router runs (`-32602 entity mcp: not permitted` instead of
-  the route's 403). The gate judges only what the `/mcp` request's
-  context shows: with no user, or no role policy and no Decider on it
-  (a policy mounted on a route group), the tool stays listed and the
-  route decides. With a Decider on it, `get`, `update` and `delete`
-  stay listed too, since the route asks the Decider per record. Tools
-  of an `app.GroupEntity` entity are never gated: the group's own
-  middleware may install another policy. So no call the route allows is
-  refused. Mount `framework.AccessMiddleware` with `app.Use` to get the
-  hiding. `crud.CrudHandler` gains `MCPRouteScoped`, which marks such an
-  entity.
+- The repo builds with Go 1.27.2 (`toolchain go1.27.2` in go.mod; the
+  `go 1.27.0` floor for apps is unchanged), which fixes the thirteen
+  standard-library advisories govulncheck reports against 1.27.0 (among
+  them GO-2026-6599 and GO-2026-6600 in html/template). Build apps with
+  1.27.2. golang.org/x/tools moves to v0.50.0.
+- Security audit findings 83–100: bounded growth and lifecycle fixes
+  across the auth, cache, queue, relay, stream, cron, rate-limit and
+  credential-store packages. Each is listed under "Security hardening"
+  in the release page's Fixes section.
+- `a2a.Config.MaxConcurrentRunsPerOwner` caps one owner's concurrent
+  skill-handler runs, resumes included (0 = 16, negative = no cap).
+- `PasswordResetPlugin.OnStop` stops the reset-email workers at
+  shutdown; reset email goes out from a bounded queue, off the request
+  path, so a known address answers as fast as an unknown one.
+- `credstore.ErrAmbiguousLegacyKey`: a legacy `provider|account` key
+  with more than one `|` is no longer handed to the first split; `Get`
+  asks for re-entry and `Put`/`Delete` on any pair that could own it
+  replace it.
 
 ## [0.86.0] - 2026-09-24
 

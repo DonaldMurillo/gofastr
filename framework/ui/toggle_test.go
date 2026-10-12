@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 func TestCheckboxRequiresName(t *testing.T) {
@@ -34,6 +35,26 @@ func TestCheckboxRendersWrappedLabel(t *testing.T) {
 	// The label wraps the control: no for/id pair left to go stale.
 	if strings.Contains(string(h), " for=") {
 		t.Fatalf("the label wraps the control; a for= pair must not ship:\n%s", h)
+	}
+}
+
+// LabelHidden keeps the label as the control's name and folds its text
+// into the visually-hidden recipe, for a checkbox whose meaning the row
+// around it already shows (a table's select column). The form attribute
+// rides through, so the control can belong to a form outside its cell.
+func TestCheckboxLabelHidden(t *testing.T) {
+	h := string(Checkbox(ToggleConfig{
+		Name: "ids", Value: "r1", ID: "sel-r1", Label: "Select INV-1", LabelHidden: true,
+		ExtraAttrs: map[string]string{"form": "bulk"},
+	}))
+	if !strings.Contains(h, `class="fui-choice__text fui-visually-hidden"`) {
+		t.Fatalf("label text is not visually hidden:\n%s", h)
+	}
+	mustContain(t, render.HTML(h), "Select INV-1")
+	mustContain(t, render.HTML(h), `form="bulk"`)
+	shown := string(Checkbox(ToggleConfig{Name: "n", Label: "Shown"}))
+	if strings.Contains(shown, "fui-visually-hidden") {
+		t.Fatalf("a plain checkbox hid its label:\n%s", shown)
 	}
 }
 

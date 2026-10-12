@@ -21,7 +21,7 @@ var (
 			"border-color", "transparent",
 		},
 		Hover: []string{"filter", "none", "opacity", "0.9"},
-		Focus: []string{"outline", "2px solid {colors.primary}", "outline-offset", "2px"},
+		Focus: []string{"outline", "2px solid {colors.text-subtle}", "outline-offset", "2px"},
 	})
 	testHeroSize = RegisterButtonSize("hero", VariantCSS{
 		Props: []string{"padding", "18px 32px", "font-size", "1.15rem"},

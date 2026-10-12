@@ -131,15 +131,12 @@ func (p *AccountsPlugin) RegisterRoutes(r *router.Router, basePath string) {
 }
 
 func (p *AccountsPlugin) requireUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
-	cfg := p.mgr.Config()
-	cookie, err := r.Cookie(cfg.SessionCookie)
+	// Bound to the context principal when there is one: unlinking a
+	// provider from the account behind some other cookie on the request
+	// would act on a user the request is not running as.
+	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
 		writeAuthError(w, http.StatusUnauthorized, "no session")
-		return "", false
-	}
-	sess, err := p.mgr.SessionStore().Get(r.Context(), cookie.Value)
-	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "invalid session")
 		return "", false
 	}
 	if sess.PendingTwoFactor {

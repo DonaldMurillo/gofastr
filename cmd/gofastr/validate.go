@@ -68,6 +68,11 @@ func runValidate(args []string) {
 	for _, f := range lintModuleCollision(bp) {
 		warn("%s: %s", path, f.Message())
 	}
+	// Uniqueness that spans owners on an owner-scoped entity: a warning,
+	// since a value unique across all accounts can be deliberate.
+	for _, f := range lintOwnerScopedUnique(bp) {
+		warn("%s: %s", path, f.Message())
+	}
 	success("Blueprint %s is valid: %d entity(ies), %d screen(s), %d endpoint(s), %d hook(s)",
 		path, len(bp.Entities), len(bp.Screens), len(bp.Endpoints), len(bp.Hooks))
 }

@@ -180,6 +180,12 @@ through the canonical `core-ui/urlsafe` allow-list (`Anchor` for hrefs,
 Direct; no framework auto-wiring. Start at `core/markdown/markdown.go`:
 `Render`.
 
+Line breaks follow CommonMark. A plain newline inside a paragraph, list
+item or blockquote is a soft break: it renders as a newline, which the
+browser shows as a space, so source hard-wrapped at 72 columns reads as
+one flowing paragraph. A line that ends in two or more spaces, or in a
+backslash, is a hard break and renders as `<br>`.
+
 Fenced blocks follow CommonMark on two points that matter for
 documentation. A fence is three **or more** of the same character and
 closes only on a run at least as long, so a ` ```` ` block can hold a
@@ -233,9 +239,16 @@ The single "is this IP internal" predicate (loopback, private,
 link-local, site-local IPv6, CGNAT, cloud-metadata), normalizing
 IPv4-mapped IPv6 first,
 with a `Reason` helper. Tiny: two exported funcs. Indirect:
-outbound-fetch surfaces (webhooks, the harness) enforce it at dial time;
+outbound-fetch surfaces (webhooks, A2A push, the harness WebFetch tool,
+the Web Bot Auth directory fetch) enforce it at dial time;
 app authors do not call it. Start at `core/netguard/netguard.go`:
-`IsInternal`.
+`IsInternal`. `GuardedTransport` ignores `HTTP_PROXY`/`HTTPS_PROXY`:
+through a proxy the dial check would see only the proxy's address while
+the proxy connected to the target. A deployment that must egress
+through a proxy supplies its own client where the surface takes one
+(battery/webhook `Options.HTTPClient`, which keeps a per-request target
+check) or turns the surface's private-network opt-out on and leaves the
+egress policy to the proxy.
 
 ### webbotauth
 

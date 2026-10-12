@@ -6,7 +6,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -51,16 +53,29 @@ type UserFieldMap struct {
 	// physical table, HasPassword returns ErrPasswordSetNotTracked and
 	// AccountsPlugin falls back to the conservative links-only rule.
 	PasswordSet string // default: "password_set"
+	// EmailVerified records whether the account's owner proved control of
+	// the address: a verification link, a magic link, a completed reset,
+	// or an IdP login asserting email_verified for this exact address.
+	// Defaults to "email_verified". EnsureSchema adds it to an existing
+	// table as FALSE for every row, because nothing about a pre-existing
+	// row says its address was proven.
+	EmailVerified string // default: "email_verified"
+	// Name is the optional display name (NameStore). Defaults to
+	// "name". EnsureSchema adds it to an existing table as '' for every
+	// row.
+	Name string // default: "name"
 }
 
 // DefaultUserFieldMap returns the standard field mapping.
 func DefaultUserFieldMap() UserFieldMap {
 	return UserFieldMap{
-		ID:           "id",
-		Email:        "email",
-		PasswordHash: "password_hash",
-		Roles:        "roles",
-		PasswordSet:  "password_set",
+		ID:            "id",
+		Email:         "email",
+		PasswordHash:  "password_hash",
+		Roles:         "roles",
+		PasswordSet:   "password_set",
+		EmailVerified: "email_verified",
+		Name:          "name",
 	}
 }
 
@@ -72,6 +87,13 @@ func NewEntityUserStore(db *sql.DB, table string, fieldMap ...UserFieldMap) *Ent
 	if len(fieldMap) > 0 {
 		fm = fieldMap[0]
 	}
+	if fm.EmailVerified == "" {
+		// A map written before the field existed keeps working.
+		fm.EmailVerified = "email_verified"
+	}
+	if fm.Name == "" {
+		fm.Name = "name"
+	}
 	// Validate all identifiers at construction time, fail fast.
 	query.MustIdent(table)
 	query.MustIdent(fm.ID)
@@ -79,6 +101,8 @@ func NewEntityUserStore(db *sql.DB, table string, fieldMap ...UserFieldMap) *Ent
 	query.MustIdent(fm.PasswordHash)
 	query.MustIdent(fm.Roles)
 	query.MustIdent(fm.PasswordSet)
+	query.MustIdent(fm.EmailVerified)
+	query.MustIdent(fm.Name)
 	return &EntityUserStore{
 		db:       db,
 		table:    table,
@@ -110,7 +134,13 @@ func (s *EntityUserStore) EnsureSchema(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := ensurePostgresBoolColumns(ctx, s.db, s.table, s.fieldMap.PasswordSet); err != nil {
+	if err := s.ensureEmailVerifiedColumn(ctx, boolType, boolFalse); err != nil {
+		return err
+	}
+	if err := s.ensureNameColumn(ctx); err != nil {
+		return err
+	}
+	if err := ensurePostgresBoolColumns(ctx, s.db, s.table, s.fieldMap.PasswordSet, s.fieldMap.EmailVerified); err != nil {
 		return err
 	}
 	// The OAuth link table backs OAuthLinker / AccountLister / AccountUnlinker
@@ -357,6 +387,81 @@ func (s *EntityUserStore) HasPassword(ctx context.Context, userID string) (bool,
 	return has, err
 }
 
+// ensureEmailVerifiedColumn adds the email_verified column to a table that
+// predates it. Every existing row reads FALSE: the battery never recorded
+// whether an address was proven, so an existing account is treated as
+// unproven until its owner proves the mailbox (see claimAccount). Postgres
+// uses ADD COLUMN IF NOT EXISTS; SQLite checks PRAGMA table_info first.
+func (s *EntityUserStore) ensureEmailVerifiedColumn(ctx context.Context, boolType, boolFalse string) error {
+	ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s NOT NULL DEFAULT %s",
+		query.QuoteIdent(s.table), query.QuoteIdent(s.fieldMap.EmailVerified), boolType, boolFalse)
+	if migrate.DetectDialect(s.db) == migrate.DialectPostgres {
+		ddl = fmt.Sprintf("ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s NOT NULL DEFAULT %s",
+			query.QuoteIdent(s.table), query.QuoteIdent(s.fieldMap.EmailVerified), boolType, boolFalse)
+	} else {
+		has, err := sqliteTableHasColumn(ctx, s.db, s.table, s.fieldMap.EmailVerified)
+		if err != nil || has {
+			return err
+		}
+	}
+	_, err := s.db.ExecContext(ctx, ddl)
+	return err
+}
+
+// MarkEmailVerified records that the user proved control of their email
+// address. Implements EmailVerifier.
+func (s *EntityUserStore) MarkEmailVerified(ctx context.Context, userID string) error {
+	q := fmt.Sprintf("UPDATE %s SET %s = TRUE WHERE %s = $1",
+		query.QuoteIdent(s.table),
+		query.QuoteIdent(s.fieldMap.EmailVerified),
+		query.QuoteIdent(s.fieldMap.ID),
+	)
+	res, err := s.db.ExecContext(ctx, q, userID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+// IsEmailVerified reports whether the user's address is proven. Implements
+// EmailVerifiedChecker.
+func (s *EntityUserStore) IsEmailVerified(ctx context.Context, userID string) (bool, error) {
+	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1",
+		query.QuoteIdent(s.fieldMap.EmailVerified),
+		query.QuoteIdent(s.table),
+		query.QuoteIdent(s.fieldMap.ID),
+	)
+	var v bool
+	err := s.db.QueryRowContext(ctx, q, userID).Scan(&v)
+	if err == sql.ErrNoRows {
+		return false, ErrUserNotFound
+	}
+	return v, err
+}
+
+// ClearPassword replaces the user's hash with the placeholder and records
+// password_set=false, so no password signs in until the owner sets one.
+// Implements PasswordClearer.
+func (s *EntityUserStore) ClearPassword(ctx context.Context, userID string) error {
+	q := fmt.Sprintf("UPDATE %s SET %s = $1, %s = FALSE WHERE %s = $2",
+		query.QuoteIdent(s.table),
+		query.QuoteIdent(s.fieldMap.PasswordHash),
+		query.QuoteIdent(s.fieldMap.PasswordSet),
+		query.QuoteIdent(s.fieldMap.ID),
+	)
+	res, err := s.db.ExecContext(ctx, q, passwordPlaceholderHash, userID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
 // isUniqueViolation detects unique-constraint violations across the
 // dialects we support (SQLite + Postgres). The driver-specific error
 // strings are stable enough to match on textually.
@@ -415,6 +520,7 @@ func UserEntityFields() UserFields {
 		{Name: "password_hash", Type: schema.String, Required: true, Hidden: true},
 		{Name: "roles", Type: schema.String, Default: `["user"]`},
 		{Name: "password_set", Type: schema.Bool, Default: "false"},
+		{Name: "email_verified", Type: schema.Bool, Default: "false"},
 	}
 }
 
@@ -459,6 +565,9 @@ func (uf UserFields) With(extra ...schema.Field) UserFields {
 type EntitySessionStore struct {
 	db    *sql.DB
 	table string
+
+	sweepMu   sync.Mutex
+	lastSweep time.Time
 }
 
 // NewEntitySessionStore creates a SessionStore backed by a database table.
@@ -488,7 +597,17 @@ func (s *EntitySessionStore) EnsureSchema(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return ensurePostgresBoolColumns(ctx, s.db, s.table, "two_factor_verified", "pending_two_factor")
+	if err := ensurePostgresBoolColumns(ctx, s.db, s.table, "two_factor_verified", "pending_two_factor"); err != nil {
+		return err
+	}
+	idxName, err := query.SafeIdent("idx_" + s.table + "_expires")
+	if err != nil {
+		return err
+	}
+	idx := fmt.Sprintf("CREATE INDEX IF NOT EXISTS %s ON %s (expires_at)",
+		query.QuoteIdent(idxName), query.QuoteIdent(s.table))
+	_, err = s.db.ExecContext(ctx, idx)
+	return err
 }
 
 // qTable wraps a statement template with the validated table name.
@@ -527,12 +646,28 @@ func (s *EntitySessionStore) Create(ctx context.Context, userID string, ttl time
 	if err != nil {
 		return nil, err
 	}
+	s.sweepExpiredOnCreate(ctx, now)
 	return &Session{
 		Token:     tok,
 		UserID:    userID,
 		CreatedAt: now,
 		ExpiresAt: expiresAt,
 	}, nil
+}
+
+// sweepExpiredOnCreate reaps abandoned rows at most once per interval while
+// allowing session creation to succeed if cleanup itself is unavailable.
+func (s *EntitySessionStore) sweepExpiredOnCreate(ctx context.Context, now time.Time) {
+	s.sweepMu.Lock()
+	defer s.sweepMu.Unlock()
+	if now.Sub(s.lastSweep) < sessionSweepInterval {
+		return
+	}
+	if _, err := s.db.ExecContext(ctx, s.qTable("DELETE FROM %s WHERE expires_at < $1"), now); err != nil {
+		slog.Warn("auth: expired session sweep failed", "err", err)
+		return
+	}
+	s.lastSweep = now
 }
 
 // Get returns the session for the given token. The presented token is
@@ -593,6 +728,17 @@ func (s *EntitySessionStore) Delete(ctx context.Context, token string) error {
 // count purged. Implements SessionUserPurger.
 func (s *EntitySessionStore) DeleteByUser(ctx context.Context, userID string) (int, error) {
 	result, err := s.db.ExecContext(ctx, s.qTable("DELETE FROM %s WHERE user_id = $1"), userID)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := result.RowsAffected()
+	return int(n), nil
+}
+
+// DeletePendingByUser removes userID's sessions that are still waiting on
+// a 2FA challenge. Implements SessionPendingPurger.
+func (s *EntitySessionStore) DeletePendingByUser(ctx context.Context, userID string) (int, error) {
+	result, err := s.db.ExecContext(ctx, s.qTable("DELETE FROM %s WHERE user_id = $1 AND pending_two_factor = TRUE"), userID)
 	if err != nil {
 		return 0, err
 	}

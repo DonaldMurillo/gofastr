@@ -234,7 +234,14 @@ func (s *EntityTwoFAStore) ensureBigIntColumn(ctx context.Context, col string) e
 // sqliteHasColumn reports whether the store's table has the named column,
 // via PRAGMA table_info (SQLite-only).
 func (s *EntityTwoFAStore) sqliteHasColumn(ctx context.Context, col string) (bool, error) {
-	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", query.QuoteIdent(s.table)))
+	return sqliteTableHasColumn(ctx, s.db, s.table, col)
+}
+
+// sqliteTableHasColumn reports whether table has the named column, via
+// PRAGMA table_info (SQLite-only). table must already be a validated
+// identifier.
+func sqliteTableHasColumn(ctx context.Context, db *sql.DB, table, col string) (bool, error) {
+	rows, err := db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", query.QuoteIdent(table)))
 	if err != nil {
 		return false, err
 	}

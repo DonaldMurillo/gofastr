@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -63,10 +64,83 @@ func TestPrintInitNextStepsTeachesPublicEscapeHatch(t *testing.T) {
 	}
 }
 
+// The CLAUDE.md an init app ships tells agents how to add an entity or
+// a screen. Every scaffold command it advises must run against that
+// same init output, and the hand-edit seams it names must exist there.
+// It used to advise generate --add / entity / screen, which refuse the
+// init layout, and their refusal advised `gofastr pack`, which fails
+// on it too.
+func TestInitAdviceWorksOnInitApp(t *testing.T) {
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	covT_capStdout(t, func() { runInit([]string{"myapp"}) })
+	root := filepath.Join(dir, "myapp")
+	covT_chdir(t, root) // the scaffolds write into the working directory
+	read := func(rel string) string {
+		t.Helper()
+		b, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	guide := read("CLAUDE.md")
+	for cmd, run := range map[string]func(){
+		"gofastr generate entity": func() { generateScaffoldEntity([]string{"note"}) },
+		"gofastr generate screen": func() { generateScaffoldScreen([]string{"about"}) },
+		"gofastr generate --add":  func() { generateScaffoldScreen([]string{"contact"}) },
+	} {
+		if !strings.Contains(guide, cmd) {
+			continue
+		}
+		var code int
+		out := covT_capStdout(t, func() { code = covT_capExit(t, run) })
+		if code > 0 {
+			t.Errorf("CLAUDE.md advises %s, which refuses the init app (exit %d):\n%s", cmd, code, out)
+		}
+	}
+	for _, want := range []string{"entities/entities.go", "site.Register"} {
+		if !strings.Contains(guide, want) {
+			t.Errorf("CLAUDE.md does not name the init seam %q", want)
+		}
+	}
+	if !strings.Contains(read("entities/entities.go"), "func RegisterAll(") || !strings.Contains(read("main.go"), "site.Register(") {
+		t.Fatal("the seams CLAUDE.md names are missing from the init output")
+	}
+
+	// The scaffolds' refusal on this layout names it and the way
+	// forward, not `gofastr pack` (which cannot read an init app).
+	var code int
+	out := covT_capStdout(t, func() {
+		code = covT_capExit(t, func() { generateScaffoldScreen([]string{"about"}) })
+	})
+	if code != 1 || strings.Contains(out, "gofastr pack") || !strings.Contains(out, "gofastr init") {
+		t.Errorf("refusal on an init app (exit %d) must name the init layout, not gofastr pack:\n%s", code, out)
+	}
+}
+
 func TestBuildAgentsMDTeachesPublicEscapeHatch(t *testing.T) {
 	// Coding agents read AGENTS.md first; without the one-liner they
 	// dead-end on the same 401 a human newcomer does.
 	for _, want := range []string{"Public: true", "battery/auth", "gofastr docs auth"} {
 		mustContain(t, string(buildAgentsMD()), want)
+	}
+}
+
+// init ignored *.db but not the -shm/-wal files SQLite writes beside it in WAL
+// mode, so a first commit of the whole tree picked up a live database sidecar.
+func TestInitIgnoresSQLiteSidecars(t *testing.T) {
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	covT_capStdout(t, func() { runInit([]string{"myapp"}) })
+	b, err := os.ReadFile(filepath.Join(dir, "myapp", ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(b), "\n")
+	for _, want := range []string{"bin/", "*.db", "*.db-shm", "*.db-wal"} {
+		if !slices.Contains(lines, want) {
+			t.Errorf("init .gitignore does not ignore %s; got:\n%s", want, b)
+		}
 	}
 }

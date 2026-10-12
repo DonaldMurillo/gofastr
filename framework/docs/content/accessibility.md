@@ -107,7 +107,7 @@ auth battery's `/login` page:
 ```
 gofastr audit a11y --url http://localhost:8080 \
   --email admin@example.com --password "$ADMIN_PASSWORD" \
-  --pages /admin,/admin/e/products
+  --pages /admin,/admin/entities/products
 ```
 
 The auditor fills `input[name=email]` and `input[name=password]`, then clicks

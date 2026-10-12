@@ -403,8 +403,9 @@ func TestStartFromTaskPageAndRow(t *testing.T) {
 	taskID := nativeTask(t, h, "Start from the task page")
 
 	reloadTo(t, h, "/tasks/"+taskID)
+	// Start lives on the record page's focus tab, one tab beside Edit.
+	h.Click(`a[href="/tasks/` + taskID + `?tab=focus"]`)
 	h.Wait("the task page's Start", func() bool { return visible(h, `[data-focus-start="`+taskID+`"]`) })
-	h.Click(`[data-focus-start="` + taskID + `"]`)
 	h.Wait("the widget window", func() bool { return len(h.WindowIDs()) == 2 })
 	h.Wait("the session on the task", func() bool {
 		r := h.Get("/api/sessions")
@@ -431,12 +432,11 @@ func TestStartFromTaskPageAndRow(t *testing.T) {
 func TestNewTaskFormLandsOnTheTimer(t *testing.T) {
 	h := desktoptest.Native(t)
 	ensureIdle(t, h)
-
-	reloadTo(t, h, "/tasks/new")
-	h.Wait("the new-task form", func() bool { return h.ExistsQuiet("#f-title") })
+	reloadTo(t, h, "/tasks/create")
+	h.Wait("the new-task form", func() bool { return h.ExistsQuiet("#eui-f-title") })
 	// Only the title, the way a user does it: the estimate stays blank
 	// and takes its default.
-	h.Fill("#f-title", "Typed in the form")
+	h.Fill("#eui-f-title", "Typed in the form")
 	h.Submit("form")
 	// Where the real Save lands, with the page's own words when it
 	// does not: the failure message names the path and the visible

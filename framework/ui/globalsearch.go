@@ -182,7 +182,7 @@ func globalSearchCSS(_ style.Theme) string {
 [data-cui-comp="ui-global-search"] .fui-global-search__input {
   width: 100%;
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFF);
   color: var(--color-text, #18181B);
@@ -190,15 +190,15 @@ func globalSearchCSS(_ style.Theme) string {
   min-height: var(--spacing-touch-target, 44px);
 }
 [data-cui-comp="ui-global-search"] .fui-global-search__input:focus-visible {
-  outline: 2px solid var(--color-primary, #4F46E5);
-  outline-offset: 1px;
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
+  outline-offset: calc(var(--stroke-focus-offset, 2px) / 2);
 }
 [data-cui-comp="ui-global-search"] .fui-global-search__listbox {
   margin: 0;
   padding: var(--spacing-xs, 2px);
   list-style: none;
   background: var(--color-surface, #FFF);
-  border: 1px solid var(--color-border, #E4E4E7);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,.10));
 }
@@ -207,7 +207,7 @@ func globalSearchCSS(_ style.Theme) string {
   align-items: baseline;
   gap: var(--spacing-sm, 4px);
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  border-radius: var(--radii-sm, 4px);
+  border-radius: var(--radii-sm, 6px);
   cursor: pointer;
   min-height: var(--spacing-touch-target, 44px);
 }
@@ -221,9 +221,9 @@ func globalSearchCSS(_ style.Theme) string {
 [data-cui-comp="ui-global-search"] .fui-global-search__chord {
   font-family: var(--font-mono, monospace);
   font-size: var(--text-xs, 0.75rem);
-  border: 1px solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-sm, 4px);
-  padding: 1px 6px;
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-sm, 6px);
+  padding: 1px calc(var(--spacing-sm, 4px) * 1.5);
   background: var(--color-surface-soft, #F4F4F5);
 }`
 }

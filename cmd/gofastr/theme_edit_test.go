@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -607,6 +608,20 @@ func TestThemeEditGalleryPreviewRenders(t *testing.T) {
 	}
 	if !strings.Contains(html, `data-cui-comp="ui-layout"`) {
 		t.Errorf("preview does not use ui.Stack for its rhythm:\n%s", truncate(html, 400))
+	}
+	// Each demo sits in a plain block box after its name, as on the docs
+	// site, so a lone button keeps its own width instead of stretching
+	// across the stack's column.
+	demos := 0
+	for _, group := range gallery.Grouped() {
+		for _, entry := range group.Entries {
+			if !gallery.IsNoteOnly(entry.Slug) && entry.Demo != nil {
+				demos++
+			}
+		}
+	}
+	if boxed := strings.Count(html, "</span><div>"); boxed < demos {
+		t.Errorf("%d demos but only %d in a block box", demos, boxed)
 	}
 	for _, gone := range []string{"tp-category", "tp-demo", "tp-gallery", "tp-preview"} {
 		if strings.Contains(rendered, gone) {
@@ -1304,14 +1319,15 @@ func TestThemeHelpRoutesLocally(t *testing.T) {
 
 // The written file has to survive the validation the app performs at boot.
 // ApplyTokens is not that boundary: its spacing/radius/z-index setters accept
-// 0 while Theme.Validate rejects it, so one keystroke in a number field
-// produced a green "updated", a written theme.go, and a panic on next run.
+// values Theme.Validate rejects (a 0 spacing, a negative radius), so one
+// keystroke in a number field produced a green "updated", a written theme.go,
+// and a panic on next run.
 func TestApplyRefusesAThemeThatWouldPanicAtBoot(t *testing.T) {
 	srv := newTestServer(t)
 
 	for _, bad := range []struct{ key, value string }{
 		{"spacing-md", "0px"},
-		{"radii-sm", "0px"},
+		{"radii-sm", "-2px"},
 		// White ink on pure red is 4.0:1: the pair guard refuses it for
 		// the same reason — the written app panics at WithTheme.
 		{"color-primary", "#FF0000"},
@@ -1324,6 +1340,10 @@ func TestApplyRefusesAThemeThatWouldPanicAtBoot(t *testing.T) {
 	// A legitimate edit still applies, or the guard has simply broken the tool.
 	if _, err := srv.applyToken("color-primary", "#0F766E"); err != nil {
 		t.Errorf("a valid edit was refused: %v", err)
+	}
+	// A square corner is a design, not a broken token.
+	if _, err := srv.applyToken("radii-sm", "0px"); err != nil {
+		t.Errorf("radii-sm=0px was refused: %v", err)
 	}
 }
 
@@ -1472,5 +1492,61 @@ func TestThemeEditUnknownComponentKeyFallsBackToText(t *testing.T) {
 	}
 	if !strings.Contains(out, `value="x"`) {
 		t.Errorf("the fallback input does not carry the current value:\n%s", out)
+	}
+}
+
+// Every token set on style.Theme must reach the write-back. A set the
+// emitter skips still boots: init's AutoFillNames names its tokens and
+// a zero width or radius validates, so saving an edited theme would
+// quietly zero every stroke.
+func TestWritebackEmitsEveryTokenSet(t *testing.T) {
+	src, err := emitThemeGoSource(uitheme.Default(), "theme")
+	if err != nil {
+		t.Fatalf("emitThemeGoSource: %v", err)
+	}
+	typ := reflect.TypeFor[style.Theme]()
+	for i := range typ.NumField() {
+		f := typ.Field(i)
+		if f.Type.Kind() != reflect.Struct {
+			continue
+		}
+		if !strings.Contains(string(src), "\t"+f.Name+": style."+f.Type.Name()+"{") {
+			t.Errorf("write-back drops Theme.%s (%s)", f.Name, f.Type.Name())
+		}
+	}
+}
+
+// The type-scale groups and the knob map survive the write-back: a
+// theme edited to a tighter leading, a wider tracking, a stronger muted
+// opacity and a button edge saves them into theme.go, so the next boot
+// draws what the editor showed.
+func TestWritebackKeepsTypeScaleAndKnobs(t *testing.T) {
+	th := uitheme.Default()
+	th.Leading.Tight.Value = "1.05"
+	th.Tracking.Wider.Value = "0.14em"
+	th.Opacities.Muted.Value = "0.8"
+	th.Knobs = map[string]string{
+		"ui-checkbox-box-size": "20px",
+		"ui-button-edge":       "var(--color-border-strong)",
+	}
+	src, err := emitThemeGoSource(th, "theme")
+	if err != nil {
+		t.Fatalf("emitThemeGoSource: %v", err)
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), "theme.go", src, parser.AllErrors); err != nil {
+		t.Fatalf("emitted theme.go does not parse: %v\n%s", err, src)
+	}
+	// gofmt aligns the composite literals, so compare with every run of
+	// whitespace collapsed to one space.
+	flat := strings.Join(strings.Fields(string(src)), " ")
+	for _, want := range []string{
+		`Tight: style.LineHeight{Value: "1.05"},`,
+		`Wider: style.LetterSpacing{Value: "0.14em"},`,
+		`Muted: style.Opacity{Value: "0.8"},`,
+		`Knobs: map[string]string{ "ui-button-edge": "var(--color-border-strong)", "ui-checkbox-box-size": "20px", },`,
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("emitted theme.go lacks %q:\n%s", want, src)
+		}
 	}
 }

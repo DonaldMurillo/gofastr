@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/page"
+	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
@@ -58,6 +59,7 @@ func TestE2EVisualSurfaces(t *testing.T) {
 	// session cookie for the app and admin surfaces below.
 	loginCtx, cancel := axetest.NewTab(t, browser)
 	e2eLogin(t, loginCtx, base)
+	invoiceID := seedVisualRecords(t, loginCtx)
 	cancel()
 
 	for _, surface := range []struct {
@@ -66,12 +68,51 @@ func TestE2EVisualSurfaces(t *testing.T) {
 	}{
 		{name: "app", path: "/app"},
 		{name: "admin", path: "/admin"},
+		{name: "admin-list", path: "/admin/entities/customers"},
 		// A generated form with a bool field: the checkbox in a
 		// ui.FormField must keep its own size, not the text track's.
-		{name: "admin-form", path: "/admin/e/plans/new"},
+		{name: "admin-form", path: "/admin/entities/plans/create"},
+		// Payments soft-delete: the Deleted view lists the binned one.
+		{name: "admin-trash", path: "/admin/entities/payments?view=deleted"},
+		{name: "admin-record", path: "/admin/entities/invoices/" + invoiceID},
+		{name: "admin-record-api", path: "/admin/entities/invoices/" + invoiceID + "?tab=api"},
+		{name: "admin-audit", path: "/admin/audit"},
 	} {
 		captureMeridianSurface(t, browser, base, surface.name, surface.path)
 	}
+}
+
+// seedVisualRecords creates, through the signed-in tab's own session, a
+// customer, an invoice and two payments, then deletes one payment, so
+// the admin's record and trash surfaces draw real rows. It returns the
+// invoice's id.
+func seedVisualRecords(t *testing.T, ctx context.Context) string {
+	t.Helper()
+	const js = `(async () => {
+		const post = async (path, body) => {
+			const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+			if (r.status !== 201) throw new Error(path + " = " + r.status + " " + await r.text());
+			const j = await r.json();
+			return j.id ?? j.data?.id;
+		};
+		const customer = await post("/api/customers", {name: "Ada Lovelace", email: "ada+" + Date.now() + "@example.com", company: "Analytical"});
+		const invoice = await post("/api/invoices", {customer_id: customer, number: "INV-V" + Date.now(), amount: "1200.00", status: "open"});
+		await post("/api/payments", {invoice_id: invoice, customer_id: customer, amount: "600.00"});
+		const binned = await post("/api/payments", {invoice_id: invoice, customer_id: customer, amount: "75.00", method: "wire"});
+		const d = await fetch("/api/payments/" + binned, {method: "DELETE"});
+		if (d.status >= 300) throw new Error("delete payment = " + d.status);
+		return invoice;
+	})()`
+	var id string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(js, &id, func(p *cdpruntime.EvaluateParams) *cdpruntime.EvaluateParams {
+		return p.WithAwaitPromise(true)
+	})); err != nil {
+		t.Fatalf("seed visual records: %v", err)
+	}
+	if id == "" {
+		t.Fatal("seed visual records: no invoice id")
+	}
+	return id
 }
 
 func captureMeridianSurface(t *testing.T, browser context.Context, base, surface, path string) {

@@ -98,6 +98,14 @@ func categoryPrefix(category string) string {
 		return "spacing"
 	case "radii", "radius":
 		return "radii"
+	case "strokes", "stroke":
+		return "stroke"
+	case "leading":
+		return "leading"
+	case "tracking":
+		return "tracking"
+	case "opacities", "opacity":
+		return "opacity"
 	case "fonts", "font":
 		return "font"
 	case "breakpoints", "breakpoint":
@@ -125,7 +133,8 @@ func categoryPrefix(category string) string {
 // tokenCategories is every custom-property prefix a typed token emits,
 // one per token type. TokenCategory matches against it longest first.
 var tokenCategories = []string{
-	"color", "spacing", "radii", "font", "breakpoint", "shadow", "z",
+	"color", "spacing", "radii", "stroke", "leading", "tracking", "opacity",
+	"font", "breakpoint", "shadow", "z",
 	"duration", "easing", "text", "tk", "size", "font-weight",
 }
 
@@ -178,6 +187,9 @@ func (t Theme) ResolveRadius(name string) string {
 // struct to include the embedded extensions.
 func (t Theme) CSSCustomProperties() string {
 	css := CSSCustomPropertiesOf(t)
+	if knobs := knobsCSS(t.Knobs); knobs != "" {
+		css += "\n" + knobs
+	}
 	if compiled := t.compiledOptionsCSS(); compiled != "" {
 		css += "\n" + compiled
 	}
@@ -195,25 +207,31 @@ func (t Theme) CSSCustomProperties() string {
 // the options and the linked layer, not part of what the theme is.
 func (t Theme) tokenCSS() string {
 	css := CSSCustomPropertiesOf(t)
+	if knobs := knobsCSS(t.Knobs); knobs != "" {
+		css += "\n" + knobs
+	}
 	if dark := darkSchemeCSS(t.DarkColors, t.DarkCode); dark != "" {
 		css += "\n" + dark
 	}
 	return css
 }
 
-// compiledOptionsCSS is the :root block of compiled component options.
-// A theme with options of its own emits those; a theme with NONE emits
-// the styled layer's registered default set instead — the :root floor.
-// Without it, every host whose theme carries no Components (a bare
-// style.DefaultTheme, the `gofastr theme init` scaffold, a host with no
-// App.Theme) would emit no option variables at all and the component
-// rules consuming them (`.fui-button--primary { background:
+// compiledOptionsCSS is the :root block of compiled component options:
+// the styled layer's registered default set with the theme's own
+// options merged over it key by key (withDefaultOptions) — the :root
+// floor. Without it, every host whose theme carries no Components (a
+// bare style.DefaultTheme, the `gofastr theme init` scaffold, a host
+// with no App.Theme) would emit no option variables at all and the
+// component rules consuming them (`.fui-button--primary { background:
 // var(--fui-button-primary-bg) }`) would resolve to nothing: an
-// uncoloured, unshaped button. The floor is deliberately ROOT-only:
-// scope blocks (ThemeOverrideCSS) emit a theme's own options or
-// nothing, because a scoped theme with no options inherits its
-// parent's variables — that is the nesting contract. With no compiler
-// registered, or no defaults, the block is "" as before.
+// uncoloured, unshaped button. The merge is per key, not
+// all-or-nothing: a partial map such as {"density": "compact"} (what
+// the scaffold's "declare Components only to deviate" invites) once
+// replaced the whole floor and left every button and field variable
+// undeclared. Scope blocks (ThemeOverrideCSS) compile the same merge,
+// so every boundary re-declares the palette-referencing variables
+// against its own tokens. With no compiler registered the block is ""
+// as before.
 //
 // The floor does not change a theme's identity: ThemeHash fingerprints
 // the flattened options directly, so an optionless theme still hashes
@@ -227,10 +245,7 @@ func (t Theme) compiledOptionsCSS() string {
 	// theme boundary (ThemeOverrideCSS does the scoped half) to pick up
 	// each scope's palette instead of carrying the root's colours into
 	// it. Sorted by name for the byte-stable output ThemeHash needs.
-	opts := componentOptionDecls(t.Components)
-	if len(opts) == 0 {
-		opts = componentOptionDecls(componentCompilerDefaults())
-	}
+	opts := componentOptionDecls(withDefaultOptions(t.Components))
 	if len(opts) == 0 {
 		return ""
 	}
@@ -243,6 +258,34 @@ func (t Theme) compiledOptionsCSS() string {
 	}
 	b.WriteString("}")
 	return b.String()
+}
+
+// knobsCSS is the :root block of the theme's --ui-* knobs, sorted by
+// name for byte-stable output; "" when the theme sets none.
+func knobsCSS(knobs map[string]string) string {
+	lines := knobDecls(knobs)
+	if len(lines) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(":root {\n")
+	for _, line := range lines {
+		b.WriteString("  ")
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	b.WriteString("}")
+	return b.String()
+}
+
+// knobDecls renders each knob as a `--ui-<name>: <value>;` line in
+// key order.
+func knobDecls(knobs map[string]string) []string {
+	lines := make([]string, 0, len(knobs))
+	for _, k := range sortedMapKeys(knobs) {
+		lines = append(lines, "--"+k+": "+knobs[k]+";")
+	}
+	return lines
 }
 
 // componentCompilerDefaults snapshots the registered default option
@@ -359,6 +402,7 @@ func walkTokens(v reflect.Value, out *[]tokenKV) {
 	if v.Kind() != reflect.Struct {
 		return
 	}
+	v = withOptionalDefaults(v)
 	if key, val, ok := tokenPair(v); ok {
 		*out = append(*out, tokenKV{key, val})
 		return
@@ -397,6 +441,26 @@ func tokenPair(v reflect.Value) (key, value string, ok bool) {
 			return "", "", false
 		}
 		return "radii-" + t.Name, fmt.Sprintf("%dpx", t.Value), true
+	case Stroke:
+		if t.Name == "" || t.Value == "" {
+			return "", "", false
+		}
+		return "stroke-" + t.Name, t.Value, true
+	case LineHeight:
+		if t.Name == "" || t.Value == "" {
+			return "", "", false
+		}
+		return "leading-" + t.Name, t.Value, true
+	case LetterSpacing:
+		if t.Name == "" || t.Value == "" {
+			return "", "", false
+		}
+		return "tracking-" + t.Name, t.Value, true
+	case Opacity:
+		if t.Name == "" || t.Value == "" {
+			return "", "", false
+		}
+		return "opacity-" + t.Name, t.Value, true
 	case Font:
 		if t.Name == "" {
 			return "", "", false

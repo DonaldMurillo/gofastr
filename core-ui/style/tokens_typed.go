@@ -52,6 +52,53 @@ type Radius struct {
 func (r Radius) CSS() string    { return varRef("radii", r.Name) }
 func (r Radius) String() string { return r.CSS() }
 
+// Stroke is a line-width token: a border, a divider, a focus outline
+// and its offset. Value is a non-negative CSS length ("1px", "0.125rem")
+// or "0", which is a real width (a borderless theme). The set is
+// optional: a token left fully zero emits the default theme's width, so
+// a theme written before strokes existed keeps its borders and every
+// var(--stroke-*) reader resolves.
+type Stroke struct {
+	Name  string
+	Value string
+}
+
+func (s Stroke) CSS() string    { return varRef("stroke", s.Name) }
+func (s Stroke) String() string { return s.CSS() }
+
+// LineHeight is a line-height token, emitted as --leading-<name>. Value
+// is a unitless multiplier ("1.5") or a px/rem/em length. Optional like
+// Stroke: a token left fully zero is not emitted and the kit's var()
+// fallback draws the default.
+type LineHeight struct {
+	Name  string
+	Value string
+}
+
+func (l LineHeight) CSS() string    { return varRef("leading", l.Name) }
+func (l LineHeight) String() string { return l.CSS() }
+
+// LetterSpacing is a letter-spacing token, emitted as --tracking-<name>.
+// Value is "0" or a signed px/rem/em length ("-0.02em"). Optional like
+// Stroke.
+type LetterSpacing struct {
+	Name  string
+	Value string
+}
+
+func (l LetterSpacing) CSS() string    { return varRef("tracking", l.Name) }
+func (l LetterSpacing) String() string { return l.CSS() }
+
+// Opacity is an opacity token, emitted as --opacity-<name>. Value is a
+// number from 0 to 1. Optional like Stroke.
+type Opacity struct {
+	Name  string
+	Value string
+}
+
+func (o Opacity) CSS() string    { return varRef("opacity", o.Name) }
+func (o Opacity) String() string { return o.CSS() }
+
 // Font holds a font-family stack.
 type Font struct {
 	Name  string

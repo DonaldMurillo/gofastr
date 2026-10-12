@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -86,6 +87,15 @@ screens:
 	gitignore := byName[".gitignore"]
 	if !strings.Contains(gitignore, ".env") {
 		t.Fatalf("generated .gitignore must ignore .env; got:\n%q", gitignore)
+	}
+	// The default SQLite DSN writes <name>.db plus its WAL/SHM siblings in
+	// the module root, and `gofastr build` writes bin/server: a first
+	// `git add .` committed the dev database (seeded admin hash included)
+	// and the binary.
+	for _, line := range []string{"bin/", "*.db", "*.db-shm", "*.db-wal"} {
+		if !slices.Contains(strings.Split(gitignore, "\n"), line) {
+			t.Errorf("generated .gitignore does not ignore %s; got:\n%s", line, gitignore)
+		}
 	}
 
 	// The runtime must actually read the env vars the .env carries.

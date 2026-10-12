@@ -259,7 +259,7 @@ func TestSettingsWindowAndStrangerAndManifest(t *testing.T) {
 	h.Wait("two new-task navigations", func() bool {
 		n := 0
 		for _, p := range h.Navigations() {
-			if p == "/tasks/new" {
+			if p == "/tasks/create" {
 				n++
 			}
 		}
@@ -344,21 +344,21 @@ func trayTitleIsMinute(title string, lo, hi int) bool {
 	return minutes >= lo && minutes <= hi
 }
 
-// The dashboard's task table island refreshes through the resource
-// engine's table handler mounted at /api/tables/tasks: the window's
-// session reaches it and a stranger on the port does not.
-func TestTaskTableIslandServesTheWindow(t *testing.T) {
+// The dashboard's task table renders through the window's session,
+// and the rows it shows belong to the local identity: a stranger on
+// the port gets nothing.
+func TestDashboardTableServesTheWindow(t *testing.T) {
 	h, _ := newHarness(t)
 	h.Post("/api/tasks", map[string]any{"title": "Table row"}).AssertStatus(t, http.StatusCreated)
-	h.Get("/api/tables/tasks").AssertStatus(t, http.StatusOK).AssertContains(t, "Table row")
+	h.Get("/tasks").AssertStatus(t, http.StatusOK).AssertContains(t, "Table row")
 
-	req, _ := http.NewRequest(http.MethodGet, h.URL("/api/tables/tasks"), nil)
+	req, _ := http.NewRequest(http.MethodGet, h.URL("/api/tasks"), nil)
 	resp, err := h.Stranger().Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("stranger GET /api/tables/tasks = %d, want 403", resp.StatusCode)
+		t.Fatalf("stranger GET /api/tasks = %d, want 403", resp.StatusCode)
 	}
 }

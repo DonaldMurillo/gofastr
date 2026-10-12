@@ -22,6 +22,7 @@ package main
 // (repo convention) before ReadAll/decode, erroring past the cap.
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -33,17 +34,23 @@ import (
 
 // TestSemanticRemoteRedBodyCapped points the CLI's remote semantic helpers
 // at a paced peer that serves more than the conventional 1 MiB cap and
-// counts every byte delivered. Both helpers must stop pulling bytes once
-// past the cap (error or truncation at the cap), not drain the peer's
-// whole stream into heap.
+// counts every body byte the CLI reads. Both helpers must stop pulling
+// bytes once past the cap (error or truncation at the cap), not drain the
+// peer's whole stream into heap.
+//
+// The count is taken where the helpers read the response body, not at the
+// peer's Write calls: loopback socket buffers on a CI runner absorb a
+// megabyte or more the client never reads, so a server-side count read
+// 2.1 MiB against a correctly capped client and flaked the gate.
 func TestSemanticRemoteRedBodyCapped(t *testing.T) {
 	const bodyTotal = 4 << 20 // peer sends 4 MiB; cap convention is 1 MiB
 	const maxDelivered = 2 << 20
 
 	t.Run("query", func(t *testing.T) {
 		var delivered atomic.Int64
-		srv := newSemanticRemoteRedPeer(t, bodyTotal, &delivered)
+		srv := newSemanticRemoteRedPeer(t, bodyTotal)
 		defer srv.Close()
+		countRemoteReads(t, &delivered)
 
 		_, err := remoteQuery(srv.URL, semantic.Query{Text: "x"})
 		if d := delivered.Load(); d > maxDelivered {
@@ -53,8 +60,9 @@ func TestSemanticRemoteRedBodyCapped(t *testing.T) {
 
 	t.Run("get", func(t *testing.T) {
 		var delivered atomic.Int64
-		srv := newSemanticRemoteRedPeer(t, bodyTotal, &delivered)
+		srv := newSemanticRemoteRedPeer(t, bodyTotal)
 		defer srv.Close()
+		countRemoteReads(t, &delivered)
 
 		_, _ = remoteGet(srv.URL + "/semantic/stats")
 		if d := delivered.Load(); d > maxDelivered {
@@ -63,12 +71,47 @@ func TestSemanticRemoteRedBodyCapped(t *testing.T) {
 	})
 }
 
+// countRemoteReads swaps remoteHTTPClient for one whose response bodies
+// add every byte read through them to delivered, restoring the original
+// client when the test ends. The timeout is kept, so the client under test
+// differs only in the counting.
+func countRemoteReads(t *testing.T, delivered *atomic.Int64) {
+	t.Helper()
+	orig := remoteHTTPClient
+	remoteHTTPClient = &http.Client{
+		Timeout:   orig.Timeout,
+		Transport: countingTransport{delivered: delivered},
+	}
+	t.Cleanup(func() { remoteHTTPClient = orig })
+}
+
+type countingTransport struct{ delivered *atomic.Int64 }
+
+func (c countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	resp, err := http.DefaultTransport.RoundTrip(r)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = &countingBody{ReadCloser: resp.Body, delivered: c.delivered}
+	return resp, nil
+}
+
+type countingBody struct {
+	io.ReadCloser
+	delivered *atomic.Int64
+}
+
+func (b *countingBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	b.delivered.Add(int64(n))
+	return n, err
+}
+
 // newSemanticRemoteRedPeer serves /semantic/query and /semantic/stats with
 // a JSON value that never terminates (`{"hits":[` + spaces), dribbled in
-// 64 KiB chunks so a capped consumer's stall is observable in the
-// delivered counter. A write deadline bounds the handler against a client
+// 64 KiB chunks. A write deadline bounds the handler against a client
 // that stops reading.
-func newSemanticRemoteRedPeer(t *testing.T, total int, delivered *atomic.Int64) *httptest.Server {
+func newSemanticRemoteRedPeer(t *testing.T, total int) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -86,7 +129,6 @@ func newSemanticRemoteRedPeer(t *testing.T, total int, delivered *atomic.Int64) 
 		sent := 0
 		for sent < total {
 			n, err := w.Write(chunk)
-			delivered.Add(int64(n))
 			sent += n
 			if err != nil {
 				return

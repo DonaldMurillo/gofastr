@@ -271,7 +271,7 @@ func TestEditReachesPreview(t *testing.T) {
 	var before string
 	_ = chromedp.Run(ctx, chromedp.Evaluate(tePreviewTokenJS("--color-primary"), &before))
 
-	const want = "#166534" // distinct from the default #4F46E5, and AA-safe under white ink (7.13:1): the theme guard refuses a lower pair
+	const want = "#166534" // distinct from the default #18181B, and AA-safe under white ink (7.13:1): the theme guard refuses a lower pair
 	if err := chromedp.Run(ctx, chromedp.Evaluate(teSetControlJS("color-primary", want), nil)); err != nil {
 		t.Fatalf("set color-primary: %v", err)
 	}

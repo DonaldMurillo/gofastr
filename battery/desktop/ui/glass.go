@@ -1,5 +1,9 @@
 package desktopui
 
+//gofastr:allow-file(GOFASTR1808) the desktop shell renders under its own theme
+// (theme.go, radii 4/8/12/16), so these radius fallbacks restate that scale, not
+// style.DefaultTheme's 6/8/10/14 the rule judges them against.
+
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -58,6 +62,8 @@ func Glass(cfg GlassConfig, children ...render.HTML) render.HTML {
 
 var glassStyle = registry.RegisterStyle("desktopui-glass", glassCSS)
 
+// Knobs: --ui-glass-rim (rgba(255, 255, 255, 0.16)), --ui-glass-rim-thick
+// (rgba(255, 255, 255, 0.18)) — the inset rim highlight colour per variant.
 func glassCSS(_ style.Theme) string {
 	return `[data-cui-comp="desktopui-glass"] {
   border-radius: var(--radii-lg, 12px);
@@ -73,8 +79,8 @@ func glassCSS(_ style.Theme) string {
      the surface disappears into the page (the 2026-09-22 captures: a
      floating toolbar read as a bare button, an inspector as loose
      rows). measured, unverified. */
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16),
-    0 0 0 0.5px color-mix(in srgb, var(--color-text, #000000) 14%, transparent),
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--ui-glass-rim, rgba(255, 255, 255, 0.16)),
+    0 0 0 calc(var(--stroke-thin, 1px) / 2) color-mix(in srgb, var(--color-text, #000000) 14%, transparent),
     var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.10), 0 2px 4px -2px rgba(0, 0, 0, 0.06));
 }
 [data-cui-comp="desktopui-glass"].desktopui-glass--thick {
@@ -84,8 +90,8 @@ func glassCSS(_ style.Theme) string {
   background: color-mix(in srgb, var(--color-surface, #FFFFFF) 82%, transparent);
   -webkit-backdrop-filter: blur(40px) saturate(200%);
   backdrop-filter: blur(40px) saturate(200%);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18),
-    0 0 0 0.5px color-mix(in srgb, var(--color-text, #000000) 14%, transparent),
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--ui-glass-rim-thick, rgba(255, 255, 255, 0.18)),
+    0 0 0 calc(var(--stroke-thin, 1px) / 2) color-mix(in srgb, var(--color-text, #000000) 14%, transparent),
     var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.10), 0 4px 6px -2px rgba(0, 0, 0, 0.05));
 }
 /* Reduce Transparency: the shell pushes the state as a class because

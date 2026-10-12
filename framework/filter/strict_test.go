@@ -23,6 +23,23 @@ func parseQuery(t *testing.T, rawQuery string, opts ...FilterOption) ([]ParsedFi
 	return ParseFilters(r, strictFields(), opts...)
 }
 
+// The operator/type rule ?where= applies holds on the flat ?field_<op>=
+// surface too: like on an Int is refused, naming the key sent, and the
+// lenient mode drops the filter like any other key it cannot honour.
+func TestFlatFilterRefusesMistypedOp(t *testing.T) {
+	_, err := parseQuery(t, "score_like=5")
+	if err == nil || !strings.Contains(err.Error(), `operator "like" cannot filter "score" (type int)`) {
+		t.Fatalf("score_like: want a type refusal, got %v", err)
+	}
+	if _, err := parseQuery(t, "score_gt=5&status_like=a"); err != nil {
+		t.Fatalf("suited operators must pass: %v", err)
+	}
+	fs, err := parseQuery(t, "score_like=5", Lenient())
+	if err != nil || len(fs) != 0 {
+		t.Fatalf("lenient: want the filter dropped, got %v, %v", fs, err)
+	}
+}
+
 // A misspelled top-level filter must NOT silently return unfiltered data,
 // it must be rejected so a broken client can't read the whole table. This is
 // the core #100A correctness contract.

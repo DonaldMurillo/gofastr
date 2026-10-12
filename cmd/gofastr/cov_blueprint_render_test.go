@@ -184,7 +184,7 @@ func TestRenderBlueprintFilesRichShape(t *testing.T) {
 		t.Fatal("expected main.go")
 	}
 	screens := allScreenContent(files)
-	for _, want := range []string{"HomeScreen", "EmptyScreen", `appResources["posts"]`, "island.NewIsland", "component.NewWidget", "ui.Link", "uinode.Node"} {
+	for _, want := range []string{"HomeScreen", "EmptyScreen", `appUI.List("posts")`, "island.NewIsland", "component.NewWidget", "ui.Link", "uinode.Node"} {
 		if !strings.Contains(screens, want) {
 			t.Errorf("screens.go missing %q", want)
 		}

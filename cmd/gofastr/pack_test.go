@@ -577,16 +577,6 @@ func constructSpecs() []constructSpec {
 			},
 		},
 		{
-			name: "transitions", order: transitionOrder, orderName: "transitionOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Screens: []BlueprintScreen{{Body: []BlueprintBlock{{Transitions: []BlueprintTransition{{}}}}}}}
-				return bp, reflect.ValueOf(&bp.Screens[0].Body[0].Transitions[0]).Elem()
-			},
-			at: func(out map[string]any) map[string]any {
-				return digEmitted(out, "screens", 0, "body", 0, "transitions", 0)
-			},
-		},
-		{
 			name: "nav", order: navOrder, orderName: "navOrder",
 			build: func() (*Blueprint, reflect.Value) {
 				bp := &Blueprint{Nav: []BlueprintNavItem{{}}}

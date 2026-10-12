@@ -79,30 +79,22 @@ type Overrides struct {
 	RadiusSm, RadiusMd, RadiusLg int // px
 }
 
-// baseTheme is the framework's opinionated default: a clean
-// neutral palette with indigo primary. Identical shape to
-// style.DefaultTheme(), but framework-ui has its own slight
-// adjustments to colors and fonts.
+// baseTheme is the framework's opinionated default: style.DefaultTheme's
+// neutral zinc palette (near-black primary, white page, hairline
+// borders) plus a complete dark palette.
 func baseTheme() style.Theme {
 	t := style.DefaultTheme()
 	t.Name = "framework-ui"
-	// Override a few values where framework-ui differs from the
-	// generic style defaults.
-	t.Colors.Background = style.Color{Name: "background", Value: "#FAFAF9"}
-	t.Colors.Accent = style.Color{Name: "accent", Value: "#0891B2"}
-	t.Fonts.Body = style.Font{Name: "body", Value: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif"}
-	t.Fonts.Heading = style.Font{Name: "heading", Value: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif"}
-	t.Fonts.Mono = style.Font{Name: "mono", Value: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace"}
 	// The framework theme is adaptive by default. core-ui's lower-level
 	// style.DefaultTheme intentionally remains light-only for compatibility;
 	// host applications and generated projects should use this theme so a
 	// ThemeToggle and the synchronous OS-preference bootstrap always have a
 	// complete, contrast-safe dark palette to switch to.
 	t.DarkColors = map[string]string{
-		"accent":        "#67E8F9",
-		"background":    "#111113",
-		"border":        "#3F3F46",
-		"border-strong": "#71717A",
+		"accent":        "#60A5FA",
+		"background":    "#09090B",
+		"border":        "#27272A",
+		"border-strong": "#3F3F46",
 		// Code-surface tokens: the dark values match the light ones on
 		// purpose — the code surface is already dark in both schemes
 		// (see style.ColorSet.CodeSurface), so dark mode reuses the
@@ -114,10 +106,10 @@ func baseTheme() style.Theme {
 		"danger":       "#F87171",
 		"danger-fg":    "#111827", // 6.41:1 on the dark danger fill; the dark ink mirrors primary-fg's
 		"info":         "#60A5FA",
-		"primary":      "#A5B4FC",
-		"primary-fg":   "#111827",
-		"secondary":    "#D4D4D8",
-		"secondary-fg": "#18181B",
+		"primary":      "#FAFAFA",
+		"primary-fg":   "#18181B",
+		"secondary":    "#27272A",
+		"secondary-fg": "#FAFAFA",
 		"success":      "#4ADE80",
 		"surface":      "#18181B",
 		"surface-soft": "#27272A",

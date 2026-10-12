@@ -85,11 +85,11 @@ func TestTransitionCSSGeneratesSlideAndBackVariant(t *testing.T) {
 	css := l.TransitionCSS()
 	for _, want := range []string{
 		`[data-cui-vt="vt-items-primary"] { view-transition-name: vt-items-primary; }`,
-		`::view-transition-new(vt-items-primary) { animation: vt-items-primary-in 220ms ease both; }`,
+		`::view-transition-new(vt-items-primary) { animation: vt-items-primary-in 220ms var(--easing-ease-in-out, ease) both; }`,
 		`@keyframes vt-items-primary-in { 0%, 50% { transform: translateX(var(--spacing-xl, 24px)); opacity: 0; } }`,
 		`:root:active-view-transition-type(back) ::view-transition-new(vt-items-primary) { animation-name: vt-items-primary-in-back; }`,
 		`@keyframes vt-items-primary-in-back { 0%, 50% { transform: translateX(calc(-1 * var(--spacing-xl, 24px))); opacity: 0; } }`,
-		`::view-transition-old(vt-items-primary) { animation: vt-items-primary-out 220ms ease both; }`,
+		`::view-transition-old(vt-items-primary) { animation: vt-items-primary-out 220ms var(--easing-ease-in-out, ease) both; }`,
 		// S2: the legs are sequential — the old snapshot is fully faded
 		// by the midpoint, the new one holds opacity 0 until then.
 		`@keyframes vt-items-primary-out { 50%, to { opacity: 0; } }`,
@@ -212,6 +212,34 @@ func TestAreaTransitionMarkerAndCSS(t *testing.T) {
 	}
 	if strings.Contains(css, "transform") {
 		t.Errorf("FadeThrough must not nudge:\n%s", css)
+	}
+}
+
+// An Instant region swaps in one frame while the root crossfades
+// around it: no fade leg and no group morph, and the old snapshot is
+// hidden from the first frame, so a trail's unchanged prefix never
+// blinks and its changed tail never ghosts.
+func TestInstantAreaSwapsInOneFrame(t *testing.T) {
+	shell := app.NewLayout("shell", app.LayoutSpec{
+		Areas: []app.AreaSpec{{Name: "crumbs", Transition: app.Instant()}},
+	}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+		return render.Join(l.RouteArea("crumbs", func(ctx context.Context, m app.Match) render.HTML {
+			return render.Text("HOME")
+		}), l.Primary())
+	})
+	css := shell.TransitionCSS()
+	for _, want := range []string{
+		`[data-cui-vt="vt-shell-crumbs"] { view-transition-name: vt-shell-crumbs; }`,
+		`::view-transition-group(vt-shell-crumbs), ::view-transition-new(vt-shell-crumbs) { animation: none; }`,
+		`::view-transition-old(vt-shell-crumbs) { animation: none; opacity: 0; }`,
+		`[data-cui-vt="vt-shell-crumbs"][data-cui-vt][aria-busy="true"] { opacity: 1; transition: none; }`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("instant CSS missing %s:\n%s", want, css)
+		}
+	}
+	if strings.Contains(css, "@keyframes") {
+		t.Errorf("an instant swap generated keyframes:\n%s", css)
 	}
 }
 

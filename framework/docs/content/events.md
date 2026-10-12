@@ -57,14 +57,26 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
   rationale.
 - The stream returns `503 Service Unavailable` if the entity has no
   event bus configured (the default `framework.NewApp` wires one).
-- The stream re-validates authorization for its whole life, not just at
-  connect. The entity's read permission is re-checked on every delivery
-  and on a 30-second ticker (`CrudHandler.EventStreamReauth`, settable
-  via `WithEventStreamReauth`), and the read-scope lift is re-evaluated
-  per event. A caller whose current authorization forbids reads —
-  session revoked, role dropped, a resource decider flipped to deny —
-  has the stream closed at the next check; the EventSource reconnects
-  and meets the full connect-time gate, which now refuses.
+- The stream re-validates its caller for its whole life, not just at
+  connect. On every delivery and on a 30-second ticker
+  (`CrudHandler.EventStreamReauth`, settable via
+  `WithEventStreamReauth`) it re-establishes the principal: the
+  battery/auth middleware that authenticated the request looks the
+  session, API token or JWT owner up again, and `access.Middleware`
+  re-derives the roles. The entity's read permission is then checked on
+  that fresh principal, and the read-scope lift is re-evaluated per
+  event. A caller who would now be refused (session deleted, token
+  revoked or expired, user deleted, role dropped, a resource decider
+  flipped to deny) has the stream closed at the next check, even on an
+  entity with no read permission. The EventSource reconnects and meets
+  the full connect-time gate, which now refuses.
+- Custom auth middleware opts in through `handler.WithPrincipalCheck`:
+  install a check after `handler.SetUser` that re-resolves the caller
+  and returns false once a fresh request would be refused. `SetUser`
+  drops any earlier check. Without one, the stream keeps the identity it
+  connected with and only the permission re-check applies. The island
+  SSE stream (`/__gofastr/sse`) runs the same check before every push
+  and heartbeat.
 
 ## Tenant scoping
 

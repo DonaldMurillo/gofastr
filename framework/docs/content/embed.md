@@ -64,8 +64,14 @@ reportsRoutes.Use(embeds.RequireScope("reports:read"))
 ### What a grant may reach
 
 A grant reaches its surface's own route subtree (the path of the screen it
-carries) and the runtime's `/__gofastr/*` endpoints. **Everything else
-answers 403** until the surface says otherwise:
+carries) and the browser-runtime endpoints uihost mounts under `/__gofastr`:
+the runtime scripts and stylesheets, `/__gofastr/action`, `/__gofastr/sse`,
+the widget routes (`/__gofastr/widgets`, `/__gofastr/widget/*`), the
+`comp`, `runtime`, `compute`, `pwa` and `icons` asset trees, and the embed
+endpoints themselves. That is a fixed list, not the whole `/__gofastr`
+subtree: batteries mount there too (`battery/rtc` at `/__gofastr/rtc`, the
+desktop bridge at `/__gofastr/desktop`), and a grant reaches none of them.
+**Everything else answers 403** until the surface says otherwise:
 
 ```go
 Surface{
@@ -92,6 +98,12 @@ framework-mounted route: a configuration that cannot be right should not
 start. When a request is refused, the 403 names the surface, the path, and the
 `Reach` entry that would allow it.
 
+Reserved prefixes are enforced at request time as well. A battery that
+implements `framework.EmbedReserving` (`battery/admin`, `battery/print`, the
+auth token routes, `battery/rtc`, `battery/desktop`) registers the prefix it
+actually mounted, and a grant-carrying request under that prefix answers 403
+whatever the surface declares.
+
 ### Scopes narrow further, within reach
 
 `Reach` decides which routes an embed may touch at all. Scopes decide what it
@@ -110,6 +122,12 @@ fwApp.Group("/reports", routegroup.WithMiddleware(embeds.RequireScope("reports:r
 `RequireScope` refuses a grant that does not carry the scope, and passes
 ordinary first-party traffic straight through: it narrows what an *embed* may
 do and nothing else.
+
+A grant's scopes also bind the auto-CRUD routes it reaches across relations.
+`embed.WithGrant` installs them as the request's held scopes
+(`access.WithHeldScopes`), so a grant scoped `customers:read` gets 403 on
+`?include=invoices` and on `?invoices.memo=…` filters, and a cascade write
+needs `<target>:write` for each child it touches.
 
 To branch inside a handler or a screen rather than gate a whole group, read the
 grant off the context:

@@ -156,6 +156,41 @@ func (s *memoryUserStore) HasPassword(_ context.Context, userID string) (bool, e
 	return false, ErrUserNotFound
 }
 
+// MarkEmailVerified implements EmailVerifier.
+func (s *memoryUserStore) MarkEmailVerified(_ context.Context, userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.byID[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	e.emailVerified = true
+	return nil
+}
+
+// IsEmailVerified implements EmailVerifiedChecker.
+func (s *memoryUserStore) IsEmailVerified(_ context.Context, userID string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.byID[userID]
+	if !ok {
+		return false, ErrUserNotFound
+	}
+	return e.emailVerified, nil
+}
+
+// ClearPassword implements PasswordClearer.
+func (s *memoryUserStore) ClearPassword(_ context.Context, userID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.byID[userID]
+	if !ok {
+		return ErrUserNotFound
+	}
+	e.hash, e.passwordSet = passwordPlaceholderHash, false
+	return nil
+}
+
 // CreateUserNoPassword implements OAuthUserCreator. Marks the new user
 // passwordless so HasPassword reports false, the same contract
 // EntityUserStore.CreateUserNoPassword upholds.

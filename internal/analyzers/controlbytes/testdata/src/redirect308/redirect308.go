@@ -43,10 +43,10 @@ func handlePartial(w http.ResponseWriter, r *http.Request, a *app) {
 	}
 }
 
-// pathValueTarget is battery/admin entitySave's shape: the redirect
+// pathValueTarget is a record-save handler's shape: the redirect
 // target embeds r.PathValue("id") with no check.
 func pathValueTarget(w http.ResponseWriter, r *http.Request) {
-	dest := "/admin/e/posts/edit/" + r.PathValue("id")
+	dest := "/admin/entities/posts/" + r.PathValue("id")
 	http.Redirect(w, r, dest+"?e=token", http.StatusSeeOther) // want `controlbytes: request-derived value reaches http.Redirect Location unscrubbed`
 }
 

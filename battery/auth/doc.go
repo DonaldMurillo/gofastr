@@ -56,7 +56,13 @@
 //   - [PasswordChecker]: lets [AccountsPlugin] refuse "unlink the last
 //     credential" correctly (otherwise it falls back to "must have at
 //     least one OAuth account remaining").
-//   - [EmailVerifier]:    required by [EmailVerificationPlugin].
+//   - [EmailVerifier]:    required by [EmailVerificationPlugin] and by
+//     every account claim.
+//   - [EmailVerifiedChecker]: reports whether an address was proven.
+//     [MagicLinkPlugin] refuses existing accounts without it, and
+//     [OAuth2Plugin] auto-links only into accounts it reports verified.
+//   - [PasswordClearer]: removes a squatter's password when a magic
+//     link claims an unverified account.
 //   - [PasswordSetter]:   required by [PasswordResetPlugin].
 //   - [SessionTwoFAMarker] / [SessionPendingMarker]: required by
 //     [TwoFAPlugin] for default-deny 2FA enforcement.

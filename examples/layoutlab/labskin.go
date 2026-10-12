@@ -40,10 +40,10 @@ const labDemoCSS = `
 }
 /* Prefixes are pseudo content: the bindings' textContent is exact
    test surface (labRoute), so the DOM gains no text. */
-#lab-route-title::before { content: "title: "; opacity: 0.6; }
-#lab-route-param::before { content: "id: "; opacity: 0.6; }
-#lab-crumbs-bind::before { content: "crumbs: "; opacity: 0.6; }
-#lab-mix-bind::before { content: "mix: "; opacity: 0.6; }
+#lab-route-title::before { content: "title: "; opacity: var(--opacity-muted, 0.6); }
+#lab-route-param::before { content: "id: "; opacity: var(--opacity-muted, 0.6); }
+#lab-crumbs-bind::before { content: "crumbs: "; opacity: var(--opacity-muted, 0.6); }
+#lab-mix-bind::before { content: "mix: "; opacity: var(--opacity-muted, 0.6); }
 
 
 /* ---- labelled regions ------------------------------------------------ */

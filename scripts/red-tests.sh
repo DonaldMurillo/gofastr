@@ -35,9 +35,20 @@ fi
 
 # Then only the AFFECTED ones: the import-graph closure of what differs
 # from origin/main, computed under the red tag so a probe's own imports
-# count. GOFASTR_TEST_ALL=1 keeps every red package.
-if [ "${GOFASTR_TEST_ALL:-}" != "1" ]; then
+# count. GOFASTR_TEST_ALL=1 keeps every red package. A failed affected
+# computation degrades to the full red run, never to a skipped one:
+# filtering against its empty output would report "nothing to run" and
+# pass the gate with findings open.
+RUN_ALL="${GOFASTR_TEST_ALL:-}"
+if [ "$RUN_ALL" != "1" ]; then
     AFFECTED="$(go run ./cmd/affected -tags red -format dir)"
+    AFFECTED_STATUS=$?
+    if [ "$AFFECTED_STATUS" -ne 0 ]; then
+        echo "warning: cmd/affected exited $AFFECTED_STATUS; running every red-tagged package."
+        RUN_ALL=1
+    fi
+fi
+if [ "$RUN_ALL" != "1" ]; then
     PKGS="$(echo "$PKGS" | grep -Fxf <(echo "$AFFECTED") || true)"
     if [ -z "$PKGS" ]; then
         echo "no red-tagged package is affected by this change — nothing to run (GOFASTR_TEST_ALL=1 runs them all)."
@@ -57,7 +68,7 @@ echo "    (raw output kept at $OUT)"
 # appending to the same log; their failures fold into the suite verdict.
 RPKGS="$(grep -rl --exclude-dir=.claude --exclude-dir=node_modules --exclude-dir=dist "^//go:build red && race\|^//go:build race && red" --include='*_red_test.go' . 2>/dev/null \
     | xargs -n1 dirname | sort -u | sed 's|^\.$|.|; s|^[^.]|./&|')"
-if [ "${GOFASTR_TEST_ALL:-}" != "1" ] && [ -n "$RPKGS" ]; then
+if [ "$RUN_ALL" != "1" ] && [ -n "$RPKGS" ]; then
     RPKGS="$(echo "$RPKGS" | grep -Fxf <(echo "$AFFECTED") || true)"
 fi
 if [ -n "$RPKGS" ]; then

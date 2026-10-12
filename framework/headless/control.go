@@ -137,6 +137,12 @@ type TextareaProps struct {
 	// behaviour of the control itself, not a decoration, and the
 	// styled layer's TextArea has no other way to say it.
 	Autogrow bool
+	// JSON is the sentence the control says when its text is not JSON
+	// ("Enter valid JSON"); set, it renders data-hui-json, and the
+	// headless-controls module checks the text as it is typed: an
+	// invalid value marks the control invalid and stops the form's
+	// submit with the sentence. Empty text is left to Required.
+	JSON string
 
 	ID    string
 	Extra html.Attrs
@@ -158,6 +164,9 @@ func Textarea(p TextareaProps, s Classes) render.HTML {
 	attrsSet(attrs, "id", p.ID)
 	attrsSet(attrs, "aria-describedby", p.DescribedBy)
 	Flag(attrs, "data-cui-autogrow", p.Autogrow)
+	if p.JSON != "" {
+		attrs["data-hui-json"] = scrubControlBytes(p.JSON)
+	}
 	Flag(attrs, "required", p.Required)
 	Flag(attrs, "disabled", p.Disabled)
 	if p.Invalid {
@@ -491,6 +500,7 @@ func init() {
 	Register(Spec{
 		Name:    "Textarea",
 		Anatomy: []Part{PartRoot},
+		Hooks:   []string{"data-hui-json"},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
 			return []Case{{
@@ -504,6 +514,10 @@ func init() {
 					func(c FieldControl) render.HTML {
 						return Textarea(TextareaProps{Name: "notes", ID: c.ID, Value: "Grows to fit whatever is typed.", Autogrow: true}, s)
 					}),
+			}, {
+				Name: "json",
+				Why:  "a JSON field says the text is not JSON as it is typed and before the submit, where the server would only say so after",
+				HTML: Textarea(TextareaProps{Name: "meta", ID: "meta", Value: `{"plan": "pro"}`, JSON: "Enter valid JSON"}, s),
 			}}
 		},
 	})

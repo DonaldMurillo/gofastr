@@ -25,7 +25,7 @@ const BehaviorName = "headless"
 var behaviorMarkers = []string{
 	"[data-hui-reveal]", "[data-hui-color]",
 	"[data-hui-form-errors]", "[data-hui-action]", "[data-hui-drop]",
-	"[data-hui-system]", "[data-hui-table]",
+	"[data-hui-system]", "[data-hui-table]", "[data-hui-selection]",
 }
 
 // The module that binds the data-hui-* hooks, registered the way a
@@ -41,7 +41,7 @@ var behaviorMarkers = []string{
 var _ = uiregistry.RegisterBehavior(BehaviorName, behaviorJS,
 	uiregistry.Markers("[data-hui-reveal]", "[data-hui-color]",
 		"[data-hui-form-errors]", "[data-hui-action]", "[data-hui-drop]",
-		"[data-hui-system]", "[data-hui-table]"),
+		"[data-hui-system]", "[data-hui-table]", "[data-hui-selection]"),
 	// A first click on a table's sort anchor or its pager's page
 	// anchor can land while this module is still cold-fetching. The
 	// bridge retains the click and replays it on the anchor once the

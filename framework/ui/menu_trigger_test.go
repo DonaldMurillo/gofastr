@@ -34,7 +34,7 @@ func TestMenuTriggerElementMarkup(t *testing.T) {
 	for _, want := range []string{
 		`<div class="fui-menu fui-menu--bottom-start" data-cui-comp="ui-menu">`,
 		`<div data-hui-menu-trigger="um" role="presentation">` + triggerBtn + `</div>`,
-		`<details data-hui-disclosure="" data-hui-menu="um">`,
+		`<details data-hui-disclosure="" data-hui-disclosure-dismiss="" data-hui-menu="um">`,
 		`<div class="fui-menu__panel" data-cui-internal="" data-hui-menu-panel="" id="um-panel" role="menu">`,
 		`role="menuitem"`,
 	} {
@@ -49,7 +49,7 @@ func TestMenuTriggerElementMarkup(t *testing.T) {
 	// the panel sits INSIDE the details, so the disclosure machinery
 	// (Escape, SPA-nav close, focus-on-open) scopes to the panel.
 	wrapperAt := strings.Index(out, `data-hui-menu-trigger="um"`)
-	detailsAt := strings.Index(out, `<details data-hui-disclosure="" data-hui-menu="um">`)
+	detailsAt := strings.Index(out, `<details data-hui-disclosure="" data-hui-disclosure-dismiss="" data-hui-menu="um">`)
 	if wrapperAt < 0 || detailsAt < 0 || wrapperAt > detailsAt {
 		t.Errorf("wrapper must precede the details sibling:\n%s", out)
 	}
@@ -191,7 +191,7 @@ func TestMenuTriggerGoldenBytes(t *testing.T) {
 			}},
 		},
 	}))
-	want := `<div class="fui-menu fui-menu--bottom-start" data-cui-comp="ui-menu"><div data-hui-menu-trigger="um" role="presentation"><button type="button" class="rounded-full">Open user menu</button></div><details data-hui-disclosure="" data-hui-menu="um"><div class="fui-menu__panel" data-cui-internal="" data-hui-menu-panel="" id="um-panel" role="menu"><a class="fui-menu__item" href="/me" role="menuitem" tabindex="-1"><span class="fui-menu__label">Profile</span></a><details class="fui-menu__sub" data-hui-disclosure="" data-hui-menu="um-panel-sub-1"><summary aria-controls="um-panel-sub-1-panel" aria-haspopup="menu" class="fui-menu__item fui-menu__item--hassub" role="menuitem" tabindex="-1"><span class="fui-menu__label">Palette</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="um-panel-sub-1-panel" role="menu"><button aria-checked="true" class="fui-menu__item" data-hui-menu-radio="theme" role="menuitemradio" tabindex="-1" type="button"><span class="fui-menu__label">Dark</span></button></div></details></div></details></div>`
+	want := `<div class="fui-menu fui-menu--bottom-start" data-cui-comp="ui-menu"><div data-hui-menu-trigger="um" role="presentation"><button type="button" class="rounded-full">Open user menu</button></div><details data-hui-disclosure="" data-hui-disclosure-dismiss="" data-hui-menu="um"><div class="fui-menu__panel" data-cui-internal="" data-hui-menu-panel="" id="um-panel" role="menu"><a class="fui-menu__item" href="/me" role="menuitem" tabindex="-1"><span class="fui-menu__label">Profile</span></a><details class="fui-menu__sub" data-hui-disclosure="" data-hui-menu="um-panel-sub-1"><summary aria-controls="um-panel-sub-1-panel" aria-haspopup="menu" class="fui-menu__item fui-menu__item--hassub" role="menuitem" tabindex="-1"><span class="fui-menu__label">Palette</span></summary><div class="fui-menu__panel" data-hui-menu-panel="" id="um-panel-sub-1-panel" role="menu"><button aria-checked="true" class="fui-menu__item" data-hui-menu-radio="theme" role="menuitemradio" tabindex="-1" type="button"><span class="fui-menu__label">Dark</span></button></div></details></div></details></div>`
 	if got != want {
 		t.Errorf("trigger menu bytes drifted:\n--got--\n%s\n--want--\n%s", got, want)
 	}

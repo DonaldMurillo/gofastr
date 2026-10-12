@@ -3,11 +3,14 @@ package access
 import (
 	"context"
 	"net/http"
+	"slices"
 )
 
 // Ref identifies the resource a capability check is about. Type is the entity
 // name (e.g. "projects"); ID is the record id, or "" for a collection-level
-// check (List, Create, a batch, or the SSE feed). The zero Ref carries no
+// check (List, Create, the up-front gate of a batch, or the SSE feed). A
+// batch update or delete then asks again for each item with that item's id.
+// The zero Ref carries no
 // resource information, a decider that ignores empty Refs is effectively
 // opting out of resource-awareness for that call.
 type Ref struct {
@@ -103,6 +106,27 @@ func CanResource(ctx context.Context, capability Permission, resource Ref) bool 
 		}
 	}
 	return Can(ctx, capability)
+}
+
+// CanResourceExact is CanResource for a capability that must be held by
+// name: the Decider is asked first, as in CanResource, and on abstain the
+// caller's roles must hold capability itself. A role granted the Wildcard
+// does not satisfy it. A move's Permission is checked this way, so a
+// superuser role does not pick up every narrow capability an app declares.
+func CanResourceExact(ctx context.Context, capability Permission, resource Ref) bool {
+	if ctx == nil {
+		return false
+	}
+	if d, ok := ctx.Value(deciderKey{}).(Decider); ok && d != nil {
+		switch d(ctx, GetRoles(ctx), capability, resource) {
+		case DecisionAllow:
+			return observe(ctx, capability, true, "can-resource-exact")
+		case DecisionDeny:
+			return observe(ctx, capability, false, "can-resource-exact")
+		case DecisionAbstain:
+		}
+	}
+	return observe(ctx, capability, slices.Contains(GetPermissions(ctx), capability), "can-resource-exact")
 }
 
 // requireResource resolves a capability exactly as CanResource does —

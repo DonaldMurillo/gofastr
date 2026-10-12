@@ -16,7 +16,8 @@ import (
 // WithSitemap registers a /sitemap.xml handler that lists every
 // reachable route in the app. Dynamic routes are expanded via
 // [app.StaticPathsProvider] when the screen implements it; otherwise
-// they are skipped (the crawler can't reach them anyway).
+// they are skipped (the crawler can't reach them anyway). A screen whose
+// policy redirects or blocks a signed-out visitor is skipped too.
 
 // SitemapConfig configures the /sitemap.xml endpoint.
 type SitemapConfig struct {
@@ -128,6 +129,9 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 		}
 		paths := expandRouteForSitemap(ds.App, route.Path)
 		for _, p := range paths {
+			if !ds.sitemapPublic(p) {
+				continue
+			}
 			b.WriteString("  <url>\n")
 			fmt.Fprintf(&b, "    <loc>%s%s</loc>\n", base, stdhtml.EscapeString(p))
 			fmt.Fprintf(&b, "    <lastmod>%s</lastmod>\n", lastmod)
@@ -137,6 +141,32 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 
 	b.WriteString(`</urlset>` + "\n")
 	return b.String(), true
+}
+
+// sitemapPublic reports whether an anonymous visitor gets the page at the
+// concrete path p: the screen's policy chain, evaluated for a bare GET with
+// no session, ends in Allow or RenderAlt. A Redirect or Block is the same
+// outcome that makes the static exporter skip the page (PolicyBlockedError),
+// so the sitemap never lists a URL the export left out or a crawler cannot
+// read. The evaluation ignores the sitemap request's own credentials: the
+// document is the same for every caller.
+func (ds *UIHost) sitemapPublic(p string) bool {
+	screen, _, ok := ds.App.Router.Resolve(p)
+	if !ok {
+		return true // nothing to gate; the route list already vouched for it
+	}
+	ctx := context.Background()
+	if req, err := http.NewRequestWithContext(ctx, http.MethodGet, p, nil); err == nil {
+		ctx = app.WithRequest(ctx, req)
+	}
+	if m, ok := ds.App.Router.MatchFor(p); ok {
+		ctx = app.WithMatch(ctx, m)
+	}
+	switch app.ResolvePolicy(ctx, screen).Kind {
+	case app.DecisionRedirect, app.DecisionBlock:
+		return false
+	}
+	return true
 }
 
 func (ds *UIHost) handleRobots(w http.ResponseWriter, _ *http.Request) {

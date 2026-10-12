@@ -224,7 +224,7 @@ func paneHostCSS(_ style.Theme) string {
 [data-cui-comp="ui-pane-host"] .fui-pane-host__pane--secondary,
 [data-cui-comp="ui-pane-host"] .fui-pane-host__pane--tertiary {
   background: var(--color-surface, transparent);
-  border: 1px solid var(--color-border, rgba(0, 0, 0, 0.10));
+  border: var(--stroke-thin, 1px) solid var(--color-border, rgba(0, 0, 0, 0.10));
   border-radius: var(--radii-md, 8px);
   padding: var(--spacing-md, 8px);
 }
@@ -257,7 +257,7 @@ func paneHostCSS(_ style.Theme) string {
   inline-size: min(90vw, var(--fui-pane-host-drawer-w, 420px));
   z-index: var(--z-modal, 300);
   border-radius: 0;
-  border-inline-start: 1px solid var(--color-border, rgba(0, 0, 0, 0.10));
+  border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, rgba(0, 0, 0, 0.10));
   box-shadow: var(--shadow-md, 0 10px 30px rgba(0, 0, 0, 0.18));
   overflow: auto;
 }

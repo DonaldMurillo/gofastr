@@ -241,3 +241,36 @@ func TestAccessControlDocUsesTheRealWildcardPath(t *testing.T) {
 		t.Error("Wildcard is now re-exported on the framework facade — access-control.md may use framework.Wildcard again")
 	}
 }
+
+// release-0-86.md's hook-rename table maps the v0.85 spellings to the
+// v0.86 ones. A later data-cui-* sweep rewrote the OLD column too, so
+// the table told a v0.85 app to migrate from names it never had. The
+// old column names only data-fui-* and data-when-* hooks (the v0.85
+// spellings); the new column is where data-hui-* lives.
+func TestRelease086OldHooksKeepV085Spelling(t *testing.T) {
+	doc := readDoc(t, "release-0-86.md")
+	start := strings.Index(doc, "| Old | New |")
+	if start < 0 {
+		t.Fatal("release-0-86.md has no `| Old | New |` hook table")
+	}
+	rows := 0
+	for ln := range strings.SplitSeq(doc[start:], "\n") {
+		if !strings.HasPrefix(ln, "| `data-") {
+			if rows > 0 && !strings.HasPrefix(ln, "|") {
+				break
+			}
+			continue
+		}
+		rows++
+		cells := strings.SplitN(ln, "|", 3)
+		if len(cells) < 3 {
+			continue
+		}
+		if strings.Contains(cells[1], "data-cui-") || strings.Contains(cells[1], "data-hui-") {
+			t.Errorf("Old column carries a post-v0.85 spelling: %s", strings.TrimSpace(cells[1]))
+		}
+	}
+	if rows == 0 {
+		t.Fatal("no hook rows under the Old/New table")
+	}
+}

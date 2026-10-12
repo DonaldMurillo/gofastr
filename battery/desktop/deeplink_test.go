@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -238,6 +239,61 @@ func TestDeepLinksQueueUntilWindow(t *testing.T) {
 	}
 	if events != 16 {
 		t.Fatalf("deep_link events = %d, want 16", events)
+	}
+}
+
+// TestColdLinkMapsOnce: a link that arrives before the window is up
+// runs the host OnDeepLink once, not again when the queue flushes, and
+// navigates once.
+func TestColdLinkMapsOnce(t *testing.T) {
+	t.Setenv("GOFASTR_DESKTOP_DATA_DIR", t.TempDir())
+	inner := desktoptest.NewShell()
+	gated := &gatedShell{Shell: inner, cfg: make(chan desktop.WindowConfig, 1), release: make(chan struct{})}
+	var calls atomic.Int32
+	app, d := uiApp(t, desktop.Config{
+		Title: "DL",
+		Shell: gated,
+		DeepLink: &desktop.DeepLinkConfig{
+			Scheme: "notes",
+			OnDeepLink: func(u *url.URL) (string, bool) {
+				calls.Add(1)
+				return "/custom" + u.Path, true
+			},
+		},
+	})
+
+	runErr := make(chan error, 1)
+	go func() { runErr <- d.Run(app) }()
+	t.Cleanup(func() {
+		inner.Quit()
+		select {
+		case err := <-runErr:
+			if err != nil {
+				t.Errorf("Battery.Run returned %v", err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Error("Battery.Run did not return after Quit")
+		}
+	})
+
+	cfg := <-gated.cfg // window NOT up yet
+	cfg.OnDeepLink("notes://a/x")
+	close(gated.release)
+
+	deadline := time.Now().Add(10 * time.Second)
+	paths := collectQueuedPaths(inner)
+	for len(paths) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		paths = collectQueuedPaths(inner)
+	}
+	// Let any second delivery land before counting.
+	time.Sleep(100 * time.Millisecond)
+	paths = collectQueuedPaths(inner)
+	if len(paths) != 1 || paths[0] != "/custom/x" {
+		t.Fatalf("navigations = %q, want exactly [/custom/x]", paths)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("OnDeepLink ran %d times for one cold-launch link, want 1", n)
 	}
 }
 
