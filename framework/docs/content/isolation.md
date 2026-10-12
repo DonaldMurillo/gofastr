@@ -104,6 +104,14 @@ if err != nil {
 }
 ```
 
+A port is remapped once. `App.Start` resolves isolation again, but every
+runtime resolved for the same project in one process shares the mappings
+already recorded, so passing it the result of `ListenAddr` keeps that
+address. `Runtime.Env` hands each recorded mapping to a child process as a
+`GOFASTR_ISOLATION_PORT_<base>` marker, which is how the app that
+`gofastr dev --addr localhost:8791` launches binds the port the dev banner
+prints.
+
 Hand-written apps still get automatic port isolation through `App.Start`.
 Database isolation is automatic when the app either runs through `gofastr dev`
 and reads env, or opens the database through `Runtime.Database`.

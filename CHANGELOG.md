@@ -27,6 +27,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   runtime now sends `Content-Type: application/json` on writes that have
   no body, which the transition route requires. GET and HEAD send no
   content type, and multipart forms keep the browser's boundary (#500).
+- **Worktree isolation remaps a listen port once.** In a linked
+  worktree, `gofastr dev --addr localhost:8791` printed one port while
+  the app bound another: the child remapped the address it was handed,
+  and `App.Start` remapped the result of `isolation.ListenAddr` again.
+  `Runtime.Env` now passes every recorded mapping to the child, and
+  runtimes resolved for the same project in one process share their
+  mappings, so the app binds the address `gofastr dev` names.
 
 ## [0.87.1] - 2026-10-11
 
