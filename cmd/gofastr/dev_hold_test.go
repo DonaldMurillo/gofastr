@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -10,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -91,13 +89,45 @@ func TestDevHoldReleaseFreesThePort(t *testing.T) {
 	}
 }
 
+// A relisten still retrying when release runs must not take the port
+// back after it: the app release made way for would then fail to bind.
+func TestDevHoldReleaseWaitsForRelisten(t *testing.T) {
+	h := newTestHold(t)
+	h.release()
+	blocker, err := net.Listen("tcp", h.addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	showDone := make(chan struct{})
+	go func() { h.show(holdExited, "exit status 1"); close(showDone) }()
+	// Wait until relisten holds its lock, retrying on the blocker.
+	for deadline := time.Now().Add(5 * time.Second); h.listenMu.TryLock(); {
+		h.listenMu.Unlock()
+		if time.Now().After(deadline) {
+			t.Fatal("show never started relistening")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	released := make(chan struct{})
+	go func() { h.release(); close(released) }()
+	time.Sleep(150 * time.Millisecond)
+	_ = blocker.Close()
+	<-showDone
+	<-released
+	ln, err := net.Listen("tcp", h.addr)
+	if err != nil {
+		t.Fatalf("the hold took the port back after release: %v", err)
+	}
+	_ = ln.Close()
+}
+
 func TestDevHoldRefusesABusyPort(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ln.Close()
-	if _, err := newDevHold(ln.Addr().String()); !errors.Is(err, syscall.EADDRINUSE) {
+	if _, err := newDevHold(ln.Addr().String()); !addrInUse(err) {
 		t.Fatalf("newDevHold on a busy port = %v, want EADDRINUSE", err)
 	}
 }
@@ -247,6 +277,28 @@ func TestBuildAndServeHandsThePortToTheApp(t *testing.T) {
 		t.Fatal("build failed")
 	}
 	pollHold(t, h.addr, "app is up")
+}
+
+// A save kills the app on purpose. Its Wait goroutine must not report
+// that as an exit, or every rebuild would flash "The app stopped".
+func TestBuildAndServeKillIsNotAnExit(t *testing.T) {
+	dir := t.TempDir()
+	holdApp(t, dir, false)
+	h := newTestHold(t)
+	var mu sync.Mutex
+	var cmd *exec.Cmd
+	var ok bool
+	covT_capStdout(t, func() { ok = buildAndServe(dir, ".", h.addr, nil, &mu, &cmd, true, h) })
+	if !ok {
+		killServer(&mu, &cmd)
+		t.Fatal("build failed")
+	}
+	pollHold(t, h.addr, "app is up")
+	killServer(&mu, &cmd)
+	time.Sleep(500 * time.Millisecond)
+	if phase, _, _, _ := h.state(); phase != holdBuilding {
+		t.Fatalf("hold phase after a kill = %q, want %q", phase, holdBuilding)
+	}
 }
 
 func TestBuildAndServeHoldShowsAppExit(t *testing.T) {

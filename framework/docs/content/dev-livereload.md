@@ -129,7 +129,9 @@ the app's own output stays in the terminal running `gofastr dev`.
 Because the hold binds the address at startup, a second `gofastr dev`
 on a busy address stops at once with an error naming the address,
 instead of building first and then failing to bind. An address with
-port `0` gets no hold.
+port `0` gets no hold. In a linked worktree with isolation on, the
+second run does not stop: isolation skips a busy port and picks the next
+free one, so it starts on another address.
 
 ## The dev loop is also livereload for agents
 

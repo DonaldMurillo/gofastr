@@ -14,7 +14,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   build or lint output included, instead of refusing connections. Open
   tabs reload into that page when a build fails and back into the app
   when it is up again. A second `gofastr dev` on a busy address now
-  stops at startup instead of after its first build (#483).
+  stops at startup instead of after its first build, except in a linked
+  worktree, where isolation moves it to the next free port (#483).
 - **`entityui.UI.WithCreatePath` sets the create screen's route.** An app
   that mounts its create screen at `/deals/new` instead of
   `/deals/create` passes one path function, and New, Duplicate, Create

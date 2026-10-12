@@ -128,11 +128,14 @@ func (h *devHold) relisten() {
 
 // release closes the listener and every open connection, livereload
 // streams included, so the app can bind the address and the open tabs
-// reconnect to it.
+// reconnect to it. It waits out a relisten still retrying, which would
+// otherwise bind the address after the release and keep the app off it.
 func (h *devHold) release() {
 	if h == nil {
 		return
 	}
+	h.listenMu.Lock()
+	defer h.listenMu.Unlock()
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.srv != nil {

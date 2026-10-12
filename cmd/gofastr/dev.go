@@ -286,7 +286,7 @@ func holdDevAddr(addr string) (*devHold, error) {
 		return nil, nil
 	}
 	hold, err := newDevHold(addr)
-	if errors.Is(err, syscall.EADDRINUSE) {
+	if addrInUse(err) {
 		return nil, fmt.Errorf("%s is already in use. If another gofastr dev serves it, use that one: it rebuilds on every save. Otherwise stop what holds the port or pass --addr", addr)
 	}
 	if err != nil {
@@ -294,6 +294,14 @@ func holdDevAddr(addr string) (*devHold, error) {
 		return nil, nil
 	}
 	return hold, nil
+}
+
+// addrInUse reports a bind refused because something already listens
+// there. Windows reports WSAEADDRINUSE (10048), which syscall.EADDRINUSE
+// does not match on that platform.
+func addrInUse(err error) bool {
+	var errno syscall.Errno
+	return errors.Is(err, syscall.EADDRINUSE) || (errors.As(err, &errno) && errno == 10048)
 }
 
 // devA11yGate runs the same static accessibility lint `gofastr build`
@@ -363,10 +371,12 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 		}
 		// killServer clears *cmd under mu before this can read it, so an
 		// app still current here stopped on its own: hold the address.
+		// The show runs under mu too. Unlocked, a kill and rebuild could
+		// land between the check and the show, and this stale exit would
+		// take the address back from the app that rebuild started.
 		mu.Lock()
-		crashed := *cmd == runCmd
-		mu.Unlock()
-		if crashed {
+		defer mu.Unlock()
+		if *cmd == runCmd {
 			status := "the app exited"
 			if err != nil {
 				status = err.Error()
