@@ -1,4 +1,4 @@
-version: v0.88.0
+version: v0.87.2
 title: gofastr dev answers while the app is down, and worktree isolation remaps a port once
 notes:
   - change: "gofastr dev holds the dev address during the first build, after a failed build and after the app exits, answering 503 with Retry-After and an X-Gofastr-Dev header (building, build-failed or exited) instead of refusing connections; a second gofastr dev on a busy address stops at startup"
