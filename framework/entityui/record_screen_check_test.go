@@ -3,6 +3,7 @@ package entityui
 import (
 	"bytes"
 	"log/slog"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -75,5 +76,59 @@ func TestListWarnsWhenRecordScreenMissing(t *testing.T) {
 	listHTML(t, plain.List("orders"), x.ctx("/orders", ""))
 	if logs.Len() != 0 {
 		t.Errorf("host without HasScreen: want no warning, got:\n%s", logs)
+	}
+}
+
+// countingHost counts HasScreen lookups and serves no screens.
+type countingHost struct {
+	*testHost
+	calls *int
+}
+
+func (h countingHost) HasScreen(string) (has, known bool) { *h.calls++; return false, true }
+
+// A NoLinks list draws no record links, so it has nothing to warn about.
+func TestNoLinksListDoesNotWarn(t *testing.T) {
+	x := newTestHost(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	logs := captureWarnings(t)
+	ui, err := New(screensHost{testHost: x.host, screens: map[string]bool{}}, Extensions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listHTML(t, ui.List("orders").NoLinks(), x.ctx("/orders", ""))
+	if logs.Len() != 0 {
+		t.Errorf("NoLinks list: want no warning, got:\n%s", logs)
+	}
+}
+
+// Each base is looked up once, and the set stops growing at its cap: an
+// unset Base is the request path, which a dynamic route lets callers vary.
+func TestRecordScreenCheckIsBounded(t *testing.T) {
+	x := newTestHost(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	logs := captureWarnings(t)
+	calls := 0
+	ui, err := New(countingHost{testHost: x.host, calls: &calls}, Extensions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listHTML(t, ui.List("orders"), x.ctx("/orders", ""))
+	listHTML(t, ui.List("orders"), x.ctx("/orders", "?orders_page=1"))
+	if calls != 1 {
+		t.Fatalf("HasScreen calls for one base = %d, want 1", calls)
+	}
+	for i := range maxCheckedBases + 50 {
+		ui.checkRecordScreen(x.ctx("/", ""), "orders", "/u/"+strconv.Itoa(i)+"/orders", "o1")
+	}
+	if calls > maxCheckedBases {
+		t.Errorf("HasScreen calls = %d, want at most %d", calls, maxCheckedBases)
+	}
+	if n := strings.Count(logs.String(), "no screen serves"); n > maxCheckedBases {
+		t.Errorf("warnings = %d, want at most %d", n, maxCheckedBases)
 	}
 }

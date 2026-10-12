@@ -55,7 +55,10 @@ a list renders rows whose `<base>/<id>` link matches no registered screen,
 it logs one warning per base naming the route to register
 (`entityui: list rows link to a path no screen serves`). The check runs
 through `App.EntityUI` with a mounted `uihost`; a custom `Host` opts in by
-implementing `entityui.ScreenHost`.
+implementing `entityui.ScreenHost`. A `NoLinks()` list draws no record
+links and is not checked. Each base is looked up once, and the check
+stops after 256 bases: a list with no `Base` takes the request path, which
+a dynamic route lets callers vary.
 
 The builders draw no page frame: no container, no max width, no gutter.
 Under a site header whose content sits in `ui.Container`, wrap the

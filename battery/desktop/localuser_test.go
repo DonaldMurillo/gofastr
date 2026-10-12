@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 )
 
@@ -166,5 +167,20 @@ func TestLocalUserNotInjectedWhenGateUnarmed(t *testing.T) {
 	}
 	if ok {
 		t.Fatal("local identity injected while the boot gate is unarmed (serve mode)")
+	}
+}
+
+// Arming the gate puts the local user on every window request, so the
+// startup banner must not claim nothing signs callers in. --serve mode
+// never arms it and keeps the hint: there every request is anonymous.
+func TestArmGateNotesAuthenticator(t *testing.T) {
+	b, _ := newTestBattery(t)
+	b.app = framework.NewApp()
+	if b.app.AuthenticatorNoted() {
+		t.Fatal("noted before the gate armed")
+	}
+	b.armGate()
+	if !b.app.AuthenticatorNoted() {
+		t.Error("an armed gate installs the local user: the app must be noted")
 	}
 }

@@ -168,6 +168,15 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	if !strings.Contains(string(noticeBody), "Account created. Sign in to continue.") {
 		t.Fatalf("GET /login?registered=1 lost the account-created notice:\n%s", noticeBody)
 	}
+	nextResp, err := http.Get(baseURL + "/login?next=%2Fposts%3Fpage%3D2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextBody, _ := io.ReadAll(nextResp.Body)
+	nextResp.Body.Close()
+	if !strings.Contains(string(nextBody), `name="next" type="hidden" value="/posts?page=2"`) {
+		t.Fatalf("GET /login?next=… must carry next into the form:\n%s", nextBody)
+	}
 	login := postForm(t, "/auth/login", creds+"&next=%2F")
 	if login.StatusCode != http.StatusSeeOther || len(login.Cookies()) == 0 {
 		t.Fatalf("login = %d with %d cookies, want 303 with a session cookie\n%s", login.StatusCode, len(login.Cookies()), output.String())
@@ -222,6 +231,12 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	_, callBody := mcpCall(t, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"posts_list","arguments":{}}}`)
 	if !strings.Contains(callBody, "401") || !strings.Contains(callBody, "authentication required") {
 		t.Fatalf("anonymous MCP posts_list did not answer the REST route's 401 — MCP must not bypass entity auth:\n%s", callBody)
+	}
+
+	// battery/auth is wired, so the banner's "nothing signs callers in"
+	// line must stay quiet.
+	if strings.Contains(output.String(), "No auth is wired") {
+		t.Fatalf("banner claims no auth is wired on a scaffold that wires battery/auth:\n%s", output.String())
 	}
 
 	// The banner is how the endpoint gets discovered at all.

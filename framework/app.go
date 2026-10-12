@@ -699,7 +699,8 @@ func (a *App) entityCrudMount(e *entity.Entity) crud.MountInfo {
 	path := a.crudMounts[e].full
 	for _, v := range a.migrationViews {
 		if len(v.Columns) > 0 && v.Name == e.GetTable() {
-			return crud.MountInfo{Mounted: true, ReadOnly: true, Path: path}
+			// App.View records no mount; its routes sit at entityMountPath.
+			return crud.MountInfo{Mounted: true, ReadOnly: true, Path: a.entityMountPath(e.GetTable())}
 		}
 	}
 	return crud.MountInfo{Mounted: true, Path: path}

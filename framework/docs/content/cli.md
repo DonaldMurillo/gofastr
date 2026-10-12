@@ -20,10 +20,11 @@ each command to the doc that covers it.
   source (a sqlite `file:<app>.db` path stays inline; it is not a
   credential). With the sample entity, entity CRUD mounts under `/api`
   (`WithAPIPrefix("/api")`) and `battery/auth` is wired with `/login` and
-  `/register` screens in `screens_auth.go`; `.env` also carries
-  `APP_ENV=development` (auth dev mode for plain-HTTP localhost) and a
-  freshly minted `JWT_SECRET`, and `main.go` reads both from the
-  environment. `init . --reinit` refreshes the
+  `/register` screens in `screens_auth.go`; `.env` also carries a
+  freshly minted `JWT_SECRET`, which `main.go` reads from the
+  environment. Auth dev mode (plain session cookie, relaxed login
+  limiter) follows `GOFASTR_DEV`, which `gofastr dev` sets, so a copied
+  `.env` never relaxes a deployment. `init . --reinit` refreshes the
   AI-agent onboarding files in place (`--force` overwrites your edits);
   no Go code or git changes. A released CLI pins the generated `go.mod` to its
   matching GoFastr version. A local development build prints the exact

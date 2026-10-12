@@ -3,8 +3,13 @@ package framework
 import (
 	"database/sql"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 // #503: under WithAPIPrefix("/api") the /api/llm.md index linked each
@@ -14,6 +19,17 @@ import (
 func TestLLMIndexLinksUnderAPIPrefix(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app := prefixedTicketsApp(t, db, "/api")
+		// A read-only view mounts under the prefix too, through App.View,
+		// which records no CRUD mount of its own.
+		app.View(migrate.View{
+			Name:      "open_tickets",
+			Select:    "SELECT id, title FROM tickets",
+			DependsOn: []string{"tickets"},
+			Columns: []migrate.Column{
+				{Name: "id", Type: schema.String, PrimaryKey: true},
+				{Name: "title", Type: schema.String},
+			},
+		})
 		stop := covStartAndStop(t, app)
 		defer stop()
 
@@ -26,6 +42,9 @@ func TestLLMIndexLinksUnderAPIPrefix(t *testing.T) {
 		if !strings.Contains(md, "[tickets](/api/tickets/llm.md)") {
 			t.Errorf("index should link the prefixed per-entity page:\n%s", md)
 		}
+		if !strings.Contains(md, "[open_tickets](/api/open_tickets/llm.md)") {
+			t.Errorf("index should link the view's prefixed page:\n%s", md)
+		}
 		if !strings.Contains(md, "`/api/tickets`") {
 			t.Errorf("index Base Path should carry the prefix:\n%s", md)
 		}
@@ -34,5 +53,33 @@ func TestLLMIndexLinksUnderAPIPrefix(t *testing.T) {
 		if got := h.Get("/api/tickets/llm.md").Status(); got == http.StatusNotFound {
 			t.Errorf("GET /api/tickets/llm.md = 404: the index links a route that is not mounted")
 		}
+
+		// The page itself must name the routes where they live: an agent
+		// that reads "GET /tickets" from it gets the same 404 the index
+		// used to hand out.
+		page := signedInGet(t, app, "/api/tickets/llm.md")
+		for _, want := range []string{"Resource: `/api/tickets`", "### GET /api/tickets\n", "### POST /api/tickets/_batch"} {
+			if !strings.Contains(page, want) {
+				t.Errorf("per-entity llm.md missing %q:\n%s", want, page)
+			}
+		}
+		if strings.Contains(page, "### GET /tickets") {
+			t.Errorf("per-entity llm.md lists the unprefixed path:\n%s", page)
+		}
+		if view := signedInGet(t, app, "/api/open_tickets/llm.md"); !strings.Contains(view, "### GET /api/open_tickets\n") {
+			t.Errorf("view llm.md lists the unprefixed path:\n%s", view)
+		}
 	})
+}
+
+func signedInGet(t *testing.T, app *App, path string) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, path, nil)
+	r = r.WithContext(handler.SetUser(r.Context(), struct{ ID string }{ID: "u1"}))
+	app.Router().ServeHTTP(rec, r)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET %s = %d, want 200:\n%s", path, rec.Code, rec.Body.String())
+	}
+	return rec.Body.String()
 }

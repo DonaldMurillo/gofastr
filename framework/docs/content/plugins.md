@@ -187,7 +187,8 @@ difference:
   `OnStart` / `OnStop` hooks.
 - A battery or middleware that signs callers in calls
   `App.NoteAuthenticator()` when it wires itself (`battery/auth`'s
-  `AuthManager.Init` does). Until something does and an entity requires
+  `AuthManager.Init` does; `battery/desktop` does when its window
+  identity takes effect). Until something does and an entity requires
   auth, the startup banner prints one line naming the fix: wire
   `battery/auth`, or set `Exposure.Public`. `App.AuthenticatorNoted()`
   reads it back.

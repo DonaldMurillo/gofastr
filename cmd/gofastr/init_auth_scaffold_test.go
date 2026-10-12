@@ -42,7 +42,7 @@ func TestInitWiresAuthAndAPIPrefix(t *testing.T) {
 		`authMgr.Init(fwApp)`,
 		`auth.SessionMiddleware(authMgr)`,
 		`os.Getenv("JWT_SECRET")`,
-		`os.Getenv("APP_ENV") == "development"`,
+		`DevMode:      dev.Enabled(),`,
 		`site.Register("/login", &LoginScreen{}, nil)`,
 		`site.Register("/register", &RegisterScreen{}, nil)`,
 	} {
@@ -59,8 +59,10 @@ func TestInitWiresAuthAndAPIPrefix(t *testing.T) {
 	if strings.Contains(mainGo, m[1]) {
 		t.Error("the JWT secret must live only in .env, never in main.go")
 	}
-	if !strings.Contains(env, "\nAPP_ENV=development\n") {
-		t.Errorf(".env must opt the local app into auth dev mode:\n%s", env)
+	// Dev mode comes from the dev loop (GOFASTR_DEV), never from .env: a
+	// .env copied next to a deployed binary must not relax auth.
+	if strings.Contains(env, "APP_ENV") || strings.Contains(env, "GOFASTR_DEV") {
+		t.Errorf(".env must not switch auth into dev mode:\n%s", env)
 	}
 	if fi, err := os.Stat(filepath.Join(root, ".env")); err != nil || fi.Mode().Perm() != 0o600 {
 		t.Errorf(".env mode = %v (%v), want 0600", fi.Mode().Perm(), err)
@@ -77,6 +79,7 @@ func TestInitWiresAuthAndAPIPrefix(t *testing.T) {
 		`Action: "/auth/login"`,
 		`Action: "/auth/register"`,
 		`Value: "/login?registered=1"`,
+		`next := q.Get("next")`,
 		"Notice:",
 		"func authError(ctx context.Context) render.HTML",
 	} {

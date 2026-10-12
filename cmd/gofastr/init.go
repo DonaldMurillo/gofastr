@@ -155,10 +155,6 @@ PORT=localhost:8080
 		envContent = fmt.Sprintf(`# GoFastr Environment Configuration
 DATABASE_URL=%s
 
-# APP_ENV=development puts battery/auth in dev mode: session cookies work
-# over plain-HTTP localhost. Remove it (or set production) when you deploy.
-APP_ENV=development
-
 # JWT_SECRET signs session tokens. This one was generated for this checkout
 # only; set your own in every deployed environment.
 JWT_SECRET=%s
@@ -488,6 +484,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/dev"
 	"github.com/DonaldMurillo/gofastr/framework/docs/mcptools"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
@@ -560,11 +557,13 @@ func main() {
 	// Sign-in: POST /auth/register, /auth/login and /auth/logout, with
 	// users and sessions in this database. SessionMiddleware resolves the
 	// session cookie on every request, so /api/posts sees the signed-in
-	// user. APP_ENV=development (set in the scaffolded .env) relaxes the
-	// cookie for plain-HTTP localhost; anywhere else auth refuses to boot
-	// without a JWT_SECRET and issues Secure cookies.
+	// user. Dev mode (plain session cookie, relaxed login limiter) follows
+	// the dev loop's own signal: GOFASTR_DEV, which `+"`gofastr dev`"+` sets and
+	// GOFASTR_ENV=production overrides. It is never read from .env, so a
+	// copied .env cannot downgrade a deployment; outside the dev loop auth
+	// issues Secure cookies and refuses to boot without JWT_SECRET.
 	authMgr := auth.New(auth.AuthConfig{
-		DevMode:      os.Getenv("APP_ENV") == "development",
+		DevMode:      dev.Enabled(),
 		JWTSecret:    os.Getenv("JWT_SECRET"),
 		UserStore:    auth.NewEntityUserStore(db, "auth_users"),
 		SessionStore: auth.NewEntitySessionStore(db, "auth_sessions"),
@@ -765,9 +764,18 @@ func (s *LoginScreen) ScreenDescription() string  { return "" }
 func (s *LoginScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *LoginScreen) RenderCtx(ctx context.Context) render.HTML {
+	q := app.QueryFromContext(ctx)
 	var notice render.HTML
-	if app.QueryFromContext(ctx).Get("registered") == "1" {
+	if q.Get("registered") == "1" {
 		notice = render.Text("Account created. Sign in to continue.")
+	}
+	// A screen behind auth.SessionPolicy sends the visitor here with
+	// ?next=<where they were going>; carry it through the form. The auth
+	// battery redirects only to a same-site relative path, whatever the
+	// form posts.
+	next := q.Get("next")
+	if next == "" {
+		next = "/"
 	}
 	return ui.Container(ui.ContainerConfig{Width: ui.ContainerNarrow},
 		ui.AuthCard(ui.AuthCardConfig{
@@ -775,7 +783,7 @@ func (s *LoginScreen) RenderCtx(ctx context.Context) render.HTML {
 			Alert:  authError(ctx),
 			Notice: notice,
 			Body: ui.Form(ui.FormConfig{Action: "/auth/login", Method: "POST", SubmitLabel: "Sign in", SubmitFullWidth: true},
-				html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/"}),
+				html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: next}),
 				emailField(),
 				passwordField("current-password", 0),
 			),

@@ -24,6 +24,10 @@ type LLMMDOptions struct {
 	// one layer down: the answer lives in the mount options, not the
 	// entity declaration).
 	ReadOnly bool
+	// Path is the full path the routes are mounted at, API and group
+	// prefixes included ("/api/posts"). Empty means "/<table>", behind the
+	// entity's Version when it has one.
+	Path string
 }
 
 // EntityLLMMD generates an LLM-friendly markdown document describing all
@@ -57,7 +61,10 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 
 	fmt.Fprintf(&b, "# %s\n\n", name)
 	resourcePath := "/" + table
-	if ent.Version != "" {
+	switch {
+	case opt.Path != "":
+		resourcePath = opt.Path
+	case ent.Version != "":
 		resourcePath = ent.Version + resourcePath
 	}
 	fmt.Fprintf(&b, "Resource: `%s`\n\n", resourcePath)
