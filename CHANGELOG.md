@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.88.0] - 2026-10-12
+
 ### Added
 - **`gofastr dev` answers while the app is down.** During the first
   build, after a failed build, and after the app exits, the dev address

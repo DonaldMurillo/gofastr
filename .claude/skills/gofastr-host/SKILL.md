@@ -15,6 +15,10 @@ To run the app while you work, start `gofastr dev` once in the background
 and leave it running: it rebuilds on every save and reloads the browser.
 `go run .` and a hand-launched binary never reload, because only
 `gofastr dev` sets `GOFASTR_DEV=1`.
+While the app is building, after a failed build, or after it exits,
+`gofastr dev` answers 503 with an `X-Gofastr-Dev` header and the build
+output in the body. It is still running: fix the error and save, and do
+not start another one.
 
 For UI work, also read and complete the project's `DESIGN.md` before selecting
 components, then open `.agents/ui.md` and run
