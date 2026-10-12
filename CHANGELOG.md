@@ -25,6 +25,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `did you mean "issue_id"?`. Only a near miss (the `_id` form, the
   foreign key, or the target entity) gets a suggestion; the error never
   lists an entity's relations (#503).
+- **`ui.AuthCard` has a `Notice` slot.** It renders a `role="status"`
+  message in the success color between the alert and the body, for
+  outcomes like "account created" that the danger-styled `Alert` would
+  misreport (#503).
 
 ### Fixed
 - **`/api/llm.md` links honor `WithAPIPrefix`.** Under

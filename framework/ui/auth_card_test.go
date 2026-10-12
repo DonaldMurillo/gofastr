@@ -32,3 +32,15 @@ func TestAuthCardExtraAttrsOnRoot(t *testing.T) {
 		t.Errorf("root missing data-test:\n%s", root)
 	}
 }
+
+// A notice ("Account created. Sign in to continue.") is not a failure:
+// it renders as a polite status with its own class, never in the
+// danger-styled alert slot.
+func TestAuthCardNoticeIsStatus(t *testing.T) {
+	h := string(AuthCard(AuthCardConfig{Title: "Sign in", Notice: render.Text("Account created.")}))
+	mustContain(t, render.HTML(h), `class="fui-auth-card__notice" role="status"`)
+	mustContain(t, render.HTML(h), "Account created.")
+	if strings.Contains(h, "fui-auth-card__alert") || strings.Contains(h, `role="alert"`) {
+		t.Errorf("a notice alone must not render the alert slot:\n%s", h)
+	}
+}
