@@ -21,6 +21,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `/<table>/llm.md` and showed unprefixed base paths, so every link
   404ed. It now links and lists the path the routes are mounted at
   (#503).
+- **Active-link highlighting works outside a `<nav>`.** A link carrying
+  `data-cui-match-prefix` or `data-cui-activelink` in a header with no
+  `<nav>` landmark was never marked. The `activelink` module now sweeps
+  opt-in links wherever they sit; plain links outside a nav stay
+  untouched (#503).
 
 ## [0.87.2] - 2026-10-12
 
