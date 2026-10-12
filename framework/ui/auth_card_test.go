@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -42,5 +43,13 @@ func TestAuthCardNoticeIsStatus(t *testing.T) {
 	mustContain(t, render.HTML(h), "Account created.")
 	if strings.Contains(h, "fui-auth-card__alert") || strings.Contains(h, `role="alert"`) {
 		t.Errorf("a notice alone must not render the alert slot:\n%s", h)
+	}
+	// A notice is a slot: the internal mark moves to the title and the
+	// panel is left for an owner to reach.
+	if !regexp.MustCompile(`<h1[^>]*data-cui-internal`).MatchString(h) {
+		t.Errorf("a notice-only card must mark the title internal:\n%s", h)
+	}
+	if regexp.MustCompile(`<div[^>]*fui-auth-card__panel[^>]*data-cui-internal|<div[^>]*data-cui-internal[^>]*fui-auth-card__panel`).MatchString(h) {
+		t.Errorf("a notice-only card must leave the panel unmarked:\n%s", h)
 	}
 }

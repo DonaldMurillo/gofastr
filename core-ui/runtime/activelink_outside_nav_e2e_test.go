@@ -51,8 +51,9 @@ func TestActiveLinkOptInOutsideNav(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/issues/42"),
 		chromedp.WaitVisible(`#issues`, chromedp.ByID),
-		chromedp.Sleep(200*time.Millisecond),
-		chromedp.Evaluate(`document.getElementById('issues').getAttribute('aria-current')`, &issues),
+		// The module loads idle: wait for its sweep to mark the link, then
+		// read the plain link, which that same sweep would have touched.
+		chromedp.Poll(`document.getElementById('issues').getAttribute('aria-current')`, &issues, chromedp.WithPollingTimeout(5*time.Second)),
 		chromedp.Evaluate(`document.getElementById('plain').getAttribute('aria-current')`, &plain),
 	); err != nil {
 		t.Fatalf("chromedp /issues/42: %v", err)
@@ -68,8 +69,7 @@ func TestActiveLinkOptInOutsideNav(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/board"),
 		chromedp.WaitVisible(`#board`, chromedp.ByID),
-		chromedp.Sleep(200*time.Millisecond),
-		chromedp.Evaluate(`document.getElementById('board').getAttribute('aria-current')`, &board),
+		chromedp.Poll(`document.getElementById('board').getAttribute('aria-current')`, &board, chromedp.WithPollingTimeout(5*time.Second)),
 	); err != nil {
 		t.Fatalf("chromedp /board: %v", err)
 	}

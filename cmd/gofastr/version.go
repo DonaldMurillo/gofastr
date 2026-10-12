@@ -32,11 +32,12 @@ func isGofastrMainModule(path string) bool {
 }
 
 // versionLine is what `gofastr version` and `--version` print. The commit
-// and build time fall back to the VCS stamp the go command records when
-// it builds from a checkout; a module-mode `go install` records neither,
-// so those two stay at their defaults there.
+// falls back to the VCS stamp the go command records when it builds from
+// a checkout; a module-mode `go install` records none, so it stays at its
+// default there. vcs.time is the commit's time, not the build's, so it is
+// printed as "committed" and only when no build date was stamped.
 func versionLine() string {
-	c, d := commit, buildDate
+	c, d, label := commit, buildDate, "built"
 	if info, ok := readBuildInfo(); ok {
 		for _, s := range info.Settings {
 			switch s.Key {
@@ -46,10 +47,10 @@ func versionLine() string {
 				}
 			case "vcs.time":
 				if d == "unknown" && s.Value != "" {
-					d = s.Value
+					d, label = s.Value, "committed"
 				}
 			}
 		}
 	}
-	return fmt.Sprintf("GoFastr %s (commit: %s, built: %s)", cliVersion(), c, d)
+	return fmt.Sprintf("GoFastr %s (commit: %s, %s: %s)", cliVersion(), c, label, d)
 }

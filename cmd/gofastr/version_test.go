@@ -46,8 +46,11 @@ func TestVersionCheckoutBuildShowsCommit(t *testing.T) {
 	if !strings.HasPrefix(got, "GoFastr dev ") {
 		t.Errorf("versionLine() = %q, want dev for a checkout build", got)
 	}
-	if !strings.Contains(got, "commit: bdea4ca6d012,") || !strings.Contains(got, "built: 2026-10-12T15:00:00Z") {
-		t.Errorf("versionLine() = %q, want the VCS stamp as commit and build time", got)
+	if !strings.Contains(got, "commit: bdea4ca6d012,") || !strings.Contains(got, "committed: 2026-10-12T15:00:00Z") {
+		t.Errorf("versionLine() = %q, want the VCS stamp as commit and commit time", got)
+	}
+	if strings.Contains(got, "built: 2026") {
+		t.Errorf("versionLine() = %q: vcs.time is the commit time, not the build time", got)
 	}
 }
 

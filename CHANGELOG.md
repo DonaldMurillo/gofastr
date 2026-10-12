@@ -62,7 +62,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`gofastr version` names the release a `go install` built.** A binary
   from `go install …/cmd/gofastr@v0.87.0` printed `GoFastr dev`. It now
   reads the module version from the build info, and a build from a
-  checkout shows its VCS commit and time (#503).
+  checkout shows its VCS commit and commit time (#503).
 
 ## [0.87.2] - 2026-10-12
 

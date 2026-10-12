@@ -62,8 +62,8 @@ func TestLLMIndexLinksUnderAPIPrefix(t *testing.T) {
 		}
 		// The per-entity page is auth-gated (WithPublicOpenAPI covers the
 		// index only), so the anonymous answer is 401. 404 is the bug.
-		if got := h.Get("/api/tickets/llm.md").Status(); got == http.StatusNotFound {
-			t.Errorf("GET /api/tickets/llm.md = 404: the index links a route that is not mounted")
+		if got := h.Get("/api/tickets/llm.md").Status(); got != http.StatusUnauthorized {
+			t.Errorf("anonymous GET /api/tickets/llm.md = %d, want 401 (404 means the index links a route that is not mounted)", got)
 		}
 
 		// The page itself must name the routes where they live: an agent
