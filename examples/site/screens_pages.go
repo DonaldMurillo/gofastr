@@ -160,10 +160,10 @@ func gsBody() render.HTML {
 	)
 
 	step2 := step("s2", "02", "Scaffold", "~45s",
-		html.Paragraph(html.TextConfig{}, render.Text("Scaffold a new project. It writes main.go, a sample posts entity in entities/entities.go, a home screen in screens.go at the root, a versioned migration, DESIGN.md, gofastr.isolation.yml, and the agent onboarding files (AGENTS.md + .agents/, CLAUDE.md), then initializes git.")),
+		html.Paragraph(html.TextConfig{}, render.Text("Scaffold a new project. It writes main.go, a sample posts entity in entities/entities.go, a home screen in screens.go at the root, sign-in screens in screens_auth.go, a versioned migration, DESIGN.md, gofastr.isolation.yml, and the agent onboarding files (AGENTS.md + .agents/, CLAUDE.md), then initializes git.")),
 		termBlock("$ scaffold",
 			render.Text("$ gofastr init blog\n"),
-			ok("✓ Created project blog in ./blog/: main.go, screens.go, entities/entities.go, gofastr.isolation.yml, DESIGN.md, CLAUDE.md, AGENTS.md\n"),
+			ok("✓ Created project blog in ./blog/: main.go, screens.go, screens_auth.go, entities/entities.go, gofastr.isolation.yml, DESIGN.md, CLAUDE.md, AGENTS.md\n"),
 			ok("→ next: cd blog && go mod tidy && gofastr dev\n"),
 		),
 		html.Paragraph(html.TextConfig{}, render.Text("Open the scaffolded "), codeText("main.go"), render.Text(". It's short, it's yours, and every registration in it is plain Go. Read it.")),
@@ -194,10 +194,10 @@ func gsBody() render.HTML {
 		),
 		html.Paragraph(html.TextConfig{}, render.Text("Open "), codeText("localhost:8080"), render.Text(". The scaffolded home screen renders. Then hit the API from a second terminal:")),
 		termBlock("$ probe",
-			o("$ curl -s http://localhost:8080/posts\n"),
+			o("$ curl -s http://localhost:8080/api/posts\n"),
 			ok("{\"error\":\"authentication required\",\"success\":false,…}   # 401\n"),
 		),
-		html.Paragraph(html.TextConfig{}, render.Text("That 401 is the point: auto-CRUD refuses anonymous requests unless you opt out. Add "), codeText("Public: true"), render.Text(" to the entity, save, and the dev server rebuilds. The same curl now answers "), codeText("{\"data\":[]}"), render.Text(". Wiring real login instead is the auth battery ("), codeText("gofastr docs auth"), render.Text(").")),
+		html.Paragraph(html.TextConfig{}, render.Text("That 401 is the point: auto-CRUD refuses anonymous requests unless you opt out. Add "), codeText("Public: true"), render.Text(" to the entity, save, and the dev server rebuilds. The same curl now answers "), codeText("{\"data\":[]}"), render.Text(". Or keep the gate and sign in: the scaffold already wires the auth battery, so create an account at "), codeText("/register"), render.Text(", sign in at "), codeText("/login"), render.Text(", and the browser session reaches the same route ("), codeText("gofastr docs auth"), render.Text(").")),
 	)
 
 	step5 := step("s5", "05", "First page", "~60s",
@@ -220,7 +220,8 @@ func gsBody() render.HTML {
 			html.Heading(html.HeadingConfig{Level: 3}, render.Text("Running, on disk, yours")),
 			html.UnorderedList(html.ListConfig{},
 				html.ListItem(html.ListItemConfig{}, render.Text("A server-rendered home screen (plus yours from step 5)")),
-				html.ListItem(html.ListItemConfig{}, render.Text("A posts entity: REST CRUD, session-gated by default")),
+				html.ListItem(html.ListItemConfig{}, render.Text("A posts entity: REST CRUD at /api/posts, session-gated by default")),
+				html.ListItem(html.ListItemConfig{}, render.Text("Sign-in screens at /login and /register, backed by the auth battery")),
 				html.ListItem(html.ListItemConfig{}, render.Text("A versioned SQL migration, already applied")),
 				html.ListItem(html.ListItemConfig{}, render.Text("An OpenAPI 3 spec (auth-gated; Swagger UI at /api/docs/)")),
 				html.ListItem(html.ListItemConfig{}, render.Text("MCP under gofastr dev: posts_list/posts_create plus app_routes, and the framework docs through framework_docs_search (the generated main.go registers them), so your coding agent reads the running app")),

@@ -25,6 +25,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `did you mean "issue_id"?`. Only a near miss (the `_id` form, the
   foreign key, or the target entity) gets a suggestion; the error never
   lists an entity's relations (#503).
+- **`gofastr init` scaffolds sign-in.** The sample app shipped CRUD
+  that answered 401 with no way to sign in. It now wires `battery/auth`
+  (users and sessions in the app's database, `SessionMiddleware`) and
+  writes `screens_auth.go` with `/login` and `/register`. Registering
+  lands on `/login?registered=1` with a notice rather than a session,
+  because the register endpoint answers a new and a taken address alike.
+  Entity CRUD mounts under `/api`, so a screen can own `/posts`. `.env`
+  gains `APP_ENV=development` and a per-checkout `JWT_SECRET`; outside
+  development, auth refuses to boot without a secret (#503).
 - **`ui.AuthCard` has a `Notice` slot.** It renders a `role="status"`
   message in the success color between the alert and the body, for
   outcomes like "account created" that the danger-styled `Alert` would
