@@ -75,3 +75,38 @@ func TestListenAddrThenStartRemapsOnce(t *testing.T) {
 		t.Fatalf("Start addr = %q, want %q: the port was remapped twice", got, addr)
 	}
 }
+
+// Two first calls for one base port can both miss the table. The one
+// that records second must take the mapping already there.
+func TestRecordPortKeepsFirstMapping(t *testing.T) {
+	clearIsolationEnv(t)
+	dir := linkedWorktree(t)
+	writeFile(t, filepath.Join(dir, "gofastr.yml"), remapConfig)
+	rt, err := Resolve(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rt.recordPort(8080, 9080); got != 9080 {
+		t.Fatalf("first record = %d, want 9080", got)
+	}
+	if got := rt.recordPort(8080, 9081); got != 9080 {
+		t.Fatalf("second record = %d, want the first mapping 9080", got)
+	}
+}
+
+// Resolve on a project where isolation is off maps nothing, so it must
+// not add a table to the process-wide set.
+func TestInactiveResolveSharesNoTable(t *testing.T) {
+	clearIsolationEnv(t)
+	t.Setenv(envIsolation, "off")
+	dir := linkedWorktree(t)
+	if _, err := Resolve(dir); err != nil {
+		t.Fatal(err)
+	}
+	portTables.Range(func(k, _ any) bool {
+		if k.(portTableKey).projectDir == dir {
+			t.Fatalf("inactive Resolve(%s) left a shared table", dir)
+		}
+		return true
+	})
+}

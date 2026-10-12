@@ -33,8 +33,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the app bound another: the child remapped the address it was handed,
   and `App.Start` remapped the result of `isolation.ListenAddr` again.
   `Runtime.Env` now passes every recorded mapping to the child, and
-  runtimes resolved for the same project in one process share their
-  mappings, so the app binds the address `gofastr dev` names.
+  active runtimes in one process with the same project, isolation ID
+  and port config share their mappings, so the app binds the address `gofastr dev` names.
 
 ## [0.87.1] - 2026-10-11
 

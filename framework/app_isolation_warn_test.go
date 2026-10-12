@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 )
 
 // Pins #268: worktree isolation remapping an explicitly-assigned listen
@@ -92,6 +94,49 @@ func TestStartDoesNotWarnWithoutIsolation(t *testing.T) {
 	case <-ready:
 		if strings.Contains(logs.String(), "isolation remapped") {
 			t.Errorf("bare-port normalization must not warn with isolation off:\n%s", logs.String())
+		}
+	case err := <-done:
+		t.Fatalf("Start returned before OnReady: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("OnReady never fired")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_ = app.Shutdown(ctx)
+	<-done
+}
+
+// isolation.ListenAddr's doc says to pass its result to Start, which
+// resolves isolation again. Start must bind that address, not remap the
+// already-mapped port a second time.
+func TestStartKeepsListenAddrResult(t *testing.T) {
+	dir := t.TempDir()
+	gitdir := filepath.Join(t.TempDir(), ".git", "worktrees", "feature")
+	if err := os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: "+gitdir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	for _, k := range []string{"GOFASTR_ISOLATION", "GOFASTR_ISOLATION_APPLIED", "GOFASTR_ISOLATION_ID", "GOFASTR_ISOLATION_REWRITE", "PORT"} {
+		t.Setenv(k, "")
+	}
+	addr, err := isolation.ListenAddr(".", "127.0.0.1:8080")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if addr == "127.0.0.1:8080" {
+		t.Fatal("ListenAddr did not remap in a linked worktree; the test proves nothing")
+	}
+
+	app := NewApp(WithoutDefaultMiddleware(), WithLogger(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))))
+	app.startupOutput = &bytes.Buffer{}
+	ready := make(chan string, 1)
+	app.OnReady(func(bound string) { ready <- bound })
+	done := make(chan error, 1)
+	go func() { done <- app.Start(addr) }()
+	select {
+	case bound := <-ready:
+		if bound != addr {
+			t.Errorf("Start bound %s, want ListenAddr's %s", bound, addr)
 		}
 	case err := <-done:
 		t.Fatalf("Start returned before OnReady: %v", err)

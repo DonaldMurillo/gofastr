@@ -105,10 +105,14 @@ if err != nil {
 ```
 
 A port is remapped once. `App.Start` resolves isolation again, but every
-runtime resolved for the same project in one process shares the mappings
-already recorded, so passing it the result of `ListenAddr` keeps that
-address. The flip side: two servers in one process asking for the same
-base port get the same mapped port, so give them different base ports.
+active runtime in one process with the same project directory, isolation
+ID and port config shares the mappings already recorded, so passing it
+the result of `ListenAddr` keeps that address. The flip side: two
+servers in one process get the same port when they ask for the same base
+port, or when one asks for a port that is already the other's mapped
+port (with the default offset, `:8080` maps near `:9080`, and a second
+server asking for that port keeps it). Give servers in one process base
+ports that are far apart.
 `Runtime.Env` hands each recorded mapping to a child process as a
 `GOFASTR_ISOLATION_PORT_<base>` marker, which is how the app that
 `gofastr dev --addr localhost:8791` launches binds the port the dev banner

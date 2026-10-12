@@ -143,6 +143,12 @@ func Resolve(projectDir string) (*Runtime, error) {
 	// child's own Resolve sees the same value in its os.Environ.
 	rewriteExplicit := os.Getenv(envRewriteExplicit) != "0" &&
 		!strings.EqualFold(os.Getenv(envRewriteExplicit), "false")
+	// Only an active runtime maps ports, so only it joins the shared
+	// table; an inactive Resolve leaves nothing behind in the process.
+	ports := &portTable{m: map[int]int{}}
+	if active {
+		ports = portTableFor(portTableKey{projectDir: start, id: id, port: cfg.Port})
+	}
 	return &Runtime{
 		projectDir:      start,
 		gitRoot:         gitRoot,
@@ -151,7 +157,7 @@ func Resolve(projectDir string) (*Runtime, error) {
 		active:          active,
 		id:              id,
 		rewriteExplicit: rewriteExplicit,
-		ports:           portTableFor(portTableKey{projectDir: start, id: id, port: cfg.Port}),
+		ports:           ports,
 	}, nil
 }
 
@@ -203,8 +209,7 @@ func (r *Runtime) Addr(addr string) (string, error) {
 	if r.isResolvedPort(port) {
 		return addr, nil
 	}
-	next := r.portFor(port, host)
-	r.recordPort(port, next)
+	next := r.recordPort(port, r.portFor(port, host))
 	return joinAddr(host, next, shape), nil
 }
 
@@ -665,13 +670,20 @@ func (r *Runtime) lookupPort(base int) (int, bool) {
 	return p, ok
 }
 
-// recordPort stores base → mapped in the shared in-process table.
+// recordPort stores base → mapped in the shared in-process table and
+// returns the mapping that stands. A mapping already there wins: two
+// first calls for the same base can both miss the table, and the later
+// one, probing after the earlier bound its port, would pick another.
 // Child-process inheritance happens through Env(), which writes the env
 // markers separately.
-func (r *Runtime) recordPort(base, mapped int) {
+func (r *Runtime) recordPort(base, mapped int) int {
 	r.ports.mu.Lock()
 	defer r.ports.mu.Unlock()
+	if p, ok := r.ports.m[base]; ok {
+		return p
+	}
 	r.ports.m[base] = mapped
+	return mapped
 }
 
 // recordedPorts copies the mappings Addr recorded for this context.

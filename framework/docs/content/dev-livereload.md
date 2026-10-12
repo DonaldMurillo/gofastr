@@ -110,8 +110,9 @@ build, or after the app exits. `gofastr dev` holds the dev address
 itself in those windows, so a request gets an answer instead of
 "connection refused":
 
-- Status `503` with `Retry-After: 1` and an `X-Gofastr-Dev` header
-  naming the state: `building`, `build-failed` or `exited`.
+- Every page request gets status `503` with `Retry-After: 1` and an
+  `X-Gofastr-Dev` header naming the state: `building`, `build-failed`
+  or `exited`.
 - A plain-text body for `curl` and other clients that don't ask for
   HTML: what is happening, and for a failed build the compiler, lint
   or sandbox output. A browser gets the same as a page.
@@ -123,8 +124,9 @@ The hold never proxies. It closes its listener right before the app
 starts, and the app binds the address itself, so the app runs the same
 as it does by hand. Between that close and the app's own bind, which
 lasts as long as the app takes to boot, the address refuses
-connections. The page for an app that exited gives its exit status;
-the app's own output stays in the terminal running `gofastr dev`.
+connections. The page for an app that exited gives its exit status
+when it was nonzero; the app's own output stays in the terminal running
+`gofastr dev`.
 
 Because the hold binds the address at startup, a second `gofastr dev`
 on a busy address stops at once with an error naming the address,
