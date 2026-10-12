@@ -8,6 +8,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`gofastr dev` answers while the app is down.** During the first
+  build, after a failed build, and after the app exits, the dev address
+  returns 503 with `Retry-After` and says which of the three it is, the
+  build or lint output included, instead of refusing connections. Open
+  tabs reload into that page when a build fails and back into the app
+  when it is up again. A second `gofastr dev` on a busy address now
+  stops at startup instead of after its first build (#483).
 - **`entityui.UI.WithCreatePath` sets the create screen's route.** An app
   that mounts its create screen at `/deals/new` instead of
   `/deals/create` passes one path function, and New, Duplicate, Create

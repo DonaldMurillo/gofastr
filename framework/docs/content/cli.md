@@ -126,7 +126,9 @@ each command to the doc that covers it.
   MCP tools for your coding agent ([dev-livereload](dev-livereload.md)).
   `--dir` sets the watch root, `--pkg` the main package under it,
   `--addr`/`-p` the port; `--no-a11y` skips the accessibility lint on
-  each rebuild.
+  each rebuild. While the app is building, failed to build, or exited,
+  the address answers 503 with what happened (the build error
+  included) instead of refusing connections.
 - `gofastr build`: codegen + `go vet` + accessibility lint + the embed
   server-action gate + contract verification + `go build`. Only
   error-severity contract findings stop the build (`gofastr verify` is

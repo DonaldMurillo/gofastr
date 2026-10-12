@@ -159,16 +159,20 @@ func resolveAuditPassword(literal string) string {
 // buildA11yGate runs the static accessibility lint for `gofastr build`
 // and reports whether the build may proceed. On violations it prints
 // the guided report so the developer knows exactly what to fix.
-func buildA11yGate(root string) bool {
+func buildA11yGate(root string) bool { return buildA11yGateTo(root, os.Stdout, os.Stderr) }
+
+// buildA11yGateTo is buildA11yGate writing to the given streams, so
+// `gofastr dev` can also show the report on its hold page.
+func buildA11yGateTo(root string, stdout, stderr io.Writer) bool {
 	findings, err := auditA11y(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "accessibility lint: %v\n", err)
+		fmt.Fprintf(stderr, "accessibility lint: %v\n", err)
 		return false
 	}
 	if len(findings) == 0 {
 		return true
 	}
-	fmt.Print(formatA11yReport(findings))
+	fmt.Fprint(stdout, formatA11yReport(findings))
 	return false
 }
 
