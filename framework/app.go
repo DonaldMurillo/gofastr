@@ -691,12 +691,15 @@ func (a *App) entityCrudMount(e *entity.Entity) crud.MountInfo {
 	// read-only (App.View); column-less views never register an entity,
 	// so they never reach this predicate. Table names are unique per
 	// booted app or route registration would already have panicked.
+	// Path is where recordCrudMount saw the routes land, API and group
+	// prefixes included: the index links there, not at /<table> (#503).
+	path := a.crudMounts[e].full
 	for _, v := range a.migrationViews {
 		if len(v.Columns) > 0 && v.Name == e.GetTable() {
-			return crud.MountInfo{Mounted: true, ReadOnly: true}
+			return crud.MountInfo{Mounted: true, ReadOnly: true, Path: path}
 		}
 	}
-	return crud.MountInfo{Mounted: true}
+	return crud.MountInfo{Mounted: true, Path: path}
 }
 
 // WithRouter sets a custom router.

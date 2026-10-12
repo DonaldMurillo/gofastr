@@ -369,6 +369,10 @@ type MountInfo struct {
 	// List, Get-by-ID and _events routes exist; write and batch routes
 	// were never registered.
 	ReadOnly bool
+	// Path is the full path the CRUD routes are mounted at, API prefix and
+	// group prefix included (/api/tickets). Empty means the index derives
+	// it from the table name and Version.
+	Path string
 }
 
 // RegistryLLMMD generates a top-level LLM-friendly markdown index that
@@ -436,7 +440,11 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 		table := ent.GetTable()
 		basePath := "/" + table
 		llmLink := "/" + table + "/llm.md"
-		if ent.Version != "" {
+		switch {
+		case mount.Path != "":
+			basePath = mount.Path
+			llmLink = mount.Path + "/llm.md"
+		case ent.Version != "":
 			basePath = ent.Version + basePath
 			llmLink = ent.Version + "/" + table + "/llm.md"
 		}

@@ -7,6 +7,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+- **`/api/llm.md` links honor `WithAPIPrefix`.** Under
+  `WithAPIPrefix("/api")` the index linked each resource to
+  `/<table>/llm.md` and showed unprefixed base paths, so every link
+  404ed. It now links and lists the path the routes are mounted at
+  (#503).
+
 ## [0.87.2] - 2026-10-12
 
 ### Added
