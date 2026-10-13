@@ -1921,14 +1921,6 @@ func backToTopCSS(_ style.Theme) string {
 [data-cui-comp="ui-back-to-top"] svg {
   pointer-events: none;
 }
-/* Inside demo frames, show BackToTop inline (not fixed). */
-:where(.demo-live) [data-cui-comp="ui-back-to-top"] {
-  position: relative;
-  opacity: 1;
-  visibility: visible;
-  transform: none;
-  pointer-events: auto;
-}
 
 /* ── Positions (defaults to bottom-right) ── */
 .fui-back-to-top--br {

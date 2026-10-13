@@ -3,7 +3,9 @@
    travels the whole page) and its content sits on the site's full-bleed
    rhythm: --size-page-gutter of side padding, the inset a page-level
    ui.Container and the footer use, so the brand, the page text and
-   the colophon start on one edge at every width. Below the xl breakpoint the seven section links give
+   the colophon start on one edge up to the wide cap. Past it the bar
+   stays full bleed while the page and the colophon center. Below the
+   xl breakpoint the seven section links give
    way to a phone menu, a native <details> that works without
    JavaScript; below md the search and toggle cluster collapses into it
    too, leaving brand + toggle in the bar. Every dimension is a theme

@@ -1,7 +1,8 @@
 /* GoFastr's colophon: the brand line and the link columns over a quiet
    mono strip. The grid sits at the site's wide cap (--size-wide-width,
-   with --size-page-gutter inside it), the measure the header's padding
-   and the page sections align to, so the three line up at every width. */
+   with --size-page-gutter inside it). Up to that cap it starts on the
+   header brand's edge; past it the grid centers under a full-bleed
+   header bar. */
 :scope {
   border-block-start: var(--stroke-thin) solid var(--color-border);
   padding-block-end: var(--spacing-2xl);
