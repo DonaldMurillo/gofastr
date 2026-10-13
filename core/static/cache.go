@@ -38,39 +38,123 @@ type digestKey struct {
 	size    int64
 }
 
+// digestCache memoises one handler's content digests (see digestKey for
+// why it is per-handler) and tracks the large files being hashed in the
+// background.
+type digestCache struct {
+	done     sync.Map      // digestKey → quoted ETag
+	inflight sync.Map      // digestKey → struct{}: a background hash is running
+	slots    chan struct{} // bounds concurrent background hashes
+}
+
+func newDigestCache() *digestCache {
+	return &digestCache{slots: make(chan struct{}, backgroundHashSlots)}
+}
+
+// largeFileETagThreshold is the size above which fileETag hashes a file
+// off the request path. Hashing reads the whole file, and for a multi-GB
+// video that is seconds of disk before the first byte goes out. Until the
+// background hash lands, the file is served with no ETag: Last-Modified
+// still revalidates it, and an If-Range carrying an ETag gets the whole
+// file rather than a range.
+//
+// The ETag stays a content hash at every size. A size-and-modtime ETag
+// would skip the read, but it repeats across releases of a same-sized
+// file whenever the build pins modtimes (reproducible builds stamp a
+// fixed date), survives a same-size rewrite inside one modtime tick, and
+// differs between replicas that unpacked the same file at different
+// times. As a strong validator the first two let If-Range splice a
+// resumed download from two revisions.
+const largeFileETagThreshold = 16 << 20
+
+// backgroundHashSlots caps how many large files one handler hashes at
+// once. A request that finds every slot busy serves without an ETag and
+// leaves the hash to a later request.
+const backgroundHashSlots = 2
+
 // fileETag returns a double-quoted content-hash ETag for the file. On a
 // cache miss it streams the file through SHA-256, the content is never
-// held in memory, which matters for large files. On a cache miss the
-// caller MUST Seek the file back to the start before serving the body.
-// A read error is returned so the caller can map it to 500 rather than
-// masking it as 404.
+// held in memory, which matters for large files. A read error is returned
+// so the caller can map it to 500 rather than masking it as 404.
 // The bool reports whether f was READ to compute the digest. On a cache
 // hit nothing is read and the handle is still at offset 0; on a miss the
 // handle is exhausted and the caller must rewind (or reopen) before
 // serving the body.
-// The cache is the calling handler's own; a nil cache computes the digest
-// without memoising it.
-// A file above largeFileETagThreshold with a usable modtime is not read at
-// all: it gets statETag.
-func fileETag(cache *sync.Map, f fs.File, stat fs.FileInfo, name string) (string, bool, error) {
-	if stat.Size() > largeFileETagThreshold && usableModTime(stat.ModTime()) {
-		return statETag(stat), false, nil
-	}
+// A file above largeFileETagThreshold that misses the cache is not read:
+// fileETag returns "" and hashes a fresh handle from reopen in the
+// background, so a later request gets the ETag. A nil cache computes the
+// digest inline without memoising it.
+func fileETag(cache *digestCache, f fs.File, stat fs.FileInfo, name string, reopen func() (fs.File, error)) (string, bool, error) {
 	key := digestKey{name: name, modTime: stat.ModTime().UnixNano(), size: stat.Size()}
 	if cache != nil {
-		if v, ok := cache.Load(key); ok {
+		if v, ok := cache.done.Load(key); ok {
 			return v.(string), false, nil
 		}
+		if stat.Size() > largeFileETagThreshold {
+			cache.hashInBackground(key, reopen)
+			return "", false, nil
+		}
 	}
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	etag, err := hashETag(f)
+	if err != nil {
 		return "", true, err
 	}
-	etag := `"` + hex.EncodeToString(h.Sum(nil)[:16]) + `"`
 	if cache != nil {
-		cache.Store(key, etag)
+		cache.done.Store(key, etag)
 	}
 	return etag, true, nil
+}
+
+func hashETag(r io.Reader) (string, error) {
+	h := sha256.New()
+	if _, err := io.Copy(h, r); err != nil {
+		return "", err
+	}
+	return `"` + hex.EncodeToString(h.Sum(nil)[:16]) + `"`, nil
+}
+
+// hashInBackground digests the file named by key on its own goroutine,
+// at most once at a time per key and backgroundHashSlots at a time per
+// handler. The digest is stored only when the handle it read still has
+// the size and modtime the key was built from, before and after the read,
+// so a file replaced mid-hash never lends its digest to the old revision.
+func (c *digestCache) hashInBackground(key digestKey, open func() (fs.File, error)) {
+	if _, running := c.inflight.LoadOrStore(key, struct{}{}); running {
+		return
+	}
+	select {
+	case c.slots <- struct{}{}:
+	default:
+		c.inflight.Delete(key)
+		return
+	}
+	go func() {
+		defer func() {
+			<-c.slots
+			c.inflight.Delete(key)
+		}()
+		// No request owns this goroutine, so no recovery middleware sits
+		// above it. A custom fs.File that panics must cost only its ETag.
+		defer func() { _ = recover() }()
+		f, err := open()
+		if err != nil {
+			return
+		}
+		defer f.Close()
+		if !sameRevision(f, key) {
+			return
+		}
+		etag, err := hashETag(f)
+		if err != nil || !sameRevision(f, key) {
+			return
+		}
+		c.done.Store(key, etag)
+	}()
+}
+
+func sameRevision(f fs.File, key digestKey) bool {
+	st, err := f.Stat()
+	return err == nil && st.Size() == key.size && st.ModTime().UnixNano() == key.modTime
 }
 
 // setCacheHeaders sets Cache-Control, ETag, and Last-Modified headers on w.
@@ -93,42 +177,61 @@ func setCacheHeaders(w http.ResponseWriter, etag string, modTime time.Time, maxA
 	}
 }
 
-// checkPreconditions checks If-None-Match and If-Modified-Since headers.
-// Returns true if a 304 should be sent (the client's cache is still valid).
-func checkPreconditions(r *http.Request, etag string, modTime time.Time) bool {
-	// Check If-None-Match first (ETag takes precedence per RFC 7232).
+// preconditionStatus evaluates the request's preconditions in the order
+// RFC 9110 §13.2.2 sets and returns 412, 304, or 0 to serve the file.
+// If-Match and If-Unmodified-Since come first, so a failed If-Match is a
+// 412 even when If-None-Match also matches. If-Match compares strongly
+// and If-None-Match weakly. An empty etag (a large file whose background
+// hash has not landed) matches only "*". The handler serves only GET and
+// HEAD, so a matching If-None-Match is always a 304.
+func preconditionStatus(r *http.Request, etag string, modTime time.Time) int {
+	if im := r.Header.Get("If-Match"); im != "" {
+		if !etagListMatch(im, etag, false) {
+			return http.StatusPreconditionFailed
+		}
+	} else if ius := r.Header.Get("If-Unmodified-Since"); ius != "" && !modTime.IsZero() {
+		if t, err := http.ParseTime(ius); err == nil && modTime.Truncate(time.Second).After(t) {
+			return http.StatusPreconditionFailed
+		}
+	}
 	if inm := r.Header.Get("If-None-Match"); inm != "" {
-		for _, tag := range parseETagList(inm) {
-			if tag == etag || tag == "*" {
-				return true
-			}
+		if etagListMatch(inm, etag, true) {
+			return http.StatusNotModified
 		}
-		return false
+		return 0
 	}
-
-	// Fall back to If-Modified-Since.
-	if ims := r.Header.Get("If-Modified-Since"); ims != "" {
-		if imsTime, err := http.ParseTime(ims); err == nil {
-			if !modTime.IsZero() && !modTime.After(imsTime) {
-				return true
-			}
+	if ims := r.Header.Get("If-Modified-Since"); ims != "" && !modTime.IsZero() {
+		// Last-Modified goes out at one-second precision, so compare at
+		// that precision: a disk modtime carries nanoseconds the client
+		// never saw.
+		if t, err := http.ParseTime(ims); err == nil && !modTime.Truncate(time.Second).After(t) {
+			return http.StatusNotModified
 		}
 	}
-
-	return false
+	return 0
 }
 
-// parseETagList splits a comma-separated list of ETags from If-None-Match.
-func parseETagList(s string) []string {
-	parts := strings.Split(s, ",")
-	result := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			result = append(result, p)
+// etagListMatch reports whether a comma-separated If-Match/If-None-Match
+// list names etag. "*" matches any current file. A weak comparison
+// ignores the W/ prefix on either side; a strong one refuses weak tags.
+func etagListMatch(list, etag string, weak bool) bool {
+	for _, tag := range strings.Split(list, ",") {
+		tag = strings.TrimSpace(tag)
+		if tag == "*" {
+			return true
+		}
+		if etag == "" || tag == "" {
+			continue
+		}
+		if weak {
+			if strings.TrimPrefix(tag, "W/") == strings.TrimPrefix(etag, "W/") {
+				return true
+			}
+		} else if !strings.HasPrefix(tag, "W/") && tag == etag {
+			return true
 		}
 	}
-	return result
+	return false
 }
 
 // FingerprintURL appends a content hash to the filename portion of the URL
@@ -154,30 +257,4 @@ func parseMaxAge(s string) time.Duration {
 		return time.Duration(n) * time.Second
 	}
 	return 0
-}
-
-// largeFileETagThreshold is the size above which fileETag stops hashing a
-// file that has a usable modtime. Hashing reads the whole file before the
-// first byte goes out, and for a multi-GB video that is seconds of disk
-// on the first request per revision. Below it the content hash stays: it
-// survives a redeploy that resets modtimes, where size+modtime does not.
-const largeFileETagThreshold = 16 << 20
-
-// statETag is the validator for a large file: its size and modtime in
-// hex, the shape nginx uses. It stays STRONG on purpose. If-Range only
-// matches a strong ETag, so a weak one would turn every resumed download
-// of exactly these files into a full restart. Size plus nanosecond modtime
-// changes with every rewrite that a filesystem records; usableModTime
-// keeps out the stamps that say nothing about the revision.
-func statETag(stat fs.FileInfo) string {
-	return `"` + strconv.FormatInt(stat.Size(), 16) + "-" + strconv.FormatInt(stat.ModTime().UnixNano(), 16) + `"`
-}
-
-// usableModTime reports whether a modtime can tell two revisions of a file
-// apart. embed.FS reports the zero time for every file, and reproducible
-// builds (Nix, SOURCE_DATE_EPOCH=0 images) stamp 0 or 1 on every file, so
-// two releases of a same-sized file would share a size+modtime ETag and a
-// client would resume a download across them.
-func usableModTime(t time.Time) bool {
-	return !t.IsZero() && t.Unix() > 1
 }

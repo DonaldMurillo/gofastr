@@ -2,6 +2,7 @@ package static
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"io/fs"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -215,12 +217,18 @@ func TestNotFoundPageIgnoresRange(t *testing.T) {
 	}
 }
 
-// bigFile is a seekable synthetic file of any size that counts the bytes
-// read from it, so a test can tell whether the ETag hashed the file.
+// bigFile is a seekable synthetic file of zeros that counts the bytes
+// read from it. A handle that reads before it ever seeks is the
+// background hash (ServeContent seeks first), and it waits on hold.
 type bigFile struct {
 	size, off int64
 	modTime   time.Time
-	read      *int64
+	read      int64
+	hold      chan struct{}
+	seeked    bool
+	// laterMod, when set, becomes the modtime once the last byte is read:
+	// a file rewritten while it was being hashed.
+	laterMod time.Time
 }
 
 type bigInfo struct {
@@ -238,20 +246,24 @@ func (i bigInfo) Sys() any           { return nil }
 func (f *bigFile) Stat() (fs.FileInfo, error) { return bigInfo{f.size, f.modTime}, nil }
 func (f *bigFile) Close() error               { return nil }
 func (f *bigFile) Read(p []byte) (int, error) {
+	if f.hold != nil && !f.seeked {
+		<-f.hold
+	}
 	if f.off >= f.size {
+		if !f.laterMod.IsZero() {
+			f.modTime = f.laterMod
+		}
 		return 0, io.EOF
 	}
-	n := int64(len(p))
-	if rest := f.size - f.off; n > rest {
-		n = rest
-	}
+	n := min(int64(len(p)), f.size-f.off)
 	clear(p[:n])
 	f.off += n
-	*f.read += n
+	f.read += n
 	return int(n), nil
 }
 
 func (f *bigFile) Seek(off int64, whence int) (int64, error) {
+	f.seeked = true
 	switch whence {
 	case io.SeekStart:
 		f.off = off
@@ -266,71 +278,219 @@ func (f *bigFile) Seek(off int64, whence int) (int64, error) {
 type bigFS struct {
 	size    int64
 	modTime time.Time
-	read    *int64
+	hold    chan struct{}
+	mu      *sync.Mutex
+	opened  *[]*bigFile
+}
+
+func newBigFS(size int64, mod time.Time) bigFS {
+	return bigFS{size: size, modTime: mod, hold: make(chan struct{}), mu: &sync.Mutex{}, opened: &[]*bigFile{}}
 }
 
 func (b bigFS) Open(name string) (fs.File, error) {
 	if name != "big.mp4" {
 		return nil, fs.ErrNotExist
 	}
-	return &bigFile{size: b.size, modTime: b.modTime, read: b.read}, nil
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	f := &bigFile{size: b.size, modTime: b.modTime, hold: b.hold}
+	*b.opened = append(*b.opened, f)
+	return f, nil
 }
 
-// Hashing a multi-GB video for its ETag reads the whole file before the
-// first byte goes out. Above the threshold a file with a real modtime gets
-// a validator from its size and modtime instead, and the validator stays
-// strong so If-Range can still resume a download.
-func TestLargeFileETagSkipsHash(t *testing.T) {
-	var read int64
-	mod := time.Unix(1_700_000_000, 123)
-	h := Handler(Config{FS: bigFS{size: 4 << 30, modTime: mod, read: &read}})
+// Hashing a multi-GB video for its ETag read the whole file before the
+// first byte went out. A large file now answers at once with no ETag and
+// is hashed off the request path; later requests carry the content hash.
+func TestLargeFileHashesOffRequest(t *testing.T) {
+	size := int64(largeFileETagThreshold + 1)
+	fsys := newBigFS(size, time.Unix(1_700_000_000, 0))
+	h := Handler(Config{FS: fsys})
 
 	rec := serveWith(h, http.MethodGet, "/big.mp4", map[string]string{"Range": "bytes=0-99"})
 	if rec.Code != http.StatusPartialContent {
 		t.Fatalf("status %d, want 206", rec.Code)
 	}
-	if read > 100 {
-		t.Errorf("read %d bytes to answer a 100-byte range; the ETag hashed the file", read)
+	fsys.mu.Lock()
+	first := (*fsys.opened)[0]
+	fsys.mu.Unlock()
+	if got := first.read; got > 100 {
+		t.Errorf("request read %d bytes to answer a 100-byte range; the ETag hashed the file inline", got)
 	}
-	etag := rec.Header().Get("ETag")
-	want := `"` + strconv.FormatInt(4<<30, 16) + "-" + strconv.FormatInt(mod.UnixNano(), 16) + `"`
-	if etag != want {
-		t.Errorf("ETag %s, want %s", etag, want)
+	if got := rec.Header().Get("ETag"); got != "" {
+		t.Errorf("ETag %s before the background hash finished, want none", got)
+	}
+	// With no ETag yet, an If-Range ETag cannot be confirmed: whole file.
+	rec = serveWith(h, http.MethodGet, "/big.mp4", map[string]string{"Range": "bytes=0-9", "If-Range": `"guess"`})
+	if rec.Code != http.StatusOK {
+		t.Errorf("If-Range while hashing: status %d, want 200", rec.Code)
 	}
 
+	close(fsys.hold)
+	want, _ := hashETag(io.LimitReader(zeroReader{}, size))
+	var etag string
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if etag = serveWith(h, http.MethodHead, "/big.mp4", nil).Header().Get("ETag"); etag != "" {
+			break
+		}
+	}
+	if etag != want {
+		t.Fatalf("ETag after the background hash: %q, want the content hash %s", etag, want)
+	}
 	rec = serveWith(h, http.MethodGet, "/big.mp4", map[string]string{"Range": "bytes=10-19", "If-Range": etag})
 	if rec.Code != http.StatusPartialContent {
-		t.Errorf("If-Range with the size-modtime ETag: status %d, want 206", rec.Code)
+		t.Errorf("If-Range with the content hash: status %d, want 206", rec.Code)
 	}
 }
 
-// A file with no usable modtime (embed.FS reports zero; reproducible
-// builds stamp the epoch) has nothing but its content to tell revisions
-// apart, so it keeps the content hash at any size.
-func TestLargeFileWithoutModTimeHashes(t *testing.T) {
-	for _, mod := range []time.Time{{}, time.Unix(0, 0), time.Unix(1, 0)} {
-		var read int64
-		size := int64(largeFileETagThreshold + 1)
-		h := Handler(Config{FS: bigFS{size: size, modTime: mod, read: &read}})
-		rec := serveWith(h, http.MethodHead, "/big.mp4", nil)
-		if !regexp.MustCompile(`^"[0-9a-f]{32}"$`).MatchString(rec.Header().Get("ETag")) {
-			t.Errorf("modtime %v: ETag %s, want the content hash", mod, rec.Header().Get("ETag"))
-		}
-		if read != size {
-			t.Errorf("modtime %v: read %d bytes, want the whole file (%d)", mod, read, size)
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) { clear(p); return len(p), nil }
+
+// waitIdle waits for every background hash on c to finish.
+func waitIdle(t *testing.T, c *digestCache) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		busy := false
+		c.inflight.Range(func(any, any) bool { busy = true; return false })
+		if !busy {
+			return
 		}
 	}
+	t.Fatal("background hash still running after 10s")
 }
 
-// At or below the threshold the content hash stays, so a redeploy that
-// resets modtimes keeps validating unchanged files.
-func TestSmallFileKeepsContentHash(t *testing.T) {
-	for name, h := range rangeHandlers(t) {
-		t.Run(name, func(t *testing.T) {
-			etag := serveWith(h, http.MethodGet, "/clip.mp4", nil).Header().Get("ETag")
-			if !regexp.MustCompile(`^"[0-9a-f]{32}"$`).MatchString(etag) {
-				t.Errorf("ETag %s, want the content hash", etag)
+// A file replaced between the request's open and the background open must
+// not lend its digest to the revision the request saw.
+func TestBackgroundHashSkipsReplacedFile(t *testing.T) {
+	mod := time.Unix(1_700_000_000, 0)
+	for _, tc := range []struct {
+		name            string
+		bgMod, laterMod time.Time
+		want            bool
+	}{
+		{"same revision is stored", mod, time.Time{}, true},
+		{"replaced before the hash", mod.Add(time.Second), time.Time{}, false},
+		{"replaced during the hash", mod, mod.Add(time.Second), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newDigestCache()
+			key := digestKey{name: "big.mp4", modTime: mod.UnixNano(), size: 1 << 10}
+			f := &bigFile{size: 1 << 10, modTime: tc.bgMod, laterMod: tc.laterMod}
+			c.hashInBackground(key, func() (fs.File, error) { return f, nil })
+			waitIdle(t, c)
+			if _, ok := c.done.Load(key); ok != tc.want {
+				t.Errorf("digest stored = %v, want %v", ok, tc.want)
+			}
+			// A file already replaced is not worth reading: for a
+			// multi-GB video that is the whole cost this hash avoids.
+			if tc.bgMod != mod && f.read != 0 {
+				t.Errorf("read %d bytes of a file already replaced, want 0", f.read)
 			}
 		})
+	}
+}
+
+// Every slot busy means no new goroutine: the request moves on and a
+// later one retries.
+func TestBackgroundHashRespectsSlots(t *testing.T) {
+	c := newDigestCache()
+	for range backgroundHashSlots {
+		c.slots <- struct{}{}
+	}
+	opened := false
+	c.hashInBackground(digestKey{name: "x"}, func() (fs.File, error) {
+		opened = true
+		return nil, fs.ErrNotExist
+	})
+	time.Sleep(20 * time.Millisecond)
+	if opened {
+		t.Error("hash started with every slot busy")
+	}
+	if _, ok := c.inflight.Load(digestKey{name: "x"}); ok {
+		t.Error("key left in flight with no hash running, so no later request retries it")
+	}
+}
+
+// conditionalHandlers serve the same file, with a sub-second modtime, from
+// the *os.Root branch, an in-memory FS, and a non-seekable FS.
+func conditionalHandlers(t *testing.T) map[string]http.Handler {
+	t.Helper()
+	mod := time.Unix(1_700_000_000, 500_000_000)
+	dir := t.TempDir()
+	p := filepath.Join(dir, "clip.mp4")
+	if err := os.WriteFile(p, rangeBody(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(p, mod, mod); err != nil {
+		t.Fatal(err)
+	}
+	mem := fstest.MapFS{"clip.mp4": &fstest.MapFile{Data: rangeBody(), ModTime: mod}}
+	return map[string]http.Handler{
+		"disk":         Handler(Config{FS: os.DirFS(dir)}),
+		"memory":       Handler(Config{FS: mem}),
+		"non-seekable": Handler(Config{FS: nonSeekableFS{inner: mem}}),
+	}
+}
+
+// RFC 9110 §13.2.2: If-Match and If-Unmodified-Since are evaluated before
+// If-None-Match, so a failed If-Match is a 412 even when If-None-Match
+// matches. Both branches answer alike.
+func TestPreconditionOrder(t *testing.T) {
+	for name, h := range conditionalHandlers(t) {
+		t.Run(name, func(t *testing.T) {
+			full := serveWith(h, http.MethodGet, "/clip.mp4", nil)
+			etag, lastMod := full.Header().Get("ETag"), full.Header().Get("Last-Modified")
+			for _, tc := range []struct {
+				name string
+				hdr  map[string]string
+				want int
+			}{
+				{"If-Match fails before If-None-Match", map[string]string{"If-Match": `"other"`, "If-None-Match": etag}, http.StatusPreconditionFailed},
+				{"weak If-Match never matches", map[string]string{"If-Match": "W/" + etag}, http.StatusPreconditionFailed},
+				{"If-Match current", map[string]string{"If-Match": etag}, http.StatusOK},
+				{"If-Unmodified-Since past", map[string]string{"If-Unmodified-Since": "Mon, 02 Jan 2006 15:04:05 GMT"}, http.StatusPreconditionFailed},
+				{"If-Unmodified-Since echoed", map[string]string{"If-Unmodified-Since": lastMod}, http.StatusOK},
+				{"weak If-None-Match", map[string]string{"If-None-Match": "W/" + etag}, http.StatusNotModified},
+				{"If-Modified-Since echoed", map[string]string{"If-Modified-Since": lastMod}, http.StatusNotModified},
+			} {
+				if got := serveWith(h, http.MethodGet, "/clip.mp4", tc.hdr).Code; got != tc.want {
+					t.Errorf("%s: status %d, want %d", tc.name, got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// rewindOnlyFS hands out files whose Seek supports only SeekStart, which
+// is all the handler needed before ServeContent; ServeContent also seeks
+// to the end.
+type rewindOnlyFS struct{ inner fs.FS }
+
+type rewindOnlyFile struct{ fs.File }
+
+func (f rewindOnlyFile) Seek(off int64, whence int) (int64, error) {
+	if whence != io.SeekStart {
+		return 0, errors.New("rewind only")
+	}
+	return f.File.(io.Seeker).Seek(off, whence)
+}
+
+func (r rewindOnlyFS) Open(name string) (fs.File, error) {
+	f, err := r.inner.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	return rewindOnlyFile{f}, nil
+}
+
+func TestRewindOnlySeekerServesFull(t *testing.T) {
+	mem := fstest.MapFS{"clip.mp4": &fstest.MapFile{Data: rangeBody()}}
+	h := Handler(Config{FS: rewindOnlyFS{inner: mem}})
+	rec := serveWith(h, http.MethodGet, "/clip.mp4", map[string]string{"Range": "bytes=0-99"})
+	if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), rangeBody()) {
+		t.Fatalf("status %d with %d bytes, want 200 with the full 1000", rec.Code, rec.Body.Len())
+	}
+	if got := rec.Header().Get("Accept-Ranges"); got != "" {
+		t.Errorf("Accept-Ranges %q from a handle ServeContent cannot use, want none", got)
 	}
 }

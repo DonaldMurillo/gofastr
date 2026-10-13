@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -62,7 +61,7 @@ type Config struct {
 	// see digestKey for why it must not be shared across filesystems.
 	// Copying a Config shares the same cache, which is correct. The FS
 	// travels with it.
-	digests *sync.Map
+	digests *digestCache
 
 	// resolvedRoot is the FS root's on-disk path with every symlink
 	// resolved, computed once by Handler. Empty when the FS is not
@@ -98,7 +97,7 @@ func (c Config) defaults() Config {
 // given Config.
 func Handler(config Config) http.Handler {
 	config = config.defaults()
-	config.digests = &sync.Map{}
+	config.digests = newDigestCache()
 	config.resolvedRoot = resolveFSRoot(config.FS)
 	if config.resolvedRoot != "" {
 		// Kernel-enforced containment for the disk-backed branch (see
@@ -281,8 +280,12 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	// streamed through SHA-256 (never held in RAM); previously the whole
 	// file was read and re-hashed on every request, and capped at 32MB,
 	// which silently truncated larger files to a 200 with a
-	// Content-Length/ETag that matched the truncated body.
-	etag, consumed, err := fileETag(config.digests, f, stat, name)
+	// Content-Length/ETag that matched the truncated body. A large file
+	// is hashed in the background instead and served without an ETag
+	// until the digest lands.
+	etag, consumed, err := fileETag(config.digests, f, stat, name, func() (fs.File, error) {
+		return config.reopen(name)
+	})
 	if err != nil {
 		// A read fault that is not "not found" is a 500, not a 404.
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -295,9 +298,11 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	// Set cache headers.
 	setCacheHeaders(w, etag, modTime, config.MaxAge)
 
-	// Check conditional request (304 Not Modified).
-	if checkPreconditions(r, etag, modTime) {
-		w.WriteHeader(http.StatusNotModified)
+	// Conditional request: 412 for a failed If-Match/If-Unmodified-Since,
+	// 304 when the client's copy is current. One evaluator serves both
+	// branches below; ServeContent re-runs the same checks and agrees.
+	if code := preconditionStatus(r, etag, modTime); code != 0 {
+		w.WriteHeader(code)
 		return true
 	}
 
@@ -310,16 +315,19 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
 	// A seekable handle (every *os.File, embed.FS and fstest.MapFS file)
-	// goes to http.ServeContent, which answers Range, multi-range,
-	// If-Range, If-Match and HEAD, sets Accept-Ranges, and sizes
-	// Content-Length to the part it sends. Setting Content-Length here
-	// would put the full size on a 206. ServeContent seeks the handle
-	// itself, so the read fileETag did on a cache miss needs no rewind.
-	// It reads the ETag set above for If-Range; the 304 answer stays with
-	// checkPreconditions so both branches share it.
+	// goes to http.ServeContent, which answers Range, multi-range and
+	// If-Range, sets Accept-Ranges, and sizes Content-Length to the part
+	// it sends. Setting Content-Length here would put the full size on a
+	// 206. ServeContent seeks the handle itself, so the read fileETag did
+	// on a cache miss needs no rewind. It also seeks to the end to find
+	// the size, so a handle that can only rewind falls through to the
+	// full-body copy instead of a 500.
 	if rs, ok := f.(io.ReadSeeker); ok {
-		http.ServeContent(w, r, name, modTime, rs)
-		return true
+		if _, err := rs.Seek(0, io.SeekEnd); err == nil {
+			http.ServeContent(w, r, name, modTime, rs)
+			return true
+		}
+		consumed = true
 	}
 
 	// fs.FS promises no seeking, so a conforming filesystem may hand back
@@ -339,28 +347,17 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	// response. The body streams to the ResponseWriter, so arbitrarily
 	// large files are never buffered in memory.
 	if consumed {
-		var reopened fs.File
-		if config.root != nil {
-			// Same kernel containment as the first open; *os.Root
-			// handles are always seekable, so this branch is
-			// unreachable for a disk-backed root, but the posture
-			// stays symmetrical.
-			reopened, err = config.root.Open(filepath.FromSlash(name))
-		} else {
-			//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
-			reopened, err = config.FS.Open(name)
+		reopened, err := config.reopen(name)
+		if errors.Is(err, errOutsideRoot) {
+			// Only reachable if the tree was swapped mid-request. Drop
+			// Content-Length before the 404 so the reframed answer is
+			// not corrupt.
+			w.Header().Del("Content-Length")
+			http.NotFound(w, r)
+			return true
 		}
 		if err != nil {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return true
-		}
-		if config.root == nil && !config.fileInRoot(reopened) {
-			// Same containment as the first open; only reachable if the
-			// tree was swapped mid-request. Drop Content-Length before
-			// the 404 so the reframed answer is not corrupt.
-			reopened.Close()
-			w.Header().Del("Content-Length")
-			http.NotFound(w, r)
 			return true
 		}
 		defer reopened.Close()
@@ -374,6 +371,29 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 		return true
 	}
 	return true
+}
+
+// errOutsideRoot is reopen's answer for a file that opened but resolves
+// outside the root: the tree was swapped since the first open.
+var errOutsideRoot = errors.New("static: file resolves outside the root")
+
+// reopen opens name again with the same containment as serveFile's first
+// open, for a handle that cannot rewind and for the background hash.
+func (c Config) reopen(name string) (fs.File, error) {
+	if c.root != nil {
+		// Kernel containment, as on the first open.
+		return c.root.Open(filepath.FromSlash(name))
+	}
+	//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
+	f, err := c.FS.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	if !c.fileInRoot(f) {
+		f.Close()
+		return nil, errOutsideRoot
+	}
+	return f, nil
 }
 
 // resolveFSRoot returns the on-disk path of fsys's root with every
