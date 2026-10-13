@@ -185,3 +185,14 @@ func TestSectionMenuFillColumnInsetsRail(t *testing.T) {
 		t.Errorf("filled rail has no inset; want %q in the section-menu CSS", want)
 	}
 }
+
+func TestSectionMenuUnknownSwapAtPanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("SwapAt \"xl\" rendered; want a panic naming the choices")
+		}
+	}()
+	cfg := sampleMenu()
+	cfg.SwapAt = "xl"
+	SectionMenu(cfg)
+}

@@ -4,8 +4,9 @@ package interactive
 // component galleries: sections (collapsible groups) → items (links), with an
 // active-item highlight.
 //
-//   Desktop (≥ 900px): a sticky rail with every group expanded.
-//   Mobile (< 900px): a "Sections" trigger button that opens the framework's
+//   Desktop (≥ 900px, or the SwapAt width): a sticky rail with every
+//     group expanded.
+//   Mobile (below it): a "Sections" trigger button that opens the framework's
 //     drawer widget, a real slide-in sheet with a dim backdrop that closes on
 //     outside-click / Escape, locks background scroll, and traps focus. None of
 //     that is re-implemented here: SectionMenuDrawer returns a preset.Drawer
@@ -22,6 +23,8 @@ package interactive
 //	widget.MountBuilder(router, interactive.SectionMenuDrawer(cfg))
 
 import (
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -69,8 +72,15 @@ type SectionMenuConfig struct {
 	// fills the column top to bottom and scrolls its overflow there. In
 	// normal flow leave it off and the rail sticks on its own.
 	FillColumn bool
-	Class      string
-	ID         string
+	// SwapAt picks the width below which the rail gives way to the
+	// trigger and drawer: 900px by default. In a ui.ContentRow nav
+	// column, match the row's Breakpoint (SectionMenuSwapMD for the
+	// default, SectionMenuSwapLG for ui.StackBelowLG), so the column
+	// never holds a lone trigger beside the content, nor a full rail
+	// stacked above it. An unknown value panics.
+	SwapAt SectionMenuSwap
+	Class  string
+	ID     string
 }
 
 // SectionMenu renders the desktop rail plus the mobile trigger button. Mount
@@ -105,6 +115,14 @@ func SectionMenu(cfg SectionMenuConfig) render.HTML {
 	cls := "cui-section-menu"
 	if cfg.FillColumn {
 		cls += " cui-section-menu--fill"
+	}
+	switch cfg.SwapAt {
+	case SectionMenuSwapDefault:
+	case SectionMenuSwapMD, SectionMenuSwapLG:
+		cls += " cui-section-menu--swap-" + string(cfg.SwapAt)
+	default:
+		panic("interactive: SectionMenu unknown SwapAt " + string(cfg.SwapAt) +
+			`. Pick one of: "" (900px), md (48rem), lg (64rem)`)
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -348,15 +366,57 @@ func sectionMenuCSS(_ style.Theme) string {
 /* The close control is a drawer-only affordance — never shown in the rail. */
 [data-cui-comp="cui-section-menu"] .cui-section-menu__rail .cui-section-menu__drawer-head { display: none; }
 
-/* ── Desktop rail (≥ 900px): hide the trigger, show a sticky column
-      with every group expanded. The drawer is never opened here. ──── */
-[data-cui-comp="cui-section-menu"] .cui-section-menu__rail { display: block; }
-@media (max-width: 899.98px) {
-  [data-cui-comp="cui-section-menu"] .cui-section-menu__rail { display: none; }
+/* ── Desktop rail (at or above the swap width; SwapAt picks it, 900px
+      by default): hide the trigger, show a sticky column with every
+      group expanded. The drawer is never opened there. Generated per
+      swap width by sectionMenuSwap.css. ──── */` + sectionMenuSwapCSS()
 }
-@media (min-width: 900px) {
-  [data-cui-comp="cui-section-menu"] .cui-section-menu__trigger { display: none; }
-  [data-cui-comp="cui-section-menu"] .cui-section-menu__rail {
+
+func sectionMenuSwapCSS() string {
+	var b strings.Builder
+	for _, w := range sectionMenuSwaps {
+		b.WriteString(w.css())
+	}
+	return b.String()
+}
+
+// SectionMenuSwap picks the viewport width where the rail gives way to
+// the "Sections" trigger and its drawer.
+type SectionMenuSwap string
+
+const (
+	// SectionMenuSwapDefault swaps below 900px: a menu in normal flow,
+	// beside a column the page lays out itself.
+	SectionMenuSwapDefault SectionMenuSwap = ""
+	// SectionMenuSwapMD swaps below 48rem, where a ui.ContentRow with the
+	// default Breakpoint stacks its nav column.
+	SectionMenuSwapMD SectionMenuSwap = "md"
+	// SectionMenuSwapLG swaps below 64rem, where a ui.ContentRow with
+	// Breakpoint: ui.StackBelowLG stacks.
+	SectionMenuSwapLG SectionMenuSwap = "lg"
+)
+
+// sectionMenuSwap is one breakpoint's half of the sheet: the root
+// selector it scopes to and the widths either side of the swap.
+type sectionMenuSwap struct{ root, maxw, minw string }
+
+var sectionMenuSwaps = []sectionMenuSwap{
+	{`[data-cui-comp="cui-section-menu"]:where(:not(.cui-section-menu--swap-md, .cui-section-menu--swap-lg))`, "899.98px", "900px"},
+	{`[data-cui-comp="cui-section-menu"]:where(.cui-section-menu--swap-md)`, "47.99rem", "48rem"},
+	{`[data-cui-comp="cui-section-menu"]:where(.cui-section-menu--swap-lg)`, "63.99rem", "64rem"},
+}
+
+// css is the rail/trigger swap at one breakpoint. The scope sits in
+// :where(), so every swap weighs what the single 900px rule set did.
+func (w sectionMenuSwap) css() string {
+	return strings.NewReplacer("ROOT", w.root, "MAXW", w.maxw, "MINW", w.minw).Replace(`
+ROOT .cui-section-menu__rail { display: block; }
+@media (max-width: MAXW) {
+  ROOT .cui-section-menu__rail { display: none; }
+}
+@media (min-width: MINW) {
+  ROOT .cui-section-menu__trigger { display: none; }
+  ROOT .cui-section-menu__rail {
     position: sticky;
     inset-block-start: var(--fui-section-menu-top, 1rem);
     align-self: start;
@@ -367,8 +427,8 @@ func sectionMenuCSS(_ style.Theme) string {
      rail scrolls inside, with no sticky offset or viewport cap of its
      own. In a column that grows with the page, 100% resolves to auto.
      The host column is drawn edge to edge, so the rail insets itself. */
-  :where([data-cui-comp="cui-section-menu"]).cui-section-menu--fill { display: flex; flex-direction: column; block-size: 100%; box-sizing: border-box; }
-  [data-cui-comp="cui-section-menu"].cui-section-menu--fill .cui-section-menu__rail {
+  :where(ROOT).cui-section-menu--fill { display: flex; flex-direction: column; block-size: 100%; box-sizing: border-box; }
+  ROOT.cui-section-menu--fill .cui-section-menu__rail {
     position: static;
     padding: var(--spacing-xl, 24px) var(--spacing-lg, 16px);
     flex: 1 1 auto;
@@ -377,11 +437,11 @@ func sectionMenuCSS(_ style.Theme) string {
     overscroll-behavior: contain;
   }
   /* The rail shows every group expanded — collapse is a drawer behaviour. */
-  [data-cui-comp="cui-section-menu"] .cui-section-menu__rail .cui-section-menu__list { display: block; }
+  ROOT .cui-section-menu__rail .cui-section-menu__list { display: block; }
   /* A rail group a reader clicks shut stays shown: browsers hide closed
      <details> content through ::details-content. */
-  [data-cui-comp="cui-section-menu"] .cui-section-menu__rail .cui-section-menu__group::details-content { content-visibility: visible; }
-  [data-cui-comp="cui-section-menu"] .cui-section-menu__rail .cui-section-menu__chevron { display: none; }
-  [data-cui-comp="cui-section-menu"] .cui-section-menu__rail .cui-section-menu__group-summary { cursor: default; }
-}`
+  ROOT .cui-section-menu__rail .cui-section-menu__group::details-content { content-visibility: visible; }
+  ROOT .cui-section-menu__rail .cui-section-menu__chevron { display: none; }
+  ROOT .cui-section-menu__rail .cui-section-menu__group-summary { cursor: default; }
+}`)
 }

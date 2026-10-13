@@ -20,7 +20,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - `SectionConfig.Band` gives a section without an eyebrow the
   page-band treatment (display-size heading, more air under the head).
 - `StepRailConfig.BelowHeader` stops the sticky rail under a sticky
-  site header (`--size-header-height` plus the rail's gap).
+  site header (`--size-header-height` plus the rail's usual 24px top
+  offset; `--ui-step-rail-top` still sets the whole offset).
+- `SectionMenuConfig.SwapAt` moves the width where an
+  `interactive.SectionMenu` trades its rail for the "Sections" trigger
+  from 900px to a `ui.ContentRow` breakpoint (`SectionMenuSwapMD`,
+  48rem, or `SectionMenuSwapLG`, 64rem), so a menu in a row's nav column
+  swaps where the row stacks.
 - **entityui lists warn when their row links lead nowhere.** The first
   time a list renders rows whose `<base>/<id>` matches no registered
   screen, it logs one warning per base naming the route to register.

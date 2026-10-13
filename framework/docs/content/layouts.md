@@ -794,6 +794,12 @@ its rail drops its own sticky offset and viewport cap, fills the pinned
 column to the bottom of the screen and scrolls there. The column has no
 padding of its own, so the filled rail insets its links from the
 column's edges.
+Set `SwapAt` to the row's breakpoint too: the menu swaps its rail for the
+"Sections" trigger at 900px by default, while the row stacks at 48rem
+(`interactive.SectionMenuSwapMD`) or, with `Breakpoint: ui.StackBelowLG`,
+at 64rem (`interactive.SectionMenuSwapLG`). A mismatch leaves the column
+holding a lone trigger beside the content, or a full rail stacked above
+it. An unknown value panics.
 `PhoneNavFlush: true` drops the nav column's phone separator below the
 breakpoint — set it when the sidebar's phone navigation lives outside
 the column (a `NativeMobile` sidebar whose drawer trigger,

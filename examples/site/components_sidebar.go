@@ -22,9 +22,11 @@ type ComponentsSidebar struct{}
 func (s *ComponentsSidebar) Render() render.HTML {
 	// The components shell pins the nav column under the header
 	// (ContentRow Sticky + BelowHeader), so the rail fills that column
-	// instead of sticking on its own.
+	// instead of sticking on its own, and swaps for the trigger where
+	// the row stacks (the default 48rem breakpoint).
 	cfg := componentsSectionMenuConfig()
 	cfg.FillColumn = true
+	cfg.SwapAt = interactive.SectionMenuSwapMD
 	return interactive.SectionMenu(cfg)
 }
 

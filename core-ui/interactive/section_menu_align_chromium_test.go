@@ -152,3 +152,47 @@ func TestSectionMenuRuleFollowsRTL(t *testing.T) {
 		t.Errorf("rtl list indent is %.0fpx on the right, want 12px", m["indent"])
 	}
 }
+
+// The rail swaps for the trigger at 900px unless SwapAt names a
+// ContentRow breakpoint. In a row that stacks at 48rem, a 900px swap
+// left a nav column holding only the trigger between 768 and 900px.
+func TestSectionMenuSwapAtMatchesRow(t *testing.T) {
+	for _, tc := range []struct {
+		swap  SectionMenuSwap
+		width int64
+		rail  bool
+	}{
+		{SectionMenuSwapDefault, 840, false},
+		{SectionMenuSwapDefault, 920, true},
+		{SectionMenuSwapMD, 760, false},
+		{SectionMenuSwapMD, 840, true},
+		{SectionMenuSwapLG, 920, false},
+		{SectionMenuSwapLG, 1040, true},
+	} {
+		cfg := sampleMenu()
+		cfg.DrawerName = "sections"
+		cfg.FillColumn = true
+		cfg.SwapAt = tc.swap
+		menu := SectionMenu(cfg)
+		css := sectionMenuStyle.Entry().CSSFor(style.Theme{})
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprintf(w, `<!doctype html><meta charset=utf-8><style>body{margin:0}</style><style>%s</style>%s`, css, string(menu))
+		}))
+		ctx := chromedptest.Context(t, chromedptest.WindowSize(int(tc.width), 800))
+		var got map[string]bool
+		if err := chromedp.Run(ctx,
+			chromedp.Navigate(srv.URL),
+			chromedp.Evaluate(`(() => {
+				const shown = sel => getComputedStyle(document.querySelector(sel)).display !== 'none';
+				return {rail: shown('.cui-section-menu__rail'), trigger: shown('.cui-section-menu__trigger')};
+			})()`, &got),
+		); err != nil {
+			t.Fatal(err)
+		}
+		srv.Close()
+		if got["rail"] != tc.rail || got["trigger"] == tc.rail {
+			t.Errorf("SwapAt %q at %dpx: rail shown=%v, trigger shown=%v; want rail=%v", tc.swap, tc.width, got["rail"], got["trigger"], tc.rail)
+		}
+	}
+}
