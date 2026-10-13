@@ -515,8 +515,8 @@ values in `Theme.DarkCode`; see [theming](theming.md)).
 | `go`, `golang` | keywords and builtins, predeclared types, call sites, and named types in type position: after `type`, an exported composite literal (`Pong{`), behind `*` or `[]`, package-qualified or not (`*http.Request`) |
 | `js`, `ts`, `jsx`, `tsx`, `javascript`, `typescript` | keywords, a few built-in types, call sites, object keys (`{ method: …}`, not a ternary's `a ? b : c`) |
 | `sql`, `postgres`, `sqlite` | keywords and column types, case-insensitive; `--` and `/* */` comments |
-| `sh`, `bash`, `shell`, `console` | keywords, the command word of each line or pipeline stage (after an optional `$ ` prompt), `#` comments at a word boundary |
-| `yaml`, `yml` | mapping keys (at line start, after an optional `- `), `true`/`false`/`null`, `#` comments; an apostrophe in an unquoted value opens no string |
+| `sh`, `bash`, `shell`, `console` | keywords, the command word of each line or pipeline stage (after an optional `$` prompt and its space), `#` comments at a word boundary |
+| `yaml`, `yml` | mapping keys (at line start, after an optional `-` list marker), `true`/`false`/`null`, `#` comments; an apostrophe in an unquoted value opens no string |
 | `json` | keys (`tk-fn`) apart from string values (`tk-str`), `true`/`false`/`null` |
 | any other non-empty key | comments, strings and numbers |
 | `""`, `text`, `plain` | escaped text, no tokens |
