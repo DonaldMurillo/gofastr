@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -173,14 +174,25 @@ type ScreenLLMMDResult struct {
 // registered pattern and emits a placeholder for ScreenLoader screens,
 // this builds the same per-request instance the page render uses
 // (SetParams → DI → Load) so the document carries the loaded title and
-// rendered content. ok is false when the path resolves to no screen; a
-// DI or Load failure falls back to the pattern-level doc rather than
+// rendered content. ok is false when the path resolves to no screen, or
+// a route resolver or Load answers ErrNotFound for it; any other
+// resolver, DI or Load failure falls back to the pattern-level doc rather than
 // erroring (llm.md is documentation, a degraded doc beats a 500).
 func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDResult, bool) {
 	screen, params, found := a.Router.Resolve(path)
 	if !found {
 		return ScreenLLMMDResult{}, false
 	}
+
+	// The page render's order: the match and the route resolvers come
+	// first, so a Load that reads a resolver (a catch-all route that
+	// resolves its slug) loads here too, and a guard may read one.
+	if _, ok := MatchFromContext(ctx); !ok {
+		ctx = WithMatch(ctx, newMatch(screen.Path, path, params))
+	}
+	ctx = withResolverState(ctx, screen)
+	runEagerResolvers(ctx, screen)
+	resolveErr := resolverPageError(ctx, path)
 
 	// Evaluate the policy chain BEFORE building the instance, this
 	// function runs Load, so skipping the chain would leak loaded content
@@ -191,6 +203,15 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	// component-supplied, which the policy protects too.
 	if ResolvePolicy(ctx, screen).Kind != DecisionAllow {
 		return ScreenLLMMDResult{MD: ScreenLLMMDWithheld(screen)}, true
+	}
+	// A resolver that names no such page (an unknown slug) is no screen,
+	// as the page render answers 404; any other resolver failure
+	// degrades to the pattern doc like a failed Load.
+	if resolveErr != nil {
+		if errors.Is(resolveErr, ErrNotFound) {
+			return ScreenLLMMDResult{}, false
+		}
+		return ScreenLLMMDResult{MD: ScreenLLMMD(screen), Title: screen.Title, Allowed: true}, true
 	}
 
 	comp := screen.newInstance()
@@ -206,6 +227,11 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 	if loaded {
 		if loader, ok := comp.(ScreenLoader); ok {
 			if err := safeScreenLoad(loader, ctx); err != nil {
+				// Load answering ErrNotFound (a lazy resolver read, or
+				// its own lookup) is the page render's 404: no screen.
+				if errors.Is(err, ErrNotFound) {
+					return ScreenLLMMDResult{}, false
+				}
 				loaded = false
 			}
 		}

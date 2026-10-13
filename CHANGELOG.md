@@ -128,6 +128,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   own padding is the gutter, it adds none, where a phone used to show
   two gutters stacked, and a `ContainerPage` there caps at the bare page
   measure.
+- **A resolver-backed screen's `llm.md` carries its content.**
+  `app.ScreenLLMMDForPath`, behind every per-URL `/llm.md`, the
+  `Accept: text/markdown` response and the static export, ran `Load`
+  without the route match or the route resolvers, so a screen reading a
+  resolver (a catch-all docs route) fell back to the pattern doc. It now
+  runs them first, as the page render does, and a resolver or `Load`
+  answering `app.ErrNotFound` makes the doc a 404 instead of the
+  pattern doc.
 - **A section nested in a page band keeps its own heading.** The
   display-size heading of an eyebrow section, and the small upper-case
   label of an `Overline` one, reached every `ui.Section` heading in the
