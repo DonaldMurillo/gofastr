@@ -21,7 +21,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   page-band treatment (display-size heading, more air under the head).
 - `StepRailConfig.BelowHeader` stops the sticky rail under a sticky
   site header (`--size-header-height` plus the rail's usual 24px top
-  offset; `--ui-step-rail-top` still sets the whole offset).
+  offset; `--ui-step-rail-top` sets that gap below the header).
 - `SectionMenuConfig.SwapAt` moves the width where an
   `interactive.SectionMenu` trades its rail for the "Sections" trigger
   from 900px to a `ui.ContentRow` breakpoint (`SectionMenuSwapMD`,
@@ -113,7 +113,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`core/markdown` hides HTML comment blocks.** A `<!-- … -->` block
   rendered as escaped text, so every `<!-- gofastr:compile … -->`
   directive in the embedded docs showed on the site's doc pages and in
-  `ui.Markdown`. A comment block now renders as nothing. An unclosed
+  `ui.Markdown`. A comment block now renders as nothing, at the top level or under a list item. An unclosed
   comment, or text after the close, still renders as escaped text.
 - `ui.Hero` (split) and `ui.HeroSplit` collapse to a `minmax(0, 1fr)`
   track on phones, so a long unbreakable line in the media column no

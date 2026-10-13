@@ -170,7 +170,7 @@ func TestStepRailBelowHeaderOffset(t *testing.T) {
 	if !classTokenPresent(below, "fui-step-rail--below-header") {
 		t.Errorf("BelowHeader rail must carry the modifier:\n%s", below)
 	}
-	if css := stepRailCSS(style.Theme{}); !strings.Contains(css, ".fui-step-rail--below-header {\n  inset-block-start: var(--ui-step-rail-top, calc(var(--size-header-height") {
+	if css := stepRailCSS(style.Theme{}); !strings.Contains(css, ".fui-step-rail--below-header {\n  inset-block-start: calc(var(--size-header-height, 56px) + var(--ui-step-rail-top") {
 		t.Errorf("below-header modifier must offset by --size-header-height:\n%s", css)
 	}
 }

@@ -51,8 +51,9 @@ type StepRailConfig struct {
 	MetaHref string
 	// BelowHeader offsets the sticky rail by the theme's
 	// --size-header-height, so it stops under a sticky site header
-	// instead of sliding behind it. Leave it off when the page has no
-	// sticky header.
+	// instead of sliding behind it. --ui-step-rail-top then sets the
+	// gap below the header, not the whole offset. Leave it off when
+	// the page has no sticky header.
 	BelowHeader bool
 	// Class is appended to the fui-step-rail wrapper.
 	Class string
@@ -174,7 +175,7 @@ func stepRailCSS(_ style.Theme) string {
   background: var(--color-surface-soft, transparent);
 }
 :where([data-cui-comp="ui-step-rail"]).fui-step-rail--below-header {
-  inset-block-start: var(--ui-step-rail-top, calc(var(--size-header-height, 56px) + var(--spacing-xl, 24px)));
+  inset-block-start: calc(var(--size-header-height, 56px) + var(--ui-step-rail-top, var(--spacing-xl, 24px)));
 }
 [data-cui-comp="ui-step-rail"] .fui-step-rail__title {
   margin: 0;
