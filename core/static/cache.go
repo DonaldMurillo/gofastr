@@ -30,12 +30,26 @@ func generateETag(data []byte) string {
 // one the first one's ETag, and answer 304 Not Modified for content the
 // client has never seen.
 //
-// Within one filesystem the (name, modtime, size) key is sound: edit or
-// replace the file and the key changes, so a fresh digest is computed.
+// Within one filesystem the key also carries the inode and change time
+// where the platform reports them (Linux, macOS; see fileRevision). Name,
+// size and modtime alone repeat after an in-place rewrite of the same
+// size whose modtime is put back (cp -p, rsync -t, a pinned build stamp),
+// and the cached digest would then validate the new bytes: a stale 304,
+// or an If-Range that splices a resumed download from two revisions. An
+// atomic replace changes the inode; any write changes the ctime, which no
+// tool can set back. embed.FS and fstest.MapFS report neither and cannot
+// change under a running handler.
 type digestKey struct {
 	name    string
 	modTime int64
 	size    int64
+	ino     uint64
+	ctime   int64
+}
+
+func keyOf(name string, stat fs.FileInfo) digestKey {
+	ino, ctime := fileRevision(stat)
+	return digestKey{name: name, modTime: stat.ModTime().UnixNano(), size: stat.Size(), ino: ino, ctime: ctime}
 }
 
 // digestCache memoises one handler's content digests (see digestKey for
@@ -85,7 +99,7 @@ const backgroundHashSlots = 2
 // background, so a later request gets the ETag. A nil cache computes the
 // digest inline without memoising it.
 func fileETag(cache *digestCache, f fs.File, stat fs.FileInfo, name string, reopen func() (fs.File, error)) (string, bool, error) {
-	key := digestKey{name: name, modTime: stat.ModTime().UnixNano(), size: stat.Size()}
+	key := keyOf(name, stat)
 	if cache != nil {
 		if v, ok := cache.done.Load(key); ok {
 			return v.(string), false, nil
@@ -116,7 +130,7 @@ func hashETag(r io.Reader) (string, error) {
 // hashInBackground digests the file named by key on its own goroutine,
 // at most once at a time per key and backgroundHashSlots at a time per
 // handler. The digest is stored only when the handle it read still has
-// the size and modtime the key was built from, before and after the read,
+// the revision the key was built from, before and after the read,
 // so a file replaced mid-hash never lends its digest to the old revision.
 func (c *digestCache) hashInBackground(key digestKey, open func() (fs.File, error)) {
 	if _, running := c.inflight.LoadOrStore(key, struct{}{}); running {
@@ -154,7 +168,7 @@ func (c *digestCache) hashInBackground(key digestKey, open func() (fs.File, erro
 
 func sameRevision(f fs.File, key digestKey) bool {
 	st, err := f.Stat()
-	return err == nil && st.Size() == key.size && st.ModTime().UnixNano() == key.modTime
+	return err == nil && keyOf(key.name, st) == key
 }
 
 // setCacheHeaders sets Cache-Control, ETag, and Last-Modified headers on w.

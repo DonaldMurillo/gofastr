@@ -55,7 +55,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   goes through `http.ServeContent`: `206` with `Content-Range`,
   multi-range, `416` for a range past the end, and `If-Range`. A file
   that cannot seek, or can only rewind, keeps the full-body answer and
-  advertises no ranges. The `NotFoundFile` page ignores `Range` and
+  advertises no ranges. A `HEAD` ignores `Range`, which RFC 9110
+  defines for `GET` only. The `NotFoundFile` page ignores `Range` and
   preconditions, which name the missing URL, not the page (#507).
 - **`core/static` evaluates preconditions in RFC 9110 order.** A failed
   `If-Match` or `If-Unmodified-Since` now answers `412`, ahead of the
@@ -71,7 +72,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ETag` until the digest lands; `Last-Modified` still revalidates it.
   The `ETag` stays a content hash: one built from size and modtime
   repeats across releases with pinned build timestamps, which would let
-  `If-Range` splice a resumed download from two versions (#507).
+  `If-Range` splice a resumed download from two versions. On Linux and
+  macOS the cached digest is also keyed on the file's inode and change
+  time, so an in-place rewrite of the same size with its modtime put back
+  (`cp -p`, `rsync -t`) gets a fresh ETag instead of the old one (#507).
 - **`/api/llm.md` links honor `WithAPIPrefix`.** Under
   `WithAPIPrefix("/api")` the index linked each resource to
   `/<table>/llm.md` and showed unprefixed base paths, so every link

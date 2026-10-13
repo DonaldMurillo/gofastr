@@ -324,6 +324,13 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	// full-body copy instead of a 500.
 	if rs, ok := f.(io.ReadSeeker); ok {
 		if _, err := rs.Seek(0, io.SeekEnd); err == nil {
+			if r.Method == http.MethodHead && r.Header.Get("Range") != "" {
+				// RFC 9110 §14.2 defines Range for GET only, and a
+				// server MUST ignore it on any other method.
+				// ServeContent would answer a HEAD with a 206.
+				r = r.Clone(r.Context())
+				r.Header.Del("Range")
+			}
 			http.ServeContent(w, r, name, modTime, rs)
 			return true
 		}

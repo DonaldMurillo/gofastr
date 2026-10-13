@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"sync"
 	"testing"
@@ -156,15 +157,22 @@ func TestIfRangeResumesOnlyUnchanged(t *testing.T) {
 	}
 }
 
-func TestHeadRangeHasNoBody(t *testing.T) {
+// RFC 9110 §14.2 defines Range for GET only; a HEAD ignores it and
+// describes the full file.
+func TestHeadIgnoresRange(t *testing.T) {
 	for name, h := range rangeHandlers(t) {
 		t.Run(name, func(t *testing.T) {
-			rec := serveWith(h, http.MethodHead, "/clip.mp4", nil)
-			if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
-				t.Errorf("HEAD: status %d with %d body bytes, want 200 and none", rec.Code, rec.Body.Len())
-			}
-			if got := rec.Header().Get("Content-Length"); got != "1000" {
-				t.Errorf("HEAD: Content-Length %q, want 1000", got)
+			for _, hdr := range []map[string]string{nil, {"Range": "bytes=0-99"}} {
+				rec := serveWith(h, http.MethodHead, "/clip.mp4", hdr)
+				if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+					t.Errorf("HEAD %v: status %d with %d body bytes, want 200 and none", hdr, rec.Code, rec.Body.Len())
+				}
+				if got := rec.Header().Get("Content-Length"); got != "1000" {
+					t.Errorf("HEAD %v: Content-Length %q, want 1000", hdr, got)
+				}
+				if got := rec.Header().Get("Content-Range"); got != "" {
+					t.Errorf("HEAD %v: Content-Range %q, want none", hdr, got)
+				}
 			}
 		})
 	}
@@ -492,5 +500,39 @@ func TestRewindOnlySeekerServesFull(t *testing.T) {
 	}
 	if got := rec.Header().Get("Accept-Ranges"); got != "" {
 		t.Errorf("Accept-Ranges %q from a handle ServeContent cannot use, want none", got)
+	}
+}
+
+// An in-place rewrite of the same size with the modtime put back (cp -p,
+// rsync -t) must not keep the old digest: the cached ETag would validate
+// the new bytes, and If-Range would splice a resumed download.
+func TestRewriteKeepingModTimeNewETag(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("fileRevision is wired for linux and darwin")
+	}
+	dir := t.TempDir()
+	p := filepath.Join(dir, "clip.mp4")
+	if err := os.WriteFile(p, bytes.Repeat([]byte("A"), 1000), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mod := time.Unix(1_700_000_000, 0)
+	if err := os.Chtimes(p, mod, mod); err != nil {
+		t.Fatal(err)
+	}
+	h := Handler(Config{FS: os.DirFS(dir)})
+	before := serveWith(h, http.MethodGet, "/clip.mp4", nil).Header().Get("ETag")
+
+	if err := os.WriteFile(p, bytes.Repeat([]byte("B"), 1000), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(p, mod, mod); err != nil {
+		t.Fatal(err)
+	}
+	rec := serveWith(h, http.MethodGet, "/clip.mp4", map[string]string{"Range": "bytes=500-", "If-Range": before})
+	if after := rec.Header().Get("ETag"); after == before {
+		t.Errorf("ETag %s survived a same-size rewrite with the modtime put back", after)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("If-Range with the old ETag: status %d, want 200 (whole new file)", rec.Code)
 	}
 }
