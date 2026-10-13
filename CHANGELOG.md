@@ -120,7 +120,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the header brand. It now takes the page gutter at every width. Inside
   an app frame's content area (`ui.ContentRow` with a `Sidebar`), whose
   own padding is the gutter, it adds none, where a phone used to show
-  two gutters stacked.
+  two gutters stacked, and a `ContainerPage` there caps at the bare page
+  measure.
+- **A section nested in a page band keeps its own heading.** The
+  display-size heading of an eyebrow section, and the small upper-case
+  label of an `Overline` one, reached every `ui.Section` heading in the
+  section's body too. Each rule now selects only the section's own
+  heading.
 - **A `SectionMenu` with `FillColumn` insets its rail.** In a pinned
   column such as `ui.ContentRow`'s nav column, which has no padding, the
   rail's links ran into the column edges. The filled rail now pads itself

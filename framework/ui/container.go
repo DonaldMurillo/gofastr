@@ -185,9 +185,11 @@ func containerCSS(_ style.Theme) string {
 }
 /* Inside an app frame (ui.ContentRow with a Sidebar) the content area
    pads itself; that padding is the gutter, and a page container there
-   adds none, or a phone shows two gutters stacked. */
+   adds none, or a phone shows two gutters stacked. The page measure's
+   cap drops the gutters it no longer pads. */
 :where(.fui-content-row--has-nav main, .fui-content-row--has-nav .layout-content) :where([data-cui-comp="ui-container"]).fui-container--pad-page,
 :where(.fui-content-row--has-nav main, .fui-content-row--has-nav .layout-content) :where([data-cui-comp="ui-container"]).fui-container--pad-end {
+  --ui-layout-gutter: 0px;
   padding-inline: 0;
 }
 /* Start: pinned to the inline start inside a frame that owns the

@@ -449,20 +449,21 @@ func sectionCSS(_ style.Theme) string {
 /* An eyebrow (or SectionConfig.Band) marks a page band (marketing,
    landing), not an in-app group, so its heading steps up to display
    size and the band opens more air under its head. The knobs still
-   win. */
+   win. The rules reach only the section's own heading, so a section
+   nested in the band's body keeps its own size. */
 [data-cui-comp="ui-section"].fui-section--band,
 [data-cui-comp="ui-section"]:has(> .fui-section__head > .fui-section__eyebrow) {
   gap: var(--spacing-xl, 24px);
 }
-[data-cui-comp="ui-section"].fui-section--band .fui-section__heading,
-[data-cui-comp="ui-section"]:has(> .fui-section__head > .fui-section__eyebrow) .fui-section__heading {
+[data-cui-comp="ui-section"].fui-section--band > .fui-section__head > .fui-section__heading,
+[data-cui-comp="ui-section"]:has(> .fui-section__head > .fui-section__eyebrow) > .fui-section__head > .fui-section__heading {
   font-size: var(--ui-section-heading-size, var(--text-3xl, 1.875rem));
   letter-spacing: var(--ui-section-heading-tracking, -0.025em);
   line-height: var(--leading-tight, 1.2);
 }
 /* Overline: the heading is a group label over a run of cards.
    Knobs: --ui-section-overline-size/-weight/-tracking/-color. */
-[data-cui-comp="ui-section"].fui-section--overline .fui-section__heading {
+[data-cui-comp="ui-section"].fui-section--overline > .fui-section__head > .fui-section__heading {
   font-size: var(--ui-section-overline-size, var(--text-xs, 0.75rem));
   font-weight: var(--ui-section-overline-weight, 600);
   letter-spacing: var(--ui-section-overline-tracking, 0.06em);

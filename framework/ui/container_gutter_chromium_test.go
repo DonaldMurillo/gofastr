@@ -38,7 +38,8 @@ func TestPageContainerUsesPageGutter(t *testing.T) {
 	// The primary slot is the layout outlet (l.Primary()), a .layout-content.
 	body.WriteString(string(ui.ContentRow(ui.ContentRowConfig{Sidebar: render.Text("nav")},
 		render.Tag("div", map[string]string{"class": "layout-content"},
-			ui.Container(ui.ContainerConfig{Width: ui.ContainerWide, Pad: ui.ContainerPadPage, ID: "framed"}, render.Text("x"))))))
+			ui.Container(ui.ContainerConfig{Width: ui.ContainerWide, Pad: ui.ContainerPadPage, ID: "framed"}, render.Text("x")),
+			ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage, ID: "framedpage"}, render.Text("x"))))))
 	for _, vw := range []int{390, 800, 1440} {
 		srv := themeTestPageWithHead(t, head, body.String())
 		ctx := moduleTestCtxURL(t, srv.URL, chromedp.EmulateViewport(int64(vw), 800))
@@ -48,10 +49,15 @@ func TestPageContainerUsesPageGutter(t *testing.T) {
 			for (const el of document.querySelectorAll('[data-cui-comp="ui-container"]')) {
 				out[el.id] = parseFloat(getComputedStyle(el).paddingLeft);
 			}
+			out.framedpageMax = parseFloat(getComputedStyle(document.getElementById('framedpage')).maxWidth);
 			const g = document.createElement('div');
 			g.style.width = 'var(--size-page-gutter, clamp(20px, 5vw, 32px))';
 			document.body.appendChild(g);
 			out.gutter = g.getBoundingClientRect().width;
+			const m = document.createElement('div');
+			m.style.width = 'var(--size-page-width, 66rem)';
+			document.body.appendChild(m);
+			out.measure = m.getBoundingClientRect().width;
 			return out;
 		})()`
 		if err := chromedp.Run(ctx, chromedp.Evaluate(probe, &got)); err != nil {
@@ -65,8 +71,15 @@ func TestPageContainerUsesPageGutter(t *testing.T) {
 		if got["start"] != 0 {
 			t.Errorf("%dpx: a Start page container pads %vpx inline; want 0", vw, got["start"])
 		}
-		if got["framed"] != 0 {
-			t.Errorf("%dpx: a page container inside an app frame pads %vpx inline on top of the frame's padding; want 0", vw, got["framed"])
+		for _, id := range []string{"framed", "framedpage"} {
+			if got[id] != 0 {
+				t.Errorf("%dpx: %s page container inside an app frame pads %vpx inline on top of the frame's padding; want 0", vw, id, got[id])
+			}
+		}
+		// With no gutter of its own, the page measure is the content box:
+		// the cap must not keep the two gutters it no longer pads.
+		if got["framedpageMax"] != got["measure"] {
+			t.Errorf("%dpx: a page-width container inside an app frame caps at %vpx; want the page measure %vpx", vw, got["framedpageMax"], got["measure"])
 		}
 	}
 }

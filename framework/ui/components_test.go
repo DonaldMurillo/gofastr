@@ -1050,7 +1050,7 @@ func TestSectionBandStepsHeadingUp(t *testing.T) {
 		t.Errorf("a plain section must not be a band:\n%s", plain)
 	}
 	css := sectionCSS(style.Theme{})
-	if !strings.Contains(css, `.fui-section--band .fui-section__heading,`) {
+	if !strings.Contains(css, `.fui-section--band > .fui-section__head > .fui-section__heading,`) {
 		t.Errorf("the display-size heading rule must select the band modifier:\n%s", css)
 	}
 }
