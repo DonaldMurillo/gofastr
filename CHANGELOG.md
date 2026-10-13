@@ -66,29 +66,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   outcomes like "account created" that the danger-styled `Alert` would
   misreport (#503).
 
-- **`gofastr dev` answers while the app is down.** During the first
-  build, after a failed build, and after the app exits, the dev address
-  returns 503 with `Retry-After` and says which of the three it is, the
-  build or lint output included, instead of refusing connections. Open
-  tabs reload into that page when a build fails and back into the app
-  when it is up again. A second `gofastr dev` on a busy address now
-  stops at startup instead of after its first build, except in a linked
-  worktree, where isolation moves it to the next free port (#483).
-- **`entityui.UI.WithCreatePath` sets the create screen's route.** An app
-  that mounts its create screen at `/deals/new` instead of
-  `/deals/create` passes one path function, and New, Duplicate, Create
-  another, related-list Add and relation-picker New all link there.
-  Returning false or an empty path hides an entity's create links.
-  Without the option, links still use `<base>/create` (#502).
-
-- **A sidebar can stay pinned under a sticky page header.**
-  `ui.ContentRowConfig.BelowHeader`, with `Sticky`, sticks the nav
-  column and the toolbar below `--size-header-height` instead of behind
-  the header, and makes the column the rest of the viewport tall, so a
-  long menu scrolls on its own while the page scrolls beside it.
-  `interactive.SectionMenuConfig.FillColumn` makes a section menu fill
-  that column. The docs site's `/components` menu uses both.
-
 ### Changed
 - **BREAKING: `gallery.ContributeCSS` and `gallery.BaseCSS` are removed.**
   The `framework/gallery` demos lay out through `ui.Cluster`, `ui.Stack`,
@@ -105,18 +82,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (`--ui-code-block-tab-size`) and draws the line-number gutter from
   the code colors (`--ui-code-block-gutter-color`), not the page's
   `--color-text-subtle`.
-- **`gofastr init` writes the agent detail files to `.agents/`.** They
-  went to a visible `agents/` folder at the project root, beside
-  `entities/`, `migrations/` and the app's own packages. They now go to
-  a hidden `.agents/` folder, and `AGENTS.md`, `CLAUDE.md` and the
-  gofastr-host skill link there. Run `gofastr agents sync` (or
-  `gofastr init --reinit`) once in an existing project: it writes
-  `.agents/`, deletes the old generated files in `agents/` (only files
-  with the auto-generated header, so a hand-written file there stays)
-  and removes the folder once nothing else is in it. It also points the
-  generated `agents/` references in `AGENTS.md`'s intro at `.agents/`,
-  and `--reinit` refreshes a stock `CLAUDE.md` from the earlier release.
-  An `agents` symlink is left as it is.
 
 ### Fixed
 - **A padded `ui.Container` lines up with the header and footer bands.**
@@ -201,6 +166,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [0.87.2] - 2026-10-12
 
+### Added
+- **`gofastr dev` answers while the app is down.** During the first
+  build, after a failed build, and after the app exits, the dev address
+  returns 503 with `Retry-After` and says which of the three it is, the
+  build or lint output included, instead of refusing connections. Open
+  tabs reload into that page when a build fails and back into the app
+  when it is up again. A second `gofastr dev` on a busy address now
+  stops at startup instead of after its first build, except in a linked
+  worktree, where isolation moves it to the next free port (#483).
+- **`entityui.UI.WithCreatePath` sets the create screen's route.** An app
+  that mounts its create screen at `/deals/new` instead of
+  `/deals/create` passes one path function, and New, Duplicate, Create
+  another, related-list Add and relation-picker New all link there.
+  Returning false or an empty path hides an entity's create links.
+  Without the option, links still use `<base>/create` (#502).
+
+### Fixed
 - **Entity state-move buttons no longer fail with HTTP 415.** The RPC
   runtime now sends `Content-Type: application/json` on writes that have
   no body, which the transition route requires. GET and HEAD send no
@@ -215,6 +197,28 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [0.87.1] - 2026-10-11
 
+### Changed
+- **`gofastr init` writes the agent detail files to `.agents/`.** They
+  went to a visible `agents/` folder at the project root, beside
+  `entities/`, `migrations/` and the app's own packages. They now go to
+  a hidden `.agents/` folder, and `AGENTS.md`, `CLAUDE.md` and the
+  gofastr-host skill link there. Run `gofastr agents sync` (or
+  `gofastr init --reinit`) once in an existing project: it writes
+  `.agents/`, deletes the old generated files in `agents/` (only files
+  with the auto-generated header, so a hand-written file there stays)
+  and removes the folder once nothing else is in it. It also points the
+  generated `agents/` references in `AGENTS.md`'s intro at `.agents/`,
+  and `--reinit` refreshes a stock `CLAUDE.md` from the earlier release.
+  An `agents` symlink is left as it is.
+
+### Added
+- **A sidebar can stay pinned under a sticky page header.**
+  `ui.ContentRowConfig.BelowHeader`, with `Sticky`, sticks the nav
+  column and the toolbar below `--size-header-height` instead of behind
+  the header, and makes the column the rest of the viewport tall, so a
+  long menu scrolls on its own while the page scrolls beside it.
+  `interactive.SectionMenuConfig.FillColumn` makes a section menu fill
+  that column. The docs site's `/components` menu uses both.
 
 ## [0.87.0] - 2026-10-10
 
