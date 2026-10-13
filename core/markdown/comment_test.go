@@ -47,3 +47,30 @@ func TestCommentWithTrailingTextStaysEscaped(t *testing.T) {
 		}
 	}
 }
+
+// A comment block under a list item hides like one at the top level; the
+// item keeps its text on either side of it.
+func TestCommentInListItemRendersNothing(t *testing.T) {
+	cases := map[string]string{
+		"one line":  "- first\n  <!-- a note -->\n- second\n",
+		"multiline": "- first\n  <!-- a note\n  more -->\n- second\n",
+		"mid item":  "- first\n  <!-- a note -->\n  still first\n- second\n",
+	}
+	for name, src := range cases {
+		t.Run(name, func(t *testing.T) {
+			got := string(RenderHTML(src))
+			if strings.Contains(got, "&lt;!--") || strings.Contains(got, "note") {
+				t.Errorf("comment leaked into the list: %s", got)
+			}
+			if !strings.Contains(got, "first") || !strings.Contains(got, "<li>second</li>") {
+				t.Errorf("list items lost: %s", got)
+			}
+		})
+	}
+	if got := string(RenderHTML("- first\n  <!-- a note -->\n  still first\n")); !strings.Contains(got, "still first") {
+		t.Errorf("item text after the comment lost: %s", got)
+	}
+	if got := string(RenderHTML("- first\n  <!-- never closed\n- second\n")); !strings.Contains(got, "&lt;!-- never closed") {
+		t.Errorf("an unclosed comment in an item should stay escaped text: %s", got)
+	}
+}

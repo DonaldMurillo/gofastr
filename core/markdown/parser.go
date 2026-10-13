@@ -334,6 +334,14 @@ func renderList(p *parser, sb *strings.Builder, ordered bool) {
 		p.advance()
 		for !p.eof() {
 			next := p.line()
+			// A comment block under the item hides as it would at the
+			// top level; the item's text continues after it.
+			if strings.HasPrefix(next, "  ") {
+				if end := p.commentEnd(); end >= 0 {
+					p.pos = end + 1
+					continue
+				}
+			}
 			if strings.HasPrefix(next, "  ") && strings.TrimSpace(next) != "" {
 				item = append(item, strings.TrimPrefix(next, "  "))
 				p.advance()

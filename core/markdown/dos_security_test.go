@@ -356,6 +356,7 @@ func TestMarkdown_GiantBacktickRunNoInt32Wrap(t *testing.T) {
 func TestMarkdown_UnclosedCommentsLinear(t *testing.T) {
 	renderWithin(t, "unclosed comments", strings.Repeat("<!--\n", 40000), 1500*time.Millisecond)
 	renderWithin(t, "close with trailing text", strings.Repeat("<!--\n", 40000)+"--> x\n", 1500*time.Millisecond)
+	renderWithin(t, "openers in a list item", "- a\n"+strings.Repeat("  <!--\n", 40000)+"--> x\n", 1500*time.Millisecond)
 	renderWithin(t, "openers with text", strings.Repeat("<!-- a\n", 40000)+"b --> c\n", 1500*time.Millisecond)
 	renderWithin(t, "long close line", strings.Repeat("<!--\n", 40000)+"--> x"+strings.Repeat(" ", 1<<20)+"\n", 1500*time.Millisecond)
 }
