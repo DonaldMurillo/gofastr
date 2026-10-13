@@ -186,7 +186,7 @@ func printHelp() {
   gofastr verify
   gofastr verify security --json
   gofastr verify --explain GOFASTR1002
-`, bold("GoFastr"), version, bold("Usage"), bold("Commands"), bold("Flags"), bold("Examples"))
+`, bold("GoFastr"), cliVersion(), bold("Usage"), bold("Commands"), bold("Flags"), bold("Examples"))
 }
 
 func main() {
@@ -254,7 +254,7 @@ func dispatch(args []string) {
 			if a == "--version" && desktopCommandOwnsVersionFlag(args, i) {
 				continue
 			}
-			fmt.Printf("GoFastr %s (commit: %s, built: %s)\n", version, commit, buildDate)
+			fmt.Println(versionLine())
 			return
 		}
 	}
@@ -308,7 +308,7 @@ func dispatch(args []string) {
 	case "desktop":
 		runDesktop(cmdArgs)
 	case "version":
-		fmt.Printf("GoFastr %s (commit: %s, built: %s)\n", version, commit, buildDate)
+		fmt.Println(versionLine())
 	default:
 		fmt.Printf("%s Unknown command: %s\n\n", red("✗"), cmd)
 		// Fuzzy suggestion: check if it's close to a known command

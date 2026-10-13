@@ -1,7 +1,7 @@
 package main
 
 // ComponentsSidebar, category navigation for /components/*. A single
-// interactive.SectionMenu: a sticky collapsible rail on desktop, a slide-in
+// interactive.SectionMenu: a collapsible rail filling the pinned column on desktop, a slide-in
 // sheet on mobile. The active component is highlighted by the runtime's
 // active-link pass (exact-href aria-current) since the sidebar persists across
 // the screen-group's client-side navigation.
@@ -20,7 +20,12 @@ import (
 type ComponentsSidebar struct{}
 
 func (s *ComponentsSidebar) Render() render.HTML {
-	return interactive.SectionMenu(componentsSectionMenuConfig())
+	// The components shell pins the nav column under the header
+	// (ContentRow Sticky + BelowHeader), so the rail fills that column
+	// instead of sticking on its own.
+	cfg := componentsSectionMenuConfig()
+	cfg.FillColumn = true
+	return interactive.SectionMenu(cfg)
 }
 
 // componentsSectionMenuConfig is the single source of truth for the components

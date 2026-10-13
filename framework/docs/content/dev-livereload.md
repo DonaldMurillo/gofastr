@@ -40,9 +40,11 @@ When enabled:
     on connect, then idles with a 25s SSE-comment heartbeat. Closes
     when the request context cancels (server shutdown / browser tab
     close).
-  - `GET /__livereload.js`: ~16 lines of JS. Opens an `EventSource`,
-    treats the **second** `onopen` (i.e. the reconnect after the
-    server drop) as the reload signal, calls `location.reload()`.
+  - `GET /__livereload.js`: ~16 lines of JS. Opens an `EventSource`
+    and remembers the build ID the first `ready` event carries. A
+    `ready` with a different ID (the reconnect after a rebuild, or
+    `gofastr dev`'s hold page below) calls `location.reload()`; a
+    reconnect to the same process does not.
 - `uihost.New()` auto-appends `/__livereload.js` to the `extraScripts`
   list so every rendered page links to the client script before
   `</body>`. CSP-safe: it's a `<script src="...">`, no inline JS.
@@ -100,6 +102,38 @@ however long it takes, and the startup banner has already named an
 address, so the heartbeat is what tells "still building" from "stuck",
 both to a person reading the terminal and to anything waiting on the
 dev process programmatically.
+
+## While the app is down
+
+Nothing from the app answers during the first build, after a failed
+build, or after the app exits. `gofastr dev` holds the dev address
+itself in those windows, so a request gets an answer instead of
+"connection refused":
+
+- Every page request gets status `503` with `Retry-After: 1` and an
+  `X-Gofastr-Dev` header naming the state: `building`, `build-failed`
+  or `exited`.
+- A plain-text body for `curl` and other clients that don't ask for
+  HTML: what is happening, and for a failed build the compiler, lint
+  or sandbox output. A browser gets the same as a page.
+- `/__livereload` answers too. An open tab reloads into the page when a
+  build fails or the app exits, but not for an ordinary rebuild, and
+  reloads back into the app when its new build comes up.
+
+The hold never proxies. It closes its listener right before the app
+starts, and the app binds the address itself, so the app runs the same
+as it does by hand. Between that close and the app's own bind, which
+lasts as long as the app takes to boot, the address refuses
+connections. The page for an app that exited gives its exit status
+when it was nonzero; the app's own output stays in the terminal running
+`gofastr dev`.
+
+Because the hold binds the address at startup, a second `gofastr dev`
+on a busy address stops at once with an error naming the address,
+instead of building first and then failing to bind. An address with
+port `0` gets no hold. In a linked worktree with isolation on, the
+second run does not stop: isolation skips a busy port and picks the next
+free one, so it starts on another address.
 
 ## The dev loop is also livereload for agents
 

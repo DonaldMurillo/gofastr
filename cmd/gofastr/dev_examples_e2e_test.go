@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -184,10 +185,23 @@ func waitForDevServe(t *testing.T, url string, devOut *syncBuffer, devDone <-cha
 	for {
 		resp, err := client.Get(url)
 		if err == nil {
+			hold := resp.Header.Get("X-Gofastr-Dev")
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 			_ = resp.Body.Close()
-			return resp.StatusCode
+			// gofastr dev holds the address while the app is down. A
+			// build in progress is not an answer; a failed build or an
+			// exited app will not become one.
+			switch hold {
+			case "":
+				return resp.StatusCode
+			case holdBuilding:
+				lastErr = "gofastr dev still building"
+			default:
+				t.Fatalf("gofastr dev answered %s with its %s page:\n%s\ndev output:\n%s", url, hold, body, clip(devOut.String()))
+			}
+		} else {
+			lastErr = err.Error()
 		}
-		lastErr = err.Error()
 		out := devOut.String()
 		select {
 		case err := <-devDone:

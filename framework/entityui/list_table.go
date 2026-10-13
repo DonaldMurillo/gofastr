@@ -469,10 +469,10 @@ func (b *ListBuilder) rowActions(ctx context.Context, s *listState, row map[stri
 		{Label: i18nui.T(ctx, i18nui.KeyEntityView), Href: href},
 		{Label: i18nui.T(ctx, i18nui.KeyEntityCopyLink), Copy: &ui.MenuCopy{Target: spanID, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}},
 	}
-	if b.dup && !m.d.NoDuplicate && canCreate(ctx, m) {
+	if b.dup && s.createPath != "" && !m.d.NoDuplicate && canCreate(ctx, m) {
 		items = append(items, ui.MenuItem{
 			Label: i18nui.T(ctx, i18nui.KeyEntityDuplicate),
-			Href:  s.base + "/create?duplicate=" + url.QueryEscape(id),
+			Href:  s.createPath + "?duplicate=" + url.QueryEscape(id),
 		})
 	}
 	if b.delete && canDelete(ctx, m, id) {
@@ -551,7 +551,7 @@ func (b *ListBuilder) emptyState(ctx context.Context, s *listState) ui.EmptyStat
 		Description:  desc,
 		HeadingLevel: b.headingLevel() + 1,
 	}
-	if b.mayCreate() && canCreate(ctx, s.m) {
+	if b.mayCreate() && s.createPath != "" && canCreate(ctx, s.m) {
 		cfg.Action = ui.LinkButton(ui.LinkButtonConfig{
 			Label: i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": s.m.singular(ctx)}),
 			Href:  s.createHref(),

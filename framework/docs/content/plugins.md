@@ -185,6 +185,17 @@ difference:
 - `Battery` can also implement `BatteryLifecycle` (OnStart / OnStop)
   for structured per-battery start/stop, separate from the App-wide
   `OnStart` / `OnStop` hooks.
+- A battery or middleware that signs callers in calls
+  `App.NoteAuthenticator()` when it wires itself. `battery/auth` does
+  once `AuthManager.Init` has run and a middleware that resolves callers
+  exists (`SessionMiddleware(mgr)`, `mgr.Middleware()`, or
+  `RequireAuth(mgr.JWT())`, in either order), since `Init` alone mounts
+  the routes but signs nobody in. An app on `TokenMiddleware` alone calls
+  it itself. `battery/desktop` calls it when its window identity takes
+  effect. Until something does and an entity requires
+  auth, the startup banner prints one line naming the fix: wire
+  `battery/auth`, or set `Exposure.Public`. `App.AuthenticatorNoted()`
+  reads it back.
 - **Module**: a Battery that also needs runtime enable/disable. See
   [Modules](modules.md) for the Module tier.
 

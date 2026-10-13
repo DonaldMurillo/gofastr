@@ -18,7 +18,15 @@ each command to the doc that covers it.
   `main.go` reads `DATABASE_URL` from the environment and fails closed
   pointing at `.env` when it is unset — no DSN literal in committed
   source (a sqlite `file:<app>.db` path stays inline; it is not a
-  credential). `init . --reinit` refreshes the
+  credential). With the sample entity, entity CRUD mounts under `/api`
+  (`WithAPIPrefix("/api")`) and `battery/auth` is wired with `/login` and
+  `/register` screens in `screens_auth.go`; `.env` also carries a
+  freshly minted `JWT_SECRET`, which `main.go` reads from the
+  environment. Auth dev mode (plain session cookie, relaxed login
+  limiter) follows `GOFASTR_DEV`, which `gofastr dev` sets, so a copied
+  `.env` never relaxes a deployment. `init .` refuses to run when git
+  already tracks `.env` (untrack it with `git rm --cached .env` first),
+  since the new secret would land in the next commit. `init . --reinit` refreshes the
   AI-agent onboarding files in place (`--force` overwrites your edits);
   no Go code or git changes. A released CLI pins the generated `go.mod` to its
   matching GoFastr version. A local development build prints the exact
@@ -26,7 +34,7 @@ each command to the doc that covers it.
 - `gofastr new handler <name>` / `gofastr new route <path>`: scaffold
   one handler or route registration into an existing app.
 - `gofastr agents init|sync|skill`: generate or refresh `AGENTS.md`
-  and the per-battery detail files under `agents/`.
+  and the per-battery detail files under `.agents/`.
 - `gofastr theme edit`: a local theme configurator with every token as a
   control, the whole component gallery as a live preview, and write-back to
   `theme/theme.go`.
@@ -126,7 +134,9 @@ each command to the doc that covers it.
   MCP tools for your coding agent ([dev-livereload](dev-livereload.md)).
   `--dir` sets the watch root, `--pkg` the main package under it,
   `--addr`/`-p` the port; `--no-a11y` skips the accessibility lint on
-  each rebuild.
+  each rebuild. While the app is building, failed to build, or exited,
+  the address answers 503 with what happened (the build error
+  included) instead of refusing connections.
 - `gofastr build`: codegen + `go vet` + accessibility lint + the embed
   server-action gate + contract verification + `go build`. Only
   error-severity contract findings stop the build (`gofastr verify` is

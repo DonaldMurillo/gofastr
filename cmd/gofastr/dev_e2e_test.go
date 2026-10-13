@@ -241,6 +241,8 @@ func TestE2E_HotReload_GoFileChange(t *testing.T) {
 			if strings.Contains(buf, "RELOADED_TITLE") {
 				return // success
 			}
+		} else if err == nil {
+			_ = resp.Body.Close()
 		}
 		time.Sleep(500 * time.Millisecond)
 	}

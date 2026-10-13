@@ -10,7 +10,7 @@ import (
 // The scaffold's agent guidance must put the dev loop where an agent reads
 // first. Before this, CLAUDE.md listed `gofastr dev` only in a closing
 // quick-reference list and AGENTS.md only in a trigger-table row; the
-// "not `go run .`" warning sat in agents/framework.md, which an agent
+// "not `go run .`" warning sat in .agents/framework.md, which an agent
 // finds only by grepping for it. evals/dev-loop measures the behavior;
 // this pins the placement it depends on.
 func TestScaffoldLeadsWithDevLoop(t *testing.T) {

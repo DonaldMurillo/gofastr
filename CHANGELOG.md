@@ -21,6 +21,67 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   page-band treatment (display-size heading, more air under the head).
 - `StepRailConfig.BelowHeader` stops the sticky rail under a sticky
   site header (`--size-header-height` plus the rail's gap).
+- **entityui lists warn when their row links lead nowhere.** The first
+  time a list renders rows whose `<base>/<id>` matches no registered
+  screen, it logs one warning per base naming the route to register.
+  Until now every row link 404ed with nothing in the log. The check runs
+  through `App.EntityUI` with a mounted `uihost` (`UIHost.HasScreen`);
+  a custom host opts in through `entityui.ScreenHost`. `NoLinks()` lists
+  skip it, and it remembers at most 256 bases (#503).
+- **The startup banner says how to get past the 401s.** When an entity
+  requires auth and nothing on the app signs callers in, the banner
+  prints one line: wire `battery/auth`, or set `Exposure.Public`.
+  `battery/auth` calls the new `App.NoteAuthenticator()` once `Init` has
+  run and a middleware that resolves callers exists
+  (`SessionMiddleware(mgr)`, `mgr.Middleware()`, or
+  `RequireAuth(mgr.JWT())`), so an `Init` with no middleware keeps the
+  hint up. `battery/desktop` calls it when its window identity takes
+  effect; a custom auth layer or a `TokenMiddleware`-only app calls it
+  too, and `App.AuthenticatorNoted()` reads it back (#503).
+- **An unknown `?include=` names the relation it was close to.**
+  `?include=issue` on an entity whose relation is `issue_id` now answers
+  `did you mean "issue_id"?`. Only a near miss (the `_id` form, the
+  foreign key, or the target entity) gets a suggestion; the error never
+  lists an entity's relations (#503).
+- **`gofastr init` scaffolds sign-in.** The sample app shipped CRUD
+  that answered 401 with no way to sign in. It now wires `battery/auth`
+  (users and sessions in the app's database, `SessionMiddleware`) and
+  writes `screens_auth.go` with `/login` and `/register`; the login form
+  carries `?next=` through to the redirect. Registering
+  lands on `/login?registered=1` with a notice rather than a session,
+  because the register endpoint answers a new and a taken address alike.
+  Entity CRUD mounts under `/api`, so a screen can own `/posts`. `.env`
+  gains a per-checkout `JWT_SECRET`. Auth dev mode follows `GOFASTR_DEV`
+  (set by `gofastr dev`), never `.env`, so outside the dev loop auth
+  issues Secure cookies and refuses to boot without a secret. `init .`
+  refuses a directory whose `.env` git already tracks (#503).
+- **`ui.AuthCard` has a `Notice` slot.** It renders a `role="status"`
+  message in the success color between the alert and the body, for
+  outcomes like "account created" that the danger-styled `Alert` would
+  misreport (#503).
+
+- **`gofastr dev` answers while the app is down.** During the first
+  build, after a failed build, and after the app exits, the dev address
+  returns 503 with `Retry-After` and says which of the three it is, the
+  build or lint output included, instead of refusing connections. Open
+  tabs reload into that page when a build fails and back into the app
+  when it is up again. A second `gofastr dev` on a busy address now
+  stops at startup instead of after its first build, except in a linked
+  worktree, where isolation moves it to the next free port (#483).
+- **`entityui.UI.WithCreatePath` sets the create screen's route.** An app
+  that mounts its create screen at `/deals/new` instead of
+  `/deals/create` passes one path function, and New, Duplicate, Create
+  another, related-list Add and relation-picker New all link there.
+  Returning false or an empty path hides an entity's create links.
+  Without the option, links still use `<base>/create` (#502).
+
+- **A sidebar can stay pinned under a sticky page header.**
+  `ui.ContentRowConfig.BelowHeader`, with `Sticky`, sticks the nav
+  column and the toolbar below `--size-header-height` instead of behind
+  the header, and makes the column the rest of the viewport tall, so a
+  long menu scrolls on its own while the page scrolls beside it.
+  `interactive.SectionMenuConfig.FillColumn` makes a section menu fill
+  that column. The docs site's `/components` menu uses both.
 
 ### Changed
 - **BREAKING: `gallery.ContributeCSS` and `gallery.BaseCSS` are removed.**
@@ -38,6 +99,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (`--ui-code-block-tab-size`) and draws the line-number gutter from
   the code colors (`--ui-code-block-gutter-color`), not the page's
   `--color-text-subtle`.
+- **`gofastr init` writes the agent detail files to `.agents/`.** They
+  went to a visible `agents/` folder at the project root, beside
+  `entities/`, `migrations/` and the app's own packages. They now go to
+  a hidden `.agents/` folder, and `AGENTS.md`, `CLAUDE.md` and the
+  gofastr-host skill link there. Run `gofastr agents sync` (or
+  `gofastr init --reinit`) once in an existing project: it writes
+  `.agents/`, deletes the old generated files in `agents/` (only files
+  with the auto-generated header, so a hand-written file there stays)
+  and removes the folder once nothing else is in it. It also points the
+  generated `agents/` references in `AGENTS.md`'s intro at `.agents/`,
+  and `--reinit` refreshes a stock `CLAUDE.md` from the earlier release.
+  An `agents` symlink is left as it is.
 
 ### Fixed
 - `ui.Hero` (split) and `ui.HeroSplit` collapse to a `minmax(0, 1fr)`
@@ -45,6 +118,66 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   longer widens the page past the viewport.
 - `ui.Card` headings and descriptions wrap long unbreakable tokens
   (a query string, a URL) instead of overflowing the card.
+- **`core/static` answers `Range` requests.** `Range: bytes=0-99` got
+  `200` and the whole file with no `Accept-Ranges`, so a video served by
+  `static.Handler` could not seek, Safari would not play an mp4 from it,
+  and an interrupted download restarted from zero. A seekable file now
+  goes through `http.ServeContent`: `206` with `Content-Range`,
+  multi-range, `416` for a range past the end, and `If-Range`. A file
+  that cannot seek, or can only rewind, keeps the full-body answer and
+  advertises no ranges. A `HEAD` ignores `Range`, which RFC 9110
+  defines for `GET` only. The `NotFoundFile` page ignores `Range` and
+  preconditions, which name the missing URL, not the page (#507).
+- **`core/static` evaluates preconditions in RFC 9110 order.** A failed
+  `If-Match` or `If-Unmodified-Since` now answers `412`, ahead of the
+  `304` an `If-None-Match` match gives, on every filesystem.
+  `If-None-Match` compares weakly, so `W/"<etag>"` revalidates.
+  `If-Modified-Since` compares at the one-second precision
+  `Last-Modified` is sent with, so a disk file with a sub-second modtime
+  answers `304` to its own `Last-Modified` (#507).
+- **`core/static` no longer hashes a large file before serving it.**
+  The first request for a multi-GB video read the whole file through
+  SHA-256 before sending a byte. A file over 16 MiB is now hashed in the
+  background, at most two at a time per handler, and served without an
+  `ETag` until the digest lands; `Last-Modified` still revalidates it.
+  The `ETag` stays a content hash: one built from size and modtime
+  repeats across releases with pinned build timestamps, which would let
+  `If-Range` splice a resumed download from two versions. On Linux and
+  macOS the cached digest is also keyed on the file's inode and change
+  time, so an in-place rewrite of the same size with its modtime put back
+  (`cp -p`, `rsync -t`) gets a fresh ETag instead of the old one (#507).
+- **`/api/llm.md` links honor `WithAPIPrefix`.** Under
+  `WithAPIPrefix("/api")` the index linked each resource to
+  `/<table>/llm.md` and showed unprefixed base paths, so every link
+  404ed, and each entity's own page listed `GET /<table>`. The index and
+  the per-entity pages now name the path the routes are mounted at, read-
+  only views included (#503).
+- **Active-link highlighting works outside a `<nav>`.** A link carrying
+  `data-cui-match-prefix` or `data-cui-activelink` in a header with no
+  `<nav>` landmark was never marked. The `activelink` module now sweeps
+  opt-in links wherever they sit; plain links outside a nav stay
+  untouched (#503).
+- **`gofastr version` names the release a `go install` built.** A binary
+  from `go install …/cmd/gofastr@v0.87.0` printed `GoFastr dev`. It now
+  reads the module version from the build info, and a build from a
+  checkout shows its VCS commit and commit time (#503).
+
+## [0.87.2] - 2026-10-12
+
+- **Entity state-move buttons no longer fail with HTTP 415.** The RPC
+  runtime now sends `Content-Type: application/json` on writes that have
+  no body, which the transition route requires. GET and HEAD send no
+  content type, and multipart forms keep the browser's boundary (#500).
+- **Worktree isolation remaps a listen port once.** In a linked
+  worktree, `gofastr dev --addr localhost:8791` printed one port while
+  the app bound another: the child remapped the address it was handed,
+  and `App.Start` remapped the result of `isolation.ListenAddr` again.
+  `Runtime.Env` now passes every recorded mapping to the child, and
+  active runtimes in one process with the same project, isolation ID
+  and port config share their mappings, so the app binds the address `gofastr dev` names.
+
+## [0.87.1] - 2026-10-11
+
 
 ## [0.87.0] - 2026-10-10
 

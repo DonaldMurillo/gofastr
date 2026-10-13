@@ -198,6 +198,9 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 			seg, filterClause := splitSegmentFilter(segRaw)
 			rel, ok := relationByName(currentEntity, seg)
 			if !ok {
+				if near := includeNearMiss(currentEntity, seg); near != "" {
+					return nil, fmt.Errorf("unknown include %q (segment %q has no relation on entity %q; did you mean %q?)", path, seg, currentEntity.GetName(), near)
+				}
 				return nil, fmt.Errorf("unknown include %q (segment %q has no relation on entity %q)", path, seg, currentEntity.GetName())
 			}
 			// Resolve the target entity. Registration is required for EVERY
@@ -446,6 +449,23 @@ func relationByName(ent *entity.Entity, name string) (entity.Relation, bool) {
 		}
 	}
 	return entity.Relation{}, false
+}
+
+// includeNearMiss names the relation an unknown include segment most
+// likely meant: the segment plus "_id" (a relation named after its
+// foreign key, ?include=issue for issue_id), the foreign key itself, or
+// the target entity in either number (?include=users for author). Only
+// a guess this close gets an answer; the error never lists the entity's
+// relations, so an unrelated probe learns nothing about the schema.
+func includeNearMiss(ent *entity.Entity, seg string) string {
+	for _, rel := range ent.Config.Relations {
+		switch seg {
+		case strings.TrimSuffix(rel.Name, "_id"), strings.TrimSuffix(rel.ForeignKey, "_id"),
+			rel.Entity, strings.TrimSuffix(rel.Entity, "s"):
+			return rel.Name
+		}
+	}
+	return ""
 }
 
 // writeIncludeError renders an eager-load failure. A blown row budget is

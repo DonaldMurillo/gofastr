@@ -28,8 +28,12 @@
   // data-cui-activelink link is then still the truth, even where the
   // href is not exactly the URL (Active on /orders served at
   // /orders?page=2, or on a detail page), so the sweep leaves it.
+  // Every link inside a <nav> landmark, plus links that opt in by
+  // attribute wherever they sit: a header link carrying
+  // data-cui-match-prefix outside a nav was silently never marked (#503).
+  const LINKS = 'nav a, a[data-cui-activelink], a[data-cui-match-prefix]';
   const update = (path, navigated, scope) => {
-    for (const link of (scope || document).querySelectorAll('nav a')) {
+    for (const link of (scope || document).querySelectorAll(LINKS)) {
       const href = link.getAttribute('href');
       if (!href) continue; // server-managed (MatchPath, dynamic), hands off
       if (link.hasAttribute('data-cui-activelink-skip')) continue;

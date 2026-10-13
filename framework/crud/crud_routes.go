@@ -19,7 +19,14 @@ import (
 // mount's llm.md omits the write and batch endpoints entirely (#358).
 func registerLLMMDRoutes(r *router.Router, ch *CrudHandler, path string, readOnly bool) {
 	path = NormalizePath(path)
-	r.Get(path+"/llm.md", LLMMDHandlerFor(ch, LLMMDOptions{ReadOnly: readOnly}))
+	opts := LLMMDOptions{ReadOnly: readOnly}
+	// BasePath is where the app mounted this handler (API prefix, group
+	// prefix or version), so mcpBase is the path the page must name; path
+	// alone is relative to r, which may be a group's sub-router (#503).
+	if ch.BasePath != "" {
+		opts.Path = ch.mcpBase()
+	}
+	r.Get(path+"/llm.md", LLMMDHandlerFor(ch, opts))
 }
 
 // CrudRouteOptions controls which routes are registered by RegisterCrudRoutes.

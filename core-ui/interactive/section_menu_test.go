@@ -158,3 +158,17 @@ func TestSectionMenuCSSScopedRailAndTrigger(t *testing.T) {
 		}
 	}
 }
+
+// FillColumn marks the root so the desktop rail fills the host's pinned
+// column; without it the root carries no fill marker and the rail keeps
+// its own sticky offset and viewport cap.
+func TestSectionMenuFillColumnMarksRoot(t *testing.T) {
+	if h := string(SectionMenu(sampleMenu())); strings.Contains(h, "cui-section-menu--fill") {
+		t.Errorf("a default menu must not carry the fill marker:\n%s", h)
+	}
+	cfg := sampleMenu()
+	cfg.FillColumn = true
+	if h := string(SectionMenu(cfg)); !strings.Contains(h, `class="cui-section-menu cui-section-menu--fill"`) {
+		t.Errorf("FillColumn should mark the root:\n%s", h)
+	}
+}

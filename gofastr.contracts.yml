@@ -50,6 +50,10 @@ contracts:
     GOFASTR1802: # rendering/hard-navigation
       exempt:
         - framework/contracts/**
+        # `gofastr dev`'s hold page stands in for the app while it is
+        # down and reloads into the app when its build comes up: the
+        # livereload class the analyzer exempts for framework/dev.
+        - cmd/gofastr/dev_hold.go
 
     GOFASTR1804: # rendering/inline-style
       exempt:
@@ -66,6 +70,10 @@ contracts:
         # no app surface to share a bus with.
         - cmd/gofastr/harness_http.go
         - framework/experimental/harness/**
+        # `gofastr dev`'s hold page listens on the same /__livereload
+        # stream open app tabs reconnect to; it is dev tooling, never in
+        # an app binary.
+        - cmd/gofastr/dev_hold.go
 
     # The rule catalog quotes a deliberately-wrong example for each rule,
     # in a Go string literal. There is no way to write "here is what SQL

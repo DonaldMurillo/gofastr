@@ -44,8 +44,31 @@ type Runtime struct {
 	// the operator set (#268); default true.
 	rewriteExplicit bool
 
-	portsMu sync.Mutex
-	ports   map[int]int // base port → mapped port, in-process only
+	ports *portTable // base port → mapped port, shared in-process
+}
+
+// portTables holds the recorded port mappings per isolation context, one
+// table shared by every Runtime resolved for the same project, ID and port
+// config in this process. ListenAddr maps the port and App.Start resolves
+// isolation again; with a table per Runtime the second resolve took the
+// mapped port for a base port and moved it again. Runtimes for different
+// contexts still get separate tables.
+var portTables sync.Map // portTableKey → *portTable
+
+type portTableKey struct {
+	projectDir string
+	id         string
+	port       PortConfig
+}
+
+type portTable struct {
+	mu sync.Mutex
+	m  map[int]int
+}
+
+func portTableFor(key portTableKey) *portTable {
+	t, _ := portTables.LoadOrStore(key, &portTable{m: map[int]int{}})
+	return t.(*portTable)
 }
 
 // Config describes local resource isolation.
@@ -120,6 +143,12 @@ func Resolve(projectDir string) (*Runtime, error) {
 	// child's own Resolve sees the same value in its os.Environ.
 	rewriteExplicit := os.Getenv(envRewriteExplicit) != "0" &&
 		!strings.EqualFold(os.Getenv(envRewriteExplicit), "false")
+	// Only an active runtime maps ports, so only it joins the shared
+	// table; an inactive Resolve leaves nothing behind in the process.
+	ports := &portTable{m: map[int]int{}}
+	if active {
+		ports = portTableFor(portTableKey{projectDir: start, id: id, port: cfg.Port})
+	}
 	return &Runtime{
 		projectDir:      start,
 		gitRoot:         gitRoot,
@@ -128,7 +157,7 @@ func Resolve(projectDir string) (*Runtime, error) {
 		active:          active,
 		id:              id,
 		rewriteExplicit: rewriteExplicit,
-		ports:           map[int]int{},
+		ports:           ports,
 	}, nil
 }
 
@@ -180,8 +209,7 @@ func (r *Runtime) Addr(addr string) (string, error) {
 	if r.isResolvedPort(port) {
 		return addr, nil
 	}
-	next := r.portFor(port, host)
-	r.recordPort(port, next)
+	next := r.recordPort(port, r.portFor(port, host))
 	return joinAddr(host, next, shape), nil
 }
 
@@ -257,6 +285,13 @@ func (r *Runtime) Env(env []string) []string {
 	}
 	values[envApplied] = "1"
 	values[envID] = r.id
+	// Every mapping Addr recorded goes to the child too, not only PORT's.
+	// gofastr dev resolves --addr and hands the child that address as
+	// PORT; without its marker the child's own Addr took the mapped port
+	// for a base port and remapped it.
+	for base, mapped := range r.recordedPorts() {
+		values[envPortPrefix+strconv.Itoa(base)] = strconv.Itoa(mapped)
+	}
 	values[envPortPrefix+strconv.Itoa(basePort)] = strconv.Itoa(appPort)
 	for name, port := range r.cfg.Services {
 		values[envPortPrefix+name] = strconv.Itoa(r.portFor(port, "localhost"))
@@ -623,25 +658,39 @@ func joinAddr(host string, port int, shape addrShape) string {
 }
 
 // lookupPort returns a previously recorded mapping for base, checking
-// env first (so child processes inherit parent's mapping) and then this
-// Runtime's in-memory cache.
+// env first (so child processes inherit parent's mapping) and then the
+// in-process table this Runtime shares with others for the same context.
 func (r *Runtime) lookupPort(base int) (int, bool) {
 	if p, ok := envAppliedPort(strconv.Itoa(base)); ok {
 		return p, true
 	}
-	r.portsMu.Lock()
-	defer r.portsMu.Unlock()
-	p, ok := r.ports[base]
+	r.ports.mu.Lock()
+	defer r.ports.mu.Unlock()
+	p, ok := r.ports.m[base]
 	return p, ok
 }
 
-// recordPort stores base → mapped in this Runtime's in-memory cache only.
+// recordPort stores base → mapped in the shared in-process table and
+// returns the mapping that stands. A mapping already there wins: two
+// first calls for the same base can both miss the table, and the later
+// one, probing after the earlier bound its port, would pick another.
 // Child-process inheritance happens through Env(), which writes the env
 // markers separately.
-func (r *Runtime) recordPort(base, mapped int) {
-	r.portsMu.Lock()
-	defer r.portsMu.Unlock()
-	r.ports[base] = mapped
+func (r *Runtime) recordPort(base, mapped int) int {
+	r.ports.mu.Lock()
+	defer r.ports.mu.Unlock()
+	if p, ok := r.ports.m[base]; ok {
+		return p
+	}
+	r.ports.m[base] = mapped
+	return mapped
+}
+
+// recordedPorts copies the mappings Addr recorded for this context.
+func (r *Runtime) recordedPorts() map[int]int {
+	r.ports.mu.Lock()
+	defer r.ports.mu.Unlock()
+	return maps.Clone(r.ports.m)
 }
 
 // isResolvedPort reports whether port is already the mapped form for some
@@ -660,9 +709,9 @@ func (r *Runtime) isResolvedPort(port int) bool {
 			}
 		}
 	}
-	r.portsMu.Lock()
-	defer r.portsMu.Unlock()
-	for _, mapped := range r.ports {
+	r.ports.mu.Lock()
+	defer r.ports.mu.Unlock()
+	for _, mapped := range r.ports.m {
 		if mapped == port {
 			return true
 		}

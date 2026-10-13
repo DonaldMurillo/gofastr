@@ -744,6 +744,14 @@ layout := app.NewLayout("app", app.LayoutSpec{}, func(ctx context.Context, l *ap
 site.SetDefaultLayout(layout)
 ```
 
+`Screen: true` makes the stack the page column: at least one viewport
+tall, with its last child pushed to the bottom (a footer on a short
+page). Put the header inside it as the first child, as `buildShell`
+above does. A screen-tall stack placed *below* a header is a viewport
+plus the header tall, so every page scrolls and a header-height dead
+band opens above the last child. Inside a layout that already provides
+the page column, use a plain `ui.Stack` for the screen's content.
+
 ### Context columns and list/detail panes
 
 `ui.ContentRowConfig.Aside` adds a labelled context column after main.
@@ -767,6 +775,23 @@ the top at one viewport tall and scrolls its own overflow, and the
 content beneath it. The client router's scroll restore and fragment
 jumps keep working because the window stays the scroller. Sticky and
 Viewport are two scroll models; setting both panics.
+`BelowHeader: true` (with `Sticky`) is the same frame under a sticky
+page header: the nav column and the toolbar stick below
+`--size-header-height` instead of behind the header, and the column is
+the rest of the viewport tall, so a long menu scrolls on its own while
+the page scrolls beside it. Setting it without `Sticky` panics. The
+footer stays where the page layout puts it, full width below the row:
+
+```go
+layout := app.NewLayout("docs", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+	nav, _ := component.SafeRenderCtx(ctx, ui.Sidebar(cfg))
+	return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true, BelowHeader: true}, l.Primary())
+})
+```
+
+An `interactive.SectionMenu` in that column sets `FillColumn: true`:
+its rail drops its own sticky offset and viewport cap, fills the pinned
+column to the bottom of the screen and scrolls there.
 `PhoneNavFlush: true` drops the nav column's phone separator below the
 breakpoint — set it when the sidebar's phone navigation lives outside
 the column (a `NativeMobile` sidebar whose drawer trigger,

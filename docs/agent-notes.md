@@ -1,5 +1,14 @@
 # Agent notes
 
+## 2026-10-11 - Entity screen route and bodyless write contracts
+- Scope: `framework/entityui`, `core-ui/runtime`
+- Trigger: State buttons posted without the JSON header; app-owned create routes used `/new` while links assumed `/create` (#500, #502).
+- Approach: Set JSON content type on bodyless RPC writes; share create links through `UI.WithCreatePath`, preserving `<base>/create` defaults and access gates.
+- Evidence: `go test ./framework/uie2e -run TestEntityUI -count=1`; `TestRPCRequestContentTypes`; `TestCreatePathLinks`.
+- Next time: Test framework-drawn actions through a real browser and register create screens from the same path function used by the UI; see [entityui contracts](entityui-contracts.md).
+- Gotcha: WebMCP browser input formats vary; reuse `chromedptest.WebMCPExecuteExpr` for tool E2E calls instead of assuming a JSON string.
+- Status: active
+
 ## 2026-10-04 - Dev-loop eval: do agents develop under `gofastr dev`?
 - Scope: `evals/dev-loop` (new), generated `CLAUDE.md`/`AGENTS.md`/`gofastr-host` skill, `evals/ui-quality` builder prompt
 - Trigger: Make sure agents working in a GoFastr app use hot reload instead of `go run .` and manual restarts.

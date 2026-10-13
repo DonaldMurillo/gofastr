@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os/exec"
 	"sync"
 	"testing"
@@ -24,7 +25,7 @@ func TestDevRebuildBlocksOnA11yFindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("isolation: %v", err)
 	}
-	if buildAndServe(root, ".", "localhost:0", rt, &mu, &cmd, false) {
+	if buildAndServe(root, ".", "localhost:0", rt, &mu, &cmd, false, nil) {
 		t.Fatal("buildAndServe started a server despite a11y findings")
 	}
 }
@@ -33,10 +34,10 @@ func TestDevA11yGateSkippedWithNoA11y(t *testing.T) {
 	root := writeA11yTree(t, map[string]string{
 		"app/screen.go": badScreen,
 	})
-	if !devA11yGate(root, true) {
+	if !devA11yGate(root, true, io.Discard) {
 		t.Fatal("--no-a11y must skip the gate")
 	}
-	if devA11yGate(root, false) {
+	if devA11yGate(root, false, io.Discard) {
 		t.Fatal("gate must block without --no-a11y")
 	}
 }

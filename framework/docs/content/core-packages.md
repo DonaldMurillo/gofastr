@@ -209,7 +209,15 @@ and silently cost the block its syntax highlighting.
 
 A hardened file server for `embed.FS` / `fs.FS`: ETag caching,
 configurable `Cache-Control`, MIME detection, SPA fallback, and
-traversal / dotfile / forbidden-config rejection. On a disk-backed
+traversal / dotfile / forbidden-config rejection. Seekable files (disk,
+`embed.FS`) are served through `http.ServeContent`, so `Range`,
+`If-Range` and multi-range requests get `206` and video can seek; a
+filesystem whose files cannot seek gets the whole body and no
+`Accept-Ranges`. Preconditions follow RFC 9110 order (`412` for a
+failed `If-Match` before any `304`). The ETag is a content hash; a file
+over 16 MiB is hashed in the background and served without an ETag
+until the hash lands, so the first request does not read the whole
+file. On a disk-backed
 `FS` (`os.DirFS`), a request whose target resolves through a symlink
 out of the root is refused with 404 — the read side is contained by
 the configured root the same way write sinks elsewhere in the repo

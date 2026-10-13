@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -177,6 +178,101 @@ last.scrollIntoView({block:'nearest'});
 const lr=last.getBoundingClientRect(), f2=foot.getBoundingClientRect();
 if(lr.bottom>f2.top+0.5)return 'the last link cannot be scrolled clear of the collapse row';
 if(scrollY!==0)return 'scrolling the nav moved the window';
+return ""})()`, &result)); err != nil {
+		t.Fatal(err)
+	}
+	if result != "" {
+		t.Fatal(result)
+	}
+}
+
+// A BelowHeader row under a sticky page header pins its nav column
+// below the header (never behind it), the rest of the viewport tall,
+// while the window scrolls the page; the page footer below the row
+// keeps the full width.
+func TestContentRowStickyBelowHeader(t *testing.T) {
+	site := app.NewApp("Below header")
+	items := make([]ui.SidebarItem, 40)
+	for i := range items {
+		items[i] = ui.SidebarItem{Label: fmt.Sprintf("Item %d", i), Href: fmt.Sprintf("/i/%d", i)}
+	}
+	nav, _ := component.SafeRenderCtx(context.Background(), ui.Sidebar(ui.SidebarConfig{NavLabel: "Pages", Items: items}))
+	paras := make([]render.HTML, 120)
+	for i := range paras {
+		paras[i] = html.Paragraph(html.TextConfig{}, render.Text(fmt.Sprintf("Paragraph %d", i)))
+	}
+	header := ui.Sticky(ui.StickyConfig{}, html.Header(html.HeaderConfig{}, render.Text("Header")))
+	page := ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+		header,
+		ui.ContentRow(ui.ContentRowConfig{Sticky: true, BelowHeader: true, Sidebar: nav},
+			html.Main(html.MainConfig{}, paras...)),
+		html.Footer(html.FooterConfig{ContentInfo: true}, render.Text("Colophon")))
+	site.RegisterScreen(app.NewScreen("/", app.NewStaticComponent(page)), nil)
+	host := uihost.New(site)
+	fw := framework.NewApp()
+	fw.Use(host.RouteMatchMiddleware())
+	fw.Mount(host)
+	if err := fw.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(fw.Router())
+	defer srv.Close()
+	ctx := chromedptest.Context(t)
+	var result string
+	if err := chromedp.Run(ctx, chromedp.EmulateViewport(1280, 800), chromedp.Navigate(srv.URL+"/"), chromedp.Poll(`!!window.__gofastr`, nil),
+		chromedp.Evaluate(`(()=>{const q=s=>document.querySelector(s), r=e=>e.getBoundingClientRect();
+const hh=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--size-header-height'))||56;
+const nav=q('.fui-content-row__nav'), foot=q('footer');
+if(Math.round(r(nav).height)!==Math.round(innerHeight-hh))return 'nav column is '+r(nav).height+'px, not the viewport less the '+hh+'px header';
+scrollTo(0, 1500);
+if(scrollY<1000)return 'the window did not scroll';
+if(Math.round(r(nav).top)!==Math.round(hh))return 'nav column top is '+r(nav).top+', not under the '+hh+'px header';
+if(Math.round(r(nav).height)!==Math.round(innerHeight-hh))return 'nav column is '+r(nav).height+'px once scrolled';
+if(Math.round(r(foot).left)!==0||Math.round(r(foot).width)!==innerWidth)return 'the footer is not full width: '+r(foot).left+' / '+r(foot).width;
+return ""})()`, &result)); err != nil {
+		t.Fatal(err)
+	}
+	if result != "" {
+		t.Fatal(result)
+	}
+}
+
+// An interactive.SectionMenu with FillColumn in a BelowHeader row fills
+// the pinned nav column to the viewport's bottom edge and scrolls its
+// rail there, with no dead strip under the rail.
+func TestContentRowBelowHeaderSectionMenuFillsColumn(t *testing.T) {
+	site := app.NewApp("Fill column")
+	items := make([]interactive.SectionItem, 60)
+	for i := range items {
+		items[i] = interactive.SectionItem{Label: fmt.Sprintf("Item %d", i), Href: fmt.Sprintf("/i/%d", i)}
+	}
+	menu := interactive.SectionMenu(interactive.SectionMenuConfig{FillColumn: true,
+		Groups: []interactive.SectionGroup{{Label: "All", Items: items}}})
+	page := ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+		ui.Sticky(ui.StickyConfig{}, html.Header(html.HeaderConfig{}, render.Text("Header"))),
+		ui.ContentRow(ui.ContentRowConfig{Sticky: true, BelowHeader: true, Sidebar: menu},
+			html.Main(html.MainConfig{}, render.Text("Body"))))
+	site.RegisterScreen(app.NewScreen("/", app.NewStaticComponent(page)), nil)
+	host := uihost.New(site)
+	fw := framework.NewApp()
+	fw.Use(host.RouteMatchMiddleware())
+	fw.Mount(host)
+	if err := fw.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(fw.Router())
+	defer srv.Close()
+	ctx := chromedptest.Context(t)
+	var result string
+	if err := chromedp.Run(ctx, chromedp.EmulateViewport(1280, 800), chromedp.Navigate(srv.URL+"/"), chromedp.Poll(`!!window.__gofastr`, nil),
+		chromedp.Evaluate(`(()=>{const r=e=>e.getBoundingClientRect();
+const nav=document.querySelector('.fui-content-row__nav'), rail=document.querySelector('.cui-section-menu__rail');
+if(Math.abs(r(nav).bottom-innerHeight)>1)return 'nav column ends at '+r(nav).bottom+', not the viewport bottom '+innerHeight;
+if(Math.abs(r(rail).bottom-r(nav).bottom)>1)return 'rail ends at '+r(rail).bottom+', short of the column bottom '+r(nav).bottom;
+if(rail.scrollHeight<=rail.clientHeight)return 'rail does not overflow, so the check proves nothing';
+rail.scrollTop=400;
+if(rail.scrollTop<100)return 'rail does not scroll';
+if(nav.scrollHeight>nav.clientHeight+1)return 'the column scrolls too: a second scroller around the rail';
 return ""})()`, &result)); err != nil {
 		t.Fatal(err)
 	}

@@ -131,3 +131,22 @@ func TestContentRowStickyRefusesViewport(t *testing.T) {
 	}()
 	ContentRow(ContentRowConfig{Sticky: true, Viewport: true}, render.Text("main"))
 }
+
+// BelowHeader offsets the Sticky frame, so a row asking for it without
+// Sticky is refused rather than drawn with the option ignored.
+func TestContentRowBelowHeaderRequiresSticky(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("ContentRow drew a BelowHeader row without Sticky")
+		}
+	}()
+	ContentRow(ContentRowConfig{BelowHeader: true}, render.Text("main"))
+}
+
+// BelowHeader marks the root so the sticky frame offsets by the header.
+func TestContentRowBelowHeaderMarksRoot(t *testing.T) {
+	out := renderRow(t, ContentRowConfig{Sticky: true, BelowHeader: true}, render.HTML("<main>M</main>"))
+	if !strings.Contains(out, "fui-content-row--below-header") {
+		t.Errorf("BelowHeader should mark the root:\n%s", out)
+	}
+}

@@ -1,7 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -90,6 +93,14 @@ func runDev(args []string) {
 	}
 	fmt.Println()
 
+	// Hold the address until the first build is up, and whenever the app
+	// is down after it. A busy address fails here, before any build.
+	hold, err := holdDevAddr(resolvedAddr)
+	if err != nil {
+		fail("%v", err)
+		osExit(1)
+	}
+
 	var (
 		mu       sync.Mutex
 		server   *exec.Cmd
@@ -101,7 +112,7 @@ func runDev(args []string) {
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	// Build and start the server initially
-	if !buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y) {
+	if !buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y, hold) {
 		fail("Initial build failed. Fixing and saving will retry")
 	}
 
@@ -140,6 +151,7 @@ func runDev(args []string) {
 			fmt.Println()
 			info("Shutting down...")
 			killServer(&mu, &server)
+			hold.release()
 			// Remove the whole minted dir: the binary inside plus the dir
 			// itself, so restarts don't accumulate either.
 			if dir := devServerBinDir(); dir != "" {
@@ -151,7 +163,8 @@ func runDev(args []string) {
 			fmt.Println()
 			info("Change detected; rebuilding...")
 			killServer(&mu, &server)
-			if buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y) {
+			hold.show(holdBuilding, "")
+			if buildAndServe(dir, pkg, resolvedAddr, runtimeIsolation, &mu, &server, noA11y, hold) {
 				success("Reloaded!")
 				// After the reload, never before it: analysis takes about
 				// a second, and a second added to every save is the
@@ -266,51 +279,57 @@ func devServerBinaryPath(runtimeIsolation *isolation.Runtime) string {
 	return filepath.Join(dir, name)
 }
 
+// holdDevAddr starts the hold on the dev address. An address with port
+// 0 has no fixed place for a browser to wait on, so it gets no hold.
+func holdDevAddr(addr string) (*devHold, error) {
+	if _, port, err := net.SplitHostPort(addr); err != nil || port == "0" {
+		return nil, nil
+	}
+	hold, err := newDevHold(addr)
+	if addrInUse(err) {
+		return nil, fmt.Errorf("%s is already in use. If another gofastr dev serves it, use that one: it rebuilds on every save. Otherwise stop what holds the port or pass --addr", addr)
+	}
+	if err != nil {
+		warn("Could not hold %s during builds: %v", addr, err)
+		return nil, nil
+	}
+	return hold, nil
+}
+
+// addrInUse reports a bind refused because something already listens
+// there. Windows reports WSAEADDRINUSE (10048), which syscall.EADDRINUSE
+// does not match on that platform.
+func addrInUse(err error) bool {
+	var errno syscall.Errno
+	return errors.Is(err, syscall.EADDRINUSE) || (errors.As(err, &errno) && errno == 10048)
+}
+
 // devA11yGate runs the same static accessibility lint `gofastr build`
 // enforces, against the dev watch root. Kept as its own decision func so
-// the skip semantics are testable without compiling a project.
-func devA11yGate(dir string, noA11y bool) bool {
+// the skip semantics are testable without compiling a project. It also
+// copies the report to out, for the hold page.
+func devA11yGate(dir string, noA11y bool, out io.Writer) bool {
 	if noA11y {
 		return true
 	}
-	if !buildA11yGate(dir) {
-		fail("Accessibility lint failed. Fix the findings above (guided), or run with --no-a11y")
+	if !buildA11yGateTo(dir, io.MultiWriter(os.Stdout, out), io.MultiWriter(os.Stderr, out)) {
+		const msg = "Accessibility lint failed. Fix the findings above (guided), or run with --no-a11y"
+		fail(msg)
+		fmt.Fprintln(out, msg)
 		return false
 	}
 	return true
 }
 
-func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd, noA11y bool) bool {
-	// Same posture as `gofastr build`: the static a11y lint gates the
-	// rebuild by default. Failing here is a build failure: the watch
-	// loop keeps running and the next save retries.
-	if !devA11yGate(dir, noA11y) {
+// buildAndServe runs the gates, builds, and starts the app. A failure
+// leaves hold showing the output; a nil hold (tests on :0) skips that.
+func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd, noA11y bool, hold *devHold) bool {
+	out := &holdOutput{}
+	if !buildGatesAndBinary(dir, pkg, runtimeIsolation, mu, cmd, noA11y, out) {
+		hold.show(holdBuildFailed, out.String())
 		return false
 	}
-	// Same posture as `gofastr build`: the .ui.go hydration-sandbox lint
-	// (no goroutines/channels/unsafe imports) gates the rebuild too, and is
-	// not skipped by --no-a11y; a violating .ui.go breaks hydration.
-	if !buildSandboxGate(dir) {
-		return false
-	}
-
 	tmpBin := devServerBinaryPath(runtimeIsolation)
-	if tmpBin == "" {
-		fail("Could not create a private temp dir for the dev server binary")
-		return false
-	}
-	buildCmd := exec.Command("go", "build", "-o", tmpBin, pkg)
-	buildCmd.Dir = dir // Run from the project dir so go build resolves the local module.
-	buildCmd.Stdout = os.Stdout
-	buildCmd.Stderr = os.Stderr
-
-	mu.Lock()
-	*cmd = buildCmd
-	mu.Unlock()
-
-	if err := runBuildWithHeartbeat(buildCmd, dir); err != nil {
-		return false
-	}
 
 	// Start the server. GOFASTR_DEV=1 signals to framework.NewApp +
 	// uihost.New that this process is under `gofastr dev`, so they
@@ -333,8 +352,11 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 	*cmd = runCmd
 	mu.Unlock()
 
+	// Hand the address to the app: it binds it itself.
+	hold.release()
 	if err := runCmd.Start(); err != nil {
 		fail("Failed to start: %v", err)
+		hold.show(holdBuildFailed, fmt.Sprintf("Failed to start the app: %v", err))
 		return false
 	}
 
@@ -343,12 +365,65 @@ func buildAndServe(dir, pkg, addr string, runtimeIsolation *isolation.Runtime, m
 	// coverage tests swap os.Stdout around buildAndServe; reading the
 	// global here later would race that restore.
 	go func(stdout *os.File) {
-		if err := runCmd.Wait(); err != nil {
+		err := runCmd.Wait()
+		if err != nil {
 			fmt.Fprintf(stdout, "\n%s\n", infoString("Server exited"))
+		}
+		// killServer clears *cmd under mu before this can read it, so an
+		// app still current here stopped on its own: hold the address.
+		// The show runs under mu too. Unlocked, a kill and rebuild could
+		// land between the check and the show, and this stale exit would
+		// take the address back from the app that rebuild started.
+		mu.Lock()
+		defer mu.Unlock()
+		if *cmd == runCmd {
+			status := "the app exited"
+			if err != nil {
+				status = err.Error()
+			}
+			hold.show(holdExited, status)
 		}
 	}(os.Stdout)
 
 	return true
+}
+
+// buildGatesAndBinary runs the rebuild's gates and go build, copying
+// their output to out as well as the terminal.
+func buildGatesAndBinary(dir, pkg string, runtimeIsolation *isolation.Runtime, mu *sync.Mutex, cmd **exec.Cmd, noA11y bool, out io.Writer) bool {
+	// Same posture as `gofastr build`: the static a11y lint gates the
+	// rebuild by default. Failing here is a build failure: the watch
+	// loop keeps running and the next save retries.
+	if !devA11yGate(dir, noA11y, out) {
+		return false
+	}
+	// Same posture as `gofastr build`: the .ui.go hydration-sandbox lint
+	// (no goroutines/channels/unsafe imports) gates the rebuild too, and is
+	// not skipped by --no-a11y; a violating .ui.go breaks hydration.
+	if !buildSandboxGateTo(dir, io.MultiWriter(os.Stdout, out), io.MultiWriter(os.Stderr, out)) {
+		return false
+	}
+
+	tmpBin := devServerBinaryPath(runtimeIsolation)
+	if tmpBin == "" {
+		const msg = "Could not create a private temp dir for the dev server binary"
+		fail(msg)
+		fmt.Fprintln(out, msg)
+		return false
+	}
+	buildCmd := exec.Command("go", "build", "-o", tmpBin, pkg)
+	buildCmd.Dir = dir // Run from the project dir so go build resolves the local module.
+	buildCmd.Stdout = io.MultiWriter(os.Stdout, out)
+	buildCmd.Stderr = io.MultiWriter(os.Stderr, out)
+	// go build's compile children exit with it; the delay only bounds a
+	// stray one holding the output pipe open.
+	buildCmd.WaitDelay = 5 * time.Second
+
+	mu.Lock()
+	*cmd = buildCmd
+	mu.Unlock()
+
+	return runBuildWithHeartbeat(buildCmd, dir) == nil
 }
 
 // runBuildWithHeartbeat waits out the dev build, printing a progress

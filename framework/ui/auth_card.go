@@ -19,6 +19,11 @@ type AuthCardConfig struct {
 	// Alert is an optional message shown above the body, typically a
 	// failed-login notice. Empty renders nothing.
 	Alert render.HTML
+	// Notice is an optional non-error message shown above the body, such
+	// as "Account created. Sign in to continue." It renders as a polite
+	// status in the success tone, never in the danger-styled Alert slot.
+	// Empty renders nothing.
+	Notice render.HTML
 	// Body is the card contents, typically a ui.Form.
 	Body render.HTML
 	// Footer is an optional row below the body, e.g. a "Create an
@@ -35,12 +40,12 @@ type AuthCardConfig struct {
 
 // AuthCard renders a centered, constrained auth card.
 func AuthCard(cfg AuthCardConfig) render.HTML {
-	// The panel holds only the title when Alert, Body and Footer are
+	// The panel holds only the title when Alert, Notice, Body and Footer are
 	// all empty — the whole panel is then the component's own — and
 	// holds a slot the moment any of them arrives, so the boundary
 	// moves down to the title alone and the panel is left for an owner
 	// to reach.
-	hasSlot := cfg.Alert != "" || cfg.Body != "" || cfg.Footer != ""
+	hasSlot := cfg.Alert != "" || cfg.Notice != "" || cfg.Body != "" || cfg.Footer != ""
 	var titleAttrs html.Attrs
 	if hasSlot {
 		titleAttrs = html.Attrs{"data-cui-internal": ""}
@@ -51,6 +56,9 @@ func AuthCard(cfg AuthCardConfig) render.HTML {
 	}
 	if cfg.Alert != "" {
 		inner = append(inner, html.Div(html.DivConfig{Class: "fui-auth-card__alert", Role: "alert"}, cfg.Alert))
+	}
+	if cfg.Notice != "" {
+		inner = append(inner, html.Div(html.DivConfig{Class: "fui-auth-card__notice", Role: "status"}, cfg.Notice))
 	}
 	if cfg.Body != "" {
 		inner = append(inner, cfg.Body)
@@ -106,6 +114,14 @@ func authCardCSS(_ style.Theme) string {
   color: var(--color-danger, #DC2626);
   background: color-mix(in srgb, var(--color-danger, #DC2626) 8%, transparent);
   border: var(--stroke-thin, 1px) solid color-mix(in srgb, var(--color-danger, #DC2626) 28%, transparent);
+  border-radius: var(--radii-lg, 10px);
+  padding: calc(var(--spacing-sm, 4px) * 2.5) calc(var(--spacing-sm, 4px) * 3);
+}
+[data-cui-comp="ui-auth-card"] .fui-auth-card__notice {
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-success, #16A34A);
+  background: color-mix(in srgb, var(--color-success, #16A34A) 8%, transparent);
+  border: var(--stroke-thin, 1px) solid color-mix(in srgb, var(--color-success, #16A34A) 28%, transparent);
   border-radius: var(--radii-lg, 10px);
   padding: calc(var(--spacing-sm, 4px) * 2.5) calc(var(--spacing-sm, 4px) * 3);
 }

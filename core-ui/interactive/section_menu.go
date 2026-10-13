@@ -63,6 +63,12 @@ type SectionMenuConfig struct {
 	// (data-cui-open) and SectionMenuDrawer. Required for the mobile sheet;
 	// must be unique per distinct menu on a site.
 	DrawerName string
+	// FillColumn is for a menu placed in a column its host already pins
+	// at a fixed height (a ui.ContentRow{Sticky: true} nav column): on
+	// desktop the rail drops its own sticky offset and viewport cap,
+	// fills the column top to bottom and scrolls its overflow there. In
+	// normal flow leave it off and the rail sticks on its own.
+	FillColumn bool
 	Class      string
 	ID         string
 }
@@ -97,6 +103,9 @@ func SectionMenu(cfg SectionMenuConfig) render.HTML {
 	children = append(children, html.Div(html.DivConfig{Class: "cui-section-menu__rail"}, sectionMenuBody(cfg, true)))
 
 	cls := "cui-section-menu"
+	if cfg.FillColumn {
+		cls += " cui-section-menu--fill"
+	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -353,6 +362,17 @@ func sectionMenuCSS(_ style.Theme) string {
     align-self: start;
     max-height: calc(100vh - var(--fui-section-menu-top, 1rem) - var(--spacing-md, 8px));
     overflow-y: auto;
+  }
+  /* FillColumn: the host pins the column, so the menu fills it and the
+     rail scrolls inside, with no sticky offset or viewport cap of its
+     own. In a column that grows with the page, 100% resolves to auto. */
+  :where([data-cui-comp="cui-section-menu"]).cui-section-menu--fill { display: flex; flex-direction: column; block-size: 100%; box-sizing: border-box; }
+  [data-cui-comp="cui-section-menu"].cui-section-menu--fill .cui-section-menu__rail {
+    position: static;
+    flex: 1 1 auto;
+    min-block-size: 0;
+    max-height: none;
+    overscroll-behavior: contain;
   }
   /* The rail shows every group expanded — collapse is a drawer behaviour. */
   [data-cui-comp="cui-section-menu"] .cui-section-menu__rail .cui-section-menu__list { display: block; }

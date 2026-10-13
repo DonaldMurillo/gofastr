@@ -340,6 +340,32 @@ type AuthManager struct {
 
 	mu      sync.RWMutex
 	started bool
+
+	// app and resolving feed the banner's "no auth is wired" hint. The
+	// app is noted only when Init has run AND a resolving middleware
+	// (SessionMiddleware, Middleware, or RequireAuth over JWT()) was
+	// built, in either order:
+	// Init alone mounts routes but signs nobody in.
+	app       *framework.App
+	resolving bool
+}
+
+// noteIfWired tells the app callers can be signed in, once both halves
+// exist. markResolving and Init each call it after recording their half.
+func (m *AuthManager) noteIfWired() {
+	m.mu.RLock()
+	app, ok := m.app, m.resolving
+	m.mu.RUnlock()
+	if app != nil && ok {
+		app.NoteAuthenticator()
+	}
+}
+
+func (m *AuthManager) markResolving() {
+	m.mu.Lock()
+	m.resolving = true
+	m.mu.Unlock()
+	m.noteIfWired()
 }
 
 // New creates a new AuthManager with the given configuration.
@@ -555,6 +581,7 @@ func (m *AuthManager) Init(app *framework.App) error {
 			expiry = time.Hour
 		}
 		m.jwtAuth = NewJWTAuth(m.config.JWTSecret, expiry)
+		m.jwtAuth.onResolve = m.markResolving
 		// Verify-only previous secrets for graceful JWTSecret rotation
 		// (sign with current; verify accepts current OR any previous).
 		m.jwtAuth.PreviousSecrets = m.config.JWTPreviousSecrets
@@ -600,6 +627,12 @@ func (m *AuthManager) Init(app *framework.App) error {
 
 	if app != nil {
 		m.RegisterRoutes(app.Router())
+		// Quiets the startup banner's "no auth is wired" line, but only
+		// once a resolving middleware exists too (see noteIfWired).
+		m.mu.Lock()
+		m.app = app
+		m.mu.Unlock()
+		m.noteIfWired()
 	}
 
 	return nil
@@ -650,6 +683,7 @@ func (m *AuthManager) RegisterRoutes(r *router.Router) {
 // Middleware returns a composed middleware chain from all plugins that
 // implement AuthPluginMiddleware. Middleware is applied in registration order.
 func (m *AuthManager) Middleware() func(http.Handler) http.Handler {
+	m.markResolving()
 	return func(next http.Handler) http.Handler {
 		// Apply plugin middleware in reverse order so the first registered
 		// plugin is the outermost middleware.

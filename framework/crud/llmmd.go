@@ -24,6 +24,10 @@ type LLMMDOptions struct {
 	// one layer down: the answer lives in the mount options, not the
 	// entity declaration).
 	ReadOnly bool
+	// Path is the full path the routes are mounted at, API and group
+	// prefixes included ("/api/posts"). Empty means "/<table>", behind the
+	// entity's Version when it has one.
+	Path string
 }
 
 // EntityLLMMD generates an LLM-friendly markdown document describing all
@@ -57,7 +61,10 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 
 	fmt.Fprintf(&b, "# %s\n\n", name)
 	resourcePath := "/" + table
-	if ent.Version != "" {
+	switch {
+	case opt.Path != "":
+		resourcePath = opt.Path
+	case ent.Version != "":
 		resourcePath = ent.Version + resourcePath
 	}
 	fmt.Fprintf(&b, "Resource: `%s`\n\n", resourcePath)
@@ -369,6 +376,10 @@ type MountInfo struct {
 	// List, Get-by-ID and _events routes exist; write and batch routes
 	// were never registered.
 	ReadOnly bool
+	// Path is the full path the CRUD routes are mounted at, API prefix and
+	// group prefix included (/api/tickets). Empty means the index derives
+	// it from the table name and Version.
+	Path string
 }
 
 // RegistryLLMMD generates a top-level LLM-friendly markdown index that
@@ -436,7 +447,11 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 		table := ent.GetTable()
 		basePath := "/" + table
 		llmLink := "/" + table + "/llm.md"
-		if ent.Version != "" {
+		switch {
+		case mount.Path != "":
+			basePath = mount.Path
+			llmLink = mount.Path + "/llm.md"
+		case ent.Version != "":
 			basePath = ent.Version + basePath
 			llmLink = ent.Version + "/" + table + "/llm.md"
 		}
