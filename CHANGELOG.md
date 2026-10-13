@@ -113,6 +113,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   An `agents` symlink is left as it is.
 
 ### Fixed
+- **A padded `ui.Container` lines up with the header and footer bands.**
+  A `ContainerPadPage` or `ContainerPadEnd` container of any `Width`
+  stepped its inline padding 8/16/24px while the bands used the page
+  gutter (`--size-page-gutter`), so on a phone page text sat 12px left of
+  the header brand. It now takes the page gutter at every width. Inside
+  an app frame's content area (`ui.ContentRow` with a `Sidebar`), whose
+  own padding is the gutter, it adds none, where a phone used to show
+  two gutters stacked.
 - **A `SectionMenu` with `FillColumn` insets its rail.** In a pinned
   column such as `ui.ContentRow`'s nav column, which has no padding, the
   rail's links ran into the column edges. The filled rail now pads itself

@@ -42,7 +42,11 @@ const (
 // ContainerPad picks the block padding: the page's rhythm between the
 // site header, the content and the footer. The two sizes are CSS
 // variables (--ui-container-pad-start, --ui-container-pad-end) a theme
-// can retune.
+// can retune. A padded container is page-level, so it also takes the
+// page gutter (--size-page-gutter) inline at every Width, the edge the
+// header and footer bands use; inside an app frame's content area
+// (ui.ContentRow with a Sidebar) the frame's padding is the gutter and
+// the container adds none.
 type ContainerPad string
 
 const (
@@ -171,6 +175,21 @@ func containerCSS(_ style.Theme) string {
   padding-inline: var(--ui-layout-gutter);
 }
 :where([data-cui-comp="ui-container"]).fui-container--full { max-inline-size: none; }
+/* A page-level container (Pad: Page or End) takes the band gutter at
+   every measure, the same gutter the page width uses, so a wide or
+   narrow page starts its text on the header and footer bands' edge
+   instead of the nested-container steps above. */
+:where([data-cui-comp="ui-container"]).fui-container--pad-page,
+:where([data-cui-comp="ui-container"]).fui-container--pad-end {
+  padding-inline: var(--size-page-gutter, clamp(20px, 5vw, 32px));
+}
+/* Inside an app frame (ui.ContentRow with a Sidebar) the content area
+   pads itself; that padding is the gutter, and a page container there
+   adds none, or a phone shows two gutters stacked. */
+:where(.fui-content-row--has-nav main, .fui-content-row--has-nav .layout-content) :where([data-cui-comp="ui-container"]).fui-container--pad-page,
+:where(.fui-content-row--has-nav main, .fui-content-row--has-nav .layout-content) :where([data-cui-comp="ui-container"]).fui-container--pad-end {
+  padding-inline: 0;
+}
 /* Start: pinned to the inline start inside a frame that owns the
    gutter. Later than the breakpoint padding rules at the same weight,
    so it wins at every width. */
