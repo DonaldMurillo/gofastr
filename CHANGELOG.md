@@ -48,6 +48,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   misreport (#503).
 
 ### Fixed
+- **`core/static` answers `Range` requests.** `Range: bytes=0-99` got
+  `200` and the whole file with no `Accept-Ranges`, so a video served by
+  `static.Handler` could not seek, Safari would not play an mp4 from it,
+  and an interrupted download restarted from zero. A seekable file now
+  goes through `http.ServeContent`: `206` with `Content-Range`,
+  multi-range, `416` for a range past the end, `If-Range`, and
+  `If-Match`/`If-Unmodified-Since` answered with `412`. A filesystem
+  whose files cannot seek keeps the full-body answer and advertises no
+  ranges. The `NotFoundFile` page ignores `Range` and preconditions,
+  which name the missing URL, not the page (#507).
+- **`core/static` no longer hashes a large file before serving it.**
+  The ETag was a SHA-256 of the content, so the first request for a
+  multi-GB video read the whole file before sending a byte. A file over
+  16 MiB with a real modtime now gets a strong `"<size>-<modtime>"` ETag
+  (hex, the shape nginx uses), which `If-Range` still matches. Smaller
+  files, and files with a zero or epoch modtime (`embed.FS`,
+  reproducible builds), keep the content hash (#507).
 - **`/api/llm.md` links honor `WithAPIPrefix`.** Under
   `WithAPIPrefix("/api")` the index linked each resource to
   `/<table>/llm.md` and showed unprefixed base paths, so every link

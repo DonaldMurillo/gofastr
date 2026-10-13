@@ -174,12 +174,15 @@ func Handler(config Config) http.Handler {
 }
 
 // serveNotFoundFile answers a miss with config.NotFoundFile under status
-// 404. The request loses its conditional headers so a cached ETag cannot
-// turn the miss into a 304, and the page carries no validators of its own.
+// 404. The request loses its Range and conditional headers: they name the
+// missing URL, not the page, so a cached ETag must not turn the miss into
+// a 304, an If-Match into a 412, or a Range into a slice of the page. The
+// page carries no validators of its own.
 func serveNotFoundFile(w http.ResponseWriter, r *http.Request, config Config) bool {
 	r2 := r.Clone(r.Context())
-	r2.Header.Del("If-None-Match")
-	r2.Header.Del("If-Modified-Since")
+	for _, h := range []string{"Range", "If-Range", "If-Match", "If-None-Match", "If-Modified-Since", "If-Unmodified-Since"} {
+		r2.Header.Del(h)
+	}
 	return serveFile(&notFoundWriter{ResponseWriter: w}, r2, config, strings.TrimPrefix(config.NotFoundFile, "/"))
 }
 
@@ -199,6 +202,7 @@ func (w *notFoundWriter) WriteHeader(code int) {
 		h := w.Header()
 		h.Del("ETag")
 		h.Del("Last-Modified")
+		h.Del("Accept-Ranges")
 		h.Set("Cache-Control", "no-cache")
 		code = http.StatusNotFound
 	}
@@ -304,6 +308,23 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	contentType := DetectFromName(name)
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	// A seekable handle (every *os.File, embed.FS and fstest.MapFS file)
+	// goes to http.ServeContent, which answers Range, multi-range,
+	// If-Range, If-Match and HEAD, sets Accept-Ranges, and sizes
+	// Content-Length to the part it sends. Setting Content-Length here
+	// would put the full size on a 206. ServeContent seeks the handle
+	// itself, so the read fileETag did on a cache miss needs no rewind.
+	// It reads the ETag set above for If-Range; the 304 answer stays with
+	// checkPreconditions so both branches share it.
+	if rs, ok := f.(io.ReadSeeker); ok {
+		http.ServeContent(w, r, name, modTime, rs)
+		return true
+	}
+
+	// fs.FS promises no seeking, so a conforming filesystem may hand back
+	// a read-only handle. It gets the whole body every time and no
+	// Accept-Ranges, since it cannot serve a range.
 	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
 
 	// HEAD: headers only, no body.
@@ -312,20 +333,12 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 		return true
 	}
 
-	// fileETag consumed the file on a cache miss; rewind before serving
-	// the body. We stream directly to the ResponseWriter so arbitrarily
+	// fileETag consumed the file on a cache miss, and this handle cannot
+	// rewind, so reopen it. Copying from the exhausted reader would answer
+	// 200 with an EMPTY body under the full Content-Length, a corrupt
+	// response. The body streams to the ResponseWriter, so arbitrarily
 	// large files are never buffered in memory.
-	//
-	// fs.FS promises no seeking, so a conforming filesystem may hand back
-	// a read-only handle. Reopen in that case: skipping the rewind would
-	// copy from an exhausted reader and answer 200 with an EMPTY body
-	// under the full Content-Length, a corrupt response.
-	if rs, ok := f.(io.Seeker); ok {
-		if _, err := rs.Seek(0, io.SeekStart); err != nil {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
-			return true
-		}
-	} else if consumed {
+	if consumed {
 		var reopened fs.File
 		if config.root != nil {
 			// Same kernel containment as the first open; *os.Root

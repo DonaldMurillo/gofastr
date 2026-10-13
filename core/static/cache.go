@@ -50,7 +50,12 @@ type digestKey struct {
 // serving the body.
 // The cache is the calling handler's own; a nil cache computes the digest
 // without memoising it.
+// A file above largeFileETagThreshold with a usable modtime is not read at
+// all: it gets statETag.
 func fileETag(cache *sync.Map, f fs.File, stat fs.FileInfo, name string) (string, bool, error) {
+	if stat.Size() > largeFileETagThreshold && usableModTime(stat.ModTime()) {
+		return statETag(stat), false, nil
+	}
 	key := digestKey{name: name, modTime: stat.ModTime().UnixNano(), size: stat.Size()}
 	if cache != nil {
 		if v, ok := cache.Load(key); ok {
@@ -149,4 +154,30 @@ func parseMaxAge(s string) time.Duration {
 		return time.Duration(n) * time.Second
 	}
 	return 0
+}
+
+// largeFileETagThreshold is the size above which fileETag stops hashing a
+// file that has a usable modtime. Hashing reads the whole file before the
+// first byte goes out, and for a multi-GB video that is seconds of disk
+// on the first request per revision. Below it the content hash stays: it
+// survives a redeploy that resets modtimes, where size+modtime does not.
+const largeFileETagThreshold = 16 << 20
+
+// statETag is the validator for a large file: its size and modtime in
+// hex, the shape nginx uses. It stays STRONG on purpose. If-Range only
+// matches a strong ETag, so a weak one would turn every resumed download
+// of exactly these files into a full restart. Size plus nanosecond modtime
+// changes with every rewrite that a filesystem records; usableModTime
+// keeps out the stamps that say nothing about the revision.
+func statETag(stat fs.FileInfo) string {
+	return `"` + strconv.FormatInt(stat.Size(), 16) + "-" + strconv.FormatInt(stat.ModTime().UnixNano(), 16) + `"`
+}
+
+// usableModTime reports whether a modtime can tell two revisions of a file
+// apart. embed.FS reports the zero time for every file, and reproducible
+// builds (Nix, SOURCE_DATE_EPOCH=0 images) stamp 0 or 1 on every file, so
+// two releases of a same-sized file would share a size+modtime ETag and a
+// client would resume a download across them.
+func usableModTime(t time.Time) bool {
+	return !t.IsZero() && t.Unix() > 1
 }
