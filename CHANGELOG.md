@@ -113,6 +113,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   An `agents` symlink is left as it is.
 
 ### Fixed
+- **A `SectionMenu` with `FillColumn` insets its rail.** In a pinned
+  column such as `ui.ContentRow`'s nav column, which has no padding, the
+  rail's links ran into the column edges. The filled rail now pads itself
+  (`--spacing-xl` block, `--spacing-lg` inline).
 - **`core/markdown` hides HTML comment blocks.** A `<!-- … -->` block
   rendered as escaped text, so every `<!-- gofastr:compile … -->`
   directive in the embedded docs showed on the site's doc pages and in

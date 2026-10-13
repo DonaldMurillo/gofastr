@@ -791,7 +791,9 @@ layout := app.NewLayout("docs", app.LayoutSpec{}, func(ctx context.Context, l *a
 
 An `interactive.SectionMenu` in that column sets `FillColumn: true`:
 its rail drops its own sticky offset and viewport cap, fills the pinned
-column to the bottom of the screen and scrolls there.
+column to the bottom of the screen and scrolls there. The column has no
+padding of its own, so the filled rail insets its links from the
+column's edges.
 `PhoneNavFlush: true` drops the nav column's phone separator below the
 breakpoint — set it when the sidebar's phone navigation lives outside
 the column (a `NativeMobile` sidebar whose drawer trigger,

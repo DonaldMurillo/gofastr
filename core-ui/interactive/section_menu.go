@@ -365,10 +365,12 @@ func sectionMenuCSS(_ style.Theme) string {
   }
   /* FillColumn: the host pins the column, so the menu fills it and the
      rail scrolls inside, with no sticky offset or viewport cap of its
-     own. In a column that grows with the page, 100% resolves to auto. */
+     own. In a column that grows with the page, 100% resolves to auto.
+     The host column is drawn edge to edge, so the rail insets itself. */
   :where([data-cui-comp="cui-section-menu"]).cui-section-menu--fill { display: flex; flex-direction: column; block-size: 100%; box-sizing: border-box; }
   [data-cui-comp="cui-section-menu"].cui-section-menu--fill .cui-section-menu__rail {
     position: static;
+    padding: var(--spacing-xl, 24px) var(--spacing-lg, 16px);
     flex: 1 1 auto;
     min-block-size: 0;
     max-height: none;

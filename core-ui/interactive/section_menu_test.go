@@ -172,3 +172,16 @@ func TestSectionMenuFillColumnMarksRoot(t *testing.T) {
 		t.Errorf("FillColumn should mark the root:\n%s", h)
 	}
 }
+
+// A filled rail sits in a column its host draws edge to edge (ContentRow's
+// nav column has no padding), so the rail insets its own links from the
+// column's edges.
+func TestSectionMenuFillColumnInsetsRail(t *testing.T) {
+	css := sectionMenuCSS(style.Theme{})
+	want := `.cui-section-menu--fill .cui-section-menu__rail {
+    position: static;
+    padding: var(--spacing-xl, 24px) var(--spacing-lg, 16px);`
+	if !strings.Contains(css, want) {
+		t.Errorf("filled rail has no inset; want %q in the section-menu CSS", want)
+	}
+}
