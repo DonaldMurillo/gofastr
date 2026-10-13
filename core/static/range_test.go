@@ -191,20 +191,6 @@ func TestRangeWithMatchingETagIs304(t *testing.T) {
 	}
 }
 
-// fs.FS promises no seeking. A handle that cannot seek keeps the full-body
-// answer and must not advertise ranges it cannot serve.
-func TestNonSeekableIgnoresRange(t *testing.T) {
-	base := fstest.MapFS{"clip.mp4": &fstest.MapFile{Data: rangeBody()}}
-	h := Handler(Config{FS: nonSeekableFS{inner: base}})
-	rec := serveWith(h, http.MethodGet, "/clip.mp4", map[string]string{"Range": "bytes=0-99"})
-	if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), rangeBody()) {
-		t.Fatalf("status %d with %d bytes, want 200 with the full 1000", rec.Code, rec.Body.Len())
-	}
-	if got := rec.Header().Get("Accept-Ranges"); got != "" {
-		t.Errorf("Accept-Ranges %q on a non-seekable handle, want none", got)
-	}
-}
-
 // The 404 page is not the resource the client asked for, so a Range or
 // a precondition aimed at the missing URL must not slice or 412 it.
 func TestNotFoundPageIgnoresRange(t *testing.T) {
@@ -491,15 +477,24 @@ func (r rewindOnlyFS) Open(name string) (fs.File, error) {
 	return rewindOnlyFile{f}, nil
 }
 
-func TestRewindOnlySeekerServesFull(t *testing.T) {
+// fs.FS promises no seeking, and ServeContent needs Seek to the end as
+// well as a rewind. A handle that cannot do both keeps the full-body
+// answer and must not advertise ranges it cannot serve.
+func TestUnseekableHandleServesFull(t *testing.T) {
 	mem := fstest.MapFS{"clip.mp4": &fstest.MapFile{Data: rangeBody()}}
-	h := Handler(Config{FS: rewindOnlyFS{inner: mem}})
-	rec := serveWith(h, http.MethodGet, "/clip.mp4", map[string]string{"Range": "bytes=0-99"})
-	if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), rangeBody()) {
-		t.Fatalf("status %d with %d bytes, want 200 with the full 1000", rec.Code, rec.Body.Len())
-	}
-	if got := rec.Header().Get("Accept-Ranges"); got != "" {
-		t.Errorf("Accept-Ranges %q from a handle ServeContent cannot use, want none", got)
+	for name, fsys := range map[string]fs.FS{
+		"no Seek":     nonSeekableFS{inner: mem},
+		"rewind only": rewindOnlyFS{inner: mem},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := serveWith(Handler(Config{FS: fsys}), http.MethodGet, "/clip.mp4", map[string]string{"Range": "bytes=0-99"})
+			if rec.Code != http.StatusOK || !bytes.Equal(rec.Body.Bytes(), rangeBody()) {
+				t.Fatalf("status %d with %d bytes, want 200 with the full 1000", rec.Code, rec.Body.Len())
+			}
+			if got := rec.Header().Get("Accept-Ranges"); got != "" {
+				t.Errorf("Accept-Ranges %q, want none", got)
+			}
+		})
 	}
 }
 
