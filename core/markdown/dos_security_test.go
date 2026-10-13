@@ -347,3 +347,11 @@ func TestMarkdown_GiantBacktickRunNoInt32Wrap(t *testing.T) {
 		t.Fatalf("len(doc.HTML) = %d, want %d", len(got), want)
 	}
 }
+
+// TestMarkdown_UnclosedCommentsLinear pins that a document of comment
+// openers with no closing "-->" renders in linear time. Each opener scans
+// ahead for its close; without remembering the failed scan, 40k openers
+// scan 40k suffixes.
+func TestMarkdown_UnclosedCommentsLinear(t *testing.T) {
+	renderWithin(t, "unclosed comments", strings.Repeat("<!--\n", 40000), 1500*time.Millisecond)
+}
