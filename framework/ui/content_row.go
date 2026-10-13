@@ -274,7 +274,7 @@ func contentRowCSS(_ style.Theme) string {
 // leave it nothing to stick within.
 func (b rowBreakpointCSS) stickyCSS() string {
 	css := fmt.Sprintf(`@media (min-width: %s) {
-  .fui-content-row--sticky:SCOPE: .fui-content-row__nav { position: sticky; inset-block-start: var(--fui-content-row-top); align-self: flex-start; block-size: calc(100dvh - var(--fui-content-row-top)); overflow-y: auto; overscroll-behavior: contain; }
+  .fui-content-row--sticky:SCOPE: .fui-content-row__nav { position: sticky; inset-block-start: var(--fui-content-row-top); align-self: flex-start; block-size: calc(100dvh - var(--fui-content-row-top)); overflow-y: auto; overscroll-behavior: contain; --ui-sticky-top: 0px; }
 }
 `, b.minw)
 	return strings.ReplaceAll(css, ":SCOPE:", b.scope)
@@ -295,7 +295,7 @@ func (b rowBreakpointCSS) viewportCSS() string {
   .fui-content-row--viewport:SCOPE: > main,
   .fui-content-row--viewport:SCOPE: > .layout-content,
   .fui-content-row--viewport:SCOPE: .fui-content-row__workspace > main,
-  .fui-content-row--viewport:SCOPE: .fui-content-row__workspace > .layout-content { min-block-size: 0; overflow-y: auto; }
+  .fui-content-row--viewport:SCOPE: .fui-content-row__workspace > .layout-content { min-block-size: 0; overflow-y: auto; --ui-sticky-top: 0px; }
   .fui-content-row--viewport:SCOPE: > main,
   .fui-content-row--viewport:SCOPE: .fui-content-row__workspace > main,
   .fui-content-row--viewport:SCOPE: > .layout-content,

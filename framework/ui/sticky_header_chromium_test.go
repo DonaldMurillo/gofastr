@@ -38,13 +38,23 @@ func TestStackStickyHeaderOffsetsStickyParts(t *testing.T) {
 	knob := render.Tag("div", map[string]string{"id": "knob", "style": "--ui-step-rail-top: 4px"}, rail)
 	menu := interactive.SectionMenu(interactive.SectionMenuConfig{
 		Groups: []interactive.SectionGroup{{Label: "All", Items: []interactive.SectionItem{{Label: "One", Href: "#one"}}}}})
+	wrap := func(id string, h render.HTML) render.HTML { return render.Tag("div", map[string]string{"id": id}, h) }
+	parts := []render.HTML{
+		wrap("plain", rail), knob, menu,
+		wrap("toc", ui.TableOfContents(ui.TOCConfig{Sticky: true, Items: []ui.TOCItem{{ID: "a", Label: "A"}}})),
+		wrap("anchored", ui.AnchoredRail(ui.AnchoredRailConfig{Label: "Rail", Items: []ui.RailItem{{Anchor: "a", Text: "A"}}})),
+		wrap("search", ui.GlobalSearch(ui.GlobalSearchConfig{ID: "gs", Name: "q", Label: "Search", RPCPath: "/search", SignalName: "results", NoScriptAction: "/search", Sticky: true})),
+		wrap("retry", ui.NetworkRetryBanner(ui.NetworkRetryBannerConfig{HealthEndpoint: "/health"})),
+		wrap("sticky", ui.Sticky(ui.StickyConfig{}, render.Text("Pinned"))),
+		wrap("stickylg", ui.Sticky(ui.StickyConfig{Offset: ui.StickyOffsetLg}, render.Text("Pinned lg"))),
+		wrap("bounded", ui.Box(ui.BoxConfig{Bounded: true}, render.Text("Window"))),
+		ui.Stack(ui.StackConfig{}, paras...),
+	}
 	page := ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},
 		render.Tag("div", map[string]string{"id": "strip"}, render.Text("Announcement")),
 		html.Header(html.HeaderConfig{Banner: true, Class: "bar"}, render.Text("Header")),
 		ui.ContentRow(ui.ContentRowConfig{Sticky: true, Sidebar: render.Text("Nav"), Toolbar: render.Text("Trail")},
-			html.Main(html.MainConfig{}, ui.Grid(ui.GridConfig{Min: "10rem"},
-				render.Tag("div", map[string]string{"id": "plain"}, rail), knob, menu,
-				ui.Stack(ui.StackConfig{}, paras...)))))
+			html.Main(html.MainConfig{}, ui.Grid(ui.GridConfig{Min: "4rem"}, parts...))))
 	srv := themeTestPageWithHead(t, head, string(page))
 	ctx := moduleTestCtxURL(t, srv.URL, chromedp.EmulateViewport(1280, 800))
 	var result string
@@ -52,6 +62,7 @@ func TestStackStickyHeaderOffsetsStickyParts(t *testing.T) {
 		const q = s => document.querySelector(s), top = e => Math.round(e.getBoundingClientRect().top);
 		const px = v => { const d = document.createElement('div'); d.style.height = v; document.body.appendChild(d); const h = d.getBoundingClientRect().height; d.remove(); return Math.round(h); };
 		const hh = px('var(--size-header-height)'), gap = px('var(--spacing-xl)');
+		q('#retry [data-cui-comp="ui-network-retry-banner"]').hidden = false;
 		scrollTo(0, 2000);
 		if (scrollY < 1000) return 'the window did not scroll';
 		if (top(q('#strip')) >= 0) return 'the strip above the header did not scroll away';
@@ -64,9 +75,21 @@ func TestStackStickyHeaderOffsetsStickyParts(t *testing.T) {
 			'step rail': [q('#plain [data-cui-comp="ui-step-rail"]'), bar + gap],
 			'step rail with its knob': [q('#knob [data-cui-comp="ui-step-rail"]'), bar + 4],
 			'section menu rail': [q('.cui-section-menu__rail'), bar + 16],
+			'table of contents': [q('#toc nav'), bar + px('var(--spacing-lg)')],
+			'anchored rail': [q('#anchored [data-cui-comp="ui-anchored-rail"]'), bar + px('var(--spacing-lg)')],
+			'global search': [q('#search [data-cui-comp="ui-global-search"]'), bar + px('var(--spacing-md)')],
+			'network retry banner': [q('#retry [data-cui-comp="ui-network-retry-banner"]'), bar],
+			'sticky': [q('#sticky [data-cui-comp="ui-sticky"]'), bar],
+			'sticky with an offset': [q('#stickylg [data-cui-comp="ui-sticky"]'), bar + px('var(--spacing-lg)')],
 		};
 		for (const [name, [el, at]] of Object.entries(want)) {
 			if (top(el) !== at) return name + ' sticks at ' + top(el) + 'px; want ' + at + 'px under the ' + hh + 'px header';
+		}
+		// A region that scrolls on its own pins its sticky parts to its
+		// own top, not under the page header.
+		for (const [name, el] of [['bounded box', q('#bounded [data-cui-comp="ui-layout"]')], ['pinned nav column', q('.fui-content-row__nav')]]) {
+			const v = getComputedStyle(el).getPropertyValue('--ui-sticky-top').trim();
+			if (v !== '0px') return name + ' passes --ui-sticky-top ' + v + ' to its sticky parts; want 0px';
 		}
 		return '';
 	})()`

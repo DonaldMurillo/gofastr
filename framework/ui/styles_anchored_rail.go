@@ -21,7 +21,8 @@ func anchoredRailCSS(t style.Theme) string {
 		Rule("&").
 		Set(
 			"position", "sticky",
-			"top", "calc(var(--nav-h, 60px) + var(--spacing-lg, 16px))",
+			// --ui-sticky-top: under a StickyHeader page's header, or the window's top.
+			"top", "calc(var(--ui-sticky-top, 0px) + var(--spacing-lg, 16px))",
 			"align-self", "start",
 			"font-size", "var(--text-sm, 0.875rem)",
 		).End().

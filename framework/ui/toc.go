@@ -102,9 +102,11 @@ func tocCSS(_ style.Theme) string {
 }
 :where([data-cui-comp="ui-toc"]).fui-toc--sticky {
   position: sticky;
-  inset-block-start: var(--spacing-lg, 16px);
+  /* --ui-sticky-top is where sticky parts start: under a StickyHeader
+     page's header, or the window's top. */
+  inset-block-start: calc(var(--ui-sticky-top, 0px) + var(--spacing-lg, 16px));
   align-self: start;
-  max-block-size: calc(100vh - var(--spacing-sm, 4px) * 16);
+  max-block-size: calc(100vh - var(--ui-sticky-top, 0px) - var(--spacing-sm, 4px) * 16);
   overflow-y: auto;
 }
 [data-cui-comp="ui-toc"]::before {

@@ -757,9 +757,14 @@ landmark) while the page scrolls, and says where it ends: the stack
 publishes the header's height, `--size-header-height`, as
 `--ui-sticky-top`, and every sticky part inside the page reads it. A
 `Sticky` content row's nav column and toolbar, a `ui.StepRail`, an
-`interactive.SectionMenu` rail, a `FormFrame` side panel and an
-anchored `ui.Section` all stop under the header instead of sliding
-behind it, at any layer depth, with no flag of their own. Children
+`interactive.SectionMenu` rail, a `ui.TableOfContents`, a
+`ui.AnchoredRail`, a `ui.GlobalSearch`, a `ui.NetworkRetryBanner`, a
+top-edge `ui.Sticky`, a `FormFrame` side panel and an anchored
+`ui.Section` all stop under the header instead of sliding behind it, at
+any layer depth, with no flag of their own. A region that scrolls on
+its own (a bounded `ui.Box`, the pinned nav column, a `ui.ListDetail`
+list, the PaneHost drawer) resets the offset to 0, so a sticky part
+inside it pins to that region's top. Children
 above the header (an announcement strip) scroll away. The header's own
 style sheet leaves positioning to the stack, and its bar is that token
 tall. An owned sheet that pins something of its own (a docs rail)

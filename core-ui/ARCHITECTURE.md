@@ -1622,6 +1622,24 @@ narrow list without moving filter logic into JavaScript.
 `StackConfig.TrimMargins` lets the stack's gap own paragraph spacing
 without also adding the browser's paragraph margins.
 
+**Sticky offsets are a layout fact, never a component flag.** The page
+layout declares a sticky header once: `StackConfig.StickyHeader` pins
+the stack's `<header>` child and publishes `--size-header-height` as
+`--ui-sticky-top`. Every top-sticky part in the kit (ContentRow's
+`Sticky` frame, StepRail, SectionMenu's rail, TableOfContents,
+AnchoredRail, GlobalSearch, NetworkRetryBanner, `ui.Sticky`, FormFrame's
+side panel, an anchored Section's scroll margin) sticks at
+`calc(var(--ui-sticky-top, 0px) + <its own gap>)`, so it stops under
+the header at any layer depth with no `BelowHeader` option. A part that
+pins something above its children re-publishes the variable on a child
+it does not read it from (ContentRow's workspace adds the toolbar's
+height); redefining it on the element that reads it makes the property
+refer to itself. A region that scrolls on its own (a bounded Box,
+ContentRow's pinned nav column and Viewport columns, ListDetail's list,
+the PaneHost drawer, the Workbench rail) resets it to `0px`, because its
+sticky parts pin to its top, not the window's. A new top-sticky part
+reads the variable; a new self-scrolling region resets it.
+
 `ui.ContentRow` owns an optional labelled aside and toolbar placement.
 Its aside observes an empty outlet by the same CSS rule. `ui.ListDetail`
 owns a list scroll container beside a detail region, with detail first on phones.

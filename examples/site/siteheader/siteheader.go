@@ -18,8 +18,9 @@
 //     the nav links (data-cui-match-prefix keeps a section link lit).
 //
 // The bar is the page's banner landmark and a direct child of the
-// page-tall ui.Stack, which is what lets it stay pinned for the whole
-// page while content scrolls under it.
+// page-tall ui.Stack, which pins it for the whole page when the layout
+// sets StickyHeader (the stack also tells sticky parts below where the
+// bar ends), so content scrolls under it.
 package siteheader
 
 import (

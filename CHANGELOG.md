@@ -21,12 +21,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   page-band treatment (display-size heading, more air under the head).
 - `ui.StackConfig.StickyHeader` pins the page frame's `<header>` and
   publishes its height (`--size-header-height`) as `--ui-sticky-top`.
-  Every sticky part below reads it, at any layer depth: a `Sticky`
+  Every top-sticky part below reads it, at any layer depth: a `Sticky`
   ContentRow's nav column and toolbar, `ui.StepRail`, the
-  `interactive.SectionMenu` rail, a `FormFrame` side panel and an
-  anchored `ui.Section` stop under the header instead of sliding behind
-  it. The layout declares the sticky header once; no component takes a
-  flag for it.
+  `interactive.SectionMenu` rail, `ui.TableOfContents`,
+  `ui.AnchoredRail`, `ui.GlobalSearch`, `ui.NetworkRetryBanner`, a
+  top-edge `ui.Sticky`, a `FormFrame` side panel and an anchored
+  `ui.Section` stop under the header instead of sliding behind it. A
+  region that scrolls on its own (a bounded `ui.Box`, the pinned nav
+  column, a `ui.ListDetail` list, the PaneHost drawer, the Workbench
+  rail) resets the offset to 0. The layout declares the sticky header
+  once; no component takes a flag for it.
 - `SectionMenuConfig.SwapAt` moves the width where an
   `interactive.SectionMenu` trades its rail for the "Sections" trigger
   from 900px to a `ui.ContentRow` breakpoint (`SectionMenuSwapMD`,
@@ -81,7 +85,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `var(--ui-sticky-top, 0px)`. A `Sticky` row with no toolbar no longer
   adds the toolbar's height to the `--ui-sticky-top` its main column
   sees; with a toolbar the workspace under it still does
-  (`gofastr upgrade` points at the field).
+  (`gofastr upgrade` points at the field). `ui.AnchoredRail` no longer
+  reads `--nav-h` (60px when unset): it sticks 16px below
+  `--ui-sticky-top`, so on a page with no sticky header it now sits
+  16px from the top instead of 76px.
 - **BREAKING: `gallery.ContributeCSS` and `gallery.BaseCSS` are removed.**
   The `framework/gallery` demos lay out through `ui.Cluster`, `ui.Stack`,
   `ui.Box` and `ui.Container` and ship no stylesheet, so a host renders the

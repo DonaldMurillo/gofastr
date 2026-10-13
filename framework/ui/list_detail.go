@@ -105,7 +105,7 @@ var listDetailStyle = registry.RegisterStyle("ui-list-detail", listDetailCSS)
 func listDetailCSS(_ style.Theme) string {
 	return `
 .fui-list-detail { display: grid; grid-template-columns: minmax(0, var(--ui-list-detail-list-width, 20rem)) minmax(0, 1fr); min-inline-size: 0; gap: var(--spacing-lg); }
-.fui-list-detail__list { min-inline-size: 0; max-block-size: var(--ui-list-detail-list-height, 70vh); overflow-y: auto; overscroll-behavior: contain; }
+.fui-list-detail__list { min-inline-size: 0; max-block-size: var(--ui-list-detail-list-height, 70vh); overflow-y: auto; overscroll-behavior: contain; --ui-sticky-top: 0px; }
 .fui-list-detail__detail { min-inline-size: 0; }
 .fui-list-detail__back { display: none; margin-block-end: var(--spacing-md); }
 @media (max-width: 47.99rem) {

@@ -112,9 +112,12 @@ type StackConfig struct {
 	// below it where the header ends: the stack publishes the header's
 	// height, the --size-header-height token, as --ui-sticky-top, so
 	// every sticky part inside the page (a Sticky ContentRow's nav
-	// column and toolbar, a StepRail, a SectionMenu rail, a FormFrame
-	// side panel, an anchored Section) stops under the header instead
-	// of sliding behind it. The layout says the header is sticky once;
+	// column and toolbar, a StepRail, a SectionMenu rail, a
+	// TableOfContents, an AnchoredRail, a GlobalSearch, a
+	// NetworkRetryBanner, a top-edge Sticky, a FormFrame side panel, an
+	// anchored Section) stops under the header instead of sliding
+	// behind it. A region that scrolls on its own (a bounded Box, a
+	// pinned nav column, a ListDetail list) resets the offset to 0. The layout says the header is sticky once;
 	// no component takes a flag for it. The header's bar must be that
 	// token tall. Children above the header (an announcement strip)
 	// scroll away.
