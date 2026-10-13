@@ -19,9 +19,13 @@ type parser struct {
 	// headingUsed records every emitted ID, including IDs that are natural
 	// slugs for a different heading (e.g. "setup-2").
 	headingUsed map[string]bool
-	// noCommentClose records that a comment opener found no closing
-	// "-->" below it (see commentEnd).
-	noCommentClose bool
+	// closeLine caches the index of the first line below some earlier
+	// comment opener that holds "-->" (len(lines) when none does),
+	// closeClean whether that line ends at its "-->", and closeKnown that
+	// the cache is filled. See commentEnd.
+	closeLine  int
+	closeClean bool
+	closeKnown bool
 }
 
 func (p *parser) eof() bool    { return p.pos >= len(p.lines) }
@@ -56,15 +60,18 @@ func (p *parser) atComment() bool {
 }
 
 // commentEnd returns the index of the line that closes the comment block
-// starting at p.pos, or -1. A failed scan is remembered: every later
-// opener scans a suffix of the same lines, so it cannot close either, and
-// a document of unclosed openers stays linear.
+// starting at p.pos, or -1. The block ends at the first line below the
+// opener holding "-->", and that line is cached: no line between an
+// opener and it holds "-->", so every later opener above it ends at the
+// same line, and the next scan starts below it. Each line is scanned
+// once, so a document of openers stays linear whether its close is
+// missing or carries trailing text.
 func (p *parser) commentEnd() int {
 	t := p.line()
 	if indent := len(t) - len(strings.TrimLeft(t, " ")); indent > 3 {
 		return -1
 	}
-	if !strings.HasPrefix(strings.TrimLeft(t, " "), "<!--") || p.noCommentClose {
+	if !strings.HasPrefix(strings.TrimLeft(t, " "), "<!--") {
 		return -1
 	}
 	rest := strings.TrimLeft(t, " ")[len("<!--"):]
@@ -74,15 +81,18 @@ func (p *parser) commentEnd() int {
 		}
 		return -1
 	}
-	for i := p.pos + 1; i < len(p.lines); i++ {
-		if strings.Contains(p.lines[i], "-->") {
-			if closesAtEnd(p.lines[i]) {
-				return i
+	if !p.closeKnown || p.closeLine <= p.pos {
+		p.closeLine, p.closeClean, p.closeKnown = len(p.lines), false, true
+		for i := p.pos + 1; i < len(p.lines); i++ {
+			if strings.Contains(p.lines[i], "-->") {
+				p.closeLine, p.closeClean = i, closesAtEnd(p.lines[i])
+				break
 			}
-			return -1
 		}
 	}
-	p.noCommentClose = true
+	if p.closeLine < len(p.lines) && p.closeClean {
+		return p.closeLine
+	}
 	return -1
 }
 

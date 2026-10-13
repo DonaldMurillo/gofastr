@@ -30,7 +30,8 @@
 // HTML comment block (a line opening with "<!--", closed by a line ending
 // in "-->"), which renders as nothing, as a browser would hide it. Docs use
 // it for tooling directives. An unclosed comment, or one with text after
-// its close, stays escaped text. Code blocks and inline
+// its close, stays escaped text, and so does a comment inside a list item:
+// the block must start at the top level or in a blockquote. Code blocks and inline
 // code are rendered without syntax highlighting; callers can post-process if
 // they want highlighted output.
 package markdown
