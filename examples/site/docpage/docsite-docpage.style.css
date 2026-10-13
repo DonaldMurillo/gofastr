@@ -10,7 +10,7 @@
   inline-size: 100%;
   max-inline-size: 1360px;
   margin-inline: auto;
-  padding: var(--spacing-2xl) var(--spacing-2xl) var(--spacing-page);
+  padding: var(--spacing-2xl) var(--size-page-gutter) var(--spacing-page);
 }
 :scope:has(> .nav) { grid-template-columns: 220px minmax(0, 1fr); }
 
@@ -121,7 +121,7 @@
   :scope {
     display: block;
     max-inline-size: none;
-    padding: var(--spacing-lg);
+    padding: var(--spacing-lg) var(--size-page-gutter);
   }
   /* display:block drops the grid gap — restore separation between the
      stacked SectionMenu pill and the article below it. */
@@ -133,3 +133,8 @@
   .pager { grid-template-columns: minmax(0, 1fr); }
   .page.next { grid-column: auto; }
 }
+
+/* Framed: the page sits in an app frame (ui.ContentRow with a Sidebar)
+   whose content area already pads by the gutter, so the shell adds no
+   inline padding of its own at any width. */
+:scope.framed { padding-inline: 0; }

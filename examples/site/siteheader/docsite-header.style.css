@@ -1,8 +1,9 @@
 /* GoFastr's top bar. It pins to the top of the page (the banner
    landmark is a direct child of the page-tall ui.Stack, so sticky
    travels the whole page) and its content sits on the site's full-bleed
-   rhythm: --spacing-2xl of side padding, the same inset the page
-   sections use. Below the xl breakpoint the seven section links give
+   rhythm: --size-page-gutter of side padding, the inset a page-level
+   ui.Container and the footer use, so the brand, the page text and
+   the colophon start on one edge at every width. Below the xl breakpoint the seven section links give
    way to a phone menu, a native <details> that works without
    JavaScript; below md the search and toggle cluster collapses into it
    too, leaving brand + toggle in the bar. Every dimension is a theme
@@ -22,7 +23,7 @@
   align-items: center;
   gap: var(--spacing-2xl);
   block-size: var(--size-header-height);
-  padding-inline: var(--spacing-2xl);
+  padding-inline: var(--size-page-gutter);
   font-size: var(--text-ui);
 }
 
@@ -295,7 +296,7 @@
 /* Phones: the bar tightens, the version capsule goes, and the search +
    toggle cluster collapses into the drawer, leaving brand + toggle. */
 @media (--below-md) {
-  .bar { padding-inline: var(--spacing-sm); gap: var(--spacing-sm); }
+  .bar { gap: var(--spacing-sm); }
   .brand-status { display: none; }
   .bar-actions { display: none; }
   .end { gap: var(--spacing-xs); }

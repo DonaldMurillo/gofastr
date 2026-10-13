@@ -40,6 +40,10 @@ type Config struct {
 	CrumbsLabel string
 	// Pager, when set, renders the previous/next cards under the body.
 	Pager *PagerConfig
+	// Framed says the page sits in an app frame (ui.ContentRow with a
+	// Sidebar) whose content area already pads by the gutter; the shell
+	// then adds no inline gutter of its own.
+	Framed bool
 }
 
 // Render builds the page around the body.
@@ -60,7 +64,7 @@ func Render(cfg Config, body ...render.HTML) render.HTML {
 	}
 	children = append(children, html.Article(html.ArticleConfig{Class: Style.Content()}, article...))
 
-	return Style.Scope(html.Div(html.DivConfig{}, children...))
+	return Style.Scope(html.Div(html.DivConfig{Class: Style.RootWith(RootVariants{Framed: cfg.Framed})}, children...))
 }
 
 // LayerConfig holds the cells of a docs layout layer. Every field is

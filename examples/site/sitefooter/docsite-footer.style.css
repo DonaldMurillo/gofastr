@@ -1,7 +1,7 @@
 /* GoFastr's colophon: the brand line and the link columns over a quiet
    mono strip. The grid sits at the site's wide cap (--size-wide-width,
-   with --spacing-2xl inside it), the measure the header's padding and
-   the page sections align to, so the three line up at every width. */
+   with --size-page-gutter inside it), the measure the header's padding
+   and the page sections align to, so the three line up at every width. */
 :scope {
   border-block-start: var(--stroke-thin) solid var(--color-border);
   padding-block-end: var(--spacing-2xl);
@@ -14,7 +14,7 @@
   max-inline-size: var(--size-wide-width);
   margin-inline: auto;
   padding-block-start: var(--spacing-section);
-  padding-inline: var(--spacing-2xl);
+  padding-inline: var(--size-page-gutter);
 }
 
 /* The lead: mark, name and version on one baseline, tagline below. */
@@ -86,7 +86,7 @@
   justify-content: space-between;
   margin: var(--spacing-section) auto 0;
   padding-block-start: var(--spacing-lg);
-  padding-inline: var(--spacing-2xl);
+  padding-inline: var(--size-page-gutter);
   border-block-start: var(--stroke-thin) solid var(--color-border);
   color: var(--color-text-subtle);
   font-size: var(--text-xs);

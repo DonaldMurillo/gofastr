@@ -248,6 +248,7 @@ func (s *ComponentShowcaseScreen) RenderCtx(ctx context.Context) render.HTML {
 	// code, the article centered in the shell the site's docpage
 	// package draws.
 	return docpage.Render(docpage.Config{
+		Framed: true,
 		Crumbs: []ui.Crumb{
 			{Text: "Components", Href: "/components/"},
 			{Text: s.Entry.Category, Href: "/components/#" + categorySlug(s.Entry.Category)},
