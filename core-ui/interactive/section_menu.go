@@ -418,9 +418,9 @@ ROOT .cui-section-menu__rail { display: block; }
   ROOT .cui-section-menu__trigger { display: none; }
   ROOT .cui-section-menu__rail {
     position: sticky;
-    inset-block-start: var(--fui-section-menu-top, 1rem);
+    inset-block-start: calc(var(--ui-sticky-top, 0px) + var(--fui-section-menu-top, 1rem));
     align-self: start;
-    max-height: calc(100vh - var(--fui-section-menu-top, 1rem) - var(--spacing-md, 8px));
+    max-height: calc(100vh - var(--ui-sticky-top, 0px) - var(--fui-section-menu-top, 1rem) - var(--spacing-md, 8px));
     overflow-y: auto;
   }
   /* FillColumn: the host pins the column, so the menu fills it and the

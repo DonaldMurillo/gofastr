@@ -19,9 +19,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   a byline, a stats line).
 - `SectionConfig.Band` gives a section without an eyebrow the
   page-band treatment (display-size heading, more air under the head).
-- `StepRailConfig.BelowHeader` stops the sticky rail under a sticky
-  site header (`--size-header-height` plus the rail's usual 24px top
-  offset; `--ui-step-rail-top` sets that gap below the header).
+- `ui.StackConfig.StickyHeader` pins the page frame's `<header>` and
+  publishes its height (`--size-header-height`) as `--ui-sticky-top`.
+  Every sticky part below reads it, at any layer depth: a `Sticky`
+  ContentRow's nav column and toolbar, `ui.StepRail`, the
+  `interactive.SectionMenu` rail, a `FormFrame` side panel and an
+  anchored `ui.Section` stop under the header instead of sliding behind
+  it. The layout declares the sticky header once; no component takes a
+  flag for it.
 - `SectionMenuConfig.SwapAt` moves the width where an
   `interactive.SectionMenu` trades its rail for the "Sections" trigger
   from 900px to a `ui.ContentRow` breakpoint (`SectionMenuSwapMD`,
@@ -67,6 +72,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   misreport (#503).
 
 ### Changed
+- **BREAKING: `ui.ContentRowConfig.BelowHeader` is removed.** Set
+  `StickyHeader: true` on the page-tall `ui.Stack` that holds the
+  header instead; a `Sticky` row under it sticks below the header on its
+  own. The site header sheets no longer set `position: sticky`
+  themselves: the stack pins the header. Owned sheets that offset a
+  sticky rail or a scroll margin by `--size-header-height` read
+  `var(--ui-sticky-top, 0px)`. A `Sticky` row with no toolbar no longer
+  adds the toolbar's height to the `--ui-sticky-top` its main column
+  sees; with a toolbar the workspace under it still does
+  (`gofastr upgrade` points at the field).
 - **BREAKING: `gallery.ContributeCSS` and `gallery.BaseCSS` are removed.**
   The `framework/gallery` demos lay out through `ui.Cluster`, `ui.Stack`,
   `ui.Box` and `ui.Container` and ship no stylesheet, so a host renders the
@@ -113,8 +128,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`core/markdown` hides HTML comment blocks.** A `<!-- … -->` block
   rendered as escaped text, so every `<!-- gofastr:compile … -->`
   directive in the embedded docs showed on the site's doc pages and in
-  `ui.Markdown`. A comment block now renders as nothing, at the top level or under a list item. An unclosed
-  comment, or text after the close, still renders as escaped text.
+  `ui.Markdown`. A comment block now renders as nothing, at the top
+  level or under a list item. An unclosed comment, or text after the
+  close, still renders as escaped text.
 - `ui.Hero` (split) and `ui.HeroSplit` collapse to a `minmax(0, 1fr)`
   track on phones, so a long unbreakable line in the media column no
   longer widens the page past the viewport.

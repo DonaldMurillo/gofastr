@@ -92,8 +92,7 @@ func (s *GetStartedScreen) Render() render.HTML {
 
 func gsRail() render.HTML {
 	return ui.StepRail(ui.StepRailConfig{
-		Title:       "The path",
-		BelowHeader: true, // the site header is sticky
+		Title: "The path",
 		Items: []ui.StepRailItem{
 			{Number: "01", Anchor: "s1", Label: "Install"},
 			{Number: "02", Anchor: "s2", Label: "Scaffold"},

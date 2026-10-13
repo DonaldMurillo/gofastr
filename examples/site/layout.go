@@ -44,12 +44,13 @@ import (
 // headless theme showcases) renders straight in the main layer.
 // =============================================================================
 
-// mainLayout is the site frame: the page-tall stack with the sticky banner
-// bar directly inside it (siteheader owns the sticky + z-order), the
-// primary slot under it, and the colophon closing the page.
+// mainLayout is the site frame: the page-tall stack pinning the banner
+// bar (StickyHeader, which also tells every sticky part below where the
+// header ends), the primary slot under it, and the colophon closing the
+// page.
 func mainLayout() *app.Layout {
 	return app.NewLayout("main", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
-		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+		return ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},
 			siteHeader(ctx),
 			l.Primary(),
 			siteFooter(),

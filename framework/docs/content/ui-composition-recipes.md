@@ -279,8 +279,9 @@ var announce = uiapp.NewOutlet("announce")
 ```go
 func buildSiteShell(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
 	// The header is the banner landmark and a direct child of the
-	// page-tall stack, so it stays pinned for the whole page.
-	return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+	// page-tall stack, which pins it for the whole page (StickyHeader)
+	// and tells every sticky part below where it ends.
+	return ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},
 		l.Place(announce),
 		siteHeader(ctx), // siteheader.Render(siteheader.Config{...})
 		l.Primary(),

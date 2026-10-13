@@ -12,3 +12,10 @@ notes:
   - change: "a ui.Container with Pad: ContainerPadPage or ContainerPadEnd takes the page gutter (--size-page-gutter, clamp(20px, 5vw, 32px)) inline at every Width instead of the 8/16/24px container steps, and none inside an app frame's content area (ui.ContentRow with a Sidebar)"
     nodetect: "a layout change, not an API one: page text on a phone moves from 8px to 20px off the edge, in line with the header and footer bands; a screen that measured its own inline offsets sees the new gutter"
     guidance: "Nothing to change. A screen that padded its own inline edge to make up for the 8px phone gutter can drop that padding; a padded container nested inside another page container takes the gutter twice, so give the inner one Pad: ContainerPadNone."
+  - change: "ui.ContentRowConfig.BelowHeader is removed: the page frame says the header is sticky once, with ui.StackConfig.StickyHeader, and every sticky part under it (a Sticky ContentRow's nav column and toolbar, a StepRail, a SectionMenu rail, a FormFrame side panel, an anchored Section) stops below the header through the --ui-sticky-top the stack publishes"
+    breaking: true
+    hits: edit
+    find:
+      fields:
+        - field: gofastr/framework/ui.ContentRowConfig.BelowHeader
+    guidance: "Delete BelowHeader: true from the ContentRow and set StickyHeader: true on the page-tall ui.Stack that holds the site header (ui.StackConfig{Screen: true, StickyHeader: true}). The stack pins its <header> child, so drop position: sticky, inset-block-start and z-index from the header's own style sheet. A sheet that offset a sticky rail or a scroll margin by var(--size-header-height) reads var(--ui-sticky-top, 0px) instead."

@@ -107,6 +107,18 @@ type StackConfig struct {
 	// header is a viewport plus the header tall, which opens a dead band
 	// above the last child on every page.
 	Screen bool
+	// StickyHeader pins the stack's <header> child (the banner
+	// landmark) to the top while the page scrolls, and tells everything
+	// below it where the header ends: the stack publishes the header's
+	// height, the --size-header-height token, as --ui-sticky-top, so
+	// every sticky part inside the page (a Sticky ContentRow's nav
+	// column and toolbar, a StepRail, a SectionMenu rail, a FormFrame
+	// side panel, an anchored Section) stops under the header instead
+	// of sliding behind it. The layout says the header is sticky once;
+	// no component takes a flag for it. The header's bar must be that
+	// token tall. Children above the header (an announcement strip)
+	// scroll away.
+	StickyHeader bool
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the stack's root <div>.
@@ -125,6 +137,9 @@ func Stack(cfg StackConfig, children ...render.HTML) render.HTML {
 	}
 	if cfg.Screen {
 		cfg.Class = cls(cfg.Class, "fui-stack--screen")
+	}
+	if cfg.StickyHeader {
+		cfg.Class = cls(cfg.Class, "fui-stack--sticky-header")
 	}
 	return layoutStyle.WrapHTML(headless.Stack(headless.StackProps{
 		Gap:        string(cfg.Gap),

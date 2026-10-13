@@ -752,6 +752,19 @@ plus the header tall, so every page scrolls and a header-height dead
 band opens above the last child. Inside a layout that already provides
 the page column, use a plain `ui.Stack` for the screen's content.
 
+`StickyHeader: true` pins the stack's `<header>` child (the banner
+landmark) while the page scrolls, and says where it ends: the stack
+publishes the header's height, `--size-header-height`, as
+`--ui-sticky-top`, and every sticky part inside the page reads it. A
+`Sticky` content row's nav column and toolbar, a `ui.StepRail`, an
+`interactive.SectionMenu` rail, a `FormFrame` side panel and an
+anchored `ui.Section` all stop under the header instead of sliding
+behind it, at any layer depth, with no flag of their own. Children
+above the header (an announcement strip) scroll away. The header's own
+style sheet leaves positioning to the stack, and its bar is that token
+tall. An owned sheet that pins something of its own (a docs rail)
+offsets it by `var(--ui-sticky-top, 0px)`.
+
 ### Context columns and list/detail panes
 
 `ui.ContentRowConfig.Aside` adds a labelled context column after main.
@@ -768,24 +781,26 @@ Below the breakpoint it returns to document flow, without hiding either
 pane — and it reads the header band's height from
 `--size-header-height` (`Theme.Layout.HeaderHeight`), so recipes pair it with a page-tall
 `ui.Stack{Screen: true}` and an app bar whose height is that token.
-`Sticky: true` is the frame for a shell with no header band (the
-admin's): the window still scrolls the page, the nav column sticks to
-the top at one viewport tall and scrolls its own overflow, and the
-`Toolbar` row sticks to the top at every width, painted over the
-content beneath it. The client router's scroll restore and fragment
+`Sticky: true` keeps the window as the scroller: the nav column sticks
+at one viewport tall and scrolls its own overflow, and the `Toolbar`
+row sticks at every width, painted over the content beneath it. Both
+stick at `--ui-sticky-top`: the window's top in a shell with no header
+band (the admin's), under the header when the page stack sets
+`StickyHeader` (the column is then the rest of the viewport tall). The
+workspace under the toolbar publishes `--ui-sticky-top` grown by the
+toolbar's height, so sticky parts in main clear the toolbar too. The client router's scroll restore and fragment
 jumps keep working because the window stays the scroller. Sticky and
 Viewport are two scroll models; setting both panics.
-`BelowHeader: true` (with `Sticky`) is the same frame under a sticky
-page header: the nav column and the toolbar stick below
-`--size-header-height` instead of behind the header, and the column is
-the rest of the viewport tall, so a long menu scrolls on its own while
-the page scrolls beside it. Setting it without `Sticky` panics. The
-footer stays where the page layout puts it, full width below the row:
+Under a sticky site header the row needs nothing extra: the page
+layout's stack sets `StickyHeader`, this inner layer's row sets
+`Sticky`, and a long menu scrolls on its own under the header while the
+page scrolls beside it. The footer stays where the page layout puts it,
+full width below the row:
 
 ```go
 layout := app.NewLayout("docs", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
 	nav, _ := component.SafeRenderCtx(ctx, ui.Sidebar(cfg))
-	return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true, BelowHeader: true}, l.Primary())
+	return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true}, l.Primary())
 })
 ```
 

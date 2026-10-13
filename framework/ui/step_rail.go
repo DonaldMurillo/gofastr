@@ -49,12 +49,6 @@ type StepRailConfig struct {
 	// instead of plain text, so a "stuck? ask here" pointer is
 	// actually clickable.
 	MetaHref string
-	// BelowHeader offsets the sticky rail by the theme's
-	// --size-header-height, so it stops under a sticky site header
-	// instead of sliding behind it. --ui-step-rail-top then sets the
-	// gap below the header, not the whole offset. Leave it off when
-	// the page has no sticky header.
-	BelowHeader bool
 	// Class is appended to the fui-step-rail wrapper.
 	Class string
 
@@ -149,9 +143,6 @@ func StepRail(cfg StepRailConfig) render.HTML {
 		attrs = html.Attrs{}
 	}
 	base := "fui-step-rail"
-	if cfg.BelowHeader {
-		base += " fui-step-rail--below-header"
-	}
 	cls := joinNonEmpty(base, cfg.Class)
 	attrs["class"] = cls
 	attrs["role"] = "complementary"
@@ -164,7 +155,9 @@ var stepRailStyle = registry.RegisterStyle("ui-step-rail", stepRailCSS)
 func stepRailCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-step-rail"] {
   position: sticky;
-  inset-block-start: var(--ui-step-rail-top, var(--spacing-xl, 24px));
+  /* --ui-sticky-top is where sticky parts start (under a StickyHeader
+     page's header); --ui-step-rail-top is the gap below it. */
+  inset-block-start: calc(var(--ui-sticky-top, 0px) + var(--ui-step-rail-top, var(--spacing-xl, 24px)));
   align-self: start;
   display: flex;
   flex-direction: column;
@@ -173,9 +166,6 @@ func stepRailCSS(_ style.Theme) string {
   border: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.1));
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, transparent);
-}
-:where([data-cui-comp="ui-step-rail"]).fui-step-rail--below-header {
-  inset-block-start: calc(var(--size-header-height, 56px) + var(--ui-step-rail-top, var(--spacing-xl, 24px)));
 }
 [data-cui-comp="ui-step-rail"] .fui-step-rail__title {
   margin: 0;

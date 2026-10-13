@@ -87,22 +87,15 @@ type ContentRowConfig struct {
 	// row sticks to the top of the workspace at every width, on the
 	// page background and above the content. The window stays the
 	// scroller, so the client router's scroll restore and fragment
-	// jumps keep working. The row assumes nothing above it scrolls into
-	// view first: with no header band the frame sticks to the window's
-	// top; under a sticky header set BelowHeader; for a header band with
-	// columns that scroll on their own, use Viewport. Setting both panics. The
-	// toolbar is one control row tall and the row publishes that height
-	// as --ui-sticky-top, so a sticky panel inside it (a FormFrame's
+	// jumps keep working. The frame sticks at --ui-sticky-top: the
+	// window's top with no header, or under the header when the page
+	// stack sets StickyHeader, the column then the rest of the viewport
+	// tall. For a header band with columns that scroll on their own,
+	// use Viewport. Setting both panics. The toolbar is one control row
+	// tall and the workspace under it publishes --ui-sticky-top grown
+	// by that height, so a sticky panel inside it (a FormFrame's
 	// SidePanel) stops under the toolbar rather than behind it.
 	Sticky bool
-	// BelowHeader tells a Sticky row that a sticky page header sits
-	// above it (a site header that pins while the page scrolls): the
-	// nav column and the toolbar stick below the header instead of
-	// behind it, the column is the rest of the viewport tall, and
-	// --ui-sticky-top grows by the header too. The header's height is
-	// the --size-header-height token, the same one Viewport reads.
-	// Setting it without Sticky panics.
-	BelowHeader bool
 	// PhoneNavFlush drops the stacked nav column's block-end rule
 	// below the breakpoint. Set it when the sidebar's phone navigation
 	// lives outside the column (a NativeMobile sidebar whose drawer
@@ -139,9 +132,6 @@ func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 	if cfg.Sticky && cfg.Viewport {
 		panic("ui: ContentRow Sticky and Viewport are two scroll models; set one")
 	}
-	if cfg.BelowHeader && !cfg.Sticky {
-		panic("ui: ContentRow BelowHeader offsets the Sticky frame; set Sticky too")
-	}
 	cls := "fui-content-row"
 	if cfg.Sidebar != "" {
 		cls += " fui-content-row--has-nav"
@@ -151,9 +141,6 @@ func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 	}
 	if cfg.Sticky {
 		cls += " fui-content-row--sticky"
-	}
-	if cfg.BelowHeader {
-		cls += " fui-content-row--below-header"
 	}
 	if cfg.PhoneNavFlush {
 		cls += " fui-content-row--phone-nav-flush"
@@ -251,17 +238,18 @@ func contentRowCSS(_ style.Theme) string {
 }
 /* Sticky: the toolbar row stays at the top of the window at every
    width, painted over the content that scrolls beneath it. */
-.fui-content-row--sticky .fui-content-row__toolbar { position: sticky; inset-block-start: var(--ui-content-row-sticky-offset, 0px); z-index: var(--z-sticky, 200); background-color: var(--color-background, #fff); }
-/* The sticky toolbar is one control row tall (a control, its padding
-   and its rule), and the row publishes that height as --ui-sticky-top:
-   a sticky panel inside it (a FormFrame's side rail) stops under the
-   toolbar instead of under the window's edge, where the toolbar would
-   paint over it. */
-.fui-content-row--sticky { --ui-content-row-toolbar-block: var(--ui-content-row-toolbar-height, calc(var(--spacing-touch-target, 44px) + 2 * var(--spacing-sm, 4px) + var(--stroke-thin, 1px))); --ui-sticky-top: calc(var(--ui-content-row-sticky-offset, 0px) + var(--ui-content-row-toolbar-block)); }
+.fui-content-row--sticky .fui-content-row__toolbar { position: sticky; inset-block-start: var(--fui-content-row-top); z-index: var(--z-sticky, 200); background-color: var(--color-background, #fff); }
+/* The frame sticks where the page says sticky parts start: the
+   --ui-sticky-top a StickyHeader page stack publishes, or the window's
+   top. The sticky toolbar is one control row tall (a control, its
+   padding and its rule), and the workspace under it publishes the
+   offset grown by that height as --ui-sticky-top: a sticky panel
+   inside it (a FormFrame's side rail) stops under the toolbar instead
+   of behind it. The root only reads the inherited value; redefining
+   it there would make the property refer to itself. */
+.fui-content-row--sticky { --fui-content-row-top: var(--ui-sticky-top, 0px); --ui-content-row-toolbar-block: var(--ui-content-row-toolbar-height, calc(var(--spacing-touch-target, 44px) + 2 * var(--spacing-sm, 4px) + var(--stroke-thin, 1px))); }
+.fui-content-row--sticky > .fui-content-row__workspace { --ui-sticky-top: calc(var(--fui-content-row-top) + var(--ui-content-row-toolbar-block)); }
 .fui-content-row--sticky .fui-content-row__toolbar { box-sizing: border-box; min-block-size: var(--ui-content-row-toolbar-block); display: flex; flex-direction: column; justify-content: center; }
-/* BelowHeader: a sticky page header pins above the row, so the sticky
-   frame starts under it: the header's height is the frame's offset. */
-.fui-content-row--below-header { --ui-content-row-sticky-offset: var(--size-header-height, 56px); }
 /* Viewport aside: the tighter padding applies below the breakpoint
    too, matching the shell (the phone column is denser everywhere). */
 .fui-content-row--viewport .fui-content-row__aside { flex-basis: var(--ui-content-row-aside-width, 18rem); padding: var(--spacing-md); }
@@ -279,14 +267,14 @@ func contentRowCSS(_ style.Theme) string {
 }
 
 // stickyCSS is the desktop half of Sticky mode: the nav column sticks
-// to the top (under the header with BelowHeader), the rest of the
+// at --ui-sticky-top (under a StickyHeader page's header), the rest of the
 // viewport tall, and scrolls its own overflow
 // while the window scrolls the page. align-self keeps the row's
 // stretch from making the column as tall as the page, which would
 // leave it nothing to stick within.
 func (b rowBreakpointCSS) stickyCSS() string {
 	css := fmt.Sprintf(`@media (min-width: %s) {
-  .fui-content-row--sticky:SCOPE: .fui-content-row__nav { position: sticky; inset-block-start: var(--ui-content-row-sticky-offset, 0px); align-self: flex-start; block-size: calc(100dvh - var(--ui-content-row-sticky-offset, 0px)); overflow-y: auto; overscroll-behavior: contain; }
+  .fui-content-row--sticky:SCOPE: .fui-content-row__nav { position: sticky; inset-block-start: var(--fui-content-row-top); align-self: flex-start; block-size: calc(100dvh - var(--fui-content-row-top)); overflow-y: auto; overscroll-behavior: contain; }
 }
 `, b.minw)
 	return strings.ReplaceAll(css, ":SCOPE:", b.scope)

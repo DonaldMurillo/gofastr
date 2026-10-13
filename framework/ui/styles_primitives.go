@@ -56,6 +56,11 @@ func layoutCSS(_ style.Theme) string {
    so earlier children and their gaps keep their rhythm. */
 :where([data-cui-comp="ui-layout"]).fui-stack--screen { min-block-size: 100dvh; }
 [data-cui-comp="ui-layout"].fui-stack--screen > :last-child { margin-block-start: auto; }
+/* StickyHeader: the page frame pins its banner and publishes the
+   banner's height as --ui-sticky-top, the offset every sticky part
+   below it reads, so none of them slides behind the header. */
+:where([data-cui-comp="ui-layout"]).fui-stack--sticky-header { --ui-sticky-top: var(--size-header-height, 56px); }
+:where([data-cui-comp="ui-layout"]).fui-stack--sticky-header > header { position: sticky; inset-block-start: 0; z-index: var(--z-sticky, 200); }
 :where([data-cui-comp="ui-layout"]).fui-stack {
   display: flex;
   flex-direction: column;
