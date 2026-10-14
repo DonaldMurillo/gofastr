@@ -513,33 +513,37 @@ func sectionMenuCSS(_ style.Theme) string {
 }
 
 /* ── Filter ───────────────────────────────────────────────────────── */
+/* The input is the box, with the icon laid over its start, so the
+   focused element draws its own ring. */
 [data-cui-comp="cui-section-menu"] .cui-section-menu__filter {
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: var(--spacing-md, 8px);
-  box-sizing: border-box;
-  block-size: calc(var(--spacing-sm, 4px) * 9);
   margin-inline: calc(var(--cui-section-menu-inset) - 4px);
-  padding-inline: calc(var(--spacing-sm, 4px) * 2.5) var(--spacing-md, 8px);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
-  border-radius: var(--radii-md, 8px);
-  background: var(--color-background, #fff);
   color: var(--color-text-subtle, #A1A1AA);
 }
-[data-cui-comp="cui-section-menu"] .cui-section-menu__filter:focus-within {
-  border-color: var(--color-accent, #2563EB);
-  box-shadow: 0 0 0 calc(var(--stroke-thin, 1px) * 3) var(--cui-section-menu-dot-ring);
+[data-cui-comp="cui-section-menu"] .cui-section-menu__filter-icon {
+  position: absolute;
+  inset-inline-start: calc(var(--spacing-sm, 4px) * 2.5);
+  inset-block-start: 50%;
+  translate: 0 -50%;
+  pointer-events: none;
 }
-[data-cui-comp="cui-section-menu"] .cui-section-menu__filter-icon { flex: 0 0 auto; }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__filter-input {
   flex: 1;
   min-width: 0;
-  border: 0;
-  padding: 0;
-  background: transparent;
+  box-sizing: border-box;
+  block-size: calc(var(--spacing-sm, 4px) * 9);
+  padding-inline: calc(var(--spacing-sm, 4px) * 8) var(--spacing-md, 8px);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  border-radius: var(--radii-md, 8px);
+  background: var(--color-background, #fff);
   color: var(--color-text, currentColor);
   font: inherit;
   outline: none;
+}
+[data-cui-comp="cui-section-menu"] .cui-section-menu__filter-input:focus-visible {
+  border-color: var(--color-accent, #2563EB);
+  box-shadow: 0 0 0 calc(var(--stroke-thin, 1px) * 3) var(--cui-section-menu-dot-ring);
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__filter-input::placeholder { color: var(--color-text-subtle, #A1A1AA); opacity: 1; }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__mark {
