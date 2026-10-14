@@ -248,10 +248,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) error {
 	// A line may be as long as an HTTP body (maxMCPBodyBytes); the
 	// scanner's 64 KiB default ended the session on any larger tool
-	// call with no reply at all.
+	// call with no reply at all. The scanner's limit counts the line
+	// ending too, so it gets room for "\r\n" and the length check
+	// below enforces the limit on the line itself.
 	scanner := bufio.NewScanner(in)
-	scanner.Buffer(make([]byte, 0, 64<<10), maxMCPBodyBytes)
+	scanner.Buffer(make([]byte, 0, 64<<10), maxMCPBodyBytes+2)
 	encoder := json.NewEncoder(out)
+	tooLong := func() {
+		// The session ends, but the client learns why first.
+		encoder.Encode(Response{
+			JSONRPC: "2.0",
+			Error: &RPCError{
+				Code:    ErrInvalidParams,
+				Message: fmt.Sprintf("request line exceeds %d bytes", maxMCPBodyBytes),
+			},
+		})
+	}
 
 	for scanner.Scan() {
 		select {
@@ -263,6 +275,10 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
+		}
+		if len(line) > maxMCPBodyBytes {
+			tooLong()
+			return bufio.ErrTooLong
 		}
 
 		// Same envelope rule as the HTTP transports (decodeMCPRequest):
@@ -301,15 +317,8 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 
 	err := scanner.Err()
 	if errors.Is(err, bufio.ErrTooLong) {
-		// The scanner cannot resume past the oversized line, so the
-		// session ends, but the client learns why first.
-		encoder.Encode(Response{
-			JSONRPC: "2.0",
-			Error: &RPCError{
-				Code:    ErrInvalidParams,
-				Message: fmt.Sprintf("request line exceeds %d bytes", maxMCPBodyBytes),
-			},
-		})
+		// The scanner cannot resume past the oversized line.
+		tooLong()
 	}
 	return err
 }

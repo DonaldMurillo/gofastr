@@ -332,10 +332,27 @@ func TestStdioLineLimit(t *testing.T) {
 		t.Fatalf("a 200 KiB line got %.200s", out.String())
 	}
 
-	out.Reset()
-	err := s.ServeStdio(context.Background(), strings.NewReader(call(maxMCPBodyBytes)), out)
-	if err == nil || !strings.Contains(out.String(), "request line exceeds") {
-		t.Fatalf("an oversized line: err %v, reply %.200s", err, out.String())
+	// A line of exactly the limit, ended by "\n" or "\r\n", is read:
+	// the scanner's own limit counts the line ending.
+	pad := maxMCPBodyBytes - (len(call(0)) - 1)
+	for _, ending := range []string{"\n", "\r\n"} {
+		out.Reset()
+		line := strings.TrimSuffix(call(pad), "\n") + ending
+		if err := s.ServeStdio(context.Background(), strings.NewReader(line), out); err != nil {
+			t.Fatalf("a %d-byte line ending %q: %v", maxMCPBodyBytes, ending, err)
+		}
+		resp = Response{}
+		if err := json.Unmarshal(out.Bytes(), &resp); err != nil || resp.Error != nil {
+			t.Fatalf("a %d-byte line ending %q got %.200s", maxMCPBodyBytes, ending, out.String())
+		}
+	}
+
+	for _, n := range []int{pad + 1, maxMCPBodyBytes} {
+		out.Reset()
+		err := s.ServeStdio(context.Background(), strings.NewReader(call(n)), out)
+		if err == nil || !strings.Contains(out.String(), "request line exceeds") {
+			t.Fatalf("a line %d bytes over: err %v, reply %.200s", n-pad, err, out.String())
+		}
 	}
 }
 
