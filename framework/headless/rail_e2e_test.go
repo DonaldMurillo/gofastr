@@ -142,25 +142,30 @@ func TestE2E_TOCListIsServerRenderedAndActiveStateMoves(t *testing.T) {
 // A section scrolled behind the sticky header is out of view: the
 // observer's band starts at --ui-sticky-top. With the last 50px of
 // "one" under a 100px header and "two" filling the view below it, the
-// active entry is "two".
+// active entry is "two". The header height is any length expression:
+// a toolbar's workspace multiplies inside its calc.
 func TestE2E_RailSkipsSectionUnderStickyHeader(t *testing.T) {
-	nav := TableOfContents(TableOfContentsProps{
-		TargetSelector: "#region",
-		Items:          []TOCItem{{ID: "one", Label: "One"}, {ID: "two", Label: "Two"}},
-	}, nil)
-	b := startBehaviorServer(t, `<style>:root{--ui-sticky-top:100px}</style>`+railPage(t, nav))
-	ctx := behaviorPage(t, b)
-	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "one")) {
-		t.Fatal("the bootstrap pass did not mark the first entry")
-	}
-	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`(() => { const one = document.getElementById('one');
-			scrollTo(0, one.offsetTop + one.offsetHeight - 50); })()`, nil),
-	); err != nil {
-		t.Fatal(err)
-	}
-	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "two")) {
-		t.Fatal("the section behind the sticky header kept the active entry")
+	for _, top := range []string{"100px", "calc(40px + calc(2 * 25px + 10px))"} {
+		t.Run(top, func(t *testing.T) {
+			nav := TableOfContents(TableOfContentsProps{
+				TargetSelector: "#region",
+				Items:          []TOCItem{{ID: "one", Label: "One"}, {ID: "two", Label: "Two"}},
+			}, nil)
+			b := startBehaviorServer(t, `<style>:root{--ui-sticky-top:`+top+`}</style>`+railPage(t, nav))
+			ctx := behaviorPage(t, b)
+			if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "one")) {
+				t.Fatal("the bootstrap pass did not mark the first entry")
+			}
+			if err := chromedp.Run(ctx,
+				chromedp.Evaluate(`(() => { const one = document.getElementById('one');
+					scrollTo(0, one.offsetTop + one.offsetHeight - 50); })()`, nil),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "two")) {
+				t.Fatal("the section behind the sticky header kept the active entry")
+			}
+		})
 	}
 }
 

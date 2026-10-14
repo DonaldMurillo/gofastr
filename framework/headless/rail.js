@@ -50,15 +50,21 @@
     return out + s.replace(/([!"#$%&'()*+,./:;<=>?@[\]^`{|}~])/g, '\\$1');
   }
 
-  // stickyTop reads --ui-sticky-top where the nav sits: the height of
-  // the sticky header above the page, as a length or a sum of lengths
-  // (a toolbar's workspace adds its row). Anything else reads as 0.
+  // stickyTop resolves --ui-sticky-top where the nav sits: the height
+  // of the sticky header above the page. The value can be any length
+  // expression (a toolbar's workspace adds its row with calc), so the
+  // browser resolves it on a probe rather than this file parsing it.
   function stickyTop(el) {
-    const v = getComputedStyle(el).getPropertyValue('--ui-sticky-top').trim();
-    if (!/^[\d.\spx+()calc]*$/.test(v)) return 0;
-    let sum = 0;
-    for (const m of v.match(/[\d.]+px/g) || []) sum += parseFloat(m);
-    return Math.max(0, Math.round(sum));
+    if (!getComputedStyle(el).getPropertyValue('--ui-sticky-top').trim()) return 0;
+    const probe = document.createElement('div');
+    probe.style.position = 'absolute';
+    probe.style.visibility = 'hidden';
+    probe.style.blockSize = '0';
+    probe.style.inlineSize = 'var(--ui-sticky-top)';
+    el.appendChild(probe);
+    const px = parseFloat(getComputedStyle(probe).inlineSize) || 0;
+    probe.remove();
+    return Math.max(0, Math.round(px));
   }
 
   // watch arms one nav: resolve the anchors it lists, map each to the
