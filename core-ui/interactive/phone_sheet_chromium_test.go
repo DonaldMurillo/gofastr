@@ -116,11 +116,12 @@ func TestPhoneSheetOpensAndCloses(t *testing.T) {
 }
 
 // The pill names the entry the list marks current, and what it opens
-// while nothing is.
+// while nothing is. A list swapped for markup that already carries the
+// mark (an island or a poll) moves the pill too.
 func TestPhoneSheetPillFollowsCurrent(t *testing.T) {
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(390, 800))
 	const label = `document.querySelector('.cui-sheet-pill__label').textContent`
-	var before, marked, cleared string
+	var before, marked, cleared, swapped string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(sheetPage(t)),
 		chromedp.Evaluate(label, &before),
@@ -130,11 +131,67 @@ func TestPhoneSheetPillFollowsCurrent(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('#list a[href="#s3"]').removeAttribute('aria-current')`, nil),
 		chromedp.Sleep(150*time.Millisecond),
 		chromedp.Evaluate(label, &cleared),
+		chromedp.Evaluate(`document.querySelector('#list ol').innerHTML = '<li><a href="#s4" aria-current="true">Section 4</a></li>'`, nil),
+		chromedp.Sleep(150*time.Millisecond),
+		chromedp.Evaluate(label, &swapped),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if before != "On this page" || marked != "Section 3" || cleared != "On this page" {
-		t.Errorf("label before|marked|cleared = %q|%q|%q", before, marked, cleared)
+	if before != "On this page" || marked != "Section 3" || cleared != "On this page" || swapped != "Section 4" {
+		t.Errorf("label before|marked|cleared|swapped = %q|%q|%q|%q", before, marked, cleared, swapped)
+	}
+}
+
+// The sheet is a dialog: opening it moves focus to the current entry,
+// or to the close button while nothing is current, and closing it
+// hands focus back to the pill.
+func TestPhoneSheetMovesFocusIn(t *testing.T) {
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(390, 800))
+	const focused = `(() => { const a = document.activeElement;
+		return a.getAttribute('href') || a.className; })()`
+	var first, current, back string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(sheetPage(t)),
+		chromedp.Focus(`.cui-sheet-pill`, chromedp.ByQuery),
+		chromedp.KeyEvent("\r"),
+		chromedp.Sleep(150*time.Millisecond),
+		chromedp.Evaluate(focused, &first),
+		chromedp.KeyEvent("\x1b"),
+		chromedp.Evaluate(`document.querySelector('#list a[href="#s3"]').setAttribute('aria-current','true')`, nil),
+		chromedp.Focus(`.cui-sheet-pill`, chromedp.ByQuery),
+		chromedp.KeyEvent("\r"),
+		chromedp.Sleep(150*time.Millisecond),
+		chromedp.Evaluate(focused, &current),
+		chromedp.KeyEvent("\x1b"),
+		chromedp.Evaluate(focused, &back),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if first != "cui-sheet-head__close" || current != "#s3" || !strings.HasPrefix(back, "cui-sheet-pill") {
+		t.Errorf("focus on open|open with a current entry|after close = %q|%q|%q", first, current, back)
+	}
+}
+
+// The page scroll lock is the phone sheet's: a sheet open above the
+// swap (no script to close it on a resize) leaves the page scrolling.
+func TestPhoneSheetScrollLockBelowSwap(t *testing.T) {
+	const lock = `getComputedStyle(document.documentElement).overflowY`
+	for _, c := range []struct {
+		w    int
+		want string
+	}{{390, "hidden"}, {1280, "visible"}} {
+		ctx := chromedptest.Context(t, chromedptest.WindowSize(c.w, 800))
+		var got string
+		if err := chromedp.Run(ctx,
+			chromedp.Navigate(sheetPage(t)),
+			chromedp.Evaluate(`document.getElementById('toc-sheet').showPopover()`, nil),
+			chromedp.Evaluate(lock, &got),
+		); err != nil {
+			t.Fatal(err)
+		}
+		if got != c.want {
+			t.Errorf("at %dpx the open sheet sets the page overflow %q; want %q", c.w, got, c.want)
+		}
 	}
 }
 

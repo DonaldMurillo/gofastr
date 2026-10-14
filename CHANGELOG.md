@@ -47,8 +47,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   on phones.** Below `Breakpoint` (md by default) a pill floating at the
   bottom of the screen names the section in view and opens the list;
   at and above it the list renders as before. The sheet is a native
-  popover rendered with the page: it opens without script and closes on
-  Escape, a tap outside, its close button or a followed link.
+  popover rendered with the page: it opens without script, closes on
+  Escape, a tap outside, its close button or a followed link, and with
+  script moves focus to the current entry when it opens.
   `ui.ContentRowConfig.PhoneAsideFlush` drops the stacked aside's rule
   and padding so an aside holding only that list leaves no band.
   The pieces are public: `interactive.SheetPill` (the pill SectionMenu

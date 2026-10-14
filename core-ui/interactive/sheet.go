@@ -386,7 +386,6 @@ func phoneSheetCSS(_ style.Theme) string {
   [data-cui-comp="cui-phone-sheet"] .cui-phone-sheet__sheet { transition: none; }
 }
 [data-cui-comp="cui-phone-sheet"] .cui-phone-sheet__sheet::backdrop { background: var(--ui-scrim, rgba(0,0,0,0.45)); }
-html:has([data-cui-comp="cui-phone-sheet"] .cui-phone-sheet__sheet:popover-open) { overflow: hidden; }
 /* The title row stays put while the list scrolls under it. */
 [data-cui-comp="cui-phone-sheet"] .cui-phone-sheet__top {
   position: sticky;
@@ -398,7 +397,13 @@ html:has([data-cui-comp="cui-phone-sheet"] .cui-phone-sheet__sheet:popover-open)
 `)
 	for _, s := range swapWidths {
 		scope := swapScope(`[data-cui-comp="cui-phone-sheet"]`, "cui-phone-sheet", s.w)
-		b.WriteString(strings.NewReplacer("SCOPE", scope, "MINW", s.minw).Replace(`@media (min-width: MINW) {
+		// Below the swap an open sheet holds the page still; above it the
+		// body is back in the page, and a sheet left open there (no
+		// script to close it on a resize) must not lock the scroll.
+		b.WriteString(strings.NewReplacer("SCOPE", scope, "MINW", s.minw, "MAXW", s.maxw).Replace(`@media (max-width: MAXW) {
+  html:has(SCOPE .cui-phone-sheet__sheet:popover-open) { overflow: hidden; }
+}
+@media (min-width: MINW) {
   SCOPE .cui-phone-sheet__sheet,
   SCOPE .cui-phone-sheet__body { display: contents; }
   SCOPE .cui-phone-sheet__top { display: none; }

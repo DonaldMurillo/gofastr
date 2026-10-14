@@ -38,17 +38,24 @@
     if (!pill || !sheet) return;
     root.__phoneSheetWired = true;
     follow(pill, sheet);
+    // An island or a poll can swap the list for markup that already
+    // carries its mark, so new children and text count as well as the
+    // attribute moving.
     new MutationObserver(() => follow(pill, sheet))
-      .observe(sheet, { subtree: true, attributes: true, attributeFilter: ['aria-current'] });
+      .observe(sheet, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['aria-current'] });
     sheet.addEventListener('click', (e) => {
       const a = e.target.closest && e.target.closest('a[href]');
       if (a && sheet.contains(a) && open(sheet)) sheet.hidePopover();
     });
-    // Opening brings the current entry into view in a long list.
+    // The sheet is a dialog, so opening it moves focus in: to the
+    // current entry, brought into view in a long list, or else to the
+    // close button. Closing returns focus to the pill (native popover).
     sheet.addEventListener('toggle', (e) => {
       if (e.newState !== 'open') return;
       const a = sheet.querySelector(CURRENT);
+      const target = a || sheet.querySelector('.cui-sheet-head__close');
       if (a) a.scrollIntoView({ block: 'nearest' });
+      if (target) target.focus({ preventScroll: true });
     });
   }
 
