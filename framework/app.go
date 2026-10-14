@@ -501,6 +501,9 @@ type App struct {
 	// reduced mux, and the interactive setup wizard alike. Guarded by
 	// serverMu. See WrapServer.
 	serverWrappers []func(http.Handler) http.Handler
+	// serverWrapped latches once Start has applied serverWrappers; a
+	// later WrapServer panics even after Shutdown clears a.server.
+	serverWrapped bool
 }
 
 // servingHandler wraps an http.Handler so it can be stored in an
@@ -1666,15 +1669,15 @@ func convertGroupEndpointPath(path string) string {
 // muxes. It is for gates that must hold for every byte the listener
 // serves, such as a Host allowlist. The first wrapper registered is
 // the outermost. Call it before Start binds (a battery's Init is in
-// time); a call once the server exists panics, since it could not
-// take effect.
+// time); a call once Start has built the server panics, since it could
+// not take effect, and so does one after Shutdown.
 func (a *App) WrapServer(wrap func(http.Handler) http.Handler) *App {
 	if wrap == nil {
 		return a
 	}
 	a.serverMu.Lock()
 	defer a.serverMu.Unlock()
-	if a.server != nil {
+	if a.server != nil || a.serverWrapped {
 		panic("framework: WrapServer called after Start bound the server")
 	}
 	a.serverWrappers = append(a.serverWrappers, wrap)
@@ -3553,6 +3556,7 @@ func (a *App) Start(addr string) error {
 	for i := len(a.serverWrappers) - 1; i >= 0; i-- {
 		serveHandler = a.serverWrappers[i](serveHandler)
 	}
+	a.serverWrapped = true
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           serveHandler,

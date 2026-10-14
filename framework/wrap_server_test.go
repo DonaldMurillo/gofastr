@@ -83,3 +83,18 @@ func TestWrapServerAfterStartPanics(t *testing.T) {
 	}()
 	app.WrapServer(func(h http.Handler) http.Handler { return h })
 }
+
+// Shutdown clears the server; a wrapper added then could still never
+// run, so it panics too.
+func TestWrapServerAfterShutdownPanics(t *testing.T) {
+	t.Setenv("GOFASTR_ROLE", "")
+	app := NewApp(WithoutDefaultMiddleware())
+	_, stop := startOnRandomPort(t, app)
+	stop()
+	defer func() {
+		if recover() == nil {
+			t.Fatal("WrapServer after Shutdown did not panic")
+		}
+	}()
+	app.WrapServer(func(h http.Handler) http.Handler { return h })
+}
