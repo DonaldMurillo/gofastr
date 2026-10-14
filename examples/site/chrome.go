@@ -22,10 +22,10 @@ import (
 // bind ⌘K, so the header needs no injected trigger.
 func siteHeader(ctx context.Context) render.HTML {
 	return siteheader.Render(siteheader.Config{
-		Ctx:        ctx,
-		Version:    versionLabel(),
-		Links:      siteNavLinks(),
-		ExtraLinks: siteNavExtraLinks(),
+		Ctx:      ctx,
+		Version:  versionLabel(),
+		Links:    siteNavLinks(),
+		MenuLead: siteMenuLead(),
 	})
 }
 

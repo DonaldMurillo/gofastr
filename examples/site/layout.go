@@ -262,14 +262,13 @@ func siteNavLinks() []siteheader.Link {
 	}
 }
 
-// siteNavExtraLinks render only in the header's phone menu, after the
-// sections: the destinations the desktop header reaches through its
-// search and icons, plus the repo. Home is the logo.
-func siteNavExtraLinks() []siteheader.Link {
+// siteMenuLead renders only in the header's phone menu, above the
+// sections: the entry points a newcomer looks for first. Home is the
+// logo, and GitHub is the mark in the menu's icon row.
+func siteMenuLead() []siteheader.Link {
 	return []siteheader.Link{
-		{Label: "Docs (all)", Href: "/docs/", Section: true},
 		{Label: "Get started", Href: "/get-started", Section: true},
-		{Label: "GitHub ↗", Href: "https://github.com/DonaldMurillo/gofastr", External: true},
+		{Label: "Docs", Href: "/docs/", Section: true},
 	}
 }
 

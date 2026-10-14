@@ -144,7 +144,7 @@
 .bar-actions { display: contents; }
 
 /* The search pill: mono placeholder on the left, the ⌘K keycaps on the
-   right. Inside the phone menu it collapses to its 44px icon shape. */
+   right. The phone menu has its own full-width field (.panel-search). */
 .cmd {
   display: inline-flex;
   align-items: center;
@@ -261,29 +261,50 @@
 }
 .panel-links a:hover,
 .panel-links a:focus-visible { background: var(--color-surface-soft); }
-.panel-actions {
+/* The entry points above the sections, set off by a hairline. */
+.panel-lead {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--spacing-sm);
-  margin-block-start: var(--spacing-md);
-  padding-block-start: var(--spacing-md);
-  border-block-start: var(--stroke-thin) solid var(--color-border);
+  gap: var(--spacing-xs);
+  padding-block-end: var(--spacing-xs);
+  margin-block-end: var(--spacing-xs);
+  border-block-end: var(--stroke-thin) solid var(--color-border);
 }
-/* The drawer's search control is the icon shape: a 44px square button
-   with the glyph only, the same treatment the GitHub mark gets. */
-.cmd-icon {
-  display: grid;
-  place-items: center;
-  inline-size: var(--spacing-touch-target);
-  block-size: var(--spacing-touch-target);
+/* The menu's search: a full-width field with the glyph and the
+   placeholder, the pill's palette. */
+.panel-search {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  inline-size: 100%;
+  min-block-size: var(--spacing-touch-target);
+  margin-block-end: var(--spacing-xs);
+  padding-inline: var(--spacing-md);
   border: var(--stroke-thin) solid var(--color-border);
   border-radius: var(--radii-md);
+  background: var(--color-background);
   color: var(--color-text-subtle);
+  font: inherit;
+  font-size: var(--text-ui);
+  text-align: start;
+  cursor: pointer;
 }
-.cmd-icon:hover {
-  background: var(--color-surface-soft);
-  color: var(--color-text);
+.panel-search:hover { color: var(--color-text); }
+/* The theme toggle and the GitHub mark, one row under the links. */
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-block-start: var(--spacing-xs);
+  padding-block-start: var(--spacing-xs);
+  border-block-start: var(--stroke-thin) solid var(--color-border);
+}
+
+/* From md the bar keeps its search, toggle and mark, so the menu holds
+   the links only. */
+@media (--above-md) {
+  .panel-search,
+  .panel-actions { display: none; }
 }
 
 /* Tablet: the dense seven-link nav gives way to the menu below xl. */

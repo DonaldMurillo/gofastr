@@ -461,3 +461,31 @@ func firstN(s string, n int) string {
 	}
 	return s
 }
+
+// TestPhoneMenuOrder: the header's phone menu leads with Get started and
+// Docs, then the sections, and names GitHub once (the mark in its icon
+// row), never Home (the logo is home).
+func TestPhoneMenuOrder(t *testing.T) {
+	page := body(t, "/get-started")
+	i := strings.Index(page, `aria-label="Mobile primary"`)
+	if i < 0 {
+		t.Fatal("no phone menu nav")
+	}
+	menu := page[i:]
+	menu = menu[:strings.Index(menu, "</details>")]
+	want := []string{`href="/get-started"`, `href="/docs/"`, `href="/primitives"`, `href="/plugins"`}
+	at := 0
+	for _, w := range want {
+		j := strings.Index(menu[at:], w)
+		if j < 0 {
+			t.Fatalf("phone menu: %s missing or out of order (want %v)", w, want)
+		}
+		at += j
+	}
+	if n := strings.Count(menu, "github.com/DonaldMurillo/gofastr\""); n != 1 {
+		t.Errorf("phone menu links GitHub %d times, want 1", n)
+	}
+	if strings.Contains(menu, `href="/"`) {
+		t.Error("phone menu lists Home; the logo links there")
+	}
+}
