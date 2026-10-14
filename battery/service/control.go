@@ -2,6 +2,7 @@ package service
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,14 +19,17 @@ import (
 
 // The control channel. A Unix socket (AF_UNIX on Windows too) inside
 // the 0700 state directory, one JSON request line and one JSON
-// response line per connection. Directory permissions are not trusted
+// response line per connection, except "mcp", which then carries an
+// MCP stdio session until either side closes. Directory permissions are not trusted
 // on their own (some systems ignore socket file modes), so every
 // accepted connection is checked against the daemon's own OS user
 // through the kernel's peer credentials before a byte is read.
 //
 // Ops: "status" (pid, address, version), "token" (a 60-second
 // single-use sign-in token), "stop" (graceful shutdown; the Windows
-// stop path, where there is no SIGTERM to send).
+// stop path, where there is no SIGTERM to send), "mcp" (the
+// connection becomes a stdio MCP session against the App's MCP server;
+// `service mcp` is its client).
 
 const (
 	controlDeadline   = 5 * time.Second
@@ -53,6 +57,11 @@ type controlResponse struct {
 
 // acceptRetryDelay paces control-channel Accept retries.
 var acceptRetryDelay = 100 * time.Millisecond
+
+// closeWait bounds how long Close waits for in-flight connections. An
+// MCP tool call that ignores its cancelled context would otherwise keep
+// the daemon from exiting.
+var closeWait = 10 * time.Second
 
 var errAlreadyRunning = errors.New("another instance is already running")
 
@@ -127,9 +136,10 @@ type controlServer struct {
 	ln     net.Listener
 	handle func(op string) controlResponse
 	log    *slog.Logger
-	// mcp serves one MCP session over in/out until in ends (the "mcp"
-	// op). Nil when the daemon has no MCP server to offer.
-	mcp func(in io.Reader, out io.Writer)
+	// mcp serves one MCP session over in/out until in ends or ctx is
+	// cancelled (the "mcp" op). Nil when the daemon has no MCP server
+	// to offer.
+	mcp func(ctx context.Context, in io.Reader, out io.Writer)
 
 	// mu orders wg.Add in serve against wg.Wait in Close: an Add that
 	// races a Wait on a zero counter is a WaitGroup misuse, and a
@@ -138,8 +148,13 @@ type controlServer struct {
 	closed bool
 	wg     sync.WaitGroup
 	// sessions are the open MCP connections. They have no deadline,
-	// so Close closes them to end the wait.
-	sessions map[net.Conn]struct{}
+	// so endMCP closes them to end the wait. mcpEnded refuses new ones,
+	// and cancelMCP cancels the context their tool calls run under.
+	sessions  map[net.Conn]struct{}
+	mcpWG     sync.WaitGroup
+	mcpEnded  bool
+	mcpCtx    context.Context
+	cancelMCP context.CancelFunc
 }
 
 // serve returns only once Close has closed the listener. Any other
@@ -172,17 +187,51 @@ func (s *controlServer) serve() {
 	}
 }
 
-// Close stops accepting, ends open MCP sessions, and waits for
-// in-flight requests.
-func (s *controlServer) Close() {
+// endMCP refuses new MCP sessions, cancels the context of the open
+// ones' tool calls, and closes their connections. The daemon calls it
+// before it drains the App, so no session calls into an App that is
+// shutting down.
+func (s *controlServer) endMCP() {
 	s.mu.Lock()
-	s.closed = true
+	s.mcpEnded = true
+	if s.cancelMCP != nil {
+		s.cancelMCP()
+	}
 	for c := range s.sessions {
 		c.Close()
 	}
 	s.mu.Unlock()
+	// Wait for the sessions to return, so a cancelled tool call has
+	// finished before the App drains; bounded like Close.
+	waitBounded(&s.mcpWG, closeWait, s.log, "an MCP session")
+}
+
+// waitBounded waits on wg for up to limit, then logs what it left
+// running.
+func waitBounded(wg *sync.WaitGroup, limit time.Duration, log *slog.Logger, what string) {
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(limit):
+		if log != nil {
+			log.Warn("service: control channel closed with "+what+" still running", "waited", limit.String())
+		}
+	}
+}
+
+// Close stops accepting, ends open MCP sessions, and waits up to
+// closeWait for in-flight requests.
+func (s *controlServer) Close() {
+	s.endMCP()
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
 	s.ln.Close()
-	s.wg.Wait()
+	waitBounded(&s.wg, closeWait, s.log, "a request")
 }
 
 func (s *controlServer) serveConn(c net.Conn) {
@@ -229,8 +278,9 @@ func (s *controlServer) serveMCP(c net.Conn, in *bufio.Reader) {
 	}
 	s.mu.Lock()
 	switch {
-	case s.closed:
+	case s.closed || s.mcpEnded:
 		s.mu.Unlock()
+		writeControl(c, controlResponse{Error: "the daemon is stopping"})
 		return
 	case len(s.sessions) >= maxMCPSessions:
 		s.mu.Unlock()
@@ -239,13 +289,19 @@ func (s *controlServer) serveMCP(c net.Conn, in *bufio.Reader) {
 	}
 	if s.sessions == nil {
 		s.sessions = map[net.Conn]struct{}{}
+		s.mcpCtx, s.cancelMCP = context.WithCancel(context.Background())
 	}
 	s.sessions[c] = struct{}{}
+	// Added under mu after the mcpEnded check, so it never races
+	// endMCP's Wait.
+	s.mcpWG.Add(1)
+	ctx := s.mcpCtx
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
 		delete(s.sessions, c)
 		s.mu.Unlock()
+		s.mcpWG.Done()
 	}()
 
 	_ = c.SetDeadline(time.Time{})
@@ -255,7 +311,7 @@ func (s *controlServer) serveMCP(c net.Conn, in *bufio.Reader) {
 			s.log.Error("service: MCP session panicked", "panic_type", fmt.Sprintf("%T", v))
 		}
 	}()
-	s.mcp(in, c)
+	s.mcp(ctx, in, c)
 }
 
 // dispatch runs the handler under a recover guard: a panic in one

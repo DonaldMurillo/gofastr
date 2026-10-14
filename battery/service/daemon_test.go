@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,6 +28,11 @@ type devRun struct {
 	rt   Runtime
 	addr string
 	done chan error
+	// holding fires when the MCP tool "hold" starts; held then reports
+	// whether the App had already stopped when the call was cancelled.
+	holding    chan struct{}
+	held       chan bool
+	appStopped atomic.Bool
 }
 
 func startDevRun(t *testing.T) *devRun {
@@ -42,7 +48,7 @@ func startRun(t *testing.T, args ...string) *devRun {
 	t.Setenv("GOFASTR_ROLE", "")
 	t.Setenv("GOFASTR_SETUP", "")
 	b, ft, _ := testBattery(t, runtime.GOOS, Config{})
-	d := &devRun{b: b, ft: ft, done: make(chan error, 1)}
+	d := &devRun{b: b, ft: ft, done: make(chan error, 1), holding: make(chan struct{}, 1), held: make(chan bool, 1)}
 	built := make(chan Runtime, 1)
 	build := func(rt Runtime) (*framework.App, error) {
 		built <- rt
@@ -71,6 +77,19 @@ func startRun(t *testing.T, args ...string) *devRun {
 				}
 			}
 			return "anonymous", nil
+		}); err != nil {
+			return nil, err
+		}
+		app.OnStop(func() error { d.appStopped.Store(true); return nil })
+		// hold blocks until its call is cancelled, then takes a moment
+		// to wind down, the way a real call does: a drain that does not
+		// wait for it shows up as appStopped.
+		if err := app.MCP.RegisterTool("hold", "block until cancelled", nil, func(ctx context.Context, _ map[string]any) (any, error) {
+			d.holding <- struct{}{}
+			<-ctx.Done()
+			time.Sleep(200 * time.Millisecond)
+			d.held <- d.appStopped.Load()
+			return nil, ctx.Err()
 		}); err != nil {
 			return nil, err
 		}

@@ -95,7 +95,8 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 	b.gate = g
 	b.mu.Unlock()
 
-	app, err := build(Runtime{DataDir: l.dir, Secret: secret, Dev: mode.dev})
+	rt := Runtime{DataDir: l.dir, Secret: secret, Dev: mode.dev}
+	app, err := build(rt)
 	if err != nil {
 		return fmt.Errorf("service: build app: %w", err)
 	}
@@ -135,7 +136,7 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 	// The local run record (framework/localrun) tells agents to reach
 	// this daemon through `service mcp`: its HTTP /mcp sits behind the
 	// browser sign-in gate.
-	app.SetLocalRunInfo(framework.LocalRunInfo{Service: b.cfg.ID, MCPCommand: mcpCommand(mode.dev), Dev: mode.dev})
+	app.SetLocalRunInfo(framework.LocalRunInfo{Service: b.cfg.ID, MCPCommand: rt.MCPCommand(), Dev: mode.dev})
 
 	listen := "127.0.0.1:" + strconv.Itoa(mode.port)
 	startErr := make(chan error, 1)
@@ -197,9 +198,11 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 		runErr = fmt.Errorf("service: server stopped: %w", err)
 	}
 	_ = sdNotify("STOPPING=1")
-	// The control channel closes after the drain, not before: a stop
-	// waiting on it then sees "gone" only once the App has let go of
-	// the port and the database.
+	// MCP sessions end first: their tool calls run inside the App, so
+	// they must not outlive it. The rest of the control channel closes
+	// after the drain, not before: a stop waiting on it then sees
+	// "gone" only once the App has let go of the port and the database.
+	cs.endMCP()
 	if err := b.drain(app, log); err != nil && runErr == nil {
 		runErr = err
 	}

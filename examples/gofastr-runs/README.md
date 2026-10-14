@@ -57,15 +57,16 @@ binary's real path. Its shape:
 ```json
 {
   "mcpServers": {
-    "gofastr-runs": { "command": "/path/to/gofastr-runs", "args": ["service", "mcp"] }
+    "gofastr-runs": { "command": "/path/to/gofastr-runs", "args": ["service", "mcp", "--state-dir", "/path/to/state"] }
   }
 }
 ```
 
-Add `"--dev"` to `args` to reach the dev run instead. `service mcp`
-tunnels through the daemon's peer-checked control socket, so only the
-OS user the service runs as gets in; the HTTP `/mcp` stays behind the
-browser sign-in.
+The card fills both paths from `Runtime.MCPCommand()`, so copy it from
+the run you want the agent to reach (the dev run's card adds
+`--dev`). `service mcp` tunnels through the daemon's peer-checked
+control socket, so only the OS user the service runs as gets in; the
+HTTP `/mcp` stays behind the browser sign-in.
 
 ## Tests
 

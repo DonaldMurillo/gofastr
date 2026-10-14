@@ -2,8 +2,11 @@ package service
 
 import (
 	"bufio"
+	"context"
 	"io"
+	"log/slog"
 	"net"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -21,7 +24,7 @@ func bridge(t *testing.T, d *devRun) (io.WriteCloser, *bufio.Scanner, <-chan err
 	outR, outW := io.Pipe()
 	done := make(chan error, 1)
 	go func() {
-		done <- d.b.mcpBridge(true, inR, outW)
+		done <- d.b.mcpBridge(true, "", inR, outW)
 		outW.Close()
 	}()
 	t.Cleanup(func() { inW.Close() })
@@ -102,9 +105,81 @@ func TestMCPSessionEndsOnStop(t *testing.T) {
 
 func TestMCPBridgeNotRunning(t *testing.T) {
 	b, _, _ := testBattery(t, "darwin", Config{})
-	err := b.mcpBridge(true, strings.NewReader(""), io.Discard)
+	err := b.mcpBridge(true, "", strings.NewReader(""), io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "service run") {
 		t.Fatalf("err = %v; want a not-running hint", err)
+	}
+	if err := b.mcpBridge(false, "relative/dir", strings.NewReader(""), io.Discard); err == nil || !strings.Contains(err.Error(), "absolute") {
+		t.Fatalf("relative --state-dir: err = %v", err)
+	}
+}
+
+// A tool call in flight when the daemon stops is cancelled, and the
+// session ends before the App drains: the call never runs on into an
+// App that is shutting down.
+func TestMCPSessionEndsBeforeDrain(t *testing.T) {
+	d := startDevRun(t)
+	in, out, done := bridge(t, d)
+	io.WriteString(in, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"hold"}}`+"\n")
+	select {
+	case <-d.holding:
+	case <-time.After(10 * time.Second):
+		t.Fatal("hold never ran")
+	}
+	if _, err := callControl(d.l.socketPath(), "stop"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case stopped := <-d.held:
+		if stopped {
+			t.Fatal("the App drained before the session's tool call was cancelled")
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("the in-flight tool call was never cancelled")
+	}
+	select {
+	case <-d.done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("daemon did not stop")
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("bridge outlived the daemon")
+	}
+	_ = out
+	d.done <- nil // for startRun's cleanup
+}
+
+// A tool call that ignores its cancelled context cannot hold the
+// daemon open: Close gives up after closeWait.
+func TestCloseBoundsAStuckSession(t *testing.T) {
+	prev := closeWait
+	closeWait = 100 * time.Millisecond
+	t.Cleanup(func() { closeWait = prev })
+	stuck := make(chan struct{})
+	t.Cleanup(func() { close(stuck) })
+	ln, err := listenControl(filepath.Join(shortTempDir(t), "c.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := &controlServer{ln: ln, handle: echoOp, log: slog.New(slog.DiscardHandler),
+		mcp: func(context.Context, io.Reader, io.Writer) { <-stuck }}
+	go cs.serve()
+	c, _, _, err := openControl(ln.Addr().String(), "mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	closed := make(chan struct{})
+	go func() {
+		cs.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close waited on a stuck session")
 	}
 }
 
@@ -117,7 +192,7 @@ func TestControlMCPRefusals(t *testing.T) {
 	}
 
 	release := make(chan struct{})
-	path = startControlServer(t, &controlServer{handle: echoOp, mcp: func(io.Reader, io.Writer) { <-release }})
+	path = startControlServer(t, &controlServer{handle: echoOp, mcp: func(context.Context, io.Reader, io.Writer) { <-release }})
 	defer close(release)
 	var open []net.Conn
 	defer func() {
@@ -149,8 +224,31 @@ func TestDaemonRecordsMCPCommand(t *testing.T) {
 		t.Fatalf("records = %+v", recs)
 	}
 	r := recs[0]
-	if r.Service != d.b.cfg.ID || !r.Dev || len(r.MCPCommand) != 4 ||
-		!slices.Equal(r.MCPCommand[1:], []string{"service", "mcp", "--dev"}) || r.URL != "http://"+d.addr {
+	if r.Service != d.b.cfg.ID || !r.Dev || len(r.MCPCommand) != 6 ||
+		!slices.Equal(r.MCPCommand[1:], []string{"service", "mcp", "--dev", "--state-dir", d.l.dir}) || r.URL != "http://"+d.addr {
 		t.Fatalf("record = %+v", r)
+	}
+}
+
+// The recorded command reaches its own daemon from anywhere: an agent
+// starts it in its own directory and environment, where neither the
+// dev run's worktree nor the install's data-dir variable applies.
+func TestRecordedMCPCommandFindsItsDaemon(t *testing.T) {
+	d := startDevRun(t)
+	argv := Runtime{DataDir: d.l.dir, Dev: true}.MCPCommand()
+	// Elsewhere, the dev layout resolves to a different directory.
+	t.Setenv(dataDirEnv, t.TempDir())
+	if l, _ := d.b.layoutFor(true); l.dir == d.l.dir {
+		t.Fatal("test setup: the layout did not move")
+	}
+	var out strings.Builder
+	d.b.cfg.Stdin = strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}` + "\n")
+	d.b.cfg.Stdout = &out
+	// argv is [exe service mcp ...]; dispatch takes what follows "service".
+	if err := d.b.dispatch(context.Background(), argv[2:], nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"id":1`) {
+		t.Fatalf("reply = %q", out.String())
 	}
 }

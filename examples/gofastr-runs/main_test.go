@@ -141,7 +141,7 @@ func TestScreensShowRuns(t *testing.T) {
 	for _, want := range []string{
 		"billing", "Acme Site", `href="/runs/` + svcID + `"`, `href="/runs/` + devID + `"`,
 		`data-cui-poll="5s"`, `data-cui-poll-src="` + tablePath + `"`,
-		"&#34;mcpServers&#34;", "&#34;--dev&#34;",
+		"&#34;mcpServers&#34;", "&#34;--dev&#34;", "&#34;--state-dir&#34;",
 	} {
 		if !strings.Contains(list, want) && !strings.Contains(list, strings.ReplaceAll(want, "&#34;", "&quot;")) {
 			t.Errorf("list screen lacks %q", want)

@@ -33,7 +33,8 @@ commands:
   status                whether it is installed and running, and where
   logs [-n N] [-f]      the service log
   open [--dev]          sign in: open the app in your browser
-  mcp [--dev]           serve the app's MCP over stdio, for an agent's
+  mcp [--dev] [--state-dir DIR]
+                        serve the app's MCP over stdio, for an agent's
                         MCP config (the daemon must be running)
   run [--port N] [--open]
                         run in the foreground with its own data and port
@@ -87,10 +88,11 @@ func (b *Battery) dispatch(ctx context.Context, args []string, build Builder) er
 		return b.openWith(l, *print)
 	case "mcp":
 		dev := fs.Bool("dev", false, "connect to the foreground dev run")
+		stateDir := fs.String("state-dir", "", "the daemon's state directory (absolute), as its run record names it")
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
-		return b.mcpBridge(*dev, b.cfg.Stdin, b.cfg.Stdout)
+		return b.mcpBridge(*dev, *stateDir, b.cfg.Stdin, b.cfg.Stdout)
 	case "run":
 		return b.runForeground(ctx, rest, build)
 	case "daemon":

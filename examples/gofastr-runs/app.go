@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
 
@@ -40,7 +39,7 @@ func buildApp(rt service.Runtime) (*framework.App, error) {
 		framework.WithMCPTools(registerTools),
 	)...)
 
-	self := selfConfig(rt.Dev)
+	self := selfConfig(rt)
 	site := app.NewApp("gofastr-runs")
 	// The canonical theme carries the dark palette, so the OS colour
 	// scheme applies.
@@ -56,17 +55,13 @@ func buildApp(rt service.Runtime) (*framework.App, error) {
 }
 
 // selfConfig is the mcpServers entry for this tracker: its own binary
-// with `service mcp`.
-func selfConfig(dev bool) *mcpServer {
-	exe, err := os.Executable()
-	if err != nil {
+// with `service mcp`, naming this run's state directory.
+func selfConfig(rt service.Runtime) *mcpServer {
+	argv := rt.MCPCommand()
+	if len(argv) == 0 {
 		return nil
 	}
-	args := []string{"service", "mcp"}
-	if dev {
-		args = append(args, "--dev")
-	}
-	return &mcpServer{Type: "stdio", Command: exe, Args: args}
+	return &mcpServer{Type: "stdio", Command: argv[0], Args: argv[1:]}
 }
 
 // runsScreen is "/": every running gofastr app, and how to point an

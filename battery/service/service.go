@@ -80,6 +80,14 @@ type Runtime struct {
 	Dev bool
 }
 
+// MCPCommand is the argv an agent's MCP config runs to reach this
+// daemon or dev run: `<exe> service mcp [--dev] --state-dir <DataDir>`.
+// It is what the run's local record carries as mcp_command. Nil when
+// the executable path is unknown.
+func (rt Runtime) MCPCommand() []string {
+	return mcpCommand(rt.Dev, rt.DataDir)
+}
+
 // AppOptions opens the mode's SQLite database (app.db in DataDir)
 // and returns it with the persisted secret, so sessions and signed
 // tokens survive a restart. An app with its own database skips this

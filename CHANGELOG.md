@@ -24,9 +24,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the local user, so owner-scoped entities work without `battery/auth`;
   with auth linked, auth keeps identity. Agents reach the App's MCP tools
   through `service mcp`, a stdio server tunnelled over that socket and
-  run as the same local user. The dev run keeps its own state
-  directory and port (one per isolated worktree), and `gofastr dev`
-  runs it gated on the address it passes. `stop`, reinstall and
+  run as the same local user; `Runtime.MCPCommand()` gives the argv with
+  `--state-dir`, so it reaches the right daemon from any directory. The
+  dev run keeps its own state directory and port (one per isolated
+  worktree), and `gofastr dev` runs it gated on the address it passes. `stop`, reinstall and
   `uninstall` wait for the old process to exit, and an instance lock
   keeps one process per state directory. Windows has no crash restart,
   and its backend is unit-tested but has not run on a real Windows

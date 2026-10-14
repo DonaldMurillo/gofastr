@@ -92,7 +92,7 @@ An app with subcommands of its own checks for them before calling
 | `status` | Installed or not, running or not, pid, address, version, data directory. Asked of the daemon, never parsed from manager output. |
 | `logs [-n N] [-f]` | The service log. journald on Linux; `logs/service.log` in the state directory on macOS and Windows. Control bytes are stripped before printing. |
 | `open [--dev] [--print]` | Signs the browser in (see below). `--dev` targets the dev run. |
-| `mcp [--dev]` | Serves the app's MCP server over stdio for an agent's MCP config (see "Agents over MCP"). The daemon, or with `--dev` the dev run, must be running. |
+| `mcp [--dev] [--state-dir DIR]` | Serves the app's MCP server over stdio for an agent's MCP config (see "Agents over MCP"). The daemon, or with `--dev` the dev run, must be running. `--state-dir` names the daemon's state directory instead of resolving it. |
 | `run [--port N] [--open]` | The foreground dev run. `--open` signs the browser in once it is up. |
 | `rotate-secret [--dev]` | Replaces the secret, which signs every browser out, and restarts a running installed daemon so it applies. With `--dev` it prints that the dev run needs a restart. |
 
@@ -221,24 +221,42 @@ same way it launches any local MCP server.
 ```json
 {
   "mcpServers": {
-    "my-app": { "command": "/Users/me/Library/Application Support/dev.acme.myapp/bin/myapp", "args": ["service", "mcp"] }
+    "my-app": {
+      "command": "/Users/me/Library/Application Support/dev.acme.myapp/bin/myapp",
+      "args": ["service", "mcp", "--state-dir", "/Users/me/Library/Application Support/dev.acme.myapp"]
+    }
   }
 }
 ```
+
+`--state-dir` pins the daemon. Without it the command resolves the
+state directory the way every other verb does, from the environment
+(`GOFASTR_SERVICE_DATA_DIR`) and, for `--dev`, the working directory's
+worktree. An agent starts the command in its own directory and
+environment, so a dev run in another worktree, or an install made with
+`GOFASTR_SERVICE_DATA_DIR` set, is not found without it.
+`Runtime.MCPCommand()` returns the full argv for the running daemon or
+dev run, `--state-dir` included; it is also what the daemon writes into
+its [local run record](local-runs.md) as `mcp_command`, so a tool that
+reads the registry can hand an agent the right entry for each service.
 
 The command connects to `control.sock`, so it is admitted by the same
 peer-credential check as `status` and `stop`: only the OS user the
 daemon runs as gets through. Inside the daemon the session runs the
 App's MCP server (`App.MCP`, everything `WithMCPTools` registered) as
 the local user from "Who the signed-in browser is", so per-caller gates
-and owner-scoped tools see the same user the browser does. A daemon
-holds at most 16 MCP sessions at once; the 17th is refused. Stopping
-the daemon ends every open session, and the agent sees its server
-exit.
+and owner-scoped tools see the same user the browser does. With
+`battery/auth` linked there is no local user, so the session is
+anonymous: tools that require a signed-in caller refuse it.
 
-The daemon writes this command into its [local run
-record](local-runs.md) as `mcp_command`, so a tool that reads the
-registry can hand an agent the right entry for each service.
+A daemon holds at most 16 MCP sessions at once; the 17th is refused.
+When the daemon stops it ends the sessions before it shuts the App
+down: tool calls in flight see their context cancelled, the daemon
+waits up to 10 s for them to return, and the agent sees its server
+exit. A tool that ignores its context past that wait can still be
+running when the database closes, so tools should return on
+cancellation. Each
+request line may be up to 1 MiB, the HTTP transport's body limit.
 
 ## Who the signed-in browser is
 
