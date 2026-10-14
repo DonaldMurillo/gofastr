@@ -36,6 +36,10 @@
     label.textContent = text || sr.textContent.replace(/:\s*$/, '');
   }
 
+  function hang(pill, sheet) {
+    sheet.style.setProperty('--cui-sheet-hang', pill.getBoundingClientRect().bottom + 'px');
+  }
+
   function open(sheet) {
     try { return sheet.matches(':popover-open'); } catch (_) { return false; }
   }
@@ -56,6 +60,15 @@
       const a = e.target.closest && e.target.closest('a[href]');
       if (a && sheet.contains(a) && open(sheet)) sheet.hidePopover();
     });
+    // A sheet that hangs from a bar hangs from where the bar is drawn:
+    // pinned under the header once the page has scrolled to it, lower
+    // while it still sits in flow. The open sheet holds the page still,
+    // so the bar stays there until it closes.
+    if (root.classList.contains('cui-phone-sheet--top')) {
+      sheet.addEventListener('beforetoggle', (e) => {
+        if (e.newState === 'open') hang(pill, sheet);
+      });
+    }
     // The sheet is a dialog, so opening it moves focus in: to the
     // current entry, brought into view in a long list, or else to the
     // close button, or the first entry where the sheet hangs from a bar
@@ -72,7 +85,8 @@
   }
 
   // Past the swap the pill is hidden and the body is back in the page;
-  // a sheet left open there would float over it.
+  // a sheet left open there would float over it. Below it, a turned
+  // phone moves the bar, and a hanging sheet follows.
   window.addEventListener('resize', () => {
     for (const root of document.querySelectorAll(ROOT)) {
       const pill = root.querySelector(':scope > .cui-sheet-pill');

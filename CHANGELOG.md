@@ -61,8 +61,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   either (`interactive.PhoneSheetConfig.Top`) pins that pill as an "On
   this page: <section>" bar under the sticky header and hangs the list
   from the bar, for a page whose SectionMenu pill already holds the
-  bottom edge. Anchored sections and the rail's in-view band clear the
-  bar through `--ui-sheet-bar-offset`.
+  bottom edge. In a ContentRow aside the bar's aside moves above the
+  main column on a phone and sticks there. Anchored sections and the
+  rail's in-view band clear the bar through `--ui-sheet-bar-offset`.
 - **entityui lists warn when their row links lead nowhere.** The first
   time a list renders rows whose `<base>/<id>` matches no registered
   screen, it logs one warning per base naming the route to register.

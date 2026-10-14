@@ -147,6 +147,80 @@ if(label!=='Intent 2')return 'the bar names '+JSON.stringify(label)+', not the s
 `)
 }
 
+// Opened before the page scrolls, while the bar still sits in flow
+// below the content above it, the sheet hangs from where the bar is
+// drawn, not from where it would pin, and the dim starts there too.
+func TestBarSheetHangsBeforeScroll(t *testing.T) {
+	items := []ui.RailItem{{Text: "Intent 0", Anchor: "i0"}, {Text: "Intent 1", Anchor: "i1"}}
+	sections := []render.HTML{
+		ui.Section(ui.SectionConfig{ID: "i0", Heading: "Intent 0"}, html.Paragraph(html.TextConfig{}, render.Text("Body"))),
+		ui.Section(ui.SectionConfig{ID: "i1", Heading: "Intent 1"}, html.Paragraph(html.TextConfig{}, render.Text("Body"))),
+	}
+	rail := ui.AnchoredRail(ui.AnchoredRailConfig{Label: "On this page", Items: items, ObserveSelector: "#sections", PhoneSheet: true, PhoneSheetTop: true})
+	intro := make([]render.HTML, 8)
+	for i := range intro {
+		intro[i] = html.Paragraph(html.TextConfig{}, render.Text("Intro"))
+	}
+	page := html.Div(html.DivConfig{}, intro...) + rail + html.Div(html.DivConfig{ID: "sections"}, sections...)
+	check := tocPage(t, page, "phonesheet")
+	check(t, 390, `
+const bar=q('.cui-sheet-pill--bar'), sheet=q('.cui-phone-sheet__sheet');
+const b=r(bar);
+if(b.top<100)return 'fixture: the bar should start in flow, top '+b.top;
+bar.click(); await wait(400);
+if(!sheet.matches(':popover-open'))return 'the bar did not open the sheet';
+const s=r(sheet);
+if(Math.abs(s.top-b.bottom)>1)return 'the sheet hangs at '+s.top+', the bar ends at '+b.bottom;
+const dim=parseFloat(getComputedStyle(sheet,'::backdrop').insetBlockStart);
+if(Math.abs(dim-b.bottom)>1)return 'the dim starts at '+dim+', the bar ends at '+b.bottom;
+`)
+}
+
+// A PhoneSheetTop contents list in a ContentRow aside: on a phone the
+// stacked aside moves above the main column and sticks, so the bar
+// pins at the top through the whole page instead of trailing the
+// article, and the sheet hangs from it.
+func TestTOCBarInAsidePinsOnPhone(t *testing.T) {
+	items := make([]ui.TOCItem, 4)
+	sections := make([]render.HTML, 4)
+	for i := range items {
+		id := fmt.Sprintf("s%d", i)
+		items[i] = ui.TOCItem{ID: id, Label: fmt.Sprintf("Section %d", i)}
+		body := []render.HTML{html.Heading(html.HeadingConfig{Level: 2}, render.Text(items[i].Label))}
+		for range 30 {
+			body = append(body, html.Paragraph(html.TextConfig{}, render.Text("Body")))
+		}
+		sections[i] = html.Div(html.DivConfig{ID: id}, body...)
+	}
+	toc := ui.TableOfContents(ui.TOCConfig{Items: items, Target: "main", Sticky: true, PhoneSheet: true, PhoneSheetTop: true})
+	page := ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+		ui.ContentRow(ui.ContentRowConfig{
+			Aside:      render.Raw(`<div data-cui-outlet="probe#toc">`) + toc + render.Raw(`</div>`),
+			AsideLabel: "On this page",
+		}, html.Main(html.MainConfig{}, sections...)))
+	check := tocPage(t, page, "phonesheet")
+	t.Run("Phone", func(t *testing.T) {
+		check(t, 390, `
+const bar=q('.cui-sheet-pill--bar'), main=q('main'), aside=q('.fui-content-row__aside');
+if(r(bar).top>r(main).top)return 'the bar trails the article: bar '+r(bar).top+', main '+r(main).top;
+if(parseFloat(getComputedStyle(aside).borderTopWidth)!==0)return 'the stacked aside draws a rule';
+for(const y of [1500, 3500, document.documentElement.scrollHeight]){
+  scrollTo(0, y); await wait(200);
+  if(Math.round(r(bar).top)!==0)return 'at scroll '+y+' the bar is not pinned: top '+r(bar).top;
+}
+bar.click(); await wait(400);
+const s=r(q('.cui-phone-sheet__sheet'));
+if(Math.abs(s.top-r(bar).bottom)>1)return 'the sheet hangs at '+s.top+', the bar ends at '+r(bar).bottom;
+`)
+	})
+	t.Run("Desktop", func(t *testing.T) {
+		check(t, 1280, `
+const main=q('main'), aside=q('.fui-content-row__aside');
+if(Math.abs(r(aside).top-r(main).top)>1||r(aside).left<r(main).left+100)return 'the aside left the side column: aside '+JSON.stringify(r(aside))+', main '+JSON.stringify(r(main));
+`)
+	})
+}
+
 // tocPage serves page through the framework host and returns a checker
 // that loads it at a width, waits for the named behaviour (if any), and
 // runs js, which returns a failure message or nothing.

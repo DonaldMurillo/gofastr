@@ -62,7 +62,9 @@ type TOCConfig struct {
 	// the breakpoint the nav renders as it does without it. The pill
 	// follows the entry the Target observer marks, so set Target too.
 	// In a ui.ContentRow aside, set the row's PhoneAsideFlush: the
-	// stacked aside holds nothing else on a phone. The pill floats at
+	// stacked aside holds nothing else on a phone (with PhoneSheetTop
+	// the aside instead moves above the main column and sticks, and
+	// needs no flag). The pill floats at
 	// the bottom of the screen, so a page carries one floating pill:
 	// beside a SectionMenu's, set PhoneSheetTop. The sheet's id is ID
 	// plus "-sheet", or fui-toc-sheet without an ID.

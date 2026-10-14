@@ -107,7 +107,9 @@ type ContentRowConfig struct {
 	// padding below the breakpoint. Set it when the aside's phone form
 	// lives outside it (a ui.TableOfContents with PhoneSheet, whose
 	// pill floats over the page): the stacked aside renders empty on
-	// phones and an empty band must not draw a line.
+	// phones and an empty band must not draw a line. An aside holding
+	// a contents list with PhoneSheetTop needs no flag: on phones it
+	// moves above the main column and sticks there, flush, as the bar.
 	PhoneAsideFlush bool
 	// Dense gives the page the compact density on a fine pointer (a
 	// mouse or trackpad): controls, toolbar fields and table rows take
@@ -345,6 +347,14 @@ func (b rowBreakpointCSS) stackCSS() string {
   /* PhoneAsideFlush: the same for the aside, whose phone form (a
      contents list's pill and sheet) floats over the page. */
   .fui-content-row--phone-aside-flush:SCOPE: .fui-content-row__aside { border: 0; padding: 0; }
+  /* An aside whose phone form is a bar pinned under the header (a
+     contents list's PhoneSheetTop) moves above the main column and
+     sticks there itself: the bar alone is as tall as the aside, so it
+     has no room to stick in, and stacked last it would trail the
+     article. The row turns to a column so the aside can move. */
+  :where(.fui-content-row:has(> .fui-content-row__aside .cui-sheet-pill--bar)):SCOPE: { display: flex; flex-direction: column; }
+  .fui-content-row:SCOPE: .fui-content-row__nav { order: -2; }
+  .fui-content-row:SCOPE: .fui-content-row__aside:has(.cui-sheet-pill--bar) { order: -1; position: sticky; inset-block-start: var(--ui-sticky-top, 0px); z-index: calc(var(--z-sticky, 200) - 1); border: 0; padding: 0; }
 }
 `, b.maxw)
 	return strings.ReplaceAll(css, ":SCOPE:", b.scope)

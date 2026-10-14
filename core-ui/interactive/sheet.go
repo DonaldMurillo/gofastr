@@ -459,16 +459,20 @@ func phoneSheetCSS(_ style.Theme) string {
    bar names the list (its title row would repeat it; the title still
    names the dialog), and the bar's chevron turns to close it. The
    list lines up with the bar's text: a bar that bleeds to the screen's
-   edges pads its text by that bleed, and the sheet does too. */
+   edges pads its text by that bleed, and the sheet does too. The bar
+   pins under the header only once the page scrolls to it, so the
+   script measures where it is drawn as the sheet opens
+   (--cui-sheet-hang); the page holds still while the sheet is open.
+   Without script the sheet hangs where the pinned bar ends. */
 [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet {
-  inset: calc(var(--ui-sticky-top, 0px) + var(--ui-sheet-bar-height, 2.75rem)) 0 auto 0;
-  max-block-size: min(var(--ui-sheet-max-height, 75vh), calc(100dvh - var(--ui-sticky-top, 0px) - var(--ui-sheet-bar-height, 2.75rem) - var(--spacing-lg, 16px)));
+  inset: var(--cui-sheet-hang, calc(var(--ui-sticky-top, 0px) + var(--ui-sheet-bar-height, 2.75rem))) 0 auto 0;
+  max-block-size: min(var(--ui-sheet-max-height, 75vh), calc(100dvh - var(--cui-sheet-hang, calc(var(--ui-sticky-top, 0px) + var(--ui-sheet-bar-height, 2.75rem))) - var(--spacing-lg, 16px)));
   padding-block: var(--spacing-sm, 4px) var(--spacing-lg, 16px);
   padding-inline: max(var(--spacing-lg, 16px), var(--ui-sheet-bar-bleed, 0px));
   border-radius: 0 0 var(--radii-lg, 10px) var(--radii-lg, 10px);
 }
 [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet::backdrop {
-  inset-block-start: calc(var(--ui-sticky-top, 0px) + var(--ui-sheet-bar-height, 2.75rem));
+  inset-block-start: var(--cui-sheet-hang, calc(var(--ui-sticky-top, 0px) + var(--ui-sheet-bar-height, 2.75rem)));
 }
 [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__top { display: none; }
 [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top:has(> .cui-phone-sheet__sheet:popover-open) > .cui-sheet-pill--bar .cui-sheet-pill__chevron { rotate: none; }
