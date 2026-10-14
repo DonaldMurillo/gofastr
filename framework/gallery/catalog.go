@@ -1370,7 +1370,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		}},
 
 	{"section-menu", "Section Menu", "Clientside Interactivity",
-		"Grouped, collapsible navigation: a sticky rail on desktop, a framework drawer (backdrop + click-outside close + focus trap) on mobile (< 900px). Powers the docs + components nav. Active item highlighted; auto-closes on navigation.",
+		"Grouped navigation: a sticky rail on desktop whose group headers pin while their links scroll, with an optional filter; on mobile (< 900px) a pill naming the current page opens a bottom sheet (backdrop + drag-down close + focus trap). Powers the docs + components nav.",
 		func() render.HTML {
 			return interactive.SectionMenu(DemoSectionMenuConfig())
 		}},
@@ -1700,6 +1700,8 @@ ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})`,
 	"section-menu": `interactive.SectionMenu(interactive.SectionMenuConfig{
     AriaLabel:    "Documentation sections",
     TriggerLabel: "Sections",
+    DrawerName:   "docs-section-menu",
+    Filter:       true,
     Lead:         &interactive.SectionItem{Label: "Overview", Href: "/docs/"},
     Groups: []interactive.SectionGroup{
         {Eyebrow: "01", Label: "Modeling", Items: []interactive.SectionItem{
@@ -1711,9 +1713,11 @@ ui.Counter(ui.CounterConfig{Slice: store.New("cart").Int("count", 0)})`,
         }},
     },
 })
-// Desktop: sticky rail, all groups expanded. Mobile (< 900px): a
-// "Sections" pill opens a focus-trapped slide-in sheet; collapsed groups
-// expand on tap; picking a link auto-closes the sheet.`,
+// Mount the sheet once: widget.MountBuilder(router, interactive.SectionMenuDrawer(cfg))
+// Desktop: sticky rail, every group expanded, each header pinned while
+// its links scroll. Mobile (< 900px): a pill at the bottom of the
+// viewport names the current page and opens a bottom sheet; collapsed
+// groups expand on tap; picking a link closes the sheet.`,
 
 	"dropdown": `trigger := ui.Button(ui.ButtonConfig{Label: "Open Menu"})
 panel := html.Div(html.DivConfig{},

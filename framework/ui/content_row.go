@@ -98,7 +98,8 @@ type ContentRowConfig struct {
 	Sticky bool
 	// PhoneNavFlush drops the stacked nav column's block-end rule
 	// below the breakpoint. Set it when the sidebar's phone navigation
-	// lives outside the column (a NativeMobile sidebar whose drawer
+	// lives outside the column (an interactive.SectionMenu, whose pill
+	// floats over the page, or a NativeMobile sidebar whose drawer
 	// trigger the page header hosts): the stacked column renders empty
 	// on phones and an empty band must not draw a line.
 	PhoneNavFlush bool
@@ -324,9 +325,9 @@ func (b rowBreakpointCSS) stackCSS() string {
   .fui-content-row--viewport:SCOPE: .fui-content-row__workspace > .layout-content { padding: var(--spacing-md); }
   .fui-content-row--viewport:SCOPE: .fui-content-row__workspace .layout-content .layout-content { padding: 0; gap: 0; }
   /* PhoneNavFlush: the caller says the sidebar's phone navigation lives
-     outside the column (a NativeMobile sidebar whose trigger the page
-     header hosts), so the stacked band renders empty and must not draw
-     its separator. */
+     outside the column (a SectionMenu's floating pill, a NativeMobile
+     sidebar whose trigger the page header hosts), so the stacked band
+     renders empty and must not draw its separator. */
   .fui-content-row--phone-nav-flush:SCOPE: .fui-content-row__nav { border: 0; padding: 0; }
 }
 `, b.maxw)

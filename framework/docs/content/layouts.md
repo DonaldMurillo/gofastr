@@ -813,18 +813,35 @@ An `interactive.SectionMenu` in that column sets `FillColumn: true`:
 its rail drops its own sticky offset and viewport cap, fills the pinned
 column to the bottom of the screen and scrolls there. The column has no
 padding of its own, so the filled rail insets its links from the
-column's edges.
-Set `SwapAt` to the row's breakpoint too: the menu swaps its rail for the
-"Sections" trigger at 900px by default, while the row stacks at 48rem
+column's edges. In the rail each group's header pins to the top while
+its links scroll under it, the current page carries an accent dot, and
+the group holding it takes the accent. `Filter: true` adds a filter box
+above the list: typing hides the links that don't match, marks the
+match, shows "matches/total" in each group header, and Escape clears
+it. `FilterPlaceholder` and `FilterEmpty` set its text.
+Set `SwapAt` to the row's breakpoint too: the menu swaps its rail for a
+pill at 900px by default, while the row stacks at 48rem
 (`interactive.SectionMenuSwapMD`) or, with `Breakpoint: ui.StackBelowLG`,
 at 64rem (`interactive.SectionMenuSwapLG`). A mismatch leaves the column
-holding a lone trigger beside the content, or a full rail stacked above
+holding a lone pill beside the content, or a full rail stacked above
 it. An unknown value panics.
+The pill floats at the bottom of the screen, names the current page and
+its group (kept current across client navigations), and opens
+`interactive.SectionMenuDrawer` as a bottom sheet with the current
+page's group open. The page ends a pill's height lower, so the pill
+never covers its last line. Mount that drawer once in the layout, under the same
+`DrawerName`. `InlineTrigger: true` keeps the pill in flow instead, for
+a menu shown inside a card or a demo. The knobs are
+`--ui-section-menu-bg` (behind the pinned group headers: the page background, or the surface color in a filled column and the sheet),
+`--ui-section-menu-inset` (the link inset), `--ui-section-menu-dot`
+(the current page's dot) and
+`--ui-section-menu-pill-bottom` (the pill's gap above the screen edge;
+set it on `:root`, where the page's end padding reads it too).
 `PhoneNavFlush: true` drops the nav column's phone separator below the
-breakpoint — set it when the sidebar's phone navigation lives outside
-the column (a `NativeMobile` sidebar whose drawer trigger,
-`ui.SidebarDrawerTrigger`, the app bar hosts), so an empty column
-draws no rule.
+breakpoint. Set it when the sidebar's phone navigation lives outside
+the column: a SectionMenu, whose pill floats over the page, or a
+`NativeMobile` sidebar whose drawer trigger, `ui.SidebarDrawerTrigger`,
+the app bar hosts. The column then renders empty and draws no rule.
 `Dense: true` gives the page the compact density on a fine pointer (a
 mouse or trackpad), declared on the document root so the drawers,
 dialogs and menus mounted outside the row follow: buttons, fields, the toolbar's controls and table

@@ -269,9 +269,10 @@ func TestContentRowSectionMenuFillsColumn(t *testing.T) {
 const nav=document.querySelector('.fui-content-row__nav'), rail=document.querySelector('.cui-section-menu__rail');
 if(Math.abs(r(nav).bottom-innerHeight)>1)return 'nav column ends at '+r(nav).bottom+', not the viewport bottom '+innerHeight;
 if(Math.abs(r(rail).bottom-r(nav).bottom)>1)return 'rail ends at '+r(rail).bottom+', short of the column bottom '+r(nav).bottom;
-if(rail.scrollHeight<=rail.clientHeight)return 'rail does not overflow, so the check proves nothing';
-rail.scrollTop=400;
-if(rail.scrollTop<100)return 'rail does not scroll';
+const list=rail.querySelector('.cui-section-menu__body');
+if(list.scrollHeight<=list.clientHeight)return 'rail list does not overflow, so the check proves nothing';
+list.scrollTop=400;
+if(list.scrollTop<100)return 'rail list does not scroll';
 if(nav.scrollHeight>nav.clientHeight+1)return 'the column scrolls too: a second scroller around the rail';
 return ""})()`, &result)); err != nil {
 		t.Fatal(err)

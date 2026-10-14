@@ -31,8 +31,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   column, a `ui.ListDetail` list, the PaneHost drawer, the Workbench
   rail) resets the offset to 0. The layout declares the sticky header
   once; no component takes a flag for it.
+- `SectionMenuConfig.Filter` puts a filter box above an
+  `interactive.SectionMenu`'s list, in the rail and in the phone sheet.
+  Typing hides the links that don't match, marks the match, shows
+  "matches/total" in each group header and says `FilterEmpty` when
+  nothing matches; Escape clears it. `FilterPlaceholder` sets the
+  prompt. `InlineTrigger` keeps the phone pill in flow, for a menu shown
+  inside a card or a demo.
 - `SectionMenuConfig.SwapAt` moves the width where an
-  `interactive.SectionMenu` trades its rail for the "Sections" trigger
+  `interactive.SectionMenu` trades its rail for its phone pill
   from 900px to a `ui.ContentRow` breakpoint (`SectionMenuSwapMD`,
   48rem, or `SectionMenuSwapLG`, 64rem), so a menu in a row's nav column
   swaps where the row stacks.
@@ -89,6 +96,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   reads `--nav-h` (60px when unset): it sticks 16px below
   `--ui-sticky-top`, so on a page with no sticky header it now sits
   16px from the top instead of 76px.
+- **`interactive.SectionMenu` is redesigned.** In the rail each group's
+  header pins to the top while its links scroll under it and shows the
+  group's link count; the current page carries an accent dot instead of
+  a left rule, and the group holding it takes the accent. A rail filling
+  a pinned column (`FillColumn`) insets its own links from the column's
+  edges, which had none, and scrolls its list under the filter. Below
+  `SwapAt` the "Sections" button becomes a pill floating at the bottom of
+  the screen that names the current page and its group, kept current
+  across client navigations (the page ends a pill's height lower, so it
+  never covers the last line), and `SectionMenuDrawer` is now a bottom
+  sheet (`preset.BottomSheet`) that opens on the current page's group.
+  Knobs: `--ui-section-menu-bg`, `--ui-section-menu-inset`,
+  `--ui-section-menu-dot`,
+  `--ui-section-menu-pill-bottom`. A `ui.ContentRow` holding the menu
+  sets `PhoneNavFlush`, so the empty stacked column draws no band.
 - **BREAKING: `gallery.ContributeCSS` and `gallery.BaseCSS` are removed.**
   The `framework/gallery` demos lay out through `ui.Cluster`, `ui.Stack`,
   `ui.Box` and `ui.Container` and ship no stylesheet, so a host renders the
@@ -128,10 +150,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   label of an `Overline` one, reached every `ui.Section` heading in the
   section's body too. Each rule now selects only the section's own
   heading.
-- **A `SectionMenu` with `FillColumn` insets its rail.** In a pinned
-  column such as `ui.ContentRow`'s nav column, which has no padding, the
-  rail's links ran into the column edges. The filled rail now pads itself
-  (`--spacing-xl` block, `--spacing-lg` inline).
 - **`core/markdown` hides HTML comment blocks.** A `<!-- … -->` block
   rendered as escaped text, so every `<!-- gofastr:compile … -->`
   directive in the embedded docs showed on the site's doc pages and in

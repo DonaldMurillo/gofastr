@@ -302,7 +302,11 @@ func DemoSectionMenuConfig() interactive.SectionMenuConfig {
 		AriaLabel:    "Demo sections",
 		TriggerLabel: "Sections",
 		DrawerName:   "demo-section-menu",
-		Lead:         &interactive.SectionItem{Label: "Overview", Href: "#overview"},
+		// A demo inside a page, not the page's own nav: its pill stays
+		// in the demo card instead of floating over the page.
+		InlineTrigger: true,
+		Filter:        true,
+		Lead:          &interactive.SectionItem{Label: "Overview", Href: "#overview"},
 		Groups: []interactive.SectionGroup{
 			{Eyebrow: "01", Label: "Modeling", Items: []interactive.SectionItem{
 				{Label: "Entities", Href: "#entities", Active: true},
