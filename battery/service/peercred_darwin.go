@@ -2,33 +2,13 @@
 
 package service
 
-import (
-	"fmt"
-	"net"
-	"os"
+import "golang.org/x/sys/unix"
 
-	"golang.org/x/sys/unix"
-)
-
-// peerIsSelf checks the connecting process's effective UID through
-// LOCAL_PEERCRED, which the kernel fills in at connect time.
-func peerIsSelf(c *net.UnixConn) error {
-	raw, err := c.SyscallConn()
+// peerUID reads the peer's effective UID through LOCAL_PEERCRED.
+func peerUID(fd int) (uint32, error) {
+	cred, err := unix.GetsockoptXucred(fd, unix.SOL_LOCAL, unix.LOCAL_PEERCRED)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	var cred *unix.Xucred
-	var credErr error
-	if err := raw.Control(func(fd uintptr) {
-		cred, credErr = unix.GetsockoptXucred(int(fd), unix.SOL_LOCAL, unix.LOCAL_PEERCRED)
-	}); err != nil {
-		return err
-	}
-	if credErr != nil {
-		return fmt.Errorf("read peer credentials: %w", credErr)
-	}
-	if int(cred.Uid) != os.Geteuid() {
-		return fmt.Errorf("peer uid %d is not the daemon's uid %d", cred.Uid, os.Geteuid())
-	}
-	return nil
+	return cred.Uid, nil
 }
