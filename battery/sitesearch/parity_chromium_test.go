@@ -1,0 +1,285 @@
+//go:build chromium
+
+package sitesearch
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/chromedp/cdproto/runtime"
+	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+)
+
+// parityCorpus mixes what ranking has to tell apart: a term in a title,
+// in a heading and in body text, camelCase identifiers, accented and
+// CJK words, repeated terms past the tf cap, and long sections whose
+// excerpts cut both ends.
+func parityCorpus() []Page {
+	long := strings.Repeat("Filler words keep this section long enough to cut. ", 12)
+	return []Page{
+		{URL: "/docs/forms", Title: "Forms", Group: "Docs", Sections: []Section{
+			{Text: "Build a form from FormField parts. " + long},
+			{ID: "validation", Heading: "Validation", Text: long + "Errors render beside each field; validation runs on the server. " + long},
+			{ID: "server-errors", Heading: "Server errors", Text: "The server returns a field map of errors."},
+		}},
+		{URL: "/docs/palette", Title: "Command palette", Group: "Docs", Sections: []Section{
+			{Text: "ui.CommandPalette opens on ⌘K. Palette palette palette palette."},
+			{ID: "search", Heading: "Search", Text: "Full-text search over every rendered page."},
+		}},
+		{URL: "/components/table", Title: "DataTable", Group: "Components", Sections: []Section{
+			{Text: "A sortable table with pagination. Café crème and naïve résumé rows."},
+			{ID: "columns", Heading: "Columns", Text: "Columns declare a renderer; the server sorts."},
+		}},
+		{URL: "/blog/日本", Title: "日本語 support", Sections: []Section{
+			{Text: "Unicode words like 日本語 and Straße index as letters."},
+		}},
+		{URL: "/examples/tracker", Title: "Tracker", Group: "Examples", Sections: []Section{
+			{Text: "An issue tracker with forms, a palette and server-rendered tables."},
+		}},
+	}
+}
+
+var parityQueries = []string{
+	"forms", "form", "fo", "valid", "server", "server errors", "palette",
+	"commandpalette", "command pal", "table", "tab", "café", "cafe", "résumé",
+	"日本語", "straße", "errors field", "zzz", "forms zzz", "f", "",
+	"Pagination", "the", "renders", "palette search", "columns sort",
+}
+
+func TestStaticSearchMatchesGo(t *testing.T) {
+	idx := Build(parityCorpus())
+	files, err := idx.Files()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!doctype html><html data-cui-static><meta charset=utf-8><script src="/client.js"></script><script src="/static.js"></script>`)
+	})
+	mux.HandleFunc("/client.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		fmt.Fprint(w, clientJS)
+	})
+	mux.HandleFunc("/static.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		fmt.Fprint(w, staticJS)
+	})
+	mux.HandleFunc(Root+"{file}", func(w http.ResponseWriter, r *http.Request) {
+		body, ok := files[r.PathValue("file")]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
+		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.WSURLReadTimeout(90*time.Second), chromedp.NoSandbox)...)
+	t.Cleanup(cancelAlloc)
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	t.Cleanup(cancel)
+	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
+	t.Cleanup(cancelTimeout)
+	if err := chromedp.Run(ctx, chromedp.Navigate(srv.URL+"/"),
+		chromedp.Poll(`!!(window.__gofastr && window.__gofastr._sitesearch && window.__gofastr._sitesearch.staticSearch)`, nil)); err != nil {
+		t.Fatalf("load client: %v", err)
+	}
+
+	nonEmpty := 0
+	for _, q := range parityQueries {
+		want := normalize(idx.Search(q, 8))
+		var raw string
+		expr := `window.__gofastr._sitesearch.staticSearch(` + jsString(q) + `, 8).then(r => JSON.stringify(r))`
+		if err := chromedp.Run(ctx, chromedp.Evaluate(expr, &raw, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+			return p.WithAwaitPromise(true)
+		})); err != nil {
+			t.Fatalf("query %q: %v", q, err)
+		}
+		var got []Result
+		if err := json.Unmarshal([]byte(raw), &got); err != nil {
+			t.Fatalf("query %q: decode %s: %v", q, raw, err)
+		}
+		got = normalize(got)
+		if !reflect.DeepEqual(got, want) {
+			g, _ := json.MarshalIndent(got, "", " ")
+			w, _ := json.MarshalIndent(want, "", " ")
+			t.Errorf("query %q: browser ranked\n%s\nGo ranked\n%s", q, g, w)
+		}
+		if len(want) > 0 {
+			nonEmpty++
+		}
+	}
+	// Anti-vacuity: most queries must return something, or the parity
+	// is two empty lists agreeing.
+	if nonEmpty < len(parityQueries)-6 {
+		t.Errorf("only %d of %d queries returned results", nonEmpty, len(parityQueries))
+	}
+}
+
+func normalize(rs []Result) []Result {
+	if len(rs) == 0 {
+		return nil
+	}
+	for i := range rs {
+		if len(rs[i].Sections) == 0 {
+			rs[i].Sections = nil
+		}
+		if len(rs[i].Excerpt) == 0 {
+			rs[i].Excerpt = nil
+		}
+		for j := range rs[i].Sections {
+			if len(rs[i].Sections[j].Excerpt) == 0 {
+				rs[i].Sections[j].Excerpt = nil
+			}
+		}
+	}
+	return rs
+}
+
+func jsString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+// TestClientShowsLoadingAndEmptyRows: a slow answer shows the listbox's
+// loading word until the results land, and a query nothing matches
+// shows its empty word, so the list is never blank while a reader
+// waits.
+func TestClientShowsLoadingAndEmptyRows(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!doctype html><html><meta charset=utf-8>
+<div data-hui-combobox><input data-hui-combobox-input id="q" aria-controls="lb" aria-expanded="false">
+<ul id="lb" role="listbox" hidden data-search data-search-loading="Loading…" data-search-empty="No matches"></ul></div>
+<script src="/client.js"></script>`)
+	})
+	mux.HandleFunc("/client.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		fmt.Fprint(w, clientJS)
+	})
+	mux.HandleFunc(Root+"query", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("q") == "slow" {
+			time.Sleep(time.Second)
+			fmt.Fprint(w, `{"results":[{"url":"/a","title":"Slow page"}]}`)
+			return
+		}
+		fmt.Fprint(w, `{"results":[]}`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
+		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.WSURLReadTimeout(90*time.Second), chromedp.NoSandbox)...)
+	t.Cleanup(cancelAlloc)
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	t.Cleanup(cancel)
+	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
+	t.Cleanup(cancelTimeout)
+
+	rows := `[...document.querySelectorAll('#lb [data-search-result]')].map(li => li.textContent).join('|')`
+	var loading, loaded, empty string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Poll(`!!(window.__gofastr && window.__gofastr._sitesearch)`, nil),
+		chromedp.SendKeys(`#q`, "slow", chromedp.ByID),
+		chromedp.Poll(rows+` === 'Loading…'`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(rows, &loading),
+		chromedp.Poll(rows+`.startsWith('Slow page')`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(rows, &loaded),
+		chromedp.Evaluate(`document.getElementById("q").value = ""`, nil),
+		chromedp.SendKeys(`#q`, "zzqx", chromedp.ByID),
+		chromedp.Poll(rows+` === 'No matches'`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(rows, &empty),
+	); err != nil {
+		t.Fatalf("rows: %v (loading %q, loaded %q, empty %q)", err, loading, loaded, empty)
+	}
+}
+
+// An exported page has no query endpoint: the first query asks the
+// kernel for the ranker module by its registered name, then ranks in
+// the browser.
+func TestExportedPageLoadsRanker(t *testing.T) {
+	files, err := Build(parityCorpus()).Files()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!doctype html><html data-cui-static><meta charset=utf-8>
+<div data-hui-combobox><input data-hui-combobox-input id="q" aria-controls="lb" aria-expanded="false">
+<ul id="lb" role="listbox" hidden data-search></ul></div>
+<script>window.__gofastr = {loadModule: function (n) {
+  window.asked = n;
+  return new Promise(function (ok) {
+    const s = document.createElement('script');
+    s.src = '/' + n + '.js';
+    s.onload = ok;
+    document.head.append(s);
+  });
+}};</script>
+<script src="/client.js"></script>`)
+	})
+	mux.HandleFunc("/client.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		fmt.Fprint(w, clientJS)
+	})
+	mux.HandleFunc("/sitesearch-static.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		fmt.Fprint(w, staticJS)
+	})
+	mux.HandleFunc(Root+"{file}", func(w http.ResponseWriter, r *http.Request) {
+		body, ok := files[r.PathValue("file")]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
+		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.WSURLReadTimeout(90*time.Second), chromedp.NoSandbox)...)
+	t.Cleanup(cancelAlloc)
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	t.Cleanup(cancel)
+	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
+	t.Cleanup(cancelTimeout)
+
+	rows := `[...document.querySelectorAll('#lb [data-search-result] .fui-cmd-palette__option-label')].map(s => s.textContent).join('|')`
+	var got, asked string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Poll(`!!window.__gofastr._sitesearch`, nil),
+		chromedp.SendKeys(`#q`, "server errors", chromedp.ByID),
+		chromedp.Poll(rows+` !== ''`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(rows, &got),
+		chromedp.Evaluate(`window.asked`, &asked),
+	); err != nil {
+		t.Fatalf("rows: %v (got %q)", err, got)
+	}
+	if !strings.HasPrefix(got, "Forms|Server errors") {
+		t.Errorf("rows = %q, want Forms then its Server errors section", got)
+	}
+	e, ok := registry.LookupBehavior(asked)
+	if !ok || e.Source != staticJS {
+		t.Errorf("the client asked for module %q, which is not the registered ranker", asked)
+	}
+}

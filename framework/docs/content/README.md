@@ -234,6 +234,9 @@ results, the harness contract) are exempt. The exemption list lives in
   any static host (GitHub Pages, S3). Replaces the broken `wget` crawl;
   stamps pages with `data-cui-static` so server-backed islands no-op
   instead of 404'ing.
+- [Site search](site-search.md): `battery/sitesearch`: a full-text index
+  of every rendered page, searched from the command palette on a live
+  server or from JSON files in a static export.
 
 - [Codegen](codegen.md): YAML-configured generators, external extension
   protocol, safe output paths, and manifest-based cleaning.
