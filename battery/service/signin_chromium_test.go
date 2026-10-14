@@ -38,16 +38,30 @@ func TestSignInPageLandsSignedIn(t *testing.T) {
 	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
 	defer cancelTimeout()
 
-	var body, loc string
-	err := chromedp.Run(ctx,
-		chromedp.Navigate("file://"+page),
-		chromedp.Poll(`location.href === "http://`+d.addr+`/" && document.body && document.body.innerText.length > 0`, nil,
-			chromedp.WithPollingTimeout(20*time.Second)),
-		chromedp.Location(&loc),
-		chromedp.Text("body", &body, chromedp.ByQuery),
-	)
-	if err != nil {
-		t.Fatalf("browser did not land on the app: %v (at %q, body %q)", err, loc, body)
+	if err := chromedp.Run(ctx, chromedp.Navigate("file://"+page)); err != nil {
+		t.Fatal(err)
+	}
+	// The chain navigates twice (the auto-POST, then the refresh). An
+	// evaluation that lands mid-navigation fails with "Cannot find
+	// context", and chromedp.Poll gives up on that, so each read here
+	// is retried until the deadline instead.
+	want := "http://" + d.addr + "/"
+	var loc, body string
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		var got struct{ Href, Body string }
+		err := chromedp.Run(ctx, chromedp.Evaluate(
+			`({Href: location.href, Body: document.body ? document.body.innerText : ""})`, &got))
+		if err == nil {
+			loc, body = got.Href, got.Body
+			if loc == want && body != "" {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("browser did not land on %s: at %q, body %q, last error %v", want, loc, body, err)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 	if !strings.Contains(body, "hello from svctest") {
 		t.Fatalf("landed on %s without a session: %q", loc, body)
