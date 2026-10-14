@@ -86,9 +86,13 @@ Test binaries never register unless `GOFASTR_RUNS_DIR` is set, so a
 test that starts an App does not write into the real registry. Neither
 does an app a test builds and runs as a child process: a test binary
 that links `framework/localrun` marks its environment at init, and the
-mark passes down to every process it starts. A test of the registry
-itself points `GOFASTR_RUNS_DIR` at `t.TempDir()`, which its children
-inherit too.
+mark passes down to every process it starts. A test package that
+builds and runs an app but imports nothing from gofastr links no
+`localrun`, so it adds
+`import _ "github.com/DonaldMurillo/gofastr/framework/localrun"` to one
+test file, or sets `GOFASTR_RUNS=off` on the child. A test of the
+registry itself points `GOFASTR_RUNS_DIR` at `t.TempDir()`, which its
+children inherit too.
 
 ## Common mistakes
 
