@@ -282,6 +282,14 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 			continue
 		}
 
+		// A notification (no id, notifications/*) gets no reply:
+		// JSON-RPC forbids one, and a stdio client reads an id-less
+		// error line as a protocol fault. The client sends
+		// notifications/initialized right after the handshake.
+		if req.ID == nil && strings.HasPrefix(req.Method, "notifications/") {
+			continue
+		}
+
 		ctx := enrichContext(ctx)
 		resp := s.HandleRequest(ctx, req)
 		encoder.Encode(resp)

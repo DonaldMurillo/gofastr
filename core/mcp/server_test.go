@@ -312,6 +312,32 @@ func TestStdioTransport(t *testing.T) {
 	}
 }
 
+// The stdio handshake: the client sends notifications/initialized
+// after initialize, and the server must not answer it.
+func TestStdioNotificationGetsNoReply(t *testing.T) {
+	s := NewServer()
+	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n" +
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}` + "\n" +
+		`{"jsonrpc":"2.0","id":2,"method":"ping"}` + "\n" +
+		`{"jsonrpc":"2.0","id":3,"method":"notifications/initialized"}` + "\n")
+	out := &bytes.Buffer{}
+	if err := s.ServeStdio(context.Background(), in, out); err != nil {
+		t.Fatalf("ServeStdio: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	// A notifications/* method sent with an id is a request, and a
+	// request is always answered.
+	if len(lines) != 3 {
+		t.Fatalf("want replies to initialize, ping and the id-carrying request, got %d lines:\n%s", len(lines), out.String())
+	}
+	for i, line := range lines {
+		var resp Response
+		if err := json.Unmarshal([]byte(line), &resp); err != nil || resp.ID != float64(i+1) || (i < 2 && resp.Error != nil) {
+			t.Fatalf("line %d = %s", i, line)
+		}
+	}
+}
+
 func TestRegisterTool_Duplicate(t *testing.T) {
 	s := NewServer()
 	err := s.RegisterTool("x", "first", nil, func(ctx context.Context, params map[string]any) (any, error) {

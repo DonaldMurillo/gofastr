@@ -75,6 +75,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   misreport (#503).
 
 ### Fixed
+- **`mcp.ServeStdio` no longer answers notifications.** The
+  `notifications/initialized` every client sends after the handshake got
+  a method-not-found error line with no id, which JSON-RPC forbids and
+  stdio clients read as a protocol fault. An id-less `notifications/*`
+  message now gets no reply.
 - **`core/static` answers `Range` requests.** `Range: bytes=0-99` got
   `200` and the whole file with no `Accept-Ranges`, so a video served by
   `static.Handler` could not seek, Safari would not play an mp4 from it,

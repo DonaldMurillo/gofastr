@@ -576,7 +576,11 @@ What a client sees at the edges:
   transports: a line repeating a key or spelling one in two cases is
   refused as invalid JSON, never resolved last-key-wins. The recover
   guard around handler code matters most here: stdio has no net/http
-  per-request net, so a panic would otherwise crash the process.
+  per-request net, so a panic would otherwise crash the process. A
+  notification (no `id`, a `notifications/*` method, such as the
+  `notifications/initialized` a client sends after the handshake) gets
+  no reply line: JSON-RPC forbids one, and clients read an id-less line
+  as a protocol fault.
 
 The HTTP transports refuse a browser `Origin` that is not same-origin with the
 request; an absent Origin passes, because curl, stdio bridges, and native MCP
