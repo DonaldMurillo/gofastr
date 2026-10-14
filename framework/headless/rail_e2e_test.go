@@ -140,18 +140,24 @@ func TestE2E_TOCListIsServerRenderedAndActiveStateMoves(t *testing.T) {
 }
 
 // A section scrolled behind the sticky header is out of view: the
-// observer's band starts at --ui-sticky-top. With the last 50px of
-// "one" under a 100px header and "two" filling the view below it, the
+// observer's band starts at --ui-sticky-top plus a phone sheet's bar
+// pinned under it (--ui-sheet-bar-offset). With the last 50px of "one"
+// under 100px of header and bar and "two" filling the view below, the
 // active entry is "two". The header height is any length expression:
 // a toolbar's workspace multiplies inside its calc.
 func TestE2E_RailSkipsSectionUnderStickyHeader(t *testing.T) {
-	for _, top := range []string{"100px", "calc(40px + calc(2 * 25px + 10px))"} {
+	for _, top := range []string{
+		"--ui-sticky-top:100px",
+		"--ui-sticky-top:calc(40px + calc(2 * 25px + 10px))",
+		"--ui-sticky-top:40px;--ui-sheet-bar-offset:60px",
+		"--ui-sheet-bar-offset:100px",
+	} {
 		t.Run(top, func(t *testing.T) {
 			nav := TableOfContents(TableOfContentsProps{
 				TargetSelector: "#region",
 				Items:          []TOCItem{{ID: "one", Label: "One"}, {ID: "two", Label: "Two"}},
 			}, nil)
-			b := startBehaviorServer(t, `<style>:root{--ui-sticky-top:`+top+`}</style>`+railPage(t, nav))
+			b := startBehaviorServer(t, `<style>:root{`+top+`}</style>`+railPage(t, nav))
 			ctx := behaviorPage(t, b)
 			if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "one")) {
 				t.Fatal("the bootstrap pass did not mark the first entry")

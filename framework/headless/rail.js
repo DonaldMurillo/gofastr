@@ -50,17 +50,20 @@
     return out + s.replace(/([!"#$%&'()*+,./:;<=>?@[\]^`{|}~])/g, '\\$1');
   }
 
-  // stickyTop resolves --ui-sticky-top where the nav sits: the height
-  // of the sticky header above the page. The value can be any length
-  // expression (a toolbar's workspace adds its row with calc), so the
-  // browser resolves it on a probe rather than this file parsing it.
+  // stickyTop resolves what covers the top of the view where the nav
+  // sits: the sticky header (--ui-sticky-top) and a phone sheet's bar
+  // pinned under it (--ui-sheet-bar-offset). The values can be any
+  // length expression (a toolbar's workspace adds its row with calc),
+  // so the browser resolves them on a probe rather than this file
+  // parsing them.
   function stickyTop(el) {
-    if (!getComputedStyle(el).getPropertyValue('--ui-sticky-top').trim()) return 0;
+    const cs = getComputedStyle(el);
+    if (!cs.getPropertyValue('--ui-sticky-top').trim() && !cs.getPropertyValue('--ui-sheet-bar-offset').trim()) return 0;
     const probe = document.createElement('div');
     probe.style.position = 'absolute';
     probe.style.visibility = 'hidden';
     probe.style.blockSize = '0';
-    probe.style.inlineSize = 'var(--ui-sticky-top)';
+    probe.style.inlineSize = 'calc(var(--ui-sticky-top, 0px) + var(--ui-sheet-bar-offset, 0px))';
     el.appendChild(probe);
     const px = parseFloat(getComputedStyle(probe).inlineSize) || 0;
     probe.remove();

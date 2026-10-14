@@ -163,6 +163,12 @@ IntersectionObserves which section is currently in the upper portion
 of the viewport and marks the corresponding nav link
 `aria-current="true"` / `.is-active`. The table of contents
 (`headless.TableOfContents`, `data-hui-toc`) shares the same observer.
+On phones `AnchoredRailConfig.PhoneSheet` folds the rail into a pill
+that names the section in view and opens the rail as a bottom sheet,
+or with `PhoneSheetTop` into a bar under the sticky header that drops
+it (layouts → the aside's contents list). The observer's band starts
+below the header and that bar: `--ui-sticky-top` plus
+`--ui-sheet-bar-offset`.
 The retired scrollspy spelling is gone with its module.
 
 ---
