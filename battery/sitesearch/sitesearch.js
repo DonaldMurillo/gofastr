@@ -137,18 +137,31 @@
     openList(lb, input);
   }
 
+  // render swaps in the new result rows. A row whose destination
+  // matches the one already in its place keeps its node and only takes
+  // the new text, so the rows that stay put while the reader types do
+  // not replay their entrance.
   function render(lb, input, list) {
-    clearRows(lb);
-    let n = 0;
-    const frag = document.createDocumentFragment();
+    const fresh = [];
     for (const r of list) {
       const url = BASE + r.url;
-      frag.appendChild(row(lb, n++, r.title, r.group, r.excerpt, url, false));
+      fresh.push(row(lb, fresh.length, r.title, r.group, r.excerpt, url, false));
       for (const s of r.sections || []) {
-        frag.appendChild(row(lb, n++, s.heading, '', s.excerpt, s.id ? url + '#' + s.id : url, true));
+        fresh.push(row(lb, fresh.length, s.heading, '', s.excerpt, s.id ? url + '#' + s.id : url, true));
       }
     }
-    lb.appendChild(frag);
+    const old = lb.querySelectorAll('[data-search-result]');
+    let i = 0;
+    for (; i < old.length && i < fresh.length; i++) {
+      const was = old[i], now = fresh[i];
+      if (was.getAttribute('data-cui-push-state') !== now.getAttribute('data-cui-push-state')) break;
+      was.id = now.id;
+      was.className = now.className;
+      was.setAttribute('data-value', now.getAttribute('data-value'));
+      was.replaceChildren(...now.childNodes);
+    }
+    for (let j = i; j < old.length; j++) old[j].remove();
+    lb.append(...fresh.slice(i));
     const visible = lb.querySelectorAll('[role="option"]:not([hidden]):not([aria-disabled="true"])');
     if (!visible.length) statusRow(lb, input, 'data-search-empty');
     if (visible.length) {

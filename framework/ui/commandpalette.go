@@ -449,10 +449,13 @@ func commandPaletteCSS(_ style.Theme) string {
   display: flex;
   flex-direction: column;
   /* Knobs: --ui-cmd-palette-width (36rem) is the panel's inline size
-     (capped by the viewport); --ui-cmd-palette-listbox-max-height
-     (24rem) caps the scrolling command list (capped by half the
-     viewport). The elevation reads the theme's dialog-tier shadow. */
+     (capped by the viewport); --ui-cmd-palette-height (30rem) is its
+     block size, held while the reader types so a filter that leaves
+     one row, or none, does not jump the field and footer. The list
+     fills what the field and footer leave. The elevation reads the
+     theme's dialog-tier shadow. */
   inline-size: min(var(--ui-cmd-palette-width, 36rem), 92vw);
+  block-size: var(--ui-cmd-palette-height, 30rem);
   /* Bound the dialog to the viewport (#325). The modal chrome centers
      the panel in a fixed wrapper padded by --spacing-lg on all sides,
      so the cap is the viewport minus both paddings. Without it a list
@@ -470,9 +473,8 @@ func commandPaletteCSS(_ style.Theme) string {
   /* Flex child of the palette column AND flex container for the form +
      listbox. min-block-size: 0 lets it shrink below its content so the
      listbox (not the whole dialog) absorbs long command lists; growing
-     keeps the footer at the bottom of the full-screen phone sheet when
-     the list is short (a content-sized desktop panel has no room to
-     grow into). */
+     keeps the footer at the bottom of the fixed-height panel when the
+     list is short. */
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -515,9 +517,8 @@ func commandPaletteCSS(_ style.Theme) string {
   border: none;
   border-radius: 0;
   box-shadow: none;
-  max-block-size: min(50vh, var(--ui-cmd-palette-listbox-max-height, 24rem));
-  /* The only scrolling region: Takes whatever space the bounded dialog
-     has left. overflow-y: auto does double duty — it scrolls AND, per
+  /* The only scrolling region: takes whatever space the panel has
+     left. overflow-y: auto does double duty — it scrolls AND, per
      flexbox §4.5, zeroes the item's automatic minimum size, so the
      list shrinks into the remaining space instead of pushing the form
      or footer out of the dialog. (The combobox wrapper above needs its
@@ -565,6 +566,15 @@ func commandPaletteCSS(_ style.Theme) string {
 :where([data-cui-comp="ui-cmd-palette"]) .fui-cmd-palette__option--result {
   flex-wrap: wrap;
   row-gap: var(--spacing-xs, 2px);
+  /* A result fades in as it arrives. The client keeps the row of a
+     result that stays put across keystrokes, so only new ones play. */
+  animation: fui-cmd-palette-row-in var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+@keyframes fui-cmd-palette-row-in {
+  from { opacity: 0; transform: translateY(2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :where([data-cui-comp="ui-cmd-palette"]) .fui-cmd-palette__option--result { animation: none; }
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__option > .fui-cmd-palette__option-excerpt:not(:first-child) {
   flex: 1 1 100%;
@@ -652,10 +662,8 @@ func commandPaletteCSS(_ style.Theme) string {
   /* Full-screen sheet, bounded to exactly the dynamic viewport: the
      wrapper's --spacing-lg padding is cancelled by centering overflow
      (the 100vw/100dvh panel spans the padding box edge to edge), and
-     the listbox cap is dropped because the palette cap now governs —
      the list takes every remaining pixel and scrolls inside. */
   [data-cui-comp="ui-cmd-palette"] { inline-size: 100vw; block-size: 100dvh; min-block-size: 100dvh; max-block-size: 100dvh; border-radius: 0; }
-  [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__listbox { max-block-size: none; }
 }
 `
 }

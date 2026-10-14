@@ -92,13 +92,7 @@ func TestStaticSearchMatchesGo(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
-		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.WSURLReadTimeout(90*time.Second), chromedp.NoSandbox)...)
-	t.Cleanup(cancelAlloc)
-	ctx, cancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(cancel)
-	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
-	t.Cleanup(cancelTimeout)
+	ctx := browser(t)
 	if err := chromedp.Run(ctx, chromedp.Navigate(srv.URL+"/"),
 		chromedp.Poll(`!!(window.__gofastr && window.__gofastr._sitesearch && window.__gofastr._sitesearch.staticSearch)`, nil)); err != nil {
 		t.Fatalf("load client: %v", err)
@@ -189,13 +183,7 @@ func TestClientShowsLoadingAndEmptyRows(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
-		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.WSURLReadTimeout(90*time.Second), chromedp.NoSandbox)...)
-	t.Cleanup(cancelAlloc)
-	ctx, cancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(cancel)
-	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
-	t.Cleanup(cancelTimeout)
+	ctx := browser(t)
 
 	rows := `[...document.querySelectorAll('#lb [data-search-result]')].map(li => li.textContent).join('|')`
 	var loading, loaded, empty string
@@ -261,13 +249,7 @@ func TestExportedPageLoadsRanker(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
-		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.WSURLReadTimeout(90*time.Second), chromedp.NoSandbox)...)
-	t.Cleanup(cancelAlloc)
-	ctx, cancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(cancel)
-	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
-	t.Cleanup(cancelTimeout)
+	ctx := browser(t)
 
 	rows := `[...document.querySelectorAll('#lb [data-search-result] .fui-cmd-palette__option-label')].map(s => s.textContent).join('|')`
 	var got, asked string
@@ -313,13 +295,7 @@ func TestClientAnswersEarlyQuery(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
-		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.WSURLReadTimeout(90*time.Second), chromedp.NoSandbox)...)
-	t.Cleanup(cancelAlloc)
-	ctx, cancel := chromedp.NewContext(allocCtx)
-	t.Cleanup(cancel)
-	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
-	t.Cleanup(cancelTimeout)
+	ctx := browser(t)
 
 	rows := `[...document.querySelectorAll('#lb [data-search-result]')].map(li => li.textContent).join('|')`
 	var got string
@@ -332,5 +308,62 @@ func TestClientAnswersEarlyQuery(t *testing.T) {
 	}
 	if got != "Found forms" {
 		t.Errorf("rows = %q, want Found forms", got)
+	}
+}
+
+// browser starts a headless Chrome that lives for the test.
+func browser(t *testing.T) context.Context {
+	t.Helper()
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
+		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.WSURLReadTimeout(90*time.Second), chromedp.NoSandbox)...)
+	t.Cleanup(cancelAlloc)
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	t.Cleanup(cancel)
+	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
+	t.Cleanup(cancelTimeout)
+	return ctx
+}
+
+// A result that is still in place after the next keystroke keeps its
+// row, so its entrance does not replay; a result that changed gets a
+// new row.
+func TestClientKeepsRowsThatStay(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!doctype html><html><meta charset=utf-8>
+<div data-hui-combobox><input data-hui-combobox-input id="q" aria-controls="lb" aria-expanded="false">
+<ul id="lb" role="listbox" hidden data-search></ul></div>
+<script src="/client.js"></script>`)
+	})
+	mux.HandleFunc("/client.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		fmt.Fprint(w, clientJS)
+	})
+	mux.HandleFunc(Root+"query", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		q := r.URL.Query().Get("q")
+		fmt.Fprintf(w, `{"results":[{"url":"/docs/forms","title":"Forms %s"},{"url":"/%s","title":"Other %s"}]}`, q, q, q)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	ctx := browser(t)
+
+	rows := `[...document.querySelectorAll('#lb [data-search-result]')]`
+	var kept []bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Poll(`!!(window.__gofastr && window.__gofastr._sitesearch)`, nil),
+		chromedp.SendKeys(`#q`, "fo", chromedp.ByID),
+		chromedp.Poll(rows+`.length === 2`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(rows+`.forEach(li => li.mark = true)`, nil),
+		chromedp.SendKeys(`#q`, "r", chromedp.ByID),
+		chromedp.Poll(rows+`[0].textContent === 'Forms for'`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(rows+`.map(li => !!li.mark)`, &kept),
+	); err != nil {
+		t.Fatalf("rows: %v", err)
+	}
+	if !reflect.DeepEqual(kept, []bool{true, false}) {
+		t.Errorf("rows kept %v, want the unchanged first row kept and the changed second one new", kept)
 	}
 }

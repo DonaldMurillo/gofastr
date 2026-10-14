@@ -648,3 +648,27 @@ func TestPaletteKeepsActiveOptionInView(t *testing.T) {
 		}
 	}
 }
+
+// The panel keeps one height while the reader types: a filter that
+// leaves one row does not shrink it, so the input and footer stay put.
+func TestPaletteHoldsItsHeightWhileTyping(t *testing.T) {
+	srv := paletteTestServer(t)
+	ctx := paletteChromeCtx(t, 1280, 800)
+	openPalette(t, ctx, srv.URL, 1280, 800)
+	const height = `document.querySelector('[data-cui-comp="ui-cmd-palette"]').getBoundingClientRect().height`
+	var full, one, none float64
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(height, &full),
+		chromedp.SendKeys(`#command-palette-input`, "Command 007", chromedp.ByID),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(height, &one),
+		chromedp.SendKeys(`#command-palette-input`, "zzz", chromedp.ByID),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(height, &none),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if one != full || none != full {
+		t.Errorf("panel height %.0f with every command, %.0f with one, %.0f with none; want one height", full, one, none)
+	}
+}

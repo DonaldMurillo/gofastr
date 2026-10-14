@@ -120,7 +120,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`ui.CommandPaletteConfig.Search`** makes the palette search the site
   search index as the reader types, below its `Commands` (required: the
   rows shown before the first keystroke). A slow answer shows a
-  "Loading…" row and an empty one "No matches".
+  "Loading…" row and an empty one "No matches". Result rows fade in as
+  they arrive; a row that stays across keystrokes does not replay.
 - **`gofastr export [--base /sub] [--pkg ./cmd/web] <dir>`** writes any
   app as a static site. It runs the app with `GOFASTR_EXPORT` (and
   `GOFASTR_EXPORT_BASE`) set; `App.Start` then exports after
@@ -183,6 +184,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   features that need the Go server.
 
 ### Fixed
+- **The command palette keeps one height while the reader types.** The
+  panel sized to its list, so a keystroke that changed the row count
+  moved the field and footer. It now holds `--ui-cmd-palette-height`
+  (30rem, capped by the viewport) and the list fills what is left. The
+  knob replaces `--ui-cmd-palette-listbox-max-height`.
 - **Arrow keys keep a combobox's active option in sight.** The
   highlight moved past the list's visible rows without scrolling, so a
   keyboard reader of a long palette or picker list lost the selection.
