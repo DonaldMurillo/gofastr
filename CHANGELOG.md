@@ -8,6 +8,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`App.WrapServer` wraps everything the listener serves.** Router
+  middleware (`Use`) never sees the interactive setup wizard or the
+  worker and agent roles' reduced muxes; a `WrapServer` wrapper does.
+  The first one registered is outermost, and a call after `Start` has
+  bound the server panics.
 - **entityui lists warn when their row links lead nowhere.** The first
   time a list renders rows whose `<base>/<id>` matches no registered
   screen, it logs one warning per base naming the route to register.

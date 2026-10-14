@@ -495,6 +495,12 @@ type App struct {
 	// the concrete type changes between Stores (http.HandlerFunc vs
 	// *router.Router). The wrapper normalizes both to *servingHandler.
 	handlerCell atomic.Pointer[servingHandler]
+
+	// serverWrappers wrap the handler Start hands the http.Server, so
+	// they see every request the listener accepts: the router, a role's
+	// reduced mux, and the interactive setup wizard alike. Guarded by
+	// serverMu. See WrapServer.
+	serverWrappers []func(http.Handler) http.Handler
 }
 
 // servingHandler wraps an http.Handler so it can be stored in an
@@ -1651,6 +1657,28 @@ func convertGroupEndpointPath(path string) string {
 		}
 	}
 	return strings.Join(parts, "/")
+}
+
+// WrapServer adds a wrapper around the whole handler Start serves.
+// Router middleware (Use) runs only for requests the router answers;
+// a wrapper also covers what Start serves in the router's place: the
+// interactive setup wizard, and the worker and agent roles' reduced
+// muxes. It is for gates that must hold for every byte the listener
+// serves, such as a Host allowlist. The first wrapper registered is
+// the outermost. Call it before Start binds (a battery's Init is in
+// time); a call once the server exists panics, since it could not
+// take effect.
+func (a *App) WrapServer(wrap func(http.Handler) http.Handler) *App {
+	if wrap == nil {
+		return a
+	}
+	a.serverMu.Lock()
+	defer a.serverMu.Unlock()
+	if a.server != nil {
+		panic("framework: WrapServer called after Start bound the server")
+	}
+	a.serverWrappers = append(a.serverWrappers, wrap)
+	return a
 }
 
 // Use appends middleware to the app's router chain. The default chain
@@ -3521,6 +3549,9 @@ func (a *App) Start(addr string) error {
 				realHandler.ServeHTTP(w, r)
 			}
 		})
+	}
+	for i := len(a.serverWrappers) - 1; i >= 0; i-- {
+		serveHandler = a.serverWrappers[i](serveHandler)
 	}
 	srv := &http.Server{
 		Addr:              addr,

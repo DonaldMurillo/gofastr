@@ -31,6 +31,14 @@ middleware.Timeout(30 * time.Second)
 ID. `Timeout` is innermost: a `30s` deadline that cancels the request
 context if the handler hangs.
 
+Router middleware runs only for requests the router answers. A gate
+that must hold for every byte the listener serves, the interactive
+setup wizard and the worker and agent roles' reduced muxes included,
+goes in `app.WrapServer(func(http.Handler) http.Handler)` instead. The
+first wrapper registered is the outermost; call it before `Start` (a
+battery's `Init` is in time), since a call after the server exists
+panics. `battery/service` installs its loopback gate this way.
+
 Access logging is deliberately not in the chain: `battery/log` owns
 structured access logging when registered, and an app that just wants a
 basic line can add `middleware.LoggingFn(app.Logger)` itself; running
