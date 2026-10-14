@@ -127,6 +127,9 @@ type controlServer struct {
 	ln     net.Listener
 	handle func(op string) controlResponse
 	log    *slog.Logger
+	// mcp serves one MCP session over in/out until in ends (the "mcp"
+	// op). Nil when the daemon has no MCP server to offer.
+	mcp func(in io.Reader, out io.Writer)
 
 	// mu orders wg.Add in serve against wg.Wait in Close: an Add that
 	// races a Wait on a zero counter is a WaitGroup misuse, and a
@@ -134,6 +137,9 @@ type controlServer struct {
 	mu     sync.Mutex
 	closed bool
 	wg     sync.WaitGroup
+	// sessions are the open MCP connections. They have no deadline,
+	// so Close closes them to end the wait.
+	sessions map[net.Conn]struct{}
 }
 
 // serve returns only once Close has closed the listener. Any other
@@ -166,10 +172,14 @@ func (s *controlServer) serve() {
 	}
 }
 
-// Close stops accepting and waits for in-flight requests.
+// Close stops accepting, ends open MCP sessions, and waits for
+// in-flight requests.
 func (s *controlServer) Close() {
 	s.mu.Lock()
 	s.closed = true
+	for c := range s.sessions {
+		c.Close()
+	}
 	s.mu.Unlock()
 	s.ln.Close()
 	s.wg.Wait()
@@ -186,7 +196,10 @@ func (s *controlServer) serveConn(c net.Conn) {
 		s.log.Warn("service: refused a control connection from another OS user", "reason", err.Error())
 		return
 	}
-	line, err := bufio.NewReader(io.LimitReader(c, maxControlRequest)).ReadBytes('\n')
+	// The reader is kept past the request line: an MCP client may
+	// send its first message right behind it.
+	br := bufio.NewReaderSize(c, maxControlRequest)
+	line, err := br.ReadSlice('\n')
 	if err != nil {
 		writeControl(c, controlResponse{Error: "request must be one JSON line under 4 KiB"})
 		return
@@ -196,7 +209,53 @@ func (s *controlServer) serveConn(c net.Conn) {
 		writeControl(c, controlResponse{Error: "malformed request"})
 		return
 	}
+	if req.Op == "mcp" {
+		s.serveMCP(c, br)
+		return
+	}
 	writeControl(c, s.dispatch(req.Op))
+}
+
+// maxMCPSessions bounds concurrent `service mcp` bridges.
+const maxMCPSessions = 16
+
+// serveMCP turns the connection into an MCP stdio session: newline-
+// delimited JSON-RPC both ways, with no deadline, until the client
+// closes its side or the daemon stops.
+func (s *controlServer) serveMCP(c net.Conn, in *bufio.Reader) {
+	if s.mcp == nil {
+		writeControl(c, controlResponse{Error: "this daemon serves no MCP"})
+		return
+	}
+	s.mu.Lock()
+	switch {
+	case s.closed:
+		s.mu.Unlock()
+		return
+	case len(s.sessions) >= maxMCPSessions:
+		s.mu.Unlock()
+		writeControl(c, controlResponse{Error: fmt.Sprintf("too many MCP sessions (limit %d)", maxMCPSessions)})
+		return
+	}
+	if s.sessions == nil {
+		s.sessions = map[net.Conn]struct{}{}
+	}
+	s.sessions[c] = struct{}{}
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.sessions, c)
+		s.mu.Unlock()
+	}()
+
+	_ = c.SetDeadline(time.Time{})
+	writeControl(c, controlResponse{OK: true})
+	defer func() {
+		if v := recover(); v != nil {
+			s.log.Error("service: MCP session panicked", "panic_type", fmt.Sprintf("%T", v))
+		}
+	}()
+	s.mcp(in, c)
 }
 
 // dispatch runs the handler under a recover guard: a panic in one
@@ -222,31 +281,51 @@ func writeControl(w io.Writer, resp controlResponse) {
 // callControl sends one request and returns the reply. The error
 // distinguishes "nothing is listening" (errNotRunning) from a refusal.
 func callControl(path, op string) (controlResponse, error) {
+	c, _, resp, err := openControl(path, op)
+	if c != nil {
+		c.Close()
+	}
+	return resp, err
+}
+
+// openControl dials the socket, sends op and reads the reply line. On
+// success it returns the connection, deadline still set, and the
+// reader holding whatever followed the reply.
+func openControl(path, op string) (net.Conn, *bufio.Reader, controlResponse, error) {
 	c, err := net.DialTimeout("unix", path, 2*time.Second)
 	if err != nil {
-		return controlResponse{}, errNotRunning
+		return nil, nil, controlResponse{}, errNotRunning
 	}
-	defer c.Close()
+	resp, br, err := exchangeControl(c, op)
+	if err != nil {
+		c.Close()
+		return nil, nil, resp, err
+	}
+	return c, br, resp, nil
+}
+
+func exchangeControl(c net.Conn, op string) (controlResponse, *bufio.Reader, error) {
 	_ = c.SetDeadline(time.Now().Add(controlDeadline))
 	b, err := json.Marshal(controlRequest{Op: op})
 	if err != nil {
-		return controlResponse{}, err
+		return controlResponse{}, nil, err
 	}
 	if _, err := c.Write(append(b, '\n')); err != nil {
-		return controlResponse{}, fmt.Errorf("service: control request: %w", err)
+		return controlResponse{}, nil, fmt.Errorf("service: control request: %w", err)
 	}
-	line, err := bufio.NewReader(io.LimitReader(c, maxControlReply)).ReadBytes('\n')
+	br := bufio.NewReaderSize(c, maxControlReply)
+	line, err := br.ReadSlice('\n')
 	if err != nil {
-		return controlResponse{}, fmt.Errorf("service: control reply: %w", err)
+		return controlResponse{}, nil, fmt.Errorf("service: control reply: %w", err)
 	}
 	var resp controlResponse
 	if err := handler.UnmarshalStrict(line, &resp); err != nil {
-		return controlResponse{}, fmt.Errorf("service: malformed control reply: %w", err)
+		return controlResponse{}, nil, fmt.Errorf("service: malformed control reply: %w", err)
 	}
 	if !resp.OK {
-		return resp, fmt.Errorf("service: daemon refused %q: %s", op, resp.Error)
+		return resp, nil, fmt.Errorf("service: daemon refused %q: %s", op, resp.Error)
 	}
-	return resp, nil
+	return resp, br, nil
 }
 
 var errNotRunning = errors.New("not running")

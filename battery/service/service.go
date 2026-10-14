@@ -63,6 +63,9 @@ type Config struct {
 	// Stdout and Stderr receive the CLI's output. Nil means os.Stdout
 	// and os.Stderr.
 	Stdout, Stderr io.Writer
+
+	// Stdin feeds `service mcp`. Nil means os.Stdin.
+	Stdin io.Reader
 }
 
 // Runtime is what the host's builder receives: the state directory
@@ -126,6 +129,9 @@ func New(cfg Config) *Battery {
 	}
 	if cfg.Stderr == nil {
 		b.cfg.Stderr = os.Stderr
+	}
+	if cfg.Stdin == nil {
+		b.cfg.Stdin = os.Stdin
 	}
 	if b.cfg.Name == "" && cfg.ID != "" {
 		b.cfg.Name = cfg.ID[strings.LastIndexByte(cfg.ID, '.')+1:]

@@ -11,7 +11,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`battery/service`: the app binary as a per-user OS service
   (experimental).** `service.New(Config{ID, Name, Port})` and
   `svc.Run(ctx, os.Args[1:], build)` give a binary the verbs
-  `service install|uninstall|start|stop|restart|status|logs|open|run|rotate-secret`.
+  `service install|uninstall|start|stop|restart|status|logs|open|mcp|run|rotate-secret`.
   `install` copies the binary to a managed path and registers it as a
   launchd agent (macOS), a `systemctl --user` unit (Linux) or a
   logon-triggered Task Scheduler task (Windows), then starts it on the
@@ -22,7 +22,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the daemon over a Unix socket in the 0700 state directory, checked
   against the daemon's OS user by peer credentials. A signed session is
   the local user, so owner-scoped entities work without `battery/auth`;
-  with auth linked, auth keeps identity. The dev run keeps its own state
+  with auth linked, auth keeps identity. Agents reach the App's MCP tools
+  through `service mcp`, a stdio server tunnelled over that socket and
+  run as the same local user. The dev run keeps its own state
   directory and port (one per isolated worktree), and `gofastr dev`
   runs it gated on the address it passes. `stop`, reinstall and
   `uninstall` wait for the old process to exit, and an instance lock

@@ -132,6 +132,11 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 		os.Setenv("GOFASTR_ISOLATION", "off")
 	}
 
+	// The local run record (framework/localrun) tells agents to reach
+	// this daemon through `service mcp`: its HTTP /mcp sits behind the
+	// browser sign-in gate.
+	app.SetLocalRunInfo(framework.LocalRunInfo{Service: b.cfg.ID, MCPCommand: mcpCommand(mode.dev), Dev: mode.dev})
+
 	listen := "127.0.0.1:" + strconv.Itoa(mode.port)
 	startErr := make(chan error, 1)
 	go func() { startErr <- app.Start(listen) }()
@@ -155,7 +160,8 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 
 	stop := make(chan struct{}, 1)
 	started := time.Now().UTC()
-	cs := &controlServer{ln: ctl, log: log, handle: b.controlHandler(g, addr, mode.dev, started, stop)}
+	cs := &controlServer{ln: ctl, log: log, handle: b.controlHandler(g, addr, mode.dev, started, stop),
+		mcp: mcpSession(app.MCP, g.user)}
 	go cs.serve()
 
 	if len(b.cfg.AllowHosts) > 0 {

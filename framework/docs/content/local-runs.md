@@ -94,3 +94,7 @@ inherit too.
 - **Expecting a record from an embedded router.** Only `App.Start`
   writes one. An app mounted inside another server, or a test serving
   `App.Router()` through `httptest`, is not in the registry.
+- **Dialing the URL of a service daemon's `/mcp` directly.** The
+  service gate answers 401 to anything without the browser's session
+  cookie. Use its `mcp_command`; see
+  [the service guide](service.md#agents-over-mcp).

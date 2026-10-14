@@ -48,6 +48,10 @@ state dir and port; `--addr <loopback>` is what `gofastr dev` passes.
 - A signed session is the local user (`internal/localuser`), so
   owner-scoped entities work without battery/auth. If battery/auth is
   linked, auth owns identity and the gate installs none.
+- Agents reach the daemon's MCP tools with `<app> service mcp`
+  (`--dev` for the dev run), a stdio server that tunnels through the
+  control socket and runs as the local user. Do not open `/mcp` to
+  cookie-less callers to get the same effect.
 - The control channel is a Unix socket in the 0700 state dir, checked
   against the daemon's own OS user. Keep the state path short: AF_UNIX
   caps it near 104 bytes.

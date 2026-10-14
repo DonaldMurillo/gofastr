@@ -33,6 +33,8 @@ commands:
   status                whether it is installed and running, and where
   logs [-n N] [-f]      the service log
   open [--dev]          sign in: open the app in your browser
+  mcp [--dev]           serve the app's MCP over stdio, for an agent's
+                        MCP config (the daemon must be running)
   run [--port N] [--open]
                         run in the foreground with its own data and port
   rotate-secret [--dev] replace the secret, signing every browser out
@@ -83,6 +85,12 @@ func (b *Battery) dispatch(ctx context.Context, args []string, build Builder) er
 			return err
 		}
 		return b.openWith(l, *print)
+	case "mcp":
+		dev := fs.Bool("dev", false, "connect to the foreground dev run")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		return b.mcpBridge(*dev, b.cfg.Stdin, b.cfg.Stdout)
 	case "run":
 		return b.runForeground(ctx, rest, build)
 	case "daemon":

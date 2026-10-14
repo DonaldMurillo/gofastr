@@ -63,6 +63,17 @@ func startRun(t *testing.T, args ...string) *devRun {
 			}
 			_, _ = fmt.Fprint(w, id)
 		}))
+		// whoami over MCP: the identity a `service mcp` session runs as.
+		if err := app.MCP.RegisterTool("whoami", "the caller's user id", nil, func(ctx context.Context, _ map[string]any) (any, error) {
+			if u, ok := handler.GetUser(ctx); ok {
+				if id, ok := u.(interface{ GetID() string }); ok {
+					return id.GetID(), nil
+				}
+			}
+			return "anonymous", nil
+		}); err != nil {
+			return nil, err
+		}
 		return app, nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())

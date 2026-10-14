@@ -92,6 +92,7 @@ An app with subcommands of its own checks for them before calling
 | `status` | Installed or not, running or not, pid, address, version, data directory. Asked of the daemon, never parsed from manager output. |
 | `logs [-n N] [-f]` | The service log. journald on Linux; `logs/service.log` in the state directory on macOS and Windows. Control bytes are stripped before printing. |
 | `open [--dev] [--print]` | Signs the browser in (see below). `--dev` targets the dev run. |
+| `mcp [--dev]` | Serves the app's MCP server over stdio for an agent's MCP config (see "Agents over MCP"). The daemon, or with `--dev` the dev run, must be running. |
 | `run [--port N] [--open]` | The foreground dev run. `--open` signs the browser in once it is up. |
 | `rotate-secret [--dev]` | Replaces the secret, which signs every browser out, and restarts a running installed daemon so it applies. With `--dev` it prints that the dev run needs a restart. |
 
@@ -209,6 +210,35 @@ Linux, `LockFileEx` on Windows) before it claims the socket, and a
 second one refuses before it builds the App, so it never opens a
 database the first one is using. The kernel drops the lock when the
 process dies, and a stale socket left by a crash is replaced.
+
+## Agents over MCP
+
+The daemon's HTTP `/mcp` sits behind the same gate as every other
+route, so an agent with no browser session gets a 401. `<bin> service
+mcp` is the agent's way in: a stdio MCP server the agent launches, the
+same way it launches any local MCP server.
+
+```json
+{
+  "mcpServers": {
+    "my-app": { "command": "/Users/me/Library/Application Support/dev.acme.myapp/bin/myapp", "args": ["service", "mcp"] }
+  }
+}
+```
+
+The command connects to `control.sock`, so it is admitted by the same
+peer-credential check as `status` and `stop`: only the OS user the
+daemon runs as gets through. Inside the daemon the session runs the
+App's MCP server (`App.MCP`, everything `WithMCPTools` registered) as
+the local user from "Who the signed-in browser is", so per-caller gates
+and owner-scoped tools see the same user the browser does. A daemon
+holds at most 16 MCP sessions at once; the 17th is refused. Stopping
+the daemon ends every open session, and the agent sees its server
+exit.
+
+The daemon writes this command into its [local run
+record](local-runs.md) as `mcp_command`, so a tool that reads the
+registry can hand an agent the right entry for each service.
 
 ## Who the signed-in browser is
 

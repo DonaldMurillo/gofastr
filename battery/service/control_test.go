@@ -17,12 +17,18 @@ import (
 
 func startControl(t *testing.T, handle func(string) controlResponse) string {
 	t.Helper()
+	return startControlServer(t, &controlServer{handle: handle})
+}
+
+// startControlServer listens on a fresh socket and serves s.
+func startControlServer(t *testing.T, s *controlServer) string {
+	t.Helper()
 	path := filepath.Join(shortTempDir(t), "c.sock")
 	ln, err := listenControl(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &controlServer{ln: ln, handle: handle, log: slog.New(slog.DiscardHandler)}
+	s.ln, s.log = ln, slog.New(slog.DiscardHandler)
 	go s.serve()
 	t.Cleanup(s.Close)
 	return path
