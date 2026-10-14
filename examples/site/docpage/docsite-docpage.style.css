@@ -37,7 +37,8 @@
    on wide screens each cell names its column. An unfilled rail outlet
    is an empty cell: the column collapses and the shell is nav |
    article. The rail is sticky inside a full-height column, the same
-   flex shape the nav uses. */
+   flex shape the nav uses. On phones the rail folds into a pill (its
+   PhoneSheet). */
 .rail {
   display: flex;
   flex-direction: column;
@@ -126,6 +127,13 @@
   /* display:block drops the grid gap — restore separation between the
      stacked SectionMenu pill and the article below it. */
   :scope > * + * { margin-block-start: var(--spacing-xl); }
+  /* The rail folds into a bar pinned under the header here (its
+     PhoneSheet). Neither its cell nor the outlet inside it lays out a
+     box, so the bar pins against the whole shell rather than a box
+     its own height, and it runs edge to edge across the gutters. */
+  .rail,
+  .rail > * { display: contents; }
+  .rail { --ui-sheet-bar-bleed: var(--size-page-gutter); }
   .content {
     max-inline-size: none;
     overflow-x: hidden;

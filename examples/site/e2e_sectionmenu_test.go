@@ -319,3 +319,57 @@ func TestE2E_HubTOC_PhonePill(t *testing.T) {
 		t.Errorf("after tapping Auth: closed=%v, Auth section %vpx from the top", closed, jumped)
 	}
 }
+
+// The docs index on a phone keeps both navigations: the docs nav's pill
+// floats alone at the bottom, and the on-this-page rail folds into a
+// bar pinned under the site header. The bar names the intent in view,
+// drops the rail from under the header, and a tapped entry closes it
+// and lands below the bar.
+func TestE2E_DocsIndex_OnThisPageBar(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+	const bar = `document.querySelector('.cui-sheet-pill--bar')`
+	const open = `document.querySelector('.cui-phone-sheet__sheet').matches(':popover-open')`
+
+	var layout, pinned, opened, landed string
+	if err := chromedp.Run(ctx,
+		emulation.SetDeviceMetricsOverride(390, 844, 1, true),
+		chromedp.Navigate(base+"/docs/"),
+		chromedp.WaitReady(`.cui-sheet-pill--bar`, chromedp.ByQuery),
+		chromedp.Evaluate(`(()=>{
+			const floating=[...document.querySelectorAll('.cui-sheet-pill')].filter(p=>getComputedStyle(p).position==='fixed');
+			const rail=document.querySelector('[data-cui-comp="ui-anchored-rail"]').getClientRects().length;
+			return 'floating='+floating.length+' docs pill='+!!floating[0]?.closest('[data-cui-comp="cui-section-menu"]')+' rail boxes='+rail;
+		})()`, &layout),
+		chromedp.Evaluate(`document.getElementById('serving').scrollIntoView()`, nil),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`(()=>{const b=`+bar+`, h=document.querySelector('header').getBoundingClientRect();
+			const top=b.getBoundingClientRect().top;
+			return (Math.round(top)===parseFloat(getComputedStyle(b).top) && top<=h.bottom)+'|'+b.textContent.replace(/\s+/g,' ').trim()})()`, &pinned),
+		chromedp.Evaluate(bar+`.click()`, nil),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(open+`+'|'+document.querySelector('.cui-phone-sheet .cui-sheet-head__title').textContent+'|'+
+			Math.round(document.querySelector('.cui-phone-sheet__sheet').getBoundingClientRect().top - `+bar+`.getBoundingClientRect().top)`, &opened),
+		chromedp.Click(`.cui-phone-sheet__sheet a[href="#persist"]`, chromedp.ByQuery),
+		chromedp.Sleep(800*time.Millisecond),
+		chromedp.Evaluate(`(()=>{const b=`+bar+`.getBoundingClientRect(), s=document.getElementById('persist').getBoundingClientRect();
+			return `+open+`+'|'+(s.top>=b.bottom)+'|'+`+bar+`.querySelector('.cui-sheet-pill__label').textContent})()`, &landed),
+	); err != nil {
+		t.Fatalf("docs index bar: %v", err)
+	}
+	if layout != "floating=1 docs pill=true rail boxes=0" {
+		t.Errorf("phone layout: %s", layout)
+	}
+	if pinned != "true|On this page: Serving HTTP" {
+		t.Errorf("bar pinned under the header|text = %q", pinned)
+	}
+	if opened != "true|On this page|0" {
+		t.Errorf("sheet open|title|top below bar top = %q", opened)
+	}
+	if landed != "false|true|Persisting & migrating" {
+		t.Errorf("after tapping Persisting: open|below bar|label = %q", landed)
+	}
+}

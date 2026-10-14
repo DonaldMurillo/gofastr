@@ -84,7 +84,8 @@ type LayerConfig struct {
 	Pager render.HTML
 	// Rail is the right column, filled by a screen that has an in-page
 	// rail (the docs index's intent rail). An empty cell collapses the
-	// column; on phones the rail stacks above the article.
+	// column. On phones the cell lays out no box: the rail there is a
+	// bar pinned under the header (AnchoredRailConfig.PhoneSheetTop).
 	Rail render.HTML
 }
 

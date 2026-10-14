@@ -14,11 +14,12 @@ import (
 //
 // The one knob is the documented one for a sticky header: a section
 // reached by its #anchor (a breadcrumb, a rail) lands below the
-// header instead of under it.
+// header, and below the on-this-page bar a phone pins under it,
+// instead of under them.
 func createTheme() style.Theme {
 	t := theme.Default(theme.Overrides{})
 	t.Knobs = map[string]string{
-		"ui-section-scroll-margin": "calc(var(--size-header-height) + var(--spacing-lg))",
+		"ui-section-scroll-margin": "calc(var(--size-header-height) + var(--ui-sheet-bar-offset, 0px) + var(--spacing-lg))",
 	}
 	return t
 }

@@ -310,9 +310,13 @@ func cxRail() render.HTML {
 	// Trailing rail entry for the flat A–Z reference section.
 	items = append(items, ui.RailItem{Eyebrow: "∑", Text: "A–Z", Anchor: "all-az", Count: docCount()})
 	return ui.AnchoredRail(ui.AnchoredRailConfig{
-		Label:           "By intent",
+		Label:           "On this page",
 		Items:           items,
 		ObserveSelector: "#docs-sections",
+		// On phones the rail folds into a bar under the header: the
+		// docs nav's pill holds the bottom of the screen.
+		PhoneSheet:    true,
+		PhoneSheetTop: true,
 	})
 }
 
