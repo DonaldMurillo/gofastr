@@ -169,6 +169,31 @@ func TestE2E_RailSkipsSectionUnderStickyHeader(t *testing.T) {
 	}
 }
 
+// A section whose bottom edge only touches the band (the next section
+// scrolled exactly to the top) is not in view: IntersectionObserver
+// reports an edge-adjacent target as intersecting, with zero height.
+func TestE2E_RailIgnoresEdgeTouch(t *testing.T) {
+	nav := TableOfContents(TableOfContentsProps{
+		TargetSelector: "#region",
+		Items:          []TOCItem{{ID: "one", Label: "One"}, {ID: "two", Label: "Two"}},
+	}, nil)
+	page := string(nav) + `<div id="region"><section id="one" style="height:1000px">One</section>` +
+		`<section id="two" style="height:2000px">Two</section></div>`
+	b := startBehaviorServer(t, `<style>body{margin:0}</style>`+page)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "one")) {
+		t.Fatal("the bootstrap pass did not mark the first entry")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`scrollTo(0, document.getElementById('two').offsetTop)`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "two")) {
+		t.Fatal("the section whose edge touches the band kept the active entry")
+	}
+}
+
 // Markup that arrives after the module is armed by the kernel's
 // insertion scan, once — the second rail on the page has its own
 // observer and its own active anchor, and the first rail's state is

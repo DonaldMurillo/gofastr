@@ -120,17 +120,19 @@
     // The view starts under a sticky header: a section scrolled behind
     // it is not in view. The band is that top edge down to 30% of the
     // viewport, and the active anchor is the first target in it, in
-    // document order, across every target the band holds, not only the
-    // ones this callback reports changed.
-    const inBand = new Set();
-    const observer = new IntersectionObserver((entries) => {
-      for (const e of entries) {
-        if (e.isIntersecting) inBand.add(e.target);
-        else inBand.delete(e.target);
-      }
-      const first = targets.find((t) => inBand.has(t));
+    // document order. The observer only says when to look: a target
+    // that moves from overlapping the band to touching its edge reports
+    // no change, so the pick reads each target's live box instead of
+    // remembering what the callbacks reported.
+    const bandTop = stickyTop(nav);
+    const observer = new IntersectionObserver(() => {
+      const bandBottom = innerHeight * 0.3;
+      const first = targets.find((t) => {
+        const r = t.getBoundingClientRect();
+        return r.bottom > bandTop && r.top < bandBottom;
+      });
       if (first) markActive(first.id);
-    }, { rootMargin: '-' + stickyTop(nav) + 'px 0px -70% 0px', threshold: 0 });
+    }, { rootMargin: '-' + bandTop + 'px 0px -70% 0px', threshold: 0 });
 
     // Document order, so the bootstrap below picks the DOM-topmost
     // section, not whatever the nav happened to list first.
