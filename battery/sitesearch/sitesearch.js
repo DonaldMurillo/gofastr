@@ -34,22 +34,24 @@
   const api = NS._sitesearch = { scan: scan, queryTerms: queryTerms };
 
   // scan splits text into lowercased word runs with code-point offsets,
-  // the Go tokenizer's runes. The static ranker shares it and queryTerms
-  // through NS._sitesearch.
+  // the Go tokenizer's runes. It lowercases one code point at a time
+  // and keeps the first, as Go does: a whole-word toLowerCase is
+  // contextual (ΟΣ → ος, a final sigma) and expands İ to two. The
+  // static ranker shares it and queryTerms through NS._sitesearch.
   function scan(text) {
     const out = [];
     let pos = 0, start = -1, word = '';
     for (const ch of text) {
       if (WORD.test(ch)) {
         if (start < 0) start = pos;
-        word += ch;
+        word += String.fromCodePoint(ch.toLowerCase().codePointAt(0));
       } else if (start >= 0) {
-        out.push({ word: word.toLowerCase(), start: start, end: pos });
+        out.push({ word: word, start: start, end: pos });
         start = -1; word = '';
       }
       pos++;
     }
-    if (start >= 0) out.push({ word: word.toLowerCase(), start: start, end: pos });
+    if (start >= 0) out.push({ word: word, start: start, end: pos });
     return out;
   }
 
@@ -174,9 +176,7 @@
     return lb && lb.hasAttribute('data-search') ? lb : null;
   }
 
-  document.addEventListener('input', function (e) {
-    const input = e.target && e.target.closest && e.target.closest('[data-hui-combobox-input]');
-    if (!input) return;
+  function query(input) {
     const lb = listboxOf(input);
     if (!lb) return;
     clearTimeout(timers.get(lb));
@@ -198,6 +198,16 @@
         if (window.console) console.warn('sitesearch:', err);
       });
     }, DEBOUNCE_MS));
+  }
+
+  document.addEventListener('input', function (e) {
+    const input = e.target && e.target.closest && e.target.closest('[data-hui-combobox-input]');
+    if (input) query(input);
   });
+
+  // The module loads when the palette first opens; a reader who typed
+  // before it arrived gets that query answered now.
+  const typed = document.activeElement;
+  if (typed && typed.matches && typed.matches('[data-hui-combobox-input]') && typed.value) query(typed);
 
 })();

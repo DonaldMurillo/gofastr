@@ -42,6 +42,11 @@ func parityCorpus() []Page {
 		{URL: "/blog/日本", Title: "日本語 support", Sections: []Section{
 			{Text: "Unicode words like 日本語 and Straße index as letters."},
 		}},
+		// JS's toLowerCase is contextual (a final sigma) and expands İ;
+		// Go lowercases rune by rune.
+		{URL: "/blog/greek", Title: "ΟΣ ΚΟΣΜΟΣ", Sections: []Section{
+			{Text: "İSTANBUL and İzmir, in capitals."},
+		}},
 		{URL: "/examples/tracker", Title: "Tracker", Group: "Examples", Sections: []Section{
 			{Text: "An issue tracker with forms, a palette and server-rendered tables."},
 		}},
@@ -53,6 +58,7 @@ var parityQueries = []string{
 	"commandpalette", "command pal", "table", "tab", "café", "cafe", "résumé",
 	"日本語", "straße", "errors field", "zzz", "forms zzz", "f", "",
 	"Pagination", "the", "renders", "palette search", "columns sort",
+	"ΟΣ", "οσ", "κοσμοσ", "ΚΟΣΜΟΣ", "İSTANBUL", "istanbul", "izmir",
 }
 
 func TestStaticSearchMatchesGo(t *testing.T) {
@@ -281,5 +287,50 @@ func TestExportedPageLoadsRanker(t *testing.T) {
 	e, ok := registry.LookupBehavior(asked)
 	if !ok || e.Source != staticJS {
 		t.Errorf("the client asked for module %q, which is not the registered ranker", asked)
+	}
+}
+
+// The module loads when the palette first opens, so a fast reader can
+// finish typing before it arrives; that query still gets answered.
+func TestClientAnswersEarlyQuery(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!doctype html><html><meta charset=utf-8>
+<div data-hui-combobox><input data-hui-combobox-input id="q" aria-controls="lb" aria-expanded="false" value="forms">
+<ul id="lb" role="listbox" hidden data-search></ul></div>
+<script>document.getElementById('q').focus()</script>
+<script src="/client.js"></script>`)
+	})
+	mux.HandleFunc("/client.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		fmt.Fprint(w, clientJS)
+	})
+	mux.HandleFunc(Root+"query", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"results":[{"url":"/docs/forms","title":"Found %s"}]}`, r.URL.Query().Get("q"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(),
+		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.WSURLReadTimeout(90*time.Second), chromedp.NoSandbox)...)
+	t.Cleanup(cancelAlloc)
+	ctx, cancel := chromedp.NewContext(allocCtx)
+	t.Cleanup(cancel)
+	ctx, cancelTimeout := context.WithTimeout(ctx, 60*time.Second)
+	t.Cleanup(cancelTimeout)
+
+	rows := `[...document.querySelectorAll('#lb [data-search-result]')].map(li => li.textContent).join('|')`
+	var got string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Poll(rows+` !== ''`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(rows, &got),
+	); err != nil {
+		t.Fatalf("the query typed before the module loaded got no rows: %v", err)
+	}
+	if got != "Found forms" {
+		t.Errorf("rows = %q, want Found forms", got)
 	}
 }
