@@ -150,6 +150,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   label of an `Overline` one, reached every `ui.Section` heading in the
   section's body too. Each rule now selects only the section's own
   heading.
+- **`sdkdocs` marks only the current page in its phone menu.** The menu
+  sheet is mounted once for every page, and it marked Overview current
+  on all of them, as did the 404 page's rail, so a reader on Errors saw
+  two current pages. Neither marks a page now; the runtime marks the one
+  the reader is on.
 - **`core/markdown` hides HTML comment blocks.** A `<!-- … -->` block
   rendered as escaped text, so every `<!-- gofastr:compile … -->`
   directive in the embedded docs showed on the site's doc pages and in
