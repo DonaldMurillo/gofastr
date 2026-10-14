@@ -103,6 +103,30 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   message in the success color between the alert and the body, for
   outcomes like "account created" that the danger-styled `Alert` would
   misreport (#503).
+- **`battery/sitesearch`: full-text search over every rendered page.**
+  The battery renders the pages a static export would write (dynamic
+  routes through `StaticPaths`), indexes each page's `<main>` with its
+  `h2`/`h3` sections as deep links, and answers at
+  `/__gofastr/search/query`; the index builds in the background when the
+  app starts. In a static export it writes the index as
+  content-hashed JSON shards under `/__gofastr/search/`, and a runtime
+  module only exported pages load (`sitesearch-static`) ranks from them
+  with no server, matching the Go ranking.
+  `Config.Groups` labels results by URL prefix, `Exclude` drops paths,
+  `Sources` adds pages no route renders; `data-search-ignore` and
+  `noindex` keep content out. Guide: `gofastr docs site-search`.
+- **`ui.CommandPaletteConfig.Search`** makes the palette search the site
+  search index as the reader types, below its `Commands` (required: the
+  rows shown before the first keystroke). A slow answer shows a
+  "Loading…" row and an empty one "No matches".
+- **`gofastr export [--base /sub] [--pkg ./cmd/web] <dir>`** writes any
+  app as a static site. It runs the app with `GOFASTR_EXPORT` (and
+  `GOFASTR_EXPORT_BASE`) set; `App.Start` then exports after
+  migrations, seeds and battery init and returns instead of serving.
+- **`static.Contributor`** lets a battery add files to an export from
+  the pages it renders, and `App.ExportStatic` passes every registered
+  battery that implements it. **`static.Walk`** renders the same page set
+  at runtime.
 
 ### Changed
 - **BREAKING: `ui.ContentRowConfig.BelowHeader` is removed.** Set
@@ -149,6 +173,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (`--ui-code-block-tab-size`) and draws the line-number gutter from
   the code colors (`--ui-code-block-gutter-color`), not the page's
   `--color-text-subtle`.
+- **`ui.CommandPalette` drops its keyboard hints on touch screens**
+  (`hover: none` and `pointer: coarse`); the footer keeps its close
+  button.
+- The static export's preview banner no longer lists search among the
+  features that need the Go server.
 
 ### Fixed
 - **A sticky `ui.TableOfContents` in a `ui.ContentRow` aside sticks
@@ -248,6 +277,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   from `go install …/cmd/gofastr@v0.87.0` printed `GoFastr dev`. It now
   reads the module version from the build info, and a build from a
   checkout shows its VCS commit and commit time (#503).
+- **The command palette opens on its commands.** It focuses its input
+  before the combobox module binds, so no focus event reached the module
+  and the list stayed closed until the first keystroke. The module now
+  opens a static list whose input already has focus when it arrives.
+- **Exports are reproducible.** `Router.Paths` ranged a map, so the
+  route manifest in every exported page, and the page order, changed
+  from run to run; every page differed between two exports of the same
+  content. Exact paths now come back
+  sorted, then dynamic patterns in registration order.
 
 ## [0.87.2] - 2026-10-12
 

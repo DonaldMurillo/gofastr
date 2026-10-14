@@ -35,6 +35,11 @@ func newTestApp(t *testing.T) *framework.App {
 	t.Cleanup(func() {
 		_ = app.Shutdown(context.Background())
 	})
+	// Start does this on a served site: batteries (site search) add
+	// their routes here.
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
 	return app
 }
 
@@ -419,28 +424,7 @@ func TestCodeBlockLineCountMatchesLines(t *testing.T) {
 	}
 }
 
-// ── Command palette search RPC filters server-side. ─────────────────────
-
-func TestPaletteSearchFilters(t *testing.T) {
-	hit := paletteSearch(t, "kiln")
-	if !strings.Contains(hit, "/kiln") || strings.Contains(hit, "/philosophy") {
-		t.Errorf("q=kiln should match only Kiln; got %q", hit)
-	}
-	if miss := paletteSearch(t, "zzzzz"); !strings.Contains(miss, "No matches") {
-		t.Errorf("q=zzzzz should report no matches; got %q", miss)
-	}
-}
-
 // ── helpers ─────────────────────────────────────────────────────────────
-
-func paletteSearch(t *testing.T, q string) string {
-	t.Helper()
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/__site/palette", strings.NewReader("q="+q))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	servePaletteSearch(rec, req)
-	return rec.Body.String()
-}
 
 func between(s, start, end string) string {
 	i := strings.Index(s, start)
