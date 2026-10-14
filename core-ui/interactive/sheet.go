@@ -472,9 +472,23 @@ func phoneSheetCSS(_ style.Theme) string {
 }
 [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__top { display: none; }
 [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top:has(> .cui-phone-sheet__sheet:popover-open) > .cui-sheet-pill--bar .cui-sheet-pill__chevron { rotate: none; }
-[data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet:not(:popover-open) { translate: 0 -100%; }
+/* It unrolls from the bar in place: an open popover paints over every
+   layer, so a sheet sliding down from above would cross the header and
+   the bar. The clip reveals it top to bottom and keeps its shadow out
+   at the sides and below. */
+[data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet {
+  translate: none;
+  clip-path: inset(0 -4rem -4rem -4rem);
+  transition: clip-path var(--duration-normal, 250ms) var(--easing-ease-out, ease-out),
+    overlay var(--duration-normal, 250ms) allow-discrete,
+    display var(--duration-normal, 250ms) allow-discrete;
+}
+[data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet:not(:popover-open) { translate: none; clip-path: inset(0 -4rem 100% -4rem); }
 @starting-style {
-  [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet:popover-open { translate: 0 -100%; }
+  [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet:popover-open { clip-path: inset(0 -4rem 100% -4rem); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet { transition: none; }
 }
 /* The title row stays put while the list scrolls under it. */
 [data-cui-comp="cui-phone-sheet"] .cui-phone-sheet__top {

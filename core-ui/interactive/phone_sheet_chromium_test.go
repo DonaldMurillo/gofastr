@@ -240,7 +240,9 @@ func TestPhoneSheetPillSkipsLinkChips(t *testing.T) {
 // menu) covers the bar. The sheet hangs from the bar's bottom edge with
 // the bar left lit above the dim, its chevron turned and no title row
 // repeating the bar; focus lands on the current entry, and a second tap
-// on the bar closes the sheet.
+// on the bar closes the sheet. Opening and closing, the sheet rolls
+// from the bar in place: no frame draws it above the bar, over the
+// header (an open popover paints over everything).
 func TestPhoneSheetTopBarPinsUnderHeader(t *testing.T) {
 	sheet := PhoneSheet(PhoneSheetConfig{ID: "toc-sheet", Title: "On this page", SwapAt: SwapMD, Top: true},
 		render.HTML(`<nav aria-label="On this page"><ol><li><a href="#s0" aria-current="true">Overview</a></li></ol></nav>`))
@@ -260,8 +262,9 @@ func TestPhoneSheetTopBarPinsUnderHeader(t *testing.T) {
 		return [Math.round(r.top), Math.round(r.height), r.left === 0 && r.right === innerWidth, sr.width > 1].join('|');
 	})()`
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(390, 800))
-	var scrolled, off, open, wide, covered string
+	var scrolled, off, open, wide, covered, frames string
 	var closed bool
+	var still string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL),
 		chromedp.Evaluate(`scrollTo(0, 1000)`, nil),
@@ -270,6 +273,23 @@ func TestPhoneSheetTopBarPinsUnderHeader(t *testing.T) {
 		chromedp.Evaluate(offset, &off),
 		chromedp.Evaluate(`(() => { const d = document.getElementById('drop'); d.style.display = 'block';
 			const at = document.elementFromPoint(innerWidth / 2, 78).id; d.style.display = 'none'; return at; })()`, &covered),
+		chromedp.Evaluate(`(() => {
+			const sheet = document.getElementById('toc-sheet'), bar = document.querySelector('.cui-sheet-pill--bar');
+			window.__frames = { above: 0, moved: 0, clips: { open: new Set(), closed: new Set() }, n: 0 };
+			sheet.addEventListener('beforetoggle', (e) => {
+				const clips = window.__frames.clips[e.newState];
+				const t0 = performance.now();
+				const tick = () => {
+					const f = window.__frames, cs = getComputedStyle(sheet);
+					f.n++;
+					if (sheet.getClientRects().length && sheet.getBoundingClientRect().top < bar.getBoundingClientRect().bottom - 0.5) f.above++;
+					if (cs.translate !== 'none') f.moved++;
+					clips.add(cs.clipPath);
+					if (performance.now() - t0 < 400) requestAnimationFrame(tick);
+				};
+				requestAnimationFrame(tick);
+			});
+		})()`, nil),
 		chromedp.Click(`.cui-sheet-pill--bar`, chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond),
 		chromedp.Evaluate(`(() => { const r = document.getElementById('toc-sheet').getBoundingClientRect();
@@ -283,7 +303,13 @@ func TestPhoneSheetTopBarPinsUnderHeader(t *testing.T) {
 				document.activeElement.getAttribute('href')].join('|'); })()`, &open),
 		chromedp.Click(`.cui-sheet-pill--bar`, chromedp.ByQuery),
 		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Sleep(300*time.Millisecond),
 		chromedp.Evaluate(`!(`+sheetOpen+`)`, &closed),
+		chromedp.Evaluate(`(() => { const f = window.__frames;
+			return 'above=' + f.above + ' moved=' + f.moved + ' animates=' + (f.clips.open.size > 2 && f.clips.closed.size > 2) + ' sampled=' + (f.n > 5); })()`, &frames),
+		emulation.SetEmulatedMedia().WithFeatures([]*emulation.MediaFeature{{Name: "prefers-reduced-motion", Value: "reduce"}}),
+		chromedp.Evaluate(`getComputedStyle(document.getElementById('toc-sheet')).transitionDuration`, &still),
+		emulation.SetEmulatedMedia().WithFeatures([]*emulation.MediaFeature{}),
 		emulation.SetDeviceMetricsOverride(1280, 800, 1, false),
 		chromedp.Sleep(100*time.Millisecond),
 		chromedp.Evaluate(offset, &wide),
@@ -301,6 +327,12 @@ func TestPhoneSheetTopBarPinsUnderHeader(t *testing.T) {
 	}
 	if open != "true|true|true|true|none|0|true|#s0" {
 		t.Errorf("sheet open|hangs from bar|short of the bottom|bar lit|chevron|head boxes|aligned|focus = %s; want true|true|true|true|none|0|true|#s0", open)
+	}
+	if frames != "above=0 moved=0 animates=true sampled=true" {
+		t.Errorf("open and close frames: %s; want the sheet rolled in place below the bar", frames)
+	}
+	if still != "0s" {
+		t.Errorf("with reduced motion the sheet transitions over %q; want 0s", still)
 	}
 	if !closed {
 		t.Error("a second tap on the bar left the sheet open")
