@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -174,5 +175,33 @@ func TestPeerIsSelfAcceptsOwnUser(t *testing.T) {
 	defer c.Close()
 	if err := <-errc; err != nil {
 		t.Fatalf("peerIsSelf refused this process: %v", err)
+	}
+}
+
+// A connection from another OS user is dropped before the handler
+// runs: no op executes and no reply is written.
+func TestControlRefusesForeignPeer(t *testing.T) {
+	prev := peerCheck
+	peerCheck = func(*net.UnixConn) error { return errors.New("peer uid 502 is not the daemon's uid 501") }
+	t.Cleanup(func() { peerCheck = prev })
+	var calls atomic.Int32
+	path := startControl(t, func(op string) controlResponse {
+		calls.Add(1)
+		return controlResponse{OK: true, Token: "t1"}
+	})
+	// The server may drop the connection before the request is even
+	// written, so a write error is an expected outcome here.
+	c, err := net.Dial("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	_ = c.SetDeadline(time.Now().Add(5 * time.Second))
+	_, _ = io.WriteString(c, `{"op":"token"}`+"\n")
+	if got, _ := io.ReadAll(c); len(got) != 0 {
+		t.Fatalf("foreign peer got a reply: %q", got)
+	}
+	if calls.Load() != 0 {
+		t.Fatal("handler ran for a foreign peer")
 	}
 }

@@ -283,6 +283,36 @@ func TestTaskSchedulerStopEndsAWedgedDaemon(t *testing.T) {
 	}
 }
 
+// rotate-secret on a socket that answers but refuses says the running
+// copy did not take the new secret, instead of reporting a clean
+// rotate.
+func TestRotateReportsUnreachableDaemon(t *testing.T) {
+	b, _, out := testBattery(t, "darwin", Config{})
+	if err := b.rotate(true); err != nil {
+		t.Fatalf("rotate with nothing running: %v", err)
+	}
+	dev, err := b.layoutFor(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln, err := listenControl(dev.socketPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &controlServer{ln: ln, log: slog.New(slog.DiscardHandler), handle: func(string) controlResponse {
+		return controlResponse{Error: "busy"}
+	}}
+	go s.serve()
+	t.Cleanup(s.Close)
+	err = b.rotate(true)
+	if err == nil || !strings.Contains(err.Error(), "did not answer") {
+		t.Fatalf("rotate error = %v; want a did-not-answer error", err)
+	}
+	if strings.Contains(out.String(), "restart the dev run") {
+		t.Fatalf("rotate claimed the daemon answered: %q", out)
+	}
+}
+
 // flakyListener fails its first Accept with an error that is not a
 // closed listener.
 type flakyListener struct {

@@ -25,8 +25,14 @@ func peerIsSelf(c *net.UnixConn) error {
 	if credErr != nil {
 		return fmt.Errorf("read peer credentials: %w", credErr)
 	}
-	if int(uid) != os.Geteuid() {
-		return fmt.Errorf("peer uid %d is not the daemon's uid %d", uid, os.Geteuid())
+	return checkPeerUID(uid, os.Geteuid())
+}
+
+// checkPeerUID refuses a peer whose uid is not self. root gets no
+// exemption: the daemon serves one user, and root is another.
+func checkPeerUID(peer uint32, self int) error {
+	if self < 0 || uint64(peer) != uint64(self) {
+		return fmt.Errorf("peer uid %d is not the daemon's uid %d", peer, self)
 	}
 	return nil
 }

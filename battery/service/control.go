@@ -118,11 +118,21 @@ func listenControl(path string) (net.Listener, error) {
 	return ln, nil
 }
 
+// peerCheck is peerIsSelf, a variable so a test can stand in a foreign
+// peer, which a unit test cannot produce for real.
+var peerCheck = peerIsSelf
+
 // controlServer answers control requests until Close.
 type controlServer struct {
 	ln     net.Listener
 	handle func(op string) controlResponse
 	log    *slog.Logger
+
+	// mu orders wg.Add in serve against wg.Wait in Close: an Add that
+	// races a Wait on a zero counter is a WaitGroup misuse, and a
+	// connection accepted as Close runs would escape the wait.
+	mu     sync.Mutex
+	closed bool
 	wg     sync.WaitGroup
 }
 
@@ -141,7 +151,14 @@ func (s *controlServer) serve() {
 			time.Sleep(acceptRetryDelay)
 			continue
 		}
+		s.mu.Lock()
+		if s.closed {
+			s.mu.Unlock()
+			c.Close()
+			return
+		}
 		s.wg.Add(1)
+		s.mu.Unlock()
 		go func() {
 			defer s.wg.Done()
 			s.serveConn(c)
@@ -151,6 +168,9 @@ func (s *controlServer) serve() {
 
 // Close stops accepting and waits for in-flight requests.
 func (s *controlServer) Close() {
+	s.mu.Lock()
+	s.closed = true
+	s.mu.Unlock()
 	s.ln.Close()
 	s.wg.Wait()
 }
@@ -162,7 +182,7 @@ func (s *controlServer) serveConn(c net.Conn) {
 	if !ok {
 		return
 	}
-	if err := peerIsSelf(uc); err != nil {
+	if err := peerCheck(uc); err != nil {
 		s.log.Warn("service: refused a control connection from another OS user", "reason", err.Error())
 		return
 	}

@@ -500,8 +500,12 @@ func (b *Battery) rotate(dev bool) error {
 		return err
 	}
 	fmt.Fprintf(b.cfg.Stdout, "rotated the secret in %s\n", l.dir)
-	if _, err := callControl(l.socketPath(), "status"); err != nil {
+	if _, err := callControl(l.socketPath(), "status"); errors.Is(err, errNotRunning) {
 		return nil
+	} else if err != nil {
+		// Something holds the socket but did not answer: it may still
+		// sign sessions with the old secret.
+		return fmt.Errorf("service: the secret was rotated, but the running %s did not answer (%w); restart it to apply the new secret", b.cfg.Name, err)
 	}
 	if dev {
 		fmt.Fprintf(b.cfg.Stdout, "restart the dev run to apply it\n")
