@@ -30,6 +30,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/battery/relay"
 	_ "github.com/DonaldMurillo/gofastr/battery/rtc"
 	_ "github.com/DonaldMurillo/gofastr/battery/search"
+	_ "github.com/DonaldMurillo/gofastr/battery/service"
 	_ "github.com/DonaldMurillo/gofastr/battery/setup"
 	_ "github.com/DonaldMurillo/gofastr/battery/storage"
 	_ "github.com/DonaldMurillo/gofastr/battery/webhook"
@@ -462,9 +463,8 @@ const agentsPreamble = `# AGENTS.md
 ` + devLoopGuidance + `
 ## Two maps, then the detail
 
-Both are one page each, and both are cheaper than the topic docs they route
-into. Land on the row for your job first; open a topic only when a row
-points you at one.
+Each is one page and cheaper than the topic docs it routes into. Land on the
+row for your job first; open a topic only when a row points you at one.
 
 - ` + "`" + `gofastr docs backend-capability-map` + "`" + `: data, auth, APIs, jobs,
   deploys. Every row names the symbols to compose and a command that

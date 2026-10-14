@@ -77,6 +77,7 @@ var manifest = []rule{
 	{"kiln", Experimental},
 	{"codegen", Experimental},
 	{"battery/desktop", Experimental},
+	{"battery/service", Experimental},
 
 	// --- Provisional: supported, not yet frozen ---
 	{"framework", Provisional},

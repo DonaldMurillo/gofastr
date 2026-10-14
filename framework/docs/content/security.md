@@ -409,7 +409,7 @@ browser treats the request as same-origin and `Origin` matches `Host`.
 Comparing `Host` against the authority the server expects is what
 refuses it, because a rebound request still carries the attacker's name.
 
-This applies to three surfaces the framework ships:
+This applies to four surfaces the framework ships:
 
 - **`/mcp`**: `core/mcp.Server` refuses a browser `Origin` that is not
   same-origin with the request. Pin the authority with
@@ -426,6 +426,11 @@ This applies to three surfaces the framework ships:
   loopback address. `kiln` also refuses request-borne agent commands
   unless started with `--allow-custom-agent`: that form lets the
   request body choose the argv of a spawned process.
+- **`battery/service`**: the installed daemon and its dev run pin
+  `Host` to their own loopback address plus `Config.AllowHosts`, refuse
+  cross-site unsafe methods, and require a session cookie minted from a
+  single-use token the control channel hands out. There is no switch
+  that turns the Host check off. See [service.md](service.md).
 
 A deliberate non-loopback bind (`--addr 0.0.0.0:…`) skips the pin,
 since the framework cannot know the intended public name. That is the

@@ -8,6 +8,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`battery/service`: the app binary as a per-user OS service
+  (experimental).** `service.New(Config{ID, Name, Port})` and
+  `svc.Run(ctx, os.Args[1:], build)` give a binary the verbs
+  `service install|uninstall|start|stop|restart|status|logs|open|run|rotate-secret`.
+  `install` copies the binary to a managed path and registers it as a
+  launchd agent (macOS), a `systemctl --user` unit (Linux) or a
+  logon-triggered Task Scheduler task (Windows), then starts it on the
+  fixed loopback port; a held port fails the start instead of moving.
+  Every request passes a Host pin, a cross-site refusal and a signed
+  session cookie, which `open` mints by handing the browser a 0600
+  local page that POSTs a 60-second single-use token. CLI clients reach
+  the daemon over a Unix socket in the 0700 state directory, checked
+  against the daemon's OS user by peer credentials. A signed session is
+  the local user, so owner-scoped entities work without `battery/auth`;
+  with auth linked, auth keeps identity. The dev run keeps its own state
+  directory and port, and `gofastr dev` runs it gated on the address it
+  passes. The Windows backend is unit-tested but has not run on a real
+  Windows machine. Guide: `gofastr docs service`; example:
+  `examples/service-hello`.
 - **`App.WrapServer` wraps everything the listener serves.** Router
   middleware (`Use`) never sees the interactive setup wizard or the
   worker and agent roles' reduced muxes; a `WrapServer` wrapper does.
