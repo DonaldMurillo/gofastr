@@ -30,6 +30,33 @@
   // tree is collected, and a nav handed to scan() twice is armed once.
   const observers = new WeakMap();
 
+  // What covers the top can change with the width: a phone sheet's bar
+  // publishes its offset below a breakpoint only. Each armed nav leaves
+  // a re-measure here, and one window listener runs them on a resize.
+  // A nav that left the document is dropped, and its observer
+  // disconnected, at the next resize or scan, so the module never holds
+  // a page the reader has navigated away from.
+  const remeasure = new Map();
+  function prune() {
+    for (const nav of remeasure.keys()) {
+      if (nav.isConnected) continue;
+      const o = observers.get(nav);
+      if (o) o.disconnect();
+      observers.delete(nav); // re-inserted later, it arms again
+      remeasure.delete(nav);
+    }
+  }
+  let resizePending = false;
+  addEventListener('resize', () => {
+    if (resizePending) return;
+    resizePending = true;
+    requestAnimationFrame(() => {
+      resizePending = false;
+      prune();
+      for (const f of remeasure.values()) f();
+    });
+  });
+
   function within(root, sel) {
     const out = [];
     if (root.matches && root.matches(sel)) out.push(root);
@@ -75,6 +102,7 @@
   // the anchor whose target holds the top of the view. Exported for
   // headless-toc, which passes its own selector pair.
   function watch(nav, observeSel, targetSel) {
+    prune();
     if (!nav || observers.has(nav)) return;
     if (!observeSel) return; // a static rail: links only
     let root = null;
@@ -156,28 +184,14 @@
     };
     arm();
 
-    // What covers the top can change with the width: a phone sheet's
-    // bar publishes its offset below a breakpoint only. A resize that
-    // moves the edge re-arms the observer on the new band; a nav that
-    // left the document drops its listener.
-    let pending = false;
-    const onResize = () => {
-      if (pending) return;
-      pending = true;
-      requestAnimationFrame(() => {
-        pending = false;
-        if (!nav.isConnected) {
-          observer.disconnect();
-          removeEventListener('resize', onResize);
-          return;
-        }
-        const top = stickyTop(nav);
-        if (top === bandTop) return;
-        bandTop = top;
-        arm();
-      });
-    };
-    addEventListener('resize', onResize);
+    // A resize that moves the covered edge re-arms the observer on the
+    // new band.
+    remeasure.set(nav, () => {
+      const top = stickyTop(nav);
+      if (top === bandTop) return;
+      bandTop = top;
+      arm();
+    });
 
     // Bootstrap an initial active anchor: on a page whose sections all
     // start below a tall header the observer never fires, and no anchor
@@ -199,6 +213,7 @@
   NS._huiRailWatch = watch;
 
   function scan(root) {
+    prune();
     const scope = root && root.querySelectorAll ? root : document;
     for (const nav of within(scope, '[data-hui-rail]')) {
       watch(

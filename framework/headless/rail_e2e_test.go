@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/chromedp/cdproto/heapprofiler"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -201,6 +203,43 @@ func TestE2E_RailBandFollowsResize(t *testing.T) {
 	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "two")) {
 		t.Fatal("after narrowing, the section behind the bar kept the active entry")
 	}
+}
+
+// A nav that leaves the document while its sections stay (a client
+// navigation swapping only the column it sat in) is released at the
+// next scan: nothing the module holds keeps it alive, so it does not
+// wait for a resize that may never come.
+func TestE2E_RailReleasesRemovedNav(t *testing.T) {
+	nav := TableOfContents(TableOfContentsProps{
+		TargetSelector: "#region",
+		Items:          []TOCItem{{ID: "one", Label: "One"}, {ID: "two", Label: "Two"}},
+	}, nil)
+	b := startBehaviorServer(t, railPage(t, nav))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "one")) {
+		t.Fatal("the bootstrap pass did not mark the first entry")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`(() => { const nav = document.querySelector('[data-hui-toc]');
+			window.__navRef = new WeakRef(nav); nav.remove();
+			window.__gofastr._moduleScanners['headless-rail'](document); })()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var released bool
+	for range 5 {
+		if err := chromedp.Run(ctx,
+			chromedp.Evaluate(`new Promise((done) => requestAnimationFrame(() => done()))`, nil, func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) }),
+			heapprofiler.CollectGarbage(),
+			chromedp.Evaluate(`window.__navRef.deref() === undefined`, &released),
+		); err != nil {
+			t.Fatal(err)
+		}
+		if released {
+			return
+		}
+	}
+	t.Fatal("the removed nav is still held after a scan and a collection")
 }
 
 // A section left with less than a pixel in the band is not in view:
