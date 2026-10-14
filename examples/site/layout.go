@@ -60,7 +60,8 @@ func mainLayout() *app.Layout {
 
 // hubLayout frames the taught area hubs: the wide reading container with a
 // content row whose aside holds the toc outlet. The rail sits beside the
-// content on wide screens and stacks under it on phones.
+// content on wide screens; on phones it folds into a pill and sheet, so
+// the stacked aside is flush.
 //
 // The toc outlet is the hubs' on-this-page rail: each hub fills it with its
 // own concept list (TeachHubScreen.TOC), and an unfilled outlet releases
@@ -71,8 +72,9 @@ func hubLayout() (*app.Layout, *app.Outlet) {
 	return app.NewLayout("hub", app.LayoutSpec{Outlets: []*app.Outlet{hubTOC}}, func(_ context.Context, l *app.LayoutTree) render.HTML {
 		return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide, Pad: ui.ContainerPadPage},
 			ui.ContentRow(ui.ContentRowConfig{
-				Aside:      l.Place(hubTOC),
-				AsideLabel: "On this page",
+				Aside:           l.Place(hubTOC),
+				AsideLabel:      "On this page",
+				PhoneAsideFlush: true,
 			}, l.Primary()),
 		)
 	}), hubTOC

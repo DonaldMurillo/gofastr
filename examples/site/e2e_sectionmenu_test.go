@@ -268,3 +268,54 @@ func TestE2E_SectionMenu_PillAndSheetFilter(t *testing.T) {
 		t.Errorf(`filter "datefield" shows %q, want DateField`, shown)
 	}
 }
+
+// Hub pages on a phone: the on-this-page list folds into the same pill,
+// which names the concept in view and opens the list as a sheet; a
+// tapped entry closes the sheet and jumps to its section.
+func TestE2E_HubTOC_PhonePill(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+	const label = `document.querySelector('.cui-sheet-pill__label').textContent`
+	const open = `document.querySelector('.cui-phone-sheet__sheet').matches(':popover-open')`
+
+	var aside, pill, opened, entries string
+	var closed bool
+	var jumped float64
+	if err := chromedp.Run(ctx,
+		emulation.SetDeviceMetricsOverride(390, 844, 1, true),
+		chromedp.Navigate(base+"/framework"),
+		chromedp.WaitReady(`.cui-sheet-pill`, chromedp.ByQuery),
+		chromedp.Evaluate(`(()=>{const a=document.querySelector('.fui-content-row__aside');return Math.round(a.getBoundingClientRect().height)+'|'+getComputedStyle(a).borderTopWidth})()`, &aside),
+		chromedp.Evaluate(`document.getElementById('migrations').scrollIntoView()`, nil),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(label, &pill),
+		chromedp.Click(`.cui-sheet-pill`, chromedp.ByQuery),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(open+`+'|'+document.querySelector('.cui-sheet-head__title').textContent`, &opened),
+		chromedp.Evaluate(`[...document.querySelectorAll('.cui-phone-sheet__sheet .fui-toc__link')].map(a=>a.textContent).slice(0,2).join('|')`, &entries),
+		chromedp.Click(`.cui-phone-sheet__sheet a[href="#auth"]`, chromedp.ByQuery),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`!(`+open+`)`, &closed),
+		chromedp.Evaluate(`Math.abs(document.getElementById('auth').getBoundingClientRect().top)`, &jumped),
+	); err != nil {
+		t.Fatalf("hub toc pill: %v", err)
+	}
+	if aside != "0|0px" {
+		t.Errorf("stacked aside height|rule = %s, want 0|0px", aside)
+	}
+	if pill != "Migrations" {
+		t.Errorf("pill = %q with Migrations in view", pill)
+	}
+	if opened != "true|On this page" {
+		t.Errorf("sheet open|title = %q", opened)
+	}
+	if entries != "Entities|Auth" {
+		t.Errorf("sheet entries start %q, want Entities|Auth", entries)
+	}
+	if !closed || jumped > 200 {
+		t.Errorf("after tapping Auth: closed=%v, Auth section %vpx from the top", closed, jumped)
+	}
+}

@@ -151,11 +151,18 @@ func (h *TeachHubScreen) TOC() *hubTOCFill {
 	return &hubTOCFill{items: items}
 }
 
-// hubTOCFill renders a hub's concept list as the sticky on-this-page rail.
+// hubTOCFill renders a hub's concept list as the sticky on-this-page rail,
+// and on phones as the pill and sheet naming the concept in view.
 type hubTOCFill struct{ items []ui.TOCItem }
 
 func (f *hubTOCFill) Render() render.HTML {
-	return ui.TableOfContents(ui.TOCConfig{Label: "On this page", Items: f.items, Sticky: true})
+	return ui.TableOfContents(ui.TOCConfig{
+		Label:      "On this page",
+		Items:      f.items,
+		Target:     "main",
+		Sticky:     true,
+		PhoneSheet: true,
+	})
 }
 
 // hubNextID anchors the closing "Where next" section.
