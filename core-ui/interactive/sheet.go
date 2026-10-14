@@ -108,6 +108,12 @@ type SheetPillConfig struct {
 	// at the bottom of the viewport, centred, and the page ends one
 	// pill's height lower so the pill never covers its last line.
 	Inline bool
+	// Bar pins the pill as a full-width bar under the page's sticky
+	// header (--ui-sticky-top) instead of floating it, the name shown
+	// before the current entry ("On this page: Overview"). A page whose
+	// bottom edge already holds a floating pill (a SectionMenu's) shows
+	// its second navigation this way. Bar and Inline are exclusive.
+	Bar bool
 	// SwapAt is the width at and above which the pill hides: the
 	// desktop surface it stands in for takes over there.
 	SwapAt SwapWidth
@@ -123,9 +129,15 @@ func SheetPill(cfg SheetPillConfig) render.HTML {
 	if (cfg.Opens == "") == (cfg.Popover == "") {
 		panic("interactive: SheetPill needs exactly one of Opens (a mounted widget) and Popover (an inline popover's id)")
 	}
+	if cfg.Inline && cfg.Bar {
+		panic("interactive: SheetPill Inline and Bar are exclusive: a pill sits in flow or pins as a bar")
+	}
 	cls := "cui-sheet-pill" + swapClass("SheetPill", "cui-sheet-pill", cfg.SwapAt)
 	if cfg.Inline {
 		cls += " cui-sheet-pill--inline"
+	}
+	if cfg.Bar {
+		cls += " cui-sheet-pill--bar"
 	}
 	attrs := map[string]string{"class": cls, "type": "button", "aria-haspopup": "dialog"}
 	if cfg.Opens != "" {
@@ -152,6 +164,12 @@ var sheetPillStyle = registry.RegisterStyle("cui-sheet-pill", sheetPillCSS)
 //   - --ui-sheet-pill-bottom (16px; set it on :root, where the page's
 //     end padding reads it too): the floating pill's gap above the
 //     viewport's bottom edge (the safe-area inset is added to it).
+//   - --ui-sheet-bar-height (2.75rem): a Bar's height, which it
+//     publishes below the swap as --ui-sheet-bar-offset, the extra
+//     top offset anchored sections and the rail's in-view band clear.
+//   - --ui-sheet-bar-bleed (0): how far a Bar reaches past its column
+//     on each side, and its inline padding: a padded page column sets
+//     its gutter so the bar runs edge to edge and its text lines up.
 func sheetPillCSS(_ style.Theme) string {
 	var b strings.Builder
 	b.WriteString(`[data-cui-comp="cui-sheet-pill"] {
@@ -176,12 +194,46 @@ func sheetPillCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   white-space: nowrap;
 }
-[data-cui-comp="cui-sheet-pill"]:not(.cui-sheet-pill--inline):dir(rtl) { translate: 50% 0; }
+[data-cui-comp="cui-sheet-pill"]:not(.cui-sheet-pill--inline, .cui-sheet-pill--bar):dir(rtl) { translate: 50% 0; }
 :where([data-cui-comp="cui-sheet-pill"]).cui-sheet-pill--inline {
   position: static;
   translate: none;
   box-shadow: none;
   max-inline-size: 100%;
+}
+/* The bar: pinned under the sticky header across its column, flat, the
+   name visible before the current entry, the chevron pointing down to
+   the sheet that drops from it. --ui-sheet-bar-bleed widens it past a
+   padded column to the screen's edges. It sits one layer under the
+   sticky header, so what the header drops (a menu) covers it. */
+:where([data-cui-comp="cui-sheet-pill"]).cui-sheet-pill--bar {
+  position: sticky;
+  z-index: calc(var(--z-sticky, 200) - 1);
+  inset-block: var(--ui-sticky-top, 0px) auto;
+  inset-inline-start: auto;
+  translate: none;
+  inline-size: calc(100% + 2 * var(--ui-sheet-bar-bleed, 0px));
+  max-inline-size: none;
+  margin-inline: calc(-1 * var(--ui-sheet-bar-bleed, 0px));
+  block-size: var(--ui-sheet-bar-height, 2.75rem);
+  padding: 0 var(--ui-sheet-bar-bleed, 0px);
+  border-width: 0 0 var(--stroke-thin, 1px);
+  border-radius: 0;
+  background: var(--color-background, #fff);
+  box-shadow: none;
+}
+[data-cui-comp="cui-sheet-pill"].cui-sheet-pill--bar .cui-sheet-pill__icon { display: none; }
+[data-cui-comp="cui-sheet-pill"].cui-sheet-pill--bar .cui-sheet-pill__sr {
+  position: static;
+  inline-size: auto;
+  block-size: auto;
+  margin: 0;
+  clip-path: none;
+  color: var(--color-text-muted, #52525B);
+}
+[data-cui-comp="cui-sheet-pill"].cui-sheet-pill--bar .cui-sheet-pill__chevron {
+  margin-inline-start: auto;
+  rotate: 180deg;
 }
 [data-cui-comp="cui-sheet-pill"] .cui-sheet-pill__icon,
 [data-cui-comp="cui-sheet-pill"] .cui-sheet-pill__chevron { flex: 0 0 auto; color: var(--color-text-muted, #52525B); }
@@ -230,9 +282,14 @@ func sheetPillCSS(_ style.Theme) string {
 /* The floating pill would cover the end of the page (a footer's last
    line): the page ends one pill's height plus its gap lower. */
 @media (max-width: MAXW) {
-  body:has(SCOPE:not(.cui-sheet-pill--inline)) {
+  body:has(SCOPE:not(.cui-sheet-pill--inline, .cui-sheet-pill--bar)) {
     padding-block-end: calc(var(--ui-sheet-pill-bottom, 16px) + env(safe-area-inset-bottom, 0px) + 3.5rem);
   }
+  /* A bar pinned under the sticky header covers the page's top edge
+     too: anchored sections (ui.Section) and the rail's in-view band
+     start below it. Published on the root, so a theme knob set there
+     (--ui-section-scroll-margin) can add it. */
+  :root:has(SCOPE.cui-sheet-pill--bar) { --ui-sheet-bar-offset: var(--ui-sheet-bar-height, 2.75rem); }
 }
 `))
 	}
@@ -307,6 +364,10 @@ type PhoneSheetConfig struct {
 	// SwapAt is the width below which the body folds into the sheet.
 	// In a ui.ContentRow column, match the row's Breakpoint.
 	SwapAt SwapWidth
+	// Top pins the pill as a bar under the page's sticky header
+	// (SheetPillConfig.Bar) and drops the sheet from there, for a page
+	// whose bottom edge already holds a SectionMenu's pill.
+	Top bool
 }
 
 // PhoneSheet renders body in normal flow at and above the swap width,
@@ -316,6 +377,10 @@ type PhoneSheetConfig struct {
 // pill names the entry the body marks aria-current, so a list that
 // marks where the reader is (a table of contents, a menu) shows it on
 // the pill. Following a link in the sheet closes it.
+//
+// The pill floats at the bottom of the screen, so a page carries one
+// floating pill: beside a SectionMenu's, set Top and the pill becomes a
+// bar under the sticky header with the sheet dropping from it.
 func PhoneSheet(cfg PhoneSheetConfig, body render.HTML) render.HTML {
 	if cfg.ID == "" {
 		panic("interactive: PhoneSheet requires ID: the pill opens the sheet by its id")
@@ -324,9 +389,12 @@ func PhoneSheet(cfg PhoneSheetConfig, body render.HTML) render.HTML {
 		panic("interactive: PhoneSheet requires Title: it names the sheet and its pill")
 	}
 	cls := "cui-phone-sheet" + swapClass("PhoneSheet", "cui-phone-sheet", cfg.SwapAt)
+	if cfg.Top {
+		cls += " cui-phone-sheet--top"
+	}
 	titleID := cfg.ID + "-title"
 	return phoneSheetStyle.WrapHTML(html.Div(html.DivConfig{Class: cls},
-		SheetPill(SheetPillConfig{Name: cfg.Title, Popover: cfg.ID, SwapAt: cfg.SwapAt}),
+		SheetPill(SheetPillConfig{Name: cfg.Title, Popover: cfg.ID, SwapAt: cfg.SwapAt, Bar: cfg.Top}),
 		render.Tag("div", map[string]string{
 			"id":              cfg.ID,
 			"class":           "cui-phone-sheet__sheet",
@@ -386,6 +454,17 @@ func phoneSheetCSS(_ style.Theme) string {
   [data-cui-comp="cui-phone-sheet"] .cui-phone-sheet__sheet { transition: none; }
 }
 [data-cui-comp="cui-phone-sheet"] .cui-phone-sheet__sheet::backdrop { background: var(--ui-scrim, rgba(0,0,0,0.45)); }
+/* Top: the sheet drops from under the sticky header, where its bar
+   sits, instead of rising from the bottom. */
+[data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet {
+  inset: var(--ui-sticky-top, 0px) 0 auto 0;
+  padding-block-end: var(--spacing-lg, 16px);
+  border-radius: 0 0 var(--radii-lg, 10px) var(--radii-lg, 10px);
+}
+[data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet:not(:popover-open) { translate: 0 -100%; }
+@starting-style {
+  [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet:popover-open { translate: 0 -100%; }
+}
 /* The title row stays put while the list scrolls under it. */
 [data-cui-comp="cui-phone-sheet"] .cui-phone-sheet__top {
   position: sticky;

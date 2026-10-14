@@ -214,3 +214,79 @@ func TestPhoneSheetClosesPastSwap(t *testing.T) {
 		t.Errorf("open before resize=%v, after=%v; want true, false", open, after)
 	}
 }
+
+// The pill names a marked rail link by the link's own text: the number
+// chip before it and the count chip after it are not the entry's name.
+func TestPhoneSheetPillSkipsLinkChips(t *testing.T) {
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(390, 800))
+	var got string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(sheetPage(t)),
+		chromedp.Evaluate(`document.querySelector('#list ol').innerHTML =
+			'<li><a href="#s2" aria-current="true"><span>02</span>Serving HTTP<span>13</span></a></li>'`, nil),
+		chromedp.Sleep(150*time.Millisecond),
+		chromedp.Evaluate(`document.querySelector('.cui-sheet-pill__label').textContent`, &got),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if got != "Serving HTTP" {
+		t.Errorf("pill label = %q; want %q", got, "Serving HTTP")
+	}
+}
+
+// Top pins the pill as a bar under a 56px sticky header, its name
+// visible; the page publishes the bar's height as
+// --ui-sheet-bar-offset below the swap only; the sheet drops from under
+// the header, and what the header drops (a menu) covers the bar.
+func TestPhoneSheetTopBarPinsUnderHeader(t *testing.T) {
+	sheet := PhoneSheet(PhoneSheetConfig{ID: "toc-sheet", Title: "On this page", SwapAt: SwapMD, Top: true},
+		render.HTML(`<nav aria-label="On this page"><ol><li><a href="#s0" aria-current="true">Overview</a></li></ol></nav>`))
+	css := kitCSS(phoneSheetStyle)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width">
+<style>:root{--ui-sticky-top:56px}body{margin:0;font-family:sans-serif}header{position:sticky;top:0;height:56px;z-index:200;background:#eee}#drop{position:absolute;top:56px;left:0;right:0;height:300px;display:none}main{height:3000px}</style>
+<style>%s</style><header><div id=drop></div></header><div class=page><p style="height:200px">intro</p>%s<main></main></div><script>%s</script>`, css, sheet, phoneSheetJS)
+	}))
+	t.Cleanup(srv.Close)
+	const offset = `getComputedStyle(document.documentElement).getPropertyValue('--ui-sheet-bar-offset').trim()`
+	const bar = `(() => {
+		const b = document.querySelector('.cui-sheet-pill--bar');
+		const r = b.getBoundingClientRect();
+		const sr = b.querySelector('.cui-sheet-pill__sr').getBoundingClientRect();
+		return [Math.round(r.top), Math.round(r.height), r.left === 0 && r.right === innerWidth, sr.width > 1].join('|');
+	})()`
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(390, 800))
+	var scrolled, off, open, wide, covered string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL),
+		chromedp.Evaluate(`scrollTo(0, 1000)`, nil),
+		chromedp.Sleep(100*time.Millisecond),
+		chromedp.Evaluate(bar, &scrolled),
+		chromedp.Evaluate(offset, &off),
+		chromedp.Evaluate(`(() => { const d = document.getElementById('drop'); d.style.display = 'block';
+			const at = document.elementFromPoint(innerWidth / 2, 78).id; d.style.display = 'none'; return at; })()`, &covered),
+		chromedp.Click(`.cui-sheet-pill--bar`, chromedp.ByQuery),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`(() => { const r = document.getElementById('toc-sheet').getBoundingClientRect();
+			return [`+sheetOpen+`, Math.round(r.top), r.bottom < innerHeight].join('|'); })()`, &open),
+		chromedp.KeyEvent("\x1b"),
+		emulation.SetDeviceMetricsOverride(1280, 800, 1, false),
+		chromedp.Sleep(100*time.Millisecond),
+		chromedp.Evaluate(offset, &wide),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if scrolled != "56|44|true|true" {
+		t.Errorf("scrolled bar top|height|full width|name shown = %s; want 56|44|true|true", scrolled)
+	}
+	if covered != "drop" {
+		t.Errorf("the header's drop-down at the bar shows %q; want it over the bar", covered)
+	}
+	if off != "2.75rem" || wide != "" {
+		t.Errorf("--ui-sheet-bar-offset = %q at 390px, %q at 1280px; want 2.75rem, empty", off, wide)
+	}
+	if open != "true|56|true" {
+		t.Errorf("sheet open|top|short of the bottom = %s; want true|56|true", open)
+	}
+}

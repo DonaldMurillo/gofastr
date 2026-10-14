@@ -58,6 +58,25 @@ func TestSheetPillLabelFallsBackToName(t *testing.T) {
 	}
 }
 
+func TestSheetPillInlineOrBar(t *testing.T) {
+	mustPanic(t, "Inline and Bar are exclusive", func() {
+		SheetPill(SheetPillConfig{Name: "Menu", Popover: "p", Inline: true, Bar: true})
+	})
+}
+
+// Top makes the pill a bar and marks the sheet to drop from the top.
+func TestPhoneSheetTopMarksBarAndSheet(t *testing.T) {
+	h := string(PhoneSheet(PhoneSheetConfig{ID: "toc-sheet", Title: "On this page", Top: true}, "<ol></ol>"))
+	for _, want := range []string{
+		`class="cui-phone-sheet cui-phone-sheet--top"`,
+		`class="cui-sheet-pill cui-sheet-pill--bar"`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("missing %q:\n%s", want, h)
+		}
+	}
+}
+
 func TestSheetPillUnknownSwapPanics(t *testing.T) {
 	mustPanic(t, "SheetPill unknown SwapAt", func() {
 		SheetPill(SheetPillConfig{Name: "Menu", Opens: "w", SwapAt: "xl"})
@@ -74,7 +93,8 @@ func TestSheetPillCSSPerSwap(t *testing.T) {
 		`@media (min-width: 48rem) {
   [data-cui-comp="cui-sheet-pill"]:where(.cui-sheet-pill--swap-md) { display: none; }`,
 		`@media (max-width: 63.99rem) {
-  body:has([data-cui-comp="cui-sheet-pill"]:where(.cui-sheet-pill--swap-lg):not(.cui-sheet-pill--inline))`,
+  body:has([data-cui-comp="cui-sheet-pill"]:where(.cui-sheet-pill--swap-lg):not(.cui-sheet-pill--inline, .cui-sheet-pill--bar))`,
+		`:root:has([data-cui-comp="cui-sheet-pill"]:where(.cui-sheet-pill--swap-lg).cui-sheet-pill--bar) { --ui-sheet-bar-offset:`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("CSS missing:\n%s", want)

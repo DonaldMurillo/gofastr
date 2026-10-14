@@ -16,6 +16,15 @@
   const ROOT = '[data-cui-comp="cui-phone-sheet"]';
   const CURRENT = 'a[aria-current]:not([aria-current="false"])';
 
+  // An entry's name is the link's own text: a rail link wraps its label
+  // in chips (a number before it, a count after it) that are not part
+  // of the name. A link whose text sits only in elements reads it all.
+  function entryName(a) {
+    let own = '';
+    for (const n of a.childNodes) if (n.nodeType === 3) own += n.textContent;
+    return own.trim() || a.textContent.trim();
+  }
+
   // The pill names the current entry, or what it opens while nothing
   // is current: its accessible name starts with that, ending in ": ".
   function follow(pill, sheet) {
@@ -23,7 +32,7 @@
     const sr = pill.querySelector('.cui-sheet-pill__sr');
     if (!label || !sr) return;
     const a = sheet.querySelector(CURRENT);
-    const text = a ? a.textContent.trim() : '';
+    const text = a ? entryName(a) : '';
     label.textContent = text || sr.textContent.replace(/:\s*$/, '');
   }
 
