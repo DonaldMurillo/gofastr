@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // This file provides the Windows implementations of:
@@ -85,7 +87,7 @@ func runProbeChildBody(id ProbeID) int {
 		// Sanity: scratch writable.
 		if scratch != "" {
 			probe := filepath.Join(scratch, ".probe-write")
-			if err := os.WriteFile(probe, []byte("ok"), 0o600); err != nil {
+			if err := fileperm.WriteOwnerOnly(probe, []byte("ok")); err != nil {
 				unreachable(fmt.Sprintf("scratch %s not writable: %v", scratch, err))
 				return 0
 			}
