@@ -612,3 +612,39 @@ func TestPaletteFooterStaysDownOnPhones(t *testing.T) {
 		t.Errorf("footer ends at %.0f of a %.0f-tall screen", m.FooterBottom, m.Inner)
 	}
 }
+
+// Arrow keys move the active option past the list's visible rows; the
+// list scrolls to keep it in sight, down past the fold and up across
+// the wrap to the last row.
+func TestPaletteKeepsActiveOptionInView(t *testing.T) {
+	srv := paletteTestServer(t)
+	ctx := paletteChromeCtx(t, 1280, 800)
+	openPalette(t, ctx, srv.URL, 1280, 800)
+	const inView = `(() => {
+		const a = document.querySelector('#command-palette-input-listbox [role="option"].is-active');
+		if (!a) return 'no active option';
+		let box = a.parentElement;
+		while (box && !(box.scrollHeight > box.clientHeight && /auto|scroll/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
+		if (!box) return 'no scroll container';
+		const r = a.getBoundingClientRect(), b = box.getBoundingClientRect();
+		return r.top >= b.top - 1 && r.bottom <= b.bottom + 1 ? 'ok' : a.textContent.trim().slice(0, 12) + ' at ' + Math.round(r.top) + ' outside ' + Math.round(b.top) + '-' + Math.round(b.bottom);
+	})()`
+	for _, step := range []struct {
+		name  string
+		key   string
+		times int
+	}{{"down past the fold", kb.ArrowDown, 30}, {"up across the wrap", kb.ArrowUp, 31}} {
+		var got string
+		actions := []chromedp.Action{chromedp.Focus(`#command-palette-input`, chromedp.ByID)}
+		for range step.times {
+			actions = append(actions, chromedp.KeyEvent(step.key))
+		}
+		actions = append(actions, chromedp.Sleep(150*time.Millisecond), chromedp.Evaluate(inView, &got))
+		if err := chromedp.Run(ctx, actions...); err != nil {
+			t.Fatal(err)
+		}
+		if got != "ok" {
+			t.Errorf("%s: %s", step.name, got)
+		}
+	}
+}

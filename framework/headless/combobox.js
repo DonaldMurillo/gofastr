@@ -42,6 +42,9 @@
     for (const o of lb.querySelectorAll('[role="option"].is-active')) o.classList.remove('is-active');
     if (opt) {
       opt.classList.add('is-active');
+      // The list scrolls to keep the active row in sight; "nearest"
+      // moves it only as far as it must, and never when it shows.
+      opt.scrollIntoView({ block: 'nearest' });
       const input = inputOf(lb);
       if (input) input.setAttribute('aria-activedescendant', opt.id || '');
     }

@@ -183,6 +183,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   features that need the Go server.
 
 ### Fixed
+- **Arrow keys keep a combobox's active option in sight.** The
+  highlight moved past the list's visible rows without scrolling, so a
+  keyboard reader of a long palette or picker list lost the selection.
+  The list now scrolls just far enough to show it.
 - **A sticky `ui.TableOfContents` in a `ui.ContentRow` aside sticks
   when a layout outlet holds it.** The outlet was only as tall as the
   list, so the list had no room to stick and scrolled away with the

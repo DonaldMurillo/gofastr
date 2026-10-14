@@ -564,7 +564,9 @@ registered the same way:
   the count announcement and the loading word. A combobox with a static
   list whose input already has focus when the module binds opens that
   list at once (the command palette focuses its input before the module
-  loads). It replaced the retired `combobox` runtime module.
+  loads). The arrow keys, Home and End scroll the list to keep the
+  active option in sight. It replaced the retired `combobox` runtime
+  module.
 - **headless-navigation** also carries the keyboard-shortcut family
   (`data-hui-shortcut-*`), and **headless-tabs**
   (`[data-hui-tabs]`) owns the roving tabindex and the vacate stash;
