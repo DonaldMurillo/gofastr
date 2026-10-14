@@ -62,11 +62,16 @@ type TOCConfig struct {
 	// the breakpoint the nav renders as it does without it. The pill
 	// follows the entry the Target observer marks, so set Target too.
 	// In a ui.ContentRow aside, set the row's PhoneAsideFlush: the
-	// stacked aside holds nothing else on a phone. The pill takes the
-	// bottom of the screen, so a page carries one: leave this off where
-	// a SectionMenu already floats its pill. The sheet's id is ID plus
-	// "-sheet", or fui-toc-sheet without an ID.
+	// stacked aside holds nothing else on a phone. The pill floats at
+	// the bottom of the screen, so a page carries one floating pill:
+	// beside a SectionMenu's, set PhoneSheetTop. The sheet's id is ID
+	// plus "-sheet", or fui-toc-sheet without an ID.
 	PhoneSheet bool
+	// PhoneSheetTop pins the PhoneSheet pill as a bar under the page's
+	// sticky header ("On this page: Overview") and drops the list from
+	// there, for a page whose SectionMenu already floats its pill at
+	// the bottom.
+	PhoneSheetTop bool
 	// Breakpoint is the width below which PhoneSheet folds the list:
 	// below md (48rem, the default) or below lg (64rem). Match the
 	// ContentRow's Breakpoint.
@@ -125,7 +130,7 @@ func TableOfContents(cfg TOCConfig) render.HTML {
 	if cfg.Breakpoint == StackBelowLG {
 		swap = interactive.SwapLG
 	}
-	return interactive.PhoneSheet(interactive.PhoneSheetConfig{ID: sheetID, Title: label, SwapAt: swap}, nav)
+	return interactive.PhoneSheet(interactive.PhoneSheetConfig{ID: sheetID, Title: label, SwapAt: swap, Top: cfg.PhoneSheetTop}, nav)
 }
 
 var tocStyle = registry.RegisterStyle("ui-toc", tocCSS)

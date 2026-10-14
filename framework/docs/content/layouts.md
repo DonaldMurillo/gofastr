@@ -857,10 +857,24 @@ script, and closes on Escape, a tap outside it, its close button, or a
 followed link. Opening it moves focus to the current entry (or the
 close button), and closing it returns focus to the pill. Set
 `PhoneAsideFlush: true` on the row: the stacked aside then holds
-nothing on a phone and draws no rule. The pill takes the bottom of the
-screen, so a page carries one floating pill: leave `PhoneSheet` off on
-a page whose SectionMenu already floats its own. The sheet's id is the
-list's `ID` plus `-sheet` (`fui-toc-sheet` without one).
+nothing on a phone and draws no rule. The pill floats at the bottom of
+the screen, so a page carries one floating pill. On a page whose
+SectionMenu already floats its own, set `PhoneSheetTop`: the contents
+pill becomes a full-width "On this page: <section>" bar pinned under
+the sticky header (`--ui-sticky-top`), and the sheet drops from under
+the header instead of rising. Below the swap the page publishes the
+bar's height as `--ui-sheet-bar-offset`, and anchored `ui.Section`s and
+the rail's in-view band start below it; a theme that sets
+`--ui-section-scroll-margin` adds it itself
+(`calc(var(--size-header-height) + var(--ui-sheet-bar-offset, 0px))`).
+Knobs: `--ui-sheet-bar-height` (2.75rem) and `--ui-sheet-bar-bleed`
+(0; set it to a padded column's gutter so the bar runs edge to edge).
+A page carries one `PhoneSheet`; two overlap. The sheet's id is the list's `ID` plus
+`-sheet` (`fui-toc-sheet` without one). `ui.AnchoredRail` takes the
+same `PhoneSheet` option, with `SwapAt` (900px by default, or
+`interactive.SwapMD`/`SwapLG`) in place of `Breakpoint`: the pill names
+the section in view by the link's own text, without the rail's number
+and count chips, and the sheet's title is the rail's `Label`.
 
 ```go
 ui.ContentRow(ui.ContentRowConfig{

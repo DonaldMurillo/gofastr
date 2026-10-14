@@ -88,6 +88,65 @@ if(getComputedStyle(nav).position!=='sticky')return 'the list lost its stickines
 `)
 }
 
+// An AnchoredRail with PhoneSheet folds the same way: on a phone the
+// pill names the section in view by its text alone, and the open sheet
+// holds the rail unpinned, without its own label under the sheet title.
+func TestAnchoredRailFoldsOnPhone(t *testing.T) {
+	items := make([]ui.RailItem, 4)
+	sections := make([]render.HTML, 4)
+	for i := range items {
+		items[i] = ui.RailItem{Eyebrow: fmt.Sprintf("%02d", i), Text: fmt.Sprintf("Intent %d", i), Anchor: fmt.Sprintf("i%d", i), Count: 3}
+		body := []render.HTML{}
+		for range 30 {
+			body = append(body, html.Paragraph(html.TextConfig{}, render.Text("Body")))
+		}
+		sections[i] = ui.Section(ui.SectionConfig{ID: items[i].Anchor, Heading: items[i].Text}, body...)
+	}
+	rail := ui.AnchoredRail(ui.AnchoredRailConfig{Label: "By intent", Items: items, ObserveSelector: "#sections", PhoneSheet: true})
+	page := rail + html.Div(html.DivConfig{ID: "sections"}, sections...)
+	check := tocPage(t, page, "phonesheet")
+	check(t, 390, `
+q('#i2').scrollIntoView(); await wait(400);
+const label=q('.cui-sheet-pill__label').textContent;
+if(label!=='Intent 2')return 'pill names '+JSON.stringify(label)+', not the intent in view';
+q('.cui-sheet-pill').click(); await wait(400);
+const aside=q('[data-cui-comp="ui-anchored-rail"]');
+if(!q('.cui-phone-sheet__sheet').matches(':popover-open'))return 'the pill did not open the sheet';
+if(getComputedStyle(aside).position!=='static')return 'the rail stays sticky in the sheet';
+if(getComputedStyle(q('.fui-anchored-rail__label')).display!=='none')return 'the rail repeats its label under the sheet title';
+`)
+}
+
+// With PhoneSheetTop the rail's pill is a bar pinned at the top: a
+// section reached from the open sheet lands below the bar, not under
+// it, and the bar names that section, not the one whose tail is left
+// behind the bar.
+func TestAnchoredRailBarClearsSections(t *testing.T) {
+	items := make([]ui.RailItem, 4)
+	sections := make([]render.HTML, 4)
+	for i := range items {
+		items[i] = ui.RailItem{Text: fmt.Sprintf("Intent %d", i), Anchor: fmt.Sprintf("i%d", i)}
+		body := []render.HTML{}
+		for range 30 {
+			body = append(body, html.Paragraph(html.TextConfig{}, render.Text("Body")))
+		}
+		sections[i] = ui.Section(ui.SectionConfig{ID: items[i].Anchor, Heading: items[i].Text}, body...)
+	}
+	rail := ui.AnchoredRail(ui.AnchoredRailConfig{Label: "On this page", Items: items, ObserveSelector: "#sections", PhoneSheet: true, PhoneSheetTop: true})
+	page := rail + html.Div(html.DivConfig{ID: "sections"}, sections...)
+	check := tocPage(t, page, "phonesheet")
+	check(t, 390, `
+const bar=q('.cui-sheet-pill--bar');
+bar.click(); await wait(400);
+q('.cui-phone-sheet__sheet a[href="#i2"]').click(); await wait(600);
+const b=r(bar), s=r(q('#i2'));
+if(Math.round(b.top)!==0)return 'the bar is not pinned: top '+b.top;
+if(s.top<b.bottom-1)return 'section top '+s.top+' sits under the bar (bottom '+b.bottom+')';
+const label=q('.cui-sheet-pill__label').textContent;
+if(label!=='Intent 2')return 'the bar names '+JSON.stringify(label)+', not the section below it';
+`)
+}
+
 // tocPage serves page through the framework host and returns a checker
 // that loads it at a width, waits for the named behaviour (if any), and
 // runs js, which returns a failure message or nothing.

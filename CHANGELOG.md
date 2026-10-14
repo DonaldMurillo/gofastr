@@ -55,6 +55,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   The pieces are public: `interactive.SheetPill` (the pill SectionMenu
   uses too) and `interactive.PhoneSheet` (pill plus inline sheet for any
   list that marks its current entry `aria-current`).
+  `ui.AnchoredRailConfig.PhoneSheet` folds a rail the same way (below
+  `SwapAt`, 900px by default); its pill names the section by the link's
+  own text, without the number and count chips. `PhoneSheetTop` on
+  either (`interactive.PhoneSheetConfig.Top`) pins that pill as an "On
+  this page: <section>" bar under the sticky header and drops the list
+  from there, for a page whose SectionMenu pill already holds the
+  bottom edge. Anchored sections and the rail's in-view band clear the
+  bar through `--ui-sheet-bar-offset`.
 - **entityui lists warn when their row links lead nowhere.** The first
   time a list renders rows whose `<base>/<id>` matches no registered
   screen, it logs one warning per base naming the route to register.

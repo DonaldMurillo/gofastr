@@ -55,3 +55,25 @@ func TestAnchoredRailExtraAttrsOnRoot(t *testing.T) {
 		t.Errorf("a caller forged the rail hook:\n%s", h)
 	}
 }
+
+// PhoneSheet wraps the rail in a phone sheet titled by the rail's
+// label, its id from the rail's ID; without PhoneSheet there is none.
+func TestAnchoredRailPhoneSheet(t *testing.T) {
+	items := []RailItem{{Anchor: "a", Text: "A"}}
+	plain := string(AnchoredRail(AnchoredRailConfig{Label: "By intent", Items: items}))
+	if strings.Contains(plain, "cui-phone-sheet") {
+		t.Errorf("a rail without PhoneSheet renders a sheet:\n%s", plain)
+	}
+	for id, want := range map[string]string{"": "fui-anchored-rail-sheet", "intents": "intents-sheet"} {
+		h := string(AnchoredRail(AnchoredRailConfig{Label: "By intent", Items: items, ID: id, PhoneSheet: true}))
+		for _, part := range []string{`data-cui-comp="cui-phone-sheet"`, `popovertarget="` + want + `"`, `id="` + want + `"`, `>By intent<`, `class="fui-anchored-rail"`} {
+			if !strings.Contains(h, part) {
+				t.Errorf("ID %q: sheet missing %q:\n%s", id, part, h)
+			}
+		}
+	}
+	top := string(AnchoredRail(AnchoredRailConfig{Label: "On this page", Items: items, PhoneSheet: true, PhoneSheetTop: true}))
+	if !strings.Contains(top, "cui-phone-sheet--top") || !strings.Contains(top, "cui-sheet-pill--bar") {
+		t.Errorf("PhoneSheetTop should render the bar and the top sheet:\n%s", top)
+	}
+}

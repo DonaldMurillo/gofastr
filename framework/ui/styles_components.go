@@ -417,9 +417,10 @@ func sectionCSS(_ style.Theme) string {
   margin: var(--spacing-xl, 24px) 0;
   border: 0;
   /* Anchored sections clear a sticky header when scrolled into view:
-     the --ui-sticky-top a StickyHeader page stack publishes, or the
+     the --ui-sticky-top a StickyHeader page stack publishes, plus a
+     phone sheet's bar pinned under it (--ui-sheet-bar-offset), or the
      --ui-section-scroll-margin knob. */
-  scroll-margin-top: var(--ui-section-scroll-margin, var(--ui-sticky-top, 0px));
+  scroll-margin-top: var(--ui-section-scroll-margin, calc(var(--ui-sticky-top, 0px) + var(--ui-sheet-bar-offset, 0px)));
 }
 :where([data-cui-comp="ui-section"]).fui-section--compact { margin-block: 0; }
 [data-cui-comp="ui-section"] .fui-section__head {
