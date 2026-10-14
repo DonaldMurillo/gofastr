@@ -500,6 +500,14 @@ func phoneSheetCSS(_ style.Theme) string {
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet { transition: none; }
 }
+/* A browser without the overlay transition (Safari) takes a closing
+   popover out of the top layer at once, so the close would play in
+   page flow: under the page, with the list's in-page styles back.
+   There the sheet closes at once; opening still animates. */
+@supports not (overlay: auto) {
+  [data-cui-comp="cui-phone-sheet"] .cui-phone-sheet__sheet:not(:popover-open),
+  [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet:not(:popover-open) { transition: none; }
+}
 /* The title row stays put while the list scrolls under it. */
 [data-cui-comp="cui-phone-sheet"] .cui-phone-sheet__top {
   position: sticky;

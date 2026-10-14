@@ -137,3 +137,21 @@ func TestPhoneSheetCSSFlowsAboveSwap(t *testing.T) {
 		t.Errorf("CSS missing:\n%s", want)
 	}
 }
+
+// Without the overlay transition (Safari) a closing popover leaves the
+// top layer at once, so its close would play in page flow under the
+// page; there the sheet closes without a transition, both variants.
+func TestPhoneSheetClosesAtOnceWithoutOverlay(t *testing.T) {
+	css := phoneSheetCSS(style.Theme{})
+	want := `@supports not (overlay: auto) {
+  [data-cui-comp="cui-phone-sheet"] .cui-phone-sheet__sheet:not(:popover-open),
+  [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet:not(:popover-open) { transition: none; }
+}`
+	i := strings.Index(css, want)
+	if i < 0 {
+		t.Fatalf("CSS missing:\n%s", want)
+	}
+	if j := strings.LastIndex(css, `.cui-phone-sheet--top .cui-phone-sheet__sheet {`); j > i {
+		t.Errorf("the top variant's transition comes after the close rule and outweighs it")
+	}
+}
