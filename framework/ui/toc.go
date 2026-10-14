@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -54,6 +55,20 @@ type TOCConfig struct {
 	// nav scrolls with the content unless the caller opts in.
 	Sticky bool
 
+	// PhoneSheet folds the contents into a bottom sheet below the
+	// Breakpoint width: a pill floating at the bottom of the viewport
+	// names the section in view and opens the list (an
+	// interactive.PhoneSheet, the pill SectionMenu uses). At and above
+	// the breakpoint the nav renders as it does without it. The pill
+	// follows the entry the Target observer marks, so set Target too.
+	// In a ui.ContentRow aside, set the row's PhoneAsideFlush: the
+	// stacked aside holds nothing else on a phone.
+	PhoneSheet bool
+	// Breakpoint is the width below which PhoneSheet folds the list:
+	// below md (48rem, the default) or below lg (64rem). Match the
+	// ContentRow's Breakpoint.
+	Breakpoint StackBreakpoint
+
 	ID    string
 	Class string
 	// ExtraAttrs forwards additional attributes to the <nav> root.
@@ -90,7 +105,24 @@ func TableOfContents(cfg TOCConfig) render.HTML {
 		ID:             cfg.ID,
 		ExtraAttrs:     headless.Safe(cfg.ExtraAttrs, "class", "id", "aria-label"),
 	}, classes)
-	return tocStyle.WrapHTML(nav)
+	nav = tocStyle.WrapHTML(nav)
+	if !cfg.PhoneSheet {
+		return nav
+	}
+	checkStackBreakpoint(cfg.Breakpoint)
+	label := cfg.Label
+	if label == "" {
+		label = "On this page"
+	}
+	sheetID := "fui-toc-sheet"
+	if cfg.ID != "" {
+		sheetID = cfg.ID + "-sheet"
+	}
+	swap := interactive.SwapMD
+	if cfg.Breakpoint == StackBelowLG {
+		swap = interactive.SwapLG
+	}
+	return interactive.PhoneSheet(interactive.PhoneSheetConfig{ID: sheetID, Title: label, SwapAt: swap}, nav)
 }
 
 var tocStyle = registry.RegisterStyle("ui-toc", tocCSS)
@@ -157,5 +189,14 @@ func tocCSS(_ style.Theme) string {
 [data-cui-comp="ui-toc"] .fui-toc__link:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
-}`
+}
+/* In an open sheet (PhoneSheet) the sheet's title row names the list
+   and the sheet scrolls it; the rows grow to a thumb's height. */
+:popover-open [data-cui-comp="ui-toc"]::before { display: none; }
+:where(:popover-open) :where([data-cui-comp="ui-toc"]).fui-toc--sticky {
+  position: static;
+  max-block-size: none;
+  overflow: visible;
+}
+:popover-open [data-cui-comp="ui-toc"] .fui-toc__link { padding-block: var(--spacing-md, 8px); }`
 }

@@ -103,6 +103,12 @@ type ContentRowConfig struct {
 	// trigger the page header hosts): the stacked column renders empty
 	// on phones and an empty band must not draw a line.
 	PhoneNavFlush bool
+	// PhoneAsideFlush drops the stacked aside's block-start rule and
+	// padding below the breakpoint. Set it when the aside's phone form
+	// lives outside it (a ui.TableOfContents with PhoneSheet, whose
+	// pill floats over the page): the stacked aside renders empty on
+	// phones and an empty band must not draw a line.
+	PhoneAsideFlush bool
 	// Dense gives the page the compact density on a fine pointer (a
 	// mouse or trackpad): controls, toolbar fields and table rows take
 	// the 36px control height and the tighter gap that the theme's
@@ -145,6 +151,9 @@ func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 	}
 	if cfg.PhoneNavFlush {
 		cls += " fui-content-row--phone-nav-flush"
+	}
+	if cfg.PhoneAsideFlush {
+		cls += " fui-content-row--phone-aside-flush"
 	}
 	if cfg.Dense {
 		cls += " fui-content-row--dense"
@@ -220,6 +229,10 @@ func contentRowCSS(_ style.Theme) string {
 .fui-content-row__toolbar { flex: 0 0 auto; min-inline-size: 0; padding: var(--spacing-sm) var(--spacing-lg); border-block-end: var(--stroke-thin, 1px) solid var(--color-border); }
 .fui-content-row__aside { flex: 0 0 var(--ui-content-row-aside-width, 18rem); min-inline-size: 0; padding: var(--spacing-lg); border-inline-start: var(--stroke-thin, 1px) solid var(--color-border); }
 .fui-content-row__aside:has(> [data-cui-outlet]:empty) { display: none; }
+/* An outlet filling the aside is as tall as the column, so a sticky
+   part inside it (a contents list) has the column's height to stick
+   in rather than its own. Stacked, the height resolves to auto. */
+.fui-content-row__aside > [data-cui-outlet] { block-size: 100%; }
 /* Dense: on a fine pointer the document takes the compact option
    values, declared at the root the way a theme boundary declares them,
    so the app's overlays (a drawer, a dialog, a floating menu) mounted
@@ -329,6 +342,9 @@ func (b rowBreakpointCSS) stackCSS() string {
      sidebar whose trigger the page header hosts), so the stacked band
      renders empty and must not draw its separator. */
   .fui-content-row--phone-nav-flush:SCOPE: .fui-content-row__nav { border: 0; padding: 0; }
+  /* PhoneAsideFlush: the same for the aside, whose phone form (a
+     contents list's pill and sheet) floats over the page. */
+  .fui-content-row--phone-aside-flush:SCOPE: .fui-content-row__aside { border: 0; padding: 0; }
 }
 `, b.maxw)
 	return strings.ReplaceAll(css, ":SCOPE:", b.scope)

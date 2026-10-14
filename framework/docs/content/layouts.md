@@ -835,7 +835,7 @@ a menu shown inside a card or a demo. The knobs are
 `--ui-section-menu-bg` (behind the pinned group headers: the page background, or the surface color in a filled column and the sheet),
 `--ui-section-menu-inset` (the link inset) and `--ui-section-menu-dot`
 (the current page's dot). The pill is `interactive.SheetPill` and the
-sheet's title row is shared with `interactive.PhoneSheet`, so
+sheet's title row is shared with `interactive.PhoneSheet` (below), so
 their knobs carry the sheet's name: `--ui-sheet-pill-bottom` (the
 pill's gap above the screen edge; set it on `:root`, where the page's
 end padding reads it too) and `--ui-sheet-close-size` (the close
@@ -845,6 +845,33 @@ breakpoint. Set it when the sidebar's phone navigation lives outside
 the column: a SectionMenu, whose pill floats over the page, or a
 `NativeMobile` sidebar whose drawer trigger, `ui.SidebarDrawerTrigger`,
 the app bar hosts. The column then renders empty and draws no rule.
+
+The aside's contents list folds the same way. `ui.TableOfContents` with
+`PhoneSheet: true` renders as it always does at and above its
+`Breakpoint` (md by default; match the row's). Below it the list moves
+into a bottom sheet and the same floating pill opens it, naming the
+section in view: the pill follows the entry the `Target` observer
+marks, so set `Target` as well. The sheet is a native popover rendered
+with the page, so it holds that page's own entries, opens with no
+script, and closes on Escape, a tap outside it, its close button, or a
+followed link. Set `PhoneAsideFlush: true` on the row: the stacked
+aside then holds nothing on a phone and draws no rule.
+
+```go
+ui.ContentRow(ui.ContentRowConfig{
+	Aside: ui.TableOfContents(ui.TOCConfig{
+		Items: items, Target: "main", Sticky: true, PhoneSheet: true,
+	}),
+	AsideLabel:      "On this page",
+	PhoneAsideFlush: true,
+}, l.Primary())
+```
+
+`interactive.PhoneSheet` is that sheet on its own, for any list that
+marks its current entry `aria-current`: body in flow at and above
+`SwapAt`, a pill and sheet below it. A sticky part in an outlet that
+fills the aside sticks to the whole column, since the outlet is as tall
+as the column.
 `Dense: true` gives the page the compact density on a fine pointer (a
 mouse or trackpad), declared on the document root so the drawers,
 dialogs and menus mounted outside the row follow: buttons, fields, the toolbar's controls and table

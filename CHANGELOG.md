@@ -43,6 +43,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   from 900px to a `ui.ContentRow` breakpoint (`interactive.SwapMD`,
   48rem, or `interactive.SwapLG`, 64rem), so a menu in a row's nav
   column swaps where the row stacks.
+- **`ui.TOCConfig.PhoneSheet` folds a contents list into a bottom sheet
+  on phones.** Below `Breakpoint` (md by default) a pill floating at the
+  bottom of the screen names the section in view and opens the list;
+  at and above it the list renders as before. The sheet is a native
+  popover rendered with the page: it opens without script and closes on
+  Escape, a tap outside, its close button or a followed link.
+  `ui.ContentRowConfig.PhoneAsideFlush` drops the stacked aside's rule
+  and padding so an aside holding only that list leaves no band.
+  The pieces are public: `interactive.SheetPill` (the pill SectionMenu
+  uses too) and `interactive.PhoneSheet` (pill plus inline sheet for any
+  list that marks its current entry `aria-current`).
 - **entityui lists warn when their row links lead nowhere.** The first
   time a list renders rows whose `<base>/<id>` matches no registered
   screen, it logs one warning per base naming the route to register.
@@ -129,6 +140,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `--color-text-subtle`.
 
 ### Fixed
+- **A sticky `ui.TableOfContents` in a `ui.ContentRow` aside sticks
+  when a layout outlet holds it.** The outlet was only as tall as the
+  list, so the list had no room to stick and scrolled away with the
+  page. An outlet in the aside now fills the column.
 - **A rail or contents list no longer marks the section behind a sticky
   header.** The shared observer (`headless-rail`) counted a section
   whose last lines sat under the header as the one in view, so after a

@@ -103,8 +103,8 @@ func TestContentRowClassAppendsToRoot(t *testing.T) {
 }
 
 func TestContentRowModifiersAndBreakpointValidation(t *testing.T) {
-	out := renderRow(t, ContentRowConfig{Viewport: true, PhoneNavFlush: true}, render.Text("main"))
-	for _, want := range []string{"fui-content-row--has-nav", "fui-content-row--viewport", "fui-content-row--phone-nav-flush"} {
+	out := renderRow(t, ContentRowConfig{Viewport: true, PhoneNavFlush: true, PhoneAsideFlush: true}, render.Text("main"))
+	for _, want := range []string{"fui-content-row--has-nav", "fui-content-row--viewport", "fui-content-row--phone-nav-flush", "fui-content-row--phone-aside-flush"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("root class list should carry %s:\n%s", want, out)
 		}
