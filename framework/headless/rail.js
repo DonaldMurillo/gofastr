@@ -123,13 +123,15 @@
     // document order. The observer only says when to look: a target
     // that moves from overlapping the band to touching its edge reports
     // no change, so the pick reads each target's live box instead of
-    // remembering what the callbacks reported.
+    // remembering what the callbacks reported. In view means a whole
+    // pixel in the band: scroll positions round to pixels, so the
+    // section above one scrolled to the top can keep a sliver.
     const bandTop = stickyTop(nav);
     const observer = new IntersectionObserver(() => {
       const bandBottom = innerHeight * 0.3;
       const first = targets.find((t) => {
         const r = t.getBoundingClientRect();
-        return r.bottom > bandTop && r.top < bandBottom;
+        return r.bottom - bandTop >= 1 && bandBottom - r.top >= 1;
       });
       if (first) markActive(first.id);
     }, { rootMargin: '-' + bandTop + 'px 0px -70% 0px', threshold: 0 });

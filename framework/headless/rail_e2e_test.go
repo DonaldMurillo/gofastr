@@ -169,28 +169,37 @@ func TestE2E_RailSkipsSectionUnderStickyHeader(t *testing.T) {
 	}
 }
 
-// A section whose bottom edge only touches the band (the next section
-// scrolled exactly to the top) is not in view: IntersectionObserver
-// reports an edge-adjacent target as intersecting, with zero height.
-func TestE2E_RailIgnoresEdgeTouch(t *testing.T) {
-	nav := TableOfContents(TableOfContentsProps{
-		TargetSelector: "#region",
-		Items:          []TOCItem{{ID: "one", Label: "One"}, {ID: "two", Label: "Two"}},
-	}, nil)
-	page := string(nav) + `<div id="region"><section id="one" style="height:1000px">One</section>` +
-		`<section id="two" style="height:2000px">Two</section></div>`
-	b := startBehaviorServer(t, `<style>body{margin:0}</style>`+page)
-	ctx := behaviorPage(t, b)
-	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "one")) {
-		t.Fatal("the bootstrap pass did not mark the first entry")
-	}
-	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`scrollTo(0, document.getElementById('two').offsetTop)`, nil),
-	); err != nil {
-		t.Fatal(err)
-	}
-	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "two")) {
-		t.Fatal("the section whose edge touches the band kept the active entry")
+// A section left with less than a pixel in the band is not in view:
+// the scroll position rounds to whole pixels, so a nav of fractional
+// height (CI's fonts) leaves a sliver of the section above when the
+// next one scrolls to the top, and an edge that only touches the band
+// reports as intersecting with no change when it gets there.
+func TestE2E_RailIgnoresSliverInBand(t *testing.T) {
+	for _, spacer := range []string{"0px", "100.4px"} {
+		t.Run(spacer, func(t *testing.T) {
+			nav := TableOfContents(TableOfContentsProps{
+				TargetSelector: "#region",
+				Items:          []TOCItem{{ID: "one", Label: "One"}, {ID: "two", Label: "Two"}},
+			}, nil)
+			page := `<div style="height:` + spacer + `"></div>` + string(nav) +
+				`<div id="region"><section id="one" style="height:1000px">One</section>` +
+				`<section id="two" style="height:2000px">Two</section></div>`
+			b := startBehaviorServer(t, `<style>body{margin:0}</style>`+page)
+			ctx := behaviorPage(t, b)
+			if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "one")) {
+				t.Fatal("the bootstrap pass did not mark the first entry")
+			}
+			if err := chromedp.Run(ctx,
+				chromedp.Evaluate(`document.getElementById('two').scrollIntoView()`, nil),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "two")) {
+				var at float64
+				_ = chromedp.Run(ctx, chromedp.Evaluate(`document.getElementById('one').getBoundingClientRect().bottom`, &at))
+				t.Fatalf("section one (bottom at %vpx) kept the active entry", at)
+			}
+		})
 	}
 }
 
