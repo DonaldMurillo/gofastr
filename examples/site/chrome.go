@@ -37,7 +37,6 @@ func siteFooter() render.HTML {
 		Columns: siteFooterColumns(),
 		Bottom: []render.HTML{
 			html.Span(html.TextConfig{}, render.Text("© 2026. A research project, not a company.")),
-			html.Span(html.TextConfig{}, render.Text("Set in system sans + mono.")),
 		},
 	})
 }
