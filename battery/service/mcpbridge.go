@@ -54,15 +54,19 @@ func mcpCommand(dev bool, dir string) []string {
 // directory instead of resolving it from dev, the working directory and
 // the environment.
 func (b *Battery) mcpBridge(dev bool, stateDir string, in io.Reader, out io.Writer) error {
-	l, err := b.layoutFor(dev)
-	if err != nil {
-		return err
-	}
+	// With --state-dir the environment is never consulted, so an agent
+	// whose environment cannot resolve a layout still connects.
+	var l layout
 	if stateDir != "" {
 		if !filepath.IsAbs(stateDir) {
 			return fmt.Errorf("service: --state-dir must be absolute, got %q", stateDir)
 		}
 		l = layout{dir: filepath.Clean(stateDir)}
+	} else {
+		var err error
+		if l, err = b.layoutFor(dev); err != nil {
+			return err
+		}
 	}
 	c, br, _, err := openControl(l.socketPath(), "mcp")
 	if errors.Is(err, errNotRunning) {

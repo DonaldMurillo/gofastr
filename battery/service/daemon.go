@@ -21,10 +21,13 @@ const (
 	// readyTimeout bounds the wait for the App's listener: migrations
 	// and seeds run before the bind.
 	readyTimeout = 60 * time.Second
-	// stopTimeout bounds the graceful drain. Windows gives a logoff
-	// little time, so this stays well under systemd's TimeoutStopSec.
-	stopTimeout = 10 * time.Second
 )
+
+// stopTimeout bounds a whole stop: the MCP sessions, the drain and the
+// control channel. Windows gives a logoff little time, so this stays
+// well under systemd's TimeoutStopSec. A variable so a test can shrink
+// it.
+var stopTimeout = 10 * time.Second
 
 // serveMode is one way of running the App: the installed daemon or
 // the foreground dev run.
@@ -198,25 +201,36 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 		runErr = fmt.Errorf("service: server stopped: %w", err)
 	}
 	_ = sdNotify("STOPPING=1")
+	// The whole stop shares one deadline, so a stuck tool call or a
+	// slow drain cannot add up past systemd's TimeoutStopSec, launchd's
+	// exit timeout, or the CLI's stopWait.
+	deadline := time.Now().Add(stopTimeout)
 	// MCP sessions end first: their tool calls run inside the App, so
 	// they must not outlive it. The rest of the control channel closes
 	// after the drain, not before: a stop waiting on it then sees
 	// "gone" only once the App has let go of the port and the database.
-	cs.endMCP()
-	if err := b.drain(app, log); err != nil && runErr == nil {
+	cs.endMCP(time.Now().Add(mcpStopWait))
+	if err := b.drainUntil(app, log, deadline); err != nil && runErr == nil {
 		runErr = err
 	}
-	cs.Close()
+	cs.closeUntil(deadline)
+	t := time.NewTimer(time.Until(deadline))
+	defer t.Stop()
 	select {
 	case <-startErr:
-	case <-time.After(stopTimeout):
+	case <-t.C:
 	}
 	return runErr
 }
 
 // drain shuts the App down with a bounded context.
 func (b *Battery) drain(app *framework.App, log *slog.Logger) error {
-	ctx, cancel := context.WithTimeout(context.Background(), stopTimeout)
+	return b.drainUntil(app, log, time.Now().Add(stopTimeout))
+}
+
+// drainUntil is drain with a deadline the caller shares.
+func (b *Battery) drainUntil(app *framework.App, log *slog.Logger, deadline time.Time) error {
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
 	if err := app.Shutdown(ctx); err != nil {
 		log.Error("service: graceful shutdown incomplete", "error", err)

@@ -151,36 +151,82 @@ func TestMCPSessionEndsBeforeDrain(t *testing.T) {
 	d.done <- nil // for startRun's cleanup
 }
 
+// A tool call that ignores its cancelled context cannot stretch a stop
+// past stopTimeout: the MCP wait, the drain and the control channel's
+// close share one deadline.
+func TestStopBudgetWithStuckTool(t *testing.T) {
+	prevStop, prevMCP := stopTimeout, mcpStopWait
+	stopTimeout, mcpStopWait = 800*time.Millisecond, 100*time.Millisecond
+	t.Cleanup(func() { stopTimeout, mcpStopWait = prevStop, prevMCP })
+	d := startDevRun(t)
+	in, _, _ := bridge(t, d)
+	io.WriteString(in, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"stuck"}}`+"\n")
+	select {
+	case <-d.stuck:
+	case <-time.After(10 * time.Second):
+		t.Fatal("stuck never ran")
+	}
+	start := time.Now()
+	if _, err := callControl(d.l.socketPath(), "stop"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-d.done:
+	case <-time.After(15 * time.Second):
+		t.Fatal("daemon did not stop")
+	}
+	if took := time.Since(start); took > stopTimeout+400*time.Millisecond {
+		t.Fatalf("stop took %s with a %s budget", took, stopTimeout)
+	}
+	d.done <- nil // for startRun's cleanup
+}
+
 // A tool call that ignores its cancelled context cannot hold the
-// daemon open: Close gives up after closeWait.
+// daemon open: every wait shares one deadline, so the stuck session
+// costs it once. Waiting per step, the daemon's endMCP, Close's
+// endMCP and Close's own wait each spent the full bound, which ran a
+// stop past systemd's TimeoutStopSec.
 func TestCloseBoundsAStuckSession(t *testing.T) {
+	const bound = 300 * time.Millisecond
 	prev := closeWait
-	closeWait = 100 * time.Millisecond
+	closeWait = bound
 	t.Cleanup(func() { closeWait = prev })
 	stuck := make(chan struct{})
 	t.Cleanup(func() { close(stuck) })
-	ln, err := listenControl(filepath.Join(shortTempDir(t), "c.sock"))
-	if err != nil {
-		t.Fatal(err)
+	stuckServer := func() *controlServer {
+		ln, err := listenControl(filepath.Join(shortTempDir(t), "c.sock"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cs := &controlServer{ln: ln, handle: echoOp, log: slog.New(slog.DiscardHandler),
+			mcp: func(context.Context, io.Reader, io.Writer) { <-stuck }}
+		go cs.serve()
+		c, _, _, err := openControl(ln.Addr().String(), "mcp")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { c.Close() })
+		return cs
 	}
-	cs := &controlServer{ln: ln, handle: echoOp, log: slog.New(slog.DiscardHandler),
-		mcp: func(context.Context, io.Reader, io.Writer) { <-stuck }}
-	go cs.serve()
-	c, _, _, err := openControl(ln.Addr().String(), "mcp")
-	if err != nil {
-		t.Fatal(err)
+	within := func(name string, f func()) {
+		start := time.Now()
+		f()
+		if d := time.Since(start); d > bound+bound/2 {
+			t.Fatalf("%s took %s with a %s bound", name, d, bound)
+		}
 	}
-	defer c.Close()
-	closed := make(chan struct{})
-	go func() {
-		cs.Close()
-		close(closed)
-	}()
-	select {
-	case <-closed:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Close waited on a stuck session")
-	}
+
+	cs := stuckServer()
+	within("Close", cs.Close)
+
+	// The daemon's order: end MCP first, drain, then close, all inside
+	// one deadline.
+	cs = stuckServer()
+	within("endMCP then closeUntil", func() {
+		deadline := time.Now().Add(bound)
+		cs.endMCP(deadline)
+		cs.closeUntil(deadline)
+	})
 }
 
 // A daemon with no MCP server refuses the op; past the cap a new
@@ -236,10 +282,11 @@ func TestDaemonRecordsMCPCommand(t *testing.T) {
 func TestRecordedMCPCommandFindsItsDaemon(t *testing.T) {
 	d := startDevRun(t)
 	argv := Runtime{DataDir: d.l.dir, Dev: true}.MCPCommand()
-	// Elsewhere, the dev layout resolves to a different directory.
-	t.Setenv(dataDirEnv, t.TempDir())
-	if l, _ := d.b.layoutFor(true); l.dir == d.l.dir {
-		t.Fatal("test setup: the layout did not move")
+	// The agent's environment resolves no layout at all: --state-dir
+	// must not consult it.
+	t.Setenv(dataDirEnv, "relative")
+	if _, err := d.b.layoutFor(true); err == nil {
+		t.Fatal("test setup: the layout still resolves")
 	}
 	var out strings.Builder
 	d.b.cfg.Stdin = strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}` + "\n")

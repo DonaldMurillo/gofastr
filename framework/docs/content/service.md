@@ -252,11 +252,11 @@ anonymous: tools that require a signed-in caller refuse it.
 A daemon holds at most 16 MCP sessions at once; the 17th is refused.
 When the daemon stops it ends the sessions before it shuts the App
 down: tool calls in flight see their context cancelled, the daemon
-waits up to 10 s for them to return, and the agent sees its server
+waits up to 2 s for them to return, and the agent sees its server
 exit. A tool that ignores its context past that wait can still be
 running when the database closes, so tools should return on
-cancellation. Each
-request line may be up to 1 MiB, the HTTP transport's body limit.
+cancellation. Each request line may be up to 1 MiB, the HTTP
+transport's body limit.
 
 ## Who the signed-in browser is
 
@@ -300,6 +300,9 @@ owns. Restore the file, or delete it to start a new identity.
 The battery owns signal handling (it sets
 `AppConfig.DisableSignalHandling`). SIGINT, SIGTERM, a control-channel
 `stop`, and a cancelled `Run` context all drain the App and exit 0.
+The whole stop (MCP sessions, the drain and the control channel)
+shares one 10 s deadline, inside systemd's `TimeoutStopSec=20`,
+launchd's exit timeout and the 20 s that `service stop` waits.
 On Linux the unit is `Type=notify`: the daemon sends `READY=1` once it
 is serving and `STOPPING=1` before the drain, so `systemctl --user
 start` reports a port collision as a failed start.

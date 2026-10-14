@@ -63,6 +63,11 @@ var acceptRetryDelay = 100 * time.Millisecond
 // the daemon from exiting.
 var closeWait = 10 * time.Second
 
+// mcpStopWait bounds how long a stopping daemon waits for cancelled MCP
+// sessions before it drains the App. It comes out of the same stop
+// budget as the drain, so it stays short.
+var mcpStopWait = 2 * time.Second
+
 var errAlreadyRunning = errors.New("another instance is already running")
 
 // checkSocketPath refuses a control socket path over the sun_path
@@ -191,7 +196,7 @@ func (s *controlServer) serve() {
 // ones' tool calls, and closes their connections. The daemon calls it
 // before it drains the App, so no session calls into an App that is
 // shutting down.
-func (s *controlServer) endMCP() {
+func (s *controlServer) endMCP(deadline time.Time) {
 	s.mu.Lock()
 	s.mcpEnded = true
 	if s.cancelMCP != nil {
@@ -202,36 +207,44 @@ func (s *controlServer) endMCP() {
 	}
 	s.mu.Unlock()
 	// Wait for the sessions to return, so a cancelled tool call has
-	// finished before the App drains; bounded like Close.
-	waitBounded(&s.mcpWG, closeWait, s.log, "an MCP session")
+	// finished before the App drains.
+	waitBounded(&s.mcpWG, deadline, s.log, "an MCP session")
 }
 
-// waitBounded waits on wg for up to limit, then logs what it left
+// waitBounded waits on wg until deadline, then logs what it left
 // running.
-func waitBounded(wg *sync.WaitGroup, limit time.Duration, log *slog.Logger, what string) {
+func waitBounded(wg *sync.WaitGroup, deadline time.Time, log *slog.Logger, what string) {
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
 		close(done)
 	}()
+	t := time.NewTimer(time.Until(deadline))
+	defer t.Stop()
 	select {
 	case <-done:
-	case <-time.After(limit):
+	case <-t.C:
 		if log != nil {
-			log.Warn("service: control channel closed with "+what+" still running", "waited", limit.String())
+			log.Warn("service: control channel closed with " + what + " still running")
 		}
 	}
 }
 
 // Close stops accepting, ends open MCP sessions, and waits up to
-// closeWait for in-flight requests.
+// closeWait in all for in-flight requests.
 func (s *controlServer) Close() {
-	s.endMCP()
+	s.closeUntil(time.Now().Add(closeWait))
+}
+
+// closeUntil is Close with every wait sharing one deadline, so a
+// stuck session costs the deadline once, not once per wait.
+func (s *controlServer) closeUntil(deadline time.Time) {
+	s.endMCP(deadline)
 	s.mu.Lock()
 	s.closed = true
 	s.mu.Unlock()
 	s.ln.Close()
-	waitBounded(&s.wg, closeWait, s.log, "a request")
+	waitBounded(&s.wg, deadline, s.log, "a request")
 }
 
 func (s *controlServer) serveConn(c net.Conn) {

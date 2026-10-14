@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,10 +28,15 @@ type devRun struct {
 	addr string
 	done chan error
 	// holding fires when the MCP tool "hold" starts; held then reports
-	// whether the App had already stopped when the call was cancelled.
+	// whether the App stopped while the cancelled call wound down.
+	// appStopped closes when the App's OnStop runs.
 	holding    chan struct{}
 	held       chan bool
-	appStopped atomic.Bool
+	appStopped chan struct{}
+	// stuck fires when the MCP tool "stuck" starts; the call ignores
+	// its context and returns only when release closes.
+	stuck   chan struct{}
+	release chan struct{}
 }
 
 func startDevRun(t *testing.T) *devRun {
@@ -48,7 +52,9 @@ func startRun(t *testing.T, args ...string) *devRun {
 	t.Setenv("GOFASTR_ROLE", "")
 	t.Setenv("GOFASTR_SETUP", "")
 	b, ft, _ := testBattery(t, runtime.GOOS, Config{})
-	d := &devRun{b: b, ft: ft, done: make(chan error, 1), holding: make(chan struct{}, 1), held: make(chan bool, 1)}
+	d := &devRun{b: b, ft: ft, done: make(chan error, 1), holding: make(chan struct{}, 1), held: make(chan bool, 1), appStopped: make(chan struct{}),
+		stuck: make(chan struct{}, 1), release: make(chan struct{})}
+	t.Cleanup(func() { close(d.release) })
 	built := make(chan Runtime, 1)
 	build := func(rt Runtime) (*framework.App, error) {
 		built <- rt
@@ -80,16 +86,28 @@ func startRun(t *testing.T, args ...string) *devRun {
 		}); err != nil {
 			return nil, err
 		}
-		app.OnStop(func() error { d.appStopped.Store(true); return nil })
-		// hold blocks until its call is cancelled, then takes a moment
-		// to wind down, the way a real call does: a drain that does not
-		// wait for it shows up as appStopped.
+		app.OnStop(func() error { close(d.appStopped); return nil })
+		// hold blocks until its call is cancelled, then winds down for up
+		// to 500ms, the way a real call does. A daemon that waits for the
+		// session (up to mcpStopWait, longer than that) cannot run OnStop
+		// inside the window; one that drains at once runs it there.
 		if err := app.MCP.RegisterTool("hold", "block until cancelled", nil, func(ctx context.Context, _ map[string]any) (any, error) {
 			d.holding <- struct{}{}
 			<-ctx.Done()
-			time.Sleep(200 * time.Millisecond)
-			d.held <- d.appStopped.Load()
+			select {
+			case <-d.appStopped:
+				d.held <- true
+			case <-time.After(500 * time.Millisecond):
+				d.held <- false
+			}
 			return nil, ctx.Err()
+		}); err != nil {
+			return nil, err
+		}
+		if err := app.MCP.RegisterTool("stuck", "ignore cancellation", nil, func(context.Context, map[string]any) (any, error) {
+			d.stuck <- struct{}{}
+			<-d.release
+			return nil, nil
 		}); err != nil {
 			return nil, err
 		}
