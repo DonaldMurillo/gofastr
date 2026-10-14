@@ -203,20 +203,21 @@ func TestGetStartedRailAnchorsResolve(t *testing.T) {
 	}
 }
 
-// TestDocIndexRailAnchorsResolve: every intent-rail entry (and the A–Z
-// entry) lands on a section of the same id inside the observed region.
-func TestDocIndexRailAnchorsResolve(t *testing.T) {
+// TestDocIndexHasNoIntentRail: the docs nav already lists every intent,
+// so the index carries no second in-page rail repeating them, and every
+// intent section (and the A–Z list) still renders.
+func TestDocIndexHasNoIntentRail(t *testing.T) {
 	html := body(t, "/docs/")
-	if !strings.Contains(html, `id="docs-sections"`) {
-		t.Fatal("/docs/ lost the #docs-sections region the rail observes")
+	if strings.Contains(html, "data-hui-rail") {
+		t.Error("/docs/ renders an in-page rail beside the docs nav that already lists the intents")
 	}
 	ids := []string{"all-az"}
 	for _, it := range docIntents {
 		ids = append(ids, it.Slug)
 	}
 	for _, id := range ids {
-		if !strings.Contains(html, `href="#`+id+`"`) || !strings.Contains(html, `id="`+id+`"`) {
-			t.Errorf("/docs/ rail entry #%s does not resolve to a section", id)
+		if !strings.Contains(html, `id="`+id+`"`) {
+			t.Errorf("/docs/ lost the #%s section", id)
 		}
 	}
 }

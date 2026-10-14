@@ -37,7 +37,7 @@ import (
 //	├── g:/plugins/    plugins    registry nav column + primary
 //	│     /plugins /plugins/:name
 //	├── g:/docs/       docs       docs nav · crumbs outlet · primary ·
-//	│     /docs/ /docs/{path...}  pager outlet · rail outlet (docpage.Layer)
+//	│     /docs/ /docs/{path...}  pager outlet (docpage.Layer)
 //	└── g:/components/ components (components.go)
 //
 // Everything else (home, get started, kiln, philosophy, seo, reader, the
@@ -104,9 +104,6 @@ type docsOutlets struct {
 	// Pager sits under the article: each doc page fills its
 	// previous/next cards.
 	Pager *app.Outlet
-	// Rail is the right column: the index fills it with its intent rail;
-	// a doc page leaves it empty and the column collapses.
-	Rail *app.Outlet
 }
 
 // docsLayout frames /docs/ and every /docs/<slug> page: the site's owned
@@ -119,15 +116,13 @@ func docsLayout() (*app.Layout, docsOutlets) {
 	o := docsOutlets{
 		Crumbs: app.NewOutlet("crumbs"),
 		Pager:  app.NewOutlet("pager"),
-		Rail:   app.NewOutlet("rail"),
 	}
-	return app.NewLayout("docs", app.LayoutSpec{Outlets: []*app.Outlet{o.Crumbs, o.Pager, o.Rail}}, func(_ context.Context, l *app.LayoutTree) render.HTML {
+	return app.NewLayout("docs", app.LayoutSpec{Outlets: []*app.Outlet{o.Crumbs, o.Pager}}, func(_ context.Context, l *app.LayoutTree) render.HTML {
 		return docpage.Layer(docpage.LayerConfig{
 			Nav:    interactive.SectionMenu(docsSectionMenuConfig()),
 			Crumbs: l.Place(o.Crumbs),
 			Body:   l.Primary(),
 			Pager:  l.Place(o.Pager),
-			Rail:   l.Place(o.Rail),
 		})
 	}), o
 }
