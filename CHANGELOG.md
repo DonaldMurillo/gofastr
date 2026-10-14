@@ -57,7 +57,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   list that marks its current entry `aria-current`).
   `ui.AnchoredRailConfig.PhoneSheet` folds a rail the same way (below
   `SwapAt`, 900px by default); its pill names the section by the link's
-  own text, without the number and count chips. `PhoneSheetTop` on
+  text, without the parts marked `interactive.SheetChipClass` (the
+  rail marks its number and count chips). `PhoneSheetTop` on
   either (`interactive.PhoneSheetConfig.Top`) pins that pill as an "On
   this page: <section>" bar under the sticky header and hangs the list
   from the bar, for a page whose SectionMenu pill already holds the

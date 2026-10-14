@@ -13,7 +13,7 @@ func TestAnchoredRailRendersThroughHeadlessRail(t *testing.T) {
 	}))
 	for _, want := range []string{
 		`<aside aria-label="On this page" class="fui-anchored-rail" data-hui-rail="" data-hui-rail-observe="#docs-sections" data-hui-rail-target=".fui-section[id]" data-cui-comp="ui-anchored-rail">`,
-		`<a class="fui-anchored-rail__link" href="#overview"><span class="fui-anchored-rail__eyebrow">01</span>Overview<span class="fui-anchored-rail__count">9</span></a>`,
+		`<a class="fui-anchored-rail__link" href="#overview"><span class="fui-anchored-rail__eyebrow cui-sheet-chip">01</span>Overview<span class="fui-anchored-rail__count cui-sheet-chip">9</span></a>`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("rail missing %q:\n%s", want, h)

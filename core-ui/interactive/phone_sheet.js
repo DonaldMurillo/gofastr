@@ -16,13 +16,14 @@
   const ROOT = '[data-cui-comp="cui-phone-sheet"]';
   const CURRENT = 'a[aria-current]:not([aria-current="false"])';
 
-  // An entry's name is the link's own text: a rail link wraps its label
-  // in chips (a number before it, a count after it) that are not part
-  // of the name. A link whose text sits only in elements reads it all.
+  // An entry's name is the link's text without its chips: a rail link
+  // wraps its label in a number before it and a count after it, marked
+  // cui-sheet-chip, that are not part of the name. Formatting inside
+  // the label (code, emphasis) is.
   function entryName(a) {
-    let own = '';
-    for (const n of a.childNodes) if (n.nodeType === 3) own += n.textContent;
-    return own.trim() || a.textContent.trim();
+    const copy = a.cloneNode(true);
+    for (const chip of copy.querySelectorAll('.cui-sheet-chip')) chip.remove();
+    return copy.textContent.replace(/\s+/g, ' ').trim();
   }
 
   // The pill names the current entry, or what it opens while nothing
@@ -91,7 +92,9 @@
     for (const root of document.querySelectorAll(ROOT)) {
       const pill = root.querySelector(':scope > .cui-sheet-pill');
       const sheet = root.querySelector(':scope > .cui-phone-sheet__sheet');
-      if (pill && sheet && open(sheet) && getComputedStyle(pill).display === 'none') sheet.hidePopover();
+      if (!pill || !sheet || !open(sheet)) continue;
+      if (getComputedStyle(pill).display === 'none') sheet.hidePopover();
+      else if (root.classList.contains('cui-phone-sheet--top')) hang(pill, sheet);
     }
   });
 

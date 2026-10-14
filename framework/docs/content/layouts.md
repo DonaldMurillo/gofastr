@@ -880,8 +880,10 @@ A page carries one `PhoneSheet`; two overlap. The sheet's id is the list's `ID` 
 `-sheet` (`fui-toc-sheet` without one). `ui.AnchoredRail` takes the
 same `PhoneSheet` option, with `SwapAt` (900px by default, or
 `interactive.SwapMD`/`SwapLG`) in place of `Breakpoint`: the pill names
-the section in view by the link's own text, without the rail's number
-and count chips, and the sheet's title is the rail's `Label`.
+the section in view by the link's text without the parts marked
+`interactive.SheetChipClass` (the rail marks its number and count
+chips; formatting in the label stays), and the sheet's title is the
+rail's `Label`.
 
 ```go
 ui.ContentRow(ui.ContentRowConfig{

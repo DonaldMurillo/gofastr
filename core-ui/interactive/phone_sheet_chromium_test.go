@@ -223,7 +223,7 @@ func TestPhoneSheetPillSkipsLinkChips(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(sheetPage(t)),
 		chromedp.Evaluate(`document.querySelector('#list ol').innerHTML =
-			'<li><a href="#s2" aria-current="true"><span>02</span>Serving HTTP<span>13</span></a></li>'`, nil),
+			'<li><a href="#s2" aria-current="true"><span class="cui-sheet-chip">02</span>Serving <code>HTTP</code><span class="cui-sheet-chip">13</span></a></li>'`, nil),
 		chromedp.Sleep(150*time.Millisecond),
 		chromedp.Evaluate(`document.querySelector('.cui-sheet-pill__label').textContent`, &got),
 	); err != nil {

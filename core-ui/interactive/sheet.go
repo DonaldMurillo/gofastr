@@ -158,15 +158,21 @@ func SheetPill(cfg SheetPillConfig) render.HTML {
 	))
 }
 
+// SheetChipClass marks a part of a sheet entry's link that is not its
+// name, such as a rail link's number or count: the pill that names the
+// current entry reads the link's text without it.
+const SheetChipClass = "cui-sheet-chip"
+
 var sheetPillStyle = registry.RegisterStyle("cui-sheet-pill", sheetPillCSS)
 
 // Knobs:
 //   - --ui-sheet-pill-bottom (16px; set it on :root, where the page's
 //     end padding reads it too): the floating pill's gap above the
 //     viewport's bottom edge (the safe-area inset is added to it).
-//   - --ui-sheet-bar-height (2.75rem): a Bar's height, which it
-//     publishes below the swap as --ui-sheet-bar-offset, the extra
-//     top offset anchored sections and the rail's in-view band clear.
+//   - --ui-sheet-bar-height (2.75rem; set it on :root, where the
+//     offset reads it): a Bar's height, which it publishes below the
+//     swap as --ui-sheet-bar-offset, the extra top offset anchored
+//     sections and the rail's in-view band clear.
 //   - --ui-sheet-bar-bleed (0): how far a Bar reaches past its column
 //     on each side, and its inline padding: a padded page column sets
 //     its gutter so the bar runs edge to edge and its text lines up.

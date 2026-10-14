@@ -123,8 +123,8 @@ func AnchoredRail(cfg AnchoredRailConfig) render.HTML {
 		headless.PartRailList:    "fui-anchored-rail__list",
 		headless.PartRailItem:    "fui-anchored-rail__item",
 		headless.PartRailLink:    "fui-anchored-rail__link",
-		headless.PartRailEyebrow: "fui-anchored-rail__eyebrow",
-		headless.PartRailCount:   "fui-anchored-rail__count",
+		headless.PartRailEyebrow: "fui-anchored-rail__eyebrow " + interactive.SheetChipClass,
+		headless.PartRailCount:   "fui-anchored-rail__count " + interactive.SheetChipClass,
 	}
 	if cfg.Class != "" {
 		classes[headless.PartRoot] += " " + cfg.Class
