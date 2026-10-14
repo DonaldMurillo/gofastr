@@ -91,7 +91,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `notifications/initialized` every client sends after the handshake got
   a method-not-found error line with no id, which JSON-RPC forbids and
   stdio clients read as a protocol fault. An id-less `notifications/*`
-  message now gets no reply.
+  message now gets no reply. A request line over 64 KiB also ended the
+  session with no reply; lines up to 1 MiB, the HTTP body limit, are
+  read now, and a longer one gets an error reply before the session
+  ends.
 - **`core/static` answers `Range` requests.** `Range: bytes=0-99` got
   `200` and the whole file with no `Accept-Ranges`, so a video served by
   `static.Handler` could not seek, Safari would not play an mp4 from it,

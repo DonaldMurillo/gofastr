@@ -246,7 +246,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // ServeStdio reads JSON-RPC requests from in line-by-line and writes
 // responses to out. It blocks until in returns EOF or ctx is cancelled.
 func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) error {
+	// A line may be as long as an HTTP body (maxMCPBodyBytes); the
+	// scanner's 64 KiB default ended the session on any larger tool
+	// call with no reply at all.
 	scanner := bufio.NewScanner(in)
+	scanner.Buffer(make([]byte, 0, 64<<10), maxMCPBodyBytes)
 	encoder := json.NewEncoder(out)
 
 	for scanner.Scan() {
@@ -295,7 +299,19 @@ func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) er
 		encoder.Encode(resp)
 	}
 
-	return scanner.Err()
+	err := scanner.Err()
+	if errors.Is(err, bufio.ErrTooLong) {
+		// The scanner cannot resume past the oversized line, so the
+		// session ends, but the client learns why first.
+		encoder.Encode(Response{
+			JSONRPC: "2.0",
+			Error: &RPCError{
+				Code:    ErrInvalidParams,
+				Message: fmt.Sprintf("request line exceeds %d bytes", maxMCPBodyBytes),
+			},
+		})
+	}
+	return err
 }
 
 // ServeSSE sets up an HTTP handler that supports Server-Sent Events for

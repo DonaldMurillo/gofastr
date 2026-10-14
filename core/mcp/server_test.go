@@ -312,6 +312,33 @@ func TestStdioTransport(t *testing.T) {
 	}
 }
 
+// A stdio line may be as long as an HTTP body. One past that ends the
+// session, with a reply saying why instead of a silent close.
+func TestStdioLineLimit(t *testing.T) {
+	s := NewServer()
+	s.RegisterTool("echo", "Echo", nil, func(ctx context.Context, params map[string]any) (any, error) {
+		return len(params["text"].(string)), nil
+	})
+	call := func(n int) string {
+		return `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{"text":"` + strings.Repeat("x", n) + `"}}}` + "\n"
+	}
+
+	out := &bytes.Buffer{}
+	if err := s.ServeStdio(context.Background(), strings.NewReader(call(200<<10)), out); err != nil {
+		t.Fatalf("a 200 KiB line: %v", err)
+	}
+	var resp Response
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil || resp.Error != nil || resp.ID != float64(1) {
+		t.Fatalf("a 200 KiB line got %.200s", out.String())
+	}
+
+	out.Reset()
+	err := s.ServeStdio(context.Background(), strings.NewReader(call(maxMCPBodyBytes)), out)
+	if err == nil || !strings.Contains(out.String(), "request line exceeds") {
+		t.Fatalf("an oversized line: err %v, reply %.200s", err, out.String())
+	}
+}
+
 // The stdio handshake: the client sends notifications/initialized
 // after initialize, and the server must not answer it.
 func TestStdioNotificationGetsNoReply(t *testing.T) {

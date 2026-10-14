@@ -580,7 +580,9 @@ What a client sees at the edges:
   notification (no `id`, a `notifications/*` method, such as the
   `notifications/initialized` a client sends after the handshake) gets
   no reply line: JSON-RPC forbids one, and clients read an id-less line
-  as a protocol fault.
+  as a protocol fault. A line may be up to 1 MiB, the same limit as an
+  HTTP body; a longer one gets an error reply and ends the session,
+  because the reader cannot resume past it.
 
 The HTTP transports refuse a browser `Origin` that is not same-origin with the
 request; an absent Origin passes, because curl, stdio bridges, and native MCP
