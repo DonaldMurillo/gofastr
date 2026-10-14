@@ -37,6 +37,10 @@
   // disconnected, at the next resize or scan, so the module never holds
   // a page the reader has navigated away from.
   const remeasure = new Map();
+  // A scroll that jumps past every target (End, a link below them)
+  // crosses no band edge the observer reports, so each armed nav also
+  // leaves its pick here and a settled scroll runs them.
+  const repick = new Map();
   function prune() {
     for (const nav of remeasure.keys()) {
       if (nav.isConnected) continue;
@@ -44,6 +48,7 @@
       if (o) o.disconnect();
       observers.delete(nav); // re-inserted later, it arms again
       remeasure.delete(nav);
+      repick.delete(nav);
     }
   }
   let resizePending = false;
@@ -56,6 +61,16 @@
       for (const f of remeasure.values()) f();
     });
   });
+  const settled = () => { for (const f of repick.values()) f(); };
+  if ('onscrollend' in window) {
+    addEventListener('scrollend', settled, { passive: true });
+  } else {
+    let scrollTimer = 0;
+    addEventListener('scroll', () => {
+      clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(settled, 120);
+    }, { passive: true });
+  }
 
   function within(root, sel) {
     const out = [];
@@ -156,15 +171,20 @@
     // no change, so the pick reads each target's live box instead of
     // remembering what the callbacks reported. In view means a whole
     // pixel in the band: scroll positions round to pixels, so the
-    // section above one scrolled to the top can keep a sliver.
+    // section above one scrolled to the top can keep a sliver. With
+    // nothing in the band, the last target scrolled above it is the
+    // one being read past (the page's tail after the last section);
+    // above every target, the mark stays.
     let bandTop = stickyTop(nav);
     const pick = () => {
       const bandBottom = innerHeight * 0.3;
-      const first = targets.find((t) => {
+      let passed = null;
+      for (const t of targets) {
         const r = t.getBoundingClientRect();
-        return r.bottom - bandTop >= 1 && bandBottom - r.top >= 1;
-      });
-      if (first) markActive(first.id);
+        if (r.bottom - bandTop >= 1 && bandBottom - r.top >= 1) { markActive(t.id); return; }
+        if (r.bottom - bandTop < 1) passed = t;
+      }
+      if (passed) markActive(passed.id);
     };
 
     // Document order, so the bootstrap below picks the DOM-topmost
@@ -186,6 +206,7 @@
 
     // A resize that moves the covered edge re-arms the observer on the
     // new band.
+    repick.set(nav, pick);
     remeasure.set(nav, () => {
       const top = stickyTop(nav);
       if (top === bandTop) return;

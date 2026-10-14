@@ -161,6 +161,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   jump the entry above stayed marked. Its band now starts at
   `--ui-sticky-top`, and the active entry is the first section in the
   band in document order.
+- **A rail or contents list marks the last section after a jump past
+  them all.** Pressing End, or following a link to content below the
+  last section, crossed no band edge the observer reports, so the
+  entry marked before the jump stayed marked. With no section in the
+  band, the rail now marks the last one scrolled past, and it checks
+  again when a scroll settles.
 - **A padded `ui.Container` lines up with the header and footer bands.**
   A `ContainerPadPage` or `ContainerPadEnd` container of any `Width`
   stepped its inline padding 8/16/24px while the bands used the page

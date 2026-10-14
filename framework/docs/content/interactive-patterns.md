@@ -161,7 +161,9 @@ The scroll-spy rail is `framework/ui.AnchoredRail` over
 naming the observed region): the `headless-rail` module
 IntersectionObserves which section is currently in the upper portion
 of the viewport and marks the corresponding nav link
-`aria-current="true"` / `.is-active`. The table of contents
+`aria-current="true"` / `.is-active`. Below the last section (a page's
+"next steps" tail) the last section stays marked, and the pick runs
+again when a scroll settles, so a jump to the end lands on it too. The table of contents
 (`headless.TableOfContents`, `data-hui-toc`) shares the same observer.
 On phones `AnchoredRailConfig.PhoneSheet` folds the rail into a pill
 that names the section in view and opens the rail as a bottom sheet,

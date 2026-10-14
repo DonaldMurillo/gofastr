@@ -310,3 +310,37 @@ func TestE2E_RailArmsInsertedMarkupWithoutDoubleBinding(t *testing.T) {
 		t.Fatalf("%d anchors marked in total, want one per rail (2)", marks)
 	}
 }
+
+// A jump past every section (End, or a link to content after them)
+// leaves nothing in the band and moves no target across it, so the
+// observer stays quiet; the rail still marks the last section the
+// reader passed, not the one marked before the jump.
+func TestE2E_RailMarksLastPassedAfterJump(t *testing.T) {
+	nav := Rail(RailProps{
+		Label: "Steps", ObserveSelector: "#region",
+		Items: []RailItem{
+			{Anchor: "one", Text: "One"},
+			{Anchor: "two", Text: "Two"},
+			{Anchor: "three", Text: "Three"},
+		},
+	}, nil)
+	sections := ""
+	for _, id := range []string{"one", "two", "three"} {
+		sections += `<section id="` + id + `" style="height:60vh">Section ` + id + `</section>`
+	}
+	page := string(nav) + `<div style="height:150vh">Intro</div><div id="region">` + sections +
+		`</div><div style="height:300vh">After</div>`
+	b := startBehaviorServer(t, page)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, railActiveExpr("[data-hui-rail]", "one")) {
+		t.Fatal("the bootstrap pass did not mark the first section's anchor")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.scrollTo(0, document.documentElement.scrollHeight)`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, railActiveExpr("[data-hui-rail]", "three")) {
+		t.Fatal("after a jump past every section the rail kept its old mark, want the last section passed")
+	}
+}
