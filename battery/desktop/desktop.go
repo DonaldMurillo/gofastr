@@ -23,6 +23,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop/appstate"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/internal/localuser"
 )
 
 // validateAppID enforces the reverse-DNS app id grammar.
@@ -188,7 +189,7 @@ type Battery struct {
 
 	// Menu (validated copy) and the local identity.
 	menu *Menu
-	user *localUser
+	user *localuser.User
 	// authOwnsIdentity is set by installOwnerExtractor (from Init) when
 	// another battery had already installed the framework/owner
 	// extractor, battery/auth does it from its package init. When it is
@@ -479,9 +480,9 @@ func (b *Battery) Init(app *framework.App) error {
 		dir = d
 	}
 	b.dataDir = dir
-	user, err := loadOrMintLocalUser(dir)
+	user, err := localuser.LoadOrMint(dir)
 	if err != nil {
-		return err
+		return fmt.Errorf("desktop: %w", err)
 	}
 	b.user = user
 
