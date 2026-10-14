@@ -60,8 +60,9 @@ type Record struct {
 	// applies.
 	MCPPath string `json:"mcp_path,omitempty"`
 	// MCPCommand, when set, is an argv that speaks stdio MCP to this
-	// run (battery/service sets `<exe> service mcp`). An agent should
-	// prefer it over MCPPath: it carries its own credential.
+	// run (battery/service sets `<exe> service mcp --state-dir <dir>`).
+	// An agent should prefer it over MCPPath: it carries its own
+	// credential.
 	MCPCommand []string `json:"mcp_command,omitempty"`
 	// Service is the battery/service Config.ID when the run is a
 	// service daemon or its dev run.
@@ -220,16 +221,18 @@ func List() ([]Record, error) {
 // record whose ID does not match its file name or whose pid disagrees
 // with it, and a URL that is not plain http(s).
 func readRecord(root *os.Root, name, id string) (Record, bool) {
-	// Only a regular file: opening a FIFO with no writer blocks, and
-	// would hang every reader of the registry.
-	if fi, err := root.Lstat(name); err != nil || !fi.Mode().IsRegular() {
-		return Record{}, false
-	}
-	f, err := root.Open(name)
+	// Only a regular file, checked on the opened handle so nothing can
+	// be swapped in after the check. The open does not block on a FIFO
+	// with no writer (openRecordFlags), and the check keeps the read
+	// from waiting on one that has a writer.
+	f, err := root.OpenFile(name, openRecordFlags, 0)
 	if err != nil {
 		return Record{}, false
 	}
 	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() || !ownFile(f, fi) {
+		return Record{}, false
+	}
 	body, err := io.ReadAll(io.LimitReader(f, maxRecordBytes+1))
 	if err != nil || len(body) > maxRecordBytes {
 		return Record{}, false
@@ -253,6 +256,10 @@ func readRecord(root *os.Root, name, id string) (Record, bool) {
 	return rec, true
 }
 
+// openRoot is os.OpenRoot, a variable so a test can swap the directory
+// between the check and the open.
+var openRoot = os.OpenRoot
+
 func remove(name string) error {
 	root, err := openDir(false)
 	if err != nil {
@@ -264,7 +271,7 @@ func remove(name string) error {
 
 // openDir opens the registry directory as an os.Root, creating it
 // first when create is set. Either way it must be this user's own
-// directory, and it is left owner-only (secureDir).
+// directory, and it is left owner-only (checkDir, secureOpened).
 func openDir(create bool) (*os.Root, error) {
 	dir, err := Dir()
 	if err != nil {
@@ -275,12 +282,17 @@ func openDir(create bool) (*os.Root, error) {
 			return nil, fmt.Errorf("localrun: %w", err)
 		}
 	}
-	if err := secureDir(dir); err != nil {
+	checked, err := checkDir(dir)
+	if err != nil {
 		return nil, err
 	}
-	root, err := os.OpenRoot(dir)
+	root, err := openRoot(dir)
 	if err != nil {
 		return nil, fmt.Errorf("localrun: %w", err)
+	}
+	if err := secureOpened(root, checked, dir); err != nil {
+		root.Close()
+		return nil, err
 	}
 	return root, nil
 }

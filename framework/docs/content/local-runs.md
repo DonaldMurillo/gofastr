@@ -43,8 +43,10 @@ The directory is created owner-only (0700, or an owner-only ACL on
 Windows) and each record is written 0600 through a temp file and a
 rename, so a reader never sees half a record. Registering and listing
 both refuse a directory that is a symlink, is not a directory, or
-belongs to another user, and tighten one of the user's own that group
-or others can reach back to 0700. A record holds no secret: a name, a
+belongs to another user (on Windows: neither the user's SID nor the
+token's default owner), and one swapped in between that check and the
+open. One of the user's own that group or others can reach is
+tightened back to 0700. A record holds no secret: a name, a
 URL, a pid and two paths.
 
 ## Reading the registry
@@ -60,6 +62,7 @@ for _, r := range recs {
 (`kill -9`, a crash, a power cut) leaves its file behind; `List` checks
 each record's pid and deletes the file of one that has exited. It skips
 anything that is not a record: a FIFO or other non-regular file, a file
+another user owns (one planted while the directory was loose), a file
 whose name is not `<pid>-<hex>.json`, a body over 16 KiB, a duplicate
 or unknown key, a `version` other than 1, an id that disagrees with its
 file name or pid, a URL that is not plain `http(s)`, and an `mcp_path`
