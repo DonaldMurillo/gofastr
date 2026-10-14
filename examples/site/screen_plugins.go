@@ -283,7 +283,7 @@ func (s *PluginsScreen) Render() render.HTML {
 		ui.Section(ui.SectionConfig{
 			ID:      "registry",
 			Heading: "Where this list comes from",
-			Description: fmt.Sprintf("This page is rendered from plugins.json as published with gofastr-plugins %s on %s. The registry is a convention, not a service: there is no discovery at runtime, an app imports the package it wants and mounts it with app.RegisterPlugin. The site vendors the file by copy and refreshes it with scripts/vendor-plugins-json.sh.",
+			Description: fmt.Sprintf("Built from the plugins.json file in the gofastr-plugins %s release (%s). Nothing looks plugins up at runtime: go get the package and mount it with app.RegisterPlugin.",
 				reg.Release.Tag, strings.SplitN(reg.Release.Published, "T", 2)[0]),
 		},
 			ui.CodeBlock(ui.CodeBlockConfig{
@@ -291,10 +291,10 @@ func (s *PluginsScreen) Render() render.HTML {
 				Code:     "curl -fsSL -O " + strings.TrimSuffix(reg.Release.Source, "/") + "/releases/download/" + reg.Release.Tag + "/plugins.json",
 			}),
 			html.Paragraph(html.TextConfig{},
-				render.Text("The isolation model, the capability grammar, and the trusted-mount opt-out are in "),
-				html.Link(html.LinkConfig{Href: "/docs/plugin-platform", Text: "the plugin platform doc"}),
-				render.Text(". The registry file itself is on "),
-				html.LinkHTML(html.LinkHTMLConfig{Href: reg.Release.Source, ExtraAttrs: html.Attrs{"rel": "external"}, Content: render.Text("GitHub")}),
+				render.Text("How the sandbox, capabilities and trusted mounts work: "),
+				ui.Link(ui.LinkConfig{Href: "/docs/plugin-platform", Text: "the plugin platform doc"}),
+				render.Text(". Plugin source: "),
+				ui.Link(ui.LinkConfig{Href: reg.Release.Source, Text: "gofastr-plugins on GitHub", ExtraAttrs: html.Attrs{"rel": "external"}}),
 				render.Text("."),
 			),
 		),
