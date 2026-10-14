@@ -50,6 +50,17 @@
     return out + s.replace(/([!"#$%&'()*+,./:;<=>?@[\]^`{|}~])/g, '\\$1');
   }
 
+  // stickyTop reads --ui-sticky-top where the nav sits: the height of
+  // the sticky header above the page, as a length or a sum of lengths
+  // (a toolbar's workspace adds its row). Anything else reads as 0.
+  function stickyTop(el) {
+    const v = getComputedStyle(el).getPropertyValue('--ui-sticky-top').trim();
+    if (!/^[\d.\spx+()calc]*$/.test(v)) return 0;
+    let sum = 0;
+    for (const m of v.match(/[\d.]+px/g) || []) sum += parseFloat(m);
+    return Math.max(0, Math.round(sum));
+  }
+
   // watch arms one nav: resolve the anchors it lists, map each to the
   // element its fragment names inside the observed region, and mark
   // the anchor whose target holds the top of the view. Exported for
@@ -100,12 +111,20 @@
       }
     };
 
+    // The view starts under a sticky header: a section scrolled behind
+    // it is not in view. The band is that top edge down to 30% of the
+    // viewport, and the active anchor is the first target in it, in
+    // document order, across every target the band holds, not only the
+    // ones this callback reports changed.
+    const inBand = new Set();
     const observer = new IntersectionObserver((entries) => {
-      const hits = entries.filter((e) => e.isIntersecting);
-      if (hits.length === 0) return;
-      hits.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-      markActive(hits[0].target.id);
-    }, { rootMargin: '0px 0px -70% 0px', threshold: 0 });
+      for (const e of entries) {
+        if (e.isIntersecting) inBand.add(e.target);
+        else inBand.delete(e.target);
+      }
+      const first = targets.find((t) => inBand.has(t));
+      if (first) markActive(first.id);
+    }, { rootMargin: '-' + stickyTop(nav) + 'px 0px -70% 0px', threshold: 0 });
 
     // Document order, so the bootstrap below picks the DOM-topmost
     // section, not whatever the nav happened to list first.

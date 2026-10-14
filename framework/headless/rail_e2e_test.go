@@ -139,6 +139,31 @@ func TestE2E_TOCListIsServerRenderedAndActiveStateMoves(t *testing.T) {
 	}
 }
 
+// A section scrolled behind the sticky header is out of view: the
+// observer's band starts at --ui-sticky-top. With the last 50px of
+// "one" under a 100px header and "two" filling the view below it, the
+// active entry is "two".
+func TestE2E_RailSkipsSectionUnderStickyHeader(t *testing.T) {
+	nav := TableOfContents(TableOfContentsProps{
+		TargetSelector: "#region",
+		Items:          []TOCItem{{ID: "one", Label: "One"}, {ID: "two", Label: "Two"}},
+	}, nil)
+	b := startBehaviorServer(t, `<style>:root{--ui-sticky-top:100px}</style>`+railPage(t, nav))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "one")) {
+		t.Fatal("the bootstrap pass did not mark the first entry")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`(() => { const one = document.getElementById('one');
+			scrollTo(0, one.offsetTop + one.offsetHeight - 50); })()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "two")) {
+		t.Fatal("the section behind the sticky header kept the active entry")
+	}
+}
+
 // Markup that arrives after the module is armed by the kernel's
 // insertion scan, once — the second rail on the page has its own
 // observer and its own active anchor, and the first rail's state is

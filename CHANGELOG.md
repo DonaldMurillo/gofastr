@@ -128,6 +128,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `--color-text-subtle`.
 
 ### Fixed
+- **A rail or contents list no longer marks the section behind a sticky
+  header.** The shared observer (`headless-rail`) counted a section
+  whose last lines sat under the header as the one in view, so after a
+  jump the entry above stayed marked. Its band now starts at
+  `--ui-sticky-top`, and the active entry is the first section in the
+  band in document order.
 - **A padded `ui.Container` lines up with the header and footer bands.**
   A `ContainerPadPage` or `ContainerPadEnd` container of any `Width`
   stepped its inline padding 8/16/24px while the bands used the page
