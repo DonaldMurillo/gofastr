@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
-	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 	"github.com/DonaldMurillo/gofastr/internal/procalive"
 )
 
@@ -221,6 +220,11 @@ func List() ([]Record, error) {
 // record whose ID does not match its file name or whose pid disagrees
 // with it, and a URL that is not plain http(s).
 func readRecord(root *os.Root, name, id string) (Record, bool) {
+	// Only a regular file: opening a FIFO with no writer blocks, and
+	// would hang every reader of the registry.
+	if fi, err := root.Lstat(name); err != nil || !fi.Mode().IsRegular() {
+		return Record{}, false
+	}
 	f, err := root.Open(name)
 	if err != nil {
 		return Record{}, false
@@ -234,11 +238,16 @@ func readRecord(root *os.Root, name, id string) (Record, bool) {
 	if err := handler.UnmarshalStrict(body, &rec); err != nil {
 		return Record{}, false
 	}
-	if rec.ID != id || !strings.HasPrefix(id, fmt.Sprintf("%d-", rec.PID)) {
+	if rec.Version != recordVersion || rec.ID != id || !strings.HasPrefix(id, fmt.Sprintf("%d-", rec.PID)) {
 		return Record{}, false
 	}
 	u, err := url.Parse(rec.URL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return Record{}, false
+	}
+	// MCPURL concatenates, so a path like "@evil.com/" would move the
+	// host. A leading slash ends the authority and keeps it on the run.
+	if rec.MCPPath != "" && !strings.HasPrefix(rec.MCPPath, "/") {
 		return Record{}, false
 	}
 	return rec, true
@@ -254,7 +263,8 @@ func remove(name string) error {
 }
 
 // openDir opens the registry directory as an os.Root, creating it
-// owner-only first when create is set.
+// first when create is set. Either way it must be this user's own
+// directory, and it is left owner-only (secureDir).
 func openDir(create bool) (*os.Root, error) {
 	dir, err := Dir()
 	if err != nil {
@@ -264,9 +274,9 @@ func openDir(create bool) (*os.Root, error) {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, fmt.Errorf("localrun: %w", err)
 		}
-		if err := fileperm.Restrict(dir, true); err != nil {
-			return nil, fmt.Errorf("localrun: %w", err)
-		}
+	}
+	if err := secureDir(dir); err != nil {
+		return nil, err
 	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {

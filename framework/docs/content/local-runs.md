@@ -18,12 +18,13 @@ Each record is one JSON file in the registry directory:
 
 | Field | Meaning |
 |-------|---------|
+| `version` | The record layout, `1`. A reader skips a layout it does not know. |
 | `id` | `<pid>-<8 hex>`, also the file name. |
 | `name` | `AppConfig.Name`, else the executable's base name. |
 | `pid` | The process id. |
 | `url` | The base URL a local client dials. A wildcard bind (`:8080`, `0.0.0.0`) is recorded as `http://127.0.0.1:<port>`. |
 | `mcp_path` | `/mcp` when the app serves MCP over HTTP (`WithMCP`, the dev loop's auto-mount, or a hand-mounted route); absent otherwise. |
-| `mcp_command` | An argv that speaks stdio MCP to the run. `battery/service` sets `<exe> service mcp`, because its HTTP `/mcp` sits behind the browser sign-in. |
+| `mcp_command` | An argv that speaks stdio MCP to the run. `battery/service` sets `<exe> service mcp --state-dir <dir>`, because its HTTP `/mcp` sits behind the browser sign-in. |
 | `service` | The `battery/service` `Config.ID`, for a service daemon or its dev run. |
 | `dev` | Set under `gofastr dev` (`GOFASTR_DEV`) and for a service battery's foreground run. |
 | `dir`, `exe` | The working directory and executable path. |
@@ -40,8 +41,11 @@ The directory is `$GOFASTR_RUNS_DIR` when set, else
 
 The directory is created owner-only (0700, or an owner-only ACL on
 Windows) and each record is written 0600 through a temp file and a
-rename, so a reader never sees half a record. A record holds no secret:
-a name, a URL, a pid and two paths.
+rename, so a reader never sees half a record. Registering and listing
+both refuse a directory that is a symlink, is not a directory, or
+belongs to another user, and tighten one of the user's own that group
+or others can reach back to 0700. A record holds no secret: a name, a
+URL, a pid and two paths.
 
 ## Reading the registry
 
@@ -55,9 +59,11 @@ for _, r := range recs {
 `List` returns live runs only. A run that died without shutting down
 (`kill -9`, a crash, a power cut) leaves its file behind; `List` checks
 each record's pid and deletes the file of one that has exited. It skips
-anything that is not a record: a file whose name is not `<pid>-<hex>.json`,
-a body over 16 KiB, a duplicate or unknown key, an id that disagrees
-with its file name or pid, and a URL that is not plain `http(s)`.
+anything that is not a record: a FIFO or other non-regular file, a file
+whose name is not `<pid>-<hex>.json`, a body over 16 KiB, a duplicate
+or unknown key, a `version` other than 1, an id that disagrees with its
+file name or pid, a URL that is not plain `http(s)`, and an `mcp_path`
+that does not start with `/` (so `MCPURL()` cannot name another host).
 
 To reach a run's MCP server, prefer `MCPCommand` when it is set: it
 carries its own credential. Otherwise `MCPURL()` is the HTTP endpoint;
@@ -89,8 +95,10 @@ inherit too.
 - **Treating a record as proof the port is this app.** Any process of
   the same OS user can write a file into the directory, and a pid freed
   by a crash can be reused by an unrelated process, which keeps the old
-  record listed until that process exits. Use the record to find a
-  run, then talk to it.
+  record listed until that process exits. A run that exited but was
+  never reaped by its parent (a zombie) still answers the pid check, so
+  its record stays listed until the parent reaps it. Use the record to
+  find a run, then talk to it.
 - **Expecting a record from an embedded router.** Only `App.Start`
   writes one. An app mounted inside another server, or a test serving
   `App.Router()` through `httptest`, is not in the registry.

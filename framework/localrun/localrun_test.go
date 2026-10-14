@@ -85,10 +85,12 @@ func TestListSkipsMalformedRecords(t *testing.T) {
 	r.PID = os.Getppid() // alive, but disagrees with the id's pid
 	writeRaw(t, dir, id(3), r)
 
-	if err := os.WriteFile(filepath.Join(dir, id(4)+".json"), []byte(`{"id":"`+id(4)+`","pid":1,"pid":2}`), 0o600); err != nil {
+	// A duplicate key: last-wins decoding would read a valid record.
+	dup := fmt.Sprintf(`{"version":1,"id":"%s","pid":%d,"pid":%d,"url":"http://127.0.0.1:1"}`, id(4), os.Getppid(), pid)
+	if err := os.WriteFile(filepath.Join(dir, id(4)+".json"), []byte(dup), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	big := `{"id":"` + id(5) + `","pid":` + fmt.Sprint(pid) + `,"url":"http://127.0.0.1:1","name":"` + strings.Repeat("x", maxRecordBytes) + `"}`
+	big := `{"version":1,"id":"` + id(5) + `","pid":` + fmt.Sprint(pid) + `,"url":"http://127.0.0.1:1","name":"` + strings.Repeat("x", maxRecordBytes) + `"}`
 	if err := os.WriteFile(filepath.Join(dir, id(5)+".json"), []byte(big), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +99,18 @@ func TestListSkipsMalformedRecords(t *testing.T) {
 	}
 
 	r = good
+	r.ID = id(7)
+	r.MCPPath = "@evil.com/" // MCPURL would read http://127.0.0.1:1@evil.com/
+	writeRaw(t, dir, id(7), r)
+
+	r = good
+	r.ID = id(8)
+	r.Version = recordVersion + 1 // a layout this reader does not know
+	writeRaw(t, dir, id(8), r)
+
+	r = good
 	r.ID = id(6)
+	r.MCPPath = "/mcp"
 	writeRaw(t, dir, id(6), r)
 
 	recs, err := List()
