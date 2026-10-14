@@ -1282,10 +1282,20 @@ func TestE2EHomeAdaptsAtTabletAndPhoneWidths(t *testing.T) {
 		chromedp.WaitReady("body"),
 		chromedp.Evaluate(`(() => {
 			const cta = document.querySelector('[aria-label="Hero"] a[href="/get-started"]');
-			const headerTargets = [...document.querySelectorAll('[data-cui-scope="docsite-header"] .cmd, [data-cui-scope="docsite-header"] .icon, [data-cui-scope="docsite-header"] .toggle')]
+			// Every target a reader can see: the bar's, then the phone
+			// menu's with it open. A closed <details> still lays out
+			// its content at a squashed width, so visibility, not a
+			// non-zero box, decides what counts.
+			const sel = '[data-cui-scope="docsite-header"] .cmd, [data-cui-scope="docsite-header"] .icon, [data-cui-scope="docsite-header"] .toggle, [data-cui-scope="docsite-header"] .panel-actions button';
+			const sizes = () => [...document.querySelectorAll(sel)]
+				.filter(el => el.checkVisibility())
 				.map(el => el.getBoundingClientRect())
-				.filter(rect => rect.width > 0 && rect.height > 0)
 				.map(rect => Math.min(rect.width, rect.height));
+			const headerTargets = sizes();
+			const menu = document.querySelector('[data-cui-scope="docsite-header"] details');
+			menu.open = true;
+			headerTargets.push(...sizes());
+			menu.open = false;
 			return {
 				ctaEnd: cta.getBoundingClientRect().bottom,
 				overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
