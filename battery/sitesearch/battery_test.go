@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -213,5 +215,129 @@ func TestStartWarmsIndex(t *testing.T) {
 	bat.mu.Unlock()
 	if !built {
 		t.Error("OnStart did not build the index")
+	}
+}
+
+type roleKey struct{}
+
+// The index is what every visitor searches, so it is built as an
+// anonymous visitor: the identity on the context that asked for the
+// build never reaches the pages' policies.
+func TestIndexIgnoresCallerIdentity(t *testing.T) {
+	bat := New(Config{})
+	app := newSite(t, bat)
+	site := app.Mountables()[0].(*uihost.UIHost).App
+	site.RegisterScreen(coreapp.NewScreen("/admin", htmlScreen(`<main><h1>Admin</h1><p>Payroll quokka.</p></main>`)).
+		WithPolicy(coreapp.PolicyFunc(func(ctx context.Context) coreapp.Decision {
+			if ctx.Value(roleKey{}) == "admin" {
+				return decide.Allow()
+			}
+			return decide.Block(http.StatusForbidden, "admins only")
+		})), nil)
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	admin := context.WithValue(context.Background(), roleKey{}, "admin")
+	if err := bat.Refresh(admin); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := bat.Index(admin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := idx.Search("quokka", 5); got != nil {
+		t.Errorf("an admin-only page entered the shared index: %q", urls(got))
+	}
+}
+
+func TestExcludeSkipsBeforeRendering(t *testing.T) {
+	bat := New(Config{Exclude: []string{"/broken"}})
+	app := newSite(t, bat)
+	site := app.Mountables()[0].(*uihost.UIHost).App
+	site.Register("/broken", panicScreen{}, nil)
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bat.Index(context.Background()); err != nil {
+		t.Errorf("an excluded page that cannot render broke the index: %v", err)
+	}
+}
+
+type panicScreen struct{}
+
+func (panicScreen) Render() render.HTML { panic("broken page") }
+
+func TestExcludeCoversSources(t *testing.T) {
+	bat := New(Config{Exclude: []string{"/drafts"}, Sources: []Source{func(context.Context) ([]Page, error) {
+		return []Page{{URL: "/drafts/next", Title: "Unannounced zanzibar"}}, nil
+	}}})
+	app := newSite(t, bat)
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := bat.Index(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := idx.Search("zanzibar", 5); got != nil {
+		t.Errorf("an excluded source page was indexed: %q", urls(got))
+	}
+}
+
+// OnStop honors its deadline while a build is still running.
+func TestStopHonorsDeadlineMidBuild(t *testing.T) {
+	release, inBuild := make(chan struct{}), make(chan struct{})
+	bat := New(Config{Sources: []Source{func(context.Context) ([]Page, error) {
+		close(inBuild)
+		<-release
+		return nil, nil
+	}}})
+	app := newSite(t, bat)
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	defer close(release)
+	if err := bat.OnStart(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	<-inBuild
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- bat.OnStop(ctx) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("OnStop returned nil while the build still ran")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("OnStop ignored its deadline")
+	}
+}
+
+// A build that failed partway leaves nothing behind for the next one.
+func TestExportStartsFresh(t *testing.T) {
+	bat := New(Config{})
+	if err := bat.ExportStart(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := bat.ExportPage("/a", `<main><h1>Old</h1><p>stale walrus</p></main>`); err != nil {
+		t.Fatal(err)
+	}
+	// The build fails here: ExportFiles never runs. The retry:
+	if err := bat.ExportStart(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := bat.ExportPage("/a", `<main><h1>New</h1><p>fresh walrus</p></main>`); err != nil {
+		t.Fatal(err)
+	}
+	files, err := bat.ExportFiles(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range files {
+		if strings.Contains(string(body), "stale") {
+			t.Errorf("%s carries the failed build's page: %s", name, body)
+		}
 	}
 }

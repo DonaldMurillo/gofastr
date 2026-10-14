@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -25,8 +26,9 @@ type Config struct {
 	// Exclude keeps pages out of the index by path: "/lab" covers
 	// "/lab" and every page under it, never "/labs". It applies to the
 	// expanded paths, so one value of a dynamic route can go
-	// ("/examples/headless/dense"). Pages a static export leaves out
-	// are never indexed there either.
+	// ("/examples/headless/dense"), and to Sources' pages. An excluded
+	// page is never rendered, so one that cannot render is no error.
+	// Pages a static export leaves out are never indexed there either.
 	Exclude []string
 	// Sources add pages no route renders (records from a database, an
 	// external changelog). They run on every build, live and export.
@@ -57,16 +59,21 @@ const (
 // host with no server.
 type Battery struct {
 	cfg Config
+	app atomic.Pointer[framework.App]
 
+	// mu guards the index and is held for a whole build, so a query
+	// that arrives mid-build waits for it.
 	mu    sync.Mutex
-	app   *framework.App
 	idx   *Index
 	files map[string][]byte
 
-	// export state: the pages ExportPage saw.
+	// export state: the pages ExportPage saw since ExportStart.
 	exportPages []Page
 
-	// warm closes when the build OnStart began has finished.
+	// life guards warm, which closes when the build OnStart began has
+	// finished. It is apart from mu so OnStop never waits on a build to
+	// read it.
+	life sync.Mutex
 	warm chan struct{}
 }
 
@@ -79,9 +86,7 @@ func (b *Battery) Name() string { return "sitesearch" }
 // Init implements framework.Battery: it registers the query endpoint
 // and the index files. The index builds on the first request.
 func (b *Battery) Init(app *framework.App) error {
-	b.mu.Lock()
-	b.app = app
-	b.mu.Unlock()
+	b.app.Store(app)
 	r := app.Router()
 	r.Get(Root+"query", http.HandlerFunc(b.serveQuery))
 	r.Get(Root+"{file}", http.HandlerFunc(b.serveFile))
@@ -93,10 +98,10 @@ func (b *Battery) Init(app *framework.App) error {
 // render. A failed build is logged and retried by the next query.
 func (b *Battery) OnStart(ctx context.Context) error {
 	done := make(chan struct{})
-	b.mu.Lock()
+	b.life.Lock()
 	b.warm = done
-	app := b.app
-	b.mu.Unlock()
+	b.life.Unlock()
+	app := b.app.Load()
 	go func() {
 		defer close(done)
 		defer func() {
@@ -114,9 +119,9 @@ func (b *Battery) OnStart(ctx context.Context) error {
 // OnStop implements framework.BatteryLifecycle: it waits for the build
 // OnStart began, so shutdown does not close what the build renders with.
 func (b *Battery) OnStop(ctx context.Context) error {
-	b.mu.Lock()
+	b.life.Lock()
 	done := b.warm
-	b.mu.Unlock()
+	b.life.Unlock()
 	if done == nil {
 		return nil
 	}
@@ -149,18 +154,18 @@ func (b *Battery) indexLocked(ctx context.Context) (*Index, error) {
 	if b.idx != nil {
 		return b.idx, nil
 	}
-	if b.app == nil {
+	app := b.app.Load()
+	if app == nil {
 		return nil, fmt.Errorf("sitesearch: battery not initialized")
 	}
-	host := mountedHost(b.app)
+	host := mountedHost(app)
 	if host == nil {
 		return nil, fmt.Errorf("sitesearch: no mounted uihost.UIHost to render pages from")
 	}
+	ctx, done := anonymous(ctx)
+	defer done()
 	var pages []Page
-	err := static.Walk(ctx, host, nil, func(path, page string) error {
-		if b.excluded(path) {
-			return nil
-		}
+	err := static.Walk(ctx, host, b.excluded, func(path, page string) error {
 		p, ok, err := b.extract(path, page)
 		if err != nil {
 			return err
@@ -179,6 +184,16 @@ func (b *Battery) indexLocked(ctx context.Context) (*Index, error) {
 	}
 	b.idx, b.files = idx, files
 	return idx, nil
+}
+
+// anonymous returns a context that ends when ctx does but carries none
+// of its values. Every visitor searches the same index, so it is built
+// as no one in particular: the identity of the request or the caller
+// that asked for a build never reaches the pages' policies.
+func anonymous(ctx context.Context) (context.Context, context.CancelFunc) {
+	c, cancel := context.WithCancel(context.Background())
+	stop := context.AfterFunc(ctx, cancel)
+	return c, func() { stop(); cancel() }
 }
 
 func mountedHost(app *framework.App) *uihost.UIHost {
@@ -220,6 +235,9 @@ func (b *Battery) build(ctx context.Context, pages []Page) (*Index, map[string][
 			return nil, nil, fmt.Errorf("sitesearch: source: %w", err)
 		}
 		for _, p := range extra {
+			if b.excluded(p.URL) {
+				continue
+			}
 			if p.Group == "" {
 				p.Group = b.group(p.URL)
 			}
@@ -235,6 +253,15 @@ func (b *Battery) build(ctx context.Context, pages []Page) (*Index, map[string][
 		return nil, nil, err
 	}
 	return idx, files, nil
+}
+
+// ExportStart implements static.Contributor: it drops the pages a
+// build that failed partway collected.
+func (b *Battery) ExportStart(context.Context) error {
+	b.mu.Lock()
+	b.exportPages = nil
+	b.mu.Unlock()
+	return nil
 }
 
 // ExportPage implements static.Contributor: it indexes one exported
@@ -260,6 +287,8 @@ func (b *Battery) ExportFiles(ctx context.Context) (map[string][]byte, error) {
 	pages := b.exportPages
 	b.exportPages = nil
 	b.mu.Unlock()
+	ctx, done := anonymous(ctx)
+	defer done()
 	_, files, err := b.build(ctx, pages)
 	if err != nil {
 		return nil, err

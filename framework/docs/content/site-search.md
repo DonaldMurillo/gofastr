@@ -52,6 +52,8 @@ func main() {
 			{Label: "Get started", Href: "/get-started"},
 			{Label: "Docs", Href: "/docs/"},
 		},
+		// Where the trigger goes without script.
+		FallbackHref: "/docs/",
 	})
 	_ = trigger
 	widget.MountBuilder(app.Router(), palette)
@@ -81,6 +83,9 @@ Left out:
   `dialog`, `alertdialog` or `navigation`.
 - Anything marked `data-search-ignore`, such as a live demo's output.
 - Pages with `<meta name="robots" content="noindex">`.
+- Pages a screen policy refuses an anonymous visitor. Every reader searches
+  the same index, so it is always built as no one in particular, whoever's
+  query or `Refresh` call started the build.
 - Pages whose text repeats an earlier page exactly (a twin route).
 
 ## Configuration
@@ -90,7 +95,8 @@ sitesearch.Config{
 	// Label results by URL prefix, on whole segments; the longest wins.
 	Groups: []sitesearch.Group{{Prefix: "/docs/", Label: "Docs"}},
 	// Keep paths out: "/lab" covers /lab and everything under it, never
-	// /labs. Matches expanded paths, so one value of a dynamic route can go.
+	// /labs. Matches expanded paths, so one value of a dynamic route can go,
+	// and Sources' pages too. An excluded page is never rendered.
 	Exclude: []string{"/examples/headless/dense"},
 	// Add pages no route renders. Runs on every build, live and export.
 	Sources: []sitesearch.Source{changelogPages},
@@ -130,9 +136,11 @@ cached forever (`Cache-Control: immutable`); the manifest is served
 `no-cache`. Two exports of the same pages produce the same files.
 
 Any battery can add files to an export the same way: implement
-`static.Contributor` (`ExportPage(path, html)` per rendered page, then
-`ExportFiles(ctx)` once) and `App.ExportStatic` calls it. `static.Walk`
-renders the same page set at runtime.
+`static.Contributor` (`ExportStart(ctx)` when a build begins, so a build
+that failed partway leaves nothing behind; `ExportPage(path, html)` per
+rendered page; then `ExportFiles(ctx)` once) and `App.ExportStatic` calls
+it. `static.Walk` renders the same page set at runtime, skipping any path
+its `skip` func names before rendering it.
 
 ## Limits
 

@@ -111,10 +111,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   app starts. In a static export it writes the index as
   content-hashed JSON shards under `/__gofastr/search/`, and a runtime
   module only exported pages load (`sitesearch-static`) ranks from them
-  with no server, matching the Go ranking.
-  `Config.Groups` labels results by URL prefix, `Exclude` drops paths,
-  `Sources` adds pages no route renders; `data-search-ignore` and
-  `noindex` keep content out. Guide: `gofastr docs site-search`.
+  with no server, matching the Go ranking. The index is built as an
+  anonymous visitor, so a policy-gated page never enters it.
+  `Config.Groups` labels results by URL prefix, `Exclude` drops paths
+  (Sources' pages included), `Sources` adds pages no route renders;
+  `data-search-ignore` and `noindex` keep content out. Guide:
+  `gofastr docs site-search`.
 - **`ui.CommandPaletteConfig.Search`** makes the palette search the site
   search index as the reader types, below its `Commands` (required: the
   rows shown before the first keystroke). A slow answer shows a
@@ -124,9 +126,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `GOFASTR_EXPORT_BASE`) set; `App.Start` then exports after
   migrations, seeds and battery init and returns instead of serving.
 - **`static.Contributor`** lets a battery add files to an export from
-  the pages it renders, and `App.ExportStatic` passes every registered
-  battery that implements it. **`static.Walk`** renders the same page set
-  at runtime.
+  the pages it renders (`ExportStart`, `ExportPage`, `ExportFiles`), and
+  `App.ExportStatic` passes every registered battery that implements it.
+  **`static.Walk`** renders the same page set at runtime, with a `skip`
+  func asked about each path before it renders.
 
 ### Changed
 - **BREAKING: `ui.ContentRowConfig.BelowHeader` is removed.** Set

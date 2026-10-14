@@ -18,7 +18,7 @@ type token struct {
 }
 
 // isWordRune reports whether r belongs to a word: a Unicode letter or
-// digit. The browser client splits on the same classes (\p{L}\p{N}).
+// digit. The browser client splits on the same classes (\p{L}\p{Nd}).
 func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
 
 // scan splits text into lowercased word runs, keeping each run's rune

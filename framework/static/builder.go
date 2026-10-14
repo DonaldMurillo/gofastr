@@ -73,20 +73,23 @@ type Builder struct {
 	// nor is a src that is not a same-origin path (a CDN URL), nor a
 	// document-scoped script whose scope accepts no exported route.
 	Handler http.Handler
-	// Contributors add files built from the exported pages: each sees
-	// every page as it renders (ExportPage), then returns its files
-	// (ExportFiles), which the build writes under their root-absolute
-	// URL paths. battery/sitesearch writes its index this way.
+	// Contributors add files built from the exported pages: each is
+	// told a build began (ExportStart), sees every page as it renders
+	// (ExportPage), then returns its files (ExportFiles), which the
+	// build writes under their root-absolute URL paths. battery/sitesearch writes its index this way.
 	// App.ExportStatic passes every registered battery that is one.
 	Contributors []Contributor
 }
 
 // Contributor adds files to an export from the pages it renders: a
-// search index, a feed. ExportPage gets each page's live HTML, before
-// the export's static rewrites; ExportFiles runs once, after the last
-// page, and returns files keyed by root-absolute URL path
+// search index, a feed. ExportStart runs when a build begins, so a
+// contributor drops what a build that failed partway left behind.
+// ExportPage gets each page's live HTML, before the export's static
+// rewrites; ExportFiles runs once, after the last page, and returns
+// files keyed by root-absolute URL path
 // ("/__gofastr/search/manifest.json").
 type Contributor interface {
+	ExportStart(ctx context.Context) error
 	ExportPage(path, html string) error
 	ExportFiles(ctx context.Context) (map[string][]byte, error)
 }
@@ -115,8 +118,14 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// document-scoped rail script's scope is asked about.
 	var renderedRoutes []string
 
+	for _, c := range b.Contributors {
+		if err := c.ExportStart(ctx); err != nil {
+			return res, fmt.Errorf("static: contributor start: %w", err)
+		}
+	}
+
 	// Pages.
-	err := walk(ctx, b.Host, b.routeExcluded, b.log, func(route, p, page string) error {
+	err := walk(ctx, b.Host, b.routeExcluded, nil, b.log, func(route, p, page string) error {
 		for _, c := range b.Contributors {
 			if err := c.ExportPage(p, page); err != nil {
 				return fmt.Errorf("static: contributor on %q: %w", p, err)
@@ -388,18 +397,23 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 // screens and 404-outlet routes are skipped the way Build skips them,
 // and a page whose fill failed and was contained is an error. A search
 // index or a feed built at runtime reads the same pages an export
-// writes; exclude may be nil.
-func Walk(ctx context.Context, host *uihost.UIHost, exclude []string, fn func(path, html string) error) error {
+// writes. skip, when set, is asked about each route pattern and each
+// expanded path before it renders, so a skipped page that cannot
+// render is never an error.
+func Walk(ctx context.Context, host *uihost.UIHost, skip func(path string) bool, fn func(path, html string) error) error {
 	if host == nil {
 		return fmt.Errorf("static: Walk needs a host")
 	}
-	b := &Builder{Host: host, ExcludeRoutes: exclude}
-	return walk(ctx, host, b.routeExcluded, nil, func(_, p, page string) error { return fn(p, page) })
+	if skip == nil {
+		skip = func(string) bool { return false }
+	}
+	return walk(ctx, host, skip, skip, nil, func(_, p, page string) error { return fn(p, page) })
 }
 
-// walk is the page loop Build and Walk share: fn gets the route
-// pattern, the concrete path and the rendered page.
-func walk(ctx context.Context, host *uihost.UIHost, excluded func(string) bool, logf func(string, ...any), fn func(route, path, page string) error) error {
+// walk is the page loop Build and Walk share: excluded is asked about
+// route patterns, skipPath (when set) about expanded paths, and fn gets
+// the route pattern, the concrete path and the rendered page.
+func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(string) bool, logf func(string, ...any), fn func(route, path, page string) error) error {
 	if logf == nil {
 		logf = func(string, ...any) {}
 	}
@@ -416,6 +430,9 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded func(string) bool, 
 			return fmt.Errorf("static: expand %q: %w", route.Path, err)
 		}
 		for _, p := range paths {
+			if skipPath != nil && skipPath(p) {
+				continue
+			}
 			page, fillFailures, err := host.RenderStaticPageResult(ctx, p)
 			if err != nil {
 				if blocked, ok := errors.AsType[*uihost.PolicyBlockedError](err); ok {
