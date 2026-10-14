@@ -90,20 +90,31 @@ func (s *GetStartedScreen) Render() render.HTML {
 		pageBody(gsHero(), gsBody(), gsNext()))
 }
 
+// gsPath is the tutorial's steps in order, the anchor and the heading
+// of each: the rail and the step sections both read it, so a rail entry
+// always names the section it scrolls to.
+var gsPath = []struct{ ID, Title string }{
+	{"s1", "Install"},
+	{"s2", "Scaffold"},
+	{"s3", "First entity"},
+	{"s4", "Run it"},
+	{"s5", "First page"},
+	{"s6", "What you have"},
+}
+
+// gsRail lists the steps and marks the one in view; on phones it folds
+// into a pill naming that step (nothing else on this page holds the
+// bottom of the screen).
 func gsRail() render.HTML {
-	return ui.StepRail(ui.StepRailConfig{
-		Title: "The path",
-		Items: []ui.StepRailItem{
-			{Number: "01", Anchor: "s1", Label: "Install"},
-			{Number: "02", Anchor: "s2", Label: "Scaffold"},
-			{Number: "03", Anchor: "s3", Label: "First entity"},
-			{Number: "04", Anchor: "s4", Label: "Run it"},
-			{Number: "05", Anchor: "s5", Label: "First page"},
-			{Number: "06", Anchor: "s6", Label: "What you have"},
-		},
-		ActiveIndex: 0,
-		Meta:        "Stuck? Ask in GitHub Discussions",
-		MetaHref:    "https://github.com/DonaldMurillo/gofastr/discussions",
+	items := make([]ui.RailItem, len(gsPath))
+	for i, st := range gsPath {
+		items[i] = ui.RailItem{Eyebrow: fmt.Sprintf("%02d", i+1), Text: st.Title, Anchor: st.ID}
+	}
+	return ui.AnchoredRail(ui.AnchoredRailConfig{
+		Label:           "The path",
+		Items:           items,
+		ObserveSelector: "#gs-steps",
+		PhoneSheet:      true,
 	})
 }
 
@@ -129,11 +140,11 @@ func gsHero() render.HTML {
 func gsBody() render.HTML {
 	// One step: a section whose id is the rail's anchor, the step number
 	// and its time budget as the eyebrow.
-	step := func(id, num, title, time string, body ...render.HTML) render.HTML {
+	step := func(n int, time string, body ...render.HTML) render.HTML {
 		return ui.Section(ui.SectionConfig{
-			ID:      id,
-			Eyebrow: "Step " + num + " · " + time,
-			Heading: title,
+			ID:      gsPath[n-1].ID,
+			Eyebrow: fmt.Sprintf("Step %02d · %s", n, time),
+			Heading: gsPath[n-1].Title,
 			Compact: true,
 		}, body...)
 	}
@@ -153,7 +164,7 @@ func gsBody() render.HTML {
 		)
 	}
 
-	step1 := step("s1", "01", "Install", "~30s",
+	step1 := step(1, "~30s",
 		p(t("One binary covers scaffold, migrate, dev, build, test, and the doc browser. Get it from GitHub:")),
 		termBlock("$ install",
 			render.Text("$ go install github.com/DonaldMurillo/gofastr/cmd/gofastr@"+siteInstallTarget()+"\n"),
@@ -163,7 +174,7 @@ func gsBody() render.HTML {
 		callout("If gofastr isn't found", "Make sure $GOPATH/bin (or ~/go/bin) is in your PATH. Run echo $PATH and add the missing entry to your shell rc."),
 	)
 
-	step2 := step("s2", "02", "Scaffold", "~45s",
+	step2 := step(2, "~45s",
 		p(t("Scaffold a new project. It writes main.go, a sample posts entity in entities/entities.go, a home screen in screens.go at the root, sign-in screens in screens_auth.go, a versioned migration, DESIGN.md, gofastr.isolation.yml, and the agent onboarding files (AGENTS.md + .agents/, CLAUDE.md), then initializes git.")),
 		termBlock("$ scaffold",
 			render.Text("$ gofastr init blog\n"),
@@ -173,7 +184,7 @@ func gsBody() render.HTML {
 		p(t("Open the scaffolded "), codeText("main.go"), t(". It's short, it's yours, and every registration in it is plain Go. Read it.")),
 	)
 
-	step3 := step("s3", "03", "The entity", "~60s",
+	step3 := step(3, "~60s",
 		p(t("The scaffold already declared one. Open "), codeText("entities/entities.go"), t(". One declaration is the table, REST CRUD, validation, an OpenAPI spec, and a typed query builder:")),
 		codeBlock("blog/entities/entities.go", []render.HTML{
 			ln(render.Text("app."), fn_("Entity"), pn("("), str_(`"posts"`), pn(","), render.Text(" entity."), ty("EntityConfig"), pn("{")),
@@ -188,7 +199,7 @@ func gsBody() render.HTML {
 		p(t("The matching versioned migration is next to it in the same file. "), codeText("gofastr docs migrations"), t(" covers how those run.")),
 	)
 
-	step4 := step("s4", "04", "Run it", "~60s",
+	step4 := step(4, "~60s",
 		p(t("Resolve dependencies once, then start the dev server. It rebuilds on save, reloads the browser, and hands your coding agent the app over MCP.")),
 		termBlock("$ run",
 			render.Text("$ go mod tidy\n"),
@@ -204,7 +215,7 @@ func gsBody() render.HTML {
 		p(t("That 401 is the point: auto-CRUD refuses anonymous requests unless you opt out. Add "), codeText("Public: true"), t(" to the entity, save, and the dev server rebuilds. The same curl now answers "), codeText("{\"data\":[]}"), t(". Or keep the gate and sign in: the scaffold already wires the auth battery, so create an account at "), codeText("/register"), t(", sign in at "), codeText("/login"), t(", and the browser session reaches the same route ("), codeText("gofastr docs auth"), t(").")),
 	)
 
-	step5 := step("s5", "05", "First page", "~60s",
+	step5 := step(5, "~60s",
 		p(t("Add a second server-rendered page. A screen is a Go struct whose Render returns the markup. The scaffolded home screen in "), codeText("screens.go"), t(" is the pattern:")),
 		codeBlock("blog/about.go", []render.HTML{
 			ln(kw("type"), render.Text(" "), ty("AboutScreen"), render.Text(" "), kw("struct"), pn("{}")),
@@ -219,7 +230,7 @@ func gsBody() render.HTML {
 	)
 
 	li := func(s string) render.HTML { return html.ListItem(html.ListItemConfig{}, render.Text(s)) }
-	step6 := step("s6", "06", "What you have", "now",
+	step6 := step(6, "now",
 		p(t("Four minutes in, this is on disk and running:")),
 		ui.Card(ui.CardConfig{Heading: "Running, on disk, yours", Variant: ui.CardOutlined},
 			html.UnorderedList(html.ListConfig{},
@@ -234,7 +245,7 @@ func gsBody() render.HTML {
 		),
 	)
 
-	return ui.Stack(ui.StackConfig{Gap: ui.Gap2XL}, step1, step2, step3, step4, step5, step6)
+	return ui.Stack(ui.StackConfig{ID: "gs-steps", Gap: ui.Gap2XL}, step1, step2, step3, step4, step5, step6)
 }
 
 func gsNext() render.HTML {
@@ -247,10 +258,11 @@ func gsNext() render.HTML {
 		}, badge...)
 	}
 	return ui.Section(ui.SectionConfig{ID: "next", Eyebrow: "Next", Heading: "Where next", Compact: true},
-		ui.Grid(ui.GridConfig{Min: "12rem"},
+		ui.Grid(ui.GridConfig{Min: "16rem"},
 			card("Browse the docs", fmt.Sprintf("%d docs grouped by what you're trying to do.", docCount()), "/docs/"),
 			card("Read an example", fmt.Sprintf("%d full apps you can clone and modify.", len(exRowItems())), "/examples"),
 			card("Try Kiln", "Build the app by chatting with an agent; freeze the result into a blueprint you commit.", "/kiln", experimentalPill()),
+			card("Stuck?", "Ask in GitHub Discussions.", "https://github.com/DonaldMurillo/gofastr/discussions"),
 		),
 	)
 }

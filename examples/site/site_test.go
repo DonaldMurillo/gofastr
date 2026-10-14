@@ -193,12 +193,15 @@ func TestPhilosophyContentsResolve(t *testing.T) {
 }
 
 // TestGetStartedRailAnchorsResolve: every step-rail entry lands on a
-// step section of the same id.
+// step section of the same id inside the region the rail observes.
 func TestGetStartedRailAnchorsResolve(t *testing.T) {
 	html := body(t, "/get-started")
-	for _, id := range []string{"s1", "s2", "s3", "s4", "s5", "s6"} {
-		if !strings.Contains(html, `href="#`+id+`"`) || !strings.Contains(html, `id="`+id+`"`) {
-			t.Errorf("/get-started rail entry #%s does not resolve to a step section", id)
+	if !strings.Contains(html, `id="gs-steps"`) {
+		t.Fatal("/get-started lost the #gs-steps region the rail observes")
+	}
+	for _, st := range gsPath {
+		if !strings.Contains(html, `href="#`+st.ID+`"`) || !strings.Contains(html, `id="`+st.ID+`"`) {
+			t.Errorf("/get-started rail entry #%s does not resolve to a step section", st.ID)
 		}
 	}
 }
