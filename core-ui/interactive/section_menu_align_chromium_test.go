@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
@@ -20,7 +19,7 @@ import (
 // would load it.
 func menuPage(t *testing.T, body string, js bool) string {
 	t.Helper()
-	css := sectionMenuStyle.Entry().CSSFor(style.Theme{})
+	css := kitCSS(sectionMenuStyle)
 	script := ""
 	if js {
 		script = "<script>" + sectionMenuJS + "</script>"
@@ -60,7 +59,7 @@ func TestSectionMenuRailShowsCollapsedGroups(t *testing.T) {
 		{Label: "Hidden one", Href: "/docs/hidden"},
 	}})
 	menu := SectionMenu(cfg)
-	css := sectionMenuStyle.Entry().CSSFor(style.Theme{})
+	css := kitCSS(sectionMenuStyle)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(w, `<!doctype html><meta charset=utf-8>
@@ -99,23 +98,23 @@ func TestSectionMenuRailShowsCollapsedGroups(t *testing.T) {
 // left a nav column holding only the trigger between 768 and 900px.
 func TestSectionMenuSwapAtMatchesRow(t *testing.T) {
 	for _, tc := range []struct {
-		swap  SectionMenuSwap
+		swap  SwapWidth
 		width int64
 		rail  bool
 	}{
-		{SectionMenuSwapDefault, 840, false},
-		{SectionMenuSwapDefault, 920, true},
-		{SectionMenuSwapMD, 760, false},
-		{SectionMenuSwapMD, 840, true},
-		{SectionMenuSwapLG, 920, false},
-		{SectionMenuSwapLG, 1040, true},
+		{SwapDefault, 840, false},
+		{SwapDefault, 920, true},
+		{SwapMD, 760, false},
+		{SwapMD, 840, true},
+		{SwapLG, 920, false},
+		{SwapLG, 1040, true},
 	} {
 		cfg := sampleMenu()
 		cfg.DrawerName = "sections"
 		cfg.FillColumn = true
 		cfg.SwapAt = tc.swap
 		menu := SectionMenu(cfg)
-		css := sectionMenuStyle.Entry().CSSFor(style.Theme{})
+		css := kitCSS(sectionMenuStyle)
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			fmt.Fprintf(w, `<!doctype html><meta charset=utf-8><style>body{margin:0}</style><style>%s</style>%s`, css, string(menu))
@@ -126,7 +125,7 @@ func TestSectionMenuSwapAtMatchesRow(t *testing.T) {
 			chromedp.Navigate(srv.URL),
 			chromedp.Evaluate(`(() => {
 				const shown = sel => getComputedStyle(document.querySelector(sel)).display !== 'none';
-				return {rail: shown('.cui-section-menu__rail'), trigger: shown('.cui-section-menu__trigger')};
+				return {rail: shown('.cui-section-menu__rail'), trigger: shown('.cui-sheet-pill')};
 			})()`, &got),
 		); err != nil {
 			t.Fatal(err)
@@ -251,15 +250,15 @@ func TestSectionMenuPillFloats(t *testing.T) {
 		if err := chromedp.Run(ctx,
 			chromedp.Navigate(url),
 			chromedp.Evaluate(`(() => {
-				const r = document.querySelector('.cui-section-menu__trigger').getBoundingClientRect();
+				const r = document.querySelector('.cui-sheet-pill').getBoundingClientRect();
 				document.documentElement.dir = 'rtl';
-				const rr = document.querySelector('.cui-section-menu__trigger').getBoundingClientRect();
+				const rr = document.querySelector('.cui-sheet-pill').getBoundingClientRect();
 				const rtl = rr.left + rr.width / 2 - innerWidth / 2;
 				document.documentElement.dir = '';
 				const pad = parseFloat(getComputedStyle(document.body).paddingBottom);
 				scrollTo(0, document.documentElement.scrollHeight);
 				const end = document.getElementById('end').getBoundingClientRect().bottom;
-				const pill = document.querySelector('.cui-section-menu__trigger').getBoundingClientRect().top;
+				const pill = document.querySelector('.cui-sheet-pill').getBoundingClientRect().top;
 				return {top: r.top, bottom: innerHeight - r.bottom, centre: r.left + r.width / 2 - innerWidth / 2, rtl: rtl, pad: pad, clear: pill - end};
 			})()`, &m),
 		); err != nil {
@@ -339,8 +338,8 @@ func TestSectionMenuPillFollowsNavigation(t *testing.T) {
 	const nav = `((path, fresh) => {
 		const root = fresh ? document.body : undefined;
 		window.dispatchEvent(new CustomEvent('gofastr:navigate', {detail: {path, root}}));
-		const b = document.querySelector('.cui-section-menu__trigger');
-		return b.querySelector('.cui-section-menu__trigger-label').textContent + '|' + b.querySelector('.cui-section-menu__trigger-group').textContent;
+		const b = document.querySelector('.cui-sheet-pill');
+		return b.querySelector('.cui-sheet-pill__label').textContent + '|' + b.querySelector('.cui-sheet-pill__detail').textContent;
 	})`
 	var first, http, off, fresh string
 	if err := chromedp.Run(ctx,

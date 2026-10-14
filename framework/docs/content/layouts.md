@@ -821,8 +821,8 @@ match, shows "matches/total" in each group header, and Escape clears
 it. `FilterPlaceholder` and `FilterEmpty` set its text.
 Set `SwapAt` to the row's breakpoint too: the menu swaps its rail for a
 pill at 900px by default, while the row stacks at 48rem
-(`interactive.SectionMenuSwapMD`) or, with `Breakpoint: ui.StackBelowLG`,
-at 64rem (`interactive.SectionMenuSwapLG`). A mismatch leaves the column
+(`interactive.SwapMD`) or, with `Breakpoint: ui.StackBelowLG`,
+at 64rem (`interactive.SwapLG`). A mismatch leaves the column
 holding a lone pill beside the content, or a full rail stacked above
 it. An unknown value panics.
 The pill floats at the bottom of the screen, names the current page and
@@ -833,10 +833,13 @@ never covers its last line. Mount that drawer once in the layout, under the same
 `DrawerName`. `InlineTrigger: true` keeps the pill in flow instead, for
 a menu shown inside a card or a demo. The knobs are
 `--ui-section-menu-bg` (behind the pinned group headers: the page background, or the surface color in a filled column and the sheet),
-`--ui-section-menu-inset` (the link inset), `--ui-section-menu-dot`
-(the current page's dot) and
-`--ui-section-menu-pill-bottom` (the pill's gap above the screen edge;
-set it on `:root`, where the page's end padding reads it too).
+`--ui-section-menu-inset` (the link inset) and `--ui-section-menu-dot`
+(the current page's dot). The pill is `interactive.SheetPill` and the
+sheet's title row is shared with `interactive.PhoneSheet`, so
+their knobs carry the sheet's name: `--ui-sheet-pill-bottom` (the
+pill's gap above the screen edge; set it on `:root`, where the page's
+end padding reads it too) and `--ui-sheet-close-size` (the close
+button).
 `PhoneNavFlush: true` drops the nav column's phone separator below the
 breakpoint. Set it when the sidebar's phone navigation lives outside
 the column: a SectionMenu, whose pill floats over the page, or a

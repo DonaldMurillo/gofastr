@@ -40,9 +40,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   inside a card or a demo.
 - `SectionMenuConfig.SwapAt` moves the width where an
   `interactive.SectionMenu` trades its rail for its phone pill
-  from 900px to a `ui.ContentRow` breakpoint (`SectionMenuSwapMD`,
-  48rem, or `SectionMenuSwapLG`, 64rem), so a menu in a row's nav column
-  swaps where the row stacks.
+  from 900px to a `ui.ContentRow` breakpoint (`interactive.SwapMD`,
+  48rem, or `interactive.SwapLG`, 64rem), so a menu in a row's nav
+  column swaps where the row stacks.
 - **entityui lists warn when their row links lead nowhere.** The first
   time a list renders rows whose `<base>/<id>` matches no registered
   screen, it logs one warning per base naming the route to register.
@@ -108,8 +108,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   never covers the last line), and `SectionMenuDrawer` is now a bottom
   sheet (`preset.BottomSheet`) that opens on the current page's group.
   Knobs: `--ui-section-menu-bg`, `--ui-section-menu-inset`,
-  `--ui-section-menu-dot`,
-  `--ui-section-menu-pill-bottom`. A `ui.ContentRow` holding the menu
+  `--ui-section-menu-dot`, and on the shared pill and sheet title row
+  `--ui-sheet-pill-bottom` and `--ui-sheet-close-size`, which replaces
+  `--ui-section-menu-close-size`. A `ui.ContentRow` holding the menu
   sets `PhoneNavFlush`, so the empty stacked column draws no band.
 - **BREAKING: `gallery.ContributeCSS` and `gallery.BaseCSS` are removed.**
   The `framework/gallery` demos lay out through `ui.Cluster`, `ui.Stack`,

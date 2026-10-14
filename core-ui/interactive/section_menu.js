@@ -97,9 +97,9 @@
   // The pill names the current page and its group, or falls back to the
   // trigger label it carries at the start of its accessible name.
   function sync(menu, path, marked) {
-    const btn = menu.querySelector(':scope > .cui-section-menu__trigger');
-    const label = btn && btn.querySelector('.cui-section-menu__trigger-label');
-    const group = btn && btn.querySelector('.cui-section-menu__trigger-group');
+    const btn = menu.querySelector(':scope > .cui-sheet-pill');
+    const label = btn && btn.querySelector('.cui-sheet-pill__label');
+    const group = btn && btn.querySelector('.cui-sheet-pill__detail');
     if (!label || !group) return;
     const a = currentLink(menu.querySelector(':scope > .cui-section-menu__rail'), path, marked);
     if (a) {
@@ -109,7 +109,7 @@
       group.textContent = gl ? gl.textContent : '';
       return;
     }
-    const sr = btn.querySelector('.cui-section-menu__sr');
+    const sr = btn.querySelector('.cui-sheet-pill__sr');
     if (sr) label.textContent = sr.textContent.replace(/:\s*$/, '');
     group.textContent = '';
   }

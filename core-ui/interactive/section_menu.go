@@ -114,11 +114,11 @@ type SectionMenuConfig struct {
 	FillColumn bool
 	// SwapAt picks the width below which the rail gives way to the
 	// trigger and sheet: 900px by default. In a ui.ContentRow nav
-	// column, match the row's Breakpoint (SectionMenuSwapMD for the
-	// default, SectionMenuSwapLG for ui.StackBelowLG), so the column
+	// column, match the row's Breakpoint (SwapMD for the
+	// default, SwapLG for ui.StackBelowLG), so the column
 	// never holds the rail beside content too narrow for it. An unknown
 	// value panics.
-	SwapAt SectionMenuSwap
+	SwapAt SwapWidth
 	Class  string
 	ID     string
 }
@@ -146,17 +146,7 @@ func SectionMenu(cfg SectionMenuConfig) render.HTML {
 	if cfg.FillColumn {
 		cls += " cui-section-menu--fill"
 	}
-	if cfg.InlineTrigger {
-		cls += " cui-section-menu--inline-trigger"
-	}
-	switch cfg.SwapAt {
-	case SectionMenuSwapDefault:
-	case SectionMenuSwapMD, SectionMenuSwapLG:
-		cls += " cui-section-menu--swap-" + string(cfg.SwapAt)
-	default:
-		panic("interactive: SectionMenu unknown SwapAt " + string(cfg.SwapAt) +
-			`. Pick one of: "" (900px), md (48rem), lg (64rem)`)
-	}
+	cls += swapClass("SectionMenu", "cui-section-menu", cfg.SwapAt)
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
@@ -167,29 +157,15 @@ func SectionMenu(cfg SectionMenuConfig) render.HTML {
 }
 
 // sectionMenuTrigger is the mobile pill: the current page and its group
-// when the config marks one, the trigger label otherwise. Its accessible
-// name starts with the trigger label, so a screen reader hears what the
-// control opens before where the reader is. The sectionmenu behaviour
-// rewrites the two visible spans on every client-side navigation.
+// when the config marks one, the trigger label otherwise. The
+// sectionmenu behaviour rewrites the label and detail on every
+// client-side navigation.
 func sectionMenuTrigger(cfg SectionMenuConfig) render.HTML {
-	name := triggerLabel(cfg)
-	label, group := name, ""
+	pill := SheetPillConfig{Name: triggerLabel(cfg), Opens: cfg.DrawerName, Inline: cfg.InlineTrigger, SwapAt: cfg.SwapAt}
 	if it, g, ok := activeItem(cfg); ok {
-		label, group = it.Label, g
+		pill.Label, pill.Detail = it.Label, g
 	}
-	return render.Tag("button",
-		map[string]string{
-			"class":         "cui-section-menu__trigger",
-			"type":          "button",
-			"data-cui-open": cfg.DrawerName,
-			"aria-haspopup": "dialog",
-		},
-		render.Raw(`<svg class="cui-section-menu__trigger-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg>`),
-		html.Span(html.TextConfig{Class: "cui-section-menu__sr"}, render.Text(name+": ")),
-		html.Span(html.TextConfig{Class: "cui-section-menu__trigger-label"}, render.Text(label)),
-		html.Span(html.TextConfig{Class: "cui-section-menu__trigger-group"}, render.Text(group)),
-		render.Raw(`<svg class="cui-section-menu__trigger-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 15 12 9 18 15"/></svg>`),
-	)
+	return SheetPill(pill)
 }
 
 func triggerLabel(cfg SectionMenuConfig) string {
@@ -261,21 +237,10 @@ func sheetTitleID(cfg SectionMenuConfig) string { return cfg.DrawerName + "-titl
 type sectionMenuDrawerSlot struct{ cfg SectionMenuConfig }
 
 func (s sectionMenuDrawerSlot) Render() render.HTML {
-	// A visible close control. data-cui-action="close" is the framework's
-	// declarative widget-dismiss hook, the sheet's own runtime closes it.
-	closeBtn := render.Tag("button",
-		map[string]string{
-			"class":           "cui-section-menu__close",
-			"type":            "button",
-			"data-cui-action": "close",
-			"aria-label":      "Close menu",
-		},
-		render.Raw(`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>`),
-	)
-	top := []render.HTML{html.Div(html.DivConfig{Class: "cui-section-menu__drawer-head"},
-		html.Span(html.TextConfig{Class: "cui-section-menu__sheet-title", ID: sheetTitleID(s.cfg)}, render.Text(triggerLabel(s.cfg))),
-		closeBtn,
-	)}
+	// The close control's data-cui-action="close" is the framework's
+	// declarative widget-dismiss hook: the sheet's own runtime closes it.
+	top := []render.HTML{sheetHead(triggerLabel(s.cfg), sheetTitleID(s.cfg),
+		map[string]string{"data-cui-action": "close"})}
 	cls := "cui-section-menu cui-section-menu--drawer"
 	if s.cfg.Filter {
 		top = append(top, sectionMenuFilter(s.cfg))
@@ -399,12 +364,10 @@ var sectionMenuStyle = registry.RegisterStyle("cui-section-menu", sectionMenuCSS
 //   - --ui-section-menu-dot (6px): the current page's dot.
 //   - --ui-section-menu-inset (12px; 16px with FillColumn): the inline
 //     gap between the rail's edge and its headers; links sit 14px deeper.
-//   - --ui-section-menu-pill-bottom (16px; set it on :root, where the
-//     page's end padding reads it too): the floating pill's gap above
-//     the viewport's bottom edge (the safe-area inset is added to it).
 //   - --ui-section-menu-chevron-opacity (0.7).
-//   - --ui-section-menu-close-size (36px, both axes of the sheet's close
-//     button).
+//
+// The pill and the sheet's title row are SheetPill's and sheetHead's,
+// with their own knobs (--ui-sheet-pill-bottom, --ui-sheet-close-size).
 func sectionMenuCSS(_ style.Theme) string {
 	return `[data-cui-comp="cui-section-menu"] {
   --cui-section-menu-inset: var(--ui-section-menu-inset, calc(var(--spacing-sm, 4px) * 3));
@@ -557,84 +520,15 @@ func sectionMenuCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
 }
 
-/* ── Mobile trigger: a pill floating at the bottom of the viewport
-      (hidden on the desktop rail). InlineTrigger keeps it in flow. ── */
-[data-cui-comp="cui-section-menu"] .cui-section-menu__trigger {
-  position: fixed;
-  z-index: var(--z-sticky, 200);
-  inset-inline-start: 50%;
-  inset-block-end: calc(var(--ui-section-menu-pill-bottom, 16px) + env(safe-area-inset-bottom, 0px));
-  translate: -50% 0;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-md, 8px);
-  max-inline-size: calc(100vw - 2 * var(--spacing-lg, 16px));
-  box-sizing: border-box;
-  cursor: pointer;
-  padding: calc(var(--spacing-sm, 4px) * 2.25) calc(var(--spacing-sm, 4px) * 3.5) calc(var(--spacing-sm, 4px) * 2.25) calc(var(--spacing-sm, 4px) * 3);
-  border: var(--stroke-thin, 1px) solid var(--color-border-strong, #D4D4D8);
-  border-radius: var(--radii-full, 9999px);
-  background: var(--color-surface, #fff);
-  box-shadow: var(--shadow-lg, 0 10px 30px rgba(0,0,0,0.15));
-  color: var(--color-text, currentColor);
-  font: inherit;
-  font-size: var(--text-sm, 0.875rem);
-  white-space: nowrap;
-}
-:where([data-cui-comp="cui-section-menu"]).cui-section-menu--inline-trigger .cui-section-menu__trigger {
-  position: static;
-  translate: none;
-  box-shadow: none;
-  max-inline-size: 100%;
-}
-[data-cui-comp="cui-section-menu"]:not(.cui-section-menu--inline-trigger) .cui-section-menu__trigger:dir(rtl) { translate: 50% 0; }
-[data-cui-comp="cui-section-menu"] .cui-section-menu__trigger-icon,
-[data-cui-comp="cui-section-menu"] .cui-section-menu__trigger-chevron { flex: 0 0 auto; color: var(--color-text-muted, #52525B); }
-[data-cui-comp="cui-section-menu"] .cui-section-menu__trigger-label {
-  font-weight: var(--font-weight-semibold, 600);
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-[data-cui-comp="cui-section-menu"] .cui-section-menu__trigger-group {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-md, 8px);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--color-text-muted, #52525B);
-}
-/* A painted dot, not a text bullet: the separator stays out of the
-   button's accessible name. */
-[data-cui-comp="cui-section-menu"] .cui-section-menu__trigger-group::before {
-  content: "";
-  flex: 0 0 auto;
-  inline-size: calc(var(--stroke-thin, 1px) * 3);
-  block-size: calc(var(--stroke-thin, 1px) * 3);
-  border-radius: var(--radii-full, 9999px);
-  background: currentColor;
-}
-[data-cui-comp="cui-section-menu"] .cui-section-menu__trigger-group:empty { display: none; }
-[data-cui-comp="cui-section-menu"] .cui-section-menu__sr {
-  position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
-
 /* ── Sheet: a top bar (title, close, filter) pinned over the groups,
       whose headers pin under it. The bar's height is fixed so the
-      headers know where to stop. ──────────────────────────────────── */
+      headers know where to stop: the title row, plus the filter box
+      and its gap when there is one. ─────────────────────────────── */
 [data-cui-comp="cui-section-menu"].cui-section-menu--drawer {
-  --cui-section-menu-head-top: 44px;
+  --cui-section-menu-head-top: calc(var(--ui-sheet-close-size, 36px) + var(--spacing-md, 8px));
   --cui-section-menu-bg: var(--ui-section-menu-bg, var(--color-surface, #fff));
 }
-[data-cui-comp="cui-section-menu"].cui-section-menu--drawer.cui-section-menu--filter { --cui-section-menu-head-top: 88px; }
+[data-cui-comp="cui-section-menu"].cui-section-menu--drawer.cui-section-menu--filter { --cui-section-menu-head-top: calc(var(--ui-sheet-close-size, 36px) + var(--spacing-sm, 4px) * 9 + var(--spacing-md, 8px) * 2); }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__sheet-top {
   position: sticky;
   inset-block-start: 0;
@@ -646,34 +540,11 @@ func sectionMenuCSS(_ style.Theme) string {
   block-size: var(--cui-section-menu-head-top);
   padding-block-end: var(--spacing-md, 8px);
   background: var(--cui-section-menu-bg);
-}
-[data-cui-comp="cui-section-menu"] .cui-section-menu__drawer-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  block-size: var(--ui-section-menu-close-size, 36px);
-  padding-inline-start: var(--cui-section-menu-inset);
-}
-[data-cui-comp="cui-section-menu"] .cui-section-menu__sheet-title { font-weight: var(--font-weight-semibold, 600); }
-[data-cui-comp="cui-section-menu"] .cui-section-menu__close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--ui-section-menu-close-size, 36px);
-  height: var(--ui-section-menu-close-size, 36px);
-  border: var(--stroke-thin, 1px) solid transparent;
-  border-radius: var(--radii-md, 8px);
-  background: transparent;
-  color: var(--color-text-muted, currentColor);
-  cursor: pointer;
-}
-[data-cui-comp="cui-section-menu"] .cui-section-menu__close:hover {
-  border-color: var(--color-border, rgba(0,0,0,0.12));
-  color: var(--color-text, currentColor);
+  --ui-sheet-head-inset: var(--cui-section-menu-inset);
 }
 
 /* ── Desktop rail (at or above the swap width; SwapAt picks it, 900px
-      by default): hide the trigger, show a sticky column with every
+      by default; the pill hides itself there): a sticky column with every
       group expanded. The filter stays put above a body that scrolls,
       so the group headers pin to the body's top. The sheet is never
       opened there. Generated per swap width by sectionMenuSwap.css. ── */` + sectionMenuSwapCSS()
@@ -681,37 +552,16 @@ func sectionMenuCSS(_ style.Theme) string {
 
 func sectionMenuSwapCSS() string {
 	var b strings.Builder
-	for _, w := range sectionMenuSwaps {
-		b.WriteString(w.css())
+	for _, w := range swapWidths {
+		root := swapScope(`[data-cui-comp="cui-section-menu"]`, "cui-section-menu", w.w)
+		b.WriteString(sectionMenuSwap{root, w.maxw, w.minw}.css())
 	}
 	return b.String()
 }
 
-// SectionMenuSwap picks the viewport width where the rail gives way to
-// the trigger pill and its sheet.
-type SectionMenuSwap string
-
-const (
-	// SectionMenuSwapDefault swaps below 900px: a menu in normal flow,
-	// beside a column the page lays out itself.
-	SectionMenuSwapDefault SectionMenuSwap = ""
-	// SectionMenuSwapMD swaps below 48rem, where a ui.ContentRow with the
-	// default Breakpoint stacks its nav column.
-	SectionMenuSwapMD SectionMenuSwap = "md"
-	// SectionMenuSwapLG swaps below 64rem, where a ui.ContentRow with
-	// Breakpoint: ui.StackBelowLG stacks.
-	SectionMenuSwapLG SectionMenuSwap = "lg"
-)
-
 // sectionMenuSwap is one breakpoint's half of the sheet: the root
 // selector it scopes to and the widths either side of the swap.
 type sectionMenuSwap struct{ root, maxw, minw string }
-
-var sectionMenuSwaps = []sectionMenuSwap{
-	{`[data-cui-comp="cui-section-menu"]:where(:not(.cui-section-menu--swap-md, .cui-section-menu--swap-lg))`, "899.98px", "900px"},
-	{`[data-cui-comp="cui-section-menu"]:where(.cui-section-menu--swap-md)`, "47.99rem", "48rem"},
-	{`[data-cui-comp="cui-section-menu"]:where(.cui-section-menu--swap-lg)`, "63.99rem", "64rem"},
-}
 
 // css is the rail/trigger swap at one breakpoint. The scope sits in
 // :where(), so every swap weighs what the single 900px rule set did.
@@ -720,14 +570,8 @@ func (w sectionMenuSwap) css() string {
 ROOT .cui-section-menu__rail { display: flex; flex-direction: column; gap: var(--spacing-md, 8px); }
 @media (max-width: MAXW) {
   ROOT .cui-section-menu__rail { display: none; }
-  /* The floating pill would cover the end of the page (a footer's
-     last line): the page ends one pill's height plus its gap lower. */
-  body:has(ROOT:not(.cui-section-menu--inline-trigger) > .cui-section-menu__trigger) {
-    padding-block-end: calc(var(--ui-section-menu-pill-bottom, 16px) + env(safe-area-inset-bottom, 0px) + 3.5rem);
-  }
 }
 @media (min-width: MINW) {
-  ROOT .cui-section-menu__trigger { display: none; }
   ROOT .cui-section-menu__rail {
     position: sticky;
     inset-block-start: calc(var(--ui-sticky-top, 0px) + var(--fui-section-menu-top, 1rem));

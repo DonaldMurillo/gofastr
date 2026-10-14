@@ -32,7 +32,7 @@ func TestSectionMenuRendersLandmarkRailAndTrigger(t *testing.T) {
 		`data-cui-comp="cui-section-menu"`,
 		`<nav`,
 		`aria-label="Documentation sections"`,
-		`class="cui-section-menu__trigger"`,
+		`class="cui-sheet-pill"`,
 		`data-cui-open="docs-section-menu"`, // opens the mounted drawer widget
 		`class="cui-section-menu__rail"`,
 	} {
@@ -46,7 +46,7 @@ func TestSectionMenuNoTriggerWithoutDrawerName(t *testing.T) {
 	cfg := sampleMenu()
 	cfg.DrawerName = ""
 	h := string(SectionMenu(cfg))
-	if strings.Contains(h, "cui-section-menu__trigger") {
+	if strings.Contains(h, "cui-sheet-pill") {
 		t.Errorf("no DrawerName should omit the mobile trigger:\n%s", h)
 	}
 }
@@ -141,7 +141,7 @@ func TestSectionMenuDrawerIsADismissibleWidget(t *testing.T) {
 
 func TestSectionMenuDrawerHasVisibleCloseButton(t *testing.T) {
 	h := string(sectionMenuDrawerSlot{cfg: sampleMenu()}.Render())
-	if !strings.Contains(h, "cui-section-menu__close") {
+	if !strings.Contains(h, "cui-sheet-head__close") {
 		t.Errorf("drawer should render a close button:\n%s", h)
 	}
 	// Uses the framework's declarative widget-dismiss hook.
@@ -169,7 +169,6 @@ func TestSectionMenuCSSScopedRailAndTrigger(t *testing.T) {
 	for _, want := range []string{
 		"@media (min-width: 900px)", // desktop rail
 		"__rail",                    // rail layout
-		"__trigger",                 // mobile trigger button
 		"prefers-reduced-motion",    // motion guard
 	} {
 		if !strings.Contains(css, want) {
@@ -209,9 +208,9 @@ func TestSectionMenuUnknownSwapAtPanics(t *testing.T) {
 func TestSectionMenuTriggerNamesCurrentPage(t *testing.T) {
 	h := string(SectionMenu(sampleMenu()))
 	for _, want := range []string{
-		`<span class="cui-section-menu__sr">Sections: </span>`,
-		`<span class="cui-section-menu__trigger-label">Entities</span>`,
-		`<span class="cui-section-menu__trigger-group">Modeling</span>`,
+		`<span class="cui-sheet-pill__sr">Sections: </span>`,
+		`<span class="cui-sheet-pill__label">Entities</span>`,
+		`<span class="cui-sheet-pill__detail">Modeling</span>`,
 		`aria-haspopup="dialog"`,
 	} {
 		if !strings.Contains(h, want) {
@@ -221,7 +220,7 @@ func TestSectionMenuTriggerNamesCurrentPage(t *testing.T) {
 	cfg := sampleMenu()
 	cfg.Groups[0].Items[0].Active = false
 	h = string(SectionMenu(cfg))
-	if !strings.Contains(h, `<span class="cui-section-menu__trigger-label">Sections</span><span class="cui-section-menu__trigger-group"></span>`) {
+	if !strings.Contains(h, `<span class="cui-sheet-pill__label">Sections</span><span class="cui-sheet-pill__detail"></span>`) {
 		t.Errorf("with no current page the pill should show the trigger label alone:\n%s", h)
 	}
 }
@@ -262,13 +261,13 @@ func TestSectionMenuFilterRendersBox(t *testing.T) {
 	}
 }
 
-func TestSectionMenuInlineTriggerMarksRoot(t *testing.T) {
-	if h := string(SectionMenu(sampleMenu())); strings.Contains(h, "cui-section-menu--inline-trigger") {
+func TestSectionMenuInlineTriggerMarksPill(t *testing.T) {
+	if h := string(SectionMenu(sampleMenu())); strings.Contains(h, "cui-sheet-pill--inline") {
 		t.Errorf("the default pill floats; no inline marker expected:\n%s", h)
 	}
 	cfg := sampleMenu()
 	cfg.InlineTrigger = true
-	if h := string(SectionMenu(cfg)); !strings.Contains(h, "cui-section-menu--inline-trigger") {
-		t.Errorf("InlineTrigger should mark the root:\n%s", h)
+	if h := string(SectionMenu(cfg)); !strings.Contains(h, "cui-sheet-pill--inline") {
+		t.Errorf("InlineTrigger should mark the pill:\n%s", h)
 	}
 }

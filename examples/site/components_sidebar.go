@@ -28,7 +28,7 @@ func (s *ComponentsSidebar) Render() render.HTML {
 	// the row stacks (the default 48rem breakpoint).
 	cfg := componentsSectionMenuConfig()
 	cfg.FillColumn = true
-	cfg.SwapAt = interactive.SectionMenuSwapMD
+	cfg.SwapAt = interactive.SwapMD
 	return interactive.SectionMenu(cfg)
 }
 
