@@ -219,3 +219,33 @@ func TestCommandPaletteCSSPadsTheInputRow(t *testing.T) {
 		t.Errorf("the palette sheet still targets retired .combobox__* classes nothing renders:\n%s", css)
 	}
 }
+
+func TestCommandPaletteSearchMarksListbox(t *testing.T) {
+	cmds := []PaletteCommand{{Label: "Docs", Href: "/docs"}}
+	_, b := CommandPalette(CommandPaletteConfig{Commands: cmds, Search: true, FallbackHref: "/docs"})
+	h := string(b.Definition().Slots[0].Component.Render())
+	i := strings.Index(h, `role="listbox"`)
+	if i < 0 {
+		t.Fatalf("no listbox:\n%s", h)
+	}
+	open := h[strings.LastIndex(h[:i], "<"):]
+	open = open[:strings.Index(open, ">")]
+	for _, want := range []string{`data-search=""`, `data-search-loading="Loading…"`, `data-search-empty="No matches"`} {
+		if !strings.Contains(open, want) {
+			t.Errorf("Search listbox lacks %s: %s", want, open)
+		}
+	}
+	_, b = CommandPalette(CommandPaletteConfig{Commands: cmds, FallbackHref: "/docs"})
+	if strings.Contains(string(b.Definition().Slots[0].Component.Render()), "data-search") {
+		t.Error("a palette without Search carries data-search")
+	}
+}
+
+func TestCommandPaletteSearchNeedsCommands(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("Search without Commands did not panic")
+		}
+	}()
+	CommandPalette(CommandPaletteConfig{RPCPath: "/s", Search: true, FallbackHref: "/s"})
+}

@@ -838,6 +838,13 @@ an href that is not a safe link (a `javascript:` URL) renders no
 navigation. With no commands it answers one disabled row reading
 `empty`, or the localized "No matches" when `empty` is `""`.
 
+A palette with `Search: true` searches the pages instead: the
+[site search](site-search.md) battery's index, live or from a static
+export's index files. It needs `Commands`, the rows shown before the
+first keystroke, and adds page and section rows below the matching
+commands as the reader types. On a phone or tablet the footer drops
+its keyboard hints and keeps the close button.
+
 ```go
 trigger, palette := ui.CommandPalette(ui.CommandPaletteConfig{
     Name: "admin-palette", RPCPath: "/admin/_palette",
