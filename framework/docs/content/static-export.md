@@ -28,8 +28,24 @@ if err := fwApp.ExportStatic(context.Background(), "_site", ""); err != nil {
 }
 ```
 
-The example site wires a `--export <dir>` flag so the same binary serves
-live *or* exports:
+`gofastr export <dir>` does this for any app without code: it runs the
+app's main package with `GOFASTR_EXPORT=<dir>` (and
+`GOFASTR_EXPORT_BASE` from `--base`), and `App.Start` exports after
+migrations, seeds and battery init, then returns instead of serving.
+Pages that read the database render the seeded rows. The app's `main`
+has to return once `Start` does, which the generated `main.go` does.
+
+```bash
+gofastr export --base /gofastr _site
+```
+
+A registered battery that implements `static.Contributor` sees every
+rendered page and adds files of its own; [site search](site-search.md)
+writes its index this way. Exports are reproducible: two runs over the
+same content write the same bytes (a page that shows live data aside).
+
+The example site also wires a `--export <dir>` flag so the same binary
+serves live *or* exports:
 
 ```bash
 go build -o site ./examples/site/
@@ -232,7 +248,8 @@ against the serverless host:
 | Signal mutations (`set`/`inc`/`toggle`) | ✓ works | client-only |
 | SPA navigation | ✓ works | fetches pre-rendered pages |
 | `data-cui-rpc` (island round-trips) | disabled | needs the Go handler |
-| `data-cui-open` (modals, ⌘K palette) | disabled | widget catalog needs the server |
+| `data-cui-open` (modals, ⌘K palette) | ✓ works | the export writes the widget catalog (`widgets.json`); an unregistered widget shows a "Needs the Go server." toast |
+| Palette search (`Search: true`) | ✓ works | reads the [site search](site-search.md) index files |
 | SSE islands | not emitted | the SSE `<meta>` is omitted at render time |
 
 A dismissible "Static preview — run locally" banner (using the shared

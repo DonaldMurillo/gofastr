@@ -173,6 +173,11 @@ each command to the doc that covers it.
   ([migrations](migrations.md)); `repair` rebuilds SQLite tables carrying
   the stale pre-v0.67 owner-column key
   ([SQLite driver](sqlite-driver.md)).
+- `gofastr export [--base /sub] [--pkg ./cmd/web] <dir>`: render every
+  page into `<dir>` as a static site. It runs the app with
+  `GOFASTR_EXPORT` set and `App.Start` exports instead of serving, so
+  any app gets it ([static export](static-export.md)); a registered
+  [site search](site-search.md) battery writes its index too.
 - `gofastr generate cli`: a customer-facing terminal client for your
   API, with scoped API-token auth ([app-cli](app-cli.md)).
 - `gofastr generate sdk`: Go + JS/TS clients your app can host behind
