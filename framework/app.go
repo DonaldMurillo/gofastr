@@ -406,6 +406,9 @@ type App struct {
 	// mcpControl enables the MUTATING MCP tools (module enable/disable)
 	// for trusted /mcp endpoints. Set via WithMCPControl().
 	mcpControl bool
+	// localRunInfo is SetLocalRunInfo's addition to the local run
+	// record Start writes.
+	localRunInfo LocalRunInfo
 	// mcpRegistrars run against a.MCP during InitPlugins, after every
 	// plugin and battery Init and before the introspection set. Set via
 	// WithMCPTools.
@@ -3667,6 +3670,10 @@ func (a *App) Start(addr string) error {
 			<-sigDone
 		}()
 	}
+
+	// The local run record (framework/localrun) exists while Serve
+	// does: written once the port is held, removed as Start returns.
+	defer a.registerLocalRun(ln.Addr().String())()
 
 	if setupInteractive {
 		setupURL = a.setup.SetupURL(ln.Addr().String())

@@ -1,6 +1,6 @@
 //go:build windows
 
-package service
+package procalive
 
 import (
 	"errors"
@@ -8,11 +8,14 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// processAlive reports whether pid names a running process: a handle
+// Alive reports whether pid names a running process: a handle
 // opened for SYNCHRONIZE is signaled once the process has exited. A
 // pid that cannot be opened is gone, unless access was denied, which
 // means it exists under another user.
-func processAlive(pid int) bool {
+func Alive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
 	h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid))
 	if err != nil {
 		return errors.Is(err, windows.ERROR_ACCESS_DENIED)

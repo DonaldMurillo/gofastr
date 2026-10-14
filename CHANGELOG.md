@@ -30,6 +30,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and its backend is unit-tested but has not run on a real Windows
   machine. Guide: `gofastr docs service`; example:
   `examples/service-hello`.
+- **Running Apps record themselves in a local run registry.** `App.Start`
+  writes a 0600 JSON record (name, pid, URL, MCP path or command,
+  service id, dev flag) into `<UserConfigDir>/gofastr/runs` once the
+  port is bound and removes it when the server stops.
+  `framework/localrun.List` returns the live runs and deletes the
+  records of dead pids. `GOFASTR_RUNS=off` opts a process out,
+  `GOFASTR_RUNS_DIR` moves the directory, and test binaries, and the
+  apps they start, skip it unless the directory is set. Guide:
+  `gofastr docs local-runs`.
 - **`App.WrapServer` wraps everything the listener serves.** Router
   middleware (`Use`) never sees the interactive setup wizard or the
   worker and agent roles' reduced muxes; a `WrapServer` wrapper does.

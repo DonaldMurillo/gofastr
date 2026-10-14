@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/procalive"
 )
 
 // startWait bounds how long install, start and restart wait for the
@@ -452,7 +454,7 @@ func (b *Battery) waitExit(pid int) error {
 	deadline := time.Now().Add(stopWait)
 	for {
 		_, err := callControl(inst.socketPath(), "status")
-		if errors.Is(err, errNotRunning) && (pid <= 0 || !processAlive(pid)) {
+		if errors.Is(err, errNotRunning) && (pid <= 0 || !procalive.Alive(pid)) {
 			return nil
 		}
 		if time.Now().After(deadline) {

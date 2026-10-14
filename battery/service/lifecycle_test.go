@@ -14,11 +14,13 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/procalive"
 )
 
 // fakeDaemon stands in for a running installed daemon: it answers the
 // installed layout's control channel with the pid of a real child
-// process, so processAlive sees a live process until kill reaps it.
+// process, so procalive.Alive sees a live process until kill reaps it.
 type fakeDaemon struct {
 	pid  int
 	kill func()
@@ -104,7 +106,7 @@ func TestLaunchdStopWaitsForExit(t *testing.T) {
 	if err := (launchd{}).stop(b); err != nil {
 		t.Fatal(err)
 	}
-	if processAlive(d.pid) {
+	if procalive.Alive(d.pid) {
 		t.Fatal("stop returned while the daemon was still alive")
 	}
 	if got := ft.got(); len(got) != 1 || got[0] != "launchctl kill SIGTERM gui/501/dev.gofastr.svctest" {
@@ -122,7 +124,7 @@ func TestLaunchdStopTimesOut(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "did not exit") {
 		t.Fatalf("stop error = %v; want a did-not-exit error", err)
 	}
-	if !processAlive(d.pid) {
+	if !procalive.Alive(d.pid) {
 		t.Fatal("fake daemon died on its own")
 	}
 }
@@ -155,7 +157,7 @@ func TestTaskSchedulerStopDrains(t *testing.T) {
 	if err := (taskScheduler{}).stop(b); err != nil {
 		t.Fatal(err)
 	}
-	if processAlive(d.pid) {
+	if procalive.Alive(d.pid) {
 		t.Fatal("stop returned while the daemon was still alive")
 	}
 	if got := ft.got(); len(got) != 0 {
@@ -172,7 +174,7 @@ func TestTaskSchedulerStopEndsAStuckDaemon(t *testing.T) {
 	if err := (taskScheduler{}).stop(b); err != nil {
 		t.Fatal(err)
 	}
-	if processAlive(d.pid) {
+	if procalive.Alive(d.pid) {
 		t.Fatal("stop returned while the daemon was still alive")
 	}
 	want := []string{"schtasks /End /TN dev.gofastr.svctest-S-1-5-21-7"}
