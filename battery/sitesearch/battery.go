@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -50,6 +51,11 @@ const (
 	maxLimit      = 20
 )
 
+// buildRetry is how long a failed build answers with its error before a
+// query may start another one. Each build renders every page, so
+// without it every query to a broken site would render the site again.
+const buildRetry = 30 * time.Second
+
 // Battery serves a full-text index of the app's rendered pages. On a
 // live server it renders every route (the static export's page set,
 // StaticPaths expanded) once, on first use, and answers queries at
@@ -66,6 +72,10 @@ type Battery struct {
 	mu    sync.Mutex
 	idx   *Index
 	files map[string][]byte
+	// failed and failedAt hold the last failed build, returned until
+	// buildRetry has passed; Refresh clears them.
+	failed   error
+	failedAt time.Time
 
 	// export state: the pages ExportPage saw since ExportStart.
 	exportPages []Page
@@ -138,7 +148,7 @@ func (b *Battery) OnStop(ctx context.Context) error {
 func (b *Battery) Refresh(ctx context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.idx, b.files = nil, nil
+	b.idx, b.files, b.failed = nil, nil, nil
 	_, err := b.indexLocked(ctx)
 	return err
 }
@@ -154,6 +164,26 @@ func (b *Battery) indexLocked(ctx context.Context) (*Index, error) {
 	if b.idx != nil {
 		return b.idx, nil
 	}
+	if b.failed != nil && time.Since(b.failedAt) < buildRetry {
+		return nil, b.failed
+	}
+	idx, err := b.buildLocked(ctx)
+	if err != nil {
+		// A build its caller cut short did not fail; the next one runs.
+		if ctx.Err() == nil {
+			b.failed, b.failedAt = err, time.Now()
+		}
+		return nil, err
+	}
+	b.failed = nil
+	return idx, nil
+}
+
+// buildLocked renders the pages and builds the index. A page that fails
+// to render is logged and left out: one broken page must not take
+// search down for the whole site. An export, which bakes what it
+// renders, refuses such a page instead.
+func (b *Battery) buildLocked(ctx context.Context) (*Index, error) {
 	app := b.app.Load()
 	if app == nil {
 		return nil, fmt.Errorf("sitesearch: battery not initialized")
@@ -165,7 +195,14 @@ func (b *Battery) indexLocked(ctx context.Context) (*Index, error) {
 	ctx, done := anonymous(ctx)
 	defer done()
 	var pages []Page
-	err := static.Walk(ctx, host, b.excluded, func(path, page string) error {
+	err := static.Walk(ctx, host, b.excluded, func(path, page string, err error) error {
+		if err != nil {
+			if ctx.Err() != nil {
+				return err
+			}
+			app.Logger().Warn("sitesearch: page left out of the index", "path", path, "err", textsafe.StripUnsafe(err.Error()))
+			return nil
+		}
 		p, ok, err := b.extract(path, page)
 		if err != nil {
 			return err

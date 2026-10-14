@@ -125,7 +125,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	}
 
 	// Pages.
-	err := walk(ctx, b.Host, b.routeExcluded, nil, b.log, func(route, p, page string) error {
+	err := walk(ctx, b.Host, b.routeExcluded, nil, b.log, nil, func(route, p, page string) error {
 		for _, c := range b.Contributors {
 			if err := c.ExportPage(p, page); err != nil {
 				return fmt.Errorf("static: contributor on %q: %w", p, err)
@@ -394,28 +394,41 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 // Walk renders every page an export of host would contain, in route
 // order, and hands each to fn with its path and its live HTML (before
 // the export's static rewrites). Excluded routes, redirects, gated
-// screens and 404-outlet routes are skipped the way Build skips them,
-// and a page whose fill failed and was contained is an error. A search
-// index or a feed built at runtime reads the same pages an export
-// writes. skip, when set, is asked about each route pattern and each
-// expanded path before it renders, so a skipped page that cannot
+// screens and 404-outlet routes are skipped the way Build skips them.
+// A search index or a feed built at runtime reads the same pages an
+// export writes. skip, when set, is asked about each route pattern and
+// each expanded path before it renders, so a skipped page that cannot
 // render is never an error.
-func Walk(ctx context.Context, host *uihost.UIHost, skip func(path string) bool, fn func(path, html string) error) error {
+//
+// A page that fails to render, or whose fill failed and was contained,
+// reaches fn with an empty html and the error; so does a dynamic route
+// whose StaticPaths failed, under its pattern. As with fs.WalkDir, fn
+// returning nil walks on without the page and returning an error stops
+// the walk with it.
+func Walk(ctx context.Context, host *uihost.UIHost, skip func(path string) bool, fn func(path, html string, err error) error) error {
 	if host == nil {
 		return fmt.Errorf("static: Walk needs a host")
 	}
 	if skip == nil {
 		skip = func(string) bool { return false }
 	}
-	return walk(ctx, host, skip, skip, nil, func(_, p, page string) error { return fn(p, page) })
+	return walk(ctx, host, skip, skip, nil,
+		func(path string, err error) error { return fn(path, "", err) },
+		func(_, p, page string) error { return fn(p, page, nil) })
 }
 
 // walk is the page loop Build and Walk share: excluded is asked about
 // route patterns, skipPath (when set) about expanded paths, and fn gets
-// the route pattern, the concrete path and the rendered page.
-func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(string) bool, logf func(string, ...any), fn func(route, path, page string) error) error {
+// the route pattern, the concrete path and the rendered page. fail,
+// when set, gets each route or page that could not render and decides
+// whether the walk goes on (nil) or stops; unset, the first one stops
+// it.
+func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(string) bool, logf func(string, ...any), fail func(path string, err error) error, fn func(route, path, page string) error) error {
 	if logf == nil {
 		logf = func(string, ...any) {}
+	}
+	if fail == nil {
+		fail = func(_ string, err error) error { return err }
 	}
 	for _, route := range host.App.Routes() {
 		if excluded(route.Path) {
@@ -427,7 +440,10 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 		}
 		paths, err := expandRoute(ctx, host.App, route.Path)
 		if err != nil {
-			return fmt.Errorf("static: expand %q: %w", route.Path, err)
+			if err := fail(route.Path, fmt.Errorf("static: expand %q: %w", route.Path, err)); err != nil {
+				return err
+			}
+			continue
 		}
 		for _, p := range paths {
 			if skipPath != nil && skipPath(p) {
@@ -449,7 +465,10 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 						"path", nf.Path)
 					continue
 				}
-				return fmt.Errorf("static: render %q: %w", p, err)
+				if err := fail(p, fmt.Errorf("static: render %q: %w", p, err)); err != nil {
+					return err
+				}
+				continue
 			}
 			// a fill that failed and was
 			// contained degrades its outlet on a LIVE server, but an
@@ -465,9 +484,12 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 					// sink, so it reaches it scrubbed.
 					parts = append(parts, fmt.Sprintf("%s (%v)", f.Addr, textsafe.StripUnsafe(f.Err.Error())))
 				}
-				return fmt.Errorf(
+				if err := fail(p, fmt.Errorf(
 					"static: render %q refused: %d fill(s) failed and were contained (a live server degrades the outlet; the export will not bake it): %s",
-					p, len(fillFailures), strings.Join(parts, "; "))
+					p, len(fillFailures), strings.Join(parts, "; "))); err != nil {
+					return err
+				}
+				continue
 			}
 			if err := fn(route.Path, p, page); err != nil {
 				return err

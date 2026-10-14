@@ -107,6 +107,12 @@ A `Source` returns `[]sitesearch.Page{URL, Title, Group, Sections}`. The live
 index is built once, at start; call `(*Battery).Refresh(ctx)` after content
 changes that do not restart the server.
 
+On a live server, a page that fails to render (a panic, or a fill that
+failed) is logged and left out, and the rest of the site stays searchable.
+An export refuses such a page instead. A build that fails outright, such as
+a `Source` returning an error, answers queries with a 503 for 30
+seconds before a query may start another; `Refresh` retries at once.
+
 ## Ranking
 
 Queries match whole words and word prefixes (`pal` finds `palette`), and
@@ -140,7 +146,9 @@ Any battery can add files to an export the same way: implement
 that failed partway leaves nothing behind; `ExportPage(path, html)` per
 rendered page; then `ExportFiles(ctx)` once) and `App.ExportStatic` calls
 it. `static.Walk` renders the same page set at runtime, skipping any path
-its `skip` func names before rendering it.
+its `skip` func names before rendering it. A page that fails to render
+reaches `fn` with the error, as in `fs.WalkDir`: return nil to walk on
+without it.
 
 ## Limits
 

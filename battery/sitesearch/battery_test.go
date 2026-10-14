@@ -3,6 +3,7 @@ package sitesearch
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -339,5 +340,122 @@ func TestExportStartsFresh(t *testing.T) {
 		if strings.Contains(string(body), "stale") {
 			t.Errorf("%s carries the failed build's page: %s", name, body)
 		}
+	}
+}
+
+// One page that cannot render leaves the rest of the site searchable.
+func TestBrokenPageLeavesSearchUp(t *testing.T) {
+	bat := New(Config{})
+	app := newSite(t, bat)
+	site := app.Mountables()[0].(*uihost.UIHost).App
+	site.Register("/broken", panicScreen{}, nil)
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := bat.Index(context.Background())
+	if err != nil {
+		t.Fatalf("a page that cannot render took search down: %v", err)
+	}
+	if got := urls(idx.Search("validation", 5)); got != "/docs/forms" {
+		t.Errorf("results = %q, want the forms page", got)
+	}
+}
+
+// A failed build is not re-run by every query; Refresh retries at once.
+func TestFailedBuildWaitsToRetry(t *testing.T) {
+	calls := 0
+	bat := New(Config{Sources: []Source{func(context.Context) ([]Page, error) {
+		calls++
+		return nil, errors.New("changelog feed down")
+	}}})
+	app := newSite(t, bat)
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if _, err := bat.Index(context.Background()); err == nil {
+			t.Fatal("a failed source built an index")
+		}
+	}
+	if calls != 1 {
+		t.Errorf("three queries ran the failed build %d times, want 1", calls)
+	}
+	if err := bat.Refresh(context.Background()); err == nil {
+		t.Fatal("Refresh with the source still down returned nil")
+	}
+	if calls != 2 {
+		t.Errorf("Refresh ran the build %d times in all, want a second run", calls)
+	}
+}
+
+// A build cut short by its caller is no failure to wait out.
+func TestCancelledBuildIsNotCached(t *testing.T) {
+	calls := 0
+	bat := New(Config{Sources: []Source{func(ctx context.Context) ([]Page, error) {
+		calls++
+		if calls == 1 {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return nil, nil
+	}}})
+	app := newSite(t, bat)
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := bat.Index(ctx); err == nil {
+		t.Fatal("a cancelled build returned an index")
+	}
+	if _, err := bat.Index(context.Background()); err != nil {
+		t.Errorf("the build after a cancelled one returned %v", err)
+	}
+}
+
+// cancelScreen cancels the build that renders it, then waits for the
+// cancellation to land.
+type cancelScreen struct{ cancel context.CancelFunc }
+
+func (s cancelScreen) Render() render.HTML {
+	s.cancel()
+	time.Sleep(50 * time.Millisecond)
+	return render.HTML(`<main><h1>Cancel</h1></main>`)
+}
+
+// ctxScreen fails to render once its context is done, the way a page
+// whose data comes from a query does.
+type ctxScreen string
+
+func (s ctxScreen) Render() render.HTML { return render.HTML(s) }
+
+func (s ctxScreen) RenderCtx(ctx context.Context) render.HTML {
+	if ctx.Err() != nil {
+		panic(ctx.Err())
+	}
+	return render.HTML(s)
+}
+
+// A build cancelled partway keeps no half-built index.
+func TestCancelledWalkKeepsNoIndex(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	bat := New(Config{})
+	site := coreapp.NewApp("sitesearch-cancel")
+	site.Register("/", cancelScreen{cancel}, nil)
+	site.Register("/docs/forms", ctxScreen(`<main><h1>Forms</h1><p>Build a form.</p></main>`), nil)
+	app := framework.NewApp(framework.WithoutDefaultMiddleware()).Mount(uihost.New(site))
+	if err := app.Batteries.Register(bat); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = bat.Index(ctx)
+	idx, err := bat.Index(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := urls(idx.Search("form", 5)); got != "/docs/forms" {
+		t.Errorf("results = %q after a cancelled build, want the forms page", got)
 	}
 }

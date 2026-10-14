@@ -115,7 +115,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   anonymous visitor, so a policy-gated page never enters it.
   `Config.Groups` labels results by URL prefix, `Exclude` drops paths
   (Sources' pages included), `Sources` adds pages no route renders;
-  `data-search-ignore` and `noindex` keep content out. Guide:
+  `data-search-ignore` and `noindex` keep content out. A page that
+  fails to render is logged and left out of a live index, and a failed
+  build waits 30 seconds before a query retries it. Guide:
   `gofastr docs site-search`.
 - **`ui.CommandPaletteConfig.Search`** makes the palette search the site
   search index as the reader types, below its `Commands` (required: the
@@ -130,7 +132,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the pages it renders (`ExportStart`, `ExportPage`, `ExportFiles`), and
   `App.ExportStatic` passes every registered battery that implements it.
   **`static.Walk`** renders the same page set at runtime, with a `skip`
-  func asked about each path before it renders.
+  func asked about each path before it renders. A page that fails to
+  render reaches `fn` with its error, as in `fs.WalkDir`.
 
 ### Changed
 - **BREAKING: `ui.ContentRowConfig.BelowHeader` is removed.** Set
