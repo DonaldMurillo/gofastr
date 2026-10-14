@@ -156,16 +156,18 @@ func TestE2E_SectionLayers_DocsNavKeptAcrossDocs(t *testing.T) {
 	var path, crumbs, current, prevHref string
 	var kept bool
 	var scrollBefore, scrollAfter float64
+	// The rail's list scrolls under its filter box.
+	list := rail + " > .cui-section-menu__body"
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/docs/query-dsl"),
 		chromedp.WaitReady(rail, chromedp.ByQuery),
 		waitModule("window.__gofastr && window.__gofastr.loadedModules"),
-		chromedp.Evaluate(`(()=>{const r=document.querySelector(`+jsString(rail)+`); r.__keepTag=1; r.scrollTop=r.scrollHeight; return r.scrollTop})()`, &scrollBefore),
+		chromedp.Evaluate(`(()=>{const r=document.querySelector(`+jsString(rail)+`); r.__keepTag=1; const l=document.querySelector(`+jsString(list)+`); l.scrollTop=l.scrollHeight; return l.scrollTop})()`, &scrollBefore),
 		chromedp.Evaluate(`document.querySelector(`+jsString(destLink)+`).click()`, nil),
 		chromedp.Sleep(900*time.Millisecond),
 		chromedp.Evaluate(`location.pathname`, &path),
 		chromedp.Evaluate(`(document.querySelector(`+jsString(rail)+`) || {}).__keepTag === 1`, &kept),
-		chromedp.Evaluate(`(document.querySelector(`+jsString(rail)+`) || {scrollTop: -1}).scrollTop`, &scrollAfter),
+		chromedp.Evaluate(`(document.querySelector(`+jsString(list)+`) || {scrollTop: -1}).scrollTop`, &scrollAfter),
 		chromedp.Evaluate(`(document.querySelector(`+jsString(rail+` a[aria-current="page"]`)+`) || {}).getAttribute ? document.querySelector(`+jsString(rail+` a[aria-current="page"]`)+`).getAttribute("href") : ""`, &current),
 		chromedp.Evaluate(`(document.querySelector(`+jsString(layer+` [data-cui-outlet$="#crumbs"]`)+`) || {textContent: ""}).textContent`, &crumbs),
 		chromedp.Evaluate(`(()=>{const a=document.querySelector(`+jsString(layer+` [data-cui-outlet$="#pager"] a`)+`);return a?a.getAttribute("href"):""})()`, &prevHref),
@@ -179,7 +181,7 @@ func TestE2E_SectionLayers_DocsNavKeptAcrossDocs(t *testing.T) {
 		t.Error("the docs nav was rebuilt on a doc-to-doc navigation; only the article and the outlet fills should swap")
 	}
 	if scrollBefore <= 0 {
-		t.Fatalf("the docs rail did not scroll (scrollTop %v): the test cannot prove scroll is kept", scrollBefore)
+		t.Fatalf("the docs rail's list did not scroll (scrollTop %v): the test cannot prove scroll is kept", scrollBefore)
 	}
 	if scrollAfter != scrollBefore {
 		t.Errorf("docs rail scrollTop = %v after the navigation, want the reader's %v", scrollAfter, scrollBefore)

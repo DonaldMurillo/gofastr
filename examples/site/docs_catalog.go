@@ -431,11 +431,13 @@ func docsSectionMenuConfig() interactive.SectionMenuConfig {
 		groups = append(groups, interactive.SectionGroup{Eyebrow: it.Num, Label: it.Title, Items: items})
 	}
 	return interactive.SectionMenuConfig{
-		AriaLabel:    "Documentation sections",
-		TriggerLabel: "Sections",
-		DrawerName:   "docs-section-menu",
-		Lead:         &interactive.SectionItem{Label: "Docs index", Href: "/docs/"},
-		Groups:       groups,
+		AriaLabel:         "Documentation sections",
+		TriggerLabel:      "Sections",
+		DrawerName:        "docs-section-menu",
+		Filter:            true,
+		FilterPlaceholder: fmt.Sprintf("Filter %d docs", len(flatDocs())),
+		Lead:              &interactive.SectionItem{Label: "Docs index", Href: "/docs/"},
+		Groups:            groups,
 	}
 }
 

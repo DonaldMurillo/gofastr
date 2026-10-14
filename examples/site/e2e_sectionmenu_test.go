@@ -23,7 +23,7 @@ func TestE2E_SectionMenu_DesktopRail(t *testing.T) {
 	base := siteE2EServer(t)
 	ctx := siteBrowserCtx(t) // 1280×800 → ≥900px → rail mode
 
-	var triggerDisplay, railDisplay, activeBorder string
+	var triggerDisplay, railDisplay, activeDot string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/docs/entity-declarations"),
 		chromedp.WaitReady(`[data-cui-comp="cui-section-menu"]`, chromedp.ByQuery),
@@ -33,7 +33,7 @@ func TestE2E_SectionMenu_DesktopRail(t *testing.T) {
 		// active-link sweep marks the current doc (aria-current), not the
 		// server, so wait for the mark on the current page's link.
 		chromedp.WaitReady(`.cui-section-menu__rail a.cui-section-menu__link[href="/docs/entity-declarations"][aria-current="page"]`, chromedp.ByQuery),
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-section-menu__rail .cui-section-menu__link[aria-current="page"]')).borderLeftColor`, &activeBorder),
+		chromedp.Evaluate(`(()=>{const s=getComputedStyle(document.querySelector('.cui-section-menu__rail .cui-section-menu__link[aria-current="page"]'),'::before');return s.width+' '+s.backgroundColor})()`, &activeDot),
 	); err != nil {
 		t.Fatalf("desktop rail: %v", err)
 	}
@@ -43,8 +43,8 @@ func TestE2E_SectionMenu_DesktopRail(t *testing.T) {
 	if railDisplay == "none" {
 		t.Errorf("desktop: the rail must be visible, got display=%q", railDisplay)
 	}
-	if activeBorder == "" || strings.Contains(activeBorder, ", 0)") || activeBorder == "rgba(0, 0, 0, 0)" {
-		t.Errorf("active item should have a coloured left border, got %q", activeBorder)
+	if !strings.HasPrefix(activeDot, "6px ") || strings.Contains(activeDot, ", 0)") {
+		t.Errorf("active item should carry a 6px coloured dot, got %q", activeDot)
 	}
 }
 
@@ -75,10 +75,10 @@ func TestE2E_SectionMenu_MobileDrawer(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('.cui-section-menu__trigger').getBoundingClientRect().top`, &triggerTopAfter),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowOpen),
 		chromedp.Evaluate(`!!document.querySelector('[data-cui-backdrop="`+drawer+`"]')`, &backdropPresent),
-		// Close on OUTSIDE click, tap the exposed backdrop strip to the right
-		// of the ~337px (90vw) drawer panel. Clicking the panel-covered centre
-		// would (correctly) NOT dismiss, so target the dim area at x≈365.
-		chromedp.MouseClickXY(365, 400),
+		// Close on OUTSIDE click: tap the dim strip above the bottom sheet
+		// (at most 75vh tall). Clicking the sheet itself would (correctly)
+		// NOT dismiss.
+		chromedp.MouseClickXY(187, 60),
 		chromedp.Sleep(400*time.Millisecond),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowAfterBackdrop),
 	); err != nil {
@@ -228,5 +228,43 @@ func TestE2E_PaletteKeepsDocsRailVisible(t *testing.T) {
 	// bottom below 0. The bug drove top to ≈ -1364 (fully off-screen above).
 	if railTop > innerH || railBottom < 0 {
 		t.Errorf("opening the palette dislodged the sticky rail off-screen: top=%.0f bottom=%.0f innerHeight=%.0f", railTop, railBottom, innerH)
+	}
+}
+
+// Mobile: the pill names the current page and its group, the sheet opens
+// on that page's group, and typing in the sheet's filter narrows the list.
+func TestE2E_SectionMenu_PillAndSheetFilter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+	const drawer = "components-section-menu"
+	sheet := `[data-cui-widget="` + drawer + `"]`
+
+	var pill, openGroup, shown string
+	if err := chromedp.Run(ctx,
+		emulation.SetDeviceMetricsOverride(390, 844, 1, true),
+		chromedp.Navigate(base+"/components/tabs"),
+		chromedp.WaitReady(`.cui-section-menu__trigger`, chromedp.ByQuery),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`(()=>{const b=document.querySelector('.cui-section-menu__trigger');return b.querySelector('.cui-section-menu__trigger-label').textContent+'|'+b.querySelector('.cui-section-menu__trigger-group').textContent})()`, &pill),
+		chromedp.Click(`.cui-section-menu__trigger`, chromedp.ByQuery),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(`[...document.querySelectorAll('`+sheet+` details[open] .cui-section-menu__group-label')].map(e=>e.textContent).join('|')`, &openGroup),
+		chromedp.SendKeys(sheet+` .cui-section-menu__filter-input`, "datefield", chromedp.ByQuery),
+		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Evaluate(`[...document.querySelectorAll('`+sheet+` .cui-section-menu__link')].filter(a=>a.getClientRects().length).map(a=>a.textContent).join('|')`, &shown),
+	); err != nil {
+		t.Fatalf("pill + sheet filter: %v", err)
+	}
+	if pill != "Tabs|Navigation" {
+		t.Errorf("pill = %q, want Tabs|Navigation", pill)
+	}
+	if openGroup != "Navigation" {
+		t.Errorf("sheet opened groups %q, want only Navigation", openGroup)
+	}
+	if shown != "DateField" {
+		t.Errorf(`filter "datefield" shows %q, want DateField`, shown)
 	}
 }

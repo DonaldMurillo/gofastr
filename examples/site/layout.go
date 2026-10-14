@@ -79,7 +79,7 @@ func hubLayout() (*app.Layout, *app.Outlet) {
 }
 
 // sectionNavLayout frames a section with a nav column: the content row with
-// a SectionMenu (sticky rail on desktop, drawer trigger on phones) beside
+// a SectionMenu (sticky rail on desktop, a floating pill and sheet on phones) beside
 // the primary slot. The menu is static chrome; the runtime's active-link
 // sweep marks the current page, so the column keeps its scroll across
 // sibling navigations.
@@ -88,7 +88,8 @@ func sectionNavLayout(name string, menu func() interactive.SectionMenuConfig) *a
 		// The row's column landmark keeps its default name: the menu
 		// inside it is its own named nav, and two navs sharing one
 		// name fail landmark-unique.
-		return ui.ContentRow(ui.ContentRowConfig{Sidebar: interactive.SectionMenu(menu())}, l.Primary())
+		// The menu's phone pill floats, so the stacked column is empty.
+		return ui.ContentRow(ui.ContentRowConfig{Sidebar: interactive.SectionMenu(menu()), PhoneNavFlush: true}, l.Primary())
 	})
 }
 

@@ -1001,7 +1001,9 @@ func registerScreens(site *app.App) {
 		// says where it ends) at the height of what's left of the
 		// viewport, scrolling on its own while the page scrolls; the
 		// colophon stays full width below.
-		return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true}, l.Primary())
+		// PhoneNavFlush: below the breakpoint the menu's pill floats at
+		// the bottom of the viewport, so the stacked column is empty.
+		return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true, PhoneNavFlush: true}, l.Primary())
 	})
 	componentsGroup := app.NewScreenGroup("/components", componentsLayout)
 	componentsGroup.Screen(app.NewScreen("/components/", &ComponentsIndexScreen{}).
