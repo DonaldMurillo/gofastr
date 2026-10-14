@@ -58,11 +58,14 @@
     });
     // The sheet is a dialog, so opening it moves focus in: to the
     // current entry, brought into view in a long list, or else to the
-    // close button. Closing returns focus to the pill (native popover).
+    // close button, or the first entry where the sheet hangs from a bar
+    // and drops its title row. Closing returns focus to the pill
+    // (native popover).
     sheet.addEventListener('toggle', (e) => {
       if (e.newState !== 'open') return;
       const a = sheet.querySelector(CURRENT);
-      const target = a || sheet.querySelector('.cui-sheet-head__close');
+      const close = sheet.querySelector('.cui-sheet-head__close');
+      const target = a || (close && close.getClientRects().length ? close : sheet.querySelector('a[href]'));
       if (a) a.scrollIntoView({ block: 'nearest' });
       if (target) target.focus({ preventScroll: true });
     });

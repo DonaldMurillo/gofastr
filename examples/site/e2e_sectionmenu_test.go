@@ -352,7 +352,7 @@ func TestE2E_DocsIndex_OnThisPageBar(t *testing.T) {
 		chromedp.Evaluate(bar+`.click()`, nil),
 		chromedp.Sleep(500*time.Millisecond),
 		chromedp.Evaluate(open+`+'|'+document.querySelector('.cui-phone-sheet .cui-sheet-head__title').textContent+'|'+
-			Math.round(document.querySelector('.cui-phone-sheet__sheet').getBoundingClientRect().top - `+bar+`.getBoundingClientRect().top)`, &opened),
+			Math.round(document.querySelector('.cui-phone-sheet__sheet').getBoundingClientRect().top - `+bar+`.getBoundingClientRect().bottom)`, &opened),
 		chromedp.Click(`.cui-phone-sheet__sheet a[href="#persist"]`, chromedp.ByQuery),
 		chromedp.Sleep(800*time.Millisecond),
 		chromedp.Evaluate(`(()=>{const b=`+bar+`.getBoundingClientRect(), s=document.getElementById('persist').getBoundingClientRect();
@@ -367,7 +367,7 @@ func TestE2E_DocsIndex_OnThisPageBar(t *testing.T) {
 		t.Errorf("bar pinned under the header|text = %q", pinned)
 	}
 	if opened != "true|On this page|0" {
-		t.Errorf("sheet open|title|top below bar top = %q", opened)
+		t.Errorf("sheet open|title|top below the bar's bottom = %q", opened)
 	}
 	if landed != "false|true|Persisting & migrating" {
 		t.Errorf("after tapping Persisting: open|below bar|label = %q", landed)

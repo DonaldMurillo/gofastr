@@ -236,8 +236,11 @@ func TestPhoneSheetPillSkipsLinkChips(t *testing.T) {
 
 // Top pins the pill as a bar under a 56px sticky header, its name
 // visible; the page publishes the bar's height as
-// --ui-sheet-bar-offset below the swap only; the sheet drops from under
-// the header, and what the header drops (a menu) covers the bar.
+// --ui-sheet-bar-offset below the swap only; what the header drops (a
+// menu) covers the bar. The sheet hangs from the bar's bottom edge with
+// the bar left lit above the dim, its chevron turned and no title row
+// repeating the bar; focus lands on the current entry, and a second tap
+// on the bar closes the sheet.
 func TestPhoneSheetTopBarPinsUnderHeader(t *testing.T) {
 	sheet := PhoneSheet(PhoneSheetConfig{ID: "toc-sheet", Title: "On this page", SwapAt: SwapMD, Top: true},
 		render.HTML(`<nav aria-label="On this page"><ol><li><a href="#s0" aria-current="true">Overview</a></li></ol></nav>`))
@@ -245,8 +248,8 @@ func TestPhoneSheetTopBarPinsUnderHeader(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(w, `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width">
-<style>:root{--ui-sticky-top:56px}body{margin:0;font-family:sans-serif}header{position:sticky;top:0;height:56px;z-index:200;background:#eee}#drop{position:absolute;top:56px;left:0;right:0;height:300px;display:none}main{height:3000px}</style>
-<style>%s</style><header><div id=drop></div></header><div class=page><p style="height:200px">intro</p>%s<main></main></div><script>%s</script>`, css, sheet, phoneSheetJS)
+<style>:root{--ui-sticky-top:56px}body{margin:0;font-family:sans-serif}ol{margin:0;padding:0;list-style:none}header{position:sticky;top:0;height:56px;z-index:200;background:#eee}#drop{position:absolute;top:56px;left:0;right:0;height:300px;display:none}main{height:3000px}</style>
+<style>%s</style><header><div id=drop></div></header><div class=page style="padding-inline:24px;--ui-sheet-bar-bleed:24px"><p style="height:200px">intro</p>%s<main></main></div><script>%s</script>`, css, sheet, phoneSheetJS)
 	}))
 	t.Cleanup(srv.Close)
 	const offset = `getComputedStyle(document.documentElement).getPropertyValue('--ui-sheet-bar-offset').trim()`
@@ -258,6 +261,7 @@ func TestPhoneSheetTopBarPinsUnderHeader(t *testing.T) {
 	})()`
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(390, 800))
 	var scrolled, off, open, wide, covered string
+	var closed bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL),
 		chromedp.Evaluate(`scrollTo(0, 1000)`, nil),
@@ -269,8 +273,17 @@ func TestPhoneSheetTopBarPinsUnderHeader(t *testing.T) {
 		chromedp.Click(`.cui-sheet-pill--bar`, chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond),
 		chromedp.Evaluate(`(() => { const r = document.getElementById('toc-sheet').getBoundingClientRect();
-			return [`+sheetOpen+`, Math.round(r.top), r.bottom < innerHeight].join('|'); })()`, &open),
-		chromedp.KeyEvent("\x1b"),
+			const bar = document.querySelector('.cui-sheet-pill--bar'), b = bar.getBoundingClientRect();
+			const lit = Math.round(parseFloat(getComputedStyle(document.getElementById('toc-sheet'), '::backdrop').top)) === Math.round(b.bottom);
+			const turned = getComputedStyle(bar.querySelector('.cui-sheet-pill__chevron')).rotate;
+			const head = document.querySelector('#toc-sheet .cui-sheet-head').getClientRects().length;
+			const aligned = Math.round(document.querySelector('#toc-sheet a').getBoundingClientRect().left) ===
+				Math.round(bar.querySelector('.cui-sheet-pill__sr').getBoundingClientRect().left);
+			return [`+sheetOpen+`, Math.round(r.top) === Math.round(b.bottom), r.bottom < innerHeight, lit, turned, head, aligned,
+				document.activeElement.getAttribute('href')].join('|'); })()`, &open),
+		chromedp.Click(`.cui-sheet-pill--bar`, chromedp.ByQuery),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(`!(`+sheetOpen+`)`, &closed),
 		emulation.SetDeviceMetricsOverride(1280, 800, 1, false),
 		chromedp.Sleep(100*time.Millisecond),
 		chromedp.Evaluate(offset, &wide),
@@ -286,7 +299,10 @@ func TestPhoneSheetTopBarPinsUnderHeader(t *testing.T) {
 	if off != "2.75rem" || wide != "" {
 		t.Errorf("--ui-sheet-bar-offset = %q at 390px, %q at 1280px; want 2.75rem, empty", off, wide)
 	}
-	if open != "true|56|true" {
-		t.Errorf("sheet open|top|short of the bottom = %s; want true|56|true", open)
+	if open != "true|true|true|true|none|0|true|#s0" {
+		t.Errorf("sheet open|hangs from bar|short of the bottom|bar lit|chevron|head boxes|aligned|focus = %s; want true|true|true|true|none|0|true|#s0", open)
+	}
+	if !closed {
+		t.Error("a second tap on the bar left the sheet open")
 	}
 }

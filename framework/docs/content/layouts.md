@@ -861,14 +861,17 @@ nothing on a phone and draws no rule. The pill floats at the bottom of
 the screen, so a page carries one floating pill. On a page whose
 SectionMenu already floats its own, set `PhoneSheetTop`: the contents
 pill becomes a full-width "On this page: <section>" bar pinned under
-the sticky header (`--ui-sticky-top`), and the sheet drops from under
-the header instead of rising. Below the swap the page publishes the
+the sticky header (`--ui-sticky-top`), and the list hangs from the
+bar's bottom edge instead of rising: the header and the bar stay above
+the dim, the bar's chevron turns, and a second tap on the bar closes
+it. Below the swap the page publishes the
 bar's height as `--ui-sheet-bar-offset`, and anchored `ui.Section`s and
 the rail's in-view band start below it; a theme that sets
 `--ui-section-scroll-margin` adds it itself
 (`calc(var(--size-header-height) + var(--ui-sheet-bar-offset, 0px))`).
 Knobs: `--ui-sheet-bar-height` (2.75rem) and `--ui-sheet-bar-bleed`
-(0; set it to a padded column's gutter so the bar runs edge to edge).
+(0; set it to a padded column's gutter so the bar runs edge to edge
+and the list hanging from it lines up with the bar's text).
 A page carries one `PhoneSheet`; two overlap. The sheet's id is the list's `ID` plus
 `-sheet` (`fui-toc-sheet` without one). `ui.AnchoredRail` takes the
 same `PhoneSheet` option, with `SwapAt` (900px by default, or

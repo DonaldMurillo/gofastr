@@ -68,8 +68,8 @@ type TOCConfig struct {
 	// plus "-sheet", or fui-toc-sheet without an ID.
 	PhoneSheet bool
 	// PhoneSheetTop pins the PhoneSheet pill as a bar under the page's
-	// sticky header ("On this page: Overview") and drops the list from
-	// there, for a page whose SectionMenu already floats its pill at
+	// sticky header ("On this page: Overview") and hangs the list from
+	// it, for a page whose SectionMenu already floats its pill at
 	// the bottom.
 	PhoneSheetTop bool
 	// Breakpoint is the width below which PhoneSheet folds the list:

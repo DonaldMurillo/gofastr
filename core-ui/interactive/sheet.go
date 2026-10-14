@@ -365,7 +365,7 @@ type PhoneSheetConfig struct {
 	// In a ui.ContentRow column, match the row's Breakpoint.
 	SwapAt SwapWidth
 	// Top pins the pill as a bar under the page's sticky header
-	// (SheetPillConfig.Bar) and drops the sheet from there, for a page
+	// (SheetPillConfig.Bar) and hangs the sheet from it, for a page
 	// whose bottom edge already holds a SectionMenu's pill.
 	Top bool
 }
@@ -380,7 +380,7 @@ type PhoneSheetConfig struct {
 //
 // The pill floats at the bottom of the screen, so a page carries one
 // floating pill: beside a SectionMenu's, set Top and the pill becomes a
-// bar under the sticky header with the sheet dropping from it.
+// bar under the sticky header with the sheet hanging from it.
 func PhoneSheet(cfg PhoneSheetConfig, body render.HTML) render.HTML {
 	if cfg.ID == "" {
 		panic("interactive: PhoneSheet requires ID: the pill opens the sheet by its id")
@@ -454,13 +454,24 @@ func phoneSheetCSS(_ style.Theme) string {
   [data-cui-comp="cui-phone-sheet"] .cui-phone-sheet__sheet { transition: none; }
 }
 [data-cui-comp="cui-phone-sheet"] .cui-phone-sheet__sheet::backdrop { background: var(--ui-scrim, rgba(0,0,0,0.45)); }
-/* Top: the sheet drops from under the sticky header, where its bar
-   sits, instead of rising from the bottom. */
+/* Top: the sheet hangs from the bar's bottom edge instead of rising
+   from the bottom. The header and the bar stay lit above the dim, the
+   bar names the list (its title row would repeat it; the title still
+   names the dialog), and the bar's chevron turns to close it. The
+   list lines up with the bar's text: a bar that bleeds to the screen's
+   edges pads its text by that bleed, and the sheet does too. */
 [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet {
-  inset: var(--ui-sticky-top, 0px) 0 auto 0;
-  padding-block-end: var(--spacing-lg, 16px);
+  inset: calc(var(--ui-sticky-top, 0px) + var(--ui-sheet-bar-height, 2.75rem)) 0 auto 0;
+  max-block-size: min(var(--ui-sheet-max-height, 75vh), calc(100dvh - var(--ui-sticky-top, 0px) - var(--ui-sheet-bar-height, 2.75rem) - var(--spacing-lg, 16px)));
+  padding-block: var(--spacing-sm, 4px) var(--spacing-lg, 16px);
+  padding-inline: max(var(--spacing-lg, 16px), var(--ui-sheet-bar-bleed, 0px));
   border-radius: 0 0 var(--radii-lg, 10px) var(--radii-lg, 10px);
 }
+[data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet::backdrop {
+  inset-block-start: calc(var(--ui-sticky-top, 0px) + var(--ui-sheet-bar-height, 2.75rem));
+}
+[data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__top { display: none; }
+[data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top:has(> .cui-phone-sheet__sheet:popover-open) > .cui-sheet-pill--bar .cui-sheet-pill__chevron { rotate: none; }
 [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet:not(:popover-open) { translate: 0 -100%; }
 @starting-style {
   [data-cui-comp="cui-phone-sheet"].cui-phone-sheet--top .cui-phone-sheet__sheet:popover-open { translate: 0 -100%; }

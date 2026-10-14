@@ -83,8 +83,8 @@ type AnchoredRailConfig struct {
 	// ui.ContentRow's Breakpoint.
 	SwapAt interactive.SwapWidth
 	// PhoneSheetTop pins the PhoneSheet pill as a bar under the page's
-	// sticky header ("On this page: Overview") and drops the rail from
-	// there, for a page whose SectionMenu already floats its pill at
+	// sticky header ("On this page: Overview") and hangs the rail from
+	// it, for a page whose SectionMenu already floats its pill at
 	// the bottom.
 	PhoneSheetTop bool
 

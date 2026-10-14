@@ -59,8 +59,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `SwapAt`, 900px by default); its pill names the section by the link's
   own text, without the number and count chips. `PhoneSheetTop` on
   either (`interactive.PhoneSheetConfig.Top`) pins that pill as an "On
-  this page: <section>" bar under the sticky header and drops the list
-  from there, for a page whose SectionMenu pill already holds the
+  this page: <section>" bar under the sticky header and hangs the list
+  from the bar, for a page whose SectionMenu pill already holds the
   bottom edge. Anchored sections and the rail's in-view band clear the
   bar through `--ui-sheet-bar-offset`.
 - **entityui lists warn when their row links lead nowhere.** The first
