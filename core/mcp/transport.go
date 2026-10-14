@@ -244,7 +244,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // ServeStdio reads JSON-RPC requests from in line-by-line and writes
-// responses to out. It blocks until in returns EOF or ctx is cancelled.
+// responses to out. It blocks until in returns EOF; ctx is checked
+// between lines, so a caller stopping a session on silent input closes
+// in as well.
 func (s *Server) ServeStdio(ctx context.Context, in io.Reader, out io.Writer) error {
 	// A line may be as long as an HTTP body (maxMCPBodyBytes); the
 	// scanner's 64 KiB default ended the session on any larger tool

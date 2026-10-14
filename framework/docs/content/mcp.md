@@ -571,7 +571,9 @@ What a client sees at the edges:
   refuses outright gets a 403 and holds no stream, instead of holding
   one open silently for its whole life.
 - `ServeStdio(ctx, in, out)` reads line-delimited JSON-RPC from `in` and writes
-  responses to `out`, blocking until EOF or context cancellation. The
+  responses to `out`, blocking until EOF. A cancelled context is seen
+  between lines, so to stop a session waiting on silent input, close
+  `in` as well. The
   envelope is decoded with the same strict top-level-key rule as the HTTP
   transports: a line repeating a key or spelling one in two cases is
   refused as invalid JSON, never resolved last-key-wins. The recover
