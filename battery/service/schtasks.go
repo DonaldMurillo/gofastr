@@ -27,13 +27,13 @@ func (taskScheduler) kind() string { return "Task Scheduler" }
 
 // taskXML renders the task definition. schtasks /XML expects UTF-16
 // with a byte-order mark; the caller encodes.
-func (taskScheduler) taskXML(b *Battery, exe string, port int, account string) string {
+func (taskScheduler) taskXML(b *Battery, args []string, account string) string {
 	esc := func(s string) string {
 		var buf bytes.Buffer
 		_ = xml.EscapeText(&buf, []byte(s))
 		return buf.String()
 	}
-	args := daemonArgs(exe, port)[1:]
+	exe, args := args[0], args[1:]
 	quoted := make([]string, len(args))
 	for i, a := range args {
 		quoted[i] = quoteWindowsArg(a)
@@ -63,9 +63,12 @@ func (taskScheduler) taskXML(b *Battery, exe string, port int, account string) s
     <AllowStartOnDemand>true</AllowStartOnDemand>
     <StartWhenAvailable>true</StartWhenAvailable>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <!-- Retries a launch that fails. A daemon that starts and then
+         crashes is not a failed launch: it stays down until next logon.
+         Count is an unsignedByte, so 255 is its ceiling. -->
     <RestartOnFailure>
       <Interval>PT1M</Interval>
-      <Count>999</Count>
+      <Count>255</Count>
     </RestartOnFailure>
     <Enabled>true</Enabled>
   </Settings>
@@ -119,10 +122,36 @@ func quoteWindowsArg(s string) string {
 	return sb.String()
 }
 
-func (t taskScheduler) install(b *Battery, exe string, port int) error {
+// currentAccount is the logged-on account's name (for the task's
+// principal and logon trigger) and SID (for its name); a variable so
+// tests pin both.
+var currentAccount = func() (name, sid string, err error) {
 	u, err := user.Current()
 	if err != nil {
-		return fmt.Errorf("service: resolve current user: %w", err)
+		return "", "", fmt.Errorf("service: resolve current user: %w", err)
+	}
+	return u.Username, u.Uid, nil
+}
+
+// taskName is the task's name: the app id plus the account's SID.
+// Task names are machine-wide, so a bare id would let one account's
+// install block another's, or an elevated one replace it.
+func (taskScheduler) taskName(b *Battery) (string, error) {
+	_, sid, err := currentAccount()
+	if err != nil {
+		return "", err
+	}
+	return b.cfg.ID + "-" + sid, nil
+}
+
+func (t taskScheduler) install(b *Battery, exe string, port int) error {
+	account, _, err := currentAccount()
+	if err != nil {
+		return err
+	}
+	name, err := t.taskName(b)
+	if err != nil {
+		return err
 	}
 	inst, err := b.layoutFor(false)
 	if err != nil {
@@ -131,12 +160,16 @@ func (t taskScheduler) install(b *Battery, exe string, port int) error {
 	if err := inst.ensure(); err != nil {
 		return err
 	}
+	args, err := b.daemonArgv(exe, port)
+	if err != nil {
+		return err
+	}
 	f, err := os.CreateTemp(inst.dir, "task-*.xml")
 	if err != nil {
 		return fmt.Errorf("service: write task definition: %w", err)
 	}
 	defer os.Remove(f.Name())
-	if _, err := f.Write(encodeUTF16(t.taskXML(b, exe, port, u.Username))); err != nil {
+	if _, err := f.Write(encodeUTF16(t.taskXML(b, args, account))); err != nil {
 		f.Close()
 		return fmt.Errorf("service: write task definition: %w", err)
 	}
@@ -145,40 +178,71 @@ func (t taskScheduler) install(b *Battery, exe string, port int) error {
 	}
 	// A running instance holds the old binary; stop it so /Run starts
 	// the new one (MultipleInstancesPolicy IgnoreNew would skip it).
-	_ = t.stop(b)
-	if err := b.run("schtasks", "/Create", "/TN", b.cfg.ID, "/XML", f.Name(), "/F"); err != nil {
+	if err := t.stop(b); err != nil {
 		return err
 	}
-	return b.run("schtasks", "/Run", "/TN", b.cfg.ID)
+	if err := b.run("schtasks", "/Create", "/TN", name, "/XML", f.Name(), "/F"); err != nil {
+		return err
+	}
+	return b.run("schtasks", "/Run", "/TN", name)
 }
 
 func (t taskScheduler) uninstall(b *Battery) error {
-	_ = t.stop(b)
+	if err := t.stop(b); err != nil {
+		return err
+	}
 	ok, err := t.installed(b)
 	if err != nil || !ok {
 		return err
 	}
-	return b.run("schtasks", "/Delete", "/TN", b.cfg.ID, "/F")
+	name, err := t.taskName(b)
+	if err != nil {
+		return err
+	}
+	return b.run("schtasks", "/Delete", "/TN", name, "/F")
 }
 
 func (t taskScheduler) start(b *Battery) error {
-	return b.run("schtasks", "/Run", "/TN", b.cfg.ID)
+	name, err := t.taskName(b)
+	if err != nil {
+		return err
+	}
+	return b.run("schtasks", "/Run", "/TN", name)
 }
 
+// stop asks the daemon to drain over the control channel and waits for
+// the process to exit: until it does, Task Scheduler counts the task
+// as running (a /Run then is dropped under IgnoreNew) and Windows
+// holds the executable locked. A drain that overruns, or a task stuck
+// before its control channel opened, gets `schtasks /End`, a hard
+// kill.
 func (t taskScheduler) stop(b *Battery) error {
+	name, err := t.taskName(b)
+	if err != nil {
+		return err
+	}
 	inst, err := b.layoutFor(false)
 	if err != nil {
 		return err
 	}
-	if _, err := callControl(inst.socketPath(), "stop"); err == nil {
+	resp, err := callControl(inst.socketPath(), "stop")
+	switch {
+	case errors.Is(err, errNotRunning):
+		// "Not running" is not an error from /End either.
+		_, _ = b.tool.output("schtasks", "/End", "/TN", name)
 		return nil
-	} else if !errors.Is(err, errNotRunning) {
-		return err
+	case err != nil:
+		// A daemon that accepts but never answers is wedged: end it,
+		// then wait for its control channel to go away (no pid to
+		// watch without a reply).
+		_, _ = b.tool.output("schtasks", "/End", "/TN", name)
+		return b.waitExit(0)
 	}
-	// Nothing answered: end a task stuck before its control channel
-	// opened. "Not running" is not an error.
-	_, _ = b.tool.output("schtasks", "/End", "/TN", b.cfg.ID)
-	return nil
+	if b.waitExit(resp.PID) == nil {
+		return nil
+	}
+	_, _ = b.tool.output("schtasks", "/End", "/TN", name)
+	return b.waitExit(resp.PID)
 }
 
 func (t taskScheduler) restart(b *Battery) error {
@@ -189,14 +253,18 @@ func (t taskScheduler) restart(b *Battery) error {
 }
 
 func (t taskScheduler) installed(b *Battery) (bool, error) {
-	out, err := b.tool.output("schtasks", "/Query", "/TN", b.cfg.ID)
+	name, err := t.taskName(b)
+	if err != nil {
+		return false, err
+	}
+	out, err := b.tool.output("schtasks", "/Query", "/TN", name)
 	if err == nil {
 		return true, nil
 	}
 	if exitCode(err) == 1 {
 		return false, nil
 	}
-	return false, toolError("schtasks", []string{"/Query", "/TN", b.cfg.ID}, out, err)
+	return false, toolError("schtasks", []string{"/Query", "/TN", name}, out, err)
 }
 
 func (taskScheduler) logs(b *Battery, n int, follow bool) error {

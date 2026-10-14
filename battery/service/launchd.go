@@ -40,7 +40,7 @@ func (l launchd) target(b *Battery) string { return l.domain() + "/" + b.cfg.ID 
 // graceful drain, exit 0, stays stopped until start or next login.
 // Output and errors go to the state directory's log, which the daemon
 // trims at start (launchd does not rotate).
-func (launchd) plist(b *Battery, exe string, port int, logPath string) []byte {
+func (launchd) plist(b *Battery, args []string, logPath string) []byte {
 	var buf bytes.Buffer
 	str := func(s string) {
 		buf.WriteString("<string>")
@@ -55,7 +55,7 @@ func (launchd) plist(b *Battery, exe string, port int, logPath string) []byte {
 	`)
 	str(b.cfg.ID)
 	buf.WriteString("\n\t<key>ProgramArguments</key>\n\t<array>\n")
-	for _, a := range daemonArgs(exe, port) {
+	for _, a := range args {
 		buf.WriteString("\t\t")
 		str(a)
 		buf.WriteString("\n")
@@ -86,8 +86,12 @@ func (l launchd) install(b *Battery, exe string, port int) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("service: create %s: %w", filepath.Dir(path), err)
 	}
+	args, err := b.daemonArgv(exe, port)
+	if err != nil {
+		return err
+	}
 	// Owner-only: launchd reads a per-user agent as that user.
-	if err := fileperm.WriteOwnerOnly(path, l.plist(b, exe, port, inst.logPath())); err != nil {
+	if err := fileperm.WriteOwnerOnly(path, l.plist(b, args, inst.logPath())); err != nil {
 		return fmt.Errorf("service: write %s: %w", path, err)
 	}
 	// Replace a loaded copy: bootout fails harmlessly when nothing is
@@ -125,18 +129,27 @@ func (l launchd) start(b *Battery) error {
 	return b.run("launchctl", "bootstrap", l.domain(), path)
 }
 
+// stop sends SIGTERM and waits for the process to exit: the daemon
+// drains, exits 0, and KeepAlive leaves it down. A daemon that is not
+// running is already stopped (`launchctl kill` would fail on it).
 func (l launchd) stop(b *Battery) error {
-	return b.run("launchctl", "kill", "SIGTERM", l.target(b))
-}
-
-// restart is stop, wait, start rather than `kickstart -k`: a graceful
-// drain, then a fresh start once the old process has released the
-// port and the control socket.
-func (l launchd) restart(b *Battery) error {
-	if err := l.stop(b); err != nil {
+	pid, err := b.runningPID()
+	if err != nil || pid == 0 {
 		return err
 	}
-	if err := b.waitStopped(); err != nil {
+	if err := b.run("launchctl", "kill", "SIGTERM", l.target(b)); err != nil {
+		return err
+	}
+	return b.waitExit(pid)
+}
+
+// restart is stop (which waits for the exit), then start, rather than
+// `kickstart -k`: a graceful drain, then a fresh start once the old
+// process has released the port and the control socket. kickstart
+// without -k does nothing to a job that is still running, so the wait
+// is what makes the start take.
+func (l launchd) restart(b *Battery) error {
+	if err := l.stop(b); err != nil {
 		return err
 	}
 	return l.start(b)
@@ -158,9 +171,12 @@ func (launchd) logs(b *Battery, n int, follow bool) error {
 	return tailFile(b.cfg.Stdout, inst.logPath(), n, follow)
 }
 
-// daemonArgs is the argv every backend registers.
-func daemonArgs(exe string, port int) []string {
-	return []string{exe, "service", "daemon", "--port", strconv.Itoa(port)}
+// daemonArgs is the argv every backend registers. base is the state
+// base the CLI resolved at install, passed explicitly because the
+// service manager does not see the shell's environment
+// (GOFASTR_SERVICE_DATA_DIR, XDG_CONFIG_HOME).
+func daemonArgs(exe string, port int, base string) []string {
+	return []string{exe, "service", "daemon", "--port", strconv.Itoa(port), "--base-dir", base}
 }
 
 func fileExists(path string) bool {

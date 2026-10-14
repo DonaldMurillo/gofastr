@@ -106,6 +106,9 @@ type Battery struct {
 
 	gate *gate
 
+	// baseOverride is the daemon's --base-dir; empty elsewhere.
+	baseOverride string
+
 	mu  sync.Mutex
 	app *framework.App
 }

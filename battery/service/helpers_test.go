@@ -20,19 +20,39 @@ type fakeTools struct {
 	mu    sync.Mutex
 	calls []string
 	fail  map[string]error
+	// out maps a command prefix to the output it prints; hook to a
+	// function run when it is called (a fake daemon reacting to it).
+	out  map[string][]byte
+	hook map[string]func()
 }
 
 func (f *fakeTools) output(name string, args ...string) ([]byte, error) {
 	line := strings.Join(append([]string{name}, args...), " ")
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls = append(f.calls, line)
+	var hook func()
+	for prefix, h := range f.hook {
+		if strings.HasPrefix(line, prefix) {
+			hook = h
+		}
+	}
+	var out []byte
+	for prefix, o := range f.out {
+		if strings.HasPrefix(line, prefix) {
+			out = o
+		}
+	}
 	for prefix, err := range f.fail {
 		if strings.HasPrefix(line, prefix) {
+			f.mu.Unlock()
 			return []byte("refused\x1b[31m"), err
 		}
 	}
-	return nil, nil
+	f.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
+	return out, nil
 }
 
 func (f *fakeTools) stream(w io.Writer, name string, args ...string) error {
@@ -98,7 +118,16 @@ func testBattery(t *testing.T, goos string, cfg Config) (*Battery, *fakeTools, *
 	if b.err != nil {
 		t.Fatal(b.err)
 	}
-	ft := &fakeTools{fail: map[string]error{}}
+	ft := &fakeTools{fail: map[string]error{}, out: map[string][]byte{}, hook: map[string]func(){}}
 	b.tool = ft
+	// The account the Windows backend names its task after.
+	prevAccount := currentAccount
+	currentAccount = func() (string, string, error) { return `PC\tester`, "S-1-5-21-7", nil }
+	t.Cleanup(func() { currentAccount = prevAccount })
+	// Layouts do not depend on whether the test tree is a linked
+	// worktree; the per-worktree dev dir has its own test.
+	prevIso := devIsolationID
+	devIsolationID = func() string { return "" }
+	t.Cleanup(func() { devIsolationID = prevIso })
 	return b, ft, &out
 }

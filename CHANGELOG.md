@@ -23,15 +23,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   against the daemon's OS user by peer credentials. A signed session is
   the local user, so owner-scoped entities work without `battery/auth`;
   with auth linked, auth keeps identity. The dev run keeps its own state
-  directory and port, and `gofastr dev` runs it gated on the address it
-  passes. The Windows backend is unit-tested but has not run on a real
-  Windows machine. Guide: `gofastr docs service`; example:
+  directory and port (one per isolated worktree), and `gofastr dev`
+  runs it gated on the address it passes. `stop`, reinstall and
+  `uninstall` wait for the old process to exit, and an instance lock
+  keeps one process per state directory. Windows has no crash restart,
+  and its backend is unit-tested but has not run on a real Windows
+  machine. Guide: `gofastr docs service`; example:
   `examples/service-hello`.
 - **`App.WrapServer` wraps everything the listener serves.** Router
   middleware (`Use`) never sees the interactive setup wizard or the
   worker and agent roles' reduced muxes; a `WrapServer` wrapper does.
   The first one registered is outermost, and a call after `Start` has
-  bound the server panics.
+  bound the server, or after `Shutdown`, panics.
 - **entityui lists warn when their row links lead nowhere.** The first
   time a list renders rows whose `<base>/<id>` matches no registered
   screen, it logs one warning per base naming the route to register.

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -50,14 +51,49 @@ type controlResponse struct {
 	Token   string `json:"token,omitempty"`
 }
 
+// acceptRetryDelay paces control-channel Accept retries.
+var acceptRetryDelay = 100 * time.Millisecond
+
 var errAlreadyRunning = errors.New("another instance is already running")
+
+// checkSocketPath refuses a control socket path over the sun_path
+// limit, naming the fix.
+func checkSocketPath(path string) error {
+	if len(path) > maxSocketPath {
+		return fmt.Errorf("service: control socket path %q is %d bytes, over the %d-byte limit; set %s to a shorter absolute directory", path, len(path), maxSocketPath, dataDirEnv)
+	}
+	return nil
+}
+
+// lockInstance takes an exclusive OS lock on the state directory's
+// lock file and holds it until release. It is what makes one instance
+// per state directory: two processes that both find no live socket
+// would otherwise both remove and re-bind it (check, then act), and
+// both open the database. The kernel drops the lock when the process
+// dies, so a crash leaves nothing to clean up.
+func lockInstance(dir string) (release func(), err error) {
+	f, err := os.OpenFile(filepath.Join(dir, "instance.lock"), os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("service: open instance lock: %w", err)
+	}
+	held, err := tryLock(f)
+	if err != nil {
+		f.Close()
+		return nil, fmt.Errorf("service: take instance lock: %w", err)
+	}
+	if !held {
+		f.Close()
+		return nil, errAlreadyRunning
+	}
+	return func() { f.Close() }, nil
+}
 
 // listenControl claims the control socket. A live socket means another
 // instance is serving (refused); a dead one is a leftover from a crash
 // and is removed.
 func listenControl(path string) (net.Listener, error) {
-	if len(path) > maxSocketPath {
-		return nil, fmt.Errorf("service: control socket path %q is %d bytes, over the %d-byte limit; set %s to a shorter absolute directory", path, len(path), maxSocketPath, dataDirEnv)
+	if err := checkSocketPath(path); err != nil {
+		return nil, err
 	}
 	if c, err := net.DialTimeout("unix", path, time.Second); err == nil {
 		c.Close()
@@ -90,11 +126,20 @@ type controlServer struct {
 	wg     sync.WaitGroup
 }
 
+// serve returns only once Close has closed the listener. Any other
+// Accept error (a full file table, an aborted connection) is retried:
+// returning would leave the socket bound but deaf, so every client
+// would time out for the rest of the daemon's life.
 func (s *controlServer) serve() {
 	for {
 		c, err := s.ln.Accept()
-		if err != nil {
+		if errors.Is(err, net.ErrClosed) {
 			return
+		}
+		if err != nil {
+			s.log.Warn("service: control channel accept failed; retrying", "error", err.Error())
+			time.Sleep(acceptRetryDelay)
+			continue
 		}
 		s.wg.Add(1)
 		go func() {

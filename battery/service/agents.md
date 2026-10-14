@@ -40,7 +40,11 @@ state dir and port; `--addr <loopback>` is what `gofastr dev` passes.
   with `<app> service open` (`--dev` for the dev run). Do not add a way
   around the gate, and never log the sign-in token or session value.
 - `install` refuses root and copies the binary; rebuild + `install`
-  again to upgrade. Per-user scope only today.
+  again to upgrade. Per-user scope only today. `stop`, `restart`,
+  reinstall and `uninstall` wait for the old process to exit; uninstall
+  deletes nothing while it is still running.
+- Windows has no crash restart: a daemon that crashes stays down until
+  the next logon or `service start`.
 - A signed session is the local user (`internal/localuser`), so
   owner-scoped entities work without battery/auth. If battery/auth is
   linked, auth owns identity and the gate installs none.

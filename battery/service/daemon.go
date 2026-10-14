@@ -52,21 +52,34 @@ func (b *Battery) serve(ctx context.Context, mode serveMode, build Builder) erro
 			return err
 		}
 	}
-	secret, err := loadOrMintSecret(l.secretPath())
-	if err != nil {
-		return err
+	// Take the instance lock and claim the control socket before
+	// building the App: a second instance fails here, before it opens
+	// the database or runs a migration against a file the first one is
+	// using. The lock is held until serve returns. The secret and the
+	// local identity are minted under it, so two first boots never race
+	// to create them.
+	release, err := lockInstance(l.dir)
+	if err == nil {
+		defer release()
+		var secret string
+		if secret, err = loadOrMintSecret(l.secretPath()); err != nil {
+			return err
+		}
+		var ctl net.Listener
+		if ctl, err = listenControl(l.socketPath()); err == nil {
+			defer ctl.Close()
+			return b.serveLocked(ctx, mode, build, l, secret, ctl)
+		}
 	}
-	// Claim the control socket before building the App: a second
-	// instance fails here, before it opens the database or runs a
-	// migration against a file the first one is using.
-	ctl, err := listenControl(l.socketPath())
 	if errors.Is(err, errAlreadyRunning) {
 		return fmt.Errorf("service: %s is already running (state dir %s); `%s service status` shows where", b.cfg.Name, l.dir, b.cfg.Name)
 	}
-	if err != nil {
-		return err
-	}
-	defer ctl.Close()
+	return err
+}
+
+// serveLocked is serve once this process holds the instance lock and
+// the control socket.
+func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder, l layout, secret string, ctl net.Listener) error {
 
 	g, err := newGate(b.cfg.Name+" service open"+devFlag(mode.dev), secret, b.cfg.SessionTTL, b.cfg.InsecureTokenInURL)
 	if err != nil {
@@ -178,10 +191,13 @@ func (b *Battery) serve(ctx context.Context, mode serveMode, build Builder) erro
 		runErr = fmt.Errorf("service: server stopped: %w", err)
 	}
 	_ = sdNotify("STOPPING=1")
-	cs.Close()
+	// The control channel closes after the drain, not before: a stop
+	// waiting on it then sees "gone" only once the App has let go of
+	// the port and the database.
 	if err := b.drain(app, log); err != nil && runErr == nil {
 		runErr = err
 	}
+	cs.Close()
 	select {
 	case <-startErr:
 	case <-time.After(stopTimeout):
@@ -218,7 +234,7 @@ func (b *Battery) controlHandler(g *gate, addr string, dev bool, started time.Ti
 			case stop <- struct{}{}:
 			default:
 			}
-			return controlResponse{OK: true}
+			return controlResponse{OK: true, PID: os.Getpid()}
 		}
 		return controlResponse{Error: "unknown op"}
 	}

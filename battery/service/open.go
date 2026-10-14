@@ -1,10 +1,14 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 )
 
@@ -73,10 +77,15 @@ func removeStalePages(dir string) {
 	}
 }
 
-// launchBrowser opens path in the user's default browser.
+// launchBrowser opens path in the user's default browser. On macOS a
+// bare `open file.html` follows the .html file association, which on
+// many machines is an editor; `open -b` names the browser instead.
 func (b *Battery) launchBrowser(path string) error {
 	switch currentOS {
 	case "darwin":
+		if id := b.defaultBrowser(); id != "" {
+			return b.run("open", "-b", id, path)
+		}
 		return b.run("open", path)
 	case "windows":
 		return b.run("rundll32", "url.dll,FileProtocolHandler", path)
@@ -84,3 +93,47 @@ func (b *Battery) launchBrowser(path string) error {
 		return b.run("xdg-open", path)
 	}
 }
+
+// launchServicesPrefs is the per-user LaunchServices store, relative to
+// the home directory: the handler the user picked for each URL scheme.
+const launchServicesPrefs = "Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist"
+
+// defaultBrowser is the bundle id of the macOS handler for http URLs,
+// read from the LaunchServices store with plutil. No store, or no http
+// entry in it, means the system default, Safari. "" (fall back to a
+// bare open) when the store cannot be read or names something that is
+// not a bundle id.
+func (b *Battery) defaultBrowser() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	path := filepath.Join(home, launchServicesPrefs)
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return "com.apple.Safari"
+	}
+	out, err := b.tool.output("plutil", "-extract", "LSHandlers", "json", "-o", "-", path)
+	if err != nil {
+		return ""
+	}
+	var handlers []struct {
+		Scheme string `json:"LSHandlerURLScheme"`
+		Role   string `json:"LSHandlerRoleAll"`
+	}
+	if err := json.Unmarshal(out, &handlers); err != nil {
+		return ""
+	}
+	for _, h := range handlers {
+		if strings.EqualFold(h.Scheme, "http") {
+			if !bundleID.MatchString(h.Role) {
+				return ""
+			}
+			return h.Role
+		}
+	}
+	return "com.apple.Safari"
+}
+
+// bundleID is a reverse-DNS bundle identifier; anything else is not
+// passed to `open -b`.
+var bundleID = regexp.MustCompile(`^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$`)

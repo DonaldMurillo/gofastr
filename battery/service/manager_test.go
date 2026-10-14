@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -102,19 +103,6 @@ func TestLaunchdStartFallsBackToBootstrap(t *testing.T) {
 	}
 }
 
-func TestLaunchdStopIsSIGTERM(t *testing.T) {
-	b, ft, _ := testBattery(t, "darwin", Config{})
-	prev := currentUID
-	currentUID = func() int { return 501 }
-	t.Cleanup(func() { currentUID = prev })
-	if err := (launchd{}).stop(b); err != nil {
-		t.Fatal(err)
-	}
-	if got := ft.got(); len(got) != 1 || got[0] != "launchctl kill SIGTERM gui/501/dev.gofastr.svctest" {
-		t.Fatalf("argv %q", got)
-	}
-}
-
 // plistDoc decodes the subset of a plist the tests read: the top dict's
 // keys and values in order.
 type plistDoc struct {
@@ -131,7 +119,7 @@ type plistDoc struct {
 func TestLaunchdPlistEscapes(t *testing.T) {
 	b, _, _ := testBattery(t, "darwin", Config{})
 	exe := `/Users/a&b/<x>/"q"/hello`
-	raw := (launchd{}).plist(b, exe, 47811, "/logs/service.log")
+	raw := (launchd{}).plist(b, daemonArgs(exe, 47811, "/base"), "/logs/service.log")
 	var doc plistDoc
 	if err := xml.Unmarshal(raw, &doc); err != nil {
 		t.Fatalf("plist is not well-formed XML: %v\n%s", err, raw)
@@ -142,7 +130,7 @@ func TestLaunchdPlistEscapes(t *testing.T) {
 			args = doc.Dict.Items[i+1].Strings
 		}
 	}
-	want := []string{exe, "service", "daemon", "--port", "47811"}
+	want := []string{exe, "service", "daemon", "--port", "47811", "--base-dir", "/base"}
 	if !reflect.DeepEqual(args, want) {
 		t.Fatalf("ProgramArguments = %q; want %q", args, want)
 	}
@@ -181,25 +169,28 @@ func bootedSystemd(t *testing.T, booted bool) {
 }
 
 func TestSystemdInstallArgv(t *testing.T) {
-	home := setHome(t)
+	setHome(t)
 	bootedSystemd(t, true)
 	b, ft, _ := testBattery(t, "linux", Config{})
 	if err := (systemdUser{}).install(b, "/opt/hello", 47811); err != nil {
 		t.Fatal(err)
 	}
+	base := os.Getenv(dataDirEnv)
+	path := filepath.Join(base, "dev.gofastr.svctest", "dev.gofastr.svctest.service")
 	want := []string{
 		"systemctl --user daemon-reload",
-		"systemctl --user enable dev.gofastr.svctest.service",
+		"systemctl --user enable " + path,
 		"systemctl --user restart dev.gofastr.svctest.service",
 	}
 	if got := ft.got(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("argv\n got %q\nwant %q", got, want)
 	}
-	unit, err := os.ReadFile(filepath.Join(home, ".config", "systemd", "user", "dev.gofastr.svctest.service"))
+	unit, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{"Type=notify", "NotifyAccess=main", `ExecStart="/opt/hello" "service" "daemon" "--port" "47811"`, "Restart=on-failure", "WantedBy=default.target"} {
+	exec := `ExecStart="/opt/hello" "service" "daemon" "--port" "47811" "--base-dir" "` + base + `"`
+	for _, s := range []string{"Type=notify", "NotifyAccess=main", exec, "Restart=on-failure", "WantedBy=default.target"} {
 		if !strings.Contains(string(unit), s) {
 			t.Errorf("unit lacks %q:\n%s", s, unit)
 		}
@@ -222,7 +213,7 @@ func TestSystemdInstallNeedsSystemd(t *testing.T) {
 func TestSystemdUninstallRemovesDropIns(t *testing.T) {
 	home := setHome(t)
 	bootedSystemd(t, true)
-	b, _, _ := testBattery(t, "linux", Config{})
+	b, ft, _ := testBattery(t, "linux", Config{})
 	if err := (systemdUser{}).install(b, "/opt/hello", 47811); err != nil {
 		t.Fatal(err)
 	}
@@ -230,11 +221,32 @@ func TestSystemdUninstallRemovesDropIns(t *testing.T) {
 	if err := os.MkdirAll(dropIn, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	unit, _ := (systemdUser{}).unitPath(b)
 	if err := (systemdUser{}).uninstall(b); err != nil {
 		t.Fatal(err)
 	}
-	if fileExists(dropIn) || fileExists(strings.TrimSuffix(dropIn, ".d")) {
+	if fileExists(dropIn) || fileExists(unit) {
 		t.Fatal("unit or drop-in dir left behind")
+	}
+	if got := ft.got(); !slices.Contains(got, "systemctl --user disable --now dev.gofastr.svctest.service") {
+		t.Fatalf("uninstall did not disable the unit: %q", got)
+	}
+}
+
+// A unit that will not stop is not deleted: it may still be running.
+func TestSystemdUninstallKeepsUnitOnDisableFailure(t *testing.T) {
+	setHome(t)
+	bootedSystemd(t, true)
+	b, ft, _ := testBattery(t, "linux", Config{})
+	if err := (systemdUser{}).install(b, "/opt/hello", 47811); err != nil {
+		t.Fatal(err)
+	}
+	ft.fail["systemctl --user disable"] = errors.New("exit status 1")
+	if err := (systemdUser{}).uninstall(b); err == nil {
+		t.Fatal("uninstall reported success after disable failed")
+	}
+	if unit, _ := (systemdUser{}).unitPath(b); !fileExists(unit) {
+		t.Fatal("unit deleted after disable failed")
 	}
 }
 
@@ -286,7 +298,7 @@ type taskDoc struct {
 func TestTaskXML(t *testing.T) {
 	b, _, _ := testBattery(t, "windows", Config{})
 	exe := `C:\Users\a&b\AppData\Local\Programs\dev.gofastr.svctest\hello.exe`
-	raw := (taskScheduler{}).taskXML(b, exe, 47811, `PC\a&b`)
+	raw := (taskScheduler{}).taskXML(b, daemonArgs(exe, 47811, `C:\Users\a b\AppData\Roaming`), `PC\a&b`)
 	// encoding/xml refuses a UTF-16 declaration it cannot transcode;
 	// the body is plain XML once the declaration is set aside.
 	body := raw[strings.Index(raw, "?>")+2:]
@@ -297,7 +309,7 @@ func TestTaskXML(t *testing.T) {
 	if doc.Exec.Command != exe {
 		t.Errorf("Command = %q; want %q", doc.Exec.Command, exe)
 	}
-	if doc.Exec.Arguments != "service daemon --port 47811" {
+	if doc.Exec.Arguments != `service daemon --port 47811 --base-dir "C:\Users\a b\AppData\Roaming"` {
 		t.Errorf("Arguments = %q", doc.Exec.Arguments)
 	}
 	if doc.Triggers.Logon.UserID != `PC\a&b` {
@@ -399,17 +411,18 @@ func TestQuoteWindowsArgRoundTrips(t *testing.T) {
 	}
 }
 
-// Windows stop asks the daemon over the control channel and falls back
-// to /End only when nothing answers.
+// With nothing answering the control channel, Windows stop still ends
+// the task (it may be stuck before the channel opened), then the task
+// is deleted. Task names carry the account SID: they are machine-wide.
 func TestTaskSchedulerUninstallArgv(t *testing.T) {
 	b, ft, _ := testBattery(t, "windows", Config{})
 	if err := (taskScheduler{}).uninstall(b); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
-		"schtasks /End /TN dev.gofastr.svctest",
-		"schtasks /Query /TN dev.gofastr.svctest",
-		"schtasks /Delete /TN dev.gofastr.svctest /F",
+		"schtasks /End /TN dev.gofastr.svctest-S-1-5-21-7",
+		"schtasks /Query /TN dev.gofastr.svctest-S-1-5-21-7",
+		"schtasks /Delete /TN dev.gofastr.svctest-S-1-5-21-7 /F",
 	}
 	if got := ft.got(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("argv\n got %q\nwant %q", got, want)

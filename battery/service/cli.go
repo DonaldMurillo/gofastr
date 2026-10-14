@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -84,11 +85,18 @@ func (b *Battery) dispatch(ctx context.Context, args []string, build Builder) er
 		return b.runForeground(ctx, rest, build)
 	case "daemon":
 		port := fs.Int("port", b.cfg.Port, "loopback port")
+		base := fs.String("base-dir", "", "state base directory (set by install)")
 		if err := fs.Parse(rest); err != nil {
 			return err
 		}
 		if err := validatePort("--port", *port, false); err != nil {
 			return err
+		}
+		if *base != "" {
+			if !filepath.IsAbs(*base) {
+				return fmt.Errorf("service: --base-dir must be absolute, got %q", *base)
+			}
+			b.baseOverride = *base
 		}
 		return b.serve(ctx, serveMode{port: *port}, build)
 	case "rotate-secret":
@@ -120,12 +128,13 @@ func (b *Battery) runForeground(ctx context.Context, args []string, build Builde
 }
 
 // runDevLoop is the child `gofastr dev` starts: `<app> --addr <addr>`.
-// It is the foreground dev run on that address's port, gate and all:
-// the browser the dev loop opens visits localhost:<port>, which the
-// gate accepts, and a session survives every rebuild because the dev
-// run's secret and port do not change. Sign in once with
-// `<app> service open --dev`. The service host serves loopback only,
-// so a host other than localhost or 127.0.0.1 is refused.
+// It is the foreground dev run on that address's port, gate and all.
+// Sign in once with `<app> service open --dev`; the session survives
+// every rebuild because the dev run's secret and port do not change.
+// The localhost:<port> address `gofastr dev` prints redirects to
+// 127.0.0.1:<port>, where the session cookie lives. The service host
+// serves loopback only, so a host other than localhost or 127.0.0.1
+// is refused.
 func (b *Battery) runDevLoop(ctx context.Context, args []string, build Builder) error {
 	fs := flag.NewFlagSet(b.cfg.Name, flag.ContinueOnError)
 	fs.SetOutput(b.cfg.Stderr)
@@ -188,17 +197,24 @@ func (b *Battery) install(port int) error {
 	if err != nil {
 		return err
 	}
+	// Refuse here, before anything is registered, rather than leave a
+	// daemon that crash-loops on the same limit.
+	if err := checkSocketPath(inst.socketPath()); err != nil {
+		return err
+	}
 	if err := inst.ensure(); err != nil {
 		return err
 	}
 	// A running copy holds the old binary (Windows refuses to replace a
-	// running .exe) and the port.
+	// running .exe) and the port; stop waits for it to exit.
 	installed, err := b.mgr.installed(b)
 	if err != nil {
 		return err
 	}
 	if installed {
-		_ = b.mgr.stop(b)
+		if err := b.mgr.stop(b); err != nil {
+			return fmt.Errorf("service: stop the installed copy before replacing it: %w", err)
+		}
 	}
 	exe, err := b.copySelf()
 	if err != nil {
@@ -272,15 +288,32 @@ func (b *Battery) copySelf() (string, error) {
 }
 
 func (b *Battery) uninstall(purge bool) error {
+	pid, err := b.runningPID()
+	if err != nil {
+		return err
+	}
 	if err := b.mgr.uninstall(b); err != nil {
 		return err
+	}
+	// Whatever the manager reported, nothing is deleted while the
+	// daemon is still alive: it holds the database and the binary.
+	if pid > 0 {
+		if err := b.waitExit(pid); err != nil {
+			return fmt.Errorf("%w; nothing was deleted", err)
+		}
 	}
 	dir, err := b.binDir()
 	if err != nil {
 		return err
 	}
 	if err := os.RemoveAll(dir); err != nil {
-		return fmt.Errorf("service: remove %s: %w", dir, err)
+		// Windows will not delete the executable a process is running
+		// from, so the installed copy uninstalling itself cannot remove
+		// its own folder. Say so and carry on to --purge.
+		if !runningFrom(dir) {
+			return fmt.Errorf("service: remove %s: %w", dir, err)
+		}
+		fmt.Fprintf(b.cfg.Stdout, "could not remove %s while running from it; delete it after this command exits\n", dir)
 	}
 	fmt.Fprintf(b.cfg.Stdout, "uninstalled %s\n", b.cfg.Name)
 	if !purge {
@@ -384,23 +417,75 @@ func (b *Battery) waitReady(inst layout) (controlResponse, error) {
 	}
 }
 
-// waitStopped polls the installed daemon's control channel until
-// nothing answers.
-func (b *Battery) waitStopped() error {
+// runningPID is the installed daemon's pid, or 0 when nothing answers
+// on its control channel.
+func (b *Battery) runningPID() (int, error) {
+	inst, err := b.layoutFor(false)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := callControl(inst.socketPath(), "status")
+	if errors.Is(err, errNotRunning) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return resp.PID, nil
+}
+
+// stopWait bounds how long a stop waits for the process to exit: the
+// daemon's own drain bound plus slack for the exit itself.
+var stopWait = stopTimeout + 10*time.Second
+
+// waitExit waits until the installed daemon's control channel is gone
+// and process pid has exited. The daemon keeps the channel open until
+// its drain finishes, but the channel closing is not the process
+// exiting: until it exits, Windows holds its executable locked and a
+// service manager still counts the job as running, so a start issued
+// then is dropped.
+func (b *Battery) waitExit(pid int) error {
 	inst, err := b.layoutFor(false)
 	if err != nil {
 		return err
 	}
-	deadline := time.Now().Add(startWait)
+	deadline := time.Now().Add(stopWait)
 	for {
-		if _, err := callControl(inst.socketPath(), "status"); errors.Is(err, errNotRunning) {
+		_, err := callControl(inst.socketPath(), "status")
+		if errors.Is(err, errNotRunning) && (pid <= 0 || !processAlive(pid)) {
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("service: %s did not stop within %s", b.cfg.Name, startWait)
+			return fmt.Errorf("service: %s (pid %d) did not exit within %s", b.cfg.Name, pid, stopWait)
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// runningFrom reports whether this process's executable is inside dir.
+func runningFrom(dir string) bool {
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	if r, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = r
+	}
+	if r, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = r
+	}
+	rel, err := filepath.Rel(dir, exe)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// daemonArgv is the argv install registers for exe on port, with the
+// state base this CLI resolved.
+func (b *Battery) daemonArgv(exe string, port int) ([]string, error) {
+	base, err := b.base()
+	if err != nil {
+		return nil, err
+	}
+	return daemonArgs(exe, port, base), nil
 }
 
 func (b *Battery) rotate(dev bool) error {

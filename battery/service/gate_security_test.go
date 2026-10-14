@@ -94,12 +94,41 @@ func TestGateRefusesRebindingHost(t *testing.T) {
 func TestGateAcceptsLoopbackAndAllowHosts(t *testing.T) {
 	g := newTestGate(t, false)
 	c := signIn(t, g)
-	for _, host := range []string{gateHost, "localhost:47811", "LOCALHOST:47811", "proxy.internal:8443"} {
+	for _, host := range []string{gateHost, "proxy.internal:8443"} {
 		r := request(http.MethodGet, host, "/", "")
 		r.AddCookie(c)
 		if rec := serveGate(g, r); rec.Code != http.StatusOK {
 			t.Errorf("Host %q answered %d; want 200", host, rec.Code)
 		}
+	}
+	// localhost is accepted for unsafe methods (no redirect can carry
+	// a body), and its session is the same cookie.
+	r := request(http.MethodPost, "localhost:47811", "/", "x=1")
+	r.AddCookie(c)
+	r.Header.Set("Sec-Fetch-Site", "same-origin")
+	if rec := serveGate(g, r); rec.Code != http.StatusOK {
+		t.Errorf("POST via localhost answered %d; want 200", rec.Code)
+	}
+}
+
+// A browser tab on localhost:<port> is sent to 127.0.0.1:<port>, where
+// `open` put the session cookie, before any session check.
+func TestGateRedirectsLocalhostToLoopbackIP(t *testing.T) {
+	g := newTestGate(t, false)
+	for _, host := range []string{"localhost:47811", "LOCALHOST:47811"} {
+		rec := serveGate(g, request(http.MethodGet, host, "/x?y=1", ""))
+		if rec.Code != http.StatusTemporaryRedirect {
+			t.Fatalf("GET via %s answered %d; want 307", host, rec.Code)
+		}
+		if loc := rec.Header().Get("Location"); loc != "http://127.0.0.1:47811/x?y=1" {
+			t.Errorf("Location = %q", loc)
+		}
+		if rec.Header().Get("Cache-Control") != "no-store" {
+			t.Errorf("redirect Cache-Control = %q; want no-store", rec.Header().Get("Cache-Control"))
+		}
+	}
+	if rec := serveGate(g, request(http.MethodGet, "localhost:47812", "/", "")); rec.Code != http.StatusForbidden {
+		t.Errorf("localhost on another port answered %d; want 403", rec.Code)
 	}
 }
 

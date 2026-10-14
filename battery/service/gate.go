@@ -62,6 +62,7 @@ type gate struct {
 	mu      sync.Mutex
 	hosts   []string
 	cookie  string
+	port    string
 	pending map[[32]byte]time.Time
 }
 
@@ -95,7 +96,26 @@ func (g *gate) pin(port int, extra []string) {
 	g.mu.Lock()
 	g.hosts = hosts
 	g.cookie = "gofastr_service_" + p
+	g.port = p
 	g.mu.Unlock()
+}
+
+// canonicalURL is where a safe request that named the app as
+// localhost:<port> is sent: the same path on 127.0.0.1:<port>. Cookies
+// are per host name, and `open` signs the browser in on 127.0.0.1, so
+// a localhost tab (the address `gofastr dev` prints) would otherwise
+// stay signed out. "" when r is not such a request.
+func (g *gate) canonicalURL(r *http.Request) string {
+	if !safeMethod(r.Method) {
+		return ""
+	}
+	g.mu.Lock()
+	port := g.port
+	g.mu.Unlock()
+	if port == "" || !strings.EqualFold(r.Host, "localhost:"+port) {
+		return ""
+	}
+	return "http://127.0.0.1:" + port + r.URL.RequestURI()
 }
 
 func (g *gate) cookieName() string {
@@ -215,6 +235,11 @@ func (g *gate) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !g.hostAllowed(r.Host) {
 			http.Error(w, "forbidden: this address is not the app's own loopback address", http.StatusForbidden)
+			return
+		}
+		if u := g.canonicalURL(r); u != "" {
+			w.Header().Set("Cache-Control", "no-store")
+			http.Redirect(w, r, u, http.StatusTemporaryRedirect)
 			return
 		}
 		if r.URL.Path == loginPath {

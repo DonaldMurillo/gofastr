@@ -2,11 +2,14 @@ package service
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -49,18 +52,66 @@ func baseDir() (string, error) {
 	return base, nil
 }
 
+// base is the state base this process uses: the --base-dir the
+// service definition passes the daemon, else baseDir. install writes
+// the CLI's resolved base into the definition, so a daemon started by
+// launchd, systemd or Task Scheduler, none of which see the shell's
+// environment, uses the same directory as the CLI that talks to it.
+func (b *Battery) base() (string, error) {
+	if b.baseOverride != "" {
+		return b.baseOverride, nil
+	}
+	return baseDir()
+}
+
 // layoutFor resolves (without creating) the state directory of the
 // installed daemon (dev false) or the foreground dev run (dev true).
+// A dev run inside an isolated worktree gets its own directory,
+// <ID>.dev-<isolation id>, so two worktrees' dev runs of one app keep
+// separate databases and control sockets, as their ports already are.
 func (b *Battery) layoutFor(dev bool) (layout, error) {
-	base, err := baseDir()
+	base, err := b.base()
 	if err != nil {
 		return layout{}, err
 	}
 	name := b.cfg.ID
 	if dev {
 		name += devSuffix
+		if id := devIsolationID(); id != "" {
+			name += "-" + id
+		}
 	}
 	return layout{dir: filepath.Join(base, name)}, nil
+}
+
+// devIsolationID is isolationID, a variable so tests pin it.
+var devIsolationID = isolationID
+
+// isolationID is the worktree isolation id when isolation is active
+// for the working directory, else "", as a path segment.
+func isolationID() string {
+	rt, err := isolation.Resolve(".")
+	if err != nil || !rt.Active() {
+		return ""
+	}
+	return pathSegment(rt.ID())
+}
+
+// pathSegment returns id when it is a short [A-Za-z0-9_-] word and a
+// 10-hex-digit hash of it otherwise: GOFASTR_ISOLATION_ID is free text,
+// and it becomes part of a directory name.
+func pathSegment(id string) string {
+	plain := id != "" && len(id) <= 32
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_' || c == '-') {
+			plain = false
+		}
+	}
+	if plain {
+		return id
+	}
+	sum := sha256.Sum256([]byte(id))
+	return hex.EncodeToString(sum[:])[:10]
 }
 
 // ensure creates the state directory owner-only: 0700 on Unix (and
