@@ -129,15 +129,15 @@
     // remembering what the callbacks reported. In view means a whole
     // pixel in the band: scroll positions round to pixels, so the
     // section above one scrolled to the top can keep a sliver.
-    const bandTop = stickyTop(nav);
-    const observer = new IntersectionObserver(() => {
+    let bandTop = stickyTop(nav);
+    const pick = () => {
       const bandBottom = innerHeight * 0.3;
       const first = targets.find((t) => {
         const r = t.getBoundingClientRect();
         return r.bottom - bandTop >= 1 && bandBottom - r.top >= 1;
       });
       if (first) markActive(first.id);
-    }, { rootMargin: '-' + bandTop + 'px 0px -70% 0px', threshold: 0 });
+    };
 
     // Document order, so the bootstrap below picks the DOM-topmost
     // section, not whatever the nav happened to list first.
@@ -147,8 +147,37 @@
       if (pos & 2) return 1;
       return 0;
     });
-    for (const t of targets) observer.observe(t);
-    observers.set(nav, observer);
+    let observer = null;
+    const arm = () => {
+      if (observer) observer.disconnect();
+      observer = new IntersectionObserver(pick, { rootMargin: '-' + bandTop + 'px 0px -70% 0px', threshold: 0 });
+      for (const t of targets) observer.observe(t);
+      observers.set(nav, observer);
+    };
+    arm();
+
+    // What covers the top can change with the width: a phone sheet's
+    // bar publishes its offset below a breakpoint only. A resize that
+    // moves the edge re-arms the observer on the new band; a nav that
+    // left the document drops its listener.
+    let pending = false;
+    const onResize = () => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(() => {
+        pending = false;
+        if (!nav.isConnected) {
+          observer.disconnect();
+          removeEventListener('resize', onResize);
+          return;
+        }
+        const top = stickyTop(nav);
+        if (top === bandTop) return;
+        bandTop = top;
+        arm();
+      });
+    };
+    addEventListener('resize', onResize);
 
     // Bootstrap an initial active anchor: on a page whose sections all
     // start below a tall header the observer never fires, and no anchor

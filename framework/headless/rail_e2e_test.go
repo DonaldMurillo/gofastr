@@ -175,6 +175,34 @@ func TestE2E_RailSkipsSectionUnderStickyHeader(t *testing.T) {
 	}
 }
 
+// The band follows the layout: a bar offset that applies only below a
+// width (a phone sheet's bar) joins the band when the window narrows
+// past it after the rail was armed.
+func TestE2E_RailBandFollowsResize(t *testing.T) {
+	nav := TableOfContents(TableOfContentsProps{
+		TargetSelector: "#region",
+		Items:          []TOCItem{{ID: "one", Label: "One"}, {ID: "two", Label: "Two"}},
+	}, nil)
+	b := startBehaviorServer(t, `<style>@media (max-width: 600px) { :root { --ui-sheet-bar-offset: 100px } }</style>`+railPage(t, nav))
+	ctx := behaviorPage(t, b)
+	if err := chromedp.Run(ctx, chromedp.EmulateViewport(1280, 800)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "one")) {
+		t.Fatal("the bootstrap pass did not mark the first entry")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(390, 800),
+		chromedp.Evaluate(`(() => { const one = document.getElementById('one');
+			scrollTo(0, one.offsetTop + one.offsetHeight - 50); })()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "two")) {
+		t.Fatal("after narrowing, the section behind the bar kept the active entry")
+	}
+}
+
 // A section left with less than a pixel in the band is not in view:
 // the scroll position rounds to whole pixels, so a nav of fractional
 // height (CI's fonts) leaves a sliver of the section above when the
