@@ -42,10 +42,7 @@ func peerIsSelf(c *net.UnixConn) error {
 	if err != nil {
 		return fmt.Errorf("read own token: %w", err)
 	}
-	if !peer.Equals(self.User.Sid) {
-		return fmt.Errorf("peer process %d runs as another user", pid)
-	}
-	return nil
+	return checkPeerSID(peer.String(), self.User.Sid.String(), pid)
 }
 
 // processUserSID returns a copy of pid's token user SID.
