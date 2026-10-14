@@ -854,8 +854,13 @@ section in view: the pill follows the entry the `Target` observer
 marks, so set `Target` as well. The sheet is a native popover rendered
 with the page, so it holds that page's own entries, opens with no
 script, and closes on Escape, a tap outside it, its close button, or a
-followed link. Set `PhoneAsideFlush: true` on the row: the stacked
-aside then holds nothing on a phone and draws no rule.
+followed link. Opening it moves focus to the current entry (or the
+close button), and closing it returns focus to the pill. Set
+`PhoneAsideFlush: true` on the row: the stacked aside then holds
+nothing on a phone and draws no rule. The pill takes the bottom of the
+screen, so a page carries one floating pill: leave `PhoneSheet` off on
+a page whose SectionMenu already floats its own. The sheet's id is the
+list's `ID` plus `-sheet` (`fui-toc-sheet` without one).
 
 ```go
 ui.ContentRow(ui.ContentRowConfig{

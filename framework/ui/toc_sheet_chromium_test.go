@@ -24,7 +24,6 @@ import (
 // section in view, and the open sheet holds the list unpinned and
 // without its own label.
 func TestTOCPhoneSheetInAside(t *testing.T) {
-	site := app.NewApp("TOC")
 	items := make([]ui.TOCItem, 6)
 	sections := make([]render.HTML, 6)
 	for i := range items {
@@ -43,30 +42,7 @@ func TestTOCPhoneSheetInAside(t *testing.T) {
 			AsideLabel:      "On this page",
 			PhoneAsideFlush: true,
 		}, html.Main(html.MainConfig{}, sections...)))
-	site.RegisterScreen(app.NewScreen("/", app.NewStaticComponent(page)), nil)
-	host := uihost.New(site)
-	fw := framework.NewApp()
-	fw.Use(host.RouteMatchMiddleware())
-	fw.Mount(host)
-	if err := fw.InitPlugins(); err != nil {
-		t.Fatal(err)
-	}
-	srv := httptest.NewServer(fw.Router())
-	defer srv.Close()
-	ctx := chromedptest.Context(t)
-	check := func(t *testing.T, width int64, js string) {
-		t.Helper()
-		var result string
-		if err := chromedp.Run(ctx, chromedp.EmulateViewport(width, 800), chromedp.Navigate(srv.URL+"/"),
-			chromedp.Poll(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.phonesheet)`, nil),
-			chromedp.Evaluate(`(async()=>{const q=s=>document.querySelector(s), r=e=>e.getBoundingClientRect(), wait=ms=>new Promise(f=>setTimeout(f,ms));`+js+`;return ""})()`,
-				&result, func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) })); err != nil {
-			t.Fatal(err)
-		}
-		if result != "" {
-			t.Fatal(result)
-		}
-	}
+	check := tocPage(t, page, "phonesheet")
 	t.Run("Desktop", func(t *testing.T) {
 		check(t, 1280, `
 const nav=q('[data-cui-comp="ui-toc"]');
@@ -94,4 +70,56 @@ if(getComputedStyle(nav,'::before').display!=='none')return 'the list repeats it
 if(!q('[data-cui-comp="ui-toc"] a[aria-current]'))return 'nothing marked in the sheet';
 `)
 	})
+}
+
+// A labelled sticky list that is not a PhoneSheet keeps its label and
+// its stickiness inside any other open popover: the sheet overrides
+// belong to the phone sheet alone.
+func TestTOCInOtherPopoverKeepsLabel(t *testing.T) {
+	items := []ui.TOCItem{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}
+	toc := ui.TableOfContents(ui.TOCConfig{Label: "In this file", Items: items, Sticky: true})
+	page := render.Raw(`<div popover="manual" id="tools">`) + toc + render.Raw(`</div>`)
+	check := tocPage(t, page, "")
+	check(t, 1280, `
+q('#tools').showPopover();
+const nav=q('[data-cui-comp="ui-toc"]');
+if(getComputedStyle(nav,'::before').display==='none')return 'the list lost its label in an unrelated popover';
+if(getComputedStyle(nav).position!=='sticky')return 'the list lost its stickiness in an unrelated popover';
+`)
+}
+
+// tocPage serves page through the framework host and returns a checker
+// that loads it at a width, waits for the named behaviour (if any), and
+// runs js, which returns a failure message or nothing.
+func tocPage(t *testing.T, page render.HTML, module string) func(t *testing.T, width int64, js string) {
+	t.Helper()
+	site := app.NewApp("TOC")
+	site.RegisterScreen(app.NewScreen("/", app.NewStaticComponent(page)), nil)
+	host := uihost.New(site)
+	fw := framework.NewApp()
+	fw.Use(host.RouteMatchMiddleware())
+	fw.Mount(host)
+	if err := fw.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(fw.Router())
+	t.Cleanup(srv.Close)
+	ctx := chromedptest.Context(t)
+	ready := `true`
+	if module != "" {
+		ready = `!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.` + module + `)`
+	}
+	return func(t *testing.T, width int64, js string) {
+		t.Helper()
+		var result string
+		if err := chromedp.Run(ctx, chromedp.EmulateViewport(width, 800), chromedp.Navigate(srv.URL+"/"),
+			chromedp.Poll(ready, nil),
+			chromedp.Evaluate(`(async()=>{const q=s=>document.querySelector(s), r=e=>e.getBoundingClientRect(), wait=ms=>new Promise(f=>setTimeout(f,ms));`+js+`;return ""})()`,
+				&result, func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) })); err != nil {
+			t.Fatal(err)
+		}
+		if result != "" {
+			t.Fatal(result)
+		}
+	}
 }

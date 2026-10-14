@@ -62,7 +62,10 @@ type TOCConfig struct {
 	// the breakpoint the nav renders as it does without it. The pill
 	// follows the entry the Target observer marks, so set Target too.
 	// In a ui.ContentRow aside, set the row's PhoneAsideFlush: the
-	// stacked aside holds nothing else on a phone.
+	// stacked aside holds nothing else on a phone. The pill takes the
+	// bottom of the screen, so a page carries one: leave this off where
+	// a SectionMenu already floats its pill. The sheet's id is ID plus
+	// "-sheet", or fui-toc-sheet without an ID.
 	PhoneSheet bool
 	// Breakpoint is the width below which PhoneSheet folds the list:
 	// below md (48rem, the default) or below lg (64rem). Match the
@@ -190,13 +193,14 @@ func tocCSS(_ style.Theme) string {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
 }
-/* In an open sheet (PhoneSheet) the sheet's title row names the list
-   and the sheet scrolls it; the rows grow to a thumb's height. */
-:popover-open [data-cui-comp="ui-toc"]::before { display: none; }
-:where(:popover-open) :where([data-cui-comp="ui-toc"]).fui-toc--sticky {
+/* In an open phone sheet (PhoneSheet) the sheet's title row names the
+   list and the sheet scrolls it; the rows grow to a thumb's height. A
+   list in any other popover keeps its own label and stickiness. */
+.cui-phone-sheet__sheet:popover-open [data-cui-comp="ui-toc"]::before { display: none; }
+:where(.cui-phone-sheet__sheet:popover-open) :where([data-cui-comp="ui-toc"]).fui-toc--sticky {
   position: static;
   max-block-size: none;
   overflow: visible;
 }
-:popover-open [data-cui-comp="ui-toc"] .fui-toc__link { padding-block: var(--spacing-md, 8px); }`
+.cui-phone-sheet__sheet:popover-open [data-cui-comp="ui-toc"] .fui-toc__link { padding-block: var(--spacing-md, 8px); }`
 }
