@@ -268,11 +268,18 @@ func (s *ConceptsIndexScreen) ScreenDescription() string {
 func (s *ConceptsIndexScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 // Render is the docs index's article: the hero and the intent groups. It
-// renders in the docs layer (docsLayout), whose docs nav already lists
-// every intent, so the index carries no in-page rail of its own.
+// renders in the docs layer (docsLayout), which brings the docs nav; the
+// intent rail is this screen's fill of the layer's rail outlet
+// (DocsIndexRail).
 func (s *ConceptsIndexScreen) Render() render.HTML {
 	return pageBody(cxHero(), cxBody())
 }
+
+// DocsIndexRail fills the docs layer's rail outlet on /docs/ with the
+// intent rail; the doc pages leave the outlet empty.
+type DocsIndexRail struct{}
+
+func (r *DocsIndexRail) Render() render.HTML { return cxRail() }
 
 func cxHero() render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
@@ -287,6 +294,28 @@ func cxHero() render.HTML {
 	)
 }
 
+// cxRail is the intent rail: ui.AnchoredRail, which bundles the links and
+// the scrollspy. Driven by the shared docIntents catalog so the rail, the
+// sections, and the per-doc pages can never disagree about what exists.
+func cxRail() render.HTML {
+	items := make([]ui.RailItem, len(docIntents))
+	for i, it := range docIntents {
+		items[i] = ui.RailItem{
+			Eyebrow: it.Num,
+			Text:    it.Title,
+			Anchor:  it.Slug,
+			Count:   len(it.Docs),
+		}
+	}
+	// Trailing rail entry for the flat A–Z reference section.
+	items = append(items, ui.RailItem{Eyebrow: "∑", Text: "A–Z", Anchor: "all-az", Count: docCount()})
+	return ui.AnchoredRail(ui.AnchoredRailConfig{
+		Label:           "By intent",
+		Items:           items,
+		ObserveSelector: "#docs-sections",
+	})
+}
+
 func cxBody() render.HTML {
 	sections := make([]render.HTML, 0, len(docIntents)+1)
 	for _, it := range docIntents {
@@ -294,7 +323,7 @@ func cxBody() render.HTML {
 	}
 	// Flat A–Z reference at the bottom, every embedded doc, nothing hidden.
 	sections = append(sections, allDocsSection())
-	return ui.Stack(ui.StackConfig{Gap: ui.Gap2XL}, sections...)
+	return ui.Stack(ui.StackConfig{ID: "docs-sections", Gap: ui.Gap2XL}, sections...)
 }
 
 // intentSection renders one intent group: a grid of linked cards, one per

@@ -1,6 +1,7 @@
 // Package docpage is the GoFastr site's article shell: the section nav
 // on the left, the article in the middle, with breadcrumbs above the
-// body and a previous/next pager under it. It is built the way
+// body and a previous/next pager under it, and an optional rail on the
+// right. It is built the way
 // siteheader and sitefooter are: plain html elements composed here
 // (ui.Breadcrumbs for the trail), the look in docsite-docpage.style.css
 // (an owned style), and every dimension a theme token — the 96px of air
@@ -81,6 +82,10 @@ type LayerConfig struct {
 	Body render.HTML
 	// Pager is the cell under the body, filled with Pager(...).
 	Pager render.HTML
+	// Rail is the right column, filled by a screen that has an in-page
+	// rail (the docs index's intent rail). An empty cell collapses the
+	// column; on phones the rail stacks above the article.
+	Rail render.HTML
 }
 
 // Layer builds the shell around a layout's cells. The cell wrappers
@@ -89,6 +94,7 @@ type LayerConfig struct {
 func Layer(cfg LayerConfig) render.HTML {
 	return Style.Scope(html.Div(html.DivConfig{},
 		html.Div(html.DivConfig{Class: Style.Nav()}, cfg.Nav),
+		html.Div(html.DivConfig{Class: Style.Rail()}, cfg.Rail),
 		html.Article(html.ArticleConfig{Class: Style.Content()},
 			html.Div(html.DivConfig{Class: Style.Crumbs()}, cfg.Crumbs),
 			cfg.Body,

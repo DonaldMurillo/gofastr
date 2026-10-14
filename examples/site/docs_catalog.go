@@ -316,8 +316,11 @@ func resolveDoc(ctx context.Context) (docRef, error) {
 func registerDocsGroup(site *app.App) {
 	frame, out := docsLayout()
 	group := app.NewScreenGroup("/docs", frame)
-	// The index leaves the crumbs and the pager empty.
-	group.Screen(groupScreen("/docs/", &ConceptsIndexScreen{}), nil)
+	// The index has its own in-page rail (the reading intents); it
+	// fills the layer's right column with it and leaves the crumbs and
+	// the pager empty.
+	group.Screen(groupScreen("/docs/", &ConceptsIndexScreen{}).
+		Fill(out.Rail, &DocsIndexRail{}), nil)
 	// One catch-all route serves every doc page. The resolver turns the
 	// slug into its catalog entry (404 for an unknown slug), and
 	// StaticPaths enumerates every page so export, sitemap, llm.md, and
