@@ -45,7 +45,7 @@ var devExamples = []devExample{
 	{"meridian", "/", http.StatusOK},
 	{"ecommerce/app", "/", http.StatusOK},
 	{"site", "/examples", http.StatusOK},
-	{"service-hello", "/", http.StatusUnauthorized}, // the loopback gate answers: sign in with `hello service open --dev`
+	{"gofastr-runs", "/", http.StatusUnauthorized}, // the loopback gate answers: sign in with `gofastr-runs service open --dev`
 }
 
 func TestE2E_DevLoop_Examples(t *testing.T) {

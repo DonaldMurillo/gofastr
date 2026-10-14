@@ -57,10 +57,10 @@ func buildApp(rt service.Runtime) (*framework.App, error) {
 ```
 
 `Run` registers the battery on the App the builder returns, so the
-builder does not need to. `examples/service-hello` is the complete
-version: an entity, entity screens, and a background goroutine that
-writes a row every minute so there is something to see after closing
-the terminal.
+builder does not need to. `examples/gofastr-runs` is the complete
+version: a tracker that lists every gofastr app running on the machine
+(from the [local run registry](local-runs.md)) in its web UI, and
+serves the same list to agents through `service mcp`.
 
 An app with subcommands of its own checks for them before calling
 `Run`. `Run` treats any first argument other than `service` or

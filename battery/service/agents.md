@@ -57,7 +57,7 @@ state dir and port; `--addr <loopback>` is what `gofastr dev` passes.
   caps it near 104 bytes.
 
 **Testing:** set `GOFASTR_SERVICE_DATA_DIR` to a short temp path before
-`Run` or `AppOptions`. The example `examples/service-hello` shows a
-background writer started from `OnStart`.
+`Run` or `AppOptions`. The example `examples/gofastr-runs` lists the
+machine's running gofastr apps and serves them to agents over MCP.
 
 Full doc: `framework/docs/content/service.md` (`gofastr docs service`).

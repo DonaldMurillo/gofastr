@@ -31,7 +31,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   keeps one process per state directory. Windows has no crash restart,
   and its backend is unit-tested but has not run on a real Windows
   machine. Guide: `gofastr docs service`; example:
-  `examples/service-hello`.
+  `examples/gofastr-runs`, which lists the machine's running gofastr
+  apps and serves the list to agents.
 - **Running Apps record themselves in a local run registry.** `App.Start`
   writes a 0600 JSON record (name, pid, URL, MCP path or command,
   service id, dev flag) into `<UserConfigDir>/gofastr/runs` once the
