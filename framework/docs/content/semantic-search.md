@@ -70,10 +70,10 @@ The pipeline is composed inside `Index.Query`. Every stage is opt-in via the `Qu
 
 The snapshot's header records the embedder's `Name()` and `Dim()`. Reopening with a different embedder is refused with `*ModelMismatchError` because mixing vectors from different models is silently catastrophic for retrieval quality. To migrate models: drop the snapshot, re-index from source.
 
-Set `SnapshotEvery` to a positive operation count to enable automatic
-snapshots, leave it at `0` to disable them, or use `-1` to snapshot after
-every operation. Explicit snapshots, recovery checkpoints and `Close()`
-still persist state. Snapshot loading validates chunk counts and vector
+`SnapshotEvery` sets how many operations pass between automatic
+snapshots; `0` means the default, 1000, and `-1` snapshots after every
+operation. Explicit snapshots, recovery checkpoints and `Close()` also
+persist state. Snapshot loading validates chunk counts and vector
 dimensions before changing the store.
 
 Replacing a document with empty text removes its previous chunks. Invalid
@@ -97,7 +97,7 @@ implementation surfaces as an attributed error from `Add` / `Remove` /
 - **`MemoryKeyword`**: in-process BM25-flavoured backend. Zero deps. Recommended default.
 - **`WrapSearchBackend(b search.Backend)`**: adapter over `battery/search` so an app that already runs Postgres FTS or a Bleve index reuses it.
 
-When `Query.Hybrid=true` and `Options.Keyword != nil`, the index gathers the top-`4K` candidates from vector and keyword separately, fuses them with reciprocal-rank fusion (`k=60`), and feeds the union into MMR/rerank. The keyword leg receives at most the first 64 whitespace-separated terms of the query text, the same cap `battery/search` applies, so a token-stuffed query cannot buy an unbounded scoring sweep. When `Keyword == nil`, `Hybrid=true` silently degrades to vector-only.
+When `Query.Hybrid=true` and `Options.Keyword != nil`, the index gathers the top-`4K` candidates from vector and keyword separately, fuses them with reciprocal-rank fusion (`k=60`), and feeds the union into MMR/rerank. The keyword leg receives at most the first 64 terms of the query text, counted as runs of letters and digits the way the keyword index tokenizes them, the same cap `battery/search` applies, so a token-stuffed query cannot buy an unbounded scoring sweep. When `Keyword == nil`, `Hybrid=true` silently degrades to vector-only.
 
 ## Diversity (MMR)
 
@@ -138,6 +138,8 @@ w.Run(ctx, "./src", "./docs")     // until ctx cancellation
 // or
 w.ScanOnce(ctx, "./src")          // one-shot
 ```
+
+A file the chunker refuses (bytes that are not UTF-8, a fallback chunker that errors) is logged and left out of the index, along with any version of it indexed before; the scan goes on, and the watcher retries the file once it changes. An embedder or store error still stops `Run`.
 
 `Watcher` is polling-based on purpose: no third-party deps, deterministic behaviour, and the dev-time cost on a tree of a few thousand files is well under the embedding cost of any actual file edit. For very large trees, swap the implementation for fsnotify-backed without changing the public API.
 

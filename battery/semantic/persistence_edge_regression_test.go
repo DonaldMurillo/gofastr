@@ -271,9 +271,12 @@ func TestRepeatedCrashReplayDoesNotDuplicateGobTypes(t *testing.T) {
 	}
 }
 
-func TestZeroSnapshotEveryDisablesAutomaticSnapshots(t *testing.T) {
+// Zero-value Options compact the WAL every 1000 ops: an index that never
+// snapshots grows its WAL until the disk fills. 500 re-Adds of one
+// document are 1000 ops (each is a remove plus an add).
+func TestZeroSnapshotEveryUsesDefault(t *testing.T) {
 	dir := t.TempDir()
-	idx, err := Open(Options{Embedder: NewStubEmbedder(2), Path: dir, SnapshotEvery: 0})
+	idx, err := Open(Options{Embedder: NewStubEmbedder(2), Path: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,8 +286,8 @@ func TestZeroSnapshotEveryDisablesAutomaticSnapshots(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(dir, "store.snap")); !os.IsNotExist(err) {
-		t.Fatal("SnapshotEvery=0 still created an automatic snapshot")
+	if _, err := os.Stat(filepath.Join(dir, "store.snap")); err != nil {
+		t.Fatalf("zero SnapshotEvery never compacted the WAL: %v", err)
 	}
 }
 

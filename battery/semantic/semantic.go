@@ -172,8 +172,8 @@ type Options struct {
 	Path string
 	// SnapshotEvery is the number of mutating ops after which the index
 	// automatically flushes a full snapshot and truncates the WAL. 0
-	// disables auto-snapshot; -1 snapshots after every op (mostly for
-	// tests). Automatic snapshots are opt-in.
+	// means the default, 1000; -1 snapshots after every op (mostly for
+	// tests).
 	SnapshotEvery int
 }
 
@@ -204,6 +204,9 @@ func Open(opts Options) (Index, error) {
 			return nil, fmt.Errorf("semantic: Options.Keyword is set but Store %T cannot list chunks: it must implement ChunkIDsForDoc(docID)/ChunkByID(id) for hybrid search", opts.Store)
 		}
 	}
+	if opts.SnapshotEvery == 0 {
+		opts.SnapshotEvery = 1000
+	}
 	idx := &index{
 		embedder:      opts.Embedder,
 		chunker:       opts.Chunker,
@@ -219,5 +222,6 @@ func Open(opts Options) (Index, error) {
 		}
 		return nil, err
 	}
+	idx.storeDim() // seed the cache at startup, not on a write
 	return idx, nil
 }

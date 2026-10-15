@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"unicode"
 )
 
@@ -44,6 +45,24 @@ type index struct {
 	mu           sync.Mutex
 	wal          *wal
 	opsSinceSnap int
+
+	// dim caches the store's vector dimension once it is known, so Add
+	// never calls Store.Stats (a full-table COUNT on pgvector, under its
+	// own timeout) per write.
+	dim atomic.Int64
+}
+
+// storeDim returns the store's vector dimension, asking Stats only while
+// it is still unknown (0: an empty FlatStore that infers it on first Add).
+func (i *index) storeDim() int {
+	if d := i.dim.Load(); d > 0 {
+		return int(d)
+	}
+	d := i.store.Stats().Dim
+	if d > 0 {
+		i.dim.Store(int64(d))
+	}
+	return d
 }
 
 func (i *index) loadAndReplay() error {
@@ -129,7 +148,7 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 		}
 		cs, err := i.chunker.Chunk(doc)
 		if err != nil {
-			return fmt.Errorf("semantic: chunk doc %q: %w", doc.ID, err)
+			return &chunkError{docID: doc.ID, err: err}
 		}
 		chunks = append(chunks, cs...)
 	}
@@ -152,7 +171,7 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 	if len(vecs) != len(chunks) {
 		return fmt.Errorf("semantic: embedder returned %d vectors for %d chunks", len(vecs), len(chunks))
 	}
-	expectedDim := i.store.Stats().Dim
+	expectedDim := i.storeDim()
 	if expectedDim == 0 && len(vecs) > 0 {
 		expectedDim = len(vecs[0])
 	}
@@ -169,6 +188,13 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 	// Replace-by-doc semantics: every prior chunk for these doc IDs is
 	// removed before the new chunks land. We log the removes in the
 	// WAL so a crash mid-replace is recoverable to a consistent state.
+	// A cancel is honored only before the first remove: once one has
+	// applied, stopping would lose the document, so the rest runs to
+	// completion.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	ctx = context.WithoutCancel(ctx)
 	for _, doc := range docs {
 		if err := i.logAndApplyRemove(ctx, doc.ID); err != nil {
 			return err
@@ -176,6 +202,19 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 	}
 	return i.logAndApplyAdd(ctx, chunks)
 }
+
+// chunkError is a document the chunker refused (bad bytes, a failing
+// fallback): a fault in that document's content, not in the index.
+type chunkError struct {
+	docID string
+	err   error
+}
+
+func (e *chunkError) Error() string {
+	return fmt.Sprintf("semantic: chunk doc %q: %v", e.docID, e.err)
+}
+
+func (e *chunkError) Unwrap() error { return e.err }
 
 func (i *index) Remove(ctx context.Context, docIDs ...string) error {
 	for _, id := range docIDs {
@@ -198,11 +237,17 @@ func (i *index) logAndApplyAdd(ctx context.Context, chunks []Chunk) (err error) 
 	}()
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if i.wal != nil {
 		if err := i.wal.append(walEntry{Op: walOpAdd, Chunks: chunks}); err != nil {
 			return err
 		}
 	}
+	// Past this point the op is logged: store and keyword index apply
+	// it together or a cancel splits them.
+	ctx = context.WithoutCancel(ctx)
 	if err := i.store.Add(ctx, chunks); err != nil {
 		return err
 	}
@@ -228,11 +273,16 @@ func (i *index) logAndApplyRemove(ctx context.Context, docID string) (err error)
 	// Collect prior chunk IDs under the same lock as the mutation so the
 	// keyword cleanup matches the exact state being removed.
 	priorChunkIDs := i.collectChunkIDs(docID)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if i.wal != nil {
 		if err := i.wal.append(walEntry{Op: walOpRemove, DocID: docID}); err != nil {
 			return err
 		}
 	}
+	// Same as logAndApplyAdd: the store and keyword removes go together.
+	ctx = context.WithoutCancel(ctx)
 	if err := i.store.RemoveDoc(ctx, docID); err != nil {
 		return err
 	}
@@ -294,7 +344,8 @@ func (i *index) keywordRemoveDoc(ctx context.Context, _ string, priorChunkIDs []
 
 // dueSnapshotLocked reports whether an auto-snapshot is due. The caller MUST
 // hold i.mu. snapshotEvery<0 means "snapshot after every op" (a test helper);
-// >0 is the periodic threshold; 0 disables auto-snapshot entirely.
+// >0 is the periodic threshold; 0 (only reachable by building an index
+// without Open, which defaults it to 1000) disables auto-snapshot.
 func (i *index) dueSnapshotLocked() bool {
 	if i.snapshotEvery == 0 {
 		return false
@@ -448,14 +499,15 @@ func (i *index) Query(ctx context.Context, q Query) ([]Hit, error) {
 const maxKeywordQueryTerms = 64
 
 // boundedKeywordText returns q truncated to its first
-// maxKeywordQueryTerms whitespace-separated fields. Byte-scanned, no
-// intermediate slice: the whole point is to not allocate per term on
-// hostile input.
+// maxKeywordQueryTerms terms, counted as keywordTokens splits them (runs
+// of letters and digits): counting whitespace fields let "a1,a2,…" pass
+// as one. Scanned in place, no intermediate slice: the whole point is to
+// not allocate per term on hostile input.
 func boundedKeywordText(q string) string {
 	n := 0
 	inField := false
 	for i, r := range q {
-		if unicode.IsSpace(r) {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
 			inField = false
 		} else {
 			if !inField {

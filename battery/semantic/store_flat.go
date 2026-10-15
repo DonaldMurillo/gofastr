@@ -137,7 +137,7 @@ func (s *FlatStore) Candidates(_ context.Context, qv []float32, filter Filter, t
 			continue
 		}
 		score := dot(q, c.Vec)
-		hits = append(hits, Hit{Chunk: cloneChunk(*c), Score: float64(score), Reason: "vec"})
+		hits = append(hits, Hit{Chunk: *c, Score: float64(score), Reason: "vec"})
 	}
 	sort.Slice(hits, func(i, j int) bool {
 		if hits[i].Score == hits[j].Score {
@@ -147,6 +147,12 @@ func (s *FlatStore) Candidates(_ context.Context, qv []float32, filter Filter, t
 	})
 	if len(hits) > top {
 		hits = hits[:top]
+	}
+	// Copy only the survivors, still under the read lock: the caller
+	// owns them, and copying every filtered chunk first would cost
+	// corpus size times dimension per query.
+	for i := range hits {
+		hits[i].Chunk = cloneChunk(hits[i].Chunk)
 	}
 	// Vectors are intentionally retained here, downstream retrieval
 	// stages (MMR diversity, reranking) need them. The Index strips

@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"strings"
+	"unicode/utf8"
 )
 
 // LangAware is a structure-aware chunker that splits Go source on
@@ -56,7 +57,34 @@ func (l *LangAware) Chunk(doc Document) ([]Chunk, error) {
 			return l.flatten(cs)
 		}
 	}
-	return chunkSafely(l.Fallback, doc)
+	cs, err := chunkSafely(l.Fallback, doc)
+	if err != nil {
+		return nil, err
+	}
+	return l.bound(cs)
+}
+
+// bound splits any chunk over MaxRunes into MaxRunes windows, keeping
+// offsets in the same frame as the input.
+func (l *LangAware) bound(in []Chunk) ([]Chunk, error) {
+	var out []Chunk
+	for _, c := range in {
+		if utf8.RuneCountInString(c.Text) <= l.MaxRunes {
+			out = append(out, c)
+			continue
+		}
+		parts, err := NewFixedWindow(l.MaxRunes, 0).Chunk(Document{ID: c.DocID, Source: c.Source, Text: c.Text, Metadata: c.Metadata})
+		if err != nil {
+			return nil, err
+		}
+		for j := range parts {
+			parts[j].Offset[0] += c.Offset[0]
+			parts[j].Offset[1] += c.Offset[0]
+			parts[j].ID = chunkID(parts[j].DocID, parts[j].Offset[0], parts[j].Offset[1])
+		}
+		out = append(out, parts...)
+	}
+	return out, nil
 }
 
 // chunkSafely invokes one host-supplied Chunker under a recover net:
@@ -218,26 +246,10 @@ func (l *LangAware) flatten(in []Chunk) ([]Chunk, error) {
 		if err != nil {
 			return nil, err
 		}
-		if len(sub) == 0 {
-			return nil, fmt.Errorf("semantic: fallback returned no chunks for oversized content")
+		// No chunks back means the fallback chose to drop the section.
+		if sub, err = l.bound(sub); err != nil {
+			return nil, err
 		}
-		var bounded []Chunk
-		for _, sc := range sub {
-			if len([]rune(sc.Text)) <= l.MaxRunes {
-				bounded = append(bounded, sc)
-				continue
-			}
-			parts, err := NewFixedWindow(l.MaxRunes, 0).Chunk(Document{ID: sc.DocID, Source: sc.Source, Text: sc.Text, Metadata: sc.Metadata})
-			if err != nil {
-				return nil, err
-			}
-			for j := range parts {
-				parts[j].Offset[0] += sc.Offset[0]
-				parts[j].Offset[1] += sc.Offset[0]
-			}
-			bounded = append(bounded, parts...)
-		}
-		sub = bounded
 		// Re-base sub-chunk offsets against the parent chunk's start.
 		for i := range sub {
 			sub[i].Offset[0] += c.Offset[0]

@@ -3,6 +3,7 @@ package semantic
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/DonaldMurillo/gofastr/battery/search"
 	"io"
 	"math"
@@ -86,6 +87,20 @@ func TestKeywordTermCapHandlesUnicodeWhitespace(t *testing.T) {
 	got := boundedKeywordText(s)
 	if len(strings.Fields(got)) > 64 {
 		t.Fatal("unicode whitespace bypassed keyword cap")
+	}
+}
+
+// The cap counts terms the way MemoryKeyword tokenizes them (runs of
+// letters and digits), so punctuation with no whitespace cannot pack an
+// unbounded term list into one "field".
+func TestKeywordTermCapCountsTokens(t *testing.T) {
+	var parts []string
+	for i := range 1000 {
+		parts = append(parts, fmt.Sprintf("a%d", i))
+	}
+	got := boundedKeywordText(strings.Join(parts, ","))
+	if n := len(keywordTokens(got)); n > maxKeywordQueryTerms {
+		t.Fatalf("comma-joined query kept %d terms past the %d cap", n, maxKeywordQueryTerms)
 	}
 }
 
