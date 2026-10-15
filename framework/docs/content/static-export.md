@@ -285,7 +285,8 @@ URLs work as-is; omit `--export-base`.
 A GitHub Pages **project** site (`https://<user>.github.io/<repo>/`) serves
 the artifact under a subpath. Pass `--export-base /<repo>` and the builder:
 
-- prefixes every root-absolute `src`/`href` in the HTML (assets + nav links);
+- prefixes every root-absolute `src`/`href`/`action`/`data-cui-push-state` in
+  the HTML (assets, nav links, form targets, palette destinations);
 - prefixes the inline component-catalog `stylePath` JSON values the runtime
   lazy-loads;
 - bakes the prefix into the emitted `runtime.js` (it constructs split-module

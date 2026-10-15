@@ -695,17 +695,18 @@ func stampStatic(page string) string {
 	return page
 }
 
-// baseAttrURL matches a whitespace-delimited src="…", href="…", or
-// data-cui-push-state="…" whose value is root-absolute (leading "/") but
+// baseAttrURL matches a whitespace-delimited src="…", href="…", action="…"
+// or data-cui-push-state="…" whose value is root-absolute (leading "/") but
 // NOT protocol-relative ("//"). data-cui-push-state is included so combobox/
 // palette selection targets get base-prefixed on subpath deploys (otherwise
-// selecting a command navigates to the apex path and 404s). The leading
+// selecting a command navigates to the apex path and 404s), and action so
+// a GET form (the search page's) submits under the base. The leading
 // ([\s]) anchor ensures only real attributes match, never "data-src" /
 // "srcset", and code samples are safe because core/markdown escapes quotes
 // inside <code> to &quot; (so the ="… pattern never appears in rendered code
 // text). Group 3 is the first path byte, re-emitted so the prefix is inserted
 // after the leading slash.
-var baseAttrURL = regexp.MustCompile(`([\s])(src|href|data-cui-push-state)="/([^/])`)
+var baseAttrURL = regexp.MustCompile(`([\s])(src|href|action|data-cui-push-state)="/([^/])`)
 
 // rewriteBaseURLs prefixes every root-absolute asset and navigation URL in
 // the page with b.BasePath. No-op when BasePath is empty (apex deploy /
@@ -717,7 +718,7 @@ func (b *Builder) rewriteBaseURLs(page string) string {
 	if b.BasePath == "" {
 		return page
 	}
-	// 1. Attributes: src="…"/href="…" (assets + nav links).
+	// 1. Attributes: src="…"/href="…"/action="…" (assets, nav links, forms).
 	page = baseAttrURL.ReplaceAllString(page, "${1}${2}=\""+b.BasePath+"/${3}")
 	// 2. Inline JSON values: the component catalog seeds
 	// "stylePath":"/__gofastr/comp/<name>.css" entries the runtime

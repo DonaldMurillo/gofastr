@@ -196,6 +196,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   features that need the Go server.
 
 ### Fixed
+- **`gofastr export --base` prefixes form actions.** A root-absolute
+  `action` kept the apex path, so a GET form on a project-page export
+  submitted outside the site. It now carries the base like `href` and
+  `src` do.
 - **The command palette keeps one height while the reader types.** The
   panel sized to its list, so a keystroke that changed the row count
   moved the field and footer. It now holds `--ui-cmd-palette-height`
