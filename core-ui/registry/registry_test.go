@@ -1,6 +1,8 @@
 package registry
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -412,5 +414,21 @@ func TestScanSkipsInertTemplates(t *testing.T) {
 				t.Fatalf("ScanSplit held = %q, want %q", got, c.held)
 			}
 		})
+	}
+}
+
+// The ?v= version addresses the bytes a browser caches as immutable,
+// so it is taken over the served (minified) sheet. Taken over the
+// source, a minifier change would ship new bytes under an old URL.
+func TestVersionCoversServedBytes(t *testing.T) {
+	reset()
+	h := RegisterStyle("c", func(style.Theme) string { return ".x {\n  color: red;\n}\n/* note */" })
+	theme := style.DefaultTheme()
+	th := themeHash(theme)
+	e := h.Entry()
+	served := e.ServedCSSForHash(theme, th)
+	sum := sha256.Sum256([]byte(th + "\x00" + served))
+	if got, want := e.VersionForHash(theme, th), hex.EncodeToString(sum[:6]); got != want {
+		t.Fatalf("version %s, want %s (the served bytes' hash)", got, want)
 	}
 }

@@ -105,16 +105,14 @@ func (e *Entry) CSSForHash(theme style.Theme, h string) string {
 	}
 	css := e.StyleFn(theme)
 	e.cssCache[h] = css
-	sum := sha256.Sum256([]byte(h + "\x00" + css))
-	e.versionCache[h] = hex.EncodeToString(sum[:6])
 	return css
 }
 
 // ServedCSSFor is CSSFor as it goes on the wire: minified unless the
 // process keeps sources readable (minify.Enabled). Every path that
 // sends component CSS to a browser (the per-component and bundle
-// endpoints, a static export, an inlined sheet) reads this one; CSSFor
-// stays the readable source the version hash is taken over.
+// endpoints, a static export, an inlined sheet) reads this one, and
+// the version hash is taken over it; CSSFor stays the readable source.
 func (e *Entry) ServedCSSFor(theme style.Theme) string {
 	return e.ServedCSSForHash(theme, themeHash(theme))
 }
@@ -140,7 +138,10 @@ func (e *Entry) ServedCSSForHash(theme style.Theme, h string) string {
 }
 
 // VersionFor returns the content-addressed version string for this
-// entry's CSS under the given theme. Build is shared with CSSFor.
+// entry's CSS under the given theme. It hashes the served bytes
+// (ServedCSSFor), the ones a browser caches as immutable under
+// ?v=<version>: hashed over the source, a minifier change would ship
+// new bytes under an old URL.
 func (e *Entry) VersionFor(theme style.Theme) string {
 	return e.VersionForHash(theme, themeHash(theme))
 }
@@ -148,10 +149,16 @@ func (e *Entry) VersionFor(theme style.Theme) string {
 // VersionForHash is VersionFor with the theme hash supplied; see
 // CSSForHash.
 func (e *Entry) VersionForHash(theme style.Theme, h string) string {
-	_ = e.CSSForHash(theme, h) // ensure cache is warm
+	served := e.ServedCSSForHash(theme, h)
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.versionCache[h]
+	if v, ok := e.versionCache[h]; ok {
+		return v
+	}
+	sum := sha256.Sum256([]byte(h + "\x00" + served))
+	v := hex.EncodeToString(sum[:6])
+	e.versionCache[h] = v
+	return v
 }
 
 // EvictTheme drops the cached CSS + version for hash from this entry. A no-op

@@ -251,7 +251,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   runtime JS (`GOFASTR_DEV=1` or `RUNTIME_NOMINIFY=1` keeps it
   readable). `app.css`, component sheets, the component bundle, widget
   sheets, the setup and print sheets and a static export's `app.css`
-  all go through `minify.ServedCSS`. On the examples/hn front page the
+  and widget sheets all go through `minify.ServedCSS`. On the examples/hn front page the
   component bundle drops from 11.4 KB to 5.7 KB gzipped and `app.css`
   from 5.0 KB to 2.6 KB, so HTML plus CSS fits in about 12 KB, and its
   first paint under real 300 ms, 400 kbps, 6x CPU throttling moves from
@@ -261,7 +261,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   minified spelling (`minmax(0,1fr)`), and a test that greps served CSS
   should build its needle with `minify.ServedCSS`.
   `registry.Entry.ServedCSSFor` returns a component's sheet as served;
-  `CSSFor` stays the readable source.
+  `CSSFor` stays the readable source. Component versions and theme
+  variant keys hash the served bytes, so a minifier change gets new
+  immutable URLs. `widget.RenderCSS` returns the served sheet.
 - **First paint links only the sheets the page renders.** The SSR
   scan skips markers inside an inert `<template>` (the confirm dialog,
   a toast item, a menu row, a loading skeleton). Each sheet only

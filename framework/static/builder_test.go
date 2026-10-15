@@ -2,6 +2,7 @@ package static
 
 import (
 	"context"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -554,7 +555,8 @@ func TestBuildDumpsWidgetCatalogAndChrome(t *testing.T) {
 		Hidden().
 		Slot("body", homeScreen{}).
 		Build()
-	widget.Mount(router.New(), &def)
+	live := router.New()
+	widget.Mount(live, &def)
 
 	out := t.TempDir()
 	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
@@ -574,6 +576,17 @@ func TestBuildDumpsWidgetCatalogAndChrome(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(out, rel)); err != nil {
 			t.Errorf("missing widget asset %s: %v", rel, err)
 		}
+	}
+	// The exported sheet is the bytes the live endpoint serves, minified
+	// outside dev, not the commented source.
+	exported, err := os.ReadFile(filepath.Join(out, "core-ui/widget/ssg-dump-test/style.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	live.ServeHTTP(rec, httptest.NewRequest("GET", def.StylePath, nil))
+	if string(exported) != rec.Body.String() {
+		t.Errorf("exported widget CSS (%d bytes) differs from the live endpoint's (%d bytes)", len(exported), rec.Body.Len())
 	}
 }
 

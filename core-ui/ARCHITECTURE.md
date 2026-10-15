@@ -1727,9 +1727,10 @@ scans newly inserted DOM (cross-page swap, island response, widget
 mount, intercepted pane) and lazy-loads any new component's CSS as a `<link>` once
 per session, dedup'd by `data-cui-style="<name>"`. The browser
 caches the stylesheet by URL (`/__gofastr/comp/<name>.css?v=<hash>`)
-under `immutable` headers in prod, content-addressed via the
-component's CSS hash, so a deploy that changes the sheet busts the
-URL automatically.
+under `immutable` headers in prod, content-addressed by a hash of
+the sheet as served (minified outside dev), so a deploy that changes
+the bytes, a source edit or a minifier change, busts the URL
+automatically.
 
 ### Three load modes
 

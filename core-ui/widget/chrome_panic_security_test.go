@@ -111,7 +111,7 @@ func TestWidgetChromeRedPanicContained(t *testing.T) {
 		t.Errorf("control broken: healthy Skeleton no longer renders:\n%s", out)
 	}
 	ctlCSS := New("red-ctl-css").Build()
-	ctlCSS.ExtraCSS = func() string { return "/* red-ctl-css */" }
+	ctlCSS.ExtraCSS = func() string { return ".red-ctl-css{color:red}" }
 	if out := RenderCSS(&ctlCSS); !strings.Contains(out, "red-ctl-css") {
 		t.Errorf("control broken: healthy ExtraCSS no longer reaches the stylesheet:\n%s", out)
 	}

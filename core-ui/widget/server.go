@@ -18,7 +18,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/compute"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
-	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -422,11 +421,7 @@ func (s *server) serveChrome(w http.ResponseWriter, r *http.Request) {
 func (s *server) serveStyle(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	css := widgetCSS(s.def)
-	if extra := safeExtraCSS(s.def); extra != "" {
-		css += "\n" + extra
-	}
-	fmt.Fprint(w, minify.ServedCSS(css))
+	fmt.Fprint(w, RenderCSS(&s.def))
 }
 
 // safeExtraCSS invokes the host ExtraCSS hook under the chrome containment
