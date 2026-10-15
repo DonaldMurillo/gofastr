@@ -198,6 +198,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   **`static.Walk`** renders the same page set at runtime, with a `skip`
   func asked about each path before it renders. A page that fails to
   render reaches `fn` with its error, as in `fs.WalkDir`.
+- **`ui.EntryList`** renders a dense list of links to read: a title
+  link, its source beside it in muted text, and a meta line under it
+  (`Entry.Meta`, the caller's markup). `Ranked` makes it an `<ol>`
+  numbered from `Start`, so page two of a thirty-row list reads 31, 32,
+  and the numbers are the browser's list markers. Knobs:
+  `--ui-entry-list-gap`, `--ui-entry-list-rank-width`.
+- **`ui.CommentThread`** renders a discussion with replies nested as
+  deep as they go: each comment an `<article>` (byline, then body) in a
+  list item, its replies a list inside that item. Each level is
+  indented and ruled on its leading edge; in a container under 30rem
+  the step shrinks so a deep thread keeps a readable column on a phone.
+  Knobs: `--ui-comment-thread-gap`, `--ui-comment-thread-indent`,
+  `--ui-comment-thread-indent-compact`.
 
 ### Changed
 - **BREAKING: `ui.ContentRowConfig.BelowHeader` is removed.** Set
