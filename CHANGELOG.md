@@ -271,20 +271,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   a NUL byte is refused, and the invalid-key error no longer echoes the key.
 
 ### Fixed
-- **Regression audit: 96 defects fixed**, each pinned by a regression
+- **Regression audit: 95 defects fixed**, each pinned by a regression
   test that failed before its fix. They cover retry arithmetic, SQL
   transactions and identifiers, configuration, YAML and dotenv parsing,
   validation and generated schemas, localization, pagination, module framing,
   notification routing, queue and webhook storage, cron shutdown, desktop
   updates, and semantic retrieval and crash recovery. Desktop updates now
   extract and copy files with group and other write bits cleared whatever
-  the umask, and `MoveTree` refuses a destination that already exists.
-  `queue` Redis `ListJobs` accepts `"all"` like the other backends.
-  `query.Insert`, `Update.Returning` and `Select` copy the slices they are
-  handed, so a caller reusing its slice no longer rewrites a built query.
-  A semantic `Add` canceled mid-replace leaves the old document in place,
-  and the watcher skips a file it cannot chunk and keeps scanning instead
-  of stopping the pass.
+  the umask, copy read-only directories, and refuse an existing
+  destination inside the rename itself. `query.Insert`, `Update.Returning`
+  and `Select` copy the slices they are handed, so a caller reusing its
+  slice no longer rewrites a built query. A semantic `Add` canceled
+  mid-replace leaves the old document in place, a `PgVectorStore.Add` batch
+  that fails stores none of its chunks, and the watcher skips a file it
+  cannot chunk and keeps scanning instead of stopping the pass.
+- **Queues list and retry what they were given.** `ListJobs("all")` lists
+  every job on the DB and Redis backends, as it did on the memory one.
+  A `MemoryQueue` handler that edits its payload and fails no longer
+  changes what its retry runs.
+- **A canceled local save or delete changes nothing.** `core/upload` and
+  `battery/storage` local backends check the context before the rename
+  that replaces the object, and `core/upload` before a delete.
 - **`mcp.ServeStdio` no longer answers notifications.** The
   `notifications/initialized` every client sends after the handshake got
   a method-not-found error line with no id, which JSON-RPC forbids and
