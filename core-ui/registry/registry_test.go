@@ -386,10 +386,19 @@ func TestScanSkipsInertTemplates(t *testing.T) {
 		{"unterminated", `<i data-cui-comp="c"></i><template><i data-cui-comp="a"></i>`, "c", "a"},
 		{"uppercase", `<TEMPLATE><i data-cui-comp="a"></i></TEMPLATE><i data-cui-comp="c"></i>`, "c", "a"},
 		{"declarative shadow root renders", `<div><template shadowrootmode="open"><i data-cui-comp="shadow"></i></template></div>`, "shadow", ""},
+		{"shadow root name in uppercase", `<div><template SHADOWROOTMODE=open><i data-cui-comp="shadow"></i></template></div>`, "shadow", ""},
+		{"shadowrootmode as a value", `<template title="shadowrootmode"><i data-cui-comp="c"></i></template>`, "", "c"},
+		{"shadowrootmode after a value", `<template data-x='a b' shadowrootmode="open"><i data-cui-comp="shadow"></i></template>`, "shadow", ""},
 		{"custom element named template-x", `<template-x data-cui-comp="t"></template-x>`, "t", ""},
 		{"text mentioning a template", `<p>&lt;template&gt;</p><i data-cui-comp="c"></i>`, "c", ""},
 		{"held and rendered", `<template><i data-cui-comp="c"></i><i data-cui-comp="d"></i></template><i data-cui-comp="c"></i>`, "c", "d"},
 		{"two templates", `<template><i data-cui-comp="a"></i></template><p></p><template><i data-cui-comp="b"></i></template>`, "", "a,b"},
+		{"template in a comment", `<!-- <template> --><i data-cui-comp="c"></i>`, "c", ""},
+		{"template in an attribute", `<p title="<template>"></p><i data-cui-comp="c"></i>`, "c", ""},
+		{"template in a script", `<script>let t = "<template>";</script><i data-cui-comp="c"></i>`, "c", ""},
+		{"template in a textarea", `<TEXTAREA><template></TEXTAREA><i data-cui-comp="c"></i>`, "c", ""},
+		{"end tag in a held comment", `<template><!-- </template> --><i data-cui-comp="a"></i></template><i data-cui-comp="c"></i>`, "c", "a"},
+		{"unterminated comment", `<i data-cui-comp="c"></i><!-- <template>`, "c", ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			if got := strings.Join(Scan(c.html), ","); got != c.want {
