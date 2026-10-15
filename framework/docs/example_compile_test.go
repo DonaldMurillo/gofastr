@@ -167,6 +167,34 @@ func repoGoDirective(t *testing.T, repoRoot string) string {
 	return ""
 }
 
+// directiveOpener matches every gofastr:compile directive line, inside a
+// fence or out; prose that names the directive mid-line is not one.
+var directiveOpener = regexp.MustCompile(`(?m)^ {0,3}<!--\s*gofastr:compile\b`)
+
+// A directive the compile gate cannot match compiles nothing and fails
+// nothing: written inside the fence instead of above it, the snippet goes
+// unchecked and the directive shows on the page as code. Every directive
+// must be one compileDirective picks up.
+func TestCompileDirectivesAllMatch(t *testing.T) {
+	entries, err := fs.ReadDir(contentFS, "content")
+	if err != nil {
+		t.Fatalf("read content dir: %v", err)
+	}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		body, err := fs.ReadFile(contentFS, "content/"+e.Name())
+		if err != nil {
+			t.Fatalf("read %s: %v", e.Name(), err)
+		}
+		text := string(body)
+		if got, want := len(compileDirective.FindAllString(text, -1)), len(directiveOpener.FindAllString(text, -1)); got != want {
+			t.Errorf("%s: %d gofastr:compile directives, %d match the compile gate; a directive goes above its ```go fence, directly followed by it", e.Name(), want, got)
+		}
+	}
+}
+
 func TestDocExamplesCompile(t *testing.T) {
 	entries, err := fs.ReadDir(contentFS, "content")
 	if err != nil {

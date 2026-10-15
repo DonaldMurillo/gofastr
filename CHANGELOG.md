@@ -8,6 +8,63 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`ui.BoxConfig.Bounded`** caps a Box at the `--ui-box-bounded-size` knob
+  (20rem) and scrolls what overflows: a window for a long list in a panel,
+  or for previewing a viewport-height component such as `ui.Workbench`.
+- `ui.TerminalErr` marks a failure line in a `ui.TerminalBlock`
+  (danger tone, `--ui-terminal-block-err-color` knob), beside
+  `TerminalOut` and `TerminalOK`.
+- `HeroConfig.Lede` (inline markup in place of `Subtitle`) and
+  `HeroConfig.Footer` (content under the actions: an install line,
+  a byline, a stats line).
+- `SectionConfig.Band` gives a section without an eyebrow the
+  page-band treatment (display-size heading, more air under the head).
+- `ui.StackConfig.StickyHeader` pins the page frame's `<header>` and
+  publishes its height (`--size-header-height`) as `--ui-sticky-top`.
+  Every top-sticky part below reads it, at any layer depth: a `Sticky`
+  ContentRow's nav column and toolbar, `ui.StepRail`, the
+  `interactive.SectionMenu` rail, `ui.TableOfContents`,
+  `ui.AnchoredRail`, `ui.GlobalSearch`, `ui.NetworkRetryBanner`, a
+  top-edge `ui.Sticky`, a `FormFrame` side panel and an anchored
+  `ui.Section` stop under the header instead of sliding behind it. A
+  region that scrolls on its own (a bounded `ui.Box`, the pinned nav
+  column, a `ui.ListDetail` list, the PaneHost drawer, the Workbench
+  rail) resets the offset to 0. The layout declares the sticky header
+  once; no component takes a flag for it.
+- `SectionMenuConfig.Filter` puts a filter box above an
+  `interactive.SectionMenu`'s list, in the rail and in the phone sheet.
+  Typing hides the links that don't match, marks the match, shows
+  "matches/total" in each group header and says `FilterEmpty` when
+  nothing matches; Escape clears it. `FilterPlaceholder` sets the
+  prompt. `InlineTrigger` keeps the phone pill in flow, for a menu shown
+  inside a card or a demo.
+- `SectionMenuConfig.SwapAt` moves the width where an
+  `interactive.SectionMenu` trades its rail for its phone pill
+  from 900px to a `ui.ContentRow` breakpoint (`interactive.SwapMD`,
+  48rem, or `interactive.SwapLG`, 64rem), so a menu in a row's nav
+  column swaps where the row stacks.
+- **`ui.TOCConfig.PhoneSheet` folds a contents list into a bottom sheet
+  on phones.** Below `Breakpoint` (md by default) a pill floating at the
+  bottom of the screen names the section in view and opens the list;
+  at and above it the list renders as before. The sheet is a native
+  popover rendered with the page: it opens without script, closes on
+  Escape, a tap outside, its close button or a followed link, and with
+  script moves focus to the current entry when it opens.
+  `ui.ContentRowConfig.PhoneAsideFlush` drops the stacked aside's rule
+  and padding so an aside holding only that list leaves no band.
+  The pieces are public: `interactive.SheetPill` (the pill SectionMenu
+  uses too) and `interactive.PhoneSheet` (pill plus inline sheet for any
+  list that marks its current entry `aria-current`).
+  `ui.AnchoredRailConfig.PhoneSheet` folds a rail the same way (below
+  `SwapAt`, 900px by default); its pill names the section by the link's
+  text, without the parts marked `interactive.SheetChipClass` (the
+  rail marks its number and count chips). `PhoneSheetTop` on
+  either (`interactive.PhoneSheetConfig.Top`) pins that pill as an "On
+  this page: <section>" bar under the sticky header and hangs the list
+  from the bar, for a page whose SectionMenu pill already holds the
+  bottom edge. In a ContentRow aside the bar's aside moves above the
+  main column on a phone and sticks there. Anchored sections and the
+  rail's in-view band clear the bar through `--ui-sheet-bar-offset`.
 - **entityui lists warn when their row links lead nowhere.** The first
   time a list renders rows whose `<base>/<id>` matches no registered
   screen, it logs one warning per base naming the route to register.
@@ -47,7 +104,107 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   outcomes like "account created" that the danger-styled `Alert` would
   misreport (#503).
 
+### Changed
+- **BREAKING: `ui.ContentRowConfig.BelowHeader` is removed.** Set
+  `StickyHeader: true` on the page-tall `ui.Stack` that holds the
+  header instead; a `Sticky` row under it sticks below the header on its
+  own. The site header sheets no longer set `position: sticky`
+  themselves: the stack pins the header. Owned sheets that offset a
+  sticky rail or a scroll margin by `--size-header-height` read
+  `var(--ui-sticky-top, 0px)`. A `Sticky` row with no toolbar no longer
+  adds the toolbar's height to the `--ui-sticky-top` its main column
+  sees; with a toolbar the workspace under it still does
+  (`gofastr upgrade` points at the field). `ui.AnchoredRail` no longer
+  reads `--nav-h` (60px when unset): it sticks 16px below
+  `--ui-sticky-top`, so on a page with no sticky header it now sits
+  16px from the top instead of 76px.
+- **`interactive.SectionMenu` is redesigned.** In the rail each group's
+  header pins to the top while its links scroll under it and shows the
+  group's link count; the current page carries an accent dot instead of
+  a left rule, and the group holding it takes the accent. A rail filling
+  a pinned column (`FillColumn`) insets its own links from the column's
+  edges, which had none, and scrolls its list under the filter. Below
+  `SwapAt` the "Sections" button becomes a pill floating at the bottom of
+  the screen that names the current page and its group, kept current
+  across client navigations (the page ends a pill's height lower, so it
+  never covers the last line), and `SectionMenuDrawer` is now a bottom
+  sheet (`preset.BottomSheet`) that opens on the current page's group.
+  Knobs: `--ui-section-menu-bg`, `--ui-section-menu-inset`,
+  `--ui-section-menu-dot`, and on the shared pill and sheet title row
+  `--ui-sheet-pill-bottom` and `--ui-sheet-close-size`, which replaces
+  `--ui-section-menu-close-size`. A `ui.ContentRow` holding the menu
+  sets `PhoneNavFlush`, so the empty stacked column draws no band.
+- **BREAKING: `gallery.ContributeCSS` and `gallery.BaseCSS` are removed.**
+  The `framework/gallery` demos lay out through `ui.Cluster`, `ui.Stack`,
+  `ui.Box` and `ui.Container` and ship no stylesheet, so a host renders the
+  catalog laid out with no CSS of its own. Delete the call (`gofastr upgrade`
+  points at it).
+- **`ui.HighlightLines` knows more languages.** Go now classes named
+  types in type position (`type Pong`, `Pong{`, `*http.Request`,
+  `[]schema.Field`); JS/TS, SQL, shell, YAML and JSON get their own
+  keyword sets, comment syntax and key classing instead of the generic
+  comments-strings-numbers pass. `text`/`plain` stay untokenized.
+  See `gofastr docs ui-new-components` → Syntax highlighting.
+- **`ui.CodeBlock` renders a tab four columns wide**
+  (`--ui-code-block-tab-size`) and draws the line-number gutter from
+  the code colors (`--ui-code-block-gutter-color`), not the page's
+  `--color-text-subtle`.
+
 ### Fixed
+- **A sticky `ui.TableOfContents` in a `ui.ContentRow` aside sticks
+  when a layout outlet holds it.** The outlet was only as tall as the
+  list, so the list had no room to stick and scrolled away with the
+  page. An outlet in the aside now fills the column.
+- **A rail or contents list no longer marks the section behind a sticky
+  header.** The shared observer (`headless-rail`) counted a section
+  whose last lines sat under the header as the one in view, so after a
+  jump the entry above stayed marked. Its band now starts at
+  `--ui-sticky-top`, and the active entry is the first section in the
+  band in document order.
+- **A rail or contents list marks the last section after a jump past
+  them all.** Pressing End, or following a link to content below the
+  last section, crossed no band edge the observer reports, so the
+  entry marked before the jump stayed marked. With no section in the
+  band, the rail now marks the last one scrolled past, and it checks
+  again when a scroll settles.
+- **A padded `ui.Container` lines up with the header and footer bands.**
+  A `ContainerPadPage` or `ContainerPadEnd` container of any `Width`
+  stepped its inline padding 8/16/24px while the bands used the page
+  gutter (`--size-page-gutter`), so on a phone page text sat 12px left of
+  the header brand. It now takes the page gutter at every width. Inside
+  an app frame's content area (`ui.ContentRow` with a `Sidebar`), whose
+  own padding is the gutter, it adds none, where a phone used to show
+  two gutters stacked, and a `ContainerPage` there caps at the bare page
+  measure.
+- **A resolver-backed screen's `llm.md` carries its content.**
+  `app.ScreenLLMMDForPath`, behind every per-URL `/llm.md`, the
+  `Accept: text/markdown` response and the static export, ran `Load`
+  without the route match or the route resolvers, so a screen reading a
+  resolver (a catch-all docs route) fell back to the pattern doc. It now
+  runs them first, as the page render does, and a resolver or `Load`
+  answering `app.ErrNotFound` makes the doc a 404 instead of the
+  pattern doc.
+- **A section nested in a page band keeps its own heading.** The
+  display-size heading of an eyebrow section, and the small upper-case
+  label of an `Overline` one, reached every `ui.Section` heading in the
+  section's body too. Each rule now selects only the section's own
+  heading.
+- **`sdkdocs` marks only the current page in its phone menu.** The menu
+  sheet is mounted once for every page, and it marked Overview current
+  on all of them, as did the 404 page's rail, so a reader on Errors saw
+  two current pages. Neither marks a page now; the runtime marks the one
+  the reader is on.
+- **`core/markdown` hides HTML comment blocks.** A `<!-- … -->` block
+  rendered as escaped text, so every `<!-- gofastr:compile … -->`
+  directive in the embedded docs showed on the site's doc pages and in
+  `ui.Markdown`. A comment block now renders as nothing, at the top
+  level or under a list item. An unclosed comment, or text after the
+  close, still renders as escaped text.
+- `ui.Hero` (split) and `ui.HeroSplit` collapse to a `minmax(0, 1fr)`
+  track on phones, so a long unbreakable line in the media column no
+  longer widens the page past the viewport.
+- `ui.Card` headings and descriptions wrap long unbreakable tokens
+  (a query string, a URL) instead of overflowing the card.
 - **`core/static` answers `Range` requests.** `Range: bytes=0-99` got
   `200` and the whole file with no `Accept-Ranges`, so a video served by
   `static.Handler` could not seek, Safari would not play an mp4 from it,

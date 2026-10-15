@@ -131,6 +131,11 @@ type SectionConfig struct {
 	// dashboard's "Billing" above its count cards). It is still the
 	// section's <h2>.
 	Overline bool
+	// Band draws the section as a page band (marketing, landing, docs
+	// hubs): display-size heading and more air under the head. A
+	// section with an Eyebrow is a band already; Band gives the same
+	// treatment to one with no kicker.
+	Band bool
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the section's root <section> element.
@@ -160,6 +165,9 @@ func Section(cfg SectionConfig, body ...render.HTML) render.HTML {
 	}
 	if cfg.Overline {
 		cfg.Class += " fui-section--overline"
+	}
+	if cfg.Band {
+		cfg.Class += " fui-section--band"
 	}
 	sectionID := cfg.ID
 	if sectionID == "" && cfg.Heading != "" {

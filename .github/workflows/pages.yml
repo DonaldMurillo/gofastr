@@ -16,6 +16,11 @@ name: pages
 on:
   push:
     branches: [main]
+    # A release tag usually lands after its commit's push to main, and
+    # the build stamps the version from `git describe`, so a deploy that
+    # ran before the tag existed shows the previous release. Re-deploy
+    # when a release tag is pushed.
+    tags: ['v*']
   workflow_dispatch:
 
 permissions:
@@ -33,6 +38,10 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          # A tag push deploys main's head, not the tagged commit: the tag
+          # may sit behind main (a release commit tagged after later
+          # merges), and deploying it would roll the site back.
+          ref: ${{ startsWith(github.ref, 'refs/tags/') && github.event.repository.default_branch || github.sha }}
           # Need the tag history so the build can stamp the displayed version
           # from `git describe` (default shallow checkout fetches no tags).
           fetch-depth: 0

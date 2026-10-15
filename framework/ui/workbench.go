@@ -117,6 +117,7 @@ func workbenchCSS(_ style.Theme) string {
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+  --ui-sticky-top: 0px;
   padding: var(--spacing-md, 8px);
   box-sizing: border-box;
   background-color: var(--color-surface, #fff);

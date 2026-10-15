@@ -235,6 +235,12 @@ func pluginPills(p pluginEntry) render.HTML {
 	)
 }
 
+// pluginPage stacks a plugins page's blocks. The page frame (the registry
+// nav column, the padded content area) is the plugins layer's.
+func pluginPage(blocks ...render.HTML) render.HTML {
+	return ui.Stack(ui.StackConfig{Gap: ui.GapXL}, blocks...)
+}
+
 // =============================================================================
 // /plugins
 // =============================================================================
@@ -254,7 +260,7 @@ func (s *PluginsScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *PluginsScreen) Render() render.HTML {
 	reg, err := pluginReg()
 	if err != nil {
-		return container(ui.Callout(ui.CalloutConfig{Title: "Registry unavailable", Variant: ui.StatusWarning},
+		return pluginPage(ui.Callout(ui.CalloutConfig{Title: "Registry unavailable", Variant: ui.StatusWarning},
 			render.Text("The vendored plugins.json did not parse: "+err.Error())))
 	}
 	cards := make([]render.HTML, 0, len(reg.Plugins))
@@ -267,7 +273,7 @@ func (s *PluginsScreen) Render() render.HTML {
 			Footer:       pluginPills(p),
 		}))
 	}
-	return container(
+	return pluginPage(
 		ui.PageHeader(ui.PageHeaderConfig{
 			Eyebrow:  "gofastr-plugins · " + reg.Release.Tag,
 			Title:    fmt.Sprintf("%d plugins, each one go get away", len(reg.Plugins)),
@@ -277,7 +283,7 @@ func (s *PluginsScreen) Render() render.HTML {
 		ui.Section(ui.SectionConfig{
 			ID:      "registry",
 			Heading: "Where this list comes from",
-			Description: fmt.Sprintf("This page is rendered from plugins.json as published with gofastr-plugins %s on %s. The registry is a convention, not a service: there is no discovery at runtime, an app imports the package it wants and mounts it with app.RegisterPlugin. The site vendors the file by copy and refreshes it with scripts/vendor-plugins-json.sh.",
+			Description: fmt.Sprintf("Built from the plugins.json file in the gofastr-plugins %s release (%s). Nothing looks plugins up at runtime: go get the package and mount it with app.RegisterPlugin.",
 				reg.Release.Tag, strings.SplitN(reg.Release.Published, "T", 2)[0]),
 		},
 			ui.CodeBlock(ui.CodeBlockConfig{
@@ -285,10 +291,10 @@ func (s *PluginsScreen) Render() render.HTML {
 				Code:     "curl -fsSL -O " + strings.TrimSuffix(reg.Release.Source, "/") + "/releases/download/" + reg.Release.Tag + "/plugins.json",
 			}),
 			html.Paragraph(html.TextConfig{},
-				render.Text("The isolation model, the capability grammar, and the trusted-mount opt-out are in "),
-				html.Link(html.LinkConfig{Href: "/docs/plugin-platform", Text: "the plugin platform doc"}),
-				render.Text(". The registry file itself is on "),
-				html.LinkHTML(html.LinkHTMLConfig{Href: reg.Release.Source, ExtraAttrs: html.Attrs{"rel": "external"}, Content: render.Text("GitHub")}),
+				render.Text("How the sandbox, capabilities and trusted mounts work: "),
+				ui.Link(ui.LinkConfig{Href: "/docs/plugin-platform", Text: "the plugin platform doc"}),
+				render.Text(". Plugin source: "),
+				ui.Link(ui.LinkConfig{Href: reg.Release.Source, Text: "gofastr-plugins on GitHub", ExtraAttrs: html.Attrs{"rel": "external"}}),
 				render.Text("."),
 			),
 		),
@@ -345,7 +351,7 @@ func (s *PluginScreen) Render() render.HTML {
 	reg, err := pluginReg()
 	p, ok := pluginByName(s.name)
 	if err != nil || !ok {
-		return container(ui.EmptyState(ui.EmptyStateConfig{
+		return pluginPage(ui.EmptyState(ui.EmptyStateConfig{
 			Title:        "No such plugin",
 			Description:  "That name is not in the vendored registry.",
 			HeadingLevel: 1,
@@ -390,18 +396,18 @@ func (s *PluginScreen) Render() render.HTML {
 			render.Text("The frame never gets allow-same-origin, so it cannot reach host cookies, the database, or the host DOM. It talks to the host only over the versioned postMessage bridge, limited to the capabilities listed below."))
 	}
 
-	return container(
+	return pluginPage(
 		ui.PageHeader(ui.PageHeaderConfig{
 			Eyebrow:  "gofastr-plugins · " + reg.Release.Tag,
 			Title:    p.Name,
 			Subtitle: p.Description,
 			Actions:  pluginPills(p),
 		}),
-		ui.Section(ui.SectionConfig{ID: "install", Heading: "Install and mount"},
+		ui.Section(ui.SectionConfig{ID: "install", Heading: "Install and mount", Compact: true},
 			ui.CodeBlock(ui.CodeBlockConfig{Language: "go", Code: mount, ShowCopy: true}),
 		),
-		ui.Section(ui.SectionConfig{ID: "posture", Heading: "Isolation"}, posture),
-		ui.Section(ui.SectionConfig{ID: "manifest", Heading: "Manifest"},
+		ui.Section(ui.SectionConfig{ID: "posture", Heading: "Isolation", Compact: true}, posture),
+		ui.Section(ui.SectionConfig{ID: "manifest", Heading: "Manifest", Compact: true},
 			ui.DetailList(ui.DetailListConfig{Items: items}),
 		),
 		html.Paragraph(html.TextConfig{}, html.Link(html.LinkConfig{Href: "/plugins", Text: "All plugins"})),

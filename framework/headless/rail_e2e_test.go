@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/chromedp/cdproto/heapprofiler"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -139,6 +141,141 @@ func TestE2E_TOCListIsServerRenderedAndActiveStateMoves(t *testing.T) {
 	}
 }
 
+// A section scrolled behind the sticky header is out of view: the
+// observer's band starts at --ui-sticky-top plus a phone sheet's bar
+// pinned under it (--ui-sheet-bar-offset). With the last 50px of "one"
+// under 100px of header and bar and "two" filling the view below, the
+// active entry is "two". The header height is any length expression:
+// a toolbar's workspace multiplies inside its calc.
+func TestE2E_RailSkipsSectionUnderStickyHeader(t *testing.T) {
+	for _, top := range []string{
+		"--ui-sticky-top:100px",
+		"--ui-sticky-top:calc(40px + calc(2 * 25px + 10px))",
+		"--ui-sticky-top:40px;--ui-sheet-bar-offset:60px",
+		"--ui-sheet-bar-offset:100px",
+	} {
+		t.Run(top, func(t *testing.T) {
+			nav := TableOfContents(TableOfContentsProps{
+				TargetSelector: "#region",
+				Items:          []TOCItem{{ID: "one", Label: "One"}, {ID: "two", Label: "Two"}},
+			}, nil)
+			b := startBehaviorServer(t, `<style>:root{`+top+`}</style>`+railPage(t, nav))
+			ctx := behaviorPage(t, b)
+			if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "one")) {
+				t.Fatal("the bootstrap pass did not mark the first entry")
+			}
+			if err := chromedp.Run(ctx,
+				chromedp.Evaluate(`(() => { const one = document.getElementById('one');
+					scrollTo(0, one.offsetTop + one.offsetHeight - 50); })()`, nil),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "two")) {
+				t.Fatal("the section behind the sticky header kept the active entry")
+			}
+		})
+	}
+}
+
+// The band follows the layout: a bar offset that applies only below a
+// width (a phone sheet's bar) joins the band when the window narrows
+// past it after the rail was armed.
+func TestE2E_RailBandFollowsResize(t *testing.T) {
+	nav := TableOfContents(TableOfContentsProps{
+		TargetSelector: "#region",
+		Items:          []TOCItem{{ID: "one", Label: "One"}, {ID: "two", Label: "Two"}},
+	}, nil)
+	b := startBehaviorServer(t, `<style>@media (max-width: 600px) { :root { --ui-sheet-bar-offset: 100px } }</style>`+railPage(t, nav))
+	ctx := behaviorPage(t, b)
+	if err := chromedp.Run(ctx, chromedp.EmulateViewport(1280, 800)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "one")) {
+		t.Fatal("the bootstrap pass did not mark the first entry")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.EmulateViewport(390, 800),
+		chromedp.Evaluate(`(() => { const one = document.getElementById('one');
+			scrollTo(0, one.offsetTop + one.offsetHeight - 50); })()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "two")) {
+		t.Fatal("after narrowing, the section behind the bar kept the active entry")
+	}
+}
+
+// A nav that leaves the document while its sections stay (a client
+// navigation swapping only the column it sat in) is released at the
+// next scan: nothing the module holds keeps it alive, so it does not
+// wait for a resize that may never come.
+func TestE2E_RailReleasesRemovedNav(t *testing.T) {
+	nav := TableOfContents(TableOfContentsProps{
+		TargetSelector: "#region",
+		Items:          []TOCItem{{ID: "one", Label: "One"}, {ID: "two", Label: "Two"}},
+	}, nil)
+	b := startBehaviorServer(t, railPage(t, nav))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "one")) {
+		t.Fatal("the bootstrap pass did not mark the first entry")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`(() => { const nav = document.querySelector('[data-hui-toc]');
+			window.__navRef = new WeakRef(nav); nav.remove();
+			window.__gofastr._moduleScanners['headless-rail'](document); })()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var released bool
+	for range 5 {
+		if err := chromedp.Run(ctx,
+			chromedp.Evaluate(`new Promise((done) => requestAnimationFrame(() => done()))`, nil, func(p *runtime.EvaluateParams) *runtime.EvaluateParams { return p.WithAwaitPromise(true) }),
+			heapprofiler.CollectGarbage(),
+			chromedp.Evaluate(`window.__navRef.deref() === undefined`, &released),
+		); err != nil {
+			t.Fatal(err)
+		}
+		if released {
+			return
+		}
+	}
+	t.Fatal("the removed nav is still held after a scan and a collection")
+}
+
+// A section left with less than a pixel in the band is not in view:
+// the scroll position rounds to whole pixels, so a nav of fractional
+// height (CI's fonts) leaves a sliver of the section above when the
+// next one scrolls to the top, and an edge that only touches the band
+// reports as intersecting with no change when it gets there.
+func TestE2E_RailIgnoresSliverInBand(t *testing.T) {
+	for _, spacer := range []string{"0px", "100.4px"} {
+		t.Run(spacer, func(t *testing.T) {
+			nav := TableOfContents(TableOfContentsProps{
+				TargetSelector: "#region",
+				Items:          []TOCItem{{ID: "one", Label: "One"}, {ID: "two", Label: "Two"}},
+			}, nil)
+			page := `<div style="height:` + spacer + `"></div>` + string(nav) +
+				`<div id="region"><section id="one" style="height:1000px">One</section>` +
+				`<section id="two" style="height:2000px">Two</section></div>`
+			b := startBehaviorServer(t, `<style>body{margin:0}</style>`+page)
+			ctx := behaviorPage(t, b)
+			if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "one")) {
+				t.Fatal("the bootstrap pass did not mark the first entry")
+			}
+			if err := chromedp.Run(ctx,
+				chromedp.Evaluate(`document.getElementById('two').scrollIntoView()`, nil),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if !pollTrue(ctx, railActiveExpr("[data-hui-toc]", "two")) {
+				var at float64
+				_ = chromedp.Run(ctx, chromedp.Evaluate(`document.getElementById('one').getBoundingClientRect().bottom`, &at))
+				t.Fatalf("section one (bottom at %vpx) kept the active entry", at)
+			}
+		})
+	}
+}
+
 // Markup that arrives after the module is armed by the kernel's
 // insertion scan, once — the second rail on the page has its own
 // observer and its own active anchor, and the first rail's state is
@@ -171,5 +308,39 @@ func TestE2E_RailArmsInsertedMarkupWithoutDoubleBinding(t *testing.T) {
 	}
 	if marks != 2 {
 		t.Fatalf("%d anchors marked in total, want one per rail (2)", marks)
+	}
+}
+
+// A jump past every section (End, or a link to content after them)
+// leaves nothing in the band and moves no target across it, so the
+// observer stays quiet; the rail still marks the last section the
+// reader passed, not the one marked before the jump.
+func TestE2E_RailMarksLastPassedAfterJump(t *testing.T) {
+	nav := Rail(RailProps{
+		Label: "Steps", ObserveSelector: "#region",
+		Items: []RailItem{
+			{Anchor: "one", Text: "One"},
+			{Anchor: "two", Text: "Two"},
+			{Anchor: "three", Text: "Three"},
+		},
+	}, nil)
+	sections := ""
+	for _, id := range []string{"one", "two", "three"} {
+		sections += `<section id="` + id + `" style="height:60vh">Section ` + id + `</section>`
+	}
+	page := string(nav) + `<div style="height:150vh">Intro</div><div id="region">` + sections +
+		`</div><div style="height:300vh">After</div>`
+	b := startBehaviorServer(t, page)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, railActiveExpr("[data-hui-rail]", "one")) {
+		t.Fatal("the bootstrap pass did not mark the first section's anchor")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.scrollTo(0, document.documentElement.scrollHeight)`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, railActiveExpr("[data-hui-rail]", "three")) {
+		t.Fatal("after a jump past every section the rail kept its old mark, want the last section passed")
 	}
 }

@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
-	"github.com/DonaldMurillo/gofastr/framework/gallery"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/chromedp/cdproto/page"
@@ -130,7 +129,7 @@ func newThemeEditE2EServer(t *testing.T) (srv *themeEditServer, base string) {
 	a := app.NewApp("theme-edit-e2e").WithTheme(core)
 	a.Register("/preview", &galleryPreviewScreen{}, nil)
 	host := uihost.New(a, uihost.WithCustomCSS(
-		gallery.BaseCSS(core)+previewChromeCSS+contrastProbeCSS()))
+		previewChromeCSS+contrastProbeCSS()))
 	srv = &themeEditServer{
 		host:    host,
 		base:    core,

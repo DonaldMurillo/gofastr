@@ -190,9 +190,10 @@ func buildSite() *uiapp.App {
 // a page-tall stack holding the site's own header and footer packages.
 func buildSiteShell(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
 	// The header is the banner landmark and a direct child of the
-	// page-tall stack, so it stays pinned for the whole page; the
-	// announcement strip scrolls away above it.
-	return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+	// page-tall stack, which pins it for the whole page (StickyHeader)
+	// and tells the sticky parts below where it ends; the announcement
+	// strip scrolls away above it.
+	return ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},
 		l.Place(acmeAnnounce),
 		siteHeader(ctx),
 		l.Primary(),

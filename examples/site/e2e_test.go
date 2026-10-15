@@ -225,8 +225,8 @@ func TestE2EDocCardNavigates(t *testing.T) {
 	var pathname, html string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/docs/"),
-		chromedp.WaitVisible(`a.doc[href="/docs/query-dsl"]`, chromedp.ByQuery),
-		chromedp.Click(`a.doc[href="/docs/query-dsl"]`, chromedp.ByQuery),
+		chromedp.WaitVisible(`a[data-cui-comp="ui-card"][href="/docs/query-dsl"]`, chromedp.ByQuery),
+		chromedp.Click(`a[data-cui-comp="ui-card"][href="/docs/query-dsl"]`, chromedp.ByQuery),
 		chromedp.WaitVisible(`.fui-markdown`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.location.pathname`, &pathname),
 		chromedp.OuterHTML(`[data-cui-scope="docsite-docpage"] article.content`, &html, chromedp.ByQuery),
@@ -1047,12 +1047,12 @@ func TestE2E_SignalAnimateTogglesClass(t *testing.T) {
 	// Initially the animated class should NOT be present.
 	var hasClass bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-cui-animate-signal]').classList.contains('fui-expanded')`, &hasClass),
+		chromedp.Evaluate(`document.querySelector('[data-cui-animate-signal]').classList.contains('is-open')`, &hasClass),
 	); err != nil {
 		t.Fatalf("check initial class: %v", err)
 	}
 	if hasClass {
-		t.Fatal("fui-expanded should NOT be present initially")
+		t.Fatal("is-open should NOT be present initially")
 	}
 
 	// Click the toggle button to set the signal to "true".
@@ -1066,12 +1066,12 @@ func TestE2E_SignalAnimateTogglesClass(t *testing.T) {
 	// Now the class should be present.
 	var afterToggle bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.querySelector('[data-cui-animate-signal]').classList.contains('fui-expanded')`, &afterToggle),
+		chromedp.Evaluate(`document.querySelector('[data-cui-animate-signal]').classList.contains('is-open')`, &afterToggle),
 	); err != nil {
 		t.Fatalf("check after toggle: %v", err)
 	}
 	if !afterToggle {
-		t.Fatal("fui-expanded should be present after toggle")
+		t.Fatal("is-open should be present after toggle")
 	}
 }
 
@@ -1281,11 +1281,21 @@ func TestE2EHomeAdaptsAtTabletAndPhoneWidths(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitReady("body"),
 		chromedp.Evaluate(`(() => {
-			const cta = document.querySelector('.hero__ctas');
-			const headerTargets = [...document.querySelectorAll('[data-cui-scope="docsite-header"] .cmd, [data-cui-scope="docsite-header"] .icon, [data-cui-scope="docsite-header"] .toggle')]
+			const cta = document.querySelector('[aria-label="Hero"] a[href="/get-started"]');
+			// Every target a reader can see: the bar's, then the phone
+			// menu's with it open. A closed <details> still lays out
+			// its content at a squashed width, so visibility, not a
+			// non-zero box, decides what counts.
+			const sel = '[data-cui-scope="docsite-header"] .cmd, [data-cui-scope="docsite-header"] .icon, [data-cui-scope="docsite-header"] .toggle, [data-cui-scope="docsite-header"] .panel-actions button';
+			const sizes = () => [...document.querySelectorAll(sel)]
+				.filter(el => el.checkVisibility())
 				.map(el => el.getBoundingClientRect())
-				.filter(rect => rect.width > 0 && rect.height > 0)
 				.map(rect => Math.min(rect.width, rect.height));
+			const headerTargets = sizes();
+			const menu = document.querySelector('[data-cui-scope="docsite-header"] details');
+			menu.open = true;
+			headerTargets.push(...sizes());
+			menu.open = false;
 			return {
 				ctaEnd: cta.getBoundingClientRect().bottom,
 				overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,

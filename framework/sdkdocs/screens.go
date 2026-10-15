@@ -53,11 +53,13 @@ func (s *site) menuConfig(active string) interactive.SectionMenuConfig {
 		AriaLabel:    "SDK documentation",
 		TriggerLabel: "SDK docs",
 		DrawerName:   drawerName,
-		Lead:         &interactive.SectionItem{Label: "Overview", Href: s.cfg.BasePath, Active: active == ""},
+		Lead:         &interactive.SectionItem{Label: "Overview", Href: s.cfg.BasePath, Active: active == "overview"},
 		Groups:       groups,
 	}
 }
 
+// The drawer is mounted once for every page, so it marks no page: the
+// runtime's active-link pass marks the one the reader is on.
 func sectionMenuDrawer(s *site) *widget.Builder {
 	return interactive.SectionMenuDrawer(s.menuConfig(""))
 }
@@ -184,7 +186,7 @@ func (sc *indexScreen) Render() render.HTML {
 			s.quickstartTabs(ents[0]),
 		)
 	}
-	return s.page("", "", body...)
+	return s.page("overview", "", body...)
 }
 
 func (s *site) downloads(m *sdk.Manifest) []render.HTML {

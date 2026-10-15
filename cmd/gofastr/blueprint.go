@@ -8072,8 +8072,9 @@ func renderBlueprintApp(bp Blueprint) string {
 		// siteheader / sitefooter render their own <header>/<footer>
 		// landmarks (the scope root of each owned style), so the stack
 		// takes them directly; the header is the direct child of the
-		// page-tall stack that keeps it pinned for the whole page.
-		sb.WriteString("\t\treturn ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},\n")
+		// page-tall stack, which pins it for the whole page
+		// (StickyHeader) and tells the sticky parts below where it ends.
+		sb.WriteString("\t\treturn ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},\n")
 		sb.WriteString("\t\t\theader,\n")
 		sb.WriteString("\t\t\tui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary()),\n")
 		sb.WriteString("\t\t\tmarketingFooter(),\n")

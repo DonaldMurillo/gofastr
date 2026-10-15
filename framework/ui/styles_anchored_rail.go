@@ -21,7 +21,8 @@ func anchoredRailCSS(t style.Theme) string {
 		Rule("&").
 		Set(
 			"position", "sticky",
-			"top", "calc(var(--nav-h, 60px) + var(--spacing-lg, 16px))",
+			// --ui-sticky-top: under a StickyHeader page's header, or the window's top.
+			"top", "calc(var(--ui-sticky-top, 0px) + var(--spacing-lg, 16px))",
 			"align-self", "start",
 			"font-size", "var(--text-sm, 0.875rem)",
 		).End().
@@ -77,5 +78,14 @@ func anchoredRailCSS(t style.Theme) string {
 		Set("color", "{colors.text}").End().
 		Rule(`.fui-anchored-rail__list a.is-active .fui-anchored-rail__eyebrow, .fui-anchored-rail__list a[aria-current="true"] .fui-anchored-rail__eyebrow`).
 		Set("color", "{colors.primary}").End().
-		MustBuild()
+		MustBuild() + anchoredRailSheetCSS
 }
+
+// In an open phone sheet (PhoneSheet) the sheet's title row names the
+// rail and the sheet scrolls it; the rows grow to a thumb's height. A
+// rail in any other popover keeps its own label and stickiness.
+const anchoredRailSheetCSS = `
+:where(.cui-phone-sheet__sheet:popover-open) [data-cui-comp="ui-anchored-rail"] { position: static; }
+.cui-phone-sheet__sheet:popover-open [data-cui-comp="ui-anchored-rail"] .fui-anchored-rail__label { display: none; }
+.cui-phone-sheet__sheet:popover-open [data-cui-comp="ui-anchored-rail"] .fui-anchored-rail__list a { padding-block: var(--spacing-md, 8px); }
+`

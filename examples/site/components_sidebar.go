@@ -1,8 +1,8 @@
 package main
 
 // ComponentsSidebar, category navigation for /components/*. A single
-// interactive.SectionMenu: a collapsible rail filling the pinned column on desktop, a slide-in
-// sheet on mobile. The active component is highlighted by the runtime's
+// interactive.SectionMenu: a filterable rail filling the pinned column on
+// desktop, a floating pill and bottom sheet on mobile. The active component is highlighted by the runtime's
 // active-link pass (exact-href aria-current) since the sidebar persists across
 // the screen-group's client-side navigation.
 //
@@ -12,6 +12,8 @@ package main
 // catalog was local.
 
 import (
+	"fmt"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
@@ -21,10 +23,12 @@ type ComponentsSidebar struct{}
 
 func (s *ComponentsSidebar) Render() render.HTML {
 	// The components shell pins the nav column under the header
-	// (ContentRow Sticky + BelowHeader), so the rail fills that column
-	// instead of sticking on its own.
+	// (ContentRow Sticky under the StickyHeader page stack), so the rail fills that column
+	// instead of sticking on its own, and swaps for the trigger where
+	// the row stacks (the default 48rem breakpoint).
 	cfg := componentsSectionMenuConfig()
 	cfg.FillColumn = true
+	cfg.SwapAt = interactive.SwapMD
 	return interactive.SectionMenu(cfg)
 }
 
@@ -52,12 +56,18 @@ func componentsSectionMenuConfig() interactive.SectionMenuConfig {
 			Collapsed: true,
 		})
 	}
+	total := 0
+	for _, g := range groups {
+		total += len(g.Entries)
+	}
 	return interactive.SectionMenuConfig{
-		AriaLabel:    "Components navigation",
-		TriggerLabel: "Sections",
-		DrawerName:   "components-section-menu",
-		Lead:         &interactive.SectionItem{Label: "Overview", Href: "/components/"},
-		Groups:       menuGroups,
+		AriaLabel:         "Components navigation",
+		TriggerLabel:      "Components",
+		DrawerName:        "components-section-menu",
+		Filter:            true,
+		FilterPlaceholder: fmt.Sprintf("Filter %d components", total),
+		Lead:              &interactive.SectionItem{Label: "Overview", Href: "/components/"},
+		Groups:            menuGroups,
 	}
 }
 

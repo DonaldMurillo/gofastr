@@ -14,14 +14,15 @@ One `*entityui.UI` serves one app. Build it once, after the entities its
 its bulk and export routes); a second `App.EntityUI` call panics, so the
 admin battery and the app's screens share the one the app built:
 
-```go
 <!-- gofastr:compile
 import "context"
 import "github.com/DonaldMurillo/gofastr/framework"
 import "github.com/DonaldMurillo/gofastr/framework/entityui"
 var fwApp *framework.App
 var ctx = context.Context(nil)
+stmt: _ = appUI
 -->
+```go
 appUI := fwApp.EntityUI(entityui.Extensions{})
 ```
 
@@ -64,7 +65,6 @@ The builders draw no page frame: no container, no max width, no gutter.
 Under a site header whose content sits in `ui.Container`, wrap the
 builder's output in the same container so the screen lines up with it:
 
-```go
 <!-- gofastr:compile
 import "context"
 import "github.com/DonaldMurillo/gofastr/framework/entityui"
@@ -72,6 +72,7 @@ import "github.com/DonaldMurillo/gofastr/framework/ui"
 var appUI *entityui.UI
 var ctx context.Context
 -->
+```go
 page := ui.Container(ui.ContainerConfig{}, appUI.List("deals").Base("/deals").RenderCtx(ctx))
 _ = page
 ```
@@ -79,12 +80,12 @@ _ = page
 To choose another route, use one create-path function for the screen
 registration and for the UI's links:
 
-```go
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework/entity"
 import "github.com/DonaldMurillo/gofastr/framework/entityui"
 var appUI *entityui.UI
 -->
+```go
 createPath := func(e *entity.Entity) (string, bool) {
     return "/" + e.GetName() + "/new", true
 }
@@ -273,14 +274,15 @@ written.
 
 ## Building a screen
 
-```go
 <!-- gofastr:compile
 import "context"
 import "github.com/DonaldMurillo/gofastr/framework"
 import "github.com/DonaldMurillo/gofastr/framework/entityui"
 var fwApp *framework.App
 var ctx = context.Context(nil)
+stmt: _ = appUI
 -->
+```go
 appUI := fwApp.EntityUI(entityui.Extensions{})
 list := appUI.List("invoices").
 	Columns("number", "amount").   // Display.Columns when unset
@@ -396,7 +398,6 @@ with the elevation removed (`crud.WithoutElevation`), and the component
 it returns draws with that context too, so it passes only
 the read and write gates the caller's own roles pass.
 
-```go
 <!-- gofastr:compile
 import "context"
 import "github.com/DonaldMurillo/gofastr/core/render"
@@ -404,7 +405,9 @@ import "github.com/DonaldMurillo/gofastr/framework"
 import "github.com/DonaldMurillo/gofastr/framework/entityui"
 import "github.com/DonaldMurillo/gofastr/framework/filter"
 var fwApp *framework.App
+stmt: _ = appUI
 -->
+```go
 appUI := fwApp.EntityUI(entityui.Extensions{
 	Kinds: map[string]entityui.Kind{
 		"slug": {Input: func(ic entityui.InputContext) render.HTML {
@@ -543,7 +546,6 @@ declared views, and the "Save view" dropdown sits at the tab row's
 end. Active filters show as chips under the toolbar, each linking to
 the list without it, plus a "Clear all".
 
-```go
 <!-- gofastr:compile
 import "context"
 import "github.com/DonaldMurillo/gofastr/framework"
@@ -551,6 +553,7 @@ import "github.com/DonaldMurillo/gofastr/framework/entityui"
 var fwApp *framework.App
 var ctx = context.Context(nil)
 -->
+```go
 list := fwApp.EntityUI(entityui.Extensions{}).
 	List("invoices").
 	QueryBox().      // the filter typed by hand

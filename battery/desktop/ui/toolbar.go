@@ -35,7 +35,7 @@ func floatingToolbarCSS(_ style.Theme) string {
   /* Floats over the content column: detached from the window edges the
      way a macOS 26 floating toolbar group sits. */
   position: sticky;
-  top: var(--spacing-md, 8px);
+  top: calc(var(--ui-sticky-top, 0px) + var(--spacing-md, 8px));
   z-index: var(--z-sticky, 200);
   margin-inline: auto;
   inline-size: fit-content;
