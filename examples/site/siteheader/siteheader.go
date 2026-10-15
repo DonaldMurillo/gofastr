@@ -83,10 +83,11 @@ func navLink(l Link) render.HTML {
 // searchAttrs are the contract both search controls share: one trigger
 // that opens the CommandPalette on click (data-cui-open) and binds ⌘K
 // directly (data-hui-shortcut-click), so there is exactly one "open
-// search" affordance per surface.
+// search" affordance per surface. Each is a link to the search page,
+// where a reader without script lands instead.
 func searchAttrs() map[string]string {
 	return map[string]string{
-		"type":                    "button",
+		"href":                    "/search",
 		"aria-label":              "Open search to find a doc, component, or example",
 		"data-cui-open":           "site-command-palette",
 		"data-hui-shortcut-click": "Meta+K",
@@ -100,7 +101,7 @@ func searchAttrs() map[string]string {
 func searchButton() render.HTML {
 	attrs := searchAttrs()
 	attrs["class"] = Style.Cmd()
-	return render.Tag("button", attrs,
+	return render.Tag("a", attrs,
 		render.Raw(`<svg class="`+Style.CmdGlyph()+`" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`),
 		html.Span(html.TextConfig{Class: Style.CmdPlaceholder()}, render.Text("Find docs, components, examples…")),
 		html.Kbd(html.TextConfig{},
@@ -116,7 +117,7 @@ func searchButton() render.HTML {
 func panelSearch() render.HTML {
 	attrs := searchAttrs()
 	attrs["class"] = Style.PanelSearch()
-	return render.Tag("button", attrs,
+	return render.Tag("a", attrs,
 		render.Raw(searchGlyph),
 		html.Span(html.TextConfig{}, render.Text("Find docs, components, examples…")),
 	)

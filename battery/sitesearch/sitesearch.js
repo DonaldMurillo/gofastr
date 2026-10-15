@@ -140,8 +140,9 @@
   // render swaps in the new result rows. A row whose destination
   // matches the one already in its place keeps its node and only takes
   // the new text, so the rows that stay put while the reader types do
-  // not replay their entrance.
-  function render(lb, input, list) {
+  // not replay their entrance. With a search page (data-search-all), a
+  // last row opens it for the query.
+  function render(lb, input, list, q) {
     const fresh = [];
     for (const r of list) {
       const url = BASE + r.url;
@@ -149,6 +150,13 @@
       for (const s of r.sections || []) {
         fresh.push(row(lb, fresh.length, s.heading, '', s.excerpt, s.id ? url + '#' + s.id : url, true));
       }
+    }
+    const all = lb.getAttribute('data-search-all');
+    if (all && list.length) {
+      const label = (lb.getAttribute('data-search-all-label') || '').replace(/\{q\}/g, function () { return q; });
+      const li = row(lb, fresh.length, label, '', null, BASE + all + '?q=' + encodeURIComponent(q), false);
+      li.classList.add('fui-cmd-palette__option--all');
+      fresh.push(li);
     }
     const old = lb.querySelectorAll('[data-search-result]');
     let i = 0;
@@ -204,7 +212,7 @@
       }, PENDING_MS);
       search(q, LIMIT).then(function (list) {
         done = true;
-        if (seq.get(lb) === n) render(lb, input, list);
+        if (seq.get(lb) === n) render(lb, input, list, q);
       }).catch(function (err) {
         done = true;
         if (seq.get(lb) === n) clearRows(lb);

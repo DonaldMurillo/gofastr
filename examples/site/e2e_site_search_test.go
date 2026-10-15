@@ -25,7 +25,7 @@ func TestE2E_PaletteSearchFindsSection(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/docs/"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-command-palette"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-cui-open="site-command-palette"]').click()`, nil),
 		chromedp.WaitVisible(`#site-command-palette-input`, chromedp.ByID),
 		chromedp.SendKeys(`#site-command-palette-input`, "darkcolors", chromedp.ByID),
 		// A query that lands while the index is still building shows a

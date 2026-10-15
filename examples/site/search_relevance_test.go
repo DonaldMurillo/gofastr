@@ -65,3 +65,22 @@ func TestSearchTopResults(t *testing.T) {
 		}
 	}
 }
+
+// The search page answers over the same index, and every page's search
+// trigger leads to it for a reader without script.
+func TestSearchPageAnswers(t *testing.T) {
+	app := newTestApp(t)
+	rec := httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/search?q=datatable", nil))
+	page := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /search?q=datatable: %d", rec.Code)
+	}
+	first := strings.Index(page, `class="fui-search-results__title"`)
+	if first < 0 || !strings.Contains(page[first:first+120], `/components/datatable`) {
+		t.Errorf("DataTable is not the first result on /search?q=datatable")
+	}
+	if !strings.Contains(page, `href="/search"`) || !strings.Contains(page, `data-cui-open="site-command-palette"`) {
+		t.Error("the header search trigger does not link to /search")
+	}
+}

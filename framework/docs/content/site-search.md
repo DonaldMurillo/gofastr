@@ -38,10 +38,13 @@ import (
 )
 
 func main() {
-	app := framework.NewApp().Mount(uihost.New(site))
-	if err := app.Batteries.Register(sitesearch.New(sitesearch.Config{
+	search := sitesearch.New(sitesearch.Config{
 		Groups: []sitesearch.Group{{Prefix: "/docs/", Label: "Docs"}},
-	})); err != nil {
+	})
+	// The search page: every result, paged, with or without script.
+	site.Register("/search", sitesearch.Screen(search), nil)
+	app := framework.NewApp().Mount(uihost.New(site))
+	if err := app.Batteries.Register(search); err != nil {
 		panic(err)
 	}
 	// trigger goes in the site header; the palette mounts as a widget.
@@ -52,8 +55,10 @@ func main() {
 			{Label: "Get started", Href: "/get-started"},
 			{Label: "Docs", Href: "/docs/"},
 		},
+		// The results end with "See all results", which opens it.
+		SearchPage: "/search",
 		// Where the trigger goes without script.
-		FallbackHref: "/docs/",
+		FallbackHref: "/search",
 	})
 	_ = trigger
 	widget.MountBuilder(app.Router(), palette)
@@ -151,7 +156,50 @@ Below that tier, a hit in a title weighs more than one in a heading, which
 weighs more than one in body text.
 
 Each result shows up to three matching sections. An excerpt opens on the
-first whole-word hit, and hits are wrapped in `<mark>`.
+first whole-word hit, and hits are wrapped in `<mark>`. With `SearchPage`
+set, the rows end with "See all results for “…”" (`ui.searchResults.all`),
+which opens the search page for the query.
+
+## Search page
+
+`sitesearch.Screen(b)` is a page of every result, 20 at a time. Mount it
+like any screen; `ScreenPath` names the path when it is not `/search`, so
+the form and the pager links point at it:
+
+<!-- gofastr:compile
+import (
+	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/battery/sitesearch"
+)
+var site = coreapp.NewApp("docs")
+var search = sitesearch.New(sitesearch.Config{})
+-->
+```go
+site.Register("/find", sitesearch.Screen(search, sitesearch.ScreenPath("/find")), nil)
+```
+
+The server renders it all from the query string: a GET form, a status line
+("12 results for “form”"), the results as links with their sections and
+excerpts, and pagination through `?page=`. A reader without script searches
+and pages with ordinary links. The page tells crawlers `noindex`, which also
+keeps it out of the index.
+
+With script, the `sitesearch-page` runtime module (loaded by the
+`data-search-page` marker [`ui.SearchResults`](ui-new-components.md)
+renders) updates the page in place as the reader types:
+
+- On a live server it fetches the page's own render for the new query, the
+  way the client router fetches a partial, and swaps in the status line,
+  the list and the pager. The input is never replaced, so focus and caret
+  stay put. Pager links are ordinary links the router follows.
+- In a static export there is no server to render the page, so the module
+  ranks with `sitesearch-static` and draws the same markup itself. A query
+  in the address (`/search?q=table`) runs on load. Instead of page links it
+  shows a "More results" button (`ui.searchResults.more`).
+
+Either way the address follows the query (`?q=`) with `replaceState`, so
+typing adds no history entries and a reload or a shared link shows the same
+results. Submitting the form runs the query at once instead of reloading.
 
 ## Static export
 
@@ -201,6 +249,8 @@ Measured on 10,000 generated pages drawn from these docs' own vocabulary
 - Each section keeps its first 2000 characters.
 - Words of one letter are not searchable, and a term of two letters matches
   only the whole word.
+- In a static export the search page needs JavaScript: without it the form
+  reloads the page the export rendered with no query.
 
 ## Common mistakes
 

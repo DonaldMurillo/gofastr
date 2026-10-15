@@ -438,3 +438,53 @@ func TestClientKeepsRowsThatStay(t *testing.T) {
 		t.Errorf("rows kept %v, want the unchanged first row kept and the changed second one new", kept)
 	}
 }
+
+// With a search page, the results end with a row that opens it for the
+// query; with none, or with no results, there is no such row.
+func TestClientEndsOnSearchPage(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!doctype html><html><meta charset=utf-8>
+<div data-hui-combobox><input data-hui-combobox-input id="q" aria-controls="lb" aria-expanded="false">
+<ul id="lb" role="listbox" hidden data-search data-search-empty="None" data-search-all="/search" data-search-all-label="All for “{q}” ({q})"></ul></div>
+<script src="/client.js"></script>`)
+	})
+	mux.HandleFunc("/client.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript")
+		fmt.Fprint(w, clientJS)
+	})
+	mux.HandleFunc(Root+"query", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("q") == "zzz" {
+			fmt.Fprint(w, `{"results":[]}`)
+			return
+		}
+		fmt.Fprint(w, `{"results":[{"url":"/docs/forms","title":"Forms"}]}`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	ctx := browser(t)
+
+	last := `[...document.querySelectorAll('#lb [data-search-result]')].pop()`
+	var label, dest, empty string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Poll(`!!(window.__gofastr && window.__gofastr._sitesearch)`, nil),
+		chromedp.SendKeys(`#q`, "forms&more", chromedp.ByID),
+		chromedp.Poll(`document.querySelectorAll('#lb [data-search-result]').length === 2`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(last+`.textContent`, &label),
+		chromedp.Evaluate(last+`.getAttribute('data-cui-push-state')`, &dest),
+		chromedp.Evaluate(`const q = document.getElementById('q'); q.value = 'zzz'; q.dispatchEvent(new Event('input', {bubbles: true}))`, nil),
+		chromedp.Poll(last+`.textContent === 'None'`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.Evaluate(`[...document.querySelectorAll('#lb [data-search-result]')].map(li => li.textContent).join('|')`, &empty),
+	); err != nil {
+		t.Fatalf("rows: %v", err)
+	}
+	if label != "All for “forms&more” (forms&more)" || dest != "/search?q=forms%26more" {
+		t.Errorf("last row %q → %q, want All for “forms&more” → /search?q=forms%%26more", label, dest)
+	}
+	if empty != "None" {
+		t.Errorf("no results showed %q, want only the empty row", empty)
+	}
+}

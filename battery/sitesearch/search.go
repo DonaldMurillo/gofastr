@@ -45,10 +45,20 @@ const maxSectionHits = 3
 // plural term ("forms") also matches what its singular prefixes. Ties
 // break by index order.
 func (idx *Index) Search(q string, limit int) []Result {
+	out, _ := idx.SearchPage(q, 0, limit)
+	return out
+}
+
+// SearchPage is Search from the offset-th result on: at most limit
+// results past the first offset, and how many pages matched in all, so
+// a results page can count them and page through. A negative offset
+// counts from the first result.
+func (idx *Index) SearchPage(q string, offset, limit int) ([]Result, int) {
 	terms := queryTerms(q)
 	if len(terms) == 0 || limit <= 0 {
-		return nil
+		return nil, 0
 	}
+	offset = max(offset, 0)
 	// Per page scratch is dense and reset through the pages each pass
 	// touched, so a query over a large site allocates per page, not per
 	// posting.
@@ -121,7 +131,7 @@ func (idx *Index) Search(q string, limit int) []Result {
 			perPage[pg], titled[pg] = 0, false
 		}
 		if len(qPages) == 0 {
-			return nil
+			return nil, 0
 		}
 	}
 	var order []int
@@ -144,9 +154,9 @@ func (idx *Index) Search(q string, limit int) []Result {
 		}
 		return cmp.Compare(a, b)
 	})
-	if len(order) > limit {
-		order = order[:limit]
-	}
+	total := len(order)
+	start := min(offset, total)
+	order = order[start : start+min(limit, total-start)]
 	secScore := idx.sectionScores(order, terms, matches)
 	out := make([]Result, 0, len(order))
 	for _, pg := range order {
@@ -178,7 +188,10 @@ func (idx *Index) Search(q string, limit int) []Result {
 		}
 		out = append(out, r)
 	}
-	return out
+	if len(out) == 0 {
+		return nil, total
+	}
+	return out, total
 }
 
 // sectionKey names one section of one page.

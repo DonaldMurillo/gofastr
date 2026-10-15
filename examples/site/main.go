@@ -162,23 +162,31 @@ func setupServer() *framework.App {
 	// definition; the header's own search button opens it and binds the
 	// shortcut, so the returned trigger is discarded. Search runs every
 	// query over the full-text index battery/sitesearch builds from the
-	// rendered pages (registered in setupServer); the Commands are the
+	// rendered pages (registered below); the Commands are the
 	// short list a reader sees before typing.
 	_, paletteBuilder := ui.CommandPalette(ui.CommandPaletteConfig{
 		Name:        "site-command-palette",
 		Placeholder: "Search docs, examples, components…",
 		Commands:    paletteCommands(),
 		Search:      true,
-		// The no-script destination: the docs index lists every doc, so
-		// a reader without script reaches the docs by an ordinary link.
-		FallbackHref: "/docs/",
+		// The search page the results end on ("See all results"), and
+		// the trigger's no-script destination: the same page, answering
+		// through its GET form.
+		SearchPage:   "/search",
+		FallbackHref: "/search",
 	})
+
+	// Full-text search over every rendered page: the palette's results
+	// and the /search page live, and the index files the static export
+	// writes for both to search with no server.
+	search := sitesearch.New(siteSearchConfig())
 
 	// The default layer every page renders in; the section layers nest
 	// under it (the tree is drawn in layout.go).
 	site.SetDefaultLayout(mainLayout())
 
 	registerScreens(site)
+	site.Register("/search", sitesearch.Screen(search), nil)
 
 	// allowAIBots is the *bool passed into WithAgentReady below so the
 	// robots.txt advertises explicit AI-crawler rules.
@@ -290,10 +298,7 @@ func setupServer() *framework.App {
 	// same router instance.
 	widget.MountBuilder(fwApp.Router(), paletteBuilder)
 
-	// Full-text search over every rendered page: the palette's results
-	// live, and the index files the static export writes for the
-	// palette to search with no server.
-	if err := fwApp.Batteries.Register(sitesearch.New(siteSearchConfig())); err != nil {
+	if err := fwApp.Batteries.Register(search); err != nil {
 		panic(err)
 	}
 

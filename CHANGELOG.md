@@ -134,6 +134,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   rows shown before the first keystroke). A slow answer shows a
   "Loading…" row and an empty one "No matches". Result rows fade in as
   they arrive; a row that stays across keystrokes does not replay.
+  `SearchPage` ends the results with a "See all results" row that opens
+  the search page for the query.
+- **`sitesearch.Screen`: a search page that works without script.** It
+  renders every result for `?q=`, 20 a page through `?page=`, as links
+  with their sections and excerpts, and tells crawlers `noindex`
+  (`ScreenPath` mounts it somewhere other than `/search`). With script,
+  the `sitesearch-page` module updates the page in place as the reader
+  types, from the server's own render on a live site and from the
+  static ranker in an export, and keeps `?q=` in the address without
+  adding history entries. `Index.SearchPage(q, offset, limit)` returns a
+  page of results and the total.
+- **`ui.SearchResults`** renders a results page: a GET search form, a
+  status line counting the matches, the results with their group,
+  excerpt hits in `<mark>` and section links, and `ui.Pagination`.
 - **`gofastr export [--base /sub] [--pkg ./cmd/web] <dir>`** writes any
   app as a static site. It runs the app with `GOFASTR_EXPORT` (and
   `GOFASTR_EXPORT_BASE`) set; `App.Start` then exports after

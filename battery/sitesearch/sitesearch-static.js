@@ -4,8 +4,9 @@
 // pages it shows, and ranks them with the integers the server fixed at
 // build time: the same query ranks the same way live and exported (a
 // chromium test compares it with Go's Search). It loads only on an
-// export, at idle or for the first query, and adds staticSearch to the
-// API sitesearch.js shares.
+// export, at idle or for the first query, and adds staticSearch (the
+// palette's) and staticFind (the search page's) to the API
+// sitesearch.js shares.
 (function () {
   'use strict';
   const NAME = 'sitesearch-static';
@@ -221,9 +222,11 @@
     });
   }
 
-  async function staticSearch(q, limit) {
+  // staticFind ranks q and returns its first limit results with the
+  // count of every page that matched, for the search page's status.
+  async function staticFind(q, limit) {
     const terms = api.queryTerms(q);
-    if (!terms.length) return [];
+    if (!terms.length) return { results: [], total: 0 };
     const m = await fetchJSON(ROOT + 'manifest.json');
     if (m.v !== 3) throw new Error('sitesearch: index format ' + m.v);
     // Each term's shards merge into one map of its terms.
@@ -236,9 +239,10 @@
       return (ranked.pageScore.get(b) - ranked.pageScore.get(a)) || (a - b);
     }).slice(0, limit);
     const frags = await Promise.all(order.map(function (pg) { return fetchJSON(ROOT + 'p' + pg + '-' + m.h + '.json'); }));
-    return results(order, frags, ranked, terms);
+    return { results: results(order, frags, ranked, terms), total: ranked.pageScore.size };
   }
 
-  api.staticSearch = staticSearch;
+  api.staticFind = staticFind;
+  api.staticSearch = function (q, limit) { return staticFind(q, limit).then(function (f) { return f.results; }); };
   api.excerpt = excerpt;
 })();

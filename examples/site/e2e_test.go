@@ -202,7 +202,7 @@ func TestE2ECommandPaletteOpensAndHydrates(t *testing.T) {
 		chromedp.Navigate(base+"/"),
 		chromedp.WaitReady("body", chromedp.ByQuery),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.Click(`[data-cui-scope="docsite-header"] button.cmd`, chromedp.ByQuery),
+		chromedp.Click(`[data-cui-scope="docsite-header"] a.cmd`, chromedp.ByQuery),
 		chromedp.WaitVisible(`#site-command-palette-input`, chromedp.ByQuery),
 		chromedp.Evaluate(`!!document.querySelector('[role="dialog"]')`, &dialogVisible),
 	); err != nil {

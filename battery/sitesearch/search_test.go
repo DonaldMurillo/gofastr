@@ -1,6 +1,7 @@
 package sitesearch
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -342,6 +343,38 @@ func TestExcerptAnchorIgnoresTermOrder(t *testing.T) {
 		if got := marked(excerpt(text, terms)); !strings.Contains(got, "[forms]") {
 			t.Errorf("terms %q: excerpt %q, want it on forms", terms, got)
 		}
+	}
+}
+
+// SearchPage pages through the ranked results and counts them all.
+func TestSearchPageOffsetsAndCounts(t *testing.T) {
+	var pages []Page
+	for i := range 7 {
+		pages = append(pages, Page{URL: "/p/" + string(rune('a'+i)), Title: "Walrus " + string(rune('a'+i)),
+			Sections: []Section{{Text: strings.Repeat("walrus ", i+1)}}})
+	}
+	idx := Build(pages)
+	all := idx.Search("walrus", 10)
+	if len(all) != 7 {
+		t.Fatalf("%d results, want 7", len(all))
+	}
+	for _, c := range []struct{ offset, limit, want int }{
+		{0, 3, 3}, {3, 3, 3}, {6, 3, 1}, {7, 3, 0}, {100, 3, 0}, {-2, 3, 3}, {2, math.MaxInt, 5},
+	} {
+		got, total := idx.SearchPage("walrus", c.offset, c.limit)
+		if total != 7 || len(got) != c.want {
+			t.Errorf("offset %d limit %d: %d results of %d, want %d of 7", c.offset, c.limit, len(got), total, c.want)
+			continue
+		}
+		from := max(c.offset, 0)
+		for i, r := range got {
+			if r.URL != all[from+i].URL {
+				t.Errorf("offset %d: result %d is %s, want %s", c.offset, i, r.URL, all[from+i].URL)
+			}
+		}
+	}
+	if _, total := idx.SearchPage("zzz", 0, 3); total != 0 {
+		t.Errorf("no match counted %d", total)
 	}
 }
 
