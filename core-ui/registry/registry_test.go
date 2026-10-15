@@ -373,3 +373,35 @@ func init() {
 	// Ensure component package is reachable for type checks.
 	var _ component.Component = (*stubComponent)(nil)
 }
+
+// A <template> is inert: the browser never renders its content, and the
+// runtime's boot scan (querySelectorAll) does not reach into it. The SSR
+// scan must agree, or a dialog or toast kept in a template makes its
+// sheet render-blocking on every page that merely carries it.
+func TestScanSkipsInertTemplates(t *testing.T) {
+	for _, c := range []struct{ name, html, want, held string }{
+		{"template content", `<template data-cui-confirm-dialog><dialog data-cui-comp="dlg"></dialog></template><div data-cui-comp="real"></div>`, "real", "dlg"},
+		{"marker on the template", `<template data-cui-comp="tpl"></template><i data-cui-comp="real"></i>`, "real", "tpl"},
+		{"nested", `<template><template><i data-cui-comp="a"></i></template><i data-cui-comp="b"></i></template><i data-cui-comp="c"></i>`, "c", "a,b"},
+		{"unterminated", `<i data-cui-comp="c"></i><template><i data-cui-comp="a"></i>`, "c", "a"},
+		{"uppercase", `<TEMPLATE><i data-cui-comp="a"></i></TEMPLATE><i data-cui-comp="c"></i>`, "c", "a"},
+		{"declarative shadow root renders", `<div><template shadowrootmode="open"><i data-cui-comp="shadow"></i></template></div>`, "shadow", ""},
+		{"custom element named template-x", `<template-x data-cui-comp="t"></template-x>`, "t", ""},
+		{"text mentioning a template", `<p>&lt;template&gt;</p><i data-cui-comp="c"></i>`, "c", ""},
+		{"held and rendered", `<template><i data-cui-comp="c"></i><i data-cui-comp="d"></i></template><i data-cui-comp="c"></i>`, "c", "d"},
+		{"two templates", `<template><i data-cui-comp="a"></i></template><p></p><template><i data-cui-comp="b"></i></template>`, "", "a,b"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := strings.Join(Scan(c.html), ","); got != c.want {
+				t.Fatalf("Scan = %q, want %q", got, c.want)
+			}
+			live, held := ScanSplit(c.html)
+			if got := strings.Join(live, ","); got != c.want {
+				t.Fatalf("ScanSplit live = %q, want %q", got, c.want)
+			}
+			if got := strings.Join(held, ","); got != c.held {
+				t.Fatalf("ScanSplit held = %q, want %q", got, c.held)
+			}
+		})
+	}
+}

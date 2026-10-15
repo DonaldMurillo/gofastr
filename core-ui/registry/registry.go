@@ -301,8 +301,9 @@ type testCleanup interface{ Cleanup(func()) }
 // Why it exists: the registry is process-global and a Go test binary
 // is one process per package, so any package linked into the binary
 // that registers styles at init time (framework/ui registers
-// ui-button, ui-page-header and ui-sidebar as LoadAlways) changes what
-// All, Lookup and EagerNames report for EVERY test in that binary.
+// ui-button as LoadAlways, ui-page-header and ui-sidebar as
+// LoadPrewarm) changes what All, Lookup and EagerNames report for
+// EVERY test in that binary.
 // Tests that assert on registry-shaped behaviour — the SSR host's
 // single-direct-link vs bundle decision, exact bundle name sets — must
 // state that premise by isolating rather than assume a clean process.

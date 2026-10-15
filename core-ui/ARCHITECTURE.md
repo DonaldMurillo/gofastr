@@ -1714,7 +1714,15 @@ A component declares its CSS by calling
 `data-cui-comp="<name>"` onto its outermost tag (no extra DOM
 node). The SSR host string-scans the final rendered HTML for those
 markers and emits **one** `<link rel="stylesheet">` in `<head>` for
-the page's exact set of components. After hydration, the runtime
+the page's exact set of components. Markers inside an inert
+`<template>` (the confirm dialog, a toast item, a menu row, a loading
+skeleton) do not count: the browser renders none of it at first paint.
+Each sheet only template content needs gets a
+`<link rel="prefetch" href="/__gofastr/comp/<name>.css?v=<hash>">`
+instead, the exact URL the runtime builds from the catalog, so the
+clone the runtime makes later finds its sheet in the HTTP cache. A
+declarative shadow root (`<template shadowrootmode>`) renders, so its
+markers count. After hydration, the runtime
 scans newly inserted DOM (cross-page swap, island response, widget
 mount, intercepted pane) and lazy-loads any new component's CSS as a `<link>` once
 per session, dedup'd by `data-cui-style="<name>"`. The browser
@@ -1727,9 +1735,9 @@ URL automatically.
 
 | Mode         | First-paint cost           | Behavior                                                                              |
 | ------------ | -------------------------- | ------------------------------------------------------------------------------------- |
-| `LoadAlways` | 1 request, render-blocking | SSR emits `<link>` in `<head>` on every page, regardless of whether the page renders the component. Use for chrome that's on essentially every screen. |
+| `LoadAlways` | 1 request, render-blocking | SSR emits `<link>` in `<head>` on every page, regardless of whether the page renders the component. Only for a sheet the scan cannot see is needed: `ui-button`'s classes are worn by ToggleAction and OptimisticAction under their own markers. |
 | `LoadAuto` (default) | 0 (deferred)               | SSR collector emits `<link>` only on pages that actually render the component. After hydration, the on-demand scanner picks up newly-inserted markers from partial responses. |
-| `LoadPrewarm`| 0 (deferred)               | `LoadAuto` plus a throttled `requestIdleCallback` prefetch (serialized, one in flight). Use for components that are likely soon (a hotkey-opened palette). |
+| `LoadPrewarm`| 0 (deferred)               | `LoadAuto` plus a throttled `requestIdleCallback` prefetch (serialized, one in flight). Use for components that are likely soon: a hotkey-opened palette, or app chrome a client navigation may swap in. `ui-sidebar` and `ui-page-header` prewarm: a page that renders one links it through the scan, and a page without one (a marketing page, an article) does not block on it. |
 
 All three converge on `loadComponentCSS(name)`. The function is
 **synchronous**: no `await` between the existence check and

@@ -2148,7 +2148,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	// and emit a single bundled <link> (or one direct <link> for a
 	// single component) so first paint has every needed sheet in
 	// <head>. LoadAlways entries are included whether the page used
-	// them or not.
+	// them or not; sheets only <template> content needs are prefetched.
 	if tags := ds.componentCSSTags(page, bundle); tags != "" {
 		headClose.WriteString(tags)
 		headClose.WriteByte('\n')
@@ -4395,10 +4395,15 @@ func (ds *UIHost) PushUpdate(islandID string, html string, sessionID string) {
 // otherwise). Inline emission is forbidden: the bundle endpoint is
 // content-addressed so the browser caches it across pages with the
 // same component set.
+//
+// A sheet only <template> content needs (a confirm dialog, a toast
+// item) gets a <link rel="prefetch"> instead: the browser fetches it at
+// idle priority, off the render-blocking path, and the runtime's link
+// for the clone it makes later is a cache hit.
 func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
-	used := registry.Scan(page)
+	used, held := registry.ScanSplit(page)
 	eager := registry.EagerNames()
-	if len(used) == 0 && len(eager) == 0 {
+	if len(used) == 0 && len(eager) == 0 && len(held) == 0 {
 		return ""
 	}
 	seen := make(map[string]struct{}, len(used)+len(eager))
@@ -4415,6 +4420,43 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 	sort.Strings(names)
 	theme := ds.activeTheme()
 	th := style.ThemeHash(theme) // once per page, not once per component
+	links := ds.stylesheetLinks(names, bundle, theme, th)
+	prefetch := prefetchLinks(held, seen, theme, th)
+	if links != "" && prefetch != "" {
+		return links + "\n" + prefetch
+	}
+	return links + prefetch
+}
+
+// prefetchLinks returns a <link rel="prefetch"> for each held sheet not
+// already in linked. The href is the URL loadComponentCSS builds from
+// the catalog (stylePath + "?v=" + version), so the prefetch is the
+// cache entry the runtime's own link reads.
+func prefetchLinks(held []string, linked map[string]struct{}, theme style.Theme, th string) string {
+	b := borrowBuilder()
+	defer returnBuilder(b)
+	for _, n := range held {
+		if _, ok := linked[n]; ok || !safeComponentName(n) {
+			continue
+		}
+		e, ok := registry.Lookup(n)
+		if !ok {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		fmt.Fprintf(b, `<link rel="prefetch" href="/__gofastr/comp/%s.css?v=%s">`, n, e.VersionForHash(theme, th))
+	}
+	return b.String()
+}
+
+// stylesheetLinks returns the render-blocking links for names: one per
+// component, or one bundle link for two or more on a live page.
+func (ds *UIHost) stylesheetLinks(names []string, bundle bool, theme style.Theme, th string) string {
+	if len(names) == 0 {
+		return ""
+	}
 	if len(names) == 1 || !bundle {
 		// Static-export path also takes this branch: emit one <link>
 		// per component to avoid the query-paramed bundle URL.

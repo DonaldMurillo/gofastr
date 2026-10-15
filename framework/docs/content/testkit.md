@@ -238,10 +238,10 @@ names in a bundle — is asserting about every package linked into that test
 binary, not just the component under test.
 
 That bites in a specific way: `framework/ui`'s package `init` registers
-`ui-button`, `ui-page-header`, and `ui-sidebar` as `LoadAlways`. So merely
-importing `framework/ui` anywhere in a package changes the eager set every test
-in it sees, and a registry assertion two files away turns red with nothing in
-its own file changed.
+`ui-button` as `LoadAlways` and every other kit sheet besides. So merely
+importing `framework/ui` anywhere in a package changes the eager set and the
+catalog every test in it sees, and a registry assertion two files away turns
+red with nothing in its own file changed.
 
 `IsolateForTest` swaps the registry for a fresh one and restores the previous
 contents when the test finishes:

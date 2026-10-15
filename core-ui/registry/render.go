@@ -1,8 +1,11 @@
 package registry
 
 import (
+	"maps"
 	"regexp"
+	"slices"
 	"sort"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -59,7 +62,34 @@ var markerRe = regexp.MustCompile(`[\s/]data-cui-(?:comp|scope)="([a-zA-Z0-9_:.-
 // Scan returns the sorted, deduped list of sheet names referenced by
 // data-cui-comp and data-cui-scope attributes in html. Used by the SSR
 // host to decide which <link> tags to emit in <head>.
+//
+// Markers inside a <template> do not count: the browser never renders
+// template content, and the runtime's boot scan does not reach into it
+// either. A confirm dialog or toast kept in a template loads its sheet
+// when the runtime clones it, not render-blocking on every page that
+// carries it. A declarative shadow root (<template shadowrootmode>)
+// renders, so its markers count.
 func Scan(html string) []string {
+	live, _ := ScanSplit(html)
+	return live
+}
+
+// ScanSplit is Scan plus the names only template content references:
+// held lists, sorted and deduped, every name a marker inside an inert
+// <template> carries and the rendered page does not. The SSR host
+// prefetches those sheets so the clone the runtime makes later finds
+// its sheet in the HTTP cache.
+func ScanSplit(html string) (live, held []string) {
+	var tpl strings.Builder
+	live = scanNames(splitInertTemplates(html, &tpl), nil)
+	if tpl.Len() > 0 {
+		held = scanNames(tpl.String(), live)
+	}
+	return live, held
+}
+
+// scanNames returns the sorted marker names in html, minus skip.
+func scanNames(html string, skip []string) []string {
 	matches := markerRe.FindAllStringSubmatch(html, -1)
 	if len(matches) == 0 {
 		return nil
@@ -68,12 +98,13 @@ func Scan(html string) []string {
 	for _, m := range matches {
 		seen[m[1]] = struct{}{}
 	}
-	out := make([]string, 0, len(seen))
-	for n := range seen {
-		out = append(out, n)
+	for _, n := range skip {
+		delete(seen, n)
 	}
-	sort.Strings(out)
-	return out
+	if len(seen) == 0 {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(seen))
 }
 
 // EagerNames returns the sorted list of names of every LoadAlways
@@ -89,4 +120,92 @@ func EagerNames() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// splitInertTemplates returns html with every inert <template> element
+// cut out, start tag through matching end tag (to the end of the input
+// when unterminated, as the parser treats it), and writes each cut
+// element to held. Templates nest; a declarative shadow root's start
+// and end tags stay, with its content.
+func splitInertTemplates(html string, held *strings.Builder) string {
+	i := indexTemplateTag(html, 0)
+	if i < 0 {
+		return html
+	}
+	var b strings.Builder
+	b.Grow(len(html))
+	last := 0
+	for i >= 0 {
+		if html[i+1] == '/' { // a shadow root's end tag
+			i = indexTemplateTag(html, i+1)
+			continue
+		}
+		end := startTagEnd(html, i)
+		if strings.Contains(strings.ToLower(html[i:end]), "shadowrootmode") {
+			i = indexTemplateTag(html, end)
+			continue
+		}
+		b.WriteString(html[last:i])
+		depth, j := 1, end
+		for depth > 0 {
+			k := indexTemplateTag(html, j)
+			if k < 0 {
+				j = len(html)
+				break
+			}
+			if html[k+1] == '/' {
+				depth--
+			} else {
+				depth++
+			}
+			j = startTagEnd(html, k)
+		}
+		held.WriteString(html[i:j])
+		held.WriteByte('\n')
+		last = j
+		i = indexTemplateTag(html, j)
+	}
+	b.WriteString(html[last:])
+	return b.String()
+}
+
+// indexTemplateTag finds the next <template or </template tag at or
+// after from, case-insensitively, where the name ends the tag name
+// (<template-x is a custom element). -1 when there is none.
+func indexTemplateTag(html string, from int) int {
+	for i := from; i < len(html); i++ {
+		j := strings.IndexByte(html[i:], '<')
+		if j < 0 {
+			return -1
+		}
+		i += j
+		n := i + 1
+		if n < len(html) && html[n] == '/' {
+			n++
+		}
+		if n+8 <= len(html) && strings.EqualFold(html[n:n+8], "template") &&
+			(n+8 == len(html) || strings.IndexByte(" \t\n\r\f/>", html[n+8]) >= 0) {
+			return i
+		}
+	}
+	return -1
+}
+
+// startTagEnd returns the index just past the '>' closing the tag at i,
+// skipping quoted attribute values; len(html) when the tag never ends.
+func startTagEnd(html string, i int) int {
+	var q byte
+	for j := i + 1; j < len(html); j++ {
+		switch c := html[j]; {
+		case q != 0:
+			if c == q {
+				q = 0
+			}
+		case c == '"' || c == '\'':
+			q = c
+		case c == '>':
+			return j + 1
+		}
+	}
+	return len(html)
 }

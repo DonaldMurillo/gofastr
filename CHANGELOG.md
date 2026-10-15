@@ -262,6 +262,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   should build its needle with `minify.ServedCSS`.
   `registry.Entry.ServedCSSFor` returns a component's sheet as served;
   `CSSFor` stays the readable source.
+- **First paint links only the sheets the page renders.** The SSR
+  scan skips markers inside an inert `<template>` (the confirm dialog,
+  a toast item, a menu row, a loading skeleton). Each sheet only
+  template content needs gets a `<link rel="prefetch">` at the URL the
+  runtime will request, so the later clone is a cache hit; a declarative
+  shadow root still counts. `ui-sidebar` and `ui-page-header` move
+  from `LoadAlways` to `LoadPrewarm`: a page that renders one links it,
+  and a page without one no longer blocks on it. `registry.ScanSplit`
+  returns the rendered and template-only names. The examples/hn front
+  page's component bundle drops from 5.7 KB to 3.1 KB gzipped, the
+  examples/site homepage's from 12.4 KB to 10.0 KB, and the
+  examples/meridian homepage's from 7.8 KB to 5.4 KB.
 - `ui.Form`'s hidden CSRF field and `auth.CSRFToken` /
   `auth.CSRFTokenFromCtx` now return masked tokens. Code that compared
   their result with the CSRF cookie should compare
