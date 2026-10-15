@@ -338,6 +338,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   features that need the Go server.
 
 ### Fixed
+- **SQLite write transactions no longer fail when another writer
+  commits mid-transaction.** `sqlite/stdlib` now adds `_txlock=immediate`
+  to every DSN. Under SQLite's default deferred `BEGIN`, a transaction
+  that read before writing (the CRUD delete reads the row for its audit
+  snapshot first) got `SQLITE_BUSY` (517) at once if another connection
+  committed between the read and the write; the busy timeout does not
+  cover that case. A delete racing a background job queue returned 500.
+  Read-only transactions still begin deferred; `_txlock=deferred` in the
+  DSN keeps SQLite's default.
 - **Active links survive a query change.** After a client navigation
   from `/ask` to `/ask?page=2`, the active-link module cleared the mark
   on a `data-cui-activelink` link to `/ask`, though the server marks it

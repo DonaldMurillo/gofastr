@@ -32,6 +32,16 @@ const timeFormatParam = "_time_format=sqlite"
 // requests relies on that wait.
 const busyTimeoutParam = "_pragma=busy_timeout(5000)"
 
+// busy_timeout only covers waiting for a lock. A DEFERRED transaction (SQLite's
+// default BEGIN) that reads first holds a snapshot; when another connection
+// commits before its first write, that write cannot upgrade and fails with
+// SQLITE_BUSY_SNAPSHOT at once, with no wait. The CRUD delete reads the row
+// for the audit snapshot before it deletes, so a background writer (a job
+// queue) turned a plain DELETE into a 500. BEGIN IMMEDIATE takes the write
+// lock up front, where busy_timeout does apply. modernc keeps read-only
+// transactions (sql.TxOptions{ReadOnly: true}) deferred.
+const txLockParam = "_txlock=immediate"
+
 // SQLite ignores FOREIGN KEY constraints unless foreign_keys is enabled on
 // the connection, and it is off by default — in modernc, in mattn, and in
 // the SQLite C library itself. This is therefore NOT a mattn-parity fix like
@@ -152,6 +162,9 @@ func withCompatDefaults(dsn string) string {
 	}
 	if !hasForeignKeysChoice(query) {
 		add(foreignKeysParam)
+	}
+	if !strings.Contains(query, "_txlock=") {
+		add(txLockParam)
 	}
 	return out
 }
