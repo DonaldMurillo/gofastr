@@ -105,13 +105,16 @@ func titleSlots(title string) (map[string][2]int, int) {
 	return spans, n
 }
 
-// sitePath reports whether u is a root-relative path on this site.
+// sitePath reports whether u is a root-relative path on this site. A
+// URL parser drops tab, LF and CR anywhere, so "/\t/host" reads as
+// "//host": every control byte is refused, and the backslash too.
 func sitePath(u string) bool {
-	return strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") && !strings.ContainsRune(u, '\\')
+	return strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") &&
+		!strings.ContainsFunc(u, func(r rune) bool { return r == '\\' || r < ' ' || r == 0x7f })
 }
 
 // Build indexes pages. A page whose URL is not a site path ("/docs",
-// never "//host", a scheme or a backslash) is dropped: every result
+// never "//host", a scheme, a backslash or a control byte) is dropped: every result
 // surface links the base path plus the URL. So is one whose URL, or
 // whose title and text, an earlier page already has: a route rendered
 // under two paths, or a demo shown in five themes, is one result.

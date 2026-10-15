@@ -402,7 +402,7 @@ func TestCappedTextEndsOnWord(t *testing.T) {
 // path never enters the index: no scheme, no other host.
 func TestBuildDropsOffSiteURLs(t *testing.T) {
 	var pages []Page
-	for _, u := range []string{"javascript:alert(1)", "//evil.example/x", "https://evil.example/x", `/\evil.example`, "docs/forms", "/ok"} {
+	for _, u := range []string{"javascript:alert(1)", "//evil.example/x", "https://evil.example/x", `/\evil.example`, "docs/forms", "/\t/evil.example", "/\n/evil.example", "/\r/evil.example", "/x\x00", "/x\x7f", "/ok"} {
 		pages = append(pages, Page{URL: u, Title: "Walrus " + u, Sections: []Section{{Text: "walrus " + u}}})
 	}
 	idx := Build(pages)
