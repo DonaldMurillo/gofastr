@@ -37,16 +37,20 @@ cancels the request context if the handler hangs.
 ### Compression
 
 `Compress` encodes HTML, CSS, JavaScript, JSON, XML, SVG and plain text
-of 1 KB or more, and adds `Vary: Accept-Encoding` to every response it
+of 1 KB or more for clients whose `Accept-Encoding` admits gzip (a
+named `gzip;q=0` refuses it even beside a `*` wildcard), and adds `Vary: Accept-Encoding` to every response it
 could have compressed. It leaves alone `HEAD` requests, `Range` requests,
 `text/event-stream`, bodies that already carry a `Content-Encoding`,
 `204`/`206`/`304` answers and hijacked connections. An `ETag` gains a
 `-gzip` suffix on the compressed variant, and a conditional request
-carrying that suffix still revalidates to `304`. Responses marked
-`immutable` (hashed static assets, `runtime.js`, `manifest.js`) are
-compressed once at the best level and the result is cached in memory
-by content hash; everything else compresses per request at the default
-level. The encoding is gzip only: the standard library has no Brotli.
+carrying that suffix still revalidates to `304`. A compressed response
+drops `Accept-Ranges`, since a range request is served uncompressed.
+Responses marked `immutable` (hashed static assets, `runtime.js`,
+`manifest.js`) are compressed at the best level and cached in memory by
+content hash from the second time the same bytes are served; a one-off
+body is compressed at the default level and not kept, so a client that
+mints immutable URLs cannot evict the hot entries. Everything else
+compresses per request at the default level. The encoding is gzip only: the standard library has no Brotli.
 
 Set `AppConfig.DisableCompression` when a reverse proxy or CDN in front
 of the app compresses instead:

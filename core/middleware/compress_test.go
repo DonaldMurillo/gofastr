@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 var bigHTML = "<!DOCTYPE html><html><body>" + strings.Repeat("<p>hello compressed world</p>", 200) + "</body></html>"
@@ -230,7 +232,7 @@ func TestCompressReusesImmutableBodies(t *testing.T) {
 	})
 	mw := Compress()(h)
 	var bodies [][]byte
-	for range 2 {
+	for range 3 {
 		rec := httptest.NewRecorder()
 		mw.ServeHTTP(rec, gzipReq("/app.css?v=1"))
 		if rec.Header().Get("Content-Encoding") != "gzip" {
@@ -238,10 +240,13 @@ func TestCompressReusesImmutableBodies(t *testing.T) {
 		}
 		bodies = append(bodies, rec.Body.Bytes())
 	}
-	if calls != 2 {
+	if calls != 3 {
 		t.Fatalf("handler ran %d times; the cache must not skip the handler", calls)
 	}
-	if !bytes.Equal(bodies[0], bodies[1]) || gunzip(t, bodies[1]) != bigHTML {
+	if gunzip(t, bodies[0]) != bigHTML {
+		t.Fatal("first compressed body does not decode")
+	}
+	if !bytes.Equal(bodies[1], bodies[2]) || gunzip(t, bodies[2]) != bigHTML {
 		t.Fatal("cached compressed body differs or does not decode")
 	}
 	if cached := compressCacheLen(); cached == 0 {
@@ -269,5 +274,237 @@ func TestCompressForwardsHijack(t *testing.T) {
 	Compress()(h).ServeHTTP(rec, gzipReq("/ws"))
 	if !rec.hijacked {
 		t.Fatal("Hijack did not reach the underlying writer")
+	}
+}
+
+func TestCompressKeepsFirstStatus(t *testing.T) {
+	twice := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusCreated)
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(w, "ok")
+	})
+	if rec := serveCompress(twice, gzipReq("/")); rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want the first WriteHeader (201)", rec.Code)
+	}
+	writeFirst := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, "ok")
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	if rec := serveCompress(writeFirst, gzipReq("/")); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: the first Write commits it", rec.Code)
+	}
+}
+
+func TestCompressHonorsGzipQZero(t *testing.T) {
+	for _, ae := range []string{"gzip;q=0, *;q=1", "*;q=1, gzip;q=0", "x-gzip;q=0, *"} {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("Accept-Encoding", ae)
+		if got := serveCompress(htmlHandler(bigHTML), r).Header().Get("Content-Encoding"); got != "" {
+			t.Errorf("Accept-Encoding %q: Content-Encoding %q, want identity", ae, got)
+		}
+	}
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Accept-Encoding", "br, *;q=0.1")
+	if got := serveCompress(htmlHandler(bigHTML), r).Header().Get("Content-Encoding"); got != "gzip" {
+		t.Errorf("wildcard alone: Content-Encoding %q, want gzip", got)
+	}
+}
+
+type noHijackRecorder struct{ *httptest.ResponseRecorder }
+
+func TestCompressFailedHijackKeepsWriter(t *testing.T) {
+	rec := noHijackRecorder{httptest.NewRecorder()}
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, _, err := http.NewResponseController(w).Hijack(); err == nil {
+			t.Fatal("premise: the recorder cannot hijack")
+		}
+		http.Error(w, "upgrade unavailable", http.StatusNotImplemented)
+	})
+	Compress()(h).ServeHTTP(rec, gzipReq("/ws"))
+	if rec.Code != http.StatusNotImplemented || !strings.Contains(rec.Body.String(), "upgrade unavailable") {
+		t.Fatalf("after a failed hijack: %d %q, want the handler's 501", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCompressSuffixesGzipLookingETag(t *testing.T) {
+	rec := serveCompress(etagHandler(`"v1-gzip"`), gzipReq("/a.js"))
+	tag := rec.Header().Get("ETag")
+	if tag != `"v1-gzip-gzip"` {
+		t.Fatalf("ETag = %q, want the suffix added even to a tag ending in -gzip", tag)
+	}
+	r := gzipReq("/a.js")
+	r.Header.Set("If-None-Match", tag)
+	rec = serveCompress(etagHandler(`"v1-gzip"`), r)
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("revalidating %s: status %d, want 304", tag, rec.Code)
+	}
+	if got := rec.Header().Get("ETag"); got != tag {
+		t.Fatalf("304 ETag = %q, want %q", got, tag)
+	}
+}
+
+func TestCompressSniffsBufferedBytes(t *testing.T) {
+	// A template that opens with a newline before its doctype: the
+	// first Write alone sniffs as text/plain, the buffered 512 bytes as
+	// HTML, which is what net/http would send without Compress.
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "\n")
+		_, _ = io.WriteString(w, bigHTML)
+	})
+	rec := serveCompress(h, gzipReq("/"))
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("Content-Type = %q, want text/html sniffed from the buffered body", ct)
+	}
+	if rec.Header().Get("Content-Encoding") != "gzip" || gunzip(t, rec.Body.Bytes()) != "\n"+bigHTML {
+		t.Fatal("body not compressed intact")
+	}
+	small := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, " ")
+		_, _ = io.WriteString(w, "<!DOCTYPE html><p>hi</p>")
+	})
+	if ct := serveCompress(small, gzipReq("/")).Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("small body: Content-Type = %q, want text/html", ct)
+	}
+}
+
+func TestCompressSniffsOnlyWhereNetHTTPDoes(t *testing.T) {
+	encoded := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Encoding", "br")
+		_, _ = io.WriteString(w, "\x1f\x8b\x08 not really")
+	})
+	// A real server, not a recorder: httptest.ResponseRecorder sniffs
+	// even an encoded body, net/http does not (go.dev/issue/31753).
+	srv := httptest.NewServer(Compress()(encoded))
+	defer srv.Close()
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	resp, err := http.DefaultTransport.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); ct != "" {
+		t.Errorf("encoded body: Content-Type = %q, want none (net/http does not sniff it)", ct)
+	}
+	suppressed := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header()["Content-Type"] = nil
+		_, _ = io.WriteString(w, bigHTML)
+	})
+	rec := serveCompress(suppressed, gzipReq("/"))
+	if _, ok := rec.Header()["Content-Type"]; ok && rec.Header().Get("Content-Type") != "" {
+		t.Errorf("suppressed type: Content-Type = %q, want none", rec.Header().Get("Content-Type"))
+	}
+}
+
+func TestCompressDropsAcceptRanges(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "a.html", time.Time{}, strings.NewReader(bigHTML))
+	})
+	rec := serveCompress(h, gzipReq("/a.html"))
+	if rec.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatal("premise: the body was not compressed")
+	}
+	if ar := rec.Header().Get("Accept-Ranges"); ar != "" {
+		t.Fatalf("Accept-Ranges = %q on a gzip body: a resumed range would be identity bytes", ar)
+	}
+	plain := httptest.NewRequest(http.MethodGet, "/a.html", nil)
+	if serveCompress(h, plain).Header().Get("Accept-Ranges") != "bytes" {
+		t.Fatal("identity response lost Accept-Ranges")
+	}
+}
+
+func TestCompressSniffsAtFlush(t *testing.T) {
+	// Progressive rendering with no Content-Type: the early Flush
+	// commits the headers, so the type is sniffed from what is
+	// buffered then, as net/http does, and the stream is compressed.
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "<!DOCTYPE html><html><head><title>t</title></head>")
+		http.NewResponseController(w).Flush()
+		_, _ = io.WriteString(w, bigHTML)
+	})
+	rec := serveCompress(h, gzipReq("/"))
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("Content-Type = %q, want text/html", ct)
+	}
+	if rec.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatal("streamed HTML was not compressed")
+	}
+}
+
+func TestCompressCachesOnSecondSighting(t *testing.T) {
+	body := bigHTML + "<!-- one-off -->"
+	before := compressCacheLen()
+	cachedGzip([]byte(body))
+	if got := compressCacheLen(); got != before {
+		t.Fatalf("a body seen once entered the cache (%d → %d)", before, got)
+	}
+	cachedGzip([]byte(body))
+	if got := compressCacheLen(); got != before+1 {
+		t.Fatalf("a body seen twice is not cached (%d → %d)", before, got)
+	}
+}
+
+func TestCompressClosesStreamOnPanic(t *testing.T) {
+	// A panic after the gzip stream started: the stream is closed on
+	// the way out, so the bytes already sent decode, and Recovery's
+	// 500 text lands after the gzip trailer, where decoders stop.
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, bigHTML)
+		http.NewResponseController(w).Flush()
+		panic("boom")
+	})
+	rec := httptest.NewRecorder()
+	RecoveryFn(func() *slog.Logger { return slog.New(slog.DiscardHandler) })(Compress()(h)).ServeHTTP(rec, gzipReq("/"))
+	if rec.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatal("premise: the stream had not started")
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(rec.Body.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr.Multistream(false)
+	got, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("the sent gzip stream does not decode: %v", err)
+	}
+	if string(got) != bigHTML {
+		t.Fatalf("decoded %d bytes, want the %d written before the panic", len(got), len(bigHTML))
+	}
+}
+
+func TestCompressPanicBeforeDecisionIs500(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, "<p>partial</p>")
+		panic("boom")
+	})
+	rec := httptest.NewRecorder()
+	RecoveryFn(func() *slog.Logger { return slog.New(slog.DiscardHandler) })(Compress()(h)).ServeHTTP(rec, gzipReq("/"))
+	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "partial") {
+		t.Fatalf("panic while buffering: %d %q, want a clean 500", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCompressImmutablePanicIsPlain500(t *testing.T) {
+	// An immutable body is held whole until the handler returns. A
+	// panic first must leave no gzip label for Recovery's plain 500:
+	// http.Error keeps Content-Encoding (go.dev/issue/66343).
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("ETag", `"v1"`)
+		_, _ = io.WriteString(w, bigHTML)
+		panic("boom")
+	})
+	rec := httptest.NewRecorder()
+	RecoveryFn(func() *slog.Logger { return slog.New(slog.DiscardHandler) })(Compress()(h)).ServeHTTP(rec, gzipReq("/a.css"))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	if ce := rec.Header().Get("Content-Encoding"); ce != "" {
+		t.Fatalf("the 500's Content-Encoding = %q over a plain-text body", ce)
 	}
 }
