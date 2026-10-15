@@ -233,7 +233,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `runtime.js`, the per-screen action scripts and the extra-script
   rail are emitted with `defer` at the end of `<head>` instead of
   `<body>` (still in document order, and still ahead of any deferred
-  script in the page's own markup); the color-scheme bootstrap is the
+  script in the page's `<body>`); the color-scheme bootstrap is the
   only blocking script. The runtime's initial pass waits for
   `DOMContentLoaded`, so `data-action-mount` handlers are registered
   before mounts fire. Runtime-module

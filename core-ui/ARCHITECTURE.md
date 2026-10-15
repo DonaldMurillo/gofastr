@@ -808,8 +808,10 @@ extra-script rail) carries `defer` and closes `<head>`, after the
 stylesheets: none blocks the parser or first paint, the preload scanner
 finds them in the first bytes, and they execute in document order once
 parsing ends, so `manifest.js` globals are set when the kernel boots,
-rail scripts see `runtime.js`, and a deferred script in the page's own
-markup runs after all of them. Because `runtime.js` is deferred, its
+rail scripts see `runtime.js`, and a deferred script in the page's
+`<body>` runs after all of them. A layout's own deferred script in
+`<head>` sits before the host's and runs first, so it cannot read
+runtime globals at execution time. Because `runtime.js` is deferred, its
 initial pass (component CSS, demand modules, `data-action-mount`) waits
 for `DOMContentLoaded`, after the action scripts that register the
 mount handlers. Runtime-module preload hints carry
@@ -822,7 +824,7 @@ than in every document; exported pages keep the inline
 preload rules, and `examples/site` holds its landing pages under one
 round trip of compressed HTML.
 
-### Extra scripts (the body-close script rail)
+### Extra scripts (the script rail)
 
 `uihost.WithExtraScripts` adds external `<script defer src="…">` tags
 at the end of `<head>`, after `runtime.js` and the per-screen action
