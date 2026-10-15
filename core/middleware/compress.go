@@ -500,10 +500,13 @@ const compressSeenMax = 4096
 // bytes share one entry and a changed body can never hit a stale one.
 //
 // A body enters only on its second sighting (the seen set is the
-// doorkeeper). Before that it is compressed at the default level and
-// not kept: a client that mints immutable URLs for one-off bodies (the
-// component bundle takes any list of names) would otherwise buy a
-// BestCompression pass per request and evict the hot entries.
+// doorkeeper), so one-off bodies from a client that mints immutable
+// URLs (the component bundle takes any list of names) never displace
+// the hot entries. A client that asks for each minted URL twice still
+// can; the byte bound is what caps the cache then. Every sighting
+// compresses at the same level: flate is deterministic, so the one
+// strong "-gzip" ETag always names the same bytes, before admission
+// and after an eviction alike.
 var compressCache = struct {
 	sync.Mutex
 	entries map[[sha256.Size]byte][]byte
@@ -528,12 +531,8 @@ func cachedGzip(body []byte) []byte {
 	}
 	compressCache.Unlock()
 
-	level := gzip.BestCompression
-	if !again {
-		level = gzip.DefaultCompression
-	}
 	var out bytes.Buffer
-	zw, _ := gzip.NewWriterLevel(&out, level)
+	zw, _ := gzip.NewWriterLevel(&out, gzip.BestCompression)
 	_, _ = zw.Write(body)
 	_ = zw.Close()
 	gz := out.Bytes()

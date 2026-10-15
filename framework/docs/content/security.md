@@ -47,9 +47,10 @@ carrying that suffix still revalidates to `304`. A compressed response
 drops `Accept-Ranges`, since a range request is served uncompressed.
 Responses marked `immutable` (hashed static assets, `runtime.js`,
 `manifest.js`) are compressed at the best level and cached in memory by
-content hash from the second time the same bytes are served; a one-off
-body is compressed at the default level and not kept, so a client that
-mints immutable URLs cannot evict the hot entries. Everything else
+content hash from the second time the same bytes are served. A one-off
+body is not kept, so a client that mints immutable URLs has to request
+each one twice to displace a cached entry, and the cache's byte bound
+holds either way. Everything else
 compresses per request at the default level. The encoding is gzip only: the standard library has no Brotli.
 
 Set `AppConfig.DisableCompression` when a reverse proxy or CDN in front

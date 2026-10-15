@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -443,6 +444,21 @@ func TestCompressCachesOnSecondSighting(t *testing.T) {
 	cachedGzip([]byte(body))
 	if got := compressCacheLen(); got != before+1 {
 		t.Fatalf("a body seen twice is not cached (%d → %d)", before, got)
+	}
+}
+
+func TestCompressSightingsShareBytes(t *testing.T) {
+	// One strong "-gzip" ETag labels every compressed copy of a body, so
+	// the first sighting (not cached) and the second (cached) must be
+	// the same bytes.
+	var b strings.Builder
+	for i := range 4000 {
+		fmt.Fprintf(&b, "<li data-n=%d>row %d of %d</li>", i*7919%1000, i, i%13)
+	}
+	first := cachedGzip([]byte(b.String()))
+	second := cachedGzip([]byte(b.String()))
+	if !bytes.Equal(first, second) {
+		t.Fatalf("one body, two gzip encodings under one ETag (%d vs %d bytes)", len(first), len(second))
 	}
 }
 
