@@ -111,7 +111,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   app starts. In a static export it writes the index as
   content-hashed JSON shards under `/__gofastr/search/`, and a runtime
   module only exported pages load (`sitesearch-static`) ranks from them
-  with no server, matching the Go ranking. The index is built as an
+  with no server, matching the Go ranking. A shard over 64 KB splits on
+  its next letter, so at 10,000 pages a query downloads 7–150 KB
+  gzipped, manifest included. The index is built as an
   anonymous visitor, so a policy-gated page never enters it.
   `Config.Groups` labels results by URL prefix, `Exclude` drops paths
   (Sources' pages included), `Sources` adds pages no route renders;
@@ -120,6 +122,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   build waits 30 seconds before a query retries it. A page whose title
   holds every query term ranks first, the title the query covers most
   on top, so `table` finds DataTable and `form` the Form component.
+  Terms of three letters or more also match the words they begin.
   Guide:
   `gofastr docs site-search`.
 - **`ui.CommandPaletteConfig.Search`** makes the palette search the site

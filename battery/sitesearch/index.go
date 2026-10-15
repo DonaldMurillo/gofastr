@@ -217,6 +217,12 @@ func capRunes(s string, n int) string {
 // prefixes (q itself among them), every term its stem prefixes when it
 // has one, and its gerund when the index holds it.
 func (idx *Index) matching(q, stem, gerund string) []string {
+	if utf8.RuneCountInString(q) < minPrefixRunes {
+		if _, ok := idx.terms[q]; ok {
+			return []string{q}
+		}
+		return nil
+	}
 	from := q
 	if stem != "" {
 		from = stem

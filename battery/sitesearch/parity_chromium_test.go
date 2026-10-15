@@ -80,6 +80,10 @@ func parityCorpus() []Page {
 		{URL: "/docs/form-format", Title: "Form format options", Sections: []Section{
 			{Text: "How a form picks its format."},
 		}},
+		// A two-letter word matches only itself: go, never gofastr.
+		{URL: "/docs/go", Title: "Go", Sections: []Section{
+			{Text: "Written in Go, the gofastr way; go install it."},
+		}},
 	}
 }
 
@@ -92,14 +96,48 @@ var parityQueries = []string{
 	"auth", "authentication", "data table", "tables", "formbuilder", "sign forms",
 	"theme", "theming", "cache", "themes", "free",
 	"datatable", "form format", "format form", "formatter", "form formatters",
+	"go", "gof", "go install",
 }
 
+// The browser ranks as Go does over the shipped shards, and over
+// shards split down to single terms, where a query term has to gather
+// its matches from every split shard under its prefix.
 func TestStaticSearchMatchesGo(t *testing.T) {
 	idx := Build(parityCorpus())
-	files, err := idx.Files()
-	if err != nil {
-		t.Fatal(err)
+	t.Run("shipped", func(t *testing.T) {
+		files, err := idx.Files()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n := countShards(files); n < 5 {
+			t.Fatalf("%d shards: the corpus no longer spans keys", n)
+		}
+		checkParity(t, idx, files)
+	})
+	t.Run("split", func(t *testing.T) {
+		files, err := idx.files(1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		shipped, _ := idx.Files()
+		if countShards(files) <= countShards(shipped) {
+			t.Fatalf("splitting made %d shards, shipped %d", countShards(files), countShards(shipped))
+		}
+		checkParity(t, idx, files)
+	})
+}
+
+func countShards(files map[string][]byte) int {
+	n := 0
+	for f := range files {
+		if strings.HasPrefix(f, "t-") {
+			n++
+		}
 	}
+	return n
+}
+
+func checkParity(t *testing.T, idx *Index, files map[string][]byte) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -157,7 +195,7 @@ func TestStaticSearchMatchesGo(t *testing.T) {
 	}
 	// Anti-vacuity: most queries must return something, or the parity
 	// is two empty lists agreeing.
-	if nonEmpty < len(parityQueries)-6 {
+	if nonEmpty < len(parityQueries)-7 {
 		t.Errorf("only %d of %d queries returned results", nonEmpty, len(parityQueries))
 	}
 }

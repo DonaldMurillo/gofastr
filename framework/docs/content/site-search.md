@@ -115,8 +115,9 @@ seconds before a query may start another; `Refresh` retries at once.
 
 ## Ranking
 
-Queries match whole words and word prefixes (`pal` finds `palette`), and
-every term must match. `CommandPalette` also indexes as `command` and
+Queries match whole words and, from three letters, the words they begin
+(`pal` finds `palette`; `go` finds only `go`, never `gofastr`), and every
+term must match. `CommandPalette` also indexes as `command` and
 `palette`. A trailing plural `s` is dropped from terms of four or more
 letters, so `forms` finds `form`, and such a term also matches its `-ing`
 form as a whole word, so `theme` finds `theming`.
@@ -143,13 +144,15 @@ gofastr export --base /docs _site
 ```
 
 ```
-_site/__gofastr/search/manifest.json       shard and page file names
-_site/__gofastr/search/t-<hex>-<hash>.json shard: terms sharing a two-letter prefix
+_site/__gofastr/search/manifest.json       the index hash and the shard keys
+_site/__gofastr/search/t-<hex>-<hash>.json shard: the terms that begin with its key
 _site/__gofastr/search/p<n>-<hash>.json    one page's title and sections
 ```
 
 A query fetches the manifest, the shards for its terms, and the page files of
-the top results. Shard and page names carry a content hash, so they can be
+the top results. A shard's key starts as two letters, and a shard over 64 KB
+splits on the next letter, so a site's common prefixes cost no more to fetch
+than its rare ones. Shard and page names carry a content hash, so they can be
 cached forever (`Cache-Control: immutable`); the manifest is served
 `no-cache`. Two exports of the same pages produce the same files.
 
@@ -162,12 +165,24 @@ its `skip` func names before rendering it. A page that fails to render
 reaches `fn` with the error, as in `fs.WalkDir`: return nil to walk on
 without it.
 
+## Scale
+
+Measured on 10,000 generated pages drawn from these docs' own vocabulary
+(six sections of 130 words each), gzipped:
+
+- The manifest is 6.5 KB and the largest shard 29 KB.
+- A query downloads 7 KB (`pa`) to 148 KB (`con`, a prefix of hundreds
+  of words), manifest and the top eight pages included; `form` takes
+  73 KB and `session token` 95 KB.
+- On a live server a query takes about 1 ms.
+
 ## Limits
 
 - The query endpoint refuses `q` over 256 bytes (414) and a `limit` below 1
   (400); `limit` defaults to 8 and caps at 20.
 - Each section keeps its first 2000 characters.
-- Words of one letter are not searchable.
+- Words of one letter are not searchable, and a term of two letters matches
+  only the whole word.
 
 ## Common mistakes
 

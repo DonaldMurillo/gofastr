@@ -18,14 +18,34 @@
 
   // ROOT carries the export's base path, baked in like sitesearch.js's.
   const ROOT = '/__gofastr/search/';
-  const MIN_TERM = 2;
+  const MIN_PREFIX = 3;
   const MAX_SECTIONS = 3;
   const EXCERPT_LEAD = 40;
   const EXCERPT_WIDTH = 160;
   const TITLE_BONUS = 1000000;
   const scan = api.scan;
 
-  function shardKey(t) { return Array.from(t).slice(0, MIN_TERM).join(''); }
+  // prefixes: a term of MIN_PREFIX runes also matches the words it
+  // begins (the Go prefixes).
+  function prefixes(q) { return Array.from(q).length >= MIN_PREFIX; }
+
+  function hex(k) {
+    return Array.from(new TextEncoder().encode(k), function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+  }
+
+  // shardsFor names the shards a term's matches live in: every key its
+  // match prefix begins (a prefix term), and the key that begins the
+  // prefix, whose shard holds every term under it unless it split;
+  // its gerund's shard too.
+  function shardsFor(m, q) {
+    const from = stem(q) || q, ger = gerund(q);
+    const out = [];
+    for (const k of m.keys) {
+      if (from.startsWith(k) || (prefixes(q) && k.startsWith(from)) ||
+          (ger && ger.startsWith(k))) out.push('t-' + hex(k) + '-' + m.h + '.json');
+    }
+    return out;
+  }
 
   // The Go stem: a plural term's singular, matched as a prefix.
   function stem(q) {
@@ -52,7 +72,7 @@
       let hit = false, whole = false;
       for (const q of terms) {
         const st = stem(q), ger = gerund(q);
-        if (t.word.startsWith(q) || (st && t.word.startsWith(st)) || (ger && t.word === ger)) {
+        if (t.word === q || (prefixes(q) && t.word.startsWith(q)) || (st && t.word.startsWith(st)) || (ger && t.word === ger)) {
           hit = true;
           whole = whole || t.word === q || t.word === st || t.word === ger;
         }
@@ -114,10 +134,10 @@
   // title word whole fills its slots with two, one only beginning it
   // puts one in its first slot, each slot keeps its best, and the
   // bonus is the share of two points a slot.
-  function rank(shards, terms, titleN) {
+  function rank(shards, terms) {
     let pageScore = null;
     const secScore = new Map();
-    const inTitle = new Map(), slots = new Map();
+    const inTitle = new Map(), slots = new Map(), titleN = new Map();
     terms.forEach(function (qt, qi) {
       const perPage = new Map();
       const perSec = new Map();
@@ -126,21 +146,28 @@
       const st = stem(qt), ger = gerund(qt);
       const from = st || qt;
       for (const t of Object.keys(shard)) {
-        if (!t.startsWith(from) && !(ger && t === ger)) continue;
+        if (t !== qt && !(prefixes(qt) && t.startsWith(from)) && !(ger && t === ger)) continue;
         const row = shard[t];
         const mult = t === qt || t === ger ? 2 : 1;
         const whole = t === qt || t === st || t === ger;
-        const idf = row[0];
+        const idf = row[0], n = row[1];
         const sums = new Map(), best = new Map();
-        for (let i = 1; i + 4 < row.length; i += 5) {
-          const pg = row[i], sec = row[i + 1];
-          const v = idf * mult * row[i + 2];
+        // Title quads after the columns: posting, from, count, slots.
+        const title = new Map();
+        for (let j = 2 + 3 * n; j + 3 < row.length; j += 4) title.set(row[j], j);
+        let pg = 0;
+        for (let i = 0; i < n; i++) {
+          pg += row[2 + i];
+          const sec = row[2 + n + i];
+          const v = idf * mult * row[2 + 2 * n + i];
           sums.set(pg, (sums.get(pg) || 0) + v);
           best.set(pg, Math.max(best.get(pg) || 0, v));
           const k = pg + ':' + sec;
           perSec.set(k, Math.max(perSec.get(k) || 0, v));
-          const tf = row[i + 3], tl = row[i + 4];
-          if (tl > 0) {
+          const j = title.get(i);
+          if (j !== undefined) {
+            const tf = row[j + 1], tl = row[j + 2];
+            titleN.set(pg, row[j + 3]);
             titled.add(pg);
             if (!slots.has(pg)) slots.set(pg, new Map());
             const sl = slots.get(pg);
@@ -166,7 +193,7 @@
     });
     pageScore = pageScore || new Map();
     for (const pg of pageScore.keys()) {
-      const n = titleN[pg] || 0;
+      const n = titleN.get(pg) || 0;
       if (inTitle.get(pg) === terms.length && n > 0) {
         let pts = 0;
         for (const v of slots.get(pg).values()) pts += v;
@@ -198,15 +225,17 @@
     const terms = api.queryTerms(q);
     if (!terms.length) return [];
     const m = await fetchJSON(ROOT + 'manifest.json');
-    if (m.v !== 2) throw new Error('sitesearch: index format ' + m.v);
-    const names = terms.map(function (t) { return m.shards[shardKey(t)]; });
-    if (names.some(function (n) { return !n; })) return [];
-    const shards = await Promise.all(names.map(function (n) { return fetchJSON(ROOT + n); }));
-    const ranked = rank(shards, terms, m.tn || []);
+    if (m.v !== 3) throw new Error('sitesearch: index format ' + m.v);
+    // Each term's shards merge into one map of its terms.
+    const shards = await Promise.all(terms.map(function (t) {
+      return Promise.all(shardsFor(m, t).map(function (n) { return fetchJSON(ROOT + n); }))
+        .then(function (parts) { return Object.assign(Object.create(null), ...parts); });
+    }));
+    const ranked = rank(shards, terms);
     const order = Array.from(ranked.pageScore.keys()).sort(function (a, b) {
       return (ranked.pageScore.get(b) - ranked.pageScore.get(a)) || (a - b);
     }).slice(0, limit);
-    const frags = await Promise.all(order.map(function (pg) { return fetchJSON(ROOT + m.pages[pg]); }));
+    const frags = await Promise.all(order.map(function (pg) { return fetchJSON(ROOT + 'p' + pg + '-' + m.h + '.json'); }));
     return results(order, frags, ranked, terms);
   }
 

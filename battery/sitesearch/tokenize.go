@@ -9,7 +9,14 @@ import (
 // minTermRunes is the shortest term the index keeps and the shortest
 // query term the search honors: one character matches nearly every
 // page, and the static shards are keyed by a term's first two runes.
-const minTermRunes = 2
+// minPrefixRunes is the shortest query term that also matches as a
+// prefix: a two-letter prefix matches a large share of a site's words,
+// costs a static export hundreds of kilobytes to fetch and ranks
+// nothing useful, so ui finds the word ui and pal finds palette.
+const (
+	minTermRunes   = 2
+	minPrefixRunes = 3
+)
 
 // token is one word run in a text, with its rune offsets.
 type token struct {

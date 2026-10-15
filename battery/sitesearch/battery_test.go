@@ -100,10 +100,11 @@ func TestLiveServesIndexFiles(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &m); err != nil {
 		t.Fatal(err)
 	}
-	shard, ok := m.Shards["va"]
-	if !ok {
-		t.Fatalf("no shard for va: %+v", m.Shards)
+	shards := shardsFor(m, "validation")
+	if len(shards) != 1 {
+		t.Fatalf("validation reads %d shards, want 1: %+v", len(shards), m.Keys)
 	}
+	shard := shards[0]
 	if rec := get(t, app.Router(), Root+shard); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"validation"`) {
 		t.Errorf("shard %s = %d %s", shard, rec.Code, rec.Body)
 	}
@@ -126,10 +127,18 @@ func TestExportWritesIndex(t *testing.T) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
 	}
-	if len(m.Pages) != 2 {
-		t.Errorf("exported index holds %d pages, want 2 (home, forms)", len(m.Pages))
+	var names []string
+	for n := 0; ; n++ {
+		name := pageFile(m, n)
+		if _, err := os.Stat(filepath.Join(dir, "__gofastr", "search", name)); err != nil {
+			break
+		}
+		names = append(names, name)
 	}
-	for _, name := range m.Pages {
+	if len(names) != 2 {
+		t.Errorf("exported index holds %d pages, want 2 (home, forms)", len(names))
+	}
+	for _, name := range names {
 		frag, err := os.ReadFile(filepath.Join(dir, "__gofastr", "search", name))
 		if err != nil {
 			t.Fatal(err)
