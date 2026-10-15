@@ -211,6 +211,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the step shrinks so a deep thread keeps a readable column on a phone.
   Knobs: `--ui-comment-thread-gap`, `--ui-comment-thread-indent`,
   `--ui-comment-thread-indent-compact`.
+- **`examples/hn`** is a Hacker News reader in the HNPWA shape, for
+  comparing first loads with other frameworks: five ranked lists paged
+  with `?page=N`, story pages with full comment threads, user pages,
+  and real 404s. Its data is synthetic and seeded from a fixed seed
+  into SQLite through the entity layer.
 
 ### Changed
 - **BREAKING: `ui.ContentRowConfig.BelowHeader` is removed.** Set
