@@ -104,6 +104,7 @@ func registerEntities(app *framework.App) {
 // store reads the dataset. One handler per entity; the typed queries
 // built on them decode rows into the structs above.
 type store struct {
+	app                      *framework.App
 	users, stories, comments *crud.CrudHandler
 }
 
@@ -115,7 +116,7 @@ func newStore(app *framework.App) (*store, error) {
 		}
 		return framework.NewCrudHandler(e, app.DB), nil
 	}
-	var s store
+	s := store{app: app}
 	var err error
 	if s.users, err = h("users"); err != nil {
 		return nil, err
@@ -232,7 +233,9 @@ func first[T any](v *T, err error) (*T, error) {
 }
 
 // seed writes the generated dataset when the tables are empty. It goes
-// through the entities' own create path, one transaction per table.
+// through the entities' own create path, in one transaction: a seed
+// that fails part-way leaves the tables empty, so the next start seeds
+// again instead of keeping users with no stories for good.
 func (s *store) seed(ctx context.Context) error {
 	n, err := framework.NewTypedQuery[User](s.users).Count(ctx)
 	if err != nil {
@@ -242,16 +245,18 @@ func (s *store) seed(ctx context.Context) error {
 		return nil
 	}
 	d := generate()
-	if err := batch(ctx, s.users, d.users); err != nil {
-		return fmt.Errorf("hn: seed users: %w", err)
-	}
-	if err := batch(ctx, s.stories, d.stories); err != nil {
-		return fmt.Errorf("hn: seed stories: %w", err)
-	}
-	if err := batch(ctx, s.comments, d.comments); err != nil {
-		return fmt.Errorf("hn: seed comments: %w", err)
-	}
-	return nil
+	return s.app.InTx(ctx, func(ctx context.Context, _ *sql.Tx) error {
+		if err := batch(ctx, s.users, d.users); err != nil {
+			return fmt.Errorf("hn: seed users: %w", err)
+		}
+		if err := batch(ctx, s.stories, d.stories); err != nil {
+			return fmt.Errorf("hn: seed stories: %w", err)
+		}
+		if err := batch(ctx, s.comments, d.comments); err != nil {
+			return fmt.Errorf("hn: seed comments: %w", err)
+		}
+		return nil
+	})
 }
 
 // rower is a struct that writes itself as a create body, keyed by
@@ -277,7 +282,8 @@ func (c CommentRow) row() map[string]any {
 	}
 }
 
-// batch inserts rows in chunks, each chunk one transaction.
+// batch inserts rows in chunks; inside seed's transaction every chunk
+// joins it.
 func batch[T rower](ctx context.Context, h *crud.CrudHandler, rows []T) error {
 	for chunk := range slices.Chunk(rows, 1000) {
 		bodies := make([]map[string]any, len(chunk))
