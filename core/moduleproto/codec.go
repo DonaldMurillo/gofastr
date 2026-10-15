@@ -59,10 +59,11 @@ var ErrScannerOvercap = errors.New("moduleproto: scanner buffer overflow")
 // write produces an [*OvercapError] and is terminal; the peer tears down. The
 // codec NEVER truncates; truncation would silently corrupt the wire.
 type Codec struct {
-	r   io.Reader
-	w   io.Writer
-	mu  sync.Mutex // guards Write
-	max int        // negotiated max_frame_bytes; enforced on read + write
+	r    io.Reader
+	w    io.Writer
+	mu   sync.Mutex // guards Write and werr
+	werr error      // set once a frame is cut short
+	max  int        // negotiated max_frame_bytes; enforced on read + write
 
 	scan *bufio.Scanner
 }
@@ -112,12 +113,21 @@ func (c *Codec) WriteFrame(f *Frame) error {
 	// Append newline into a single Write so a peer never observes a partial
 	// frame. bytes concat allocates, but stdio JSON frames are small and
 	// bounded by max_frame_bytes; the allocation is the cost of atomicity.
+	if c.werr != nil {
+		return c.werr
+	}
 	n, err := c.w.Write(append(body, '\n'))
 	if err == nil && n != len(body)+1 {
 		err = io.ErrShortWrite
 	}
 	if err != nil {
-		return fmt.Errorf("moduleproto: write: %w", err)
+		err = fmt.Errorf("moduleproto: write: %w", err)
+		if n > 0 {
+			// Part of a frame reached the peer; anything written after
+			// it would read as the rest of that frame.
+			c.werr = err
+		}
+		return err
 	}
 	return nil
 }
