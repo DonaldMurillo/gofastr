@@ -269,7 +269,10 @@ func (c *conn) writeFrame(v any) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	_, err = c.w.Write(append(buf, '\n'))
+	n, err := c.w.Write(append(buf, '\n'))
+	if err == nil && n != len(buf)+1 {
+		err = io.ErrShortWrite
+	}
 	return err
 }
 
