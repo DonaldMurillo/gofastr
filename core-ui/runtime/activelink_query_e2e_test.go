@@ -4,7 +4,10 @@ package runtime
 // screen's in-page state (sort, page, filter live in the query string),
 // so /ask stays current on /ask?page=2. The server marks it that way;
 // a client navigation must not clear it. An href that carries its own
-// query still needs the exact URL.
+// query still needs the exact URL. A nav that holds query-carrying links
+// to the same path is a tab strip whose current tab the server picks,
+// so its query-less "All" tab also needs the exact URL: it stays dark
+// on every filtered or paged view.
 
 import (
 	"testing"
@@ -17,6 +20,7 @@ import (
 const activelinkQueryPage = `<!doctype html><html><head><title>activelink query</title>
   <nav aria-label="Sections">
     <a id="ask" href="/ask" data-cui-activelink>ask</a>
+    <a id="all" href="/orders">all</a>
     <a id="open" href="/orders?status=open" data-cui-activelink>open</a>
   </nav>
   <main id="main">ready</main>
@@ -38,22 +42,24 @@ func TestActiveLinkIgnoresScreenQuery(t *testing.T) {
 		const u = window.__gofastr._updateActiveLink;
 		const g = (id) => document.getElementById(id).getAttribute('aria-current') || '-';
 		const out = {};
-		for (const p of ['/ask?page=2', '/orders?status=closed', '/orders?status=open']) {
+		for (const p of ['/ask?page=2', '/orders', '/orders?status=closed', '/orders?status=open', '/orders?status=open&page=2']) {
 			u(p, true);
-			out[p] = g('ask') + ' ' + g('open');
+			out[p] = g('ask') + ' ' + g('all') + ' ' + g('open');
 		}
 		return out;
 	})()`, &got)); err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		"/ask?page=2":           "page -",
-		"/orders?status=closed": "- -",
-		"/orders?status=open":   "- page",
+		"/ask?page=2":                "page - -",
+		"/orders":                    "- page -",
+		"/orders?status=closed":      "- - -",
+		"/orders?status=open":        "- - page",
+		"/orders?status=open&page=2": "- - -",
 	}
 	for p, w := range want {
 		if got[p] != w {
-			t.Errorf("at %s: ask/open marks = %q, want %q", p, got[p], w)
+			t.Errorf("at %s: ask/all/open marks = %q, want %q", p, got[p], w)
 		}
 	}
 }

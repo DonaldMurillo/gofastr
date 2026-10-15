@@ -308,7 +308,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   from `/ask` to `/ask?page=2`, the active-link module cleared the mark
   on a `data-cui-activelink` link to `/ask`, though the server marks it
   current there. A link whose href has no query now matches the URL's
-  path; an href with its own query still needs the exact URL.
+  path; an href with its own query still needs the exact URL, and so
+  does a query-less link in a nav that also links the same path with a
+  query (a tab strip's "All" tab stays dark on a filtered view).
 - **`mcp.ServeStdio` no longer answers notifications.** The
   `notifications/initialized` every client sends after the handshake got
   a method-not-found error line with no id, which JSON-RPC forbids and
