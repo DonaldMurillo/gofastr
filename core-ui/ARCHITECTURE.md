@@ -1590,6 +1590,15 @@ SSG output emits the same single file. (`/__gofastr/theme.css`
 and `/__gofastr/styles.css` are retained as `410 GONE` so stale
 references surface clearly.)
 
+Served CSS is minified outside dev: app.css, component sheets, the
+bundle, widget sheets and the static export all pass through
+`minify.ServedCSS`, gated like the runtime JS (`GOFASTR_DEV`,
+`RUNTIME_NOMINIFY`; see `framework/docs/content/runtime-minification.md`).
+`AppCSS()` and `Entry.CSSFor` stay the readable source and the version
+hash is taken over it; `Entry.ServedCSSFor` is what goes on the wire.
+A custom property reads back through `getComputedStyle` in the served
+spelling (`minmax(0,1fr)`), so compare tokens, not spacing.
+
 ---
 
 ## Component CSS

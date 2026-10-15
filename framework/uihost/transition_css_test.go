@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -33,7 +34,7 @@ func TestAppCSSCollectsLayoutTransitions(t *testing.T) {
 	}
 
 	css, _ := New(site).appCSSCached()
-	rule := "::view-transition-new(vt-items-primary) { animation: vt-items-primary-in 220ms var(--easing-ease-in-out, ease) both; }"
+	rule := minify.ServedCSS("::view-transition-new(vt-items-primary) { animation: vt-items-primary-in 220ms var(--easing-ease-in-out, ease) both; }")
 	if n := strings.Count(css, rule); n != 1 {
 		t.Fatalf("app.css holds the items transition rule %d times, want 1:\n%s", n, css)
 	}

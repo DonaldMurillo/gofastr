@@ -43,6 +43,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
@@ -78,6 +79,7 @@ type Entry struct {
 	mu           sync.Mutex
 	versionCache map[string]string
 	cssCache     map[string]string
+	servedCache  map[string]string
 }
 
 // CSSFor returns the scoped CSS bytes for this entry under the given
@@ -108,6 +110,35 @@ func (e *Entry) CSSForHash(theme style.Theme, h string) string {
 	return css
 }
 
+// ServedCSSFor is CSSFor as it goes on the wire: minified unless the
+// process keeps sources readable (minify.Enabled). Every path that
+// sends component CSS to a browser (the per-component and bundle
+// endpoints, a static export, an inlined sheet) reads this one; CSSFor
+// stays the readable source the version hash is taken over.
+func (e *Entry) ServedCSSFor(theme style.Theme) string {
+	return e.ServedCSSForHash(theme, themeHash(theme))
+}
+
+// ServedCSSForHash is ServedCSSFor with the theme hash supplied; see
+// CSSForHash.
+func (e *Entry) ServedCSSForHash(theme style.Theme, h string) string {
+	css := e.CSSForHash(theme, h)
+	if !minify.Enabled() {
+		return css
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.servedCache == nil {
+		e.servedCache = make(map[string]string, 1)
+	}
+	if out, ok := e.servedCache[h]; ok {
+		return out
+	}
+	out := minify.CSS(css)
+	e.servedCache[h] = out
+	return out
+}
+
 // VersionFor returns the content-addressed version string for this
 // entry's CSS under the given theme. Build is shared with CSSFor.
 func (e *Entry) VersionFor(theme style.Theme) string {
@@ -132,6 +163,7 @@ func (e *Entry) EvictTheme(hash string) {
 	defer e.mu.Unlock()
 	delete(e.cssCache, hash)
 	delete(e.versionCache, hash)
+	delete(e.servedCache, hash)
 }
 
 // HasCachedTheme reports whether this entry currently holds a cached stylesheet

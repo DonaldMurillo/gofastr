@@ -11,7 +11,9 @@ import (
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+
 	// The blank import is load-bearing: framework/ui's init registers
 	// the component-options compiler these tests prove. Importing only
 	// framework/ui/theme would leave the compiler unregistered and
@@ -186,8 +188,10 @@ func TestNestedScopedThemeOptionsWinByProximity(t *testing.T) {
 		{"b", "9999px|44px", "the inner B boundary wins by proximity over the outer A"},
 		{"a2", "0|36px", "the innermost A resets to A's values, not B's"},
 	} {
-		if got[tc.probe] != tc.want {
-			t.Errorf("probe %s (%s): --fui-button-radius|--fui-density-control-h = %q, want %q", tc.probe, tc.why, got[tc.probe], tc.want)
+		// A custom property computes to its declared text, so it reads
+		// back in the served spelling.
+		if want := minify.ServedCSS(tc.want); got[tc.probe] != want {
+			t.Errorf("probe %s (%s): --fui-button-radius|--fui-density-control-h = %q, want %q", tc.probe, tc.why, got[tc.probe], want)
 		}
 	}
 }
@@ -245,8 +249,10 @@ func TestNestedFieldOptionsWinByProximity(t *testing.T) {
 		{"a", "minmax(0, 1fr)|0", "inside A: stacked columns, square corners"},
 		{"b", "minmax(8rem, 1fr) minmax(0, 3fr)|8px", "the inner B boundary wins by proximity (the radius resolves to the theme's --radii-md)"},
 	} {
-		if got[tc.probe] != tc.want {
-			t.Errorf("probe %s (%s): --fui-field-columns|--fui-field-radius = %q, want %q", tc.probe, tc.why, got[tc.probe], tc.want)
+		// A custom property computes to its declared text, so it reads
+		// back in the served spelling.
+		if want := minify.ServedCSS(tc.want); got[tc.probe] != want {
+			t.Errorf("probe %s (%s): --fui-field-columns|--fui-field-radius = %q, want %q", tc.probe, tc.why, got[tc.probe], want)
 		}
 	}
 }

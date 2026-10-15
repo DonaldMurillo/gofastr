@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/island"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -642,7 +643,7 @@ func TestUIHostCustomCSS(t *testing.T) {
 	if got := cssRec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/css") {
 		t.Errorf("Content-Type = %q, want text/css", got)
 	}
-	assertContains(t, cssRec.Body.String(), "body { background: red; }")
+	assertContains(t, cssRec.Body.String(), minify.ServedCSS("body { background: red; }"))
 
 	// Old endpoints are removed entirely: 404, not registered.
 	for _, gone := range []string{"/__gofastr/theme.css", "/__gofastr/styles.css"} {

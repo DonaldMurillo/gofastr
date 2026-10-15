@@ -38,6 +38,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/island"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core-ui/seo"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -1037,7 +1038,7 @@ func (ds *UIHost) ComponentCSSFiles() map[string]string {
 	theme := ds.activeTheme()
 	out := make(map[string]string, len(all))
 	for _, e := range all {
-		out["/__gofastr/comp/"+e.Name+".css"] = e.CSSFor(theme)
+		out["/__gofastr/comp/"+e.Name+".css"] = e.ServedCSSFor(theme)
 	}
 	return out
 }
@@ -2300,7 +2301,7 @@ func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
 		if t, ok := ds.themeVariant(hash); ok {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-			fmt.Fprint(w, ds.AppCSSFor(t))
+			fmt.Fprint(w, minify.ServedCSS(ds.AppCSSFor(t)))
 			return
 		}
 		// Unknown variant: serve the app theme, but do NOT mark it immutable.
@@ -2330,7 +2331,7 @@ func (ds *UIHost) appCSSCached() (body, hash string) {
 		for _, l := range ds.App.Layouts() {
 			ds.appCSSTransitionLayouts[l] = true
 		}
-		ds.appCSSBody = ds.AppCSS()
+		ds.appCSSBody = minify.ServedCSS(ds.AppCSS())
 		ds.appCSSHash = style.CSSFingerprint(ds.appCSSBody)
 	})
 	if style.ContributedCount() != ds.appCSSContribN {
@@ -4901,7 +4902,7 @@ func (ds *UIHost) handleComponentCSS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	theme := ds.requestTheme(r)
-	css := e.CSSFor(theme)
+	css := e.ServedCSSFor(theme)
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	if v := r.URL.Query().Get("v"); v != "" && v == e.VersionFor(theme) {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
@@ -4958,7 +4959,7 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		versions = append(versions, e.VersionForHash(theme, th))
-		bodies = append(bodies, e.CSSForHash(theme, th))
+		bodies = append(bodies, e.ServedCSSForHash(theme, th))
 	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	wantV := hashStrings(versions...)

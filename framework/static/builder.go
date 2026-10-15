@@ -22,6 +22,7 @@ import (
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -308,7 +309,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// Single app-level CSS asset: theme :root vars + customCSS
 	// concatenated. Matches the live server's /__gofastr/app.css.
 	if appBody := b.Host.AppCSS(); appBody != "" {
-		assets = append(assets, asset{urlPath: "/__gofastr/app.css", body: []byte(appBody)})
+		assets = append(assets, asset{urlPath: "/__gofastr/app.css", body: []byte(minify.ServedCSS(appBody))})
 	}
 	// Route graph + component catalog ship INLINE in each rendered
 	// HTML page as <script type="application/json"> blocks. No

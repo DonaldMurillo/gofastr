@@ -6,6 +6,7 @@ import (
 
 	desktopui "github.com/DonaldMurillo/gofastr/battery/desktop/ui"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -105,9 +106,9 @@ func TestDemoPageBundlesDesktopStyles(t *testing.T) {
 	layoutCSS := ta.Get("/__gofastr/comp/desktopui-layout.css").Body()
 	for _, w := range []string{
 		"--desktop-sidebar-top-inset: 52px;",
-		"background-color: transparent;",
+		"background-color: transparent",
 	} {
-		if !strings.Contains(layoutCSS, w) {
+		if !strings.Contains(layoutCSS, minify.ServedCSS(w)) {
 			t.Errorf("served desktopui-layout.css missing %q:\n%s", w, layoutCSS)
 		}
 	}
@@ -116,7 +117,7 @@ func TestDemoPageBundlesDesktopStyles(t *testing.T) {
 		t.Errorf("served desktopui-glass.css missing the blur recipe:\n%s", glassCSS)
 	}
 	listCSS := ta.Get("/__gofastr/comp/desktopui-sourcelist.css").Body()
-	if !strings.Contains(listCSS, "--desktop-sourcelist-row: 28px") {
+	if !strings.Contains(listCSS, minify.ServedCSS("--desktop-sourcelist-row: 28px")) {
 		t.Errorf("served desktopui-sourcelist.css missing the native row metric:\n%s", listCSS)
 	}
 
@@ -128,7 +129,7 @@ func TestDemoPageBundlesDesktopStyles(t *testing.T) {
 		"--font-body: -apple-system, system-ui, ui-sans-serif, sans-serif;",
 		"--color-accent: #007AFF;",
 	} {
-		if !strings.Contains(appCSS, w) {
+		if !strings.Contains(appCSS, minify.ServedCSS(w)) {
 			t.Errorf("app.css missing the desktop token %q", w)
 		}
 	}

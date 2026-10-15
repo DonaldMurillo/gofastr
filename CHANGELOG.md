@@ -247,6 +247,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   transferred (HTML 74 KB to 11 KB), and its Lighthouse mobile run goes
   from 80 to 100, LCP 3.9 s to 1.7 s; on a 400 kbps, 300 ms RTT, 6x CPU
   profile LCP goes from 14.4 s to 5.1 s.
+- **Served CSS is minified outside dev**, under the same switch as the
+  runtime JS (`GOFASTR_DEV=1` or `RUNTIME_NOMINIFY=1` keeps it
+  readable). `app.css`, component sheets, the component bundle, widget
+  sheets, the setup and print sheets and a static export's `app.css`
+  all go through `minify.ServedCSS`. On the examples/hn front page the
+  component bundle drops from 11.4 KB to 5.7 KB gzipped and `app.css`
+  from 5.0 KB to 2.6 KB, so HTML plus CSS fits in about 12 KB, and its
+  first paint under real 300 ms, 400 kbps, 6x CPU throttling moves from
+  1.25 s to 1.0 s. The examples/site homepage's HTML plus CSS goes from
+  44 KB to 27 KB.
+  A custom property read through `getComputedStyle` now returns the
+  minified spelling (`minmax(0,1fr)`), and a test that greps served CSS
+  should build its needle with `minify.ServedCSS`.
+  `registry.Entry.ServedCSSFor` returns a component's sheet as served;
+  `CSSFor` stays the readable source.
 - `ui.Form`'s hidden CSRF field and `auth.CSRFToken` /
   `auth.CSRFTokenFromCtx` now return masked tokens. Code that compared
   their result with the CSRF cookie should compare

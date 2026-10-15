@@ -1,10 +1,12 @@
-# Runtime JS minification
+# Runtime JS and CSS minification
 
 GoFastr embeds its client-side runtime (`runtime.js` and the
 on-demand modules under `core-ui/runtime/src/*.js`) directly into the
 host-app binary via `//go:embed`. By default, every deployed binary
 ships the **minified** form of those scripts, typically 50% smaller
-raw and 50% smaller gzipped than the embedded source.
+raw and 50% smaller gzipped than the embedded source. The stylesheets
+the framework composes are minified under the same switch; see
+[Stylesheets](#stylesheets).
 
 The minifier is a token-aware JavaScript pass implemented in
 `core-ui/runtime/minify` (pure Go, zero deps). Tier-2 scope:
@@ -57,6 +59,42 @@ selected at process startup. The minified output is still a valid
 ES2020+ IIFE; no source maps are emitted, but the code remains
 human-readable enough to set breakpoints in.
 
+## Stylesheets
+
+Every stylesheet the framework composes for a browser goes through
+`minify.ServedCSS`, under the same env gate as the runtime:
+
+- `/__gofastr/app.css` and its theme-variant URLs (`?t=<hash>`)
+- per-component CSS (`/__gofastr/comp/<name>.css`) and the
+  `/__gofastr/comp-bundle.css` bundle
+- widget stylesheets, the setup wizard's sheet, the print shell's
+  inlined CSS, and the `app.css` a static export writes
+
+The CSS pass strips comments, collapses whitespace, drops the space
+beside `{`, `}`, `;`, `,`, after `(` and `:`, before `)`, and the `;`
+before a `}`. It keeps every space that changes meaning: before `(`
+(`and (` is not the function `and(`), before `:` (`a :hover` selects
+descendants), around `>`, `+` and `~`, inside `calc()`, and in an
+empty custom property (`--x: ;`). Strings, escapes and unquoted
+`url()` bodies pass through byte for byte. A browser test hands
+Chrome every registered component sheet and `app.css`, as written and
+as minified, and requires the same rule tree from both.
+
+Two things change for code that reads the served CSS:
+
+- **Custom properties read back in the minified spelling.**
+  `getComputedStyle(el).getPropertyValue('--x')` returns the declared
+  text, so `minmax(0, 1fr)` comes back as `minmax(0,1fr)`. The value
+  means the same thing; compare tokens, not spacing.
+- **Tests that grep served CSS** should spell the needle through
+  `minify.ServedCSS("--color-primary: #4F46E5")`, which matches in
+  both modes. `registry.Entry.CSSFor` and `UIHost.AppCSS` still return
+  the readable source; `Entry.ServedCSSFor` returns what is sent.
+
+On the examples/hn front page the component bundle drops from 11.4 KB
+to 5.7 KB gzipped and `app.css` from 5.0 KB to 2.6 KB, so the HTML
+and both stylesheets together come to about 12 KB.
+
 ## Sizes
 
 After minification (typical end-user deploy):
@@ -73,10 +111,10 @@ loaded only when a route declares `app.Preload`), and `actionloader`
 (per-screen compiled action scripts, loaded only when the app has
 compiled actions).
 
-Reverse proxies (nginx, CloudFront, etc.) typically apply
-`Content-Encoding: gzip` or `br` on top, so the bytes actually on the
-wire are smaller still. GoFastr itself does not set
-`Content-Encoding` headers; that stays in the operator's control.
+The default middleware chain gzips these responses for clients that
+accept it (`middleware.Compress`; see [security](security.md#compression)
+for the chain). An app behind a proxy that compresses on its own sets
+`AppConfig.DisableCompression`.
 
 ## Verifying behaviour in your app
 
@@ -88,6 +126,9 @@ curl -s https://your-app.example.com/__gofastr/runtime.js | head -c 80
 
 - Minified: starts with `(()=>{'use strict';try{const ua=…`
 - Raw:      starts with `// GoFastr Core-UI Runtime v0.4 — ES2020+…`
+
+`/__gofastr/app.css` answers the same question for CSS: minified
+starts with `:root{--`, raw with `:root {` and a newline.
 
 If you expected one and got the other, check `GOFASTR_ENV` /
 `GOFASTR_DEV` / `RUNTIME_NOMINIFY` on the running process.
@@ -107,6 +148,7 @@ If you expected one and got the other, check `GOFASTR_ENV` /
   minifier strips comments and collapses whitespace, so a grep for a
   comment-only substring (or a pre-minify spacing pattern) passes in
   dev and fails in prod. Anchor on code, and accept both spacings.
+  For CSS, spell the needle through `minify.ServedCSS`.
 - **Hunting for source maps.** None are emitted by design; the
   minified output keeps identifiers and stays debuggable. For full
   readability while reproducing an issue, restart with
