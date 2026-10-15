@@ -56,7 +56,8 @@ type EntryListConfig struct {
 	Class string
 	// ExtraAttrs forwards additional attributes to the list root. Keys
 	// the component owns are dropped: class and id (use Class / ID),
-	// style, start, aria-label and data-cui-*.
+	// style, start, aria-label and data-cui-*. A role replaces the
+	// unranked list's default role="list".
 	ExtraAttrs html.Attrs
 }
 
@@ -102,10 +103,12 @@ func EntryList(cfg EntryListConfig) render.HTML {
 	}
 	tag := "ul"
 	// The unranked list drops its markers (list-style: none), which
-	// costs it list semantics in WebKit/VoiceOver unless it says so.
-	attrs["role"] = "list"
+	// costs it list semantics in WebKit/VoiceOver unless it says so. A
+	// caller's own role (ExtraAttrs) wins.
+	if _, set := attrs["role"]; !set && !cfg.Ranked {
+		attrs["role"] = "list"
+	}
 	if cfg.Ranked {
-		delete(attrs, "role")
 		tag = "ol"
 		attrs["class"] += " fui-entry-list--ranked"
 		attrs["start"] = strconv.Itoa(max(cfg.Start, 1))

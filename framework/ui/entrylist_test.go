@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -105,5 +106,11 @@ func TestEntryListKeepsListRole(t *testing.T) {
 	}
 	if h := string(EntryList(EntryListConfig{Label: "L", Entries: entries, Ranked: true})); strings.Contains(h, `role="list"`) {
 		t.Errorf("ranked list carries a redundant role=list:\n%s", h)
+	}
+	for _, ranked := range []bool{false, true} {
+		h := string(EntryList(EntryListConfig{Label: "L", Entries: entries, Ranked: ranked, ExtraAttrs: html.Attrs{"role": "feed"}}))
+		if !strings.Contains(h, `role="feed"`) {
+			t.Errorf("ranked=%v dropped the caller's role:\n%s", ranked, h)
+		}
 	}
 }

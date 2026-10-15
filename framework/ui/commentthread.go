@@ -46,7 +46,8 @@ type CommentThreadConfig struct {
 	Class string
 	// ExtraAttrs forwards additional attributes to the root list. Keys
 	// the component owns are dropped: class and id (use Class / ID),
-	// style, aria-label and data-cui-*.
+	// style, aria-label and data-cui-*. A role replaces the root's
+	// default role="list".
 	ExtraAttrs html.Attrs
 }
 
@@ -66,8 +67,11 @@ func CommentThread(cfg CommentThreadConfig) render.HTML {
 	attrs["class"] = cls
 	attrs["aria-label"] = cfg.Label
 	// list-style: none drops list semantics in WebKit/VoiceOver; the
-	// role keeps the nesting a screen reader announces as depth.
-	attrs["role"] = "list"
+	// role keeps the nesting a screen reader announces as depth. A
+	// caller's own role (ExtraAttrs) wins.
+	if _, set := attrs["role"]; !set {
+		attrs["role"] = "list"
+	}
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}

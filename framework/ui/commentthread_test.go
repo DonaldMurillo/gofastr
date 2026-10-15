@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -84,5 +85,9 @@ func TestCommentThreadKeepsListRole(t *testing.T) {
 	h := string(CommentThread(CommentThreadConfig{Label: "Comments", Comments: chain(3)}))
 	if n := strings.Count(h, `role="list"`); n != 3 {
 		t.Errorf("lists with role=list = %d, want 3 (root + 2 reply lists):\n%s", n, h)
+	}
+	h = string(CommentThread(CommentThreadConfig{Label: "Comments", Comments: chain(1), ExtraAttrs: html.Attrs{"role": "feed"}}))
+	if !strings.Contains(h, `role="feed"`) {
+		t.Errorf("the caller's root role was dropped:\n%s", h)
 	}
 }
