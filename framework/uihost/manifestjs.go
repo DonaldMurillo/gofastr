@@ -31,6 +31,10 @@ import (
 // and content hashes. It is deliberately ungated.
 func (ds *UIHost) manifestJS() (body, hash string) {
 	ds.manifestOnce.Do(func() {
+		// The body freezes the route graph, document scripts included,
+		// so registration closes here as it does on the first render: a
+		// script added later would be missing from the graph.
+		ds.markServingBegun()
 		var b []byte
 		b = append(b, "window.__gofastr_catalog="...)
 		if cat := catalogJSON(ds, ds.activeTheme(), ""); cat != nil {

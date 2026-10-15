@@ -102,3 +102,19 @@ func TestHostScriptsCloseHead(t *testing.T) {
 		}
 	}
 }
+
+// manifest.js freezes the route graph, document scripts included, on
+// its first request. A rail registration after that would be missing
+// from the graph every page reads, so the first manifest fetch closes
+// registration the way the first page render does.
+func TestManifestFetchClosesScriptRail(t *testing.T) {
+	ds := newTestUIHost()
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/__gofastr/manifest.js", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("premise: manifest.js = %d", w.Code)
+	}
+	if err := ds.RegisterExternalScript("/late.js"); err == nil {
+		t.Fatal("a script registered after manifest.js froze the route graph was accepted")
+	}
+}
