@@ -21,7 +21,6 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -29,7 +28,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/compute"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
-	"github.com/DonaldMurillo/gofastr/core/config"
 )
 
 //go:embed frag/*.js
@@ -41,58 +39,9 @@ var colorSchemeFS embed.FS
 //go:embed src/*.js
 var modulesFS embed.FS
 
-// nominify reports whether minification should be skipped on this
-// process. The default is "production wins":
-//
-//   - GOFASTR_ENV set to "production"/"prod"/"live"/"staging" → minify.
-//   - GOFASTR_DEV truthy (and GOFASTR_ENV not a non-dev env) → keep raw
-//     so browser devtools show readable stack traces.
-//   - Neither set → minify (the right default for any app that just
-//     `go run`s its binary in production with no env hints).
-//   - RUNTIME_NOMINIFY truthy → force raw (manual override; trumps the
-//     env detection so a dev can debug a production-config app).
-//   - RUNTIME_MINIFY truthy → force minify (manual override; useful when
-//     reproducing a prod issue from a dev workstation).
-//
-// Evaluated once at startup; flipping the env mid-process has no effect
-// because Module/RuntimeJS results are cached behind sync.Once.
-var nominifyOnce sync.Once
-var nominifyVal bool
-
-func nominify() bool {
-	nominifyOnce.Do(func() {
-		// Explicit manual overrides win.
-		if config.EnvBool("RUNTIME_NOMINIFY") {
-			nominifyVal = true
-			return
-		}
-		if config.EnvBool("RUNTIME_MINIFY") {
-			nominifyVal = false
-			return
-		}
-		// Production-shaped env → minify.
-		if isNonDevEnv(os.Getenv("GOFASTR_ENV")) {
-			nominifyVal = false
-			return
-		}
-		// Explicit dev-mode → skip minify.
-		if config.EnvBool("GOFASTR_DEV") {
-			nominifyVal = true
-			return
-		}
-		// Nothing set → minify by default.
-		nominifyVal = false
-	})
-	return nominifyVal
-}
-
-func isNonDevEnv(v string) bool {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "production", "prod", "live", "staging":
-		return true
-	}
-	return false
-}
+// nominify reports whether this process serves code unminified; the
+// rule (production wins, GOFASTR_DEV keeps it raw) is minify.Enabled.
+func nominify() bool { return !minify.Enabled() }
 
 // Cached minified payloads. Computed lazily on first read so the
 // minify pass runs at most once per source per process; subsequent
