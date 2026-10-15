@@ -896,6 +896,31 @@ const page = await api.posts.list({ limit: 25 });`},
 	{"shortid", "ShortID", "Data", "A long identifier's first characters, with a copy button for all of it.", func() render.HTML {
 		return ui.ShortID(ui.ShortIDConfig{Value: "c86a70b90b096dfa646910e48fd975dc"})
 	}},
+	{"entrylist", "EntryList", "Data", "A dense, ranked list of links to read: title, source, and a meta line.", func() render.HTML {
+		meta := func(points, author, age, comments string) render.HTML {
+			return render.Join(render.Text(points+" points by "), ui.Link(ui.LinkConfig{Href: "#", Text: author}),
+				render.Text(" "+age+" · "), ui.Link(ui.LinkConfig{Href: "#", Text: comments + " comments"}))
+		}
+		return ui.EntryList(ui.EntryListConfig{Label: "Top stories", Ranked: true, Start: 1, Entries: []ui.Entry{
+			{Title: "A field guide to reading compiler output", Href: "#", Source: "example.com", Meta: meta("214", "ada", "3 hours ago", "87")},
+			{Title: "Show: a tiny static site generator in one file", Href: "#", Source: "example.org", Meta: meta("96", "lin", "5 hours ago", "31")},
+			{Title: "Ask: how do you keep notes for long projects?", Href: "#", Meta: meta("58", "sam", "6 hours ago", "142")},
+		}})
+	}},
+	{"commentthread", "CommentThread", "Data", "A discussion with replies nested under each comment.", func() render.HTML {
+		by := func(author, age string) render.HTML {
+			return render.Join(ui.Link(ui.LinkConfig{Href: "#", Text: author}), render.Text(" "+age))
+		}
+		p := func(text string) render.HTML { return html.Paragraph(html.TextConfig{}, render.Text(text)) }
+		return ui.CommentThread(ui.CommentThreadConfig{Label: "Comments", Comments: []ui.Comment{
+			{Byline: by("ada", "2 hours ago"), Body: p("The section on error budgets matched what we saw in practice."), Replies: []ui.Comment{
+				{Byline: by("lin", "1 hour ago"), Body: p("Same here. The hard part was agreeing on what counts as an error."), Replies: []ui.Comment{
+					{Byline: by("sam", "40 minutes ago"), Body: p("We counted anything a user would retry.")},
+				}},
+			}},
+			{Byline: by("kim", "3 hours ago"), Body: p("Has anyone tried this with a queue in front?")},
+		}})
+	}},
 	{"changelist", "ChangeList", "Data", "What one edit changed, a field per row: the old value struck through, then the new one.", func() render.HTML {
 		return ui.ChangeList(ui.ChangeListConfig{Changes: []ui.Change{
 			{Label: "Plan", From: render.Text("Starter"), To: render.Text("Pro")},

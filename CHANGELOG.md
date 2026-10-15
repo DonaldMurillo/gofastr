@@ -209,6 +209,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`middleware.MaskCSRFToken`** renders a CSRF token under a fresh
   one-time pad (`m1.` prefix), so a compressed page never repeats the
   token's bytes (BREACH). `CSRF` accepts masked and raw tokens alike.
+- **`ui.EntryList`** renders a dense list of links to read: a title
+  link, its source beside it in muted text, and a meta line under it
+  (`Entry.Meta`, the caller's markup). `Ranked` makes it an `<ol>`
+  numbered from `Start`, so page two of a thirty-row list reads 31, 32,
+  and the numbers are the browser's list markers. Knobs:
+  `--ui-entry-list-gap`, `--ui-entry-list-rank-width`.
+- **`ui.CommentThread`** renders a discussion with replies nested as
+  deep as they go: each comment an `<article>` (byline, then body) in a
+  list item, its replies a list inside that item. Each level is
+  indented and ruled on its leading edge; in a container under 30rem
+  the step shrinks so a deep thread keeps a readable column on a phone.
+  Knobs: `--ui-comment-thread-gap`, `--ui-comment-thread-indent`,
+  `--ui-comment-thread-indent-compact`.
+- **`examples/hn`** is a Hacker News reader in the HNPWA shape, for
+  comparing first loads with other frameworks: five ranked lists paged
+  with `?page=N`, story pages with full comment threads, user pages,
+  and real 404s. Its data is synthetic and seeded from a fixed seed
+  into SQLite through the entity layer.
 
 ### Changed
 - **First paint no longer waits on the runtime.** `manifest.js`,
