@@ -253,9 +253,12 @@ recursing into nested structs with a `SCREAMING_SNAKE` prefix (value or
 pointer form: a pointer is allocated and bound when any nested key is
 present, left nil otherwise) and redacting `sensitive` values from
 errors. `validate:"min=1,max=65535"` enforces numeric bounds (string bounds
-count characters); `validate:"oneof=debug info warn error"` restricts string
-choices. Explicit empty strings clear prior values; empty numeric/bool/duration
-settings return an error. Recursive configuration struct shapes are rejected.
+count characters; a `time.Duration` takes duration bounds such as
+`min=1s,max=5m`); `validate:"oneof=debug info warn error"` restricts string
+choices. A rule `Load` cannot apply (an unknown rule, a bound on a bool)
+fails `Load`. An empty value (`KEY=`) leaves the field as it was, without
+the `default:` tag, and the rules still check it. Recursive configuration
+struct shapes are rejected.
 Direct: call `config.Load(&cfg)` at startup. Start at
 `core/config/config.go`: `Load`.
 

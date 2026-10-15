@@ -273,12 +273,12 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 			if required {
 				return fmt.Errorf("config: required field %s (%s) not set", field.Name, key)
 			}
-			if !found {
-				if err := validateTags(fieldVal, field.Tag.Get("validate")); err != nil {
-					return fmt.Errorf("config: field %s: %s", field.Name, redactSecrets(err.Error(), *secrets))
-				}
-				continue // preserve a valid host default
+			if err := validateTags(fieldVal, field.Tag.Get("validate")); err != nil {
+				return fmt.Errorf("config: field %s: %s", field.Name, redactSecrets(err.Error(), *secrets))
 			}
+			// An empty value (`KEY=`) leaves the field as the host set
+			// it; the tags still check what it holds.
+			continue
 		}
 
 		if sensitive {
@@ -302,11 +302,6 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 // setField sets a reflect.Value from a string, converting to the
 // appropriate type.
 func setField(v reflect.Value, s string, fieldName string) error {
-	if s == "" && v.Kind() == reflect.String {
-		v.SetString("")
-		return nil
-	}
-
 	switch v.Kind() {
 	case reflect.String:
 		v.SetString(s)
@@ -402,6 +397,7 @@ func validateTags(v reflect.Value, tag string) error {
 	}
 	f := schema.Field{}
 	var value any
+	isDuration := v.Type() == reflect.TypeFor[time.Duration]()
 	switch v.Kind() {
 	case reflect.String:
 		f.Type = schema.String
@@ -422,9 +418,21 @@ func validateTags(v reflect.Value, tag string) error {
 		}
 		switch key {
 		case "min", "max":
-			n, err := strconv.ParseFloat(arg, 64)
-			if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
-				return fmt.Errorf("invalid %s bound", key)
+			// A Duration's bounds are durations ("1s", "5m"), compared
+			// in nanoseconds like the value.
+			var n float64
+			if isDuration {
+				d, err := parseDuration(arg)
+				if err != nil {
+					return fmt.Errorf("invalid %s bound", key)
+				}
+				n = float64(d)
+			} else {
+				var err error
+				n, err = strconv.ParseFloat(arg, 64)
+				if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
+					return fmt.Errorf("invalid %s bound", key)
+				}
 			}
 			if key == "min" {
 				f.Min = &n
