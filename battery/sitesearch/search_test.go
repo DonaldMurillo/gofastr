@@ -364,3 +364,19 @@ func TestCappedTextEndsOnWord(t *testing.T) {
 		t.Errorf("one long word cut to %q", got)
 	}
 }
+
+// Every result surface links BASE + URL, so a URL that is not a site
+// path never enters the index: no scheme, no other host.
+func TestBuildDropsOffSiteURLs(t *testing.T) {
+	var pages []Page
+	for _, u := range []string{"javascript:alert(1)", "//evil.example/x", "https://evil.example/x", `/\evil.example`, "docs/forms", "/ok"} {
+		pages = append(pages, Page{URL: u, Title: "Walrus " + u, Sections: []Section{{Text: "walrus " + u}}})
+	}
+	idx := Build(pages)
+	if idx.Len() != 1 {
+		t.Fatalf("indexed %d pages, want only /ok", idx.Len())
+	}
+	if rs := idx.Search("walrus", 10); len(rs) != 1 || rs[0].URL != "/ok" {
+		t.Fatalf("results = %+v", rs)
+	}
+}

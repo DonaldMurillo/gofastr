@@ -117,9 +117,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   anonymous visitor, so a policy-gated page never enters it.
   `Config.Groups` labels results by URL prefix, `Exclude` drops paths
   (Sources' pages included), `Sources` adds pages no route renders;
-  `data-search-ignore` and `noindex` keep content out. A page that
-  fails to render is logged and left out of a live index, and a failed
-  build waits 30 seconds before a query retries it. `Config.MaxAge`
+  `data-search-ignore` and `noindex` keep content out, and a page whose
+  URL is not a path on the site (a scheme, another host) is dropped. A
+  page that fails to render is logged and left out of a live index, and
+  a failed build waits 30 seconds before a query retries it. `Config.MaxAge`
   rebuilds a live index older than it in the background, answering from
   the old index meanwhile; `Refresh` builds beside the live index and
   swaps it in. A page whose title

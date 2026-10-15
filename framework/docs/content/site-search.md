@@ -105,7 +105,10 @@ sitesearch.Config{
 }
 ```
 
-A `Source` returns `[]sitesearch.Page{URL, Title, Group, Sections}`.
+A `Source` returns `[]sitesearch.Page{URL, Title, Group, Sections}`. `URL`
+is a root-relative path on the site (`/docs/forms`); a page with any
+other URL, a scheme or another host, is dropped, since every result
+links the base path plus it.
 
 The live index is built at start. Content that changes without a restart
 (pages that read the database, a `Source`) reaches it two ways:

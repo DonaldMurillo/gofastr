@@ -105,17 +105,23 @@ func titleSlots(title string) (map[string][2]int, int) {
 	return spans, n
 }
 
-// Build indexes pages. A page without a URL is dropped, and so is one
-// whose URL, or whose title and text, an earlier page already has: a
-// route rendered under two paths, or a demo shown in five themes, is
-// one result.
+// sitePath reports whether u is a root-relative path on this site.
+func sitePath(u string) bool {
+	return strings.HasPrefix(u, "/") && !strings.HasPrefix(u, "//") && !strings.ContainsRune(u, '\\')
+}
+
+// Build indexes pages. A page whose URL is not a site path ("/docs",
+// never "//host", a scheme or a backslash) is dropped: every result
+// surface links the base path plus the URL. So is one whose URL, or
+// whose title and text, an earlier page already has: a route rendered
+// under two paths, or a demo shown in five themes, is one result.
 func Build(pages []Page) *Index {
 	idx := &Index{terms: map[string]termEntry{}}
 	df := map[string]int{}
 	seenURL := map[string]bool{}
 	seenBody := map[[32]byte]bool{}
 	for _, p := range pages {
-		if p.URL == "" || seenURL[p.URL] {
+		if !sitePath(p.URL) || seenURL[p.URL] {
 			continue
 		}
 		body := bodyHash(p)
