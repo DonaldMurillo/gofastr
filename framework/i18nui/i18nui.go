@@ -154,6 +154,14 @@ const (
 	KeySearchLabel            Key = "ui.search.label"
 	KeySearchClear            Key = "ui.search.clear"
 
+	// SearchResults
+	KeySearchResultsCount Key = "ui.searchResults.count" // "{n} results for “{q}”"
+	KeySearchResultsOne   Key = "ui.searchResults.one"   // "1 result for “{q}”"
+	KeySearchResultsNone  Key = "ui.searchResults.none"  // "No pages match “{q}”"
+	KeySearchResultsLabel Key = "ui.searchResults.label" // "Search results"
+	KeySearchResultsMore  Key = "ui.searchResults.more"  // "More results"
+	KeySearchResultsAll   Key = "ui.searchResults.all"   // "See all results for “{q}”"
+
 	// CommandPalette
 	KeyCommandPalettePlaceholder Key = "ui.commandPalette.placeholder"
 	KeyCommandPaletteOpen        Key = "ui.commandPalette.open"
@@ -444,6 +452,13 @@ var Defaults = map[Key]string{
 	KeySearchInputPlaceholder: "Search...",
 	KeySearchLabel:            "Search",
 	KeySearchClear:            "Clear search",
+
+	KeySearchResultsCount: "{n} results for “{q}”",
+	KeySearchResultsOne:   "1 result for “{q}”",
+	KeySearchResultsNone:  "No pages match “{q}”",
+	KeySearchResultsLabel: "Search results",
+	KeySearchResultsMore:  "More results",
+	KeySearchResultsAll:   "See all results for “{q}”",
 
 	KeyCommandPalettePlaceholder: "Type a command or search…",
 	KeyCommandPaletteOpen:        "Open command palette",
@@ -959,6 +974,8 @@ func AllKeys() []Key {
 		KeyFilterClearAll, KeyFilterChipRemove,
 		KeySearchPlaceholder, KeySearchNoResults,
 		KeySearchInputPlaceholder, KeySearchLabel, KeySearchClear,
+		KeySearchResultsCount, KeySearchResultsOne, KeySearchResultsNone,
+		KeySearchResultsLabel, KeySearchResultsMore, KeySearchResultsAll,
 		KeyCommandPalettePlaceholder, KeyCommandPaletteOpen,
 		KeyCommandPaletteTitle, KeyCommandPaletteNavigate,
 		KeyCommandPaletteSelect, KeyCommandPaletteClose,

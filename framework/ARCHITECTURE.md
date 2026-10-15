@@ -263,6 +263,9 @@ framework/
 ├── internal/exif/   TIFF/EXIF orientation parser shared by file/ and
 │                    image/ (stdlib-only leaf, so file/ never links codecs)
 ├── lifecycle/       Graceful shutdown contract: drain, flush, stop phases
+├── localrun/        Machine-local registry of running Apps: one 0600
+│                    record per run (URL, MCP entry), written by
+│                    App.Start, listed with dead pids pruned
 ├── migrate/         AutoMigrate / DiffSchema / Dialect / Bulk queries
 ├── openapi/         EntityOpenAPI spec generator + the entity-endpoint
 │                    URL builders (EntityEndpointPath etc.)
@@ -376,7 +379,7 @@ L3  hook, event, file, cron, access, db,    (leaf packages, no framework-
     pagination, filter, owner, agentsinv,    internal imports at all)
     axecov, datexport, fanout, i18nui,
     image, lifecycle, ratelimit, semcov,
-    docs, dev, routegroup, headless
+    docs, dev, routegroup, headless, localrun
     dsl, tenant, softdelete, migrate, sdk    (each imports entity)
     slowquery, outbox, embed, imagefield,    (intra-L3 edges, listed
     contracts                                 below)

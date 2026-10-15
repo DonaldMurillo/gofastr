@@ -135,10 +135,9 @@ func openPalette(t *testing.T, ctx context.Context, url string, vw, vh int64) {
 		_ = chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify((window.__gofastr&&window.__gofastr.loadedModules)||{})`, &loaded))
 		t.Fatalf("combobox module never loaded (loaded=%s): %v", loaded, err)
 	}
-	// The listbox opens on focusin / ArrowDown / input — NOT on a
-	// plain click, and the input was already focused by mountWidget
-	// before the module bound its listeners (no focusin will fire).
-	// Drive the real keyboard open path instead.
+	// The arrival pass opens the list on the focused input
+	// (TestPaletteOpensOnItsCommandsChromium); ArrowDown then
+	// highlights the first row, the state these tests measure.
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`document.getElementById('command-palette-input').focus()`, nil),
 		chromedp.KeyEvent(kb.ArrowDown),
@@ -507,5 +506,169 @@ func TestCommandPaletteStaticFilteringPaintsOnlyMatchesChromium(t *testing.T) {
 	shot("coarse")
 	if m.Painted != 10 {
 		t.Errorf("coarse pointer (touch) must also leave 10 painted rows, got %d — the @media (pointer: coarse) display:flex rule beats the [hidden] guard", m.Painted)
+	}
+}
+
+// TestPaletteOpensOnItsCommandsChromium: opening a Commands palette
+// shows its list at once. The widget focuses the input before the
+// combobox module binds, so no focusin reaches the module; its arrival
+// pass opens a static list whose input already has focus.
+func TestPaletteOpensOnItsCommandsChromium(t *testing.T) {
+	srv := paletteTestServer(t)
+	ctx := paletteChromeCtx(t, 1280, 800)
+	var loaded bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL),
+		chromedp.EmulateViewport(1280, 800),
+		chromedp.WaitVisible(`#open`, chromedp.ByID),
+		chromedp.Click(`#open`, chromedp.ByID),
+		chromedp.WaitVisible(`[data-cui-comp="ui-cmd-palette"]`),
+		chromedp.Poll(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-combobox'])`, &loaded,
+			chromedp.WithPollingTimeout(15*time.Second)),
+	); err != nil {
+		t.Fatalf("open palette: %v", err)
+	}
+	var state struct {
+		Focused  bool `json:"focused"`
+		Expanded string
+		Visible  bool `json:"visible"`
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(`(() => {
+			const input = document.getElementById('command-palette-input');
+			const lb = document.getElementById('command-palette-input-listbox');
+			return {focused: document.activeElement === input, expanded: input.getAttribute('aria-expanded'),
+				visible: !lb.hidden && lb.getBoundingClientRect().height > 0};
+		})()`, &state),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !state.Focused {
+		t.Fatalf("the palette did not focus its input: %+v", state)
+	}
+	if !state.Visible || state.Expanded != "true" {
+		t.Errorf("the palette opened on an empty list: %+v", state)
+	}
+}
+
+// TestPaletteHidesKeyHintsOnTouch: a touch screen has no arrow keys or
+// Esc to hint at, so the footer keeps only its close button there; a
+// mouse-and-keyboard screen keeps the hints.
+func TestPaletteHidesKeyHintsOnTouch(t *testing.T) {
+	srv := paletteTestServer(t)
+	for _, tc := range []struct {
+		name  string
+		touch bool
+		want  bool
+	}{{"mouse", false, true}, {"touch", true, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := paletteChromeCtx(t, 390, 844)
+			openPalette(t, ctx, srv.URL, 390, 844)
+			// After openPalette: EmulateViewport switches touch off.
+			var shown bool
+			if err := chromedp.Run(ctx,
+				emulation.SetTouchEmulationEnabled(tc.touch),
+				chromedp.Evaluate(`(() => {
+				const h = document.querySelector('[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__hints');
+				return h.getBoundingClientRect().width > 0;
+			})()`, &shown)); err != nil {
+				t.Fatal(err)
+			}
+			if shown != tc.want {
+				t.Errorf("hints shown = %v, want %v", shown, tc.want)
+			}
+		})
+	}
+}
+
+// TestPaletteFooterStaysDownOnPhones: the phone palette fills the
+// screen, and a list filtered to one row leaves its footer (the close
+// button) at the bottom edge, not floating under the row.
+func TestPaletteFooterStaysDownOnPhones(t *testing.T) {
+	srv := paletteTestServer(t)
+	ctx := paletteChromeCtx(t, 390, 844)
+	openPalette(t, ctx, srv.URL, 390, 844)
+	var m struct {
+		FooterBottom float64 `json:"footerBottom"`
+		Inner        float64 `json:"inner"`
+		Rows         int     `json:"rows"`
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.SendKeys(`#command-palette-input`, "Command 007", chromedp.ByID),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(`(() => ({
+			footerBottom: document.querySelector('[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__footer').getBoundingClientRect().bottom,
+			inner: innerHeight,
+			rows: document.querySelectorAll('#command-palette-input-listbox [role="option"]:not([hidden])').length,
+		}))()`, &m),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if m.Rows != 1 {
+		t.Fatalf("the filter left %d rows, want 1", m.Rows)
+	}
+	if m.Inner-m.FooterBottom > 1 {
+		t.Errorf("footer ends at %.0f of a %.0f-tall screen", m.FooterBottom, m.Inner)
+	}
+}
+
+// Arrow keys move the active option past the list's visible rows; the
+// list scrolls to keep it in sight, down past the fold and up across
+// the wrap to the last row.
+func TestPaletteKeepsActiveOptionInView(t *testing.T) {
+	srv := paletteTestServer(t)
+	ctx := paletteChromeCtx(t, 1280, 800)
+	openPalette(t, ctx, srv.URL, 1280, 800)
+	const inView = `(() => {
+		const a = document.querySelector('#command-palette-input-listbox [role="option"].is-active');
+		if (!a) return 'no active option';
+		let box = a.parentElement;
+		while (box && !(box.scrollHeight > box.clientHeight && /auto|scroll/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
+		if (!box) return 'no scroll container';
+		const r = a.getBoundingClientRect(), b = box.getBoundingClientRect();
+		return r.top >= b.top - 1 && r.bottom <= b.bottom + 1 ? 'ok' : a.textContent.trim().slice(0, 12) + ' at ' + Math.round(r.top) + ' outside ' + Math.round(b.top) + '-' + Math.round(b.bottom);
+	})()`
+	for _, step := range []struct {
+		name  string
+		key   string
+		times int
+	}{{"down past the fold", kb.ArrowDown, 30}, {"up across the wrap", kb.ArrowUp, 31}} {
+		var got string
+		actions := []chromedp.Action{chromedp.Focus(`#command-palette-input`, chromedp.ByID)}
+		for range step.times {
+			actions = append(actions, chromedp.KeyEvent(step.key))
+		}
+		actions = append(actions, chromedp.Sleep(150*time.Millisecond), chromedp.Evaluate(inView, &got))
+		if err := chromedp.Run(ctx, actions...); err != nil {
+			t.Fatal(err)
+		}
+		if got != "ok" {
+			t.Errorf("%s: %s", step.name, got)
+		}
+	}
+}
+
+// The panel keeps one height while the reader types: a filter that
+// leaves one row does not shrink it, so the input and footer stay put.
+func TestPaletteHoldsItsHeightWhileTyping(t *testing.T) {
+	srv := paletteTestServer(t)
+	ctx := paletteChromeCtx(t, 1280, 800)
+	openPalette(t, ctx, srv.URL, 1280, 800)
+	const height = `document.querySelector('[data-cui-comp="ui-cmd-palette"]').getBoundingClientRect().height`
+	var full, one, none float64
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(height, &full),
+		chromedp.SendKeys(`#command-palette-input`, "Command 007", chromedp.ByID),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(height, &one),
+		chromedp.SendKeys(`#command-palette-input`, "zzz", chromedp.ByID),
+		chromedp.Sleep(300*time.Millisecond),
+		chromedp.Evaluate(height, &none),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if one != full || none != full {
+		t.Errorf("panel height %.0f with every command, %.0f with one, %.0f with none; want one height", full, one, none)
 	}
 }

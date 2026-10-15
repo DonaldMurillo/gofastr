@@ -519,7 +519,7 @@ jobs:
             # surface need a budget well past the local ~2m runtime.
             run: go test -count=1 -timeout=25m ./examples/meridian/
           - suite: chromium-ui
-            pkg: (framework/ui|framework/pluginhost|core/mcp|cmd/gofastr/packages(/.*)?)$
+            pkg: (framework/ui|framework/pluginhost|core/mcp|battery/service|battery/sitesearch|cmd/gofastr/packages(/.*)?)$
             # Go build tags for cmd/affected's go list; named apart from a
             # git tag trigger on purpose.
             buildtags: chromium
@@ -535,7 +535,9 @@ jobs:
             # `go test` without the tag silently compiles the files out
             # and passes. Verified locally green before landing:
             # `go test -tags chromium ./framework/ui/
-            # ./framework/pluginhost/` (~12s).
+            # ./framework/pluginhost/` (~12s). battery/sitesearch's
+            # parity test (the browser ranks what Go ranks) rides the
+            # same tag.
             # -p 1: these packages drive their own headless Chrome, and
             # go test runs packages CONCURRENTLY by default. Launching
             # several Chromes on one runner is the documented "chrome
@@ -544,8 +546,10 @@ jobs:
             # TestBlueprintCLIGeneratesEntireWorkingAppE2E). It bit here
             # as "websocket url timeout reached" in
             # TestCardFooterPinsToBottomInGrid on a PR that touched
-            # neither package.
-            run: go test -count=1 -timeout=10m -p 1 -tags chromium ./framework/ui/ ./framework/pluginhost/ ./core/mcp/ ./cmd/gofastr/packages/...
+            # neither package. battery/service's tagged test signs in
+            # through the file:// page `service open` writes and checks
+            # the browser lands on the app with its session.
+            run: go test -count=1 -timeout=10m -p 1 -tags chromium ./framework/ui/ ./framework/pluginhost/ ./core/mcp/ ./battery/service/ ./battery/sitesearch/ ./cmd/gofastr/packages/...
           - suite: ui-quality-evals
             pkg: evals/ui-quality(/|$)
             # Its capture tests drive a real headless Chrome; kept out of

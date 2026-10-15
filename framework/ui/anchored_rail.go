@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
@@ -69,6 +70,24 @@ type AnchoredRailConfig struct {
 	// Set it when the sections aren't headings (e.g. ".intent[id]").
 	TargetSelector string
 
+	// PhoneSheet folds the rail into a bottom sheet below SwapAt: a
+	// pill floating at the bottom of the viewport names the section in
+	// view and opens the rail (an interactive.PhoneSheet, the pill a
+	// SectionMenu uses). At and above SwapAt the rail renders as it
+	// does without it. The pill follows the entry the observer marks,
+	// so set ObserveSelector too. The sheet's title is Label and its id
+	// is ID plus "-sheet", or fui-anchored-rail-sheet without an ID.
+	PhoneSheet bool
+	// SwapAt is the width below which PhoneSheet folds the rail: 900px
+	// by default, or interactive.SwapMD / SwapLG to match a
+	// ui.ContentRow's Breakpoint.
+	SwapAt interactive.SwapWidth
+	// PhoneSheetTop pins the PhoneSheet pill as a bar under the page's
+	// sticky header ("On this page: Overview") and hangs the rail from
+	// it, for a page whose SectionMenu already floats its pill at
+	// the bottom.
+	PhoneSheetTop bool
+
 	// Class is appended to the <aside>'s class list.
 	Class string
 
@@ -104,8 +123,8 @@ func AnchoredRail(cfg AnchoredRailConfig) render.HTML {
 		headless.PartRailList:    "fui-anchored-rail__list",
 		headless.PartRailItem:    "fui-anchored-rail__item",
 		headless.PartRailLink:    "fui-anchored-rail__link",
-		headless.PartRailEyebrow: "fui-anchored-rail__eyebrow",
-		headless.PartRailCount:   "fui-anchored-rail__count",
+		headless.PartRailEyebrow: "fui-anchored-rail__eyebrow " + interactive.SheetChipClass,
+		headless.PartRailCount:   "fui-anchored-rail__count " + interactive.SheetChipClass,
 	}
 	if cfg.Class != "" {
 		classes[headless.PartRoot] += " " + cfg.Class
@@ -125,7 +144,15 @@ func AnchoredRail(cfg AnchoredRailConfig) render.HTML {
 		ID:              cfg.ID,
 		ExtraAttrs:      headless.Safe(cfg.ExtraAttrs, "class", "id", "aria-label"),
 	}, classes)
-	return anchoredRailStyle.WrapHTML(rail)
+	rail = anchoredRailStyle.WrapHTML(rail)
+	if !cfg.PhoneSheet {
+		return rail
+	}
+	sheetID := "fui-anchored-rail-sheet"
+	if cfg.ID != "" {
+		sheetID = cfg.ID + "-sheet"
+	}
+	return interactive.PhoneSheet(interactive.PhoneSheetConfig{ID: sheetID, Title: cfg.Label, SwapAt: cfg.SwapAt, Top: cfg.PhoneSheetTop}, rail)
 }
 
 var anchoredRailStyle = registry.RegisterStyle("ui-anchored-rail", anchoredRailCSS)

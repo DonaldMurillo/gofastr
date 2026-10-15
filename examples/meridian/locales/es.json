@@ -796,6 +796,14 @@
       "noResults": "Sin resultados",
       "placeholder": "Buscar…"
     },
+    "searchResults": {
+      "all": "Ver todos los resultados de “{q}”",
+      "count": "{n} resultados de “{q}”",
+      "label": "Resultados de búsqueda",
+      "more": "Más resultados",
+      "none": "Ninguna página coincide con “{q}”",
+      "one": "1 resultado de “{q}”"
+    },
     "section": {
       "label": "Sección"
     },

@@ -29,6 +29,7 @@ server, so `go run` it.
 | `static-site` | Static page serving with the file server. |
 | `desktop-notes` | The same app as a desktop window (`battery/desktop`, experimental, macOS today) or over HTTP with `--serve`: owner-scoped notes, native menu, clipboard and file dialogs through the typed bridge, a plugin capability. |
 | `desktop-focus` | The whole desktop surface in one app (`battery/desktop`, experimental, macOS today): hidden-title window, floating timer widget, settings window, tray countdown, notifications, deep links, cross-window messages, a `focus` plugin capability; also over HTTP with `--serve`. |
+| `gofastr-runs` | A per-user OS service (`battery/service`, experimental) that tracks every gofastr app running on the machine from the local run registry: a polled web list, a page per run, and MCP tools (`runs_list`, `run_get`) that agents reach through `gofastr-runs service mcp`. |
 | `semantic-demo` | Semantic search with `battery/semantic`. |
 | `embed-demo` | Embeddable surfaces: an app and a customer's site on two origins. |
 | `processmodule-demo` | A process-isolated third-party module speaking the `moduleproto` protocol over stdio. The canonical [process-module](../framework/docs/content/process-modules.md) example and the child the go/no-go gate suite drives end to end. |

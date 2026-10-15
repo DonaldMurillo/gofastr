@@ -1,4 +1,4 @@
-/* The app's top bar. It pins to the top of the page, and its
+/* The app's top bar. The page stack pins it (StickyHeader), and its
    translucent background blurs the content scrolling under it. The bar's
    content lines up with the page column. Below the md breakpoint the
    links and the call to action move into a full-width menu under the
@@ -8,9 +8,6 @@
    with --size-page-gutter outside it), the column ui.Container's page
    width gives main. */
 :scope {
-  position: sticky;
-  inset-block-start: 0;
-  z-index: var(--z-sticky);
   border-block-end: var(--stroke-thin) solid var(--color-border);
 }
 /* The glass sits on a layer behind the bar, not on the bar itself:

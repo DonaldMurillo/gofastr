@@ -31,7 +31,7 @@ func TestFuzzySuggestionsIncludeNewAndTheme(t *testing.T) {
 // to miss 8 dispatch subcommands (new, pack, build, dev, migrate, test,
 // harness, agents), so each fell through to printHelp().
 func TestSubcommandHelpIsCommandSpecific(t *testing.T) {
-	for _, cmd := range []string{"new", "pack", "build", "dev", "migrate", "test", "harness", "agents"} {
+	for _, cmd := range []string{"new", "pack", "build", "dev", "export", "migrate", "test", "harness", "agents"} {
 		out := covT_capStdout(t, func() { dispatch([]string{cmd, "--help"}) })
 		if want := "Usage: gofastr " + cmd; !strings.Contains(out, want) {
 			t.Errorf("%s --help missing command-specific %q:\n%s", cmd, want, out)

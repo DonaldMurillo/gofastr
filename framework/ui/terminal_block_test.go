@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -33,6 +35,12 @@ func TestTerminalLineTones(t *testing.T) {
 	}
 	if got := string(TerminalOK("y")); !classTokenPresent(got, "fui-terminal-block__ok") {
 		t.Errorf("TerminalOK should carry the success class:\n%s", got)
+	}
+	if got := string(TerminalErr("z")); !classTokenPresent(got, "fui-terminal-block__err") {
+		t.Errorf("TerminalErr should carry the failure class:\n%s", got)
+	}
+	if css := terminalBlockCSS(style.Theme{}); !strings.Contains(css, ".fui-terminal-block__err {\n  color: var(--ui-terminal-block-err-color, var(--color-danger") {
+		t.Errorf("the failure tone must read the danger token:\n%s", css)
 	}
 }
 

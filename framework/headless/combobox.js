@@ -42,6 +42,9 @@
     for (const o of lb.querySelectorAll('[role="option"].is-active')) o.classList.remove('is-active');
     if (opt) {
       opt.classList.add('is-active');
+      // The list scrolls to keep the active row in sight; "nearest"
+      // moves it only as far as it must, and never when it shows.
+      opt.scrollIntoView({ block: 'nearest' });
       const input = inputOf(lb);
       if (input) input.setAttribute('aria-activedescendant', opt.id || '');
     }
@@ -312,12 +315,18 @@
   }
 
   // The arrival pass: announce the static list's count, and watch each
-  // island listbox for its swaps.
+  // island listbox for its swaps. A static list whose input already has
+  // focus opens: a widget that focuses its input on open (the command
+  // palette) does so before this module binds, so the focusin that
+  // would open the list never reaches it.
   function scan(root) {
     const scope = root && root.querySelectorAll ? root : document;
     for (const lb of within(scope, '[data-hui-combobox-listbox]')) {
-      if (lb.hasAttribute('data-hui-combobox-static')) announce(lb);
-      else watchIsland(lb);
+      if (lb.hasAttribute('data-hui-combobox-static')) {
+        announce(lb);
+        const input = inputOf(lb);
+        if (input && document.activeElement === input && lb.querySelector('[role="option"]')) openListbox(input, lb);
+      } else watchIsland(lb);
     }
   }
 

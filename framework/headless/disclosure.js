@@ -373,11 +373,13 @@
 
   // A click on an ordinary link inside a disclosure closes it (the
   // destination page does not need the menu open); a persistent
-  // disclosure keeps its state by contract.
+  // disclosure keeps its state by contract. A data-cui-open link opens
+  // a widget over this page, no navigation (the kernel's router skips
+  // it too), so the menu stays and the widget returns focus into it.
   document.addEventListener('click', (e) => {
     const t = e.target;
     const a = t && t.closest && t.closest('a[href]');
-    if (!a) return;
+    if (!a || a.hasAttribute('data-cui-open')) return;
     const d = a.closest(HOOK + ':not([data-hui-disclosure-persist])');
     if (d) d.removeAttribute('open');
   });

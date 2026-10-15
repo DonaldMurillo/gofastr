@@ -85,6 +85,22 @@ type CommandPaletteConfig struct {
 	// where no RPC handler exists. Takes precedence over RPCPath.
 	Commands []PaletteCommand
 
+	// Search turns the palette into full-text site search: typing runs
+	// the query against the index battery/sitesearch builds from every
+	// rendered page, and the matching pages, each with its best
+	// sections as deep links, list after the Commands. The Commands
+	// stay the list a reader sees before typing, so Search requires
+	// them. The battery must be registered: it serves the index on a
+	// live server, writes it into a static export, and ships the
+	// browser client that fills the rows.
+	Search bool
+
+	// SearchPage is the path of the site's search page (battery/
+	// sitesearch's Screen). With Search on, the results end with a "See
+	// all results" row that opens it for the reader's query. Empty
+	// shows no such row. It must be same-origin and start with /.
+	SearchPage string
+
 	// FallbackHref is the ordinary same-origin destination the trigger
 	// navigates to without script: a modal trigger with no navigation
 	// path is a button a scriptless reader cannot use. Required; "#"
@@ -130,6 +146,13 @@ const (
 func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 	if cfg.RPCPath == "" && len(cfg.Commands) == 0 {
 		panic("ui: CommandPalette requires RPCPath or Commands")
+	}
+	if cfg.Search && len(cfg.Commands) == 0 {
+		panic("ui: CommandPalette Search requires Commands — they are the list a reader sees before typing")
+	}
+	if cfg.SearchPage != "" && (!cfg.Search || !strings.HasPrefix(cfg.SearchPage, "/") ||
+		strings.HasPrefix(cfg.SearchPage, "//") || strings.ContainsAny(cfg.SearchPage, "\\?#")) {
+		panic("ui: CommandPalette SearchPage needs Search and a same-origin path starting with /, not " + strconv.Quote(cfg.SearchPage))
 	}
 	if cfg.FallbackHref == "" {
 		panic("ui: CommandPalette requires FallbackHref — a modal trigger with no ordinary navigation path is a button a scriptless reader cannot use")
@@ -208,11 +231,16 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 		placeholder:   placeholder,
 		debounceMs:    debounce,
 		emptyHTML:     cfg.EmptyHTML,
+		search:        cfg.Search,
 		options:       paletteCommandsToOptions(cfg.Commands),
 		title:         i18nui.T(ctx, i18nui.KeyCommandPaletteTitle),
 		navigateLabel: i18nui.T(ctx, i18nui.KeyCommandPaletteNavigate),
 		selectLabel:   i18nui.T(ctx, i18nui.KeyCommandPaletteSelect),
 		closeLabel:    i18nui.T(ctx, i18nui.KeyCommandPaletteClose),
+		loadingLabel:  i18nui.T(ctx, i18nui.KeyHuiComboboxLoading),
+		emptyLabel:    i18nui.T(ctx, i18nui.KeyHuiComboboxNoResults),
+		searchPage:    cfg.SearchPage,
+		allLabel:      i18nui.T(ctx, i18nui.KeySearchResultsAll),
 		extraAttrs:    html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}
 	b := preset.Modal(name).
@@ -303,11 +331,16 @@ type commandPaletteSlot struct {
 	placeholder   string
 	debounceMs    int
 	emptyHTML     string
+	search        bool
 	options       []headless.ComboboxOption
 	title         string
 	navigateLabel string
 	selectLabel   string
 	closeLabel    string
+	loadingLabel  string // search: the row shown while results load
+	emptyLabel    string // search: the row shown when nothing matches
+	searchPage    string // search: the search page the last row opens
+	allLabel      string // search: that row's words
 	extraAttrs    html.Attrs
 }
 
@@ -342,6 +375,21 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	for i, o := range s.options {
 		opts[i] = headless.ComboboxOption{Value: o.Value, Label: o.Label, Href: o.Href, Meta: o.Meta}
 	}
+	var parts headless.Parts
+	if s.search {
+		// battery/sitesearch's client fills a listbox carrying this
+		// marker (its SearchAttr) with result rows, and shows the two
+		// words while results load and when nothing matches.
+		parts.Attrs = headless.PartAttrs{headless.PartComboboxListbox: {
+			"data-search":         "",
+			"data-search-loading": s.loadingLabel,
+			"data-search-empty":   s.emptyLabel,
+		}}
+		if s.searchPage != "" {
+			parts.Attrs[headless.PartComboboxListbox]["data-search-all"] = s.searchPage
+			parts.Attrs[headless.PartComboboxListbox]["data-search-all-label"] = s.allLabel
+		}
+	}
 	combo := headless.Combobox(headless.ComboboxProps{
 		ID:             inputID,
 		Name:           "q",
@@ -351,6 +399,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		NoScriptAction: s.fallbackHref,
 		DebounceMS:     s.debounceMs,
 		Options:        opts,
+		Parts:          parts,
 	}, headless.Classes{
 		headless.PartRoot:            "fui-cmd-palette__field",
 		headless.PartLabel:           "fui-visually-hidden",
@@ -418,10 +467,13 @@ func commandPaletteCSS(_ style.Theme) string {
   display: flex;
   flex-direction: column;
   /* Knobs: --ui-cmd-palette-width (36rem) is the panel's inline size
-     (capped by the viewport); --ui-cmd-palette-listbox-max-height
-     (24rem) caps the scrolling command list (capped by half the
-     viewport). The elevation reads the theme's dialog-tier shadow. */
+     (capped by the viewport); --ui-cmd-palette-height (30rem) is its
+     block size, held while the reader types so a filter that leaves
+     one row, or none, does not jump the field and footer. The list
+     fills what the field and footer leave. The elevation reads the
+     theme's dialog-tier shadow. */
   inline-size: min(var(--ui-cmd-palette-width, 36rem), 92vw);
+  block-size: var(--ui-cmd-palette-height, 30rem);
   /* Bound the dialog to the viewport (#325). The modal chrome centers
      the panel in a fixed wrapper padded by --spacing-lg on all sides,
      so the cap is the viewport minus both paddings. Without it a list
@@ -438,9 +490,12 @@ func commandPaletteCSS(_ style.Theme) string {
   max-inline-size: none;
   /* Flex child of the palette column AND flex container for the form +
      listbox. min-block-size: 0 lets it shrink below its content so the
-     listbox (not the whole dialog) absorbs long command lists. */
+     listbox (not the whole dialog) absorbs long command lists; growing
+     keeps the footer at the bottom of the fixed-height panel when the
+     list is short. */
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   min-block-size: 0;
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__field {
@@ -480,9 +535,8 @@ func commandPaletteCSS(_ style.Theme) string {
   border: none;
   border-radius: 0;
   box-shadow: none;
-  max-block-size: min(50vh, var(--ui-cmd-palette-listbox-max-height, 24rem));
-  /* The only scrolling region: Takes whatever space the bounded dialog
-     has left. overflow-y: auto does double duty — it scrolls AND, per
+  /* The only scrolling region: takes whatever space the panel has
+     left. overflow-y: auto does double duty — it scrolls AND, per
      flexbox §4.5, zeroes the item's automatic minimum size, so the
      list shrinks into the remaining space instead of pushing the form
      or footer out of the dialog. (The combobox wrapper above needs its
@@ -523,6 +577,48 @@ func commandPaletteCSS(_ style.Theme) string {
   color: var(--color-text-muted, #6b7280);
   font-size: var(--text-xs, 0.75rem);
   flex: 0 0 auto;
+}
+/* Search result rows (Search): the page's title and group on the
+   first line, the matching text under them, hits marked; a section's
+   row hangs from its page's on a rule. */
+:where([data-cui-comp="ui-cmd-palette"]) .fui-cmd-palette__option--result {
+  flex-wrap: wrap;
+  row-gap: var(--spacing-xs, 2px);
+  /* A result fades in as it arrives. The client keeps the row of a
+     result that stays put across keystrokes, so only new ones play. */
+  animation: fui-cmd-palette-row-in var(--duration-fast, 150ms) var(--easing-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+@keyframes fui-cmd-palette-row-in {
+  from { opacity: 0; transform: translateY(2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :where([data-cui-comp="ui-cmd-palette"]) .fui-cmd-palette__option--result { animation: none; }
+}
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__option > .fui-cmd-palette__option-excerpt:not(:first-child) {
+  flex: 1 1 100%;
+  min-inline-size: 0;
+  line-height: var(--leading-snug, 1.4);
+}
+[data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__option-excerpt mark {
+  background: transparent;
+  color: var(--color-text, #09090B);
+  font-weight: var(--font-weight-medium);
+}
+/* The last result row opens the search page for the query: a link
+   out of the list, set apart from the results above it. */
+:where([data-cui-comp="ui-cmd-palette"]) .fui-cmd-palette__option--all {
+  margin-block-start: var(--spacing-xs, 2px);
+  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+  color: var(--color-primary);
+  font-weight: var(--font-weight-medium);
+}
+:where([data-cui-comp="ui-cmd-palette"]) .fui-cmd-palette__option--section {
+  margin-inline-start: var(--spacing-lg, 16px);
+  border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
 }
 @media (pointer: coarse) {
   :where([data-cui-comp="ui-cmd-palette"]) .fui-cmd-palette__option {
@@ -585,14 +681,17 @@ func commandPaletteCSS(_ style.Theme) string {
   background: var(--color-surface, #fff);
   font-size: var(--text-xs, 0.75rem);
 }
+/* A touch screen has no arrow keys or Esc to hint at: the footer keeps
+   only its close button. */
+@media (hover: none) and (pointer: coarse) {
+  [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__hints { display: none; }
+}
 @media (max-width: 540px) {
   /* Full-screen sheet, bounded to exactly the dynamic viewport: the
      wrapper's --spacing-lg padding is cancelled by centering overflow
      (the 100vw/100dvh panel spans the padding box edge to edge), and
-     the listbox cap is dropped because the palette cap now governs —
      the list takes every remaining pixel and scrolls inside. */
   [data-cui-comp="ui-cmd-palette"] { inline-size: 100vw; block-size: 100dvh; min-block-size: 100dvh; max-block-size: 100dvh; border-radius: 0; }
-  [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__listbox { max-block-size: none; }
 }
 `
 }

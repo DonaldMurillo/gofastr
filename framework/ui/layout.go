@@ -107,6 +107,21 @@ type StackConfig struct {
 	// header is a viewport plus the header tall, which opens a dead band
 	// above the last child on every page.
 	Screen bool
+	// StickyHeader pins the stack's <header> child (the banner
+	// landmark) to the top while the page scrolls, and tells everything
+	// below it where the header ends: the stack publishes the header's
+	// height, the --size-header-height token, as --ui-sticky-top, so
+	// every sticky part inside the page (a Sticky ContentRow's nav
+	// column and toolbar, a StepRail, a SectionMenu rail, a
+	// TableOfContents, an AnchoredRail, a GlobalSearch, a
+	// NetworkRetryBanner, a top-edge Sticky, a FormFrame side panel, an
+	// anchored Section) stops under the header instead of sliding
+	// behind it. A region that scrolls on its own (a bounded Box, a
+	// pinned nav column, a ListDetail list) resets the offset to 0. The layout says the header is sticky once;
+	// no component takes a flag for it. The header's bar must be that
+	// token tall. Children above the header (an announcement strip)
+	// scroll away.
+	StickyHeader bool
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the stack's root <div>.
@@ -125,6 +140,9 @@ func Stack(cfg StackConfig, children ...render.HTML) render.HTML {
 	}
 	if cfg.Screen {
 		cfg.Class = cls(cfg.Class, "fui-stack--screen")
+	}
+	if cfg.StickyHeader {
+		cfg.Class = cls(cfg.Class, "fui-stack--sticky-header")
 	}
 	return layoutStyle.WrapHTML(headless.Stack(headless.StackProps{
 		Gap:        string(cfg.Gap),
@@ -304,8 +322,14 @@ type BoxConfig struct {
 	Pad      BoxPad // padding (none | sm | md | lg | xl)
 	Surface  bool   // when true, applies the surface background + border-radius
 	Outlined bool   // when true, applies a 1px border (pairs well with Surface=false)
-	ID       string
-	Class    string
+	// Bounded caps the box's block size at the --ui-box-bounded-size
+	// knob (20rem by default) and scrolls whatever overflows it. It is a
+	// window onto content taller than the place it sits: a long log or
+	// list in a panel, or a component that is viewport-height by design
+	// (Workbench, a Screen stack) previewed inside a page.
+	Bounded bool
+	ID      string
+	Class   string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the box's root <div>.
@@ -329,6 +353,9 @@ func Box(cfg BoxConfig, children ...render.HTML) render.HTML {
 	}
 	if cfg.Outlined {
 		cls += " fui-box--outlined"
+	}
+	if cfg.Bounded {
+		cls += " fui-box--bounded"
 	}
 	if cfg.Class != "" {
 		cls += " " + cfg.Class

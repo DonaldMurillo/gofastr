@@ -9,9 +9,199 @@ package main
 // them around the primary slot; see those packages for the contract.
 
 import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/examples/site/docpage"
 	"github.com/DonaldMurillo/gofastr/examples/site/sitefooter"
 	"github.com/DonaldMurillo/gofastr/examples/site/siteheader"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
+
+// =============================================================================
+// The layout tree. Every page renders inside the default "main" layer
+// (header, primary, footer). Sections whose pages share chrome get a
+// ScreenGroup with their own layer below it, so a navigation between two
+// pages of one section swaps only that layer's primary slot and the
+// section chrome (its nav column, its rail) stays in place:
+//
+//	main                      siteheader · primary · sitefooter
+//	├── g:/            hub    reading column + on-this-page rail (toc outlet)
+//	│     /primitives /framework /agents /interactivity /generator
+//	├── g:/examples/   examples   examples nav column + primary
+//	│     /examples /examples/workspace /examples/catalog(/:id)
+//	│     /examples/presence /examples/live-dashboard
+//	├── g:/plugins/    plugins    registry nav column + primary
+//	│     /plugins /plugins/:name
+//	├── g:/docs/       docs       docs nav · crumbs outlet · primary ·
+//	│     /docs/ /docs/{path...}  pager outlet · rail outlet (docpage.Layer)
+//	└── g:/components/ components (components.go)
+//
+// Everything else (home, get started, kiln, philosophy, seo, reader, the
+// headless theme showcases) renders straight in the main layer.
+// =============================================================================
+
+// mainLayout is the site frame: the page-tall stack pinning the banner
+// bar (StickyHeader, which also tells every sticky part below where the
+// header ends), the primary slot under it, and the colophon closing the
+// page.
+func mainLayout() *app.Layout {
+	return app.NewLayout("main", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
+		return ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},
+			siteHeader(ctx),
+			l.Primary(),
+			siteFooter(),
+		)
+	})
+}
+
+// hubLayout frames the taught area hubs: the wide reading container with a
+// content row whose aside holds the toc outlet. The rail sits beside the
+// content on wide screens; on phones it folds into a pill and sheet, so
+// the stacked aside is flush.
+//
+// The toc outlet is the hubs' on-this-page rail: each hub fills it with its
+// own concept list (TeachHubScreen.TOC), and an unfilled outlet releases
+// the aside column. An outlet handle binds to exactly one layout, so the
+// pair is minted together per setupServer call.
+func hubLayout() (*app.Layout, *app.Outlet) {
+	hubTOC := app.NewOutlet("toc")
+	return app.NewLayout("hub", app.LayoutSpec{Outlets: []*app.Outlet{hubTOC}}, func(_ context.Context, l *app.LayoutTree) render.HTML {
+		return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide, Pad: ui.ContainerPadPage},
+			ui.ContentRow(ui.ContentRowConfig{
+				Aside:           l.Place(hubTOC),
+				AsideLabel:      "On this page",
+				PhoneAsideFlush: true,
+			}, l.Primary()),
+		)
+	}), hubTOC
+}
+
+// sectionNavLayout frames a section with a nav column: the content row with
+// a SectionMenu (sticky rail on desktop, a floating pill and sheet on phones) beside
+// the primary slot. The menu is static chrome; the runtime's active-link
+// sweep marks the current page, so the column keeps its scroll across
+// sibling navigations.
+func sectionNavLayout(name string, menu func() interactive.SectionMenuConfig) *app.Layout {
+	return app.NewLayout(name, app.LayoutSpec{}, func(_ context.Context, l *app.LayoutTree) render.HTML {
+		// The row's column landmark keeps its default name: the menu
+		// inside it is its own named nav, and two navs sharing one
+		// name fail landmark-unique.
+		// The menu's phone pill floats, so the stacked column is empty.
+		return ui.ContentRow(ui.ContentRowConfig{Sidebar: interactive.SectionMenu(menu()), PhoneNavFlush: true}, l.Primary())
+	})
+}
+
+// docsOutlets are the docs layer's per-route regions. An outlet handle
+// binds to exactly one layout, so they are minted with it.
+type docsOutlets struct {
+	// Crumbs sits above the article: each doc page fills its trail; the
+	// index leaves it empty and the cell takes no room.
+	Crumbs *app.Outlet
+	// Pager sits under the article: each doc page fills its
+	// previous/next cards.
+	Pager *app.Outlet
+	// Rail is the right column: the index fills it with its intent rail;
+	// a doc page leaves it empty and the column collapses.
+	Rail *app.Outlet
+}
+
+// docsLayout frames /docs/ and every /docs/<slug> page: the site's owned
+// docpage shell around the docs nav, the outlets and the primary slot.
+// The nav is static chrome (the whole catalog, ~110 links), so the layer
+// keeps it, and its scroll, across doc-to-doc navigations; the runtime's
+// active-link sweep marks the current doc. Only the primary and the
+// outlet fills travel on a sibling navigation.
+func docsLayout() (*app.Layout, docsOutlets) {
+	o := docsOutlets{
+		Crumbs: app.NewOutlet("crumbs"),
+		Pager:  app.NewOutlet("pager"),
+		Rail:   app.NewOutlet("rail"),
+	}
+	return app.NewLayout("docs", app.LayoutSpec{Outlets: []*app.Outlet{o.Crumbs, o.Pager, o.Rail}}, func(_ context.Context, l *app.LayoutTree) render.HTML {
+		return docpage.Layer(docpage.LayerConfig{
+			Nav:    interactive.SectionMenu(docsSectionMenuConfig()),
+			Crumbs: l.Place(o.Crumbs),
+			Body:   l.Primary(),
+			Pager:  l.Place(o.Pager),
+			Rail:   l.Place(o.Rail),
+		})
+	}), o
+}
+
+// examplesSectionMenuConfig is the /examples section nav: the reference-app
+// index, the in-site demo apps, and the headless theme showcases. Shared by
+// the inline rail and the phone drawer mounted in setupServer.
+func examplesSectionMenuConfig() interactive.SectionMenuConfig {
+	themes := make([]interactive.SectionItem, 0, 2*len(landingRoutes))
+	for _, r := range landingRoutes {
+		themes = append(themes, interactive.SectionItem{Label: r.Name + " landing", Href: landingRoutePath(r.Segment)})
+	}
+	for _, r := range landingRoutes {
+		themes = append(themes, interactive.SectionItem{Label: r.Name + " dashboard", Href: dashboardRoutePath(r.Segment)})
+	}
+	return interactive.SectionMenuConfig{
+		AriaLabel:    "Examples navigation",
+		TriggerLabel: "Examples",
+		DrawerName:   "examples-section-menu",
+		Lead:         &interactive.SectionItem{Label: "Reference apps", Href: "/examples"},
+		Groups: []interactive.SectionGroup{
+			{Label: "In-site apps", Items: []interactive.SectionItem{
+				{Label: "Support workspace", Href: "/examples/workspace"},
+				{Label: "Catalog (intercepting route)", Href: "/examples/catalog"},
+			}},
+			{Label: "Live data", Items: []interactive.SectionItem{
+				{Label: "Live dashboard", Href: "/examples/live-dashboard?presence=" + liveDashTopic},
+				{Label: "Live presence", Href: "/examples/presence?presence=" + presenceDemoTopic},
+			}},
+			{Label: "Theme layer", Items: themes, Collapsed: true},
+		},
+	}
+}
+
+// pluginsSectionMenuConfig is the /plugins section nav: the registry index
+// and one entry per vendored plugin row.
+func pluginsSectionMenuConfig() interactive.SectionMenuConfig {
+	cfg := interactive.SectionMenuConfig{
+		AriaLabel:    "Plugins navigation",
+		TriggerLabel: "Plugins",
+		DrawerName:   "plugins-section-menu",
+		Lead:         &interactive.SectionItem{Label: "All plugins", Href: "/plugins"},
+	}
+	reg, err := pluginReg()
+	if err != nil {
+		return cfg
+	}
+	items := make([]interactive.SectionItem, 0, len(reg.Plugins))
+	for _, p := range reg.Plugins {
+		items = append(items, interactive.SectionItem{Label: p.Name, Href: "/plugins/" + p.Name})
+	}
+	cfg.Groups = []interactive.SectionGroup{{Label: "Registry · " + reg.Release.Tag, Items: items}}
+	return cfg
+}
+
+// groupScreen builds a group member from a component the way App.Register
+// does: title, description, and type read from the component's own
+// metadata interfaces, then the registration options applied.
+func groupScreen(path string, comp component.Component, opts ...app.ScreenOption) *app.Screen {
+	s := app.NewScreen(path, comp)
+	if t, ok := comp.(app.ScreenTitler); ok {
+		s.Title = t.ScreenTitle()
+	}
+	if d, ok := comp.(app.ScreenDescriber); ok {
+		s.Description = d.ScreenDescription()
+	}
+	if ty, ok := comp.(app.ScreenTyper); ok {
+		s.Type = ty.ScreenType()
+	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
 
 // build time from the deployment's git tag via
 //
@@ -72,14 +262,13 @@ func siteNavLinks() []siteheader.Link {
 	}
 }
 
-// siteNavExtraLinks render only in the header's phone menu: the destinations
-// a thumb expects first, plus the repo.
-func siteNavExtraLinks() []siteheader.Link {
+// siteMenuLead renders only in the header's phone menu, above the
+// sections: the entry points a newcomer looks for first. Home is the
+// logo, and GitHub is the mark in the menu's icon row.
+func siteMenuLead() []siteheader.Link {
 	return []siteheader.Link{
-		{Label: "Home", Href: "/"},
-		{Label: "Docs (all)", Href: "/docs/", Section: true},
 		{Label: "Get started", Href: "/get-started", Section: true},
-		{Label: "GitHub ↗", Href: "https://github.com/DonaldMurillo/gofastr", External: true},
+		{Label: "Docs", Href: "/docs/", Section: true},
 	}
 }
 

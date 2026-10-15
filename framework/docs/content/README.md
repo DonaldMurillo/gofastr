@@ -117,6 +117,12 @@ results, the harness contract) are exempt. The exemption list lives in
   chokepoint, menus, tray, deep links, remembered window state, app
   state, declared preferences with a settings screen, single-user
   mode, and the fs allow-list. Experimental: pin a version.
+- [OS service host (experimental)](service.md): `battery/service`:
+  `<app> service install` registers the binary as a per-user launchd
+  agent, `systemd --user` unit or Task Scheduler task; the loopback
+  gate (Host pin, cross-site refusal, signed session), the token
+  sign-in `open` performs, the control channel, the local identity,
+  and the dev run. Experimental: pin a version.
 
 ## Building UI
 
@@ -234,6 +240,9 @@ results, the harness contract) are exempt. The exemption list lives in
   any static host (GitHub Pages, S3). Replaces the broken `wget` crawl;
   stamps pages with `data-cui-static` so server-backed islands no-op
   instead of 404'ing.
+- [Site search](site-search.md): `battery/sitesearch`: a full-text index
+  of every rendered page, searched from the command palette on a live
+  server or from JSON files in a static export.
 
 - [Codegen](codegen.md): YAML-configured generators, external extension
   protocol, safe output paths, and manifest-based cleaning.

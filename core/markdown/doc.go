@@ -26,7 +26,12 @@
 //     two or more trailing spaces or a trailing backslash is a hard break
 //     and renders as <br>
 //
-// HTML in source is escaped, never passed through. Code blocks and inline
+// HTML in source is escaped, never passed through. The one exception is an
+// HTML comment block (a line opening with "<!--", closed by a line ending
+// in "-->"), which renders as nothing, as a browser would hide it. Docs use
+// it for tooling directives. An unclosed comment, or one with text after
+// its close, stays escaped text. A comment block hides the same way under
+// a list item or in a blockquote. Code blocks and inline
 // code are rendered without syntax highlighting; callers can post-process if
 // they want highlighted output.
 package markdown

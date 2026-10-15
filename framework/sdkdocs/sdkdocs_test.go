@@ -294,3 +294,33 @@ func TestStaticPathsCoverIncludedEntities(t *testing.T) {
 		t.Fatalf("StaticPaths: %+v", paths)
 	}
 }
+
+func TestMenuMarksOnlyTheCurrentPage(t *testing.T) {
+	s := &site{cfg: Config{Registry: testRegistry(), BasePath: "/docs/api"}}
+	marked := func(key string) []string {
+		cfg := s.menuConfig(key)
+		var out []string
+		if cfg.Lead != nil && cfg.Lead.Active {
+			out = append(out, cfg.Lead.Label)
+		}
+		for _, g := range cfg.Groups {
+			for _, it := range g.Items {
+				if it.Active {
+					out = append(out, it.Label)
+				}
+			}
+		}
+		return out
+	}
+	// The drawer is mounted once for every page, and the 404 page is no
+	// page in the menu: neither may mark Overview.
+	if got := marked(""); len(got) != 0 {
+		t.Errorf("drawer/404 menu marks %v; want nothing", got)
+	}
+	if got := marked("overview"); len(got) != 1 || got[0] != "Overview" {
+		t.Errorf("index menu marks %v; want [Overview]", got)
+	}
+	if got := marked("errors"); len(got) != 1 || got[0] != "Errors" {
+		t.Errorf("errors menu marks %v; want [Errors]", got)
+	}
+}

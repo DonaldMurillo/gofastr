@@ -74,3 +74,43 @@ func TestTOCExtraAttrsCannotOverrideOwned(t *testing.T) {
 		}
 	}
 }
+
+// PhoneSheet wraps the nav in a sheet the pill opens: the sheet takes
+// its id from the TOC's ID (a fixed one without), its title from the
+// Label, and its swap from the Breakpoint.
+func TestTOCPhoneSheetWrapsNav(t *testing.T) {
+	items := []TOCItem{{ID: "a", Label: "A"}}
+	h := string(TableOfContents(TOCConfig{Items: items, Target: "main", PhoneSheet: true}))
+	for _, want := range []string{
+		`class="cui-phone-sheet cui-phone-sheet--swap-md"`,
+		`popovertarget="fui-toc-sheet"`,
+		`<span class="cui-sheet-pill__label">On this page</span>`,
+		`<div class="cui-phone-sheet__body"><nav aria-label="On this page"`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("missing %q:\n%s", want, h)
+		}
+	}
+	h = string(TableOfContents(TOCConfig{Items: items, ID: "doc-toc", Label: "Sections", Breakpoint: StackBelowLG, PhoneSheet: true}))
+	for _, want := range []string{
+		`cui-phone-sheet--swap-lg`,
+		`id="doc-toc-sheet"`,
+		`<span class="cui-sheet-head__title" id="doc-toc-sheet-title">Sections</span>`,
+	} {
+		if !strings.Contains(h, want) {
+			t.Errorf("missing %q:\n%s", want, h)
+		}
+	}
+	if h := string(TableOfContents(TOCConfig{Items: items})); strings.Contains(h, "cui-phone-sheet") {
+		t.Errorf("without PhoneSheet the nav renders alone:\n%s", h)
+	}
+}
+
+func TestTOCPhoneSheetRefusesUnknownBreakpoint(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("an unknown Breakpoint should panic at render")
+		}
+	}()
+	TableOfContents(TOCConfig{Items: []TOCItem{{ID: "a", Label: "A"}}, PhoneSheet: true, Breakpoint: "xl"})
+}

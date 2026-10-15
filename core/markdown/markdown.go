@@ -66,6 +66,8 @@ func renderBodyDepth(input string, depth int, headingIDs map[string]int, heading
 		switch {
 		case p.atFence():
 			renderFence(p, &sb)
+		case p.atComment():
+			p.skipComment()
 		case p.atHR():
 			sb.WriteString("<hr>\n")
 			p.advance()

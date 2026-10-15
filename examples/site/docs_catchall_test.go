@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"sort"
 	"strings"
 	"testing"
@@ -15,7 +17,7 @@ import (
 // StaticPaths the way the static builder and sitemap do.
 func TestDocsCatchAllURLSetUnchanged(t *testing.T) {
 	site := coreapp.NewApp("parity")
-	site.Register("/docs/{path...}", &DocPageScreen{}, nil)
+	registerDocsGroup(site)
 
 	// Expected: every flatDocs slug as /docs/<slug>, sorted.
 	want := make([]string, 0, len(flatDocs()))
@@ -71,15 +73,27 @@ func expandDocPattern(pattern string, params map[string]string) string {
 }
 
 // TestDocsCatchAllUnknownSlug404s verifies an unknown doc slug is
-// rejected (Load errors), so handlePage serves the site's 404,
-// preserving the UX the per-slug loop had by not registering unknown
-// paths at all.
+// rejected (the resolver answers app.ErrNotFound and the screen's Load
+// is its first reader), so the site serves its not-found page with a
+// 404, preserving the UX the per-slug loop had by not registering
+// unknown paths at all.
 func TestDocsCatchAllUnknownSlug404s(t *testing.T) {
 	site := coreapp.NewApp("parity")
-	site.Register("/docs/{path...}", &DocPageScreen{}, nil)
+	registerDocsGroup(site)
 
-	if _, err := site.RenderPageResult(context.Background(), "/docs/no-such-doc-xyz"); err == nil {
-		t.Error("unknown doc slug should make RenderPageResult error (→ 404), got nil")
+	_, err := site.RenderPageResult(context.Background(), "/docs/no-such-doc-xyz")
+	if !errors.Is(err, coreapp.ErrNotFound) {
+		t.Errorf("unknown doc slug: RenderPageResult error = %v, want app.ErrNotFound", err)
+	}
+
+	// Through the real server: the status and the site's own 404 page,
+	// which echoes the requested path.
+	rec := serve(t, http.MethodGet, "/docs/no-such-doc-xyz")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("/docs/no-such-doc-xyz: got %d, want 404", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "/docs/no-such-doc-xyz") {
+		t.Error("/docs/no-such-doc-xyz should render the site's not-found page (it echoes the path)")
 	}
 }
 
@@ -87,7 +101,7 @@ func TestDocsCatchAllUnknownSlug404s(t *testing.T) {
 // DocPageScreen with the right entry wired through SetParams.
 func TestDocsCatchAllKnownSlugResolves(t *testing.T) {
 	site := coreapp.NewApp("parity")
-	site.Register("/docs/{path...}", &DocPageScreen{}, nil)
+	registerDocsGroup(site)
 
 	doc := flatDocs()[0]
 	res, err := site.RenderPageResult(context.Background(), "/docs/"+doc.Slug)

@@ -303,13 +303,16 @@ unchanged. See [SEO](/docs/seo) for the per-screen interfaces.
 A dynamic route's concrete URLs serve real per-page docs, not one shared
 pattern doc: `GET /products/42/llm.md` (or `/docs/getting-started/llm.md`
 on a catch-all route) builds the same per-request instance the page render
-uses, `SetParams` → DI → `Load`, so the markdown carries that page's
-loaded title and rendered content. The static exporter does the same for
+uses, the route match and its resolvers → `SetParams` → DI → `Load`,
+so the markdown carries that page's loaded title and rendered content,
+including a `Load` that reads a route resolver. The static exporter does the same for
 every URL a screen's `StaticPaths` enumerates, and SPA partial responses
 carry the post-`Load` title in `X-Gofastr-Title`, so in-app navigation to
 a dynamic page updates the browser title correctly. All of it sits behind
-the same `WithPublicLLMMD` opt-in as the static per-screen handlers; a
-`Load` failure degrades to the pattern-level doc rather than erroring.
+the same `WithPublicLLMMD` opt-in as the static per-screen handlers. A
+resolver or `Load` answering `app.ErrNotFound` makes the doc a 404, as
+the page is; any other failure degrades to the pattern-level doc rather
+than erroring.
 
 Every markdown surface evaluates the screen's policy chain with the live
 request: a non-Allow decision serves a metadata-free "withheld" doc (route

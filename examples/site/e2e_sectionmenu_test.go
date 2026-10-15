@@ -23,13 +23,17 @@ func TestE2E_SectionMenu_DesktopRail(t *testing.T) {
 	base := siteE2EServer(t)
 	ctx := siteBrowserCtx(t) // 1280×800 → ≥900px → rail mode
 
-	var triggerDisplay, railDisplay, activeBorder string
+	var triggerDisplay, railDisplay, activeDot string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/docs/entity-declarations"),
 		chromedp.WaitReady(`[data-cui-comp="cui-section-menu"]`, chromedp.ByQuery),
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-section-menu__trigger')).display`, &triggerDisplay),
+		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-sheet-pill')).display`, &triggerDisplay),
 		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-section-menu__rail')).display`, &railDisplay),
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('.cui-section-menu__link.is-active')).borderLeftColor`, &activeBorder),
+		// The docs rail is static chrome in the docs layer: the runtime's
+		// active-link sweep marks the current doc (aria-current), not the
+		// server, so wait for the mark on the current page's link.
+		chromedp.WaitReady(`.cui-section-menu__rail a.cui-section-menu__link[href="/docs/entity-declarations"][aria-current="page"]`, chromedp.ByQuery),
+		chromedp.Evaluate(`(()=>{const s=getComputedStyle(document.querySelector('.cui-section-menu__rail .cui-section-menu__link[aria-current="page"]'),'::before');return s.width+' '+s.backgroundColor})()`, &activeDot),
 	); err != nil {
 		t.Fatalf("desktop rail: %v", err)
 	}
@@ -39,8 +43,8 @@ func TestE2E_SectionMenu_DesktopRail(t *testing.T) {
 	if railDisplay == "none" {
 		t.Errorf("desktop: the rail must be visible, got display=%q", railDisplay)
 	}
-	if activeBorder == "" || strings.Contains(activeBorder, ", 0)") || activeBorder == "rgba(0, 0, 0, 0)" {
-		t.Errorf("active item should have a coloured left border, got %q", activeBorder)
+	if !strings.HasPrefix(activeDot, "6px ") || strings.Contains(activeDot, ", 0)") {
+		t.Errorf("active item should carry a 6px coloured dot, got %q", activeDot)
 	}
 }
 
@@ -61,20 +65,20 @@ func TestE2E_SectionMenu_MobileDrawer(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		emulation.SetDeviceMetricsOverride(375, 812, 1, true),
 		chromedp.Navigate(base+"/components/dropdown"),
-		chromedp.WaitReady(`.cui-section-menu__trigger`, chromedp.ByQuery),
+		chromedp.WaitReady(`.cui-sheet-pill`, chromedp.ByQuery),
 		chromedp.Evaluate(`window.innerWidth`, &viewportW),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowClosed),
-		chromedp.Evaluate(`document.querySelector('.cui-section-menu__trigger').getBoundingClientRect().top`, &triggerTopBefore),
+		chromedp.Evaluate(`document.querySelector('.cui-sheet-pill').getBoundingClientRect().top`, &triggerTopBefore),
 		// Open the drawer.
-		chromedp.Click(`.cui-section-menu__trigger`, chromedp.ByQuery),
+		chromedp.Click(`.cui-sheet-pill`, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond), // lazy widget chrome + open
-		chromedp.Evaluate(`document.querySelector('.cui-section-menu__trigger').getBoundingClientRect().top`, &triggerTopAfter),
+		chromedp.Evaluate(`document.querySelector('.cui-sheet-pill').getBoundingClientRect().top`, &triggerTopAfter),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowOpen),
 		chromedp.Evaluate(`!!document.querySelector('[data-cui-backdrop="`+drawer+`"]')`, &backdropPresent),
-		// Close on OUTSIDE click, tap the exposed backdrop strip to the right
-		// of the ~337px (90vw) drawer panel. Clicking the panel-covered centre
-		// would (correctly) NOT dismiss, so target the dim area at x≈365.
-		chromedp.MouseClickXY(365, 400),
+		// Close on OUTSIDE click: tap the dim strip above the bottom sheet
+		// (at most 75vh tall). Clicking the sheet itself would (correctly)
+		// NOT dismiss.
+		chromedp.MouseClickXY(187, 60),
 		chromedp.Sleep(400*time.Millisecond),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowAfterBackdrop),
 	); err != nil {
@@ -121,18 +125,18 @@ func TestE2E_SectionMenu_CloseButtonAndScrollPreserved(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		emulation.SetDeviceMetricsOverride(375, 812, 1, true),
 		chromedp.Navigate(base+"/components/dropdown"),
-		chromedp.WaitReady(`.cui-section-menu__trigger`, chromedp.ByQuery),
+		chromedp.WaitReady(`.cui-sheet-pill`, chromedp.ByQuery),
 		// Scroll the page down so an open/close scroll jump would be visible.
 		chromedp.Evaluate(`window.scrollTo(0, 600)`, nil),
 		chromedp.Sleep(100*time.Millisecond),
 		chromedp.Evaluate(`window.scrollY`, &scrollBefore),
-		chromedp.Evaluate(`document.querySelector('.cui-section-menu__trigger').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('.cui-sheet-pill').click()`, nil),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`window.scrollY`, &scrollAfterOpen),
 		// The × close button must be visible inside the drawer.
-		chromedp.Evaluate(`(()=>{const b=document.querySelector('[data-cui-widget="`+drawer+`"] .cui-section-menu__close');return !!b && b.getBoundingClientRect().width>0})()`, &closeVisible),
+		chromedp.Evaluate(`(()=>{const b=document.querySelector('[data-cui-widget="`+drawer+`"] .cui-sheet-head__close');return !!b && b.getBoundingClientRect().width>0})()`, &closeVisible),
 		// Close via the × button (data-cui-action="close").
-		chromedp.Evaluate(`document.querySelector('[data-cui-widget="`+drawer+`"] .cui-section-menu__close').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-cui-widget="`+drawer+`"] .cui-sheet-head__close').click()`, nil),
 		chromedp.Sleep(400*time.Millisecond),
 		chromedp.Evaluate(`window.scrollY`, &scrollAfterClose),
 		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &overflowAfterClose),
@@ -167,8 +171,8 @@ func TestE2E_SectionMenu_DrawerClosesOnNav(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		emulation.SetDeviceMetricsOverride(375, 812, 1, true),
 		chromedp.Navigate(base+"/components/dropdown"),
-		chromedp.WaitReady(`.cui-section-menu__trigger`, chromedp.ByQuery),
-		chromedp.Click(`.cui-section-menu__trigger`, chromedp.ByQuery),
+		chromedp.WaitReady(`.cui-sheet-pill`, chromedp.ByQuery),
+		chromedp.Click(`.cui-sheet-pill`, chromedp.ByQuery),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`location.pathname`, &pathBefore),
 		// Tap the "Overview" lead link inside the open drawer.
@@ -224,5 +228,148 @@ func TestE2E_PaletteKeepsDocsRailVisible(t *testing.T) {
 	// bottom below 0. The bug drove top to ≈ -1364 (fully off-screen above).
 	if railTop > innerH || railBottom < 0 {
 		t.Errorf("opening the palette dislodged the sticky rail off-screen: top=%.0f bottom=%.0f innerHeight=%.0f", railTop, railBottom, innerH)
+	}
+}
+
+// Mobile: the pill names the current page and its group, the sheet opens
+// on that page's group, and typing in the sheet's filter narrows the list.
+func TestE2E_SectionMenu_PillAndSheetFilter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+	const drawer = "components-section-menu"
+	sheet := `[data-cui-widget="` + drawer + `"]`
+
+	var pill, openGroup, shown string
+	if err := chromedp.Run(ctx,
+		emulation.SetDeviceMetricsOverride(390, 844, 1, true),
+		chromedp.Navigate(base+"/components/tabs"),
+		chromedp.WaitReady(`.cui-sheet-pill`, chromedp.ByQuery),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`(()=>{const b=document.querySelector('.cui-sheet-pill');return b.querySelector('.cui-sheet-pill__label').textContent+'|'+b.querySelector('.cui-sheet-pill__detail').textContent})()`, &pill),
+		chromedp.Click(`.cui-sheet-pill`, chromedp.ByQuery),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(`[...document.querySelectorAll('`+sheet+` details[open] .cui-section-menu__group-label')].map(e=>e.textContent).join('|')`, &openGroup),
+		chromedp.SendKeys(sheet+` .cui-section-menu__filter-input`, "datefield", chromedp.ByQuery),
+		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Evaluate(`[...document.querySelectorAll('`+sheet+` .cui-section-menu__link')].filter(a=>a.getClientRects().length).map(a=>a.textContent).join('|')`, &shown),
+	); err != nil {
+		t.Fatalf("pill + sheet filter: %v", err)
+	}
+	if pill != "Tabs|Navigation" {
+		t.Errorf("pill = %q, want Tabs|Navigation", pill)
+	}
+	if openGroup != "Navigation" {
+		t.Errorf("sheet opened groups %q, want only Navigation", openGroup)
+	}
+	if shown != "DateField" {
+		t.Errorf(`filter "datefield" shows %q, want DateField`, shown)
+	}
+}
+
+// Hub pages on a phone: the on-this-page list folds into the same pill,
+// which names the concept in view and opens the list as a sheet; a
+// tapped entry closes the sheet and jumps to its section.
+func TestE2E_HubTOC_PhonePill(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+	const label = `document.querySelector('.cui-sheet-pill__label').textContent`
+	const open = `document.querySelector('.cui-phone-sheet__sheet').matches(':popover-open')`
+
+	var aside, pill, opened, entries string
+	var closed bool
+	var jumped float64
+	if err := chromedp.Run(ctx,
+		emulation.SetDeviceMetricsOverride(390, 844, 1, true),
+		chromedp.Navigate(base+"/framework"),
+		chromedp.WaitReady(`.cui-sheet-pill`, chromedp.ByQuery),
+		chromedp.Evaluate(`(()=>{const a=document.querySelector('.fui-content-row__aside');return Math.round(a.getBoundingClientRect().height)+'|'+getComputedStyle(a).borderTopWidth})()`, &aside),
+		chromedp.Evaluate(`document.getElementById('migrations').scrollIntoView()`, nil),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(label, &pill),
+		chromedp.Click(`.cui-sheet-pill`, chromedp.ByQuery),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(open+`+'|'+document.querySelector('.cui-sheet-head__title').textContent`, &opened),
+		chromedp.Evaluate(`[...document.querySelectorAll('.cui-phone-sheet__sheet .fui-toc__link')].map(a=>a.textContent).slice(0,2).join('|')`, &entries),
+		chromedp.Click(`.cui-phone-sheet__sheet a[href="#auth"]`, chromedp.ByQuery),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`!(`+open+`)`, &closed),
+		chromedp.Evaluate(`Math.abs(document.getElementById('auth').getBoundingClientRect().top)`, &jumped),
+	); err != nil {
+		t.Fatalf("hub toc pill: %v", err)
+	}
+	if aside != "0|0px" {
+		t.Errorf("stacked aside height|rule = %s, want 0|0px", aside)
+	}
+	if pill != "Migrations" {
+		t.Errorf("pill = %q with Migrations in view", pill)
+	}
+	if opened != "true|On this page" {
+		t.Errorf("sheet open|title = %q", opened)
+	}
+	if entries != "Entities|Auth" {
+		t.Errorf("sheet entries start %q, want Entities|Auth", entries)
+	}
+	if !closed || jumped > 200 {
+		t.Errorf("after tapping Auth: closed=%v, Auth section %vpx from the top", closed, jumped)
+	}
+}
+
+// The docs index on a phone keeps both navigations: the docs nav's pill
+// floats alone at the bottom, and the on-this-page rail folds into a
+// bar pinned under the site header. The bar names the intent in view,
+// drops the rail from under the header, and a tapped entry closes it
+// and lands below the bar.
+func TestE2E_DocsIndex_OnThisPageBar(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+	const bar = `document.querySelector('.cui-sheet-pill--bar')`
+	const open = `document.querySelector('.cui-phone-sheet__sheet').matches(':popover-open')`
+
+	var layout, pinned, opened, landed string
+	if err := chromedp.Run(ctx,
+		emulation.SetDeviceMetricsOverride(390, 844, 1, true),
+		chromedp.Navigate(base+"/docs/"),
+		chromedp.WaitReady(`.cui-sheet-pill--bar`, chromedp.ByQuery),
+		chromedp.Evaluate(`(()=>{
+			const floating=[...document.querySelectorAll('.cui-sheet-pill')].filter(p=>getComputedStyle(p).position==='fixed');
+			const rail=document.querySelector('[data-cui-comp="ui-anchored-rail"]').getClientRects().length;
+			return 'floating='+floating.length+' docs pill='+!!floating[0]?.closest('[data-cui-comp="cui-section-menu"]')+' rail boxes='+rail;
+		})()`, &layout),
+		chromedp.Evaluate(`document.getElementById('serving').scrollIntoView()`, nil),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`(()=>{const b=`+bar+`, h=document.querySelector('header').getBoundingClientRect();
+			const top=b.getBoundingClientRect().top;
+			return (Math.round(top)===parseFloat(getComputedStyle(b).top) && top<=h.bottom)+'|'+b.textContent.replace(/\s+/g,' ').trim()})()`, &pinned),
+		chromedp.Evaluate(bar+`.click()`, nil),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(open+`+'|'+document.querySelector('.cui-phone-sheet .cui-sheet-head__title').textContent+'|'+
+			Math.round(document.querySelector('.cui-phone-sheet__sheet').getBoundingClientRect().top - `+bar+`.getBoundingClientRect().bottom)`, &opened),
+		chromedp.Click(`.cui-phone-sheet__sheet a[href="#persist"]`, chromedp.ByQuery),
+		chromedp.Sleep(800*time.Millisecond),
+		chromedp.Evaluate(`(()=>{const b=`+bar+`.getBoundingClientRect(), s=document.getElementById('persist').getBoundingClientRect();
+			return `+open+`+'|'+(s.top>=b.bottom)+'|'+`+bar+`.querySelector('.cui-sheet-pill__label').textContent})()`, &landed),
+	); err != nil {
+		t.Fatalf("docs index bar: %v", err)
+	}
+	if layout != "floating=1 docs pill=true rail boxes=0" {
+		t.Errorf("phone layout: %s", layout)
+	}
+	if pinned != "true|On this page: Serving HTTP" {
+		t.Errorf("bar pinned under the header|text = %q", pinned)
+	}
+	if opened != "true|On this page|0" {
+		t.Errorf("sheet open|title|top below the bar's bottom = %q", opened)
+	}
+	if landed != "false|true|Persisting & migrating" {
+		t.Errorf("after tapping Persisting: open|below bar|label = %q", landed)
 	}
 }

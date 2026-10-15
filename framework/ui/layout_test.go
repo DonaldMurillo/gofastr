@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -66,6 +67,29 @@ func TestBoxVariantsCompose(t *testing.T) {
 	h := Box(BoxConfig{Pad: BoxPadLG, Surface: true, Outlined: true}, render.Text("x"))
 	for _, want := range []string{"fui-box", "fui-box--pad-lg", "fui-box--surface", "fui-box--outlined"} {
 		mustContain(t, h, want)
+	}
+}
+
+// TestBoxBounded pins the bounded window: the modifier class on the
+// root, and a sheet rule that caps the block size at the token knob and
+// scrolls the overflow. Without the rule a viewport-height child
+// (Workbench) would take the whole page.
+func TestBoxBounded(t *testing.T) {
+	h := Box(BoxConfig{Bounded: true}, render.Text("x"))
+	mustContain(t, h, "fui-box--bounded")
+	if strings.Contains(string(Box(BoxConfig{}, render.Text("x"))), "fui-box--bounded") {
+		t.Fatal("an unbounded Box carries the bounded class")
+	}
+	css := layoutCSS(style.DefaultTheme())
+	i := strings.Index(css, ".fui-box--bounded {")
+	if i < 0 {
+		t.Fatalf("layout sheet has no .fui-box--bounded rule:\n%s", css)
+	}
+	rule := css[i : i+strings.Index(css[i:], "}")]
+	for _, want := range []string{"max-block-size: var(--ui-box-bounded-size, 20rem)", "overflow: auto"} {
+		if !strings.Contains(rule, want) {
+			t.Errorf("bounded rule lacks %q:\n%s", want, rule)
+		}
 	}
 }
 
