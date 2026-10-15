@@ -117,6 +117,12 @@ results, the harness contract) are exempt. The exemption list lives in
   chokepoint, menus, tray, deep links, remembered window state, app
   state, declared preferences with a settings screen, single-user
   mode, and the fs allow-list. Experimental: pin a version.
+- [OS service host (experimental)](service.md): `battery/service`:
+  `<app> service install` registers the binary as a per-user launchd
+  agent, `systemd --user` unit or Task Scheduler task; the loopback
+  gate (Host pin, cross-site refusal, signed session), the token
+  sign-in `open` performs, the control channel, the local identity,
+  and the dev run. Experimental: pin a version.
 
 ## Building UI
 

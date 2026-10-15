@@ -312,6 +312,76 @@ func TestStdioTransport(t *testing.T) {
 	}
 }
 
+// A stdio line may be as long as an HTTP body. One past that ends the
+// session, with a reply saying why instead of a silent close.
+func TestStdioLineLimit(t *testing.T) {
+	s := NewServer()
+	s.RegisterTool("echo", "Echo", nil, func(ctx context.Context, params map[string]any) (any, error) {
+		return len(params["text"].(string)), nil
+	})
+	call := func(n int) string {
+		return `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{"text":"` + strings.Repeat("x", n) + `"}}}` + "\n"
+	}
+
+	out := &bytes.Buffer{}
+	if err := s.ServeStdio(context.Background(), strings.NewReader(call(200<<10)), out); err != nil {
+		t.Fatalf("a 200 KiB line: %v", err)
+	}
+	var resp Response
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil || resp.Error != nil || resp.ID != float64(1) {
+		t.Fatalf("a 200 KiB line got %.200s", out.String())
+	}
+
+	// A line of exactly the limit, ended by "\n" or "\r\n", is read:
+	// the scanner's own limit counts the line ending.
+	pad := maxMCPBodyBytes - (len(call(0)) - 1)
+	for _, ending := range []string{"\n", "\r\n"} {
+		out.Reset()
+		line := strings.TrimSuffix(call(pad), "\n") + ending
+		if err := s.ServeStdio(context.Background(), strings.NewReader(line), out); err != nil {
+			t.Fatalf("a %d-byte line ending %q: %v", maxMCPBodyBytes, ending, err)
+		}
+		resp = Response{}
+		if err := json.Unmarshal(out.Bytes(), &resp); err != nil || resp.Error != nil {
+			t.Fatalf("a %d-byte line ending %q got %.200s", maxMCPBodyBytes, ending, out.String())
+		}
+	}
+
+	for _, n := range []int{pad + 1, maxMCPBodyBytes} {
+		out.Reset()
+		err := s.ServeStdio(context.Background(), strings.NewReader(call(n)), out)
+		if err == nil || !strings.Contains(out.String(), "request line exceeds") {
+			t.Fatalf("a line %d bytes over: err %v, reply %.200s", n-pad, err, out.String())
+		}
+	}
+}
+
+// The stdio handshake: the client sends notifications/initialized
+// after initialize, and the server must not answer it.
+func TestStdioNotificationGetsNoReply(t *testing.T) {
+	s := NewServer()
+	in := bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n" +
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}` + "\n" +
+		`{"jsonrpc":"2.0","id":2,"method":"ping"}` + "\n" +
+		`{"jsonrpc":"2.0","id":3,"method":"notifications/initialized"}` + "\n")
+	out := &bytes.Buffer{}
+	if err := s.ServeStdio(context.Background(), in, out); err != nil {
+		t.Fatalf("ServeStdio: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	// A notifications/* method sent with an id is a request, and a
+	// request is always answered.
+	if len(lines) != 3 {
+		t.Fatalf("want replies to initialize, ping and the id-carrying request, got %d lines:\n%s", len(lines), out.String())
+	}
+	for i, line := range lines {
+		var resp Response
+		if err := json.Unmarshal([]byte(line), &resp); err != nil || resp.ID != float64(i+1) || (i < 2 && resp.Error != nil) {
+			t.Fatalf("line %d = %s", i, line)
+		}
+	}
+}
+
 func TestRegisterTool_Duplicate(t *testing.T) {
 	s := NewServer()
 	err := s.RegisterTool("x", "first", nil, func(ctx context.Context, params map[string]any) (any, error) {

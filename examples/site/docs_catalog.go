@@ -130,6 +130,7 @@ var docIntents = []docIntent{
 			{"site-search", "Site search", "Full-text search over every rendered page: live from the server, or from index files in a static export."},
 			{"pwa", "PWA", "uihost.WithPWA: installable manifest, versioned offline shell, and a safe service worker."},
 			{"desktop", "Desktop host", "Experimental: run the app in the OS WebView from a CGO_ENABLED=0 binary, with a typed JS bridge to native capabilities (macOS today)."},
+			{"service", "OS service host", "Experimental: install the app binary as a per-user launchd, systemd or Task Scheduler service and sign the browser in to its loopback UI."},
 			{"seo", "SEO", "Meta tags, Open Graph, JSON-LD, sitemap, robots, and the one-image icon surface."},
 			{"accessibility", "Accessibility", "Built-in ARIA guarantees, the guided audit command, and the build gate."},
 			{"porting", "Porting an existing frontend", "The escape hatch for a foreign DOM contract: html/template screens + static.Mount, deliberately unsupported."},
@@ -174,6 +175,7 @@ var docIntents = []docIntent{
 		Docs: []docEntry{
 			{"agent-ready", "Agent-readiness", "Discovery surface scanners (isitagentready.com) look for: llms.txt, A2A card, MCP/OAuth well-knowns, markdown negotiation."},
 			{"mcp", "MCP server", "The core/mcp reference: JSON-RPC methods, registering tools, resources, templates, and prompts, per-caller gates, and cursor pagination."},
+			{"local-runs", "Local run registry", "Every running App writes a 0600 record of its URL and MCP entry; framework/localrun lists the live ones, pruning dead pids."},
 			{"a2a", "A2A task exchange", "WithA2A mounts the Agent2Agent v1.0 exchange at /a2a: deterministic named skills, entity skills over MCP tools, tasks, streaming, and push."},
 			{"contracts", "Contracts", "gofastr verify: one pipeline of rules with IDs, reasons, and fixes, plus semantic coverage and machine-readable diagnostics."},
 			{"kiln", "Kiln overview", "Experimental: the agent-driven build-mode binary."},

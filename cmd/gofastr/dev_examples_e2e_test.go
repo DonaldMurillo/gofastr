@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -44,6 +45,7 @@ var devExamples = []devExample{
 	{"meridian", "/", http.StatusOK},
 	{"ecommerce/app", "/", http.StatusOK},
 	{"site", "/examples", http.StatusOK},
+	{"gofastr-runs", "/", http.StatusUnauthorized}, // the loopback gate answers: sign in with `gofastr-runs service open --dev`
 }
 
 func TestE2E_DevLoop_Examples(t *testing.T) {
@@ -70,6 +72,9 @@ func TestE2E_DevLoop_Examples(t *testing.T) {
 				// The generated apps refuse to seed their admin on a fresh
 				// database without this and exit; CI has no .env to supply it.
 				"ADMIN_SEED_PASSWORD=dev-loop-examples-admin-seed-2026", // not-a-secret: test fixture
+				// The service example keeps its dev state (secret, identity,
+				// app.db) here instead of the user's config dir.
+				"GOFASTR_SERVICE_DATA_DIR="+shortStateDir(t),
 			)
 			prewarmExampleBuild(t, dir, env)
 			ctx, cancel := context.WithCancel(context.Background())
@@ -107,6 +112,23 @@ func TestE2E_DevLoop_Examples(t *testing.T) {
 			}
 		})
 	}
+}
+
+// shortStateDir is a state dir short enough for a control socket inside
+// it: AF_UNIX paths cap near 104 bytes, and macOS's per-user TMPDIR
+// alone uses half of that.
+func shortStateDir(t *testing.T) string {
+	t.Helper()
+	base := ""
+	if runtime.GOOS != "windows" {
+		base = "/tmp"
+	}
+	dir, err := os.MkdirTemp(base, "svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }
 
 // prewarmExampleBuild compiles the example with the same working dir,

@@ -571,12 +571,20 @@ What a client sees at the edges:
   refuses outright gets a 403 and holds no stream, instead of holding
   one open silently for its whole life.
 - `ServeStdio(ctx, in, out)` reads line-delimited JSON-RPC from `in` and writes
-  responses to `out`, blocking until EOF or context cancellation. The
+  responses to `out`, blocking until EOF. A cancelled context is seen
+  between lines, so to stop a session waiting on silent input, close
+  `in` as well. The
   envelope is decoded with the same strict top-level-key rule as the HTTP
   transports: a line repeating a key or spelling one in two cases is
   refused as invalid JSON, never resolved last-key-wins. The recover
   guard around handler code matters most here: stdio has no net/http
-  per-request net, so a panic would otherwise crash the process.
+  per-request net, so a panic would otherwise crash the process. A
+  notification (no `id`, a `notifications/*` method, such as the
+  `notifications/initialized` a client sends after the handshake) gets
+  no reply line: JSON-RPC forbids one, and clients read an id-less line
+  as a protocol fault. A line may be up to 1 MiB, the same limit as an
+  HTTP body; a longer one gets an error reply and ends the session,
+  because the reader cannot resume past it.
 
 The HTTP transports refuse a browser `Origin` that is not same-origin with the
 request; an absent Origin passes, because curl, stdio bridges, and native MCP

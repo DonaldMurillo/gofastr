@@ -104,6 +104,7 @@ func TestClassifyLongestPrefixWins(t *testing.T) {
 		{ModulePath + "/framework/experimental/apiversions", Experimental},
 		{ModulePath + "/kiln/journal", Experimental},
 		{ModulePath + "/battery/desktop", Experimental},
+		{ModulePath + "/battery/service", Experimental},
 		{ModulePath + "/battery/auth", Provisional},
 		{ModulePath + "/examples/site", Excluded},
 		{ModulePath + "/sqlite/stdlib", Provisional},

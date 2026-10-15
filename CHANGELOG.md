@@ -8,6 +8,46 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`battery/service`: the app binary as a per-user OS service
+  (experimental).** `service.New(Config{ID, Name, Port})` and
+  `svc.Run(ctx, os.Args[1:], build)` give a binary the verbs
+  `service install|uninstall|start|stop|restart|status|logs|open|mcp|run|rotate-secret`.
+  `install` copies the binary to a managed path and registers it as a
+  launchd agent (macOS), a `systemctl --user` unit (Linux) or a
+  logon-triggered Task Scheduler task (Windows), then starts it on the
+  fixed loopback port; a held port fails the start instead of moving.
+  Every request passes a Host pin, a cross-site refusal and a signed
+  session cookie, which `open` mints by handing the browser a 0600
+  local page that POSTs a 60-second single-use token. CLI clients reach
+  the daemon over a Unix socket in the 0700 state directory, checked
+  against the daemon's OS user by peer credentials. A signed session is
+  the local user, so owner-scoped entities work without `battery/auth`;
+  with auth linked, auth keeps identity. Agents reach the App's MCP tools
+  through `service mcp`, a stdio server tunnelled over that socket and
+  run as the same local user; `Runtime.MCPCommand()` gives the argv with
+  `--state-dir`, so it reaches the right daemon from any directory. The
+  dev run keeps its own state directory and port (one per isolated
+  worktree), and `gofastr dev` runs it gated on the address it passes. `stop`, reinstall and
+  `uninstall` wait for the old process to exit, and an instance lock
+  keeps one process per state directory. Windows has no crash restart,
+  and its backend is unit-tested but has not run on a real Windows
+  machine. Guide: `gofastr docs service`; example:
+  `examples/gofastr-runs`, which lists the machine's running gofastr
+  apps and serves the list to agents.
+- **Running Apps record themselves in a local run registry.** `App.Start`
+  writes a 0600 JSON record (name, pid, URL, MCP path or command,
+  service id, dev flag) into `<UserConfigDir>/gofastr/runs` once the
+  port is bound and removes it when the server stops.
+  `framework/localrun.List` returns the live runs and deletes the
+  records of dead pids. `GOFASTR_RUNS=off` opts a process out,
+  `GOFASTR_RUNS_DIR` moves the directory, and test binaries, and the
+  apps they start, skip it unless the directory is set. Guide:
+  `gofastr docs local-runs`.
+- **`App.WrapServer` wraps everything the listener serves.** Router
+  middleware (`Use`) never sees the interactive setup wizard or the
+  worker and agent roles' reduced muxes; a `WrapServer` wrapper does.
+  The first one registered is outermost, and a call after `Start` has
+  bound the server, or after `Shutdown`, panics.
 - **`ui.BoxConfig.Bounded`** caps a Box at the `--ui-box-bounded-size` knob
   (20rem) and scrolls what overflows: a window for a long list in a panel,
   or for previewing a viewport-height component such as `ui.Workbench`.
@@ -211,6 +251,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   features that need the Go server.
 
 ### Fixed
+- **`mcp.ServeStdio` no longer answers notifications.** The
+  `notifications/initialized` every client sends after the handshake got
+  a method-not-found error line with no id, which JSON-RPC forbids and
+  stdio clients read as a protocol fault. An id-less `notifications/*`
+  message now gets no reply. A request line over 64 KiB also ended the
+  session with no reply; lines up to 1 MiB, the HTTP body limit, are
+  read now, and a longer one gets an error reply before the session
+  ends.
 - **A widget link inside a disclosure leaves it open.** The disclosure
   closed on any link click, so an `<a data-cui-open>` in a phone menu
   shut the menu as its widget opened, and closing the widget dropped

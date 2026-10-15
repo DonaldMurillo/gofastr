@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/localuser"
+
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 )
@@ -69,7 +71,7 @@ func TestAnonDecisionIsNotOverridden(t *testing.T) {
 	t.Cleanup(func() { owner.SetExtractor(prev) })
 
 	b, _ := newTestBattery(t)
-	b.user = &localUser{id: "0123456789abcdef0123456789abcdef"}
+	b.user = localuser.ForID("0123456789abcdef0123456789abcdef")
 	b.installOwnerExtractor() // the seam Init runs; it already sees the foreign extractor
 	b.armGate()
 
@@ -104,7 +106,7 @@ func TestLocalIdentityStillFillsInAlone(t *testing.T) {
 	t.Cleanup(func() { owner.SetExtractor(prev) })
 
 	b, _ := newTestBattery(t)
-	b.user = &localUser{id: "0123456789abcdef0123456789abcdef"}
+	b.user = localuser.ForID("0123456789abcdef0123456789abcdef")
 	b.installOwnerExtractor()
 	b.armGate()
 
@@ -128,7 +130,7 @@ func TestLocalIdentityStillFillsInAlone(t *testing.T) {
 // browser may become the local admin.
 func TestUnarmedGateInstallsNoIdentity(t *testing.T) {
 	b, _ := newTestBattery(t)
-	b.user = &localUser{id: "0123456789abcdef0123456789abcdef"}
+	b.user = localuser.ForID("0123456789abcdef0123456789abcdef")
 
 	sawUser := false
 	h := b.localUserMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
