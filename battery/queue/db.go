@@ -865,8 +865,8 @@ func (q *DBQueue) Replay(ctx context.Context, jobID string) error {
 }
 
 // ListJobs implements [Browsable]. Returns up to limit jobs in the
-// supplied status, newest-first, after skipping offset of them. Empty
-// status returns all jobs regardless of state. limit <= 0 defaults to
+// supplied status, newest-first, after skipping offset of them. An empty
+// or "all" status returns every job regardless of state. limit <= 0 defaults to
 // 100; a negative offset reads as zero.
 func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int) ([]Job, error) {
 	if limit <= 0 {
@@ -876,7 +876,7 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 	base := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts,
 		max_attempts, created_at, scheduled_at, status, updated_at, last_error FROM %s`, q.qt())
 	args := []any{}
-	if status != "" {
+	if status != "" && status != "all" {
 		base += " WHERE status = $1"
 		args = append(args, status)
 	}

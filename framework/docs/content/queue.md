@@ -273,13 +273,13 @@ skipping the newest `offset` of them, so `ListJobs(ctx, "failed", 50,
 pager its total.
 
 `MemoryQueue` copies job payload bytes when enqueueing, tracking manual
-claims, and returning dead-letter listings; editing a caller payload
-cannot change a pending retry.
+claims, returning dead-letter listings, and handing a job to its handler;
+editing a caller or handler payload cannot change a pending retry.
 
 MemoryQueue and RedisQueue can only enumerate their dead-letter store,
 so only `"failed"`, `"all"` or `""` returns results. DBQueue can enumerate any
 status: `"pending"`, `"claimed"` (running), `"failed"`, and `"done"`
-with `WithDoneRetention`.
+with `WithDoneRetention`, and `"all"` or `""` lists every status.
 
 A job DBQueue lists carries `Status`, `UpdatedAt` (when its state last
 changed: enqueue, claim, retry, failure, replay or completion) and

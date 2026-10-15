@@ -374,6 +374,9 @@ func (q *MemoryQueue) processJob(job Job) {
 func (q *MemoryQueue) awaitHandler(ctx context.Context, handler Handler, job Job) error {
 	type outcome struct{ err error }
 	done := make(chan outcome, 1)
+	// The handler gets its own payload bytes: an edit it makes, or a late
+	// write after the budget expires, must not reach the retry's copy.
+	job.Payload = slices.Clone(job.Payload)
 	go func() { done <- outcome{safeHandle(ctx, handler, job)} }()
 	timer := time.NewTimer(q.handlerTimeout)
 	defer timer.Stop()
@@ -668,7 +671,7 @@ func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
 	q.deadMu.Lock()
 	for i, d := range q.dead {
 		if d.ID == jobID {
-			q.dead = append(q.dead[:i], q.dead[i+1:]...)
+			q.dead = slices.Delete(q.dead, i, i+1)
 			break
 		}
 	}
