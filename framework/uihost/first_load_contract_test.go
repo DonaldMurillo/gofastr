@@ -70,3 +70,35 @@ func TestModulePreloadsAreLowPriority(t *testing.T) {
 		t.Errorf("%d of %d module preloads ask for low priority:\n%s", got, n, links)
 	}
 }
+
+// The host's deferred scripts close <head>, so they run before any
+// deferred script in the page's own markup: page code that reaches for
+// window.__gofastr finds it, as it did when runtime.js ran in step.
+func TestHostScriptsCloseHead(t *testing.T) {
+	ds := newTestUIHost()
+	if err := ds.RegisterExternalScript("/plug.js"); err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	page := w.Body.String()
+	headEnd := strings.Index(page, "</head>")
+	bodyStart := strings.Index(page, "<body")
+	if headEnd < 0 || bodyStart < 0 {
+		t.Fatal("premise: no </head> or <body> in the page")
+	}
+	for _, src := range []string{"/__gofastr/runtime.js", "/plug.js"} {
+		i := strings.Index(page, `src="`+src)
+		if i < 0 {
+			t.Fatalf("premise: no %s script", src)
+		}
+		if i > headEnd {
+			t.Errorf("%s is emitted after </head>; page scripts would run before it", src)
+		}
+	}
+	for _, tag := range firstLoadScriptRe.FindAllString(page[bodyStart:], -1) {
+		if strings.Contains(tag, " src=") {
+			t.Errorf("a script tag is left in <body>: %s", tag)
+		}
+	}
+}

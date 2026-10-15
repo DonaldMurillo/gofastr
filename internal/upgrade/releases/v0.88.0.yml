@@ -19,10 +19,10 @@ notes:
       fields:
         - field: gofastr/framework/ui.ContentRowConfig.BelowHeader
     guidance: "Delete BelowHeader: true from the ContentRow and set StickyHeader: true on the page-tall ui.Stack that holds the site header (ui.StackConfig{Screen: true, StickyHeader: true}). The stack pins its <header> child, so drop position: sticky, inset-block-start and z-index from the header's own style sheet. A sheet that offset a sticky rail or a scroll margin by var(--size-header-height) reads var(--ui-sticky-top, 0px) instead."
-  - change: "live pages read the route graph from /__gofastr/manifest.js (window.__gofastr_routes) instead of an inline #gofastr-routes block, and route entries no longer carry title or description; every script the host emits before </body> carries defer"
+  - change: "live pages read the route graph from /__gofastr/manifest.js (window.__gofastr_routes) instead of an inline #gofastr-routes block, and route entries no longer carry title or description; every script the host emits besides the color-scheme bootstrap carries defer and closes <head> instead of <body>"
     breaking: true
     hits: review
-    guidance: "Code that scraped the inline #gofastr-routes block on a live page reads window.__gofastr_routes once the deferred scripts have run (DOMContentLoaded or later); a route's title comes from the page it navigates to. Static exports keep the inline block, so a hit on an export surface may still be right. A script on the WithExtraScripts / RegisterExternalScript rail now runs after the document is parsed, still after runtime.js; one that relied on running mid-parse moves its work to that point."
+    guidance: "Code that scraped the inline #gofastr-routes block on a live page reads window.__gofastr_routes once the deferred scripts have run (DOMContentLoaded or later); a route's title comes from the page it navigates to. Static exports keep the inline block, so a hit on an export surface may still be right. A script on the WithExtraScripts / RegisterExternalScript rail now runs after the document is parsed, still after runtime.js; one that relied on running mid-parse moves its work to that point. A test or scraper that looked for the host's script tags before </body> finds them before </head>."
     find:
       strings:
         match: 'gofastr-routes'

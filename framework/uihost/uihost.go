@@ -110,7 +110,7 @@ type UIHost struct {
 	actionComps         map[string]component.Component       // componentID → the component the registry was compiled FROM (embed_actions.go walks it)
 	actionScreens       map[string]*app.Screen               // componentID → the screen whose Policy chain gates its actions (AutoCompileActions)
 	customCSS           string                               // extra CSS to inject (e.g. demo.css)
-	extraScripts        []externalScript                     // extra <script src="…"> rail before </body>; every-page + document-lifetime entries (register_script.go)
+	extraScripts        []externalScript                     // extra <script defer src="…"> rail closing <head>; every-page + document-lifetime entries (register_script.go)
 	scriptMu            sync.Mutex                           // guards post-construction extraScripts appends + the servingStarted latch (see register_script.go)
 	servingStarted      atomic.Bool                          // latched on the first full-shell render; RegisterExternalScript refuses after it
 	staticDir           string                               // directory to serve static files from
@@ -1245,10 +1245,9 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 	}
 	ds.routeMarshalCount.Add(1)
 	rgJSON, _ := json.Marshal(infos)
-	// JS body only, no <script> wrapper. The body is served as an
-	// external file via /__gofastr/routes.js (CSP-safe under
-	// default-src 'self'); injectChrome references it with
-	// <script src="…">. SSG writes the same body to disk.
+	// JS body only, no <script> wrapper. Live pages get it inside
+	// /__gofastr/manifest.js (CSP-safe under default-src 'self');
+	// exports and the PWA offline shell inline it as #gofastr-routes.
 	return fmt.Sprintf("window.__gofastr_routes = %s;", string(rgJSON))
 }
 
@@ -2068,8 +2067,8 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	}
 	headClose := borrowBuilder()
 	defer returnBuilder(headClose)
-	bodyClose := borrowBuilder()
-	defer returnBuilder(bodyClose)
+	scripts := borrowBuilder()
+	defer returnBuilder(scripts)
 
 	if sessionID != "" && !ds.noLiveChannel {
 		// The SSE connection URL. presenceTopic (from the page's ?presence=
@@ -2203,7 +2202,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		headClose.WriteByte('\n')
 	}
 
-	// <body>
+	// Deferred scripts, emitted at the end of <head> below.
 	runtimeSrc := "/__gofastr/runtime.js"
 	if bundle {
 		// manifest.js assigns the catalog/module/action globals and MUST
@@ -2212,12 +2211,12 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		// defer, so none of them blocks the parser or first paint, and
 		// they all run after the document is parsed, still in order.
 		_, mHash := ds.manifestJS()
-		bodyClose.WriteString(`<script defer src="/__gofastr/manifest.js?v=` + mHash + `"></script>`)
-		bodyClose.WriteByte('\n')
+		scripts.WriteString(`<script defer src="/__gofastr/manifest.js?v=` + mHash + `"></script>`)
+		scripts.WriteByte('\n')
 		runtimeSrc += "?v=" + widget.RuntimeHash()
 	}
-	bodyClose.WriteString(`<script defer src="` + runtimeSrc + `"></script>`)
-	bodyClose.WriteByte('\n')
+	scripts.WriteString(`<script defer src="` + runtimeSrc + `"></script>`)
+	scripts.WriteByte('\n')
 	if bundle {
 		// Per-screen action scripts: only the compiled registries whose
 		// component ids actually appear on THIS page, each content-
@@ -2226,13 +2225,13 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		// Navigation to a screen whose actions aren't loaded yet is
 		// covered by the actionloader module reading __gofastr_actions.
 		for _, tag := range ds.actionScriptTags(page) {
-			bodyClose.WriteString(tag)
-			bodyClose.WriteByte('\n')
+			scripts.WriteString(tag)
+			scripts.WriteByte('\n')
 		}
 	} else if ds.HasActions() {
 		// Export mode keeps the self-contained concat file.
-		bodyClose.WriteString(`<script defer src="/__gofastr/actions.js"></script>`)
-		bodyClose.WriteByte('\n')
+		scripts.WriteString(`<script defer src="/__gofastr/actions.js"></script>`)
+		scripts.WriteByte('\n')
 	}
 	// Document-lifetime scopes are asked about the ROUTE, not the
 	// concrete path: the same identity the manifest uses. A predicate
@@ -2255,7 +2254,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 			docAttr = " data-cui-doc"
 		}
 		//gofastr:allow(GOFASTR1412) src passed validExternalScriptSrc at registration: a same-origin path, no scheme or host.
-		fmt.Fprintf(bodyClose, `<script defer src="%s"%s></script>`+"\n", stdhtml.EscapeString(s.src), docAttr)
+		fmt.Fprintf(scripts, `<script defer src="%s"%s></script>`+"\n", stdhtml.EscapeString(s.src), docAttr)
 	}
 
 	// Color-scheme bootstrap runs SYNCHRONOUSLY at the top of <head>
@@ -2270,12 +2269,13 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	page = replaceChromeMarker(page,
 		"<head>",
 		`<head><script src="`+colorSrc+`"></script>`, "color-scheme bootstrap")
-	if headClose.Len() > 0 {
-		page = replaceChromeMarker(page, "</head>", headClose.String()+"</head>", "head chrome (SEO/CSS)")
-	}
-	if bodyClose.Len() > 0 {
-		page = replaceChromeMarker(page, "</body>", bodyClose.String()+"</body>", "body-close scripts")
-	}
+	// The deferred scripts close <head>, after the stylesheets: defer
+	// keeps them off the first paint, the preload scanner finds them
+	// with the first bytes, and they run before any deferred script
+	// in the page's own markup, which may reach for window.__gofastr
+	// the way it could when runtime.js ran synchronously.
+	headClose.WriteString(scripts.String())
+	page = replaceChromeMarker(page, "</head>", headClose.String()+"</head>", "head chrome (SEO/CSS/scripts)")
 	return page
 }
 
@@ -4572,7 +4572,7 @@ func signalsJSONScript(seed map[string]any) string {
 // injectSignalSeed resolves the signal seed for the rendered page (names
 // referenced in the HTML plus all app-global slices), and splices the
 // JSON block into <head> just before </head> so it is in place before
-// runtime.js (end of <body>) reads it. ctx must carry the request value
+// runtime.js (deferred, after parsing) reads it. ctx must carry the request value
 // bag (store.WithValues), so producer-seeded per-request values win over
 // declared defaults. No-op when there is nothing to seed.
 func injectSignalSeed(ctx context.Context, page string) string {

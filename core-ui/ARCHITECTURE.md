@@ -802,12 +802,17 @@ See `framework/docs/content/signal-store.md` for the full guide.
 
 A live page paints from its document and stylesheets alone. The one
 script that blocks is the color-scheme bootstrap at the top of `<head>`
-(dark tokens must apply before CSS parses). Every script the host emits
-before `</body>` (`manifest.js`, `runtime.js`, the per-screen action
-scripts, the extra-script rail) carries `defer`: none blocks the parser
-or first paint, and they still execute in document order once parsing
-ends, so `manifest.js` globals are set when the kernel boots and rail
-scripts see `runtime.js`. Runtime-module preload hints carry
+(dark tokens must apply before CSS parses). Every other script the host
+emits (`manifest.js`, `runtime.js`, the per-screen action scripts, the
+extra-script rail) carries `defer` and closes `<head>`, after the
+stylesheets: none blocks the parser or first paint, the preload scanner
+finds them in the first bytes, and they execute in document order once
+parsing ends, so `manifest.js` globals are set when the kernel boots,
+rail scripts see `runtime.js`, and a deferred script in the page's own
+markup runs after all of them. Because `runtime.js` is deferred, its
+initial pass (component CSS, demand modules, `data-action-mount`) waits
+for `DOMContentLoaded`, after the action scripts that register the
+mount handlers. Runtime-module preload hints carry
 `fetchpriority="low"` so they warm the cache without competing with
 the document and its stylesheets. The route graph rides in
 `manifest.js` (`window.__gofastr_routes`, cached once per deploy) rather
@@ -820,7 +825,7 @@ round trip of compressed HTML.
 ### Extra scripts (the body-close script rail)
 
 `uihost.WithExtraScripts` adds external `<script defer src="…">` tags
-just before `</body>`, after `runtime.js` and the per-screen action
+at the end of `<head>`, after `runtime.js` and the per-screen action
 scripts.
 They are same-origin resources under the default CSP (`default-src
 'self'`), so every URL on the rail must be a path the app itself serves;
@@ -1086,7 +1091,7 @@ the rest of this document:
 
 - **Chrome injection.** `WithPWA` adds `<link rel="manifest">` (+ a
   `theme-color` meta when configured) to `<head>` and an external
-  `<script src="/__gofastr/pwa/register.js" defer>` before `</body>`:
+  `<script defer src="/__gofastr/pwa/register.js">` on the script rail:
   no inline JS, same CSP posture as `runtime.js`. Routes mounted:
   `/manifest.webmanifest`, `/service-worker.js` (root-scoped),
   `/__gofastr/pwa/register.js`, `/__gofastr/pwa/offline`.

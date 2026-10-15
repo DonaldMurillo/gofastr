@@ -21,8 +21,8 @@ type externalScript struct {
 }
 
 // RegisterExternalScript adds an external same-origin <script src> URL to
-// every full-page render, emitted just before </body> after runtime.js and
-// the per-screen action scripts. It exists for plugins and batteries that
+// every full-page render, emitted deferred at the end of <head> after
+// runtime.js and the per-screen action scripts. It exists for plugins and batteries that
 // wire themselves in Init, which runs after Mount — when the
 // construction-time options (WithExtraScripts) are already frozen.
 //

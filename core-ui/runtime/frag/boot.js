@@ -753,7 +753,12 @@
     _injectSignalAria();
     _runMountActions(document);
   };
-  if (document.readyState === 'loading') {
+  // A deferred runtime.js runs at readyState 'interactive' but before
+  // the deferred action scripts after it, so it waits for
+  // DOMContentLoaded too, or mounts fire at handlers not registered yet.
+  // Nothing injects runtime.js after parsing, the one spot where a
+  // deferred tag would miss that event.
+  if (document.readyState === 'loading' || document.currentScript?.defer) {
     document.addEventListener('DOMContentLoaded', _initialPass);
   } else {
     _initialPass();

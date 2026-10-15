@@ -231,8 +231,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ### Changed
 - **First paint no longer waits on the runtime.** `manifest.js`,
   `runtime.js`, the per-screen action scripts and the extra-script
-  rail are emitted with `defer` (still in document order); the
-  color-scheme bootstrap is the only blocking script. Runtime-module
+  rail are emitted with `defer` at the end of `<head>` instead of
+  `<body>` (still in document order, and still ahead of any deferred
+  script in the page's own markup); the color-scheme bootstrap is the
+  only blocking script. The runtime's initial pass waits for
+  `DOMContentLoaded`, so `data-action-mount` handlers are registered
+  before mounts fire. Runtime-module
   preloads carry `fetchpriority="low"`. Live pages read the route graph
   from `manifest.js` instead of an inline `#gofastr-routes` block, and
   the graph drops route titles and descriptions, which nothing read
