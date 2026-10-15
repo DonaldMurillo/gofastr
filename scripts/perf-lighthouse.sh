@@ -25,13 +25,17 @@ RUNS=3
 OUT="${TMPDIR:-/tmp}/gofastr-lighthouse"
 while [ $# -gt 0 ]; do
 	case "$1" in
-	--runs) RUNS="$2"; shift 2 ;;
-	--out) OUT="$2"; shift 2 ;;
+	--runs | --out)
+		[ $# -ge 2 ] || { echo "$1 needs a value" >&2; exit 2; }
+		if [ "$1" = --runs ]; then RUNS="$2"; else OUT="$2"; fi
+		shift 2
+		;;
 	--) shift; break ;;
 	-*) echo "unknown flag $1" >&2; exit 2 ;;
 	*) break ;;
 	esac
 done
+case "$RUNS" in '' | *[!0-9]* | 0*) echo "--runs wants a positive integer, got '$RUNS'" >&2; exit 2 ;; esac
 [ $# -gt 0 ] || { sed -n 2,22p "$0" >&2; exit 2; }
 mkdir -p "$OUT"
 LH="lighthouse@12.8.2"
@@ -48,6 +52,8 @@ for target in "$@"; do
 	url="${target#*=}"
 	for profile in mobile slow; do
 		for i in $(seq 1 "$RUNS"); do
+			# A failed run must not leave an earlier report in its place.
+			rm -f "$OUT/$name.$profile.$i.json"
 			# shellcheck disable=SC2046 # profile flags are word-split on purpose
 			npx -y "$LH" "$url" $(profile_flags "$profile") --quiet \
 				--chrome-flags="--headless=new" --only-categories=performance \
@@ -57,9 +63,9 @@ for target in "$@"; do
 	done
 done
 
-node - "$OUT" "$@" <<'EOF'
+node - "$OUT" "$RUNS" "$@" <<'EOF'
 const fs = require('fs'), path = require('path');
-const [dir, ...targets] = process.argv.slice(2);
+const [dir, nruns, ...targets] = process.argv.slice(2);
 const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
 const kib = (b) => Math.round(b / 1024);
 const head = ['page', 'profile', 'score', 'FCP s', 'LCP s', 'TBT ms', 'CLS', 'KiB', 'JS', 'CSS', 'HTML', 'reqs', 'bootup ms'];
@@ -67,9 +73,11 @@ const rows = [head];
 for (const t of targets) {
   const name = t.split('=')[0];
   for (const profile of ['mobile', 'slow']) {
-    const runs = fs.readdirSync(dir)
-      .filter((f) => f.startsWith(`${name}.${profile}.`) && f.endsWith('.json'))
-      .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f))))
+    // This invocation's runs only: a larger --runs into the same --out
+    // earlier leaves higher-numbered reports behind.
+    const runs = Array.from({ length: Number(nruns) }, (_, i) => path.join(dir, `${name}.${profile}.${i + 1}.json`))
+      .filter((f) => fs.existsSync(f))
+      .map((f) => JSON.parse(fs.readFileSync(f)))
       .filter((r) => r.categories && r.categories.performance.score !== null);
     if (!runs.length) { rows.push([name, profile, 'failed']); continue; }
     const m = (fn) => median(runs.map(fn));
