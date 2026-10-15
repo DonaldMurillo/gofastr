@@ -37,7 +37,12 @@
       const href = link.getAttribute('href');
       if (!href) continue; // server-managed (MatchPath, dynamic), hands off
       if (link.hasAttribute('data-cui-activelink-skip')) continue;
-      let active = href === path;
+      const pathOnly = (path || '').split('?')[0].split('#')[0];
+      // A query-less href names a screen, and the URL's query is that
+      // screen's in-page state (sort, page, filter), so /ask stays
+      // current on /ask?page=2, as the server marks it. An href with
+      // its own query (a filter tab) can only match the exact URL.
+      let active = href === path || href === pathOnly;
       if (!active && link.hasAttribute('data-cui-match-prefix')) {
         // The attribute's VALUE is the prefix when non-empty — the
         // sidebar emits its MatchPath there, and the owned section can
@@ -46,7 +51,6 @@
         // the prefix, the original opt-in spelling.
         const attrPrefix = (link.getAttribute('data-cui-match-prefix') || '').trim();
         const hrefPath = (attrPrefix !== '' ? attrPrefix : href).split('?')[0].split('#')[0];
-        const pathOnly = (path || '').split('?')[0].split('#')[0];
         // Match on SEGMENT boundaries, and accept the canonical
         // no-trailing-slash href (/docs) as well as the trailing-slash
         // form (/docs/), apps register /docs, so requiring the slash

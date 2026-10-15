@@ -304,6 +304,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   features that need the Go server.
 
 ### Fixed
+- **Active links survive a query change.** After a client navigation
+  from `/ask` to `/ask?page=2`, the active-link module cleared the mark
+  on a `data-cui-activelink` link to `/ask`, though the server marks it
+  current there. A link whose href has no query now matches the URL's
+  path; an href with its own query still needs the exact URL.
 - **`mcp.ServeStdio` no longer answers notifications.** The
   `notifications/initialized` every client sends after the handshake got
   a method-not-found error line with no id, which JSON-RPC forbids and
