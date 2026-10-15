@@ -276,9 +276,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   page's component bundle drops from 5.7 KB to 3.1 KB gzipped, the
   examples/site homepage's from 12.4 KB to 10.0 KB, and the
   examples/meridian homepage's from 7.8 KB to 5.4 KB.
-- The confirm dialog opens once its sheets have loaded (bounded at 3
-  seconds), so a click that beats the prefetch no longer shows the
-  browser's default dialog for a round trip.
+- The confirm dialog opens once the sheets it names have loaded
+  (bounded at 3 seconds), so a click that beats the prefetch no longer
+  shows the browser's default dialog for a round trip. It waits for
+  those sheets only, and an ask made while one is waiting or open
+  answers no, so a double click opens one dialog and sends one request.
 - `ui.Form`'s hidden CSRF field and `auth.CSRFToken` /
   `auth.CSRFTokenFromCtx` now return masked tokens. Code that compared
   their result with the CSRF cookie should compare
