@@ -451,7 +451,7 @@ func (i *index) Query(ctx context.Context, q Query) ([]Hit, error) {
 
 	candidates := vecHits
 	if q.Hybrid && i.keyword != nil {
-		kwRaw, err := i.keyword.Search(ctx, boundedKeywordText(q.Text), width)
+		kwRaw, err := i.keywordSearch(ctx, boundedKeywordText(q.Text), width)
 		if err != nil {
 			return nil, fmt.Errorf("semantic: keyword search: %w", err)
 		}
@@ -581,4 +581,16 @@ func (i *index) Close() error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// keywordSearch calls the host keyword backend on the query path; a panic
+// becomes an attributed error, as it does on the Add and Remove paths.
+func (i *index) keywordSearch(ctx context.Context, text string, top int) (out []KeywordHit, err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			out = nil
+			err = fmt.Errorf("keyword backend panicked: %v", v)
+		}
+	}()
+	return i.keyword.Search(ctx, text, top)
 }
