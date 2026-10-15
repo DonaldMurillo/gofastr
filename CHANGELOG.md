@@ -249,23 +249,42 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   button.
 - The static export's preview banner no longer lists search among the
   features that need the Go server.
+- **BREAKING: `core/config` enforces `validate:` tags.** `min`, `max`
+  and `oneof` run on every tagged field after `Load`, including one left at
+  its default; `time.Duration` bounds read as durations
+  (`min=1s,max=5m`). A rule `Load` cannot apply (an unknown name such as
+  `url`, `min` on a bool, `oneof` on an int) fails `Load` instead of being
+  skipped. An
+  empty value (`KEY=`) still leaves the field as the host set it.
+- `handler.Bind` applies header, then query, then path, then JSON values,
+  as documented, and a present later value wins. A JSON property set to a
+  zero value (`"count": 0`) now beats a query or header value; before, the
+  query or header value overwrote it. An omitted JSON property keeps the
+  value already bound.
+- `semantic.Query.MMRLambda` now raises diversity as it grows, as
+  documented (0 is pure relevance), and a NaN, infinite or out-of-range
+  value is an error.
+- `core/yaml` refuses an unescaped `'` inside a single-quoted scalar and
+  control bytes in mapping keys, and splits a mapping only on an unquoted colon
+  followed by a space, so a quoted key holding a colon (`"a:b": 1`) parses.
+- `core/dotenv` keys must match `[A-Za-z_][A-Za-z0-9_]*`, a value holding
+  a NUL byte is refused, and the invalid-key error no longer echoes the key.
 
 ### Fixed
-- **Regression audit: 100 distinct defects in GoFastr**, each covered by a
-  regression observed failing before its fix. Covers retry arithmetic, SQL
+- **Regression audit: 100 defects fixed**, each pinned by a regression
+  test that failed before its fix. They cover retry arithmetic, SQL
   transactions and identifiers, configuration, YAML and dotenv parsing,
   validation and generated schemas, localization, pagination, module framing,
-  notification routing, queue/webhook storage, cron shutdown, desktop updates,
-  semantic retrieval and crash recovery, and two test-fixture defects.
-  The pull request records each finding and its pinning regression.
-  Explicit empty numeric configuration now errors; documented validation tags
-  are enforced. `handler.Bind` applies header → query → path → JSON priority.
-  `render.RegisterFunc` refuses replacement as documented, and MMR lambda now
-  increases diversity as documented.
-- **Semantic snapshot configuration honors zero.** `SnapshotEvery: 0` now
-  disables automatic snapshots as documented, instead of silently becoming
-  1000. Set `SnapshotEvery: 1000` explicitly to keep that interval. Recovery
-  checkpoints, explicit `Snapshot()` calls and `Close()` still persist state.
+  notification routing, queue and webhook storage, cron shutdown, desktop
+  updates, and semantic retrieval and crash recovery. Desktop updates now
+  extract and copy files with group and other write bits cleared whatever
+  the umask, and `MoveTree` refuses a destination that already exists.
+  `queue` Redis `ListJobs` accepts `"all"` like the other backends.
+  `query.Insert`, `Update.Returning` and `Select` copy the slices they are
+  handed, so a caller reusing its slice no longer rewrites a built query.
+  A semantic `Add` canceled mid-replace leaves the old document in place,
+  and the watcher skips a file it cannot chunk and keeps scanning instead
+  of stopping the pass.
 - **`mcp.ServeStdio` no longer answers notifications.** The
   `notifications/initialized` every client sends after the handshake got
   a method-not-found error line with no id, which JSON-RPC forbids and
