@@ -196,6 +196,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   features that need the Go server.
 
 ### Fixed
+- **A widget link inside a disclosure leaves it open.** The disclosure
+  closed on any link click, so an `<a data-cui-open>` in a phone menu
+  shut the menu as its widget opened, and closing the widget dropped
+  focus on the page body. Such a link opens a widget over the page, as
+  the router already treats it, so the menu stays and focus returns to
+  the link.
 - **`gofastr export --base` prefixes form actions.** A root-absolute
   `action` kept the apex path, so a GET form on a project-page export
   submitted outside the site. It now carries the base like `href` and
