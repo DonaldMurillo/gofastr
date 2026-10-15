@@ -163,12 +163,6 @@ func comparePreID(a, b string) int {
 	}
 }
 
-// numericID parses an identifier already validated as numeric.
-func numericID(s string) (uint64, bool) {
-	n, err := strconv.ParseUint(s, 10, 64)
-	return n, err == nil
-}
-
 // IsNewer reports whether candidate sorts above running. An empty
 // running version is never updated: the caller treats it as unbundled.
 func IsNewer(candidate, running string) (bool, error) {

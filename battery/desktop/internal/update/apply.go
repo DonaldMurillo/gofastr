@@ -74,14 +74,16 @@ func MoveTree(src, dst string) error {
 	return os.RemoveAll(src)
 }
 
-// copyTree recursively copies src to dst preserving file modes.
+// copyTree recursively copies src to dst preserving file modes. Every
+// directory and file is created exclusively: a dst that appeared after
+// MoveTree's absence check stops the copy instead of taking a merge.
 func copyTree(src, dst string) error {
 	info, err := os.Lstat(src)
 	if err != nil {
 		return err
 	}
 	if info.IsDir() {
-		if err := os.MkdirAll(dst, info.Mode().Perm()); err != nil {
+		if err := os.Mkdir(dst, info.Mode().Perm()); err != nil {
 			return err
 		}
 		entries, err := os.ReadDir(src)
@@ -106,7 +108,7 @@ func copyTree(src, dst string) error {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode().Perm())
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
 	if err != nil {
 		return err
 	}

@@ -150,14 +150,15 @@ func extractEntry(f *zip.File, dest, name string) error {
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		return fmt.Errorf("%w: extract failed", ErrBadArchive)
 	}
-	out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.FileInfo().Mode().Perm())
+	perm := filePerm(mode)
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
 	if err != nil {
 		return fmt.Errorf("%w: extract failed", ErrBadArchive)
 	}
 	// Cap the copy too: a lying zip header could stream more than
 	// UncompressedSize64.
 	n, err := io.CopyN(out, rc, maxEntrySize+1)
-	modeErr := out.Chmod(mode.Perm())
+	modeErr := out.Chmod(perm)
 	cerr := out.Close()
 	if err != nil && !errors.Is(err, io.EOF) {
 		return fmt.Errorf("%w: extract failed", ErrBadArchive)
@@ -176,4 +177,11 @@ func extractEntry(f *zip.File, dest, name string) error {
 // wider-than-recorded directory bits, and the staging root is 0700).
 func dirPerm(mode fs.FileMode) fs.FileMode {
 	return (mode.Perm() | 0o700) &^ 0o022 // group/other write never
+}
+
+// filePerm keeps a file's recorded mode minus group/other write: a zip
+// built on Windows records 0777, and a group-writable binary in the
+// installed bundle is one any local user can swap.
+func filePerm(mode fs.FileMode) fs.FileMode {
+	return mode.Perm() &^ 0o022
 }

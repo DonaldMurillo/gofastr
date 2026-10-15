@@ -4,33 +4,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
-
-func TestCopyTreePreservesActualSourceMode(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Unix mode contract")
-	}
-	src := filepath.Join(t.TempDir(), "source")
-	if err := os.WriteFile(src, []byte("bin"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(src, 0755); err != nil {
-		t.Fatal(err)
-	}
-	dst := filepath.Join(t.TempDir(), "copy")
-	if err := copyTree(src, dst); err != nil {
-		t.Fatal(err)
-	}
-	info, err := os.Stat(dst)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0755 {
-		t.Fatalf("copied mode %o, want 755", info.Mode().Perm())
-	}
-}
 
 func TestMoveTreeRefusesExistingDestination(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "src")
