@@ -19,6 +19,7 @@ import "time"
 ```go
 middleware.Recovery()
 middleware.RequestID()
+middleware.Compress()
 middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})
 middleware.Timeout(30 * time.Second)
 ```
@@ -28,8 +29,37 @@ middleware.Timeout(30 * time.Second)
 
 `Recovery` is outermost so a panic anywhere below it produces a clean
 `500`. `RequestID` runs next so every later log line carries the trace
-ID. `Timeout` is innermost: a `30s` deadline that cancels the request
-context if the handler hangs.
+ID. `Compress` gzips text responses for clients that send
+`Accept-Encoding: gzip`; it sits outside everything that writes the body,
+so it sees the final bytes. `Timeout` is innermost: a `30s` deadline that
+cancels the request context if the handler hangs.
+
+### Compression
+
+`Compress` encodes HTML, CSS, JavaScript, JSON, XML, SVG and plain text
+of 1 KB or more, and adds `Vary: Accept-Encoding` to every response it
+could have compressed. It leaves alone `HEAD` requests, `Range` requests,
+`text/event-stream`, bodies that already carry a `Content-Encoding`,
+`204`/`206`/`304` answers and hijacked connections. An `ETag` gains a
+`-gzip` suffix on the compressed variant, and a conditional request
+carrying that suffix still revalidates to `304`. Responses marked
+`immutable` (hashed static assets, `runtime.js`, `manifest.js`) are
+compressed once at the best level and the result is cached in memory
+by content hash; everything else compresses per request at the default
+level. The encoding is gzip only: the standard library has no Brotli.
+
+Set `AppConfig.DisableCompression` when a reverse proxy or CDN in front
+of the app compresses instead:
+
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+-->
+```go
+app := framework.NewApp(framework.WithConfig(framework.AppConfig{
+    DisableCompression: true,
+}))
+_ = app
+```
 
 Router middleware runs only for requests the router answers. A gate
 that must hold for every byte the listener serves, the interactive
@@ -385,6 +415,7 @@ in the gateway / docs pipeline.
 - `SecurityHeaders(SecurityHeadersConfig)`: defensive headers above.
 - `CORS(CORSConfig)`: cross-origin headers + preflight.
 - `CSRF(CSRFConfig)`: double-submit cookie pattern.
+- `Compress()`: gzip for text responses (see [Compression](#compression)).
 - `RateLimit(RateLimitConfig)`: token-bucket per key.
 - `Timeout(d)`: per-request deadline; cancels context on expiry.
 - `NewMetrics()` + `MetricsMiddleware` + `MetricsHandler`: RED metrics.

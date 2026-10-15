@@ -198,6 +198,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   **`static.Walk`** renders the same page set at runtime, with a `skip`
   func asked about each path before it renders. A page that fails to
   render reaches `fn` with its error, as in `fs.WalkDir`.
+- **Responses are gzipped by default.** `middleware.Compress()` joins
+  the default chain after `RequestID` and encodes text responses (HTML,
+  CSS, JavaScript, JSON, SVG) of 1 KB or more for clients that accept
+  gzip, with `Vary: Accept-Encoding` and a `-gzip` ETag suffix that
+  still revalidates to `304`. Immutable assets are compressed once at
+  the best level and cached by content hash. It skips `HEAD`, `Range`,
+  event streams and already-encoded bodies. `AppConfig.DisableCompression`
+  turns it off for apps behind a compressing proxy.
 
 ### Changed
 - **BREAKING: `ui.ContentRowConfig.BelowHeader` is removed.** Set
