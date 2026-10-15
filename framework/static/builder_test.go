@@ -87,7 +87,7 @@ func TestBuildWritesIndexHTMLPerRoute(t *testing.T) {
 		if strings.Contains(string(data), "gofastr-sse") {
 			t.Errorf("%s should not include SSE meta tag — SSG pages are session-less", rel)
 		}
-		if !strings.Contains(string(data), `<script src="/__gofastr/runtime.js">`) {
+		if !strings.Contains(string(data), `<script defer src="/__gofastr/runtime.js">`) {
 			t.Errorf("%s missing runtime.js script tag", rel)
 		}
 	}

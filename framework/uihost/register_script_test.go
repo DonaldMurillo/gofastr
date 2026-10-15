@@ -62,8 +62,8 @@ func TestRegisterExternalScriptDedupesInOrder(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
 	page := w.Body.String()
-	bTag := `<script src="/b.js"></script>`
-	aTag := `<script src="/a.js"></script>`
+	bTag := `<script defer src="/b.js"></script>`
+	aTag := `<script defer src="/a.js"></script>`
 	if n := strings.Count(page, bTag); n != 1 {
 		t.Errorf("duplicate /b.js emitted %d times, want exactly 1", n)
 	}
@@ -96,7 +96,7 @@ func TestExtraScriptEmittedFullPageOnly(t *testing.T) {
 	if err := ds.RegisterExternalScript("/plug.js?v=abc"); err != nil {
 		t.Fatalf("RegisterExternalScript: %v", err)
 	}
-	tag := `<script src="/plug.js?v=abc"></script>`
+	tag := `<script defer src="/plug.js?v=abc"></script>`
 
 	// Full shell render: exactly once, after runtime.js.
 	w := httptest.NewRecorder()
@@ -180,7 +180,7 @@ func TestDocumentScriptScopedEmission(t *testing.T) {
 	}
 
 	// In scope, pattern AND concrete path: tagged, exactly once.
-	tag := `<script src="/cap.js" data-cui-doc></script>`
+	tag := `<script defer src="/cap.js" data-cui-doc></script>`
 	for _, p := range []string{"/session/42", "/session/7"} {
 		if n := strings.Count(page(p), tag); n != 1 {
 			t.Errorf("%s emits the document script %d times, want 1:\n%s", p, n, truncate(page(p), 400))
@@ -300,7 +300,7 @@ func TestDocumentScriptScopeSeesRoutePattern(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/session/42", nil))
 	body := w.Body.String()
-	if !strings.Contains(body, `<script src="/pat.js" data-cui-doc></script>`) {
+	if !strings.Contains(body, `<script defer src="/pat.js" data-cui-doc></script>`) {
 		t.Errorf("pattern-scoped script must emit on the concrete page:\n%s", truncate(body, 400))
 	}
 	if strings.Contains(body, `src="/concrete.js"`) {

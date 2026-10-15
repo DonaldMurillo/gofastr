@@ -349,10 +349,11 @@ type ScreenSEO interface {
 }
 
 // routeInfoJSON is the JSON shape sent to the browser as __gofastr_routes.
+// Every visitor downloads it (in manifest.js on live pages, inline in
+// exports), so it carries only what the runtime reads: no titles or
+// descriptions (a navigation takes its title from the response).
 type routeInfoJSON struct {
-	Path        string `json:"path"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
+	Path string `json:"path"`
 	// Preload is the route's prefetch mode ("hover"/"visible"/"eager");
 	// absent means never. Any non-empty value in the manifest loads the
 	// prefetch runtime module.
@@ -1211,13 +1212,11 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 	infos := make([]routeInfoJSON, len(routes))
 	for i, r := range routes {
 		infos[i] = routeInfoJSON{
-			Path:        r.Path,
-			Title:       r.Title,
-			Description: r.Description,
-			Preload:     r.Preload,
-			Layouts:     r.Layouts,
-			Deferred:    r.Deferred,
-			Redirect:    r.RedirectTo,
+			Path:     r.Path,
+			Preload:  r.Preload,
+			Layouts:  r.Layouts,
+			Deferred: r.Deferred,
+			Redirect: r.RedirectTo,
 		}
 		// Document-lifetime scripts in scope for this route, sorted so
 		// the manifest bytes are deterministic. The scope sees the
@@ -1310,7 +1309,7 @@ func (ds *UIHost) actionScriptTags(page string) []string {
 	sort.Strings(ids)
 	tags := make([]string, len(ids))
 	for i, id := range ids {
-		tags[i] = `<script src="/__gofastr/widget/` + id + `.js?v=` + ds.actionHash[id] + `"></script>`
+		tags[i] = `<script defer src="/__gofastr/widget/` + id + `.js?v=` + ds.actionHash[id] + `"></script>`
 	}
 	return tags
 }
@@ -2132,15 +2131,17 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		headClose.WriteString(strings.Join(headParts, "\n"))
 		headClose.WriteByte('\n')
 	}
-	// Route graph + component catalog ship as inline JSON in
-	// <script type="application/json"> blocks. The browser treats
-	// these as inert data (NOT scripts) so they pass under strict
-	// CSP (default-src 'self'). runtime.js reads + parses them on
-	// boot. Saves two HTTP requests per page load vs separate
-	// /__gofastr/{routes,catalog}.js files.
-	if routes := routesJSONScript(ds); routes != "" {
-		headClose.WriteString(routes)
-		headClose.WriteByte('\n')
+	// Route graph: live pages get it from manifest.js (one cached,
+	// content-addressed fetch per deploy) instead of paying its bytes
+	// in every document; it grows with the app, and nothing reads it
+	// before the runtime boots. Export mode keeps the inline JSON
+	// block (inert data, CSP-safe) because exported pages must be
+	// self-contained files.
+	if !bundle {
+		if routes := routesJSONScript(ds); routes != "" {
+			headClose.WriteString(routes)
+			headClose.WriteByte('\n')
+		}
 	}
 
 	// Component CSS: scan the rendered page for data-cui-comp markers
@@ -2206,14 +2207,16 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	runtimeSrc := "/__gofastr/runtime.js"
 	if bundle {
 		// manifest.js assigns the catalog/module/action globals and MUST
-		// precede runtime.js: classic scripts execute in order, so the
-		// kernel finds them set at boot.
+		// precede runtime.js: deferred scripts execute in document order,
+		// so the kernel finds them set at boot. Every rail script carries
+		// defer, so none of them blocks the parser or first paint, and
+		// they all run after the document is parsed, still in order.
 		_, mHash := ds.manifestJS()
-		bodyClose.WriteString(`<script src="/__gofastr/manifest.js?v=` + mHash + `"></script>`)
+		bodyClose.WriteString(`<script defer src="/__gofastr/manifest.js?v=` + mHash + `"></script>`)
 		bodyClose.WriteByte('\n')
 		runtimeSrc += "?v=" + widget.RuntimeHash()
 	}
-	bodyClose.WriteString(`<script src="` + runtimeSrc + `"></script>`)
+	bodyClose.WriteString(`<script defer src="` + runtimeSrc + `"></script>`)
 	bodyClose.WriteByte('\n')
 	if bundle {
 		// Per-screen action scripts: only the compiled registries whose
@@ -2228,7 +2231,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		}
 	} else if ds.HasActions() {
 		// Export mode keeps the self-contained concat file.
-		bodyClose.WriteString(`<script src="/__gofastr/actions.js"></script>`)
+		bodyClose.WriteString(`<script defer src="/__gofastr/actions.js"></script>`)
 		bodyClose.WriteByte('\n')
 	}
 	// Document-lifetime scopes are asked about the ROUTE, not the
@@ -2252,7 +2255,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 			docAttr = " data-cui-doc"
 		}
 		//gofastr:allow(GOFASTR1412) src passed validExternalScriptSrc at registration: a same-origin path, no scheme or host.
-		fmt.Fprintf(bodyClose, `<script src="%s"%s></script>`+"\n", stdhtml.EscapeString(s.src), docAttr)
+		fmt.Fprintf(bodyClose, `<script defer src="%s"%s></script>`+"\n", stdhtml.EscapeString(s.src), docAttr)
 	}
 
 	// Color-scheme bootstrap runs SYNCHRONOUSLY at the top of <head>
@@ -4649,6 +4652,11 @@ func runtimeModuleManifestScript() string {
 // a modulepreload'd response is fetched with module destination/
 // credentials semantics the classic request does not match. The browser
 // would not reuse it, so every hinted module was fetched twice.
+//
+// fetchpriority="low": a script preload otherwise fetches at high
+// priority and competes with the stylesheets and the document itself
+// for the first-paint bandwidth. Modules hydrate after paint, so the
+// hint only has to land before the kernel asks for them.
 func runtimeModulePreloadLinks(pageHTML string) string {
 	mods := runtime.NeededModules(pageHTML)
 	if len(mods) == 0 {
@@ -4664,7 +4672,7 @@ func runtimeModulePreloadLinks(pageHTML string) string {
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString(`<link rel="preload" as="script" href="` + href + `">`)
+		b.WriteString(`<link rel="preload" as="script" fetchpriority="low" href="` + href + `">`)
 	}
 	return b.String()
 }

@@ -209,7 +209,7 @@ func TestUIHostInjectsRuntimeJS(t *testing.T) {
 	ds.ServeHTTP(w, req)
 
 	body := w.Body.String()
-	assertContains(t, body, `<script src="/__gofastr/runtime.js?v=`)
+	assertContains(t, body, `<script defer src="/__gofastr/runtime.js?v=`)
 }
 
 func TestUIHostServesRuntimeJS(t *testing.T) {
@@ -542,7 +542,7 @@ func TestUIHostExtraScriptsInjectedBeforeBodyEnd(t *testing.T) {
 	ds.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
 	page := rec.Body.String()
 
-	for _, src := range []string{`<script src="/__livereload.js"></script>`, `<script src="/diag.js"></script>`} {
+	for _, src := range []string{`<script defer src="/__livereload.js"></script>`, `<script defer src="/diag.js"></script>`} {
 		assertContains(t, page, src)
 	}
 	// Order matters: extras must appear after the framework runtime so
@@ -668,7 +668,7 @@ func TestRouteGraphCarriesAlsoFrom(t *testing.T) {
 	scr.Intercept = &app.Intercept{From: "/about", AlsoFrom: []string{"/"}, As: app.ScreenDrawer}
 
 	rec := httptest.NewRecorder()
-	ds.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	ds.ServeHTTP(rec, httptest.NewRequest("GET", "/__gofastr/manifest.js", nil))
 	assertContains(t, rec.Body.String(), `"intercept":{"from":"/about","also":["/"],"as":"drawer"}`)
 
 	req := httptest.NewRequest("GET", "/about/new", nil)
@@ -685,19 +685,26 @@ func TestRouteGraphCarriesAlsoFrom(t *testing.T) {
 func TestUIHostRouteGraph(t *testing.T) {
 	ds := newTestUIHostWithMultipleRoutes()
 
-	// Page embeds the route graph as inline JSON (CSP-safe; no round-
-	// trip; no executable inline script).
-	pageReq := httptest.NewRequest("GET", "/", nil)
+	// Live pages read the route graph from manifest.js, fetched once
+	// per deploy, instead of carrying it in every document.
 	pageRec := httptest.NewRecorder()
-	ds.ServeHTTP(pageRec, pageReq)
+	ds.ServeHTTP(pageRec, httptest.NewRequest("GET", "/", nil))
 	page := pageRec.Body.String()
-	assertContains(t, page, `<script type="application/json" id="gofastr-routes">`)
-	assertContains(t, page, `"path":"/"`)
-	assertContains(t, page, `"title":"Home"`)
-	assertContains(t, page, `"title":"About"`)
-	// External script reference must not appear: routes ship inline.
+	if strings.Contains(page, `id="gofastr-routes"`) {
+		t.Errorf("live page still inlines the route graph")
+	}
+	mRec := httptest.NewRecorder()
+	ds.ServeHTTP(mRec, httptest.NewRequest("GET", "/__gofastr/manifest.js", nil))
+	manifest := mRec.Body.String()
+	assertContains(t, manifest, `window.__gofastr_routes = [`)
+	assertContains(t, manifest, `"path":"/about"`)
+	// Titles and descriptions stay out of the graph: no runtime code
+	// reads them, and every page paid their bytes.
+	if strings.Contains(manifest, `"title":`) {
+		t.Errorf("route graph carries titles; the runtime never reads them")
+	}
 	if strings.Contains(page, `src="/__gofastr/routes.js"`) {
-		t.Errorf("page must NOT reference /__gofastr/routes.js — route graph ships inline:\n%s", page)
+		t.Errorf("page must NOT reference /__gofastr/routes.js:\n%s", page)
 	}
 
 	// Old endpoint removed entirely: 404, not registered.

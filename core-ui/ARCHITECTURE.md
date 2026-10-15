@@ -798,10 +798,30 @@ client-side with no per-consumer round-trip.
 
 See `framework/docs/content/signal-store.md` for the full guide.
 
+### First-load order
+
+A live page paints from its document and stylesheets alone. The one
+script that blocks is the color-scheme bootstrap at the top of `<head>`
+(dark tokens must apply before CSS parses). Every script the host emits
+before `</body>` (`manifest.js`, `runtime.js`, the per-screen action
+scripts, the extra-script rail) carries `defer`: none blocks the parser
+or first paint, and they still execute in document order once parsing
+ends, so `manifest.js` globals are set when the kernel boots and rail
+scripts see `runtime.js`. Runtime-module preload hints carry
+`fetchpriority="low"` so they warm the cache without competing with
+the document and its stylesheets. The route graph rides in
+`manifest.js` (`window.__gofastr_routes`, cached once per deploy) rather
+than in every document; exported pages keep the inline
+`#gofastr-routes` block because they must be self-contained.
+`framework/uihost/first_load_contract_test.go` pins the script and
+preload rules, and `examples/site` holds its landing pages under one
+round trip of compressed HTML.
+
 ### Extra scripts (the body-close script rail)
 
-`uihost.WithExtraScripts` adds external `<script src="…">` tags just
-before `</body>`, after `runtime.js` and the per-screen action scripts.
+`uihost.WithExtraScripts` adds external `<script defer src="…">` tags
+just before `</body>`, after `runtime.js` and the per-screen action
+scripts.
 They are same-origin resources under the default CSP (`default-src
 'self'`), so every URL on the rail must be a path the app itself serves;
 the dev livereload client is the canonical example. The tags ship only on
@@ -1848,7 +1868,7 @@ var Behavior = registry.RegisterBehavior("headless", runtimeJS,
 From the host down a registered behaviour is a runtime module like the
 embedded ones: served at `/__gofastr/runtime/<name>.js?v=<hash>`,
 minified under the same gate, listed in the module manifest, preloaded
-when its marker is in the rendered page. The kernel learns registered
+at low priority when its marker is in the rendered page. The kernel learns registered
 markers from one block beside the manifest (`window.__gofastr_behaviors`
 from `manifest.js` on live pages, the inline `#gofastr-behaviors` block
 in exports and the embed frame) and scans them after its own table.

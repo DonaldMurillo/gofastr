@@ -369,13 +369,29 @@ func MustEmbedLoaderJS() string {
 // added to <html> before first paint, and set through
 // `window.__gofastr_theme.set(class)`; an empty class returns to the
 // app's own theme.
+//
+// It is the one script that blocks first paint, so it is minified like
+// the runtime modules (unless the environment disables minification).
 func ColorSchemeJS() (string, error) {
-	data, err := fs.ReadFile(colorSchemeFS, "colorscheme.js")
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
+	colorSchemeOnce.Do(func() {
+		data, err := fs.ReadFile(colorSchemeFS, "colorscheme.js")
+		if err != nil {
+			colorSchemeErr = err
+			return
+		}
+		colorSchemeSrc = string(data)
+		if !nominify() {
+			colorSchemeSrc = minify.Minify(colorSchemeSrc)
+		}
+	})
+	return colorSchemeSrc, colorSchemeErr
 }
+
+var (
+	colorSchemeOnce sync.Once
+	colorSchemeSrc  string
+	colorSchemeErr  error
+)
 
 // Module returns the source of a single split runtime module by name
 // (e.g. "popover"). Used by the HTTP server to serve

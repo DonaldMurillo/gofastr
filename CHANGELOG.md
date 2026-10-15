@@ -211,6 +211,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   token's bytes (BREACH). `CSRF` accepts masked and raw tokens alike.
 
 ### Changed
+- **First paint no longer waits on the runtime.** `manifest.js`,
+  `runtime.js`, the per-screen action scripts and the extra-script
+  rail are emitted with `defer` (still in document order); the
+  color-scheme bootstrap is the only blocking script. Runtime-module
+  preloads carry `fetchpriority="low"`. Live pages read the route graph
+  from `manifest.js` instead of an inline `#gofastr-routes` block, and
+  the graph drops route titles and descriptions, which nothing read
+  (exports keep the inline block). A script registered on the rail that
+  relied on running while the document was still parsing now runs after
+  parsing ends. The color-scheme bootstrap is served minified. With
+  compression, the examples/site homepage drops from 445 KB to 99 KB
+  transferred (HTML 74 KB to 11 KB), and its Lighthouse mobile run goes
+  from 80 to 100, LCP 3.9 s to 1.7 s; on a 400 kbps, 300 ms RTT, 6x CPU
+  profile LCP goes from 14.4 s to 5.1 s.
 - `ui.Form`'s hidden CSRF field and `auth.CSRFToken` /
   `auth.CSRFTokenFromCtx` now return masked tokens. Code that compared
   their result with the CSRF cookie should compare
