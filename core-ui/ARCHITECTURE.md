@@ -1725,7 +1725,13 @@ declarative shadow root (`<template shadowrootmode>`) renders, so its
 markers count. After hydration, the runtime
 scans newly inserted DOM (cross-page swap, island response, widget
 mount, intercepted pane) and lazy-loads any new component's CSS as a `<link>` once
-per session, dedup'd by `data-cui-style="<name>"`. The browser
+per session, dedup'd by `data-cui-style="<name>"`. The kernel does
+not watch every insertion, so code that moves template content into
+the page (the confirm module, the toast stack, a lazy menu panel, a
+loading skeleton) calls `__gofastr.scanAndLoadCSS(container)` on what
+it inserted. The scan reads descendants only: pass the element that
+holds the new nodes, or load the root's own `data-cui-comp` /
+`data-cui-scope` by name. The browser
 caches the stylesheet by URL (`/__gofastr/comp/<name>.css?v=<hash>`)
 under `immutable` headers in prod, content-addressed by a hash of
 the sheet as served (minified outside dev), so a deploy that changes
