@@ -119,7 +119,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (Sources' pages included), `Sources` adds pages no route renders;
   `data-search-ignore` and `noindex` keep content out. A page that
   fails to render is logged and left out of a live index, and a failed
-  build waits 30 seconds before a query retries it. A page whose title
+  build waits 30 seconds before a query retries it. `Config.MaxAge`
+  rebuilds a live index older than it in the background, answering from
+  the old index meanwhile; `Refresh` builds beside the live index and
+  swaps it in. A page whose title
   holds every query term ranks first, the title the query covers most
   on top, so `table` finds DataTable and `form` the Form component.
   Terms of three letters or more also match the words they begin.

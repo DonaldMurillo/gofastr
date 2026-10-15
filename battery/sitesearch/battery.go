@@ -34,6 +34,11 @@ type Config struct {
 	// Sources add pages no route renders (records from a database, an
 	// external changelog). They run on every build, live and export.
 	Sources []Source
+	// MaxAge is how old the live index may get: a query that finds it
+	// older starts one rebuild in the background and is answered from
+	// the old index meanwhile. Zero never rebuilds; call Refresh after
+	// a change instead. New panics on a negative MaxAge.
+	MaxAge time.Duration
 }
 
 // Group labels results under one URL prefix.
@@ -58,7 +63,8 @@ const buildRetry = 30 * time.Second
 
 // Battery serves a full-text index of the app's rendered pages. On a
 // live server it renders every route (the static export's page set,
-// StaticPaths expanded) once, on first use, and answers queries at
+// StaticPaths expanded) when the app starts, again in the background
+// once the index is older than Config.MaxAge, and answers queries at
 // Root+"query"; the same index files the static export writes are
 // served under Root. Registered on an app that exports, it writes
 // those files into the export, so the browser client searches a static
@@ -67,28 +73,44 @@ type Battery struct {
 	cfg Config
 	app atomic.Pointer[framework.App]
 
-	// mu guards the index and is held for a whole build, so a query
-	// that arrives mid-build waits for it.
-	mu    sync.Mutex
-	idx   *Index
-	files map[string][]byte
-	// failed and failedAt hold the last failed build, returned until
-	// buildRetry has passed; Refresh clears them.
+	// building serializes builds: one renders the site at a time.
+	building sync.Mutex
+	// mu guards the index state. It is held to read or swap it, never
+	// across a render, so a query waits only for the first build.
+	mu      sync.Mutex
+	idx     *Index
+	files   map[string][]byte
+	builtAt time.Time
+	// failed and failedAt hold the last failed build: with no index it
+	// is returned, and either way no build retries, until buildRetry
+	// has passed.
 	failed   error
 	failedAt time.Time
+	// rebuilding is set while a background rebuild runs.
+	rebuilding bool
 
 	// export state: the pages ExportPage saw since ExportStart.
 	exportPages []Page
 
 	// life guards warm, which closes when the build OnStart began has
-	// finished. It is apart from mu so OnStop never waits on a build to
-	// read it.
-	life sync.Mutex
-	warm chan struct{}
+	// finished, and the background rebuild in flight: rebuilt closes
+	// when it ends, and stopRebuild ends it. stopped refuses new
+	// rebuilds once OnStop has run. It is apart from mu so OnStop never
+	// waits on a build to read it.
+	life        sync.Mutex
+	warm        chan struct{}
+	rebuilt     chan struct{}
+	stopRebuild context.CancelFunc
+	stopped     bool
 }
 
-// New returns a site search battery.
-func New(cfg Config) *Battery { return &Battery{cfg: cfg} }
+// New returns a site search battery. It panics on a negative MaxAge.
+func New(cfg Config) *Battery {
+	if cfg.MaxAge < 0 {
+		panic("sitesearch: negative Config.MaxAge")
+	}
+	return &Battery{cfg: cfg}
+}
 
 // Name implements framework.Battery.
 func (b *Battery) Name() string { return "sitesearch" }
@@ -127,70 +149,151 @@ func (b *Battery) OnStart(ctx context.Context) error {
 }
 
 // OnStop implements framework.BatteryLifecycle: it waits for the build
-// OnStart began, so shutdown does not close what the build renders with.
+// OnStart began, so shutdown does not close what the build renders
+// with, and ends a background rebuild and waits for it.
 func (b *Battery) OnStop(ctx context.Context) error {
 	b.life.Lock()
-	done := b.warm
+	b.stopped = true
+	warm, rebuilt := b.warm, b.rebuilt
+	if b.stopRebuild != nil {
+		b.stopRebuild()
+	}
 	b.life.Unlock()
-	if done == nil {
-		return nil
+	for _, done := range []chan struct{}{warm, rebuilt} {
+		if done == nil {
+			continue
+		}
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return nil
 }
 
 // Refresh rebuilds the live index from the current pages; a content
-// change that does not restart the server calls it.
+// change that does not restart the server calls it. Queries keep the
+// old index until the new one is built. A failed Refresh keeps the old
+// index and returns the error.
 func (b *Battery) Refresh(ctx context.Context) error {
+	b.building.Lock()
+	defer b.building.Unlock()
+	idx, files, err := b.render(ctx)
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.idx, b.files, b.failed = nil, nil, nil
-	_, err := b.indexLocked(ctx)
+	b.settle(ctx, idx, files, err)
 	return err
 }
 
-// Index returns the live index, building it on first use.
+// Index returns the live index, building it on first use. A query
+// that finds it older than Config.MaxAge gets it at once and starts a
+// rebuild in the background.
 func (b *Battery) Index(ctx context.Context) (*Index, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.indexLocked(ctx)
+	idx, _, err := b.current(ctx)
+	return idx, err
 }
 
-func (b *Battery) indexLocked(ctx context.Context) (*Index, error) {
-	if b.idx != nil {
-		return b.idx, nil
+// current returns the live index and its files, building them on first
+// use.
+func (b *Battery) current(ctx context.Context) (*Index, map[string][]byte, error) {
+	b.mu.Lock()
+	if idx, files := b.idx, b.files; idx != nil {
+		if b.expired() {
+			b.rebuild()
+		}
+		b.mu.Unlock()
+		return idx, files, nil
 	}
-	if b.failed != nil && time.Since(b.failedAt) < buildRetry {
-		return nil, b.failed
+	b.mu.Unlock()
+
+	b.building.Lock()
+	defer b.building.Unlock()
+	// The build this one waited behind may have made the index, or
+	// failed recently enough to answer for this one.
+	b.mu.Lock()
+	idx, files, failed := b.idx, b.files, b.failed
+	retry := failed != nil && time.Since(b.failedAt) < buildRetry
+	b.mu.Unlock()
+	if idx != nil {
+		return idx, files, nil
 	}
-	idx, err := b.buildLocked(ctx)
+	if retry {
+		return nil, nil, failed
+	}
+	idx, files, err := b.render(ctx)
+	b.mu.Lock()
+	b.settle(ctx, idx, files, err)
+	b.mu.Unlock()
+	return idx, files, err
+}
+
+// settle records a build's outcome under mu: a built index replaces the
+// live one, and a failure is held for buildRetry. A build its caller
+// cut short did not fail; the next one runs.
+func (b *Battery) settle(ctx context.Context, idx *Index, files map[string][]byte, err error) {
 	if err != nil {
-		// A build its caller cut short did not fail; the next one runs.
 		if ctx.Err() == nil {
 			b.failed, b.failedAt = err, time.Now()
 		}
-		return nil, err
+		return
 	}
-	b.failed = nil
-	return idx, nil
+	b.idx, b.files, b.builtAt, b.failed = idx, files, time.Now(), nil
 }
 
-// buildLocked renders the pages and builds the index. A page that fails
-// to render is logged and left out: one broken page must not take
-// search down for the whole site. An export, which bakes what it
-// renders, refuses such a page instead.
-func (b *Battery) buildLocked(ctx context.Context) (*Index, error) {
+// expired reports, under mu, whether the live index is past MaxAge and
+// no rebuild runs or waits out a failure.
+func (b *Battery) expired() bool {
+	return b.cfg.MaxAge > 0 && time.Since(b.builtAt) >= b.cfg.MaxAge && !b.rebuilding &&
+		(b.failed == nil || time.Since(b.failedAt) >= buildRetry)
+}
+
+// rebuild starts a background rebuild, under mu. OnStop ends it.
+func (b *Battery) rebuild() {
+	b.life.Lock()
+	defer b.life.Unlock()
+	if b.stopped {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	b.rebuilt, b.stopRebuild, b.rebuilding = done, cancel, true
+	app := b.app.Load()
+	go func() {
+		defer close(done)
+		defer cancel()
+		defer func() {
+			if r := recover(); r != nil {
+				app.Logger().Error("sitesearch: index rebuild panicked", "panic", textsafe.Recovered(r))
+			}
+			b.mu.Lock()
+			b.rebuilding = false
+			b.mu.Unlock()
+		}()
+		b.building.Lock()
+		defer b.building.Unlock()
+		idx, files, err := b.render(ctx)
+		b.mu.Lock()
+		b.settle(ctx, idx, files, err)
+		b.mu.Unlock()
+		if err != nil && ctx.Err() == nil {
+			app.Logger().Warn("sitesearch: index rebuild failed; serving the old index", "err", err)
+		}
+	}()
+}
+
+// render renders the pages and builds the index and its files. A page
+// that fails to render is logged and left out: one broken page must
+// not take search down for the whole site. An export, which bakes what
+// it renders, refuses such a page instead.
+func (b *Battery) render(ctx context.Context) (*Index, map[string][]byte, error) {
 	app := b.app.Load()
 	if app == nil {
-		return nil, fmt.Errorf("sitesearch: battery not initialized")
+		return nil, nil, fmt.Errorf("sitesearch: battery not initialized")
 	}
 	host := mountedHost(app)
 	if host == nil {
-		return nil, fmt.Errorf("sitesearch: no mounted uihost.UIHost to render pages from")
+		return nil, nil, fmt.Errorf("sitesearch: no mounted uihost.UIHost to render pages from")
 	}
 	ctx, done := anonymous(ctx)
 	defer done()
@@ -213,14 +316,9 @@ func (b *Battery) buildLocked(ctx context.Context) (*Index, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("sitesearch: render pages: %w", err)
+		return nil, nil, fmt.Errorf("sitesearch: render pages: %w", err)
 	}
-	idx, files, err := b.build(ctx, pages)
-	if err != nil {
-		return nil, err
-	}
-	b.idx, b.files = idx, files
-	return idx, nil
+	return b.build(ctx, pages)
 }
 
 // anonymous returns a context that ends when ctx does but carries none
@@ -389,10 +487,8 @@ func (b *Battery) serveQuery(w http.ResponseWriter, r *http.Request) {
 
 func (b *Battery) serveFile(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("file")
-	b.mu.Lock()
-	_, err := b.indexLocked(r.Context())
-	body, ok := b.files[name]
-	b.mu.Unlock()
+	_, files, err := b.current(r.Context())
+	body, ok := files[name]
 	if err != nil {
 		http.Error(w, "search index unavailable", http.StatusServiceUnavailable)
 		return

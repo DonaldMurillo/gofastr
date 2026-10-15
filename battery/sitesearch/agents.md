@@ -34,6 +34,9 @@ stop and register this battery instead:
 - A crawler that fetches your own pages over HTTP to index them
 - Indexing records from the database here: that is `battery/search`
 
+**Content that changes without a restart** (database-backed pages, a
+`Source`): set `Config.MaxAge`, or call `Refresh` after the change.
+
 **Keep out of the index:** mark live demo output or polled numbers
 `data-search-ignore`; draw sidebars as `<nav>`/`<aside>`.
 

@@ -100,18 +100,33 @@ sitesearch.Config{
 	Exclude: []string{"/examples/headless/dense"},
 	// Add pages no route renders. Runs on every build, live and export.
 	Sources: []sitesearch.Source{changelogPages},
+	// Rebuild the live index once it is older than this. Zero never does.
+	MaxAge: 10 * time.Minute,
 }
 ```
 
-A `Source` returns `[]sitesearch.Page{URL, Title, Group, Sections}`. The live
-index is built once, at start; call `(*Battery).Refresh(ctx)` after content
-changes that do not restart the server.
+A `Source` returns `[]sitesearch.Page{URL, Title, Group, Sections}`.
+
+The live index is built at start. Content that changes without a restart
+(pages that read the database, a `Source`) reaches it two ways:
+
+- **`MaxAge`.** A query that finds the index older than `MaxAge` starts one
+  rebuild in the background and is answered from the old index meanwhile,
+  so no query waits for the site to render again. The next query after the
+  rebuild sees the new content. A negative `MaxAge` panics in `New`.
+- **`(*Battery).Refresh(ctx)`** rebuilds at once, for a change you know
+  about (after saving a post). Queries keep the old index until the new one
+  is built.
+
+Builds run one at a time, and `OnStop` ends a background rebuild and waits
+for it.
 
 On a live server, a page that fails to render (a panic, or a fill that
 failed) is logged and left out, and the rest of the site stays searchable.
 An export refuses such a page instead. A build that fails outright, such as
-a `Source` returning an error, answers queries with a 503 for 30
-seconds before a query may start another; `Refresh` retries at once.
+a `Source` returning an error, is logged and no query starts another for 30
+seconds. Meanwhile queries are answered from the last good index, or with a
+503 when there is none. `Refresh` retries at once and returns the error.
 
 ## Ranking
 
@@ -194,7 +209,8 @@ Measured on 10,000 generated pages drawn from these docs' own vocabulary
   `data-search-ignore`.
 - **Headings without an `id`.** Their sections are searchable but get no
   result row of their own, since there is no anchor to land on.
-- **Expecting new content to show up on a live server.** The index is built
-  once; call `Refresh` after changing content without a restart.
+- **Expecting new content to show up on a live server.** With a zero
+  `MaxAge` the index is built once. Set `MaxAge`, or call `Refresh` after
+  changing content.
 - **`Search: true` with no `Commands`.** The palette panics at construction:
   an empty palette before the first keystroke reads as broken.
