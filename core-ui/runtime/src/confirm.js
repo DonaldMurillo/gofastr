@@ -81,11 +81,21 @@
         if (back && back.isConnected && typeof back.focus === 'function') back.focus();
         resolve(answer);
       }, { once: true });
-      document.body.appendChild(dlg);
-      dlg.showModal();
-      // Cancel takes focus: Enter on an open confirm must never be the
-      // destructive answer.
-      if (cancel) cancel.focus();
+      // The template is inert, so the host's first paint left the
+      // dialog's sheet out. Open once it has loaded (each sheet wait is
+      // bounded): showModal on an unstyled clone paints the browser's
+      // default dialog for a round trip.
+      if (NS.loadComponentCSS) {
+        NS.loadComponentCSS(dlg.getAttribute('data-cui-comp'));
+        NS.scanAndLoadCSS(dlg);
+      }
+      Promise.resolve(NS._stylesReady).then(() => {
+        document.body.appendChild(dlg);
+        dlg.showModal();
+        // Cancel takes focus: Enter on an open confirm must never be
+        // the destructive answer.
+        if (cancel) cancel.focus();
+      });
     });
   }
 
