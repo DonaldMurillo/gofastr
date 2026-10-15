@@ -74,7 +74,6 @@ func (m *Memory) Search(ctx context.Context, query Query) ([]Result, error) {
 		if score == 0 && len(terms) > 0 {
 			continue
 		}
-		doc.Fields = maps.Clone(doc.Fields)
 		results = append(results, Result{Document: doc, Score: score})
 	}
 	sort.Slice(results, func(i, j int) bool {
@@ -98,7 +97,13 @@ func (m *Memory) Search(ctx context.Context, query Query) ([]Result, error) {
 			end = sum
 		}
 	}
-	return append([]Result(nil), results[offset:end]...), nil
+	// Copy Fields for the returned page only, still under the read
+	// lock: the caller owns them, the rest never leave.
+	page := append([]Result(nil), results[offset:end]...)
+	for i := range page {
+		page[i].Document.Fields = maps.Clone(page[i].Document.Fields)
+	}
+	return page, nil
 }
 
 // normalizeTerms lowercases, splits, dedups, and caps the query into a bounded

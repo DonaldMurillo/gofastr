@@ -272,12 +272,12 @@ skipping the newest `offset` of them, so `ListJobs(ctx, "failed", 50,
 `Stats` returns a `JobStats` map (status → count), which gives a
 pager its total.
 
-`MemoryQueue` also accepts `"all"` for its dead-letter listing. It copies
-job payload bytes when enqueueing, tracking manual claims, and returning
-dead-letter listings; editing a caller payload cannot change a pending retry.
+`MemoryQueue` copies job payload bytes when enqueueing, tracking manual
+claims, and returning dead-letter listings; editing a caller payload
+cannot change a pending retry.
 
 MemoryQueue and RedisQueue can only enumerate their dead-letter store,
-so only `"failed"` (or `""`) returns results. DBQueue can enumerate any
+so only `"failed"`, `"all"` or `""` returns results. DBQueue can enumerate any
 status: `"pending"`, `"claimed"` (running), `"failed"`, and `"done"`
 with `WithDoneRetention`.
 

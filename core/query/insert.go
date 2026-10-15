@@ -2,6 +2,7 @@ package query
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -20,19 +21,19 @@ func Insert(table string) *InsertBuilder {
 
 // Columns sets the columns to insert into.
 func (ib *InsertBuilder) Columns(cols ...string) *InsertBuilder {
-	ib.columns = cols
+	ib.columns = slices.Clone(cols)
 	return ib
 }
 
 // Values sets the values to insert.
 func (ib *InsertBuilder) Values(vals ...any) *InsertBuilder {
-	ib.values = vals
+	ib.values = slices.Clone(vals)
 	return ib
 }
 
 // Returning adds a RETURNING clause.
 func (ib *InsertBuilder) Returning(cols ...string) *InsertBuilder {
-	ib.returning = cols
+	ib.returning = slices.Clone(cols)
 	return ib
 }
 
@@ -76,5 +77,5 @@ func (ib *InsertBuilder) Build() (string, []any) {
 		sb.WriteString(strings.Join(sanitizedRet, ", "))
 	}
 
-	return sb.String(), ib.values
+	return sb.String(), slices.Clone(ib.values)
 }

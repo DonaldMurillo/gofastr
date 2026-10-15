@@ -208,7 +208,6 @@ func (m *MemoryStore) ClaimDueDeliveries(_ context.Context, now time.Time, limit
 		if d.NextAttemptAt.After(now) {
 			continue
 		}
-		d.Payload = cloneBytes(d.Payload)
 		candidates = append(candidates, d)
 	}
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].NextAttemptAt.Before(candidates[j].NextAttemptAt) })
@@ -216,18 +215,14 @@ func (m *MemoryStore) ClaimDueDeliveries(_ context.Context, now time.Time, limit
 		candidates = candidates[:limit]
 	}
 	leaseUntil := now.Add(leasePeriod)
-	for _, d := range candidates {
+	for i := range candidates {
+		d := &candidates[i]
 		d.Attempts++
 		d.NextAttemptAt = leaseUntil
 		d.UpdatedAt = leaseUntil
+		// The store keeps its own payload; the caller gets one copy.
+		m.deliveries[d.ID] = *d
 		d.Payload = cloneBytes(d.Payload)
-		m.deliveries[d.ID] = d
-	}
-	// Reflect the lease and the consumed attempt in the returned snapshot.
-	for i := range candidates {
-		candidates[i].Attempts++
-		candidates[i].NextAttemptAt = leaseUntil
-		candidates[i].UpdatedAt = leaseUntil
 	}
 	return candidates, nil
 }

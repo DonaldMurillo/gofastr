@@ -2,6 +2,7 @@ package query
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -43,7 +44,7 @@ type orderClause struct {
 // allocate once at the expected size.
 func Select(columns ...string) *QueryBuilder {
 	return &QueryBuilder{
-		columns: columns,
+		columns: slices.Clone(columns),
 		wheres:  make([]whereClause, 0, defaultWhereCap),
 		args:    make([]any, 0, defaultArgCap),
 	}

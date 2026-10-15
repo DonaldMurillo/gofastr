@@ -2,6 +2,7 @@ package query
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -35,5 +36,35 @@ func TestDollarSignsInBareIdentifiers(t *testing.T) {
 	want := "col$1 = $3 AND other$tag$ = $4"
 	if got != want {
 		t.Fatalf("%q want %q", got, want)
+	}
+}
+
+// A builder owns what it was given and what Build hands back: the
+// caller reusing its slice must not rewrite a later Build.
+func TestInsertOwnsSlices(t *testing.T) {
+	cols, vals, ret := []string{"a"}, []any{1}, []string{"id"}
+	b := Insert("t").Columns(cols...).Values(vals...).Returning(ret...)
+	cols[0], vals[0], ret[0] = "b", 9, "secret"
+	sql, args := b.Build()
+	if !reflect.DeepEqual(args, []any{1}) || strings.Contains(sql, "b") || strings.Contains(sql, "secret") {
+		t.Fatalf("caller mutation reached Build: %s %v", sql, args)
+	}
+	args[0] = 7
+	if _, again := b.Build(); !reflect.DeepEqual(again, []any{1}) {
+		t.Fatalf("mutating Build's args changed the builder: %v", again)
+	}
+}
+
+func TestSelectAndReturningOwnColumns(t *testing.T) {
+	cols := []string{"name"}
+	q := Select(cols...).From("t")
+	ret := []string{"id"}
+	u := Update("t").Set("x", 1).Returning(ret...)
+	cols[0], ret[0] = "secret", "secret"
+	if sql, _ := q.Build(); strings.Contains(sql, "secret") {
+		t.Fatalf("Select kept the caller's slice: %s", sql)
+	}
+	if sql, _ := u.Build(); strings.Contains(sql, "secret") {
+		t.Fatalf("Returning kept the caller's slice: %s", sql)
 	}
 }

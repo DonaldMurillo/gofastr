@@ -42,7 +42,7 @@ func (ub *UpdateBuilder) Where(condition string, args ...any) *UpdateBuilder {
 
 // Returning adds a RETURNING clause.
 func (ub *UpdateBuilder) Returning(cols ...string) *UpdateBuilder {
-	ub.returning = cols
+	ub.returning = slices.Clone(cols)
 	return ub
 }
 
