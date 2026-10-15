@@ -26,12 +26,14 @@ import (
 const Root = "/__gofastr/search/"
 
 // formatVersion is the manifest's "v"; the client refuses another.
-const formatVersion = 1
+const formatVersion = 2
 
 type manifest struct {
 	V      int               `json:"v"`
 	Shards map[string]string `json:"shards"`
 	Pages  []string          `json:"pages"`
+	// TitleN is each page's count of title slots (titleBonus).
+	TitleN []int `json:"tn"`
 }
 
 type fragment struct {
@@ -45,7 +47,7 @@ type fragment struct {
 // reads, keyed by file name relative to Root.
 func (idx *Index) Files() (map[string][]byte, error) {
 	files := map[string][]byte{}
-	m := manifest{V: formatVersion, Shards: map[string]string{}}
+	m := manifest{V: formatVersion, Shards: map[string]string{}, TitleN: idx.titleN}
 
 	shards := map[string]map[string][]int64{}
 	for _, t := range idx.keys {
@@ -54,10 +56,10 @@ func (idx *Index) Files() (map[string][]byte, error) {
 			shards[k] = map[string][]int64{}
 		}
 		e := idx.terms[t]
-		row := make([]int64, 0, 1+3*len(e.postings))
+		row := make([]int64, 0, 1+5*len(e.postings))
 		row = append(row, e.idf)
 		for _, p := range e.postings {
-			row = append(row, int64(p.page), int64(p.section), int64(p.score))
+			row = append(row, int64(p.page), int64(p.section), int64(p.score), int64(p.tFrom), int64(p.tLen))
 		}
 		shards[k][t] = row
 	}

@@ -50,15 +50,24 @@ func (idx *Index) Search(q string, limit int) []Result {
 	type key struct{ page, section int }
 	var pageScore map[int]int64
 	secScore := map[key]int64{}
+	// Per page, how many query terms its title holds and the points
+	// each title slot earned (titleBonus).
+	inTitle, slots := map[int]int{}, map[int]map[int]int64{}
 	for qi, qt := range terms {
 		perPage := map[int]int64{}
 		perSec := map[key]int64{}
-		for _, t := range idx.matching(qt, stem(qt)) {
+		titled := map[int]bool{}
+		st, ger := stem(qt), gerund(qt)
+		for _, t := range idx.matching(qt, st, ger) {
 			e := idx.terms[t]
 			mult := int64(1)
-			if t == qt {
+			if t == qt || t == ger {
 				mult = 2
 			}
+			// A title term the query names whole, as the singular of
+			// its plural or in its -ing form, fills its slots; one it
+			// only begins earns its first slot one point.
+			whole := t == qt || t == st || t == ger
 			// A page scores its best section in full and a quarter of
 			// the rest, so a long page that mentions a term in every
 			// section does not outrank the page about it.
@@ -69,6 +78,20 @@ func (idx *Index) Search(q string, limit int) []Result {
 				best[p.page] = max(best[p.page], v)
 				k := key{p.page, p.section}
 				perSec[k] = max(perSec[k], v)
+				if p.tLen > 0 {
+					titled[p.page] = true
+					if slots[p.page] == nil {
+						slots[p.page] = map[int]int64{}
+					}
+					sl := slots[p.page]
+					if whole {
+						for s := p.tFrom; s < p.tFrom+p.tLen; s++ {
+							sl[s] = 2
+						}
+					} else {
+						sl[p.tFrom] = max(sl[p.tFrom], 1)
+					}
+				}
 			}
 			for pg, sum := range sums {
 				perPage[pg] = max(perPage[pg], best[pg]+(sum-best[pg])/4)
@@ -88,8 +111,20 @@ func (idx *Index) Search(q string, limit int) []Result {
 		for k, v := range perSec {
 			secScore[k] += v
 		}
+		for pg := range titled {
+			inTitle[pg]++
+		}
 		if len(pageScore) == 0 {
 			return nil
+		}
+	}
+	for pg := range pageScore {
+		if n := int64(idx.titleN[pg]); inTitle[pg] == len(terms) && n > 0 {
+			var pts int64
+			for _, v := range slots[pg] {
+				pts += v
+			}
+			pageScore[pg] += titleBonus * pts / (2 * n)
 		}
 	}
 	order := make([]int, 0, len(pageScore))
@@ -149,6 +184,22 @@ func stem(q string) string {
 	return string(rs[:len(rs)-1])
 }
 
+// gerund is the -ing form a query term also matches as a whole word,
+// so "theme" finds Theming and "cache" caching: the term with a final
+// lone e dropped, plus ing, for terms of four or more runes that are
+// neither plural nor -ing already. Empty when there is none. It keeps
+// the term's first two runes, so it lives in the term's shard.
+func gerund(q string) string {
+	rs := []rune(q)
+	if len(rs) < 4 || stem(q) != "" || strings.HasSuffix(q, "ing") {
+		return ""
+	}
+	if n := len(rs); rs[n-1] == 'e' && rs[n-2] != 'e' {
+		return string(rs[:n-1]) + "ing"
+	}
+	return q + "ing"
+}
+
 // Excerpt window, in runes: the window opens up to excerptLead runes
 // before the first hit and spans excerptWidth.
 const (
@@ -157,31 +208,51 @@ const (
 )
 
 // excerpt cuts the window of text around the first word a query term
-// prefixes and splits it into plain and hit runs. The window's edges
-// snap to spaces so no word is cut, and an ellipsis marks a cut end.
+// names whole (or, failing that, the first it begins) and splits it
+// into plain and hit runs; a plural term also marks its singular, and
+// a term its -ing form. The
+// window's edges snap to spaces so no word is cut: with no space in
+// the lead-in (a long URL), it opens on the hit. An ellipsis marks a
+// cut end.
 func excerpt(text string, terms []string) []Segment {
 	rs := []rune(text)
 	var hits []token
+	anchor := -1
 	for _, t := range scan(text) {
+		hit, whole := false, false
 		for _, q := range terms {
-			if strings.HasPrefix(t.word, q) {
-				hits = append(hits, t)
-				break
+			st, ger := stem(q), gerund(q)
+			if strings.HasPrefix(t.word, q) || st != "" && strings.HasPrefix(t.word, st) || ger != "" && t.word == ger {
+				hit = true
+				whole = whole || t.word == q || t.word == st || t.word == ger
 			}
 		}
+		if !hit {
+			continue
+		}
+		if anchor < 0 && whole {
+			anchor = len(hits)
+		}
+		hits = append(hits, t)
+	}
+	if anchor < 0 && len(hits) > 0 {
+		anchor = 0
 	}
 	start := 0
-	if len(hits) > 0 && hits[0].start > excerptLead {
-		start = hits[0].start - excerptLead
-		if i := indexRune(rs[start:hits[0].start], ' '); i >= 0 {
+	if anchor >= 0 && hits[anchor].start > excerptLead {
+		a := hits[anchor].start
+		start = a - excerptLead
+		if i := indexRune(rs[start:a], ' '); i >= 0 {
 			start += i + 1
+		} else {
+			start = a
 		}
 	}
 	end := min(len(rs), start+excerptWidth)
 	if end < len(rs) {
 		from := start
-		if len(hits) > 0 {
-			from = min(hits[0].end, end)
+		if anchor >= 0 {
+			from = min(hits[anchor].end, end)
 		}
 		if i := lastIndexRune(rs[from:end], ' '); i >= 0 {
 			end = from + i

@@ -118,9 +118,21 @@ seconds before a query may start another; `Refresh` retries at once.
 Queries match whole words and word prefixes (`pal` finds `palette`), and
 every term must match. `CommandPalette` also indexes as `command` and
 `palette`. A trailing plural `s` is dropped from terms of four or more
-letters, so `forms` finds `form`. A hit in a title weighs more than one in a
-heading, which weighs more than one in body text. Each result shows up to
-three matching sections with an excerpt, and hits are wrapped in `<mark>`.
+letters, so `forms` finds `form`, and such a term also matches its `-ing`
+form as a whole word, so `theme` finds `theming`.
+
+A page whose title holds every query term ranks above every page whose
+title does not, so the page named for the query comes first however often
+other pages repeat the words. Among those, the title the query covers most
+wins. Each distinct title word counts once, a camelCase word once per part,
+and a term that only begins a word covers half of it. So `table` finds
+`DataTable` (half its title) before `TableOfContents` (a third), and
+`datatable` finds `DataTable` (all of it) before `Datatables` (half).
+Below that tier, a hit in a title weighs more than one in a heading, which
+weighs more than one in body text.
+
+Each result shows up to three matching sections. An excerpt opens on the
+first whole-word hit, and hits are wrapped in `<mark>`.
 
 ## Static export
 

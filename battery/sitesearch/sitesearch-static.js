@@ -22,6 +22,7 @@
   const MAX_SECTIONS = 3;
   const EXCERPT_LEAD = 40;
   const EXCERPT_WIDTH = 160;
+  const TITLE_BONUS = 1000000;
   const scan = api.scan;
 
   function shardKey(t) { return Array.from(t).slice(0, MIN_TERM).join(''); }
@@ -33,21 +34,44 @@
     return rs.slice(0, -1).join('');
   }
 
+  // The Go gerund: the -ing form a term also matches as a whole word.
+  function gerund(q) {
+    const rs = Array.from(q);
+    const n = rs.length;
+    if (n < 4 || stem(q) || q.endsWith('ing')) return '';
+    if (rs[n - 1] === 'e' && rs[n - 2] !== 'e') return rs.slice(0, -1).join('') + 'ing';
+    return q + 'ing';
+  }
+
   // The excerpt window: the Go excerpt, on code points.
   function excerpt(text, terms) {
     const rs = Array.from(text);
-    const hits = scan(text).filter(function (t) {
-      return terms.some(function (q) { return t.word.startsWith(q); });
-    });
+    const hits = [];
+    let anchor = -1;
+    for (const t of scan(text)) {
+      let hit = false, whole = false;
+      for (const q of terms) {
+        const st = stem(q), ger = gerund(q);
+        if (t.word.startsWith(q) || (st && t.word.startsWith(st)) || (ger && t.word === ger)) {
+          hit = true;
+          whole = whole || t.word === q || t.word === st || t.word === ger;
+        }
+      }
+      if (!hit) continue;
+      if (anchor < 0 && whole) anchor = hits.length;
+      hits.push(t);
+    }
+    if (anchor < 0 && hits.length) anchor = 0;
     let start = 0;
-    if (hits.length && hits[0].start > EXCERPT_LEAD) {
-      start = hits[0].start - EXCERPT_LEAD;
-      const i = rs.slice(start, hits[0].start).indexOf(' ');
-      if (i >= 0) start += i + 1;
+    if (anchor >= 0 && hits[anchor].start > EXCERPT_LEAD) {
+      const a = hits[anchor].start;
+      start = a - EXCERPT_LEAD;
+      const i = rs.slice(start, a).indexOf(' ');
+      start = i >= 0 ? start + i + 1 : a;
     }
     let end = Math.min(rs.length, start + EXCERPT_WIDTH);
     if (end < rs.length) {
-      const from = hits.length ? Math.min(hits[0].end, end) : start;
+      const from = anchor >= 0 ? Math.min(hits[anchor].end, end) : start;
       const i = rs.slice(from, end).lastIndexOf(' ');
       if (i >= 0) end = from + i;
     }
@@ -85,28 +109,44 @@
   // rank runs the Go Search over the shards: per query term, a page
   // scores its best matching term, each section idf × (2 exact, 1
   // prefix) × the term's section score, the best section in full and
-  // a quarter of the rest; a page must match every term.
-  function rank(shards, terms) {
+  // a quarter of the rest; a page must match every term. A page whose
+  // title holds every term then gets the title bonus: a term naming a
+  // title word whole fills its slots with two, one only beginning it
+  // puts one in its first slot, each slot keeps its best, and the
+  // bonus is the share of two points a slot.
+  function rank(shards, terms, titleN) {
     let pageScore = null;
     const secScore = new Map();
+    const inTitle = new Map(), slots = new Map();
     terms.forEach(function (qt, qi) {
       const perPage = new Map();
       const perSec = new Map();
+      const titled = new Set();
       const shard = shards[qi] || {};
-      const from = stem(qt) || qt;
+      const st = stem(qt), ger = gerund(qt);
+      const from = st || qt;
       for (const t of Object.keys(shard)) {
-        if (!t.startsWith(from)) continue;
+        if (!t.startsWith(from) && !(ger && t === ger)) continue;
         const row = shard[t];
-        const mult = t === qt ? 2 : 1;
+        const mult = t === qt || t === ger ? 2 : 1;
+        const whole = t === qt || t === st || t === ger;
         const idf = row[0];
         const sums = new Map(), best = new Map();
-        for (let i = 1; i + 2 < row.length; i += 3) {
+        for (let i = 1; i + 4 < row.length; i += 5) {
           const pg = row[i], sec = row[i + 1];
           const v = idf * mult * row[i + 2];
           sums.set(pg, (sums.get(pg) || 0) + v);
           best.set(pg, Math.max(best.get(pg) || 0, v));
           const k = pg + ':' + sec;
           perSec.set(k, Math.max(perSec.get(k) || 0, v));
+          const tf = row[i + 3], tl = row[i + 4];
+          if (tl > 0) {
+            titled.add(pg);
+            if (!slots.has(pg)) slots.set(pg, new Map());
+            const sl = slots.get(pg);
+            if (whole) for (let s = tf; s < tf + tl; s++) sl.set(s, 2);
+            else sl.set(tf, Math.max(sl.get(tf) || 0, 1));
+          }
         }
         // The best section in full, a quarter of the rest.
         for (const [pg, sum] of sums) {
@@ -122,8 +162,18 @@
         }
       }
       for (const [k, v] of perSec) secScore.set(k, (secScore.get(k) || 0) + v);
+      for (const pg of titled) inTitle.set(pg, (inTitle.get(pg) || 0) + 1);
     });
-    return { pageScore: pageScore || new Map(), secScore: secScore };
+    pageScore = pageScore || new Map();
+    for (const pg of pageScore.keys()) {
+      const n = titleN[pg] || 0;
+      if (inTitle.get(pg) === terms.length && n > 0) {
+        let pts = 0;
+        for (const v of slots.get(pg).values()) pts += v;
+        pageScore.set(pg, pageScore.get(pg) + Math.floor(TITLE_BONUS * pts / (2 * n)));
+      }
+    }
+    return { pageScore: pageScore, secScore: secScore };
   }
 
   function results(order, frags, ranked, terms) {
@@ -148,11 +198,11 @@
     const terms = api.queryTerms(q);
     if (!terms.length) return [];
     const m = await fetchJSON(ROOT + 'manifest.json');
-    if (m.v !== 1) throw new Error('sitesearch: index format ' + m.v);
+    if (m.v !== 2) throw new Error('sitesearch: index format ' + m.v);
     const names = terms.map(function (t) { return m.shards[shardKey(t)]; });
     if (names.some(function (n) { return !n; })) return [];
     const shards = await Promise.all(names.map(function (n) { return fetchJSON(ROOT + n); }));
-    const ranked = rank(shards, terms);
+    const ranked = rank(shards, terms, m.tn || []);
     const order = Array.from(ranked.pageScore.keys()).sort(function (a, b) {
       return (ranked.pageScore.get(b) - ranked.pageScore.get(a)) || (a - b);
     }).slice(0, limit);

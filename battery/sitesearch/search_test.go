@@ -200,3 +200,146 @@ func TestBuildDropsDuplicatePages(t *testing.T) {
 		t.Errorf("Len = %d, want 1 (a twin and a repeated URL dropped)", idx.Len())
 	}
 }
+
+func marked(segs []Segment) string {
+	var b strings.Builder
+	for _, s := range segs {
+		if s.Hit {
+			b.WriteString("[" + s.Text + "]")
+		} else {
+			b.WriteString(s.Text)
+		}
+	}
+	return b.String()
+}
+
+// A page titled with the query outranks pages that only repeat it, and
+// a shorter title that holds it outranks a longer one.
+func TestSearchTitleNamesTheAnswer(t *testing.T) {
+	many := strings.Repeat("Every table has rows. ", 5)
+	idx := Build([]Page{
+		{URL: "/migrations", Title: "Migrations", Sections: []Section{{Text: many}, {ID: "t", Heading: "Table changes", Text: many}}},
+		{URL: "/toc", Title: "TableOfContents", Sections: []Section{{Text: "A table of contents. " + many}}},
+		{URL: "/datatable", Title: "DataTable", Sections: []Section{{Text: "Rows and columns."}}},
+	})
+	if got := urls(idx.Search("table", 3)); got != "/datatable /toc /migrations" {
+		t.Errorf("table: %s, want /datatable /toc /migrations", got)
+	}
+	if got := urls(idx.Search("data table", 3)); got != "/datatable" {
+		t.Errorf("data table: %s, want /datatable", got)
+	}
+}
+
+// A title word the query only begins earns half its slot, so a title
+// that names the word whole ranks first.
+func TestSearchTitlePrefixEarnsLess(t *testing.T) {
+	idx := Build([]Page{
+		{URL: "/builder", Title: "formbuilder", Sections: []Section{{}}},
+		{URL: "/form", Title: "Form module", Sections: []Section{{}}},
+	})
+	if got := urls(idx.Search("form", 2)); got != "/form /builder" {
+		t.Errorf("form: %s, want /form /builder", got)
+	}
+}
+
+// The excerpt opens on the first whole-word hit, never mid-word, even
+// when an earlier hit sits inside a URL with no space before it.
+func TestExcerptOpensOnWholeWord(t *testing.T) {
+	text := "Install github.com/DonaldMurillo/gofastr-plugins/formbuilder today. " +
+		strings.Repeat("Filler words here. ", 10) + "A form collects fields."
+	got := marked(excerpt(text, []string{"form"}))
+	if !strings.HasPrefix(got, "…") || strings.Contains(got, "ithub") {
+		t.Errorf("excerpt %q, want it to open on a word", got)
+	}
+	if !strings.Contains(got, "A [form] collects") {
+		t.Errorf("excerpt %q does not show the whole-word hit", got)
+	}
+	got = marked(excerpt(strings.Repeat("lead ", 12)+"https://example.com/really/long/path/to/formbuilder now", []string{"formbuilder"}))
+	if !strings.HasPrefix(got, "…[formbuilder]") {
+		t.Errorf("excerpt %q, want it to open on the hit when the lead-in has no space", got)
+	}
+}
+
+func TestExcerptMarksSingularOfPlural(t *testing.T) {
+	if got := marked(excerpt("Build a form.", []string{"forms"})); got != "Build a [form]." {
+		t.Errorf("excerpt %q, want the singular marked", got)
+	}
+}
+
+// A term also finds its -ing form as a whole word: "theme" names the
+// Theming page before ThemePicker, which only holds it in a longer title.
+func TestSearchMatchesGerund(t *testing.T) {
+	idx := Build([]Page{
+		{URL: "/picker", Title: "ThemePicker", Sections: []Section{{Text: "Pick a theme. theme theme."}}},
+		{URL: "/theming", Title: "Theming", Sections: []Section{{Text: "Tokens drive caching and colors."}}},
+	})
+	if got := urls(idx.Search("theme", 2)); got != "/theming /picker" {
+		t.Errorf("theme: %s, want /theming /picker", got)
+	}
+	if got := urls(idx.Search("cache", 2)); got != "/theming" {
+		t.Errorf("cache: %s, want /theming", got)
+	}
+	if got := marked(excerpt("Tokens drive caching.", []string{"cache"})); got != "Tokens drive [caching]." {
+		t.Errorf("excerpt %q, want the -ing form marked", got)
+	}
+}
+
+// A camelCase title named whole earns the full title bonus and beats
+// a longer title the query only begins: its parts do not count as
+// extra title words.
+func TestSearchCamelTitleNamedWhole(t *testing.T) {
+	idx := Build([]Page{
+		{URL: "/plural", Title: "Datatables", Sections: []Section{{}}},
+		{URL: "/datatable", Title: "DataTable", Sections: []Section{{}}},
+	})
+	res := idx.Search("datatable", 2)
+	if got := urls(res); got != "/datatable /plural" {
+		t.Fatalf("datatable: %s, want /datatable /plural", got)
+	}
+	if res[0].Score < titleBonus {
+		t.Errorf("DataTable scored %d, want the full title bonus %d", res[0].Score, titleBonus)
+	}
+}
+
+// A word the title repeats is one slot, so "Form, form" is named whole
+// by form.
+func TestSearchTitleWordRepeatsOnce(t *testing.T) {
+	idx := Build([]Page{{URL: "/form", Title: "Form, form", Sections: []Section{{}}}})
+	res := idx.Search("form", 1)
+	if len(res) != 1 || res[0].Score < titleBonus {
+		t.Errorf("form: %+v, want /form with the full title bonus", res)
+	}
+}
+
+// A term the title holds twice takes its widest span: in "DataTable
+// MyDatatable", datatable names DataTable's two slots whole, not just
+// MyDatatable's second part.
+func TestSearchTitleTermTakesWidestSpan(t *testing.T) {
+	idx := Build([]Page{{URL: "/t", Title: "DataTable MyDatatable", Sections: []Section{{}}}})
+	res := idx.Search("datatable", 1)
+	if len(res) != 1 || res[0].Score < titleBonus/2 {
+		t.Errorf("datatable: %+v, want half the title bonus (2 of 4 slots)", res)
+	}
+}
+
+// Two query terms that begin the same title word earn it once.
+func TestSearchTermsShareTitleWordOnce(t *testing.T) {
+	idx := Build([]Page{
+		{URL: "/formatter", Title: "Formatter", Sections: []Section{{}}},
+		{URL: "/options", Title: "Form Format Options", Sections: []Section{{}}},
+	})
+	if got := urls(idx.Search("form format", 2)); got != "/options /formatter" {
+		t.Errorf("form format: %s, want /options /formatter", got)
+	}
+}
+
+// The excerpt anchor is the first word any query term names whole,
+// whatever order the terms came in.
+func TestExcerptAnchorIgnoresTermOrder(t *testing.T) {
+	text := "formbuilder " + strings.Repeat("filler ", 40) + "forms."
+	for _, terms := range [][]string{{"form", "forms"}, {"forms", "form"}} {
+		if got := marked(excerpt(text, terms)); !strings.Contains(got, "[forms]") {
+			t.Errorf("terms %q: excerpt %q, want it on forms", terms, got)
+		}
+	}
+}

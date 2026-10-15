@@ -21,6 +21,21 @@ const (
 	tfCap         = 3
 )
 
+// titleBonus lifts a page whose title holds every query term above
+// every page whose title does not, so a page named for the query is
+// its answer however often other pages repeat the words. A title is a
+// row of slots, one per camelCase part (a plain word is one slot), and
+// the bonus is the share of two points a slot the query earns: a term
+// that names a word whole fills all its slots with two, one that names
+// a part fills that slot with two, and one that only begins a word
+// puts one in its first slot. Each slot keeps its best, so two terms
+// never earn one word twice. "table" finds DataTable (2 of 4) before
+// TableOfContents (2 of 6), "datatable" finds DataTable (4 of 4)
+// before Datatables (1 of 2), and "form format" finds Form Format
+// Options (4 of 6) before Formatter (1 of 2). Scores stay far below
+// 2^53, so the browser adds them exactly.
+const titleBonus = 1_000_000
+
 // excerptRunes caps the section text an index keeps for excerpts. The
 // static fragments ship the same capped text, so the browser excerpts
 // what the server would.
@@ -31,9 +46,10 @@ const excerptRunes = 2000
 // same search run by the browser client over the static files rank
 // identically.
 type Index struct {
-	pages []Page // section text capped at excerptRunes
-	terms map[string]termEntry
-	keys  []string // sorted terms, for prefix scans
+	pages  []Page // section text capped at excerptRunes
+	titleN []int  // each page's count of title slots (titleBonus)
+	terms  map[string]termEntry
+	keys   []string // sorted terms, for prefix scans
 }
 
 // termEntry is one term's inverse document frequency (scaled by 100)
@@ -43,10 +59,50 @@ type termEntry struct {
 	postings []posting
 }
 
-// posting is one section that holds a term, and the term's weighted
-// count there.
+// posting is one section that holds a term and the term's weighted
+// count there. On a page's first section it also says which title
+// slots the term names: tLen slots from tFrom, none when tLen is 0.
 type posting struct {
 	page, section, score int
+	tFrom, tLen          int
+}
+
+// titleSlots lays a title out as slots (titleBonus): each distinct
+// word takes one slot per camelCase part, or one when it has none, and
+// names them all whole; each part names its own slot. A term the title
+// holds twice keeps its widest span. It returns the spans by term and
+// the slot count.
+func titleSlots(title string) (map[string][2]int, int) {
+	spans := map[string][2]int{}
+	keep := func(t string, from, n int) {
+		if old, ok := spans[t]; !ok || n > old[1] {
+			spans[t] = [2]int{from, n}
+		}
+	}
+	n := 0
+	seen := map[string]bool{}
+	for _, word := range sourceWords(title) {
+		terms := indexTerms(word)
+		lower := strings.ToLower(word)
+		if len(terms) == 0 || seen[lower] {
+			continue
+		}
+		seen[lower] = true
+		whole := terms[0] == lower
+		parts := terms
+		if whole {
+			parts = terms[1:]
+		}
+		width := max(1, len(parts))
+		if whole {
+			keep(lower, n, width)
+		}
+		for i, part := range parts {
+			keep(part, n+i, 1)
+		}
+		n += width
+	}
+	return spans, n
 }
 
 // Build indexes pages. A page without a URL is dropped, and so is one
@@ -69,6 +125,7 @@ func Build(pages []Page) *Index {
 		seenURL[p.URL], seenBody[body] = true, true
 		pi := len(idx.pages)
 		seen := map[string]bool{}
+		spans, slots := titleSlots(p.Title)
 		for si, s := range p.Sections {
 			scores := map[string]int{}
 			if si == 0 {
@@ -78,7 +135,11 @@ func Build(pages []Page) *Index {
 			addField(scores, s.Text, weightBody)
 			for _, t := range slices.Sorted(maps.Keys(scores)) {
 				e := idx.terms[t]
-				e.postings = append(e.postings, posting{page: pi, section: si, score: scores[t]})
+				post := posting{page: pi, section: si, score: scores[t]}
+				if sp, ok := spans[t]; ok && si == 0 {
+					post.tFrom, post.tLen = sp[0], sp[1]
+				}
+				e.postings = append(e.postings, post)
 				idx.terms[t] = e
 				if !seen[t] {
 					seen[t] = true
@@ -93,6 +154,7 @@ func Build(pages []Page) *Index {
 			kept.Sections[i] = s
 		}
 		idx.pages = append(idx.pages, kept)
+		idx.titleN = append(idx.titleN, slots)
 	}
 	n := float64(len(idx.pages))
 	for t, e := range idx.terms {
@@ -152,9 +214,9 @@ func capRunes(s string, n int) string {
 }
 
 // matching returns the index terms a query term matches: every term q
-// prefixes (q itself among them), and every term its stem prefixes
-// when it has one.
-func (idx *Index) matching(q, stem string) []string {
+// prefixes (q itself among them), every term its stem prefixes when it
+// has one, and its gerund when the index holds it.
+func (idx *Index) matching(q, stem, gerund string) []string {
 	from := q
 	if stem != "" {
 		from = stem
@@ -163,6 +225,11 @@ func (idx *Index) matching(q, stem string) []string {
 	var out []string
 	for ; i < len(idx.keys) && strings.HasPrefix(idx.keys[i], from); i++ {
 		out = append(out, idx.keys[i])
+	}
+	if gerund != "" && !strings.HasPrefix(gerund, from) {
+		if _, ok := idx.terms[gerund]; ok {
+			out = append(out, gerund)
+		}
 	}
 	return out
 }

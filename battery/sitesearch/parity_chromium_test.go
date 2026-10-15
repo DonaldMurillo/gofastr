@@ -50,6 +50,36 @@ func parityCorpus() []Page {
 		{URL: "/examples/tracker", Title: "Tracker", Group: "Examples", Sections: []Section{
 			{Text: "An issue tracker with forms, a palette and server-rendered tables."},
 		}},
+		// The title tier: a title the query names whole, one it only
+		// begins, and a longer title that holds it.
+		{URL: "/components/authcard", Title: "AuthCard", Group: "Components", Sections: []Section{
+			{Text: "A sign-in card. Auth for auth pages."},
+		}},
+		{URL: "/docs/auth", Title: "Authentication", Group: "Docs", Sections: []Section{
+			{Text: "Install github.com/DonaldMurillo/gofastr-plugins/formbuilder first. " + long + "Then a form signs the session in."},
+		}},
+		{URL: "/components/toc", Title: "TableOfContents", Group: "Components", Sections: []Section{
+			{Text: "A table of contents for long pages."},
+		}},
+		{URL: "/components/themepicker", Title: "ThemePicker", Sections: []Section{
+			{Text: "Pick a theme; the theme sticks."},
+		}},
+		{URL: "/docs/theming", Title: "Theming", Sections: []Section{
+			{Text: "Tokens drive caching and colors."},
+		}},
+		// Title slots: a camelCase title named whole against one word
+		// the query only begins, and two terms against one title word.
+		// The Formatter text puts a prefix hit before a whole one, so
+		// the excerpt anchor must not depend on term order.
+		{URL: "/blog/datatables", Title: "Datatables", Sections: []Section{
+			{Text: "Notes on datatable layouts."},
+		}},
+		{URL: "/docs/formatter", Title: "Formatter", Sections: []Section{
+			{Text: "Formatters reshape values. " + long + "A form uses one to format dates."},
+		}},
+		{URL: "/docs/form-format", Title: "Form format options", Sections: []Section{
+			{Text: "How a form picks its format."},
+		}},
 	}
 }
 
@@ -59,6 +89,9 @@ var parityQueries = []string{
 	"日本語", "straße", "errors field", "zzz", "forms zzz", "f", "",
 	"Pagination", "the", "renders", "palette search", "columns sort",
 	"ΟΣ", "οσ", "κοσμοσ", "ΚΟΣΜΟΣ", "İSTANBUL", "istanbul", "izmir",
+	"auth", "authentication", "data table", "tables", "formbuilder", "sign forms",
+	"theme", "theming", "cache", "themes", "free",
+	"datatable", "form format", "format form", "formatter", "form formatters",
 }
 
 func TestStaticSearchMatchesGo(t *testing.T) {
