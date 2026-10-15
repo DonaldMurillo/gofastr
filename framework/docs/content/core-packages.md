@@ -153,8 +153,7 @@ operations or mount the docs endpoint. Start at `core/openapi/spec.go`:
 
 `core/schema` defines entity fields, validates values, and generates JSON
 schemas. Start at `core/schema/schema.go`: `Field`, `Validate`, `JSONSchema`.
-Validation accepts precise `json.Number` numeric values; a relation with
-`Many=true` accepts arrays of non-empty string references. Generated JSON
+Validation accepts precise `json.Number` numeric values. Generated JSON
 and OpenAPI object properties and required lists use an explicit `WireName`.
 Character bounds and text patterns match validation; generated enum lists
 own their slices, so editing a schema does not change its declaration.

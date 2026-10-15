@@ -56,19 +56,6 @@ func TestEnumJSONSchemaOwnsValues(t *testing.T) {
 		t.Fatal("schema mutated source")
 	}
 }
-func TestManyRelationsAcceptReferenceArrays(t *testing.T) {
-	f := Field{Type: Relation, Many: true}
-	if e := Validate(f, []string{"a", "b"}); e != nil {
-		t.Fatal(e)
-	}
-	if Validate(f, []any{"a", 4}) == nil {
-		t.Fatal("invalid relation accepted")
-	}
-	if p := fieldToJSONSchema(f); p["type"] != "array" {
-		t.Fatal(p)
-	}
-}
-
 func TestDecimalIntegralBoundPreservesExactInteger(t *testing.T) {
 	b := math.Exp2(60)
 	if Validate(Field{Type: Decimal, Max: &b}, "1152921504606846977") == nil {

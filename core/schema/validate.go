@@ -51,9 +51,6 @@ func validateField(f Field, value any) error {
 	case JSON:
 		return validateJSON(value)
 	case Relation:
-		if f.Many {
-			return validateManyRelations(value)
-		}
 		return validateRelation(value)
 	case Image, File:
 		return validateImageOrFile(value)
@@ -478,24 +475,4 @@ func decimalBound(v float64) *big.Rat {
 	}
 	n, _ := new(big.Rat).SetString(strconv.FormatFloat(v, 'g', -1, 64))
 	return n
-}
-
-func validateManyRelations(value any) error {
-	switch refs := value.(type) {
-	case []string:
-		for _, ref := range refs {
-			if err := validateRelation(ref); err != nil {
-				return err
-			}
-		}
-	case []any:
-		for _, ref := range refs {
-			if err := validateRelation(ref); err != nil {
-				return err
-			}
-		}
-	default:
-		return fmt.Errorf("must be an array of references")
-	}
-	return nil
 }

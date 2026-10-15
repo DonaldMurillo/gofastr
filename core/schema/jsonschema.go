@@ -126,8 +126,6 @@ func fieldToJSONSchema(f Field) map[string]any {
 			prop["x-relation"] = f.To
 		}
 		if f.Many {
-			prop["type"] = "array"
-			prop["items"] = map[string]any{"type": "string", "minLength": 1}
 			prop["x-many"] = true
 		}
 
