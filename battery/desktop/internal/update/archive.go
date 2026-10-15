@@ -94,9 +94,6 @@ func ExtractZip(data []byte, dest, appName string) (string, error) {
 	}
 	for _, f := range zr.File {
 		name, _ := cleanEntryName(f.Name)
-		if name == root && f.FileInfo().IsDir() {
-			continue
-		}
 		if err := extractEntry(f, dest, name); err != nil {
 			return "", err
 		}
@@ -128,7 +125,11 @@ func extractEntry(f *zip.File, dest, name string) error {
 	mode := f.FileInfo().Mode()
 	switch {
 	case mode.IsDir():
-		if err := os.MkdirAll(filepath.Join(dest, filepath.FromSlash(name)), dirPerm(mode)); err != nil {
+		target := filepath.Join(dest, filepath.FromSlash(name))
+		if err := os.MkdirAll(target, dirPerm(mode)); err != nil {
+			return fmt.Errorf("%w: extract failed", ErrBadArchive)
+		}
+		if err := os.Chmod(target, dirPerm(mode)); err != nil {
 			return fmt.Errorf("%w: extract failed", ErrBadArchive)
 		}
 		return nil
@@ -156,6 +157,7 @@ func extractEntry(f *zip.File, dest, name string) error {
 	// Cap the copy too: a lying zip header could stream more than
 	// UncompressedSize64.
 	n, err := io.CopyN(out, rc, maxEntrySize+1)
+	modeErr := out.Chmod(mode.Perm())
 	cerr := out.Close()
 	if err != nil && !errors.Is(err, io.EOF) {
 		return fmt.Errorf("%w: extract failed", ErrBadArchive)
@@ -163,7 +165,7 @@ func extractEntry(f *zip.File, dest, name string) error {
 	if n > maxEntrySize {
 		return fmt.Errorf("%w: entry too large", ErrBadArchive)
 	}
-	if cerr != nil {
+	if cerr != nil || modeErr != nil {
 		return fmt.Errorf("%w: extract failed", ErrBadArchive)
 	}
 	return nil
@@ -173,9 +175,5 @@ func extractEntry(f *zip.File, dest, name string) error {
 // says (a bundle that could not be re-removed is worse than one with
 // wider-than-recorded directory bits, and the staging root is 0700).
 func dirPerm(mode fs.FileMode) fs.FileMode {
-	p := mode.Perm()
-	if p&0o700 != 0o700 {
-		p = (p | 0o700) &^ 0o022 // group/other write never
-	}
-	return p
+	return (mode.Perm() | 0o700) &^ 0o022 // group/other write never
 }

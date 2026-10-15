@@ -22,9 +22,8 @@ import (
 // 3. Path parameters (via `path:"id"` tag)
 // 4. JSON body (decodes entire struct, highest priority)
 //
-// If the request has a JSON body and Content-Type is application/json,
-// the body is decoded first. Then query/path/header values fill in
-// any zero-valued fields.
+// Sources are applied in the order above; later present values overwrite
+// earlier values. An absent JSON property preserves the lower-priority value.
 //
 // If the body is present but not valid JSON, a 400 error is returned.
 // If dst is not a pointer, Bind panics.
@@ -217,6 +216,14 @@ func jsonTagSet(t reflect.Type) map[string]struct{} {
 }
 
 func collectJSONTags(t reflect.Type, out map[string]struct{}) {
+	collectJSONTagsSeen(t, out, make(map[reflect.Type]bool))
+}
+func collectJSONTagsSeen(t reflect.Type, out map[string]struct{}, active map[reflect.Type]bool) {
+	if active[t] {
+		return
+	}
+	active[t] = true
+	defer delete(active, t)
 	for f := range t.Fields() {
 		tag := f.Tag.Get("json")
 		if tag == "-" {
@@ -236,7 +243,7 @@ func collectJSONTags(t reflect.Type, out map[string]struct{}) {
 				ft = ft.Elem()
 			}
 			if ft.Kind() == reflect.Struct {
-				collectJSONTags(ft, out)
+				collectJSONTagsSeen(ft, out, active)
 				continue
 			}
 		}
@@ -297,9 +304,6 @@ func bindQuery(r *http.Request, rv reflect.Value) error {
 		if !fv.CanSet() {
 			continue
 		}
-		if !fv.IsZero() {
-			continue // don't overwrite existing values
-		}
 
 		if err := setField(fv, sanitizeQueryParam(values[0])); err != nil {
 			return Errorf(400, "invalid query parameter %q: %s", tag, err.Error())
@@ -335,9 +339,6 @@ func bindPath(r *http.Request, rv reflect.Value) error {
 		if !fv.CanSet() {
 			continue
 		}
-		if !fv.IsZero() {
-			continue
-		}
 
 		if err := setField(fv, value); err != nil {
 			return Errorf(400, "invalid path parameter %q: %s", tag, err.Error())
@@ -365,9 +366,6 @@ func bindHeaders(r *http.Request, rv reflect.Value) error {
 
 		fv := rv.Field(i)
 		if !fv.CanSet() {
-			continue
-		}
-		if !fv.IsZero() {
 			continue
 		}
 

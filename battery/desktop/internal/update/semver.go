@@ -139,11 +139,21 @@ func Compare(a, b Version) int {
 
 // comparePreID orders two pre-release identifiers.
 func comparePreID(a, b string) int {
-	an, aIsNum := numericID(a)
-	bn, bIsNum := numericID(b)
+	isNumeric := func(s string) bool {
+		for i := range len(s) {
+			if s[i] < '0' || s[i] > '9' {
+				return false
+			}
+		}
+		return s != ""
+	}
+	aIsNum, bIsNum := isNumeric(a), isNumeric(b)
 	switch {
 	case aIsNum && bIsNum:
-		return cmpU64(an, bn)
+		if c := cmpInt(len(a), len(b)); c != 0 {
+			return c
+		}
+		return strings.Compare(a, b)
 	case aIsNum: // numeric identifiers sort below alphanumeric
 		return -1
 	case bIsNum:

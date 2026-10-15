@@ -285,6 +285,21 @@ func renumberPlaceholders(condition string, startIdx int) string {
 	for i < len(condition) {
 		c := condition[i]
 		switch {
+		case c == '"' || c == '`':
+			quote, j := c, i+1
+			for j < len(condition) {
+				if condition[j] == quote {
+					j++
+					if j < len(condition) && condition[j] == quote {
+						j++
+						continue
+					}
+					break
+				}
+				j++
+			}
+			sb.WriteString(condition[i:j])
+			i = j
 		case c == '\'':
 			// A string literal is data: copy it byte for byte, including
 			// any $N inside it. E'…' honours backslash escapes, so \' does
@@ -323,7 +338,7 @@ func renumberPlaceholders(condition string, startIdx int) string {
 			}
 			sb.WriteString(condition[i:j])
 			i = j
-		case c == '$':
+		case c == '$' && (i == 0 || (!isIdentByte(condition[i-1]) && condition[i-1] != '$' && condition[i-1] < 0x80)):
 			// $tag$…$tag$ (and bare $$…$$) is a dollar-quoted literal,
 			// also data. Its body regularly contains $1-looking text.
 			if body, ok := dollarQuoteEnd(condition, i); ok {

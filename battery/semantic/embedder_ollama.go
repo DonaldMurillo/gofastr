@@ -144,9 +144,12 @@ func (e *OllamaEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 	}
 	defer resp.Body.Close()
 
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 10<<20)) // 10 MB max
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, (10<<20)+1)) // 10 MB max
 	if err != nil {
 		return nil, fmt.Errorf("semantic: read ollama response: %w", err)
+	}
+	if len(raw) > 10<<20 {
+		return nil, errors.New("semantic: ollama response exceeds 10 MB")
 	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("semantic: ollama returned %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
@@ -171,15 +174,26 @@ func (e *OllamaEmbedder) Embed(ctx context.Context, texts []string) ([][]float32
 		return nil, fmt.Errorf("semantic: ollama returned %d embeddings for %d inputs", len(embeddings), len(texts))
 	}
 
+	dim := len(embeddings[0])
+	if dim == 0 {
+		return nil, errors.New("semantic: ollama returned an empty embedding")
+	}
+	for _, vec := range embeddings {
+		if len(vec) != dim {
+			return nil, errors.New("semantic: ollama returned inconsistent embedding dimensions")
+		}
+	}
+	cached := e.Dim()
+	if cached != 0 && cached != dim {
+		return nil, fmt.Errorf("semantic: ollama dimension %d does not match %d", dim, cached)
+	}
+	if !e.dim.CompareAndSwap(0, int64(dim)) && e.Dim() != dim {
+		return nil, fmt.Errorf("semantic: ollama dimension changed to %d", dim)
+	}
 	for i := range embeddings {
 		normalize(embeddings[i])
 	}
 
-	// Cache the dimension on first successful call. CompareAndSwap so a
-	// concurrent caller can't race two writers to a torn value.
-	if len(embeddings[0]) > 0 {
-		e.dim.CompareAndSwap(0, int64(len(embeddings[0])))
-	}
 	return embeddings, nil
 }
 

@@ -12,6 +12,9 @@ package textsafe
 // "…(truncated)" (no leading space) and it backs off to a rune
 // boundary, so it is not this function.
 func Truncate(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
 	if len(s) <= max {
 		return s
 	}

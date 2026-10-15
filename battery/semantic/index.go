@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
+	"unicode"
 )
 
 // snapshotter is the optional Store capability needed for on-disk persistence
@@ -71,16 +73,27 @@ func (i *index) loadAndReplay() error {
 			}
 			return i.keywordIndexChunks(ctx, e.Chunks)
 		case walOpRemove:
+			priorIDs := i.collectChunkIDs(e.DocID)
 			if err := i.store.RemoveDoc(ctx, e.DocID); err != nil {
 				return err
 			}
-			return i.keywordRemoveDoc(ctx, e.DocID, nil)
+			return i.keywordRemoveDoc(ctx, e.DocID, priorIDs)
 		default:
 			return fmt.Errorf("unknown wal op %q", e.Op)
 		}
 	}); err != nil {
 		return err
 	}
+	// A fresh gob encoder must not append a second type table to the old
+	// stream. Checkpoint replayed state before starting a new WAL stream.
+	if info, err := w.f.Stat(); err != nil {
+		return err
+	} else if info.Size() > 0 {
+		if err := i.snapshotLocked(); err != nil {
+			return err
+		}
+	}
+
 	// After replay, rebuild keyword index from any chunks loaded from
 	// the snapshot itself (the snapshot does not include keyword state).
 	// keyword != nil guarantees the store is a chunkLister (Open fails closed).
@@ -121,6 +134,11 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 		chunks = append(chunks, cs...)
 	}
 	if len(chunks) == 0 {
+		for _, doc := range docs {
+			if err := i.logAndApplyRemove(ctx, doc.ID); err != nil {
+				return err
+			}
+		}
 		return nil
 	}
 	texts := make([]string, len(chunks))
@@ -134,7 +152,17 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 	if len(vecs) != len(chunks) {
 		return fmt.Errorf("semantic: embedder returned %d vectors for %d chunks", len(vecs), len(chunks))
 	}
+	expectedDim := i.store.Stats().Dim
+	if expectedDim == 0 && len(vecs) > 0 {
+		expectedDim = len(vecs[0])
+	}
 	for j := range chunks {
+		if len(vecs[j]) != expectedDim {
+			return errVecDim(expectedDim, len(vecs[j]))
+		}
+		if err := finiteVector(vecs[j]); err != nil {
+			return err
+		}
 		chunks[j].Vec = vecs[j]
 	}
 
@@ -336,6 +364,9 @@ func candidateWidth(k int) int {
 }
 
 func (i *index) Query(ctx context.Context, q Query) ([]Hit, error) {
+	if math.IsNaN(q.MMRLambda) || math.IsInf(q.MMRLambda, 0) || q.MMRLambda < 0 || q.MMRLambda > 1 {
+		return nil, errors.New("semantic: MMRLambda must be finite and between 0 and 1")
+	}
 	if q.Text == "" {
 		return nil, nil
 	}
@@ -423,11 +454,10 @@ const maxKeywordQueryTerms = 64
 func boundedKeywordText(q string) string {
 	n := 0
 	inField := false
-	for i := range q {
-		switch q[i] {
-		case ' ', '\t', '\n', '\v', '\f', '\r':
+	for i, r := range q {
+		if unicode.IsSpace(r) {
 			inField = false
-		default:
+		} else {
 			if !inField {
 				inField = true
 				n++

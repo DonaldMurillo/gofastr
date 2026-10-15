@@ -84,7 +84,7 @@ func NewCodec(r io.Reader, w io.Writer, maxFrameBytes int) (*Codec, error) {
 	}
 	s := bufio.NewScanner(r)
 	// Verbatim lift from mcpclient: 64 KiB start, 4 MiB max.
-	s.Buffer(make([]byte, scannerStartCap), scannerMaxCap)
+	s.Buffer(make([]byte, scannerStartCap), scannerMaxCap+2)
 	return &Codec{r: r, w: w, max: maxFrameBytes, scan: s}, nil
 }
 
@@ -112,7 +112,11 @@ func (c *Codec) WriteFrame(f *Frame) error {
 	// Append newline into a single Write so a peer never observes a partial
 	// frame. bytes concat allocates, but stdio JSON frames are small and
 	// bounded by max_frame_bytes; the allocation is the cost of atomicity.
-	if _, err := c.w.Write(append(body, '\n')); err != nil {
+	n, err := c.w.Write(append(body, '\n'))
+	if err == nil && n != len(body)+1 {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
 		return fmt.Errorf("moduleproto: write: %w", err)
 	}
 	return nil

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -140,6 +141,7 @@ func (h *pendingHeap) Push(x any)   { h.items = append(h.items, x.(pendingJob)) 
 func (h *pendingHeap) Pop() any {
 	n := len(h.items)
 	x := h.items[n-1]
+	h.items[n-1] = pendingJob{}
 	h.items = h.items[:n-1]
 	return x
 }
@@ -429,6 +431,7 @@ func (q *MemoryQueue) Enqueue(ctx context.Context, job Job) error {
 // pushLocked appends a job to the pending heap and wakes one waiting worker.
 // Caller must hold pmu.
 func (q *MemoryQueue) pushLocked(job Job) {
+	job.Payload = slices.Clone(job.Payload)
 	q.seq++
 	heap.Push(&q.pending, pendingJob{job: job, seq: q.seq})
 	// Broadcast rather than Signal so a lane worker whose lane just got a
@@ -470,6 +473,7 @@ func (q *MemoryQueue) trackInflight(job Job) {
 		return
 	}
 	q.inflightMu.Lock()
+	job.Payload = slices.Clone(job.Payload)
 	q.inflight[job.ID] = job
 	q.inflightMu.Unlock()
 }
@@ -565,6 +569,7 @@ func (q *MemoryQueue) retainDead(job Job) {
 		// An ID is required to inspect/replay a job; skip ID-less jobs.
 		return
 	}
+	job.Payload = slices.Clone(job.Payload)
 	q.deadMu.Lock()
 	defer q.deadMu.Unlock()
 	// De-dupe by ID so a re-failed replayed job doesn't appear twice.
@@ -592,7 +597,7 @@ func (q *MemoryQueue) retainDead(job Job) {
 // It skips the newest offset of them. limit <= 0 defaults to 100; a
 // negative offset reads as zero.
 func (q *MemoryQueue) ListJobs(_ context.Context, status string, limit, offset int) ([]Job, error) {
-	if status != "" && status != "failed" {
+	if status != "" && status != "all" && status != "failed" {
 		return nil, nil
 	}
 	if limit <= 0 {
@@ -604,7 +609,9 @@ func (q *MemoryQueue) ListJobs(_ context.Context, status string, limit, offset i
 	out := make([]Job, 0, min(limit, len(q.dead)-skip))
 	// Newest-first: walk the oldest-first slice in reverse.
 	for i := len(q.dead) - 1 - skip; i >= 0 && len(out) < limit; i-- {
-		out = append(out, q.dead[i])
+		job := q.dead[i]
+		job.Payload = slices.Clone(job.Payload)
+		out = append(out, job)
 	}
 	return out, nil
 }

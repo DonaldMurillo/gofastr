@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -73,6 +74,18 @@ func waitForUnixProcessExit(t *testing.T, pid int) {
 }
 
 func unixProcessExists(pid int) bool {
+	if runtime.GOOS == "linux" {
+		// Container PID 1 may leave terminated orphan processes unreaped.
+		// A zombie cannot execute, even though kill(pid, 0) still succeeds.
+		if raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
+			if close := strings.LastIndexByte(string(raw), ')'); close >= 0 {
+				fields := strings.Fields(string(raw)[close+1:])
+				if len(fields) > 0 && (fields[0] == "Z" || fields[0] == "X") {
+					return false
+				}
+			}
+		}
+	}
 	err := syscall.Kill(pid, 0)
 	return err == nil || err == syscall.EPERM
 }

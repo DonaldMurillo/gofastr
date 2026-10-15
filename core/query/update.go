@@ -2,6 +2,7 @@ package query
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -34,7 +35,7 @@ func (ub *UpdateBuilder) Where(condition string, args ...any) *UpdateBuilder {
 	ub.wheres = append(ub.wheres, whereClause{
 		connector: "AND",
 		condition: condition,
-		args:      args,
+		args:      slices.Clone(args),
 	})
 	return ub
 }

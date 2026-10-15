@@ -1,5 +1,10 @@
 package schema
 
+import (
+	"math"
+	"slices"
+)
+
 // JSONSchema generates a JSON Schema draft-07 object from a slice of Field
 // definitions. The returned map can be marshaled directly to JSON.
 func JSONSchema(fields []Field) map[string]any {
@@ -8,9 +13,13 @@ func JSONSchema(fields []Field) map[string]any {
 
 	for _, f := range fields {
 		prop := fieldToJSONSchema(f)
-		properties[f.Name] = prop
+		name := f.Name
+		if f.WireName != "" {
+			name = f.WireName
+		}
+		properties[name] = prop
 		if f.Required {
-			required = append(required, f.Name)
+			required = append(required, name)
 		}
 	}
 
@@ -36,7 +45,7 @@ func fieldToJSONSchema(f Field) map[string]any {
 	case String:
 		prop["type"] = "string"
 		if f.Min != nil {
-			prop["minLength"] = int(*f.Min)
+			prop["minLength"] = int(math.Ceil(*f.Min))
 		}
 		if f.Max != nil {
 			prop["maxLength"] = int(*f.Max)
@@ -49,7 +58,7 @@ func fieldToJSONSchema(f Field) map[string]any {
 		prop["type"] = "string"
 		prop["format"] = "textarea"
 		if f.Min != nil {
-			prop["minLength"] = int(*f.Min)
+			prop["minLength"] = int(math.Ceil(*f.Min))
 		}
 		if f.Max != nil {
 			prop["maxLength"] = int(*f.Max)
@@ -91,7 +100,7 @@ func fieldToJSONSchema(f Field) map[string]any {
 
 	case Enum:
 		prop["type"] = "string"
-		prop["enum"] = f.Values
+		prop["enum"] = slices.Clone(f.Values)
 
 	case UUID:
 		prop["type"] = "string"
@@ -117,6 +126,8 @@ func fieldToJSONSchema(f Field) map[string]any {
 			prop["x-relation"] = f.To
 		}
 		if f.Many {
+			prop["type"] = "array"
+			prop["items"] = map[string]any{"type": "string", "minLength": 1}
 			prop["x-many"] = true
 		}
 

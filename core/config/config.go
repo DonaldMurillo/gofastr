@@ -29,6 +29,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 // Source provides configuration values. The default source reads from
@@ -120,6 +122,9 @@ func LoadWith(cfg any, sources ...Source) error {
 		return fmt.Errorf("config: expected pointer to struct, got %T", cfg)
 	}
 
+	if err := checkConfigShape(v.Elem().Type(), make(map[reflect.Type]bool)); err != nil {
+		return err
+	}
 	src := ChainedSource(sources)
 	if len(sources) == 0 {
 		src = ChainedSource{EnvSource{}}
@@ -268,7 +273,12 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 			if required {
 				return fmt.Errorf("config: required field %s (%s) not set", field.Name, key)
 			}
-			continue // leave zero value
+			if !found {
+				if err := validateTags(fieldVal, field.Tag.Get("validate")); err != nil {
+					return fmt.Errorf("config: field %s: %s", field.Name, redactSecrets(err.Error(), *secrets))
+				}
+				continue // preserve a valid host default
+			}
 		}
 
 		if sensitive {
@@ -281,6 +291,9 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 			}
 			return err
 		}
+		if err := validateTags(fieldVal, field.Tag.Get("validate")); err != nil {
+			return fmt.Errorf("config: field %s: %s", field.Name, redactSecrets(err.Error(), *secrets))
+		}
 	}
 
 	return nil
@@ -289,7 +302,8 @@ func bindStruct(elem reflect.Value, prefix string, src Source, secrets *[]string
 // setField sets a reflect.Value from a string, converting to the
 // appropriate type.
 func setField(v reflect.Value, s string, fieldName string) error {
-	if s == "" {
+	if s == "" && v.Kind() == reflect.String {
+		v.SetString("")
 		return nil
 	}
 
@@ -379,4 +393,85 @@ func MustLoad(cfg any, sources ...Source) {
 	if err := Load(cfg, sources...); err != nil {
 		panic(err)
 	}
+}
+
+// validateTags enforces the bounds and choices advertised by Load.
+func validateTags(v reflect.Value, tag string) error {
+	if tag == "" {
+		return nil
+	}
+	f := schema.Field{}
+	var value any
+	switch v.Kind() {
+	case reflect.String:
+		f.Type = schema.String
+		value = v.String()
+	case reflect.Int, reflect.Int64:
+		f.Type = schema.Int
+		value = v.Int()
+	case reflect.Float64:
+		f.Type = schema.Float
+		value = v.Float()
+	default:
+		return fmt.Errorf("validation unsupported for %s", v.Kind())
+	}
+	for _, rule := range strings.Split(tag, ",") {
+		key, arg, ok := strings.Cut(rule, "=")
+		if !ok {
+			return fmt.Errorf("invalid validation rule %q", rule)
+		}
+		switch key {
+		case "min", "max":
+			n, err := strconv.ParseFloat(arg, 64)
+			if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
+				return fmt.Errorf("invalid %s bound", key)
+			}
+			if key == "min" {
+				f.Min = &n
+			} else {
+				f.Max = &n
+			}
+		case "oneof":
+			if v.Kind() != reflect.String {
+				return fmt.Errorf("oneof requires a string")
+			}
+			valid := false
+			for _, choice := range strings.Fields(arg) {
+				if v.String() == choice {
+					valid = true
+				}
+			}
+			if !valid {
+				return fmt.Errorf("must be one of %s", arg)
+			}
+		default:
+			return fmt.Errorf("unknown validation rule %q", key)
+		}
+	}
+	return schema.Validate(f, value)
+}
+
+// Recursive struct shapes make key discovery unbounded. Refuse them before
+// reading sources or allocating nested configuration pointers.
+func checkConfigShape(t reflect.Type, active map[reflect.Type]bool) error {
+	if active[t] {
+		return fmt.Errorf("config: recursive struct %s is unsupported", t)
+	}
+	active[t] = true
+	defer delete(active, t)
+	for f := range t.Fields() {
+		if !f.IsExported() {
+			continue
+		}
+		ft := f.Type
+		if ft.Kind() == reflect.Pointer {
+			ft = ft.Elem()
+		}
+		if ft.Kind() == reflect.Struct {
+			if err := checkConfigShape(ft, active); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

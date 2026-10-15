@@ -60,6 +60,11 @@ type Platform interface {
 // rename fails and the tree is copied with modes preserved and the
 // source removed.
 func MoveTree(src, dst string) error {
+	if _, err := os.Lstat(dst); err == nil {
+		return fmt.Errorf("MoveTree: destination already exists")
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	if err := os.Rename(src, dst); err == nil {
 		return nil
 	}
@@ -88,7 +93,7 @@ func copyTree(src, dst string) error {
 				return err
 			}
 		}
-		return nil
+		return os.Chmod(dst, info.Mode().Perm())
 	}
 	if !info.Mode().IsRegular() {
 		// A symlink or device in a bundle we just extracted and
@@ -106,6 +111,10 @@ func copyTree(src, dst string) error {
 		return err
 	}
 	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	if err := out.Chmod(info.Mode().Perm()); err != nil {
 		out.Close()
 		return err
 	}

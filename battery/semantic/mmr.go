@@ -50,17 +50,19 @@ func mmr(qv []float32, hits []Hit, lambda float64, k int) []Hit {
 			}
 			maxSim := 0.0
 			if hits[i].Chunk.Vec != nil {
+				compared := false
 				for _, p := range out {
 					if p.Chunk.Vec == nil {
 						continue
 					}
 					sim := float64(dot(hits[i].Chunk.Vec, p.Chunk.Vec))
-					if sim > maxSim {
+					if !compared || sim > maxSim {
 						maxSim = sim
 					}
+					compared = true
 				}
 			}
-			score := lambda*relevance[i] - (1-lambda)*maxSim
+			score := (1-lambda)*relevance[i] - lambda*maxSim
 			if score > bestScore {
 				bestScore = score
 				bestIdx = i

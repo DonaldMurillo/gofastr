@@ -42,25 +42,29 @@ func (ib *InsertBuilder) Build() (string, []any) {
 
 	sb.WriteString("INSERT INTO ")
 	sb.WriteString(sanitizeFragment(ib.table))
+	if len(ib.columns) == 0 && len(ib.values) == 0 {
+		sb.WriteString(" DEFAULT VALUES")
+	} else {
 
-	// Columns: each column is sanitized so SQL meta-sequences in
-	// a hostile column name cannot escape the parenthesised list.
-	sb.WriteString(" (")
-	sanitized := make([]string, len(ib.columns))
-	for i, c := range ib.columns {
-		sanitized[i] = sanitizeColumn(c)
-	}
-	sb.WriteString(strings.Join(sanitized, ", "))
-	sb.WriteString(")")
+		// Columns: each column is sanitized so SQL meta-sequences in
+		// a hostile column name cannot escape the parenthesised list.
+		sb.WriteString(" (")
+		sanitized := make([]string, len(ib.columns))
+		for i, c := range ib.columns {
+			sanitized[i] = sanitizeColumn(c)
+		}
+		sb.WriteString(strings.Join(sanitized, ", "))
+		sb.WriteString(")")
 
-	// Values
-	sb.WriteString(" VALUES (")
-	placeholders := make([]string, len(ib.values))
-	for i := range ib.values {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		// Values
+		sb.WriteString(" VALUES (")
+		placeholders := make([]string, len(ib.values))
+		for i := range ib.values {
+			placeholders[i] = fmt.Sprintf("$%d", i+1)
+		}
+		sb.WriteString(strings.Join(placeholders, ", "))
+		sb.WriteString(")")
 	}
-	sb.WriteString(strings.Join(placeholders, ", "))
-	sb.WriteString(")")
 
 	// Returning: each column sanitized for the same reason as Columns.
 	if len(ib.returning) > 0 {

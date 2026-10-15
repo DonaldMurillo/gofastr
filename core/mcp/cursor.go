@@ -156,10 +156,7 @@ func pageList[T any](s *Server, method string, items []T, offset int) ([]T, stri
 	if offset >= len(items) {
 		return items[:0], ""
 	}
-	end := offset + s.pageListSize()
-	if end > len(items) {
-		end = len(items)
-	}
+	end := offset + min(s.pageListSize(), len(items)-offset)
 	if end < len(items) {
 		return items[offset:end], s.encodeListCursor(method, end)
 	}

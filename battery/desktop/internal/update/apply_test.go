@@ -41,6 +41,9 @@ func TestMoveTreeCrossVolumeFallback(t *testing.T) {
 	if err := os.WriteFile(file, []byte("bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(file, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	dst := filepath.Join(t.TempDir(), "Notes.app")
 	if err := copyTree(filepath.Join(src, "Notes.app"), dst); err != nil {
 		t.Fatal(err)

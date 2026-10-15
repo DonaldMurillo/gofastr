@@ -151,11 +151,14 @@ func (s *Scheduler) WithLeaderElection(le LeaderElection) {
 // replica fired. Extracted from the run loop so the leader-gating is testable
 // without the wall clock.
 func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
-	if s.leader == nil {
+	s.mu.RLock()
+	leader := s.leader
+	s.mu.RUnlock()
+	if leader == nil {
 		s.RunOnce(ctx, now)
 		return true
 	}
-	held, release, err := s.acquireSafely(ctx)
+	held, release, err := s.acquireSafely(ctx, leader)
 	if err != nil {
 		s.reportError("(leader-election)", err)
 		return false
@@ -186,14 +189,14 @@ func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
 // running on the loop goroutine, which has no per-request net — its
 // panic is routed to OnError like every other scheduler fault and the
 // tick is skipped, instead of killing the process.
-func (s *Scheduler) acquireSafely(ctx context.Context) (held bool, release func(), err error) {
+func (s *Scheduler) acquireSafely(ctx context.Context, leader LeaderElection) (held bool, release func(), err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			held, release = false, nil
 			err = fmt.Errorf("panic in leader-election acquire: %v\n%s", r, debug.Stack())
 		}
 	}()
-	return s.leader.Acquire(ctx)
+	return leader.Acquire(ctx)
 }
 
 // releaseSafely runs the per-tick lease release under a recover guard
@@ -247,7 +250,11 @@ func (s *Scheduler) StopContext(ctx context.Context) error {
 	started := s.started
 	s.mu.RUnlock()
 	if started {
-		<-s.stopped
+		select {
+		case <-s.stopped:
+		case <-ctx.Done():
+			return fmt.Errorf("cron: tick loop still running at stop deadline: %w", ctx.Err())
+		}
 	}
 
 	joined := make(chan struct{})
@@ -458,6 +465,7 @@ func parseField(s string, min, max int) (uint64, error) {
 
 func parseFieldPart(part string, min, max int) (uint64, error) {
 	step := 1
+	stepped := strings.Contains(part, "/")
 	if idx := strings.Index(part, "/"); idx != -1 {
 		s, err := strconv.Atoi(part[idx+1:])
 		if err != nil || s <= 0 {
@@ -485,6 +493,9 @@ func parseFieldPart(part string, min, max int) (uint64, error) {
 			return 0, fmt.Errorf("bad value %q", part)
 		}
 		lo, hi = n, n
+		if stepped {
+			hi = max
+		}
 	}
 
 	if lo < min || hi > max || lo > hi {

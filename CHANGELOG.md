@@ -48,6 +48,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   misreport (#503).
 
 ### Fixed
+- **Regression audit: 100 distinct defects in GoFastr**, each covered by a
+  regression observed failing before its fix. Covers retry arithmetic, SQL
+  transactions and identifiers, configuration, YAML and dotenv parsing,
+  validation and generated schemas, localization, pagination, module framing,
+  notification routing, queue/webhook storage, cron shutdown, desktop updates,
+  semantic retrieval and crash recovery, and two test-fixture defects.
+  The pull request records each finding and its pinning regression.
+  Explicit empty numeric configuration now errors; documented validation tags
+  are enforced. `handler.Bind` applies header → query → path → JSON priority.
+  `render.RegisterFunc` refuses replacement as documented, and MMR lambda now
+  increases diversity as documented.
+- **Semantic snapshot configuration honors zero.** `SnapshotEvery: 0` now
+  disables automatic snapshots as documented, instead of silently becoming
+  1000. Set `SnapshotEvery: 1000` explicitly to keep that interval. Recovery
+  checkpoints, explicit `Snapshot()` calls and `Close()` still persist state.
 - **`core/static` answers `Range` requests.** `Range: bytes=0-99` got
   `200` and the whole file with no `Accept-Ranges`, so a video served by
   `static.Handler` could not seek, Safari would not play an mp4 from it,
