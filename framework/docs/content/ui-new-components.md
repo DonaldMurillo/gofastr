@@ -82,6 +82,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **toggleaction**: `framework/ui.ToggleAction`, three-state commit/untoggle button (idle → pending → committed) with optional mutex groups
 - **passwordinput**: `framework/ui.PasswordInput`, password field with a show/hide reveal button rendered through `headless.Password` — the headless behaviour module binds the reveal and its words come from `ui.StringsFor`; a control, not a field: the error belongs to the FormField around it
 - **searchinput**: `framework/ui.SearchInput`, search field with icon prefix + clear button
+- **searchresults**: `framework/ui.SearchResults`, a full search results page (GET form, match count, results with section links, pagination) that works without script
 - **inputgroup**: `framework/ui.InputGroup`, input with prepend / append addons
 - **rating**: `framework/ui.RatingInput`, 1-N star/heart with Size / Gap / Shape / Icon knobs
 - **rating-display**: `framework/ui.Rating` (`ui.RatingDisplayConfig`), a read-only score drawn as glyphs sized to themselves, one `role="img"` with a localized "4 out of 5" name. Shares Shape / Size and the `--ui-rating-color` knob with RatingInput. Use it for a testimonial or a product average, where a disabled RatingInput would announce a form control and space its stars on 44px tap targets.
@@ -102,7 +103,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **datefield**: `framework/ui.DateField`, typed labelled native date field with HTML-date min/max bounds
 - **datetimefield**: `framework/ui.DateTimeField`, typed labelled native date-and-time field (`datetime-local`) with min/max bounds and a step in seconds
 - **formsection**: `framework/ui.FormSection`, grouped fields with a shared heading + description
-- **formframe**: `framework/ui.FormFrame`, record form in two columns — a wide main column beside a narrow side rail (one of three named `SideWidth` sizes, each a modifier class reading a `--ui-form-frame-side-*` token) that drops under the main one below 48rem of the form's own width, a container query, so a drawer on a wide screen stacks and a full page sits side by side; the main column stops at 45rem, and `SidePanel` makes the rail a bordered panel that sticks beside the fields (under a `ContentRow{Sticky: true}` toolbar it stops below the bar, offset by the `--ui-sticky-top` the row publishes)
+- **formframe**: `framework/ui.FormFrame`, record form in two columns — a wide main column beside a narrow side rail (one of three named `SideWidth` sizes, each a modifier class reading a `--ui-form-frame-side-*` token) that drops under the main one below 48rem of the form's own width, a container query, so a drawer on a wide screen stacks and a full page sits side by side; the main column stops at 45rem, and `SidePanel` makes the rail a bordered panel that sticks beside the fields (under a `ContentRow{Sticky: true}` toolbar it stops below the bar, offset by the `--ui-sticky-top` the row publishes, which already counts a `StickyHeader` page's header)
 - **validationsummary**: `framework/ui.ValidationSummary`, inline summary of form validation errors
 - **conditionalfield**: `framework/ui.ConditionalField`, form region visible on first paint and hidden by the runtime until the watched field matches — one value (`WhenValue`) or any of a list (`WhenValues`)
 - **formrepeater**: `framework/ui.FormRepeater`, dynamic list of repeating field groups (add / remove rows)
@@ -129,7 +130,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **skiplink**: `framework/ui.SkipLink`, focus-visible bypass link for jumping to main content
 - **pageheader**: `framework/ui.PageHeader`, top-of-page header with title / eyebrow / subtitle / actions
 - **anchoredrail**: `framework/ui.AnchoredRail`, sticky in-page nav rail with scrollspy-tracked active state
-- **contentrow**: `framework/ui.ContentRow`, the page's content row — a start column (the nav landmark `ContentRowConfig.NavLabel` names, wrapping a `ui.Sidebar` whose own inner nav names only the links list), the main column, an optional toolbar band above main beside the nav (a region landmark `ToolbarLabel` names), and an optional context aside that releases its width around an empty outlet. `Breakpoint` picks the stack width (below md by default, below lg to match `SidebarConfig.DrawerBreakpoint`); `Viewport: true` fills the rest of the viewport below the header and scrolls each column on its own — the row reads the header's height from `--size-header-height` and cannot style its parent, so recipes pair it with a page-tall `ui.Stack{Screen: true}` and the fixed header band; `Sticky: true` keeps the window as the scroller and pins the nav column, `BelowHeader: true` drops that sticky frame under a sticky page header (`--size-header-height`), so a long menu scrolls on its own beside the page.
+- **contentrow**: `framework/ui.ContentRow`, the page's content row — a start column (the nav landmark `ContentRowConfig.NavLabel` names, wrapping a `ui.Sidebar` whose own inner nav names only the links list), the main column, an optional toolbar band above main beside the nav (a region landmark `ToolbarLabel` names), and an optional context aside that releases its width around an empty outlet. `Breakpoint` picks the stack width (below md by default, below lg to match `SidebarConfig.DrawerBreakpoint`); `Viewport: true` fills the rest of the viewport below the header and scrolls each column on its own — the row reads the header's height from `--size-header-height` and cannot style its parent, so recipes pair it with a page-tall `ui.Stack{Screen: true}` and the fixed header band; `Sticky: true` keeps the window as the scroller and pins the nav column at `--ui-sticky-top`, under the header when the page stack sets `StickyHeader`, so a long menu scrolls on its own beside the page.
 - **tabs-signal**: `framework/ui.Tabs`, signal-driven tab strip (click sets the signal; CSS shows the panel); `StateAttrs` adds `data-state=active/inactive` to the buttons, `ID` wires `aria-controls`/`id` pairs, `VacateHidden` ships hidden panels empty with their content in a JSON stash (restored on show by the `headless-tabs` module) so page-scoped test locators cannot match hidden text — the contract knobs a port needs, each off by default
 - **tabnav**: `framework/ui.TabNav`, a navigation strip of links where at most one is current (`aria-current="page"`; a second `Current` panics): the view tabs above a list, the sub-navigation of a record screen. Every tab is a plain `<a>`, so a tab click is a navigation the client router intercepts and the URL stays shareable — the query-param contract since list state moved off islands. `Badge` rides inside the link, `aria-hidden`, for a view's row count. `End` draws a control at the strip's trailing edge, outside the `<nav>` landmark, such as a "Save view" dropdown; the root is then a `<div>` holding both. Distinct from `tabs-signal`, which swaps panels in place under one URL
 - **breadcrumbs**: `framework/ui.Breadcrumbs`, `<nav aria-label>` landmark over an ordered trail; the last step (or the one carrying `Current`) is `aria-current="page"` text, never a link to itself, and separators are `aria-hidden`
@@ -140,8 +141,8 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **sidebardrawertrigger**: `framework/ui.SidebarDrawerTrigger`, the sidebar's drawer toggle rendered on its own — the relocated hamburger a header row carries while the sidebar itself lives in the body; pass the SAME `SidebarConfig` the `ui.Sidebar` render uses and the pair stays one logical control (the trigger hides itself at >= md exactly like the sidebar's inline copy, so `SuppressDrawerTrigger` and a relocated trigger never draw two)
 - **menu**: `framework/ui.Menu`, keyboard-driven dropdown built on `<details>`; `MenuItem.ID` gives a row an addressable `id` (caller-owned uniqueness, ignored on separators; `ExtraAttrs` still cannot set `id`); `MenuConfig.TriggerElement` swaps the framework `<summary>` for a caller-owned trigger — pass the inline HTML of your own `<button>` (or `<a>`) and the runtime makes it the controller: it wires `aria-haspopup`/`aria-controls`/`aria-expanded` at hydration, toggles on click/Enter/Space (activation is prevented — put navigation on menu items), focuses the first menuitem on open, and returns focus to your element on Escape. Use it whenever the page owns the trigger's markup or classes (avatar buttons, pill buttons): routing such an element through `TriggerHTML` nests it inside the summary, which axe reports as `nested-interactive`. `TriggerElement` overrides `Label` and `TriggerHTML`; give each trigger menu a distinct `ID` when two structurally identical ones share a page. `MenuConfig.LazyPanel: true` keeps the panel's rows out of the document tree until the menu is first opened: SSR ships them inside an inert `<template data-cui-menu-lazy>` as the panel's only child (the panel `<div>` stays, so `aria-controls` still resolves), and the runtime mounts them on first open — before its focus-on-open lookup, so the keyboard contract is unchanged. Use it when live-DOM queries must not see closed-menu rows: host Playwright contracts that pin `getByText('Theme')` to the first visible match or `getByLabel` to exactly one element. The rows are still in the HTML source, so this hides nothing from a crawler that parses the response. The cost: rows are not in the DOM until first open, so host JS that binds menu rows by id at page load must use delegated listeners instead, and with JavaScript disabled the menu opens empty (only the disclosure module mounts the rows); the zero value renders rows inline exactly as before. `MenuConfig.IconOnly: true` draws the trigger as the `more` icon with `Label` kept as its visually hidden accessible name, for a table row's action menu. `MenuConfig.Avatar` draws the trigger as that avatar (round, borderless, 32px, a 44px box on coarse pointers) with `Label` as its hidden name, for an account menu; it panics beside `TriggerHTML`, `TriggerElement` or `IconOnly`. `MenuConfig.Icon` draws a registered icon before `Label` on the default trigger (a list's Columns menu); it panics on an unregistered name and beside `TriggerHTML`, `TriggerElement`, `IconOnly` or `Avatar`. A row's action is one of `Href`, `RPC`, `Action`, `Do` (a built `*interactive.Action`, so the row carries its confirm, navigate and toasts) or `Copy` (`&ui.MenuCopy{Target: "<element id>", Toast: "Copied"}` copies that element's text through the headless copy module); a row naming two panics at render. `MenuItem.Check: true` makes a row a checkbox option (`role="menuitemcheckbox"`, `aria-checked` from `Checked`): the state is the server's, so pair it with `Href` or `RPC` that toggles it, as a list's Columns menu does; it panics beside `Radio` or `Children`.
 - **tree**: `framework/ui.Tree`, WAI-ARIA treeview on the headless primitive: roving tabindex, arrows/Home/End/type-ahead bound by the registered `headless-tree` module; leaf hrefs are real anchors, a static branch is real markup, and a `LazyPath` branch keeps the kernel's rpc wiring on its toggle with a hidden signal-bound group (`LazySignalPrefix` names the signal)
-- **toc**: `framework/ui.TableOfContents`, auto-built sticky nav from `<h2>` / `<h3>`
-- **steprail**: `framework/ui.StepRail`, vertical numbered step rail with an active step + anchor links
+- **toc**: `framework/ui.TableOfContents`, a server-rendered contents nav from the `Items` you pass, marking the section in view when `Target` is set; `PhoneSheet` folds it into a bottom sheet a floating pill opens on phones
+- **steprail**: `framework/ui.StepRail`, vertical numbered step rail with an active step + anchor links; it sticks `--ui-step-rail-top` (24px) below `--ui-sticky-top`, so it stops under a `StickyHeader` page's header
 - **steps**: `framework/ui.ProgressSteps`, linear step indicator (horizontal + vertical)
 
 ### Disclosure / surface widgets
@@ -165,11 +166,11 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 
 ### Layout & display
 
-- **layout**: `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box`; `Cluster` wraps by default and exposes the explicit `NoWrap` opt-out; `Shrink` lets a no-wrap row narrow, its last child (a trail that ellipsizes) taking the squeeze while the earlier children keep their size. `StackConfig.Screen: true` makes the stack the page column: at least one viewport tall (100dvh) with its last child pushed to the bottom — the option a recipe uses to keep a short page's footer at the bottom of the screen
+- **layout**: `framework/ui.Stack` / `Cluster` / `Grid` / `Center` / `Spacer` / `Box`; `Cluster` wraps by default and exposes the explicit `NoWrap` opt-out; `Shrink` lets a no-wrap row narrow, its last child (a trail that ellipsizes) taking the squeeze while the earlier children keep their size. `StackConfig.Screen: true` makes the stack the page column: at least one viewport tall (100dvh) with its last child pushed to the bottom — the option a recipe uses to keep a short page's footer at the bottom of the screen. `StackConfig.StickyHeader: true` pins the stack's `<header>` child and publishes its height (`--size-header-height`) as `--ui-sticky-top`, the offset every top-sticky part below reads (ContentRow's Sticky frame, StepRail, SectionMenu, TableOfContents, AnchoredRail, GlobalSearch, NetworkRetryBanner, a top-edge Sticky, FormFrame's side panel, an anchored Section); a region that scrolls on its own (a bounded Box, a pinned nav column, a ListDetail list) resets it to 0. `BoxConfig.Bounded: true` caps a Box at the `--ui-box-bounded-size` knob (20rem) and scrolls what overflows: a window for a long log or list in a panel, or for previewing a viewport-height component (Workbench) inside a page
 - **listdetail**: `framework/ui.ListDetail`, a labelled, keyboard-scrollable list beside a detail slot. Keep it in the group layout to preserve its node and scroll position while detail navigation swaps the primary slot. On phones the detail stacks above the list. `ExtraAttrs` accepts the two markers returned by `LayoutTree.VTRegion()` for whole-region transitions.
 - **listdetailplaceholder**: `framework/ui.ListDetailPlaceholder`, marks an unselected detail screen for `ListDetailConfig.MobileSinglePane`. This opt-in phone mode shows the list on an index and the detail on an issue, including a missing issue; desktop remains split. `BackHref` (with `BackLabel`, default "Back") adds a link to the list at the top of the detail pane, shown only while a phone shows the detail alone; it requires `MobileSinglePane`. The default ListDetail still stacks both regions on phones.
-- **container**: `framework/ui.Container`, max-width page wrapper with breakpoint padding; `Width: ContainerPage` caps at the page measure (`--size-page-width`, 66rem) — the editorial column a contained page's main and its header/footer bands share. Like the bands, its content box is the measure and the page gutter (`--size-page-gutter`, clamp(20px, 5vw, 32px)) sits outside it, so main's text starts on the header brand's edge at every width; `Pad` is the page's block rhythm: `ContainerPadPage` pads under the header (`--ui-container-pad-start`, clamp(40px, 6vw, 64px)) and above the footer (`--ui-container-pad-end`, clamp(48px, 7vw, 80px)), `ContainerPadEnd` only above the footer; an unknown value panics; `Start: true` pins the column to the inline start and drops its gutter, for a measure inside a frame that already pads its content (a settings page in an app shell's pane)
-- **section**: `framework/ui.Section`, labelled content section with heading + description; `Overline` draws the heading as a small upper-case muted group label over a run of cards (a dashboard's "Billing"), still the section's h2
+- **container**: `framework/ui.Container`, max-width page wrapper with breakpoint padding; `Width: ContainerPage` caps at the page measure (`--size-page-width`, 66rem) — the editorial column a contained page's main and its header/footer bands share. Like the bands, its content box is the measure and the page gutter (`--size-page-gutter`, clamp(20px, 5vw, 32px)) sits outside it, so main's text starts on the header brand's edge at every width; `Pad` is the page's block rhythm: `ContainerPadPage` pads under the header (`--ui-container-pad-start`, clamp(40px, 6vw, 64px)) and above the footer (`--ui-container-pad-end`, clamp(48px, 7vw, 80px)), `ContainerPadEnd` only above the footer; a padded container is page-level, so it takes the page gutter inline at every `Width` (an unpadded one keeps the nested-container steps, 8/16/24px), except inside an app frame's content area (`ui.ContentRow` with a `Sidebar`), whose own padding is the gutter; an unknown value panics; `Start: true` pins the column to the inline start and drops its gutter, for a measure inside a frame that already pads its content (a settings page in an app shell's pane)
+- **section**: `framework/ui.Section`, labelled content section with heading + description; `Overline` draws the heading as a small upper-case muted group label over a run of cards (a dashboard's "Billing"), still the section's h2; `Band` gives a section with no eyebrow the page-band treatment (display-size heading)
 - **responsive**: `framework/ui.Responsive`, viewport-swap pair (independent desktop / mobile variants). `Below` picks the breakpoint the mobile variant shows below: `ui.StackBelowMD` (the zero value, 48rem) or `ui.StackBelowLG` (64rem)
 - **panehost**: `framework/ui.PaneHost`, primary pane + openable secondary/tertiary side panes with a responsive overlay-drawer collapse
 - **themed**: `framework/ui.Themed`, wraps a subtree in a registered section-level theme override
@@ -210,7 +211,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **factbox**: `framework/ui.FactBox`, single labelled fact (compact label + value pair; label-first or value-first)
 - **detaillist**: `framework/ui.DetailList`, label/value description list for record detail views; stacks labels above values in narrow containers, including desktop context cards, and on phones; `Stacked` draws a read-only value in a form, label above and the value boxed like a control; `Spread` draws compact side-column facts, label at the start and value at the end, a long first value (an id) truncating ahead of a copy button
 - **progress**: `framework/ui.Progress`, native `<progress>` with theme styling; determinate (`Value` 0..`Max`, clamped at render) or indeterminate (`Value` < 0), labelled visibly (`ShowLabel`) or through `aria-label`. A named-stage walk is `ProgressSteps`, a different component
-- **terminalblock**: `framework/ui.TerminalBlock`, terminal transcript with a labelled header and `TerminalOut` / `TerminalOK` lines
+- **terminalblock**: `framework/ui.TerminalBlock`, terminal transcript with a labelled header and `TerminalOut` / `TerminalOK` / `TerminalErr` lines
 - **skeleton**: `framework/ui.SkeletonCard` / `SkeletonRow` / `SkeletonAvatar` / `SkeletonTimeline` / `SkeletonLine`, loading placeholders over `framework/headless.Skeleton`: hidden shimmer bars, one polite "Loading…" announcement per preset; the timeline preset draws event-shaped rows (dot, name line, two text lines) matching what `ui.Timeline` arrivals look like, and `SkeletonLine` draws ONE capped bar — the loading twin of a breadcrumb trail or a one-line label (an area's `Loading.Show`, a crumbs skeleton)
 - **spinner**: `framework/ui.Spinner`, inline CSS loading indicator
 
@@ -243,7 +244,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 
 ### Marketing & page sections
 
-- **hero**: `framework/ui.Hero`, centered landing hero (eyebrow + title + subtitle + actions + optional media)
+- **hero**: `framework/ui.Hero`, centered landing hero (eyebrow + title + subtitle + actions + optional media); `Lede` takes inline markup in place of `Subtitle`, `Footer` holds content under the actions (an install line, a byline, stats)
 - **herosplit**: `framework/ui.HeroSplit`, two-column hero (copy + media) with equal / copy-wide / media-wide ratios
 - **pricingcard**: `framework/ui.PricingCard`, plan tile (price + period + feature list + CTA), optional featured highlight; cards placed directly in a `ui.Grid` that holds only plans share their row lines, so prices and feature lists start level across a row; a card in a wrapper cell or a mixed grid keeps its own rows
 - **authcard**: `framework/ui.AuthCard`, centered card shell for login / register / reset forms (title + alert + notice + body + footer)
@@ -500,6 +501,36 @@ added/removed, `--color-warning` for word marks) and are tunable through
 `--ui-code-block-highlight-bg`, `--ui-code-block-added-bg`,
 `--ui-code-block-removed-bg`, and `--ui-code-block-mark-bg`.
 
+### Syntax highlighting
+
+`ui.HighlightLines(code, lang)` is the kit's highlighter: a small
+single-pass scanner that returns one `render.HTML` per source line, ready
+for `CodeBlockConfig.Lines`. `ui.Markdown` fences and `ui.CodeTabs`
+samples go through it. It emits the kit's token classes (`tk-kw`,
+`tk-fn`, `tk-str`, `tk-num`, `tk-com`, `tk-type`, `tk-pn`), which the
+CodeBlock sheet colors from the theme's `Code` slots (`--tk-*`, dark
+values in `Theme.DarkCode`; see [theming](theming.md)).
+
+| Language key | What it classes |
+|---|---|
+| `go`, `golang` | keywords and builtins, predeclared types, call sites, and named types in type position: after `type`, an exported composite literal (`Pong{`), behind `*` or `[]`, package-qualified or not (`*http.Request`) |
+| `js`, `ts`, `jsx`, `tsx`, `javascript`, `typescript` | keywords, a few built-in types, call sites, object keys (`{ method: …}`, not a ternary's `a ? b : c`) |
+| `sql`, `postgres`, `sqlite` | keywords and column types, case-insensitive; `--` and `/* */` comments |
+| `sh`, `bash`, `shell`, `console` | keywords, the command word of each line or pipeline stage (after an optional `$` prompt and its space), `#` comments at a word boundary |
+| `yaml`, `yml` | mapping keys (at line start, after an optional `-` list marker), `true`/`false`/`null`, `#` comments; an apostrophe in an unquoted value opens no string |
+| `json` | keys (`tk-fn`) apart from string values (`tk-str`), `true`/`false`/`null` |
+| any other non-empty key | comments, strings and numbers |
+| `""`, `text`, `plain` | escaped text, no tokens |
+
+Hand-tokenized lines work too: pass `<span class="tk-…">` spans you
+escaped yourself as `Lines`, and they draw in the same palette.
+
+Go source is tab-indented, so the block renders a tab four columns wide
+(`--ui-code-block-tab-size`, default `4`; the browser's 8 pushed nested
+code off a hero-width panel). The line-number gutter draws in a mix of
+the code text and code surface colors (`--ui-code-block-gutter-color`),
+so it recedes on a dark or a light code surface alike.
+
 **Common mistake**: writing the line numbers as `highlight={2}`. The
 braces are the bare form; `highlight=` takes the bare list. Both
 `{2,5-7}` and `highlight=2,5-7` work, `{2,5-7}` after `highlight=` does
@@ -514,8 +545,8 @@ helpful pre-flight read for human reviewers.
 
 1. **Implementation**: `framework/ui/<name>.go`.
 2. **Theme-token CSS only**: register your own `RegisterStyle`; use
-   `var(--color-*, fallback)` etc. No top-level `.ui-*` rules in
-   `examples/site/styles.go`, the site chrome is page-only.
+   `var(--color-*, fallback)` etc. Never style it from an app: the
+   docs site ships no stylesheet of its own and composes the kit as is.
 3. **Unit tests**: `<name>_test.go` exercising panic paths + emitted
    markup + variant classes.
 4. **`/components/<slug>` screen** in `examples/site/`:
@@ -572,9 +603,10 @@ helpful pre-flight read for human reviewers.
   the behaviour composition cannot give (gallery stepping,
   pinch-zoom). New modules are the expensive path (budget, tests,
   docs).
-- **Styling a component from `examples/site/styles.go`.** Top-level
-  `.ui-*` rules in the site stylesheet are forbidden; the site chrome
-  is page-only. A component owns its CSS via `registry.RegisterStyle`
+- **Styling a component from an app.** The docs site
+  (`examples/site`) ships no stylesheet beyond its owned header,
+  footer and docs-page sheets, and those never reach into a kit
+  component. A component owns its CSS via `registry.RegisterStyle`
   with theme tokens, so it works in every host, not just the demo
   site.
 - **Hardcoding colors/spacing instead of theme tokens.** Use

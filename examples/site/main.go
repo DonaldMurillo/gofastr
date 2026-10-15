@@ -19,11 +19,11 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	gflog "github.com/DonaldMurillo/gofastr/battery/log"
+	"github.com/DonaldMurillo/gofastr/battery/sitesearch"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -160,35 +160,33 @@ func setupServer() *framework.App {
 
 	// CommandPalette, the global ⌘K palette. We only need the widget
 	// definition; the header's own search button opens it and binds the
-	// shortcut, so the returned trigger is discarded.
+	// shortcut, so the returned trigger is discarded. Search runs every
+	// query over the full-text index battery/sitesearch builds from the
+	// rendered pages (registered below); the Commands are the
+	// short list a reader sees before typing.
 	_, paletteBuilder := ui.CommandPalette(ui.CommandPaletteConfig{
 		Name:        "site-command-palette",
-		RPCPath:     "/__site/palette",
 		Placeholder: "Search docs, examples, components…",
-		// Static command list → client-side search. Works identically live
-		// and on the static export (no search endpoint needed). Takes
-		// precedence over RPCPath in the combobox.
-		Commands: paletteCommands(),
-		// The no-script destination: the docs index lists everything the
-		// palette lists (it is the palette's own catalog), so a reader
-		// without script reaches the same set by an ordinary link.
-		FallbackHref: "/docs/",
+		Commands:    paletteCommands(),
+		Search:      true,
+		// The search page the results end on ("See all results"), and
+		// the trigger's no-script destination: the same page, answering
+		// through its GET form.
+		SearchPage:   "/search",
+		FallbackHref: "/search",
 	})
 
-	layout := app.NewLayout("main", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
-		// The page-tall stack with the sticky banner bar directly
-		// inside it: the header pins for the whole page (siteheader
-		// owns the sticky + z-order), the primary slot scrolls under
-		// it, and the colophon closes the page.
-		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
-			siteHeader(ctx),
-			l.Primary(),
-			siteFooter(),
-		)
-	})
-	site.SetDefaultLayout(layout)
+	// Full-text search over every rendered page: the palette's results
+	// and the /search page live, and the index files the static export
+	// writes for both to search with no server.
+	search := sitesearch.New(siteSearchConfig())
+
+	// The default layer every page renders in; the section layers nest
+	// under it (the tree is drawn in layout.go).
+	site.SetDefaultLayout(mainLayout())
 
 	registerScreens(site)
+	site.Register("/search", sitesearch.Screen(search), nil)
 
 	// allowAIBots is the *bool passed into WithAgentReady below so the
 	// robots.txt advertises explicit AI-crawler rules.
@@ -198,7 +196,6 @@ func setupServer() *framework.App {
 	markdownNeg := true
 
 	host := uihost.New(site,
-		uihost.WithCustomCSS(createStyleSheet(t)),
 		uihost.WithNotFoundScreen(&NotFoundScreen{}),
 		// Per-screen markdown surface (/llm-pages.md + /<screen>/llm.md). The
 		// site has no per-user data shapes to leak, so publishing it is safe.
@@ -298,11 +295,12 @@ func setupServer() *framework.App {
 	})
 
 	// Mount the palette widget AFTER the host so its routes land on the
-	// same router instance. The palette's RPC handler runs an in-memory
-	// fuzzy match over a curated route catalog, no DB roundtrip.
+	// same router instance.
 	widget.MountBuilder(fwApp.Router(), paletteBuilder)
-	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
-	fwApp.Router().Post("/__site/palette", http.HandlerFunc(servePaletteSearch))
+
+	if err := fwApp.Batteries.Register(search); err != nil {
+		panic(err)
+	}
 
 	// Raw markdown for every embedded doc at /docs/<name>.md, the URLs
 	// /llms.txt indexes. The HTML page stays at /docs/<name>.
@@ -310,11 +308,13 @@ func setupServer() *framework.App {
 
 	// SectionMenu mobile drawers, the docs + components navs each mount a
 	// preset.Drawer once (backdrop + click-outside/Escape close + scroll lock
-	// + focus trap, all from the framework widget). The inline rails render
-	// the same config per page.
-	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(docsSectionMenuConfig("")))
+	// + focus trap, all from the framework widget). The section layers'
+	// rails render the same configs.
+	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(docsSectionMenuConfig()))
 	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(componentsSectionMenuConfig()))
 	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(demoSectionMenuConfig()))
+	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(examplesSectionMenuConfig()))
+	widget.MountBuilder(fwApp.Router(), interactive.SectionMenuDrawer(pluginsSectionMenuConfig()))
 	// Kiln panel approve/reject, no-op endpoints. The OptimisticAction
 	// runtime needs a real 2xx response to keep the optimistic label;
 	// these record nothing because the page is a demo, but the round-trip
@@ -640,8 +640,8 @@ func setupServer() *framework.App {
 	}))
 	// Modal for the "RPC → Open Widget" demo.
 	// Hidden by default, only appears when data-cui-rpc-open triggers it.
-	modalBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
-		html.Paragraph(html.TextConfig{Class: "demo-modal-emoji"}, render.Text("🎉")),
+	modalBody := ui.Stack(ui.StackConfig{},
+		html.Paragraph(html.TextConfig{}, render.Text("🎉")),
 		html.Heading(html.HeadingConfig{Level: 3, ID: "demo-modal-heading"}, render.Text("Congratulations!")),
 		html.Paragraph(html.TextConfig{}, render.Text("This modal was triggered from an in-browser action. The server returned 2xx, so the runtime opened the widget. No JavaScript required.")),
 	)
@@ -655,7 +655,7 @@ func setupServer() *framework.App {
 	// trigger button (data-cui-open / data-cui-toast) that opens them. Modal +
 	// drawer are Hidden (lazy-fetched on open); the toast stack is auto-mount
 	// (always inlined) so a toast has somewhere to land on any page.
-	demoModalBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
+	demoModalBody := ui.Stack(ui.StackConfig{},
 		html.Heading(html.HeadingConfig{Level: 3, ID: "site-demo-modal-heading"}, render.Text("Edit user")),
 		html.Paragraph(html.TextConfig{}, render.Text("Center-mounted dialog with a backdrop, focus trap, and Escape-to-close. Open a deeplinked variant and the URL gains ?modal=user-edit&user_id=42. Refresh re-opens it.")),
 	)
@@ -666,7 +666,7 @@ func setupServer() *framework.App {
 		Slot("body", app.NewStaticComponent(demoModalBody)).
 		Hidden())
 
-	demoDrawerBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
+	demoDrawerBody := ui.Stack(ui.StackConfig{},
 		html.Heading(html.HeadingConfig{Level: 3, ID: "site-demo-drawer-heading"}, render.Text("Filters")),
 		html.Paragraph(html.TextConfig{}, render.Text("Side-mounted sliding panel. Same dismiss affordances as Modal: backdrop, Escape, focus trap, scroll lock.")),
 	)
@@ -675,7 +675,7 @@ func setupServer() *framework.App {
 		Slot("body", app.NewStaticComponent(demoDrawerBody)).
 		Hidden())
 
-	demoSheetBody := html.Div(html.DivConfig{Class: "demo-modal-body"},
+	demoSheetBody := ui.Stack(ui.StackConfig{},
 		html.Heading(html.HeadingConfig{Level: 3, ID: "site-demo-sheet-heading"}, render.Text("Share")),
 		html.Paragraph(html.TextConfig{}, render.Text("Bottom-anchored sibling of Drawer. Drag the handle down past ~80px to dismiss; Escape and backdrop click also close it.")),
 	)
@@ -814,98 +814,38 @@ func setupServer() *framework.App {
 	return fwApp
 }
 
-// paletteRoute is one entry in the command palette's search catalog.
-type paletteRoute struct{ title, path string }
-
-// paletteCatalog seeds the ⌘K palette. Lives in main so add_routes
-// adds an entry here at the same time it adds a Register call below.
-// The headless showcase's entries are derived from landingRoutes —
-// the same table the routes come from (screen_headless_landing.go) —
-// so a new theme cannot miss the palette.
-var paletteCatalog = buildPaletteCatalog()
-
-func buildPaletteCatalog() []paletteRoute {
-	catalog := []paletteRoute{
-		{"Home", "/"},
-		{"Get started", "/get-started"},
-		{"Docs index", "/docs/"},
-		{"Entity declarations: modeling the domain", "/docs/entity-declarations"},
-		{"Examples: the reference apps", "/examples"},
-	}
-	for _, r := range landingRoutes {
-		catalog = append(catalog, paletteRoute{
-			"Headless landing: " + r.Name + " theme",
-			landingRoutePath(r.Segment),
-		})
-	}
-	catalog = append(catalog,
-		paletteRoute{"Live dashboard: SSE + signals reference", "/examples/live-dashboard?presence=live-dashboard-demo"},
-		paletteRoute{"Live presence: viewer roster demo", "/examples/presence?presence=presence-demo"},
-		paletteRoute{"Plugins: the gofastr-plugins registry", "/plugins"},
-		paletteRoute{"Workspace: master-detail pane-host example", "/examples/workspace"},
-		paletteRoute{"Kiln: agent build mode (experimental)", "/kiln"},
-		paletteRoute{"Philosophy: the convictions essay", "/philosophy"},
-		paletteRoute{"Reader-ready pages: browser Reader Mode", "/reader"},
-		paletteRoute{"Components: gallery index", "/components/"},
-		paletteRoute{"SEO: per-page meta, canonical, JSON-LD", "/seo"},
-		paletteRoute{"Forms wizard: multi-step round-trip", "/forms/wizard"},
-		paletteRoute{"Print: invoice / receipt documents", "/print/invoice/1"},
-	)
-	return catalog
-}
-
-// paletteCommands maps the curated route catalog into static palette
-// commands so ⌘K search is fully client-side, instant on the live server
-// and functional on the static export with no search endpoint.
+// paletteCommands is what the ⌘K palette lists before a reader types:
+// the site's entry points. Everything else is a search away.
 func paletteCommands() []ui.PaletteCommand {
-	cmds := make([]ui.PaletteCommand, 0, len(paletteCatalog))
-	for _, r := range paletteCatalog {
-		cmds = append(cmds, ui.PaletteCommand{Label: r.title, Href: r.path, Meta: r.path})
-	}
-	return cmds
-}
-
-// servePaletteSearch returns matching options as <li role="option">
-// fragments, the format ui.CommandPalette's combobox expects.
-func servePaletteSearch(w http.ResponseWriter, r *http.Request) {
-	// Cap + check, the sibling /__site handlers' shape: an uncapped POST is
-	// a memory lever on a public origin, and a discarded parse error would
-	// march on with a zero-value form.
-	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
-	if err := r.ParseForm(); err != nil {
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
-			return
-		}
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	q := strings.ToLower(strings.TrimSpace(r.FormValue("q")))
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	matched := 0
-	for i, p := range paletteCatalog {
-		if q != "" && !strings.Contains(strings.ToLower(p.title), q) && !strings.Contains(strings.ToLower(p.path), q) {
-			continue
-		}
-		// data-cui-push-state navigates without a hard refresh on click.
-		// data-value is what the combobox echoes back to the input.
-		_, _ = fmt.Fprintf(w,
-			`<li role="option" id="site-pal-%d" data-value=%q data-cui-push-state=%q><span>%s</span><span class="pal-meta">%s</span></li>`,
-			i, p.title, p.path, htmlEscape(p.title), htmlEscape(p.path))
-		matched++
-	}
-	if matched == 0 {
-		_, _ = w.Write([]byte(`<li role="option" aria-disabled="true">No matches</li>`))
+	return []ui.PaletteCommand{
+		{Label: "Get started", Href: "/get-started", Meta: "/get-started"},
+		{Label: "Docs", Href: "/docs/", Meta: "/docs/"},
+		{Label: "Components", Href: "/components/", Meta: "/components/"},
+		{Label: "Examples", Href: "/examples", Meta: "/examples"},
+		{Label: "Plugins", Href: "/plugins", Meta: "/plugins"},
+		{Label: "Kiln", Href: "/kiln", Meta: "/kiln"},
+		{Label: "Philosophy", Href: "/philosophy", Meta: "/philosophy"},
 	}
 }
 
-// htmlEscape escapes the palette options. The catalog values are
-// compile-time constants, so this is defensive only, it delegates to
-// the canonical 5-char escaper so no reduced-shape escaper survives in
-// the tree.
-func htmlEscape(s string) string {
-	return render.Escape(s)
+// siteSearchConfig labels results by section and indexes the headless
+// showcase once: its other themes render the default's text.
+func siteSearchConfig() sitesearch.Config {
+	var exclude []string
+	for _, r := range landingRoutes[1:] {
+		exclude = append(exclude, "/examples/headless/"+r.Segment)
+	}
+	return sitesearch.Config{
+		Exclude: exclude,
+		Groups: []sitesearch.Group{
+			{Prefix: "/docs/", Label: "Docs"},
+			{Prefix: "/components/", Label: "Components"},
+			{Prefix: "/examples", Label: "Examples"},
+			{Prefix: "/headless", Label: "Headless"},
+			{Prefix: "/plugins", Label: "Plugins"},
+			{Prefix: "/kiln", Label: "Kiln"},
+		},
+	}
 }
 
 // registerScreens wires every route, the main pages plus the per-
@@ -913,20 +853,57 @@ func htmlEscape(s string) string {
 // the palette seed stay editable side by side.
 func registerScreens(site *app.App) {
 	site.Register("/", &HomeScreen{}, nil)
-	registerHubs(site) // /primitives, /framework, /agents, /interactivity, /generator
+
+	// The taught area hubs share one layer: the reading column and the
+	// on-this-page rail. The group sits at "/" because the hubs are
+	// top-level siblings (/primitives, /framework, …); the layer key is
+	// the group, so moving between hubs keeps the frame and swaps the
+	// primary plus the rail's fill.
+	hubFrame, hubTOC := hubLayout()
+	hubs := app.NewScreenGroup("/", hubFrame)
+	for _, h := range hubScreens() {
+		hubs.Screen(groupScreen(h.Path, h.Screen).Fill(hubTOC, h.Screen.TOC()), nil)
+	}
+	site.Router.ScreenGroup(hubs)
+
 	site.Register("/get-started", &GetStartedScreen{}, nil)
-	site.Register("/docs/", &ConceptsIndexScreen{}, nil)
-	// One catch-all route serves every doc page. DocPageScreen resolves
-	// the entry from the slug (SetParams), 404s unknown slugs (Load),
-	// and enumerates every page via StaticPaths so export, sitemap,
-	// llm.md, and the strict coverage gate stay in sync with the
-	// catalog, the same URL set the old per-slug loop emitted.
-	site.Register("/docs/{path...}", &DocPageScreen{}, nil)
-	site.Register("/examples", &ExamplesScreen{}, nil)
+	// The docs section: /docs/ and the /docs/{path...} catch-all share
+	// the docs layer (docs nav, crumbs, pager, rail; layout.go), so a
+	// doc-to-doc navigation swaps the article and its fills and keeps
+	// the nav. See registerDocsGroup (docs_catalog.go).
+	registerDocsGroup(site)
+
+	// The examples section: the reference-app index and the in-site demo
+	// apps share the examples nav column (layout.go), so moving between
+	// them swaps only the primary slot beside it.
+	examples := app.NewScreenGroup("/examples", sectionNavLayout("examples", examplesSectionMenuConfig))
+	examples.Screen(groupScreen("/examples", &ExamplesScreen{}), nil)
 	// Advanced, full-page interactive example: a master-detail workspace
 	// on ui.PaneHost. Its /__site/workspace/* detail endpoints are mounted
 	// in setupServer.
-	site.Register("/examples/workspace", &WorkspaceScreen{}, nil)
+	examples.Screen(groupScreen("/examples/workspace", &WorkspaceScreen{}), nil)
+	// Intercepting route: the detail is a normal page registration, and
+	// InterceptFrom only changes how a soft nav that STARTED on the list
+	// presents it. Hard load, refresh, or an external link still render
+	// the full page, the deep link stays the canonical render.
+	examples.Screen(groupScreen("/examples/catalog", &CatalogScreen{}), nil)
+	examples.Screen(groupScreen("/examples/catalog/:id", &CatalogItemScreen{},
+		app.InterceptFrom("/examples/catalog", app.ScreenDrawer)), nil)
+	// ── Presence demo ──────────────────────────────────────────────
+	// /examples/presence?presence=presence-demo, a live avatar roster.
+	// The ?presence= param is threaded into the SSE <meta> tag by
+	// handlePage so the connection joins the topic.
+	examples.Screen(groupScreen("/examples/presence", &PresenceScreen{}), nil)
+	// ── Live-dashboard demo ────────────────────────────────────────
+	// /examples/live-dashboard?presence=live-dashboard-demo, an ops
+	// dashboard fed by SSE island push. The ticker that advances the
+	// demo state is wired in setupServer; see screen_livedash.go.
+	examples.Screen(groupScreen("/examples/live-dashboard", &LiveDashboardScreen{}), nil)
+	site.Router.ScreenGroup(examples)
+
+	// The headless showcases stay out of the examples layer on purpose:
+	// each renders a whole themed product page (its own theme scope), so a
+	// site nav column beside it would misrepresent the page it demos.
 	// ── Headless landing, the theme-layer showcase (additive) ──────
 	// /examples/headless/{theme}/landing: one screen parameterised by
 	// the theme segment, its content scoped by the route's
@@ -936,28 +913,15 @@ func registerScreens(site *app.App) {
 	// The form family's dashboard: same parameterised shape, scoped by
 	// the theme segment (screen_headless_dashboard.go).
 	site.Register("/examples/headless/:theme/dashboard", &HeadlessDashboardScreen{}, nil)
-	// Intercepting route: the detail is a normal page registration, and
-	// InterceptFrom only changes how a soft nav that STARTED on the list
-	// presents it. Hard load, refresh, or an external link still render
-	// the full page, the deep link stays the canonical render.
-	site.Register("/examples/catalog", &CatalogScreen{}, nil)
-	site.Register("/examples/catalog/:id", &CatalogItemScreen{}, nil,
-		app.InterceptFrom("/examples/catalog", app.ScreenDrawer))
-	// ── Presence demo (additive) ───────────────────────────────────
-	// /examples/presence?presence=presence-demo, a live avatar roster.
-	// The ?presence= param is threaded into the SSE <meta> tag by
-	// handlePage so the connection joins the topic.
-	site.Register("/examples/presence", &PresenceScreen{}, nil)
-	// ── Live-dashboard demo (additive) ──────────────────────────
-	// /examples/live-dashboard?presence=live-dashboard-demo, an ops
-	// dashboard fed by SSE island push. The ticker that advances the
-	// demo state is wired in setupServer; see screen_livedash.go.
-	site.Register("/examples/live-dashboard", &LiveDashboardScreen{}, nil)
 	// The gofastr-plugins registry: one index plus one page per row of the
 	// vendored plugins.json (see screen_plugins.go). PluginScreen 404s an
-	// unknown name (Load) and enumerates every row via StaticPaths.
-	site.Register("/plugins", &PluginsScreen{}, nil)
-	site.Register("/plugins/:name", &PluginScreen{}, nil)
+	// unknown name (Load) and enumerates every row via StaticPaths. The
+	// registry nav column is the plugins layer's (list on the left, the
+	// plugin on the right), kept across plugin pages.
+	plugins := app.NewScreenGroup("/plugins", sectionNavLayout("plugins", pluginsSectionMenuConfig))
+	plugins.Screen(groupScreen("/plugins", &PluginsScreen{}), nil)
+	plugins.Screen(groupScreen("/plugins/:name", &PluginScreen{}), nil)
+	site.Router.ScreenGroup(plugins)
 	site.Register("/kiln", &KilnScreen{}, nil)
 	site.Register("/philosophy", &PhilosophyScreen{}, nil)
 	// /reader: a reader-ready article, the simple way. This is a normal
@@ -980,11 +944,14 @@ func registerScreens(site *app.App) {
 		nav, _ := component.SafeRenderCtx(ctx, &ComponentsSidebar{})
 		// The row (not a second screen-tall stack: this layer nests
 		// inside the default layout's page column) arranges the
-		// multi-level sidebar beside the primary slot. Sticky +
-		// BelowHeader pin the sidebar under the site header at the
-		// height of what's left of the viewport, scrolling on its own
-		// while the page scrolls; the colophon stays full width below.
-		return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true, BelowHeader: true}, l.Primary())
+		// multi-level sidebar beside the primary slot. Sticky pins the
+		// sidebar under the site header (the page stack's StickyHeader
+		// says where it ends) at the height of what's left of the
+		// viewport, scrolling on its own while the page scrolls; the
+		// colophon stays full width below.
+		// PhoneNavFlush: below the breakpoint the menu's pill floats at
+		// the bottom of the viewport, so the stacked column is empty.
+		return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true, PhoneNavFlush: true}, l.Primary())
 	})
 	componentsGroup := app.NewScreenGroup("/components", componentsLayout)
 	componentsGroup.Screen(app.NewScreen("/components/", &ComponentsIndexScreen{}).
@@ -996,9 +963,3 @@ func registerScreens(site *app.App) {
 	}
 	site.Router.ScreenGroup(componentsGroup)
 }
-
-// _ = strconv is here so the import survives even if servePaletteSearch
-// goes through a refactor that drops the explicit %d formatting; the
-// palette options must always carry a unique id for combobox arrow-key
-// navigation, so the strconv pattern stays load-bearing.
-var _ = strconv.Itoa

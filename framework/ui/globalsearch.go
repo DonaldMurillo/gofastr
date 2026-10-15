@@ -173,7 +173,7 @@ func globalSearchCSS(_ style.Theme) string {
 }
 :where([data-cui-comp="ui-global-search"]).fui-global-search--sticky {
   position: sticky;
-  inset-block-start: var(--spacing-md, 8px);
+  inset-block-start: calc(var(--ui-sticky-top, 0px) + var(--spacing-md, 8px));
   z-index: var(--z-sticky, 50);
 }
 [data-cui-comp="ui-global-search"] .fui-global-search__field {

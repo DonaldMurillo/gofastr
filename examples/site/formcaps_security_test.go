@@ -27,19 +27,12 @@ func postForm(t *testing.T, target, body string) int {
 func TestDemoFormBodiesCapped(t *testing.T) {
 	big := strings.Repeat("x", 4<<20)
 
-	if code := postForm(t, "/__site/palette", "q="+big); code != http.StatusRequestEntityTooLarge {
-		t.Errorf("POST /__site/palette with 4 MiB urlencoded body = %d, want 413: servePaletteSearch must wrap the body in http.MaxBytesReader before ParseForm (like the sibling /__site handlers) so each request cannot buffer its full body", code)
-	}
-
 	if code := postForm(t, "/forms/wizard", "wizard_action=next&_step=2&wd_name="+big); code != http.StatusRequestEntityTooLarge {
 		t.Errorf("POST /forms/wizard with 4 MiB urlencoded body = %d, want 413: WizardDemoHandler must wrap the body in http.MaxBytesReader before ParseForm — it is a sitemap-listed public form", code)
 	}
 
 	// Legitimate small bodies still answer 200 (the cap must not refuse
 	// the demo's own traffic).
-	if code := postForm(t, "/__site/palette", "q=docs"); code != http.StatusOK {
-		t.Errorf("POST /__site/palette with a small body = %d, want 200", code)
-	}
 	if code := postForm(t, "/forms/wizard", "wizard_action=next&_step=0&wd_name=abc"); code != http.StatusOK {
 		t.Errorf("POST /forms/wizard with a small body = %d, want 200", code)
 	}

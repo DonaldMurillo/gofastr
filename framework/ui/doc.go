@@ -136,6 +136,7 @@
 //	Repeater:             dynamic add/remove item list with min/max limits
 //	Responsive:           viewport-swap pair (desktop / mobile variant)
 //	SearchInput:          search field with icon prefix + clear button
+//	SearchResults:        full-page results: GET form, status, result list, pagination
 //	Section:              labelled content section with heading + description
 //	SegmentedControl:     radio-group styled as a sliding pill bar
 //	Select:               labelled native <select> with help/error/placeholder

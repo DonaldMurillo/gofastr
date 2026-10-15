@@ -85,6 +85,7 @@ route, marks which need auth, and names the option that ungates them.
 | Send mail | `battery/email` | the SMTP backend logs the send; swap in a fake for tests | [Email](email.md) |
 | File and image uploads | `battery/storage`, `framework/imagefield` | `curl -F file=@x.png localhost:8080/api/posts` | [Storage](storage.md), [Uploads](uploads.md) |
 | Full-text and vector search | `battery/search`, `battery/semantic` | `curl 'localhost:8080/api/posts?q=term'` | [Search](search.md), [Semantic search](semantic-search.md) |
+| Search over the site's pages | `battery/sitesearch` | `curl 'localhost:8080/__gofastr/search/query?q=term'` | [Site search](site-search.md) |
 | Multi-tenancy | `framework/tenant`, a declaration rather than a WHERE clause | `gofastr verify data` | [Multi-tenant](multi-tenant.md) |
 | Soft delete | `framework/softdelete` | `?trashed=true` returns the deleted rows | [Entity declarations](entity-declarations.md) |
 | Rate limiting | `framework/ratelimit` | replay a request past the limit → `429` | [Rate limit](rate-limit.md) |

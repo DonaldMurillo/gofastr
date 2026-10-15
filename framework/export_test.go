@@ -4,7 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -43,5 +45,36 @@ func TestAppExportStatic_NoHostErrors(t *testing.T) {
 	err := fwApp.ExportStatic(context.Background(), t.TempDir(), "")
 	if err == nil {
 		t.Error("expected error when no uihost.UIHost is mounted")
+	}
+}
+
+// TestStartExportsWhenAsked: with GOFASTR_EXPORT set, Start writes the
+// export and returns instead of serving (`gofastr export` runs the app
+// this way).
+func TestStartExportsWhenAsked(t *testing.T) {
+	site := coreapp.NewApp("export-env-test")
+	site.Register("/", &exportHomeComp{}, nil)
+	fwApp := NewApp(WithoutDefaultMiddleware()).Mount(uihost.New(site))
+	dir := t.TempDir()
+	t.Setenv("GOFASTR_EXPORT", dir)
+	t.Setenv("GOFASTR_EXPORT_BASE", "/sub")
+
+	done := make(chan error, 1)
+	go func() { done <- fwApp.Start("127.0.0.1:0") }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		_ = fwApp.Shutdown(context.Background())
+		t.Fatal("Start served instead of exporting")
+	}
+	page, err := os.ReadFile(filepath.Join(dir, "index.html"))
+	if err != nil {
+		t.Fatalf("index.html missing: %v", err)
+	}
+	if !strings.Contains(string(page), `"/sub/__gofastr/`) {
+		t.Error("the export ignored GOFASTR_EXPORT_BASE")
 	}
 }

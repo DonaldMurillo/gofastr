@@ -219,3 +219,66 @@ func TestCommandPaletteCSSPadsTheInputRow(t *testing.T) {
 		t.Errorf("the palette sheet still targets retired .combobox__* classes nothing renders:\n%s", css)
 	}
 }
+
+func TestCommandPaletteSearchMarksListbox(t *testing.T) {
+	cmds := []PaletteCommand{{Label: "Docs", Href: "/docs"}}
+	_, b := CommandPalette(CommandPaletteConfig{Commands: cmds, Search: true, FallbackHref: "/docs"})
+	h := string(b.Definition().Slots[0].Component.Render())
+	i := strings.Index(h, `role="listbox"`)
+	if i < 0 {
+		t.Fatalf("no listbox:\n%s", h)
+	}
+	open := h[strings.LastIndex(h[:i], "<"):]
+	open = open[:strings.Index(open, ">")]
+	for _, want := range []string{`data-search=""`, `data-search-loading="Loading…"`, `data-search-empty="No matches"`} {
+		if !strings.Contains(open, want) {
+			t.Errorf("Search listbox lacks %s: %s", want, open)
+		}
+	}
+	_, b = CommandPalette(CommandPaletteConfig{Commands: cmds, FallbackHref: "/docs"})
+	if strings.Contains(string(b.Definition().Slots[0].Component.Render()), "data-search") {
+		t.Error("a palette without Search carries data-search")
+	}
+}
+
+func TestCommandPaletteSearchNeedsCommands(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("Search without Commands did not panic")
+		}
+	}()
+	CommandPalette(CommandPaletteConfig{RPCPath: "/s", Search: true, FallbackHref: "/s"})
+}
+
+// SearchPage marks the listbox with the page the last row opens.
+func TestCommandPaletteSearchPageMarks(t *testing.T) {
+	cmds := []PaletteCommand{{Label: "Docs", Href: "/docs"}}
+	_, b := CommandPalette(CommandPaletteConfig{Commands: cmds, Search: true, SearchPage: "/search", FallbackHref: "/search"})
+	h := string(b.Definition().Slots[0].Component.Render())
+	for _, want := range []string{`data-search-all="/search"`, `data-search-all-label="See all results for “{q}”"`} {
+		if !strings.Contains(h, want) {
+			t.Errorf("listbox lacks %s", want)
+		}
+	}
+	_, b = CommandPalette(CommandPaletteConfig{Commands: cmds, Search: true, FallbackHref: "/docs"})
+	if strings.Contains(string(b.Definition().Slots[0].Component.Render()), "data-search-all") {
+		t.Error("a palette with no SearchPage carries data-search-all")
+	}
+}
+
+func TestCommandPaletteSearchPageRefused(t *testing.T) {
+	cmds := []PaletteCommand{{Label: "Docs", Href: "/docs"}}
+	for _, c := range []struct {
+		search bool
+		page   string
+	}{{false, "/search"}, {true, "search"}, {true, "//evil.example"}, {true, "/s?x=1"}, {true, `/\evil`}, {true, "https://x/y"}} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Search %v SearchPage %q did not panic", c.search, c.page)
+				}
+			}()
+			CommandPalette(CommandPaletteConfig{Commands: cmds, Search: c.search, SearchPage: c.page, FallbackHref: "/docs"})
+		}()
+	}
+}

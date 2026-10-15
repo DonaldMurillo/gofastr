@@ -47,7 +47,7 @@ func TestHeaderLayoutPromises(t *testing.T) {
 	for i := range paras {
 		paras[i] = html.Paragraph(html.TextConfig{}, render.Text(fmt.Sprintf("Paragraph %d of a long page.", i)))
 	}
-	page := ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+	page := ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},
 		siteheader.Render(siteheader.Config{
 			Name: "Example",
 			Mark: render.Raw(testMark),

@@ -148,7 +148,7 @@ var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", 
   background: color-mix(in srgb, var(--color-warning) 15%, transparent);
   color: color-mix(in srgb, var(--color-warning) 80%, var(--color-text));
   position: sticky;
-  inset-block-start: 0;
+  inset-block-start: var(--ui-sticky-top, 0px);
   z-index: var(--z-sticky, 200);
 }
 /* SystemBanner's parts are the banner's own children: title over

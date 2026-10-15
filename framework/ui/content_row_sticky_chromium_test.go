@@ -186,11 +186,11 @@ return ""})()`, &result)); err != nil {
 	}
 }
 
-// A BelowHeader row under a sticky page header pins its nav column
-// below the header (never behind it), the rest of the viewport tall,
+// A Sticky row in a StickyHeader page pins its nav column below the
+// header (never behind it), the rest of the viewport tall,
 // while the window scrolls the page; the page footer below the row
 // keeps the full width.
-func TestContentRowStickyBelowHeader(t *testing.T) {
+func TestContentRowStickyUnderHeader(t *testing.T) {
 	site := app.NewApp("Below header")
 	items := make([]ui.SidebarItem, 40)
 	for i := range items {
@@ -201,10 +201,9 @@ func TestContentRowStickyBelowHeader(t *testing.T) {
 	for i := range paras {
 		paras[i] = html.Paragraph(html.TextConfig{}, render.Text(fmt.Sprintf("Paragraph %d", i)))
 	}
-	header := ui.Sticky(ui.StickyConfig{}, html.Header(html.HeaderConfig{}, render.Text("Header")))
-	page := ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
-		header,
-		ui.ContentRow(ui.ContentRowConfig{Sticky: true, BelowHeader: true, Sidebar: nav},
+	page := ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},
+		html.Header(html.HeaderConfig{}, render.Text("Header")),
+		ui.ContentRow(ui.ContentRowConfig{Sticky: true, Sidebar: nav},
 			html.Main(html.MainConfig{}, paras...)),
 		html.Footer(html.FooterConfig{ContentInfo: true}, render.Text("Colophon")))
 	site.RegisterScreen(app.NewScreen("/", app.NewStaticComponent(page)), nil)
@@ -237,10 +236,11 @@ return ""})()`, &result)); err != nil {
 	}
 }
 
-// An interactive.SectionMenu with FillColumn in a BelowHeader row fills
+// An interactive.SectionMenu with FillColumn in a Sticky row under a
+// sticky header fills
 // the pinned nav column to the viewport's bottom edge and scrolls its
 // rail there, with no dead strip under the rail.
-func TestContentRowBelowHeaderSectionMenuFillsColumn(t *testing.T) {
+func TestContentRowSectionMenuFillsColumn(t *testing.T) {
 	site := app.NewApp("Fill column")
 	items := make([]interactive.SectionItem, 60)
 	for i := range items {
@@ -248,9 +248,9 @@ func TestContentRowBelowHeaderSectionMenuFillsColumn(t *testing.T) {
 	}
 	menu := interactive.SectionMenu(interactive.SectionMenuConfig{FillColumn: true,
 		Groups: []interactive.SectionGroup{{Label: "All", Items: items}}})
-	page := ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
-		ui.Sticky(ui.StickyConfig{}, html.Header(html.HeaderConfig{}, render.Text("Header"))),
-		ui.ContentRow(ui.ContentRowConfig{Sticky: true, BelowHeader: true, Sidebar: menu},
+	page := ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},
+		html.Header(html.HeaderConfig{}, render.Text("Header")),
+		ui.ContentRow(ui.ContentRowConfig{Sticky: true, Sidebar: menu},
 			html.Main(html.MainConfig{}, render.Text("Body"))))
 	site.RegisterScreen(app.NewScreen("/", app.NewStaticComponent(page)), nil)
 	host := uihost.New(site)
@@ -269,9 +269,10 @@ func TestContentRowBelowHeaderSectionMenuFillsColumn(t *testing.T) {
 const nav=document.querySelector('.fui-content-row__nav'), rail=document.querySelector('.cui-section-menu__rail');
 if(Math.abs(r(nav).bottom-innerHeight)>1)return 'nav column ends at '+r(nav).bottom+', not the viewport bottom '+innerHeight;
 if(Math.abs(r(rail).bottom-r(nav).bottom)>1)return 'rail ends at '+r(rail).bottom+', short of the column bottom '+r(nav).bottom;
-if(rail.scrollHeight<=rail.clientHeight)return 'rail does not overflow, so the check proves nothing';
-rail.scrollTop=400;
-if(rail.scrollTop<100)return 'rail does not scroll';
+const list=rail.querySelector('.cui-section-menu__body');
+if(list.scrollHeight<=list.clientHeight)return 'rail list does not overflow, so the check proves nothing';
+list.scrollTop=400;
+if(list.scrollTop<100)return 'rail list does not scroll';
 if(nav.scrollHeight>nav.clientHeight+1)return 'the column scrolls too: a second scroller around the rail';
 return ""})()`, &result)); err != nil {
 		t.Fatal(err)

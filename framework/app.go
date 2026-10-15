@@ -3242,6 +3242,16 @@ func (a *App) Start(addr string) error {
 	if err := a.InitPlugins(); err != nil {
 		return abort(fmt.Errorf("init plugins: %w", err))
 	}
+	// `gofastr export` runs the app with GOFASTR_EXPORT set: export
+	// every page now (migrations and seeds have run, so data-backed
+	// pages render their rows) and return instead of serving.
+	if dir := os.Getenv(envExport); dir != "" {
+		if err := a.ExportStatic(a.appCtx, dir, os.Getenv(envExportBase)); err != nil {
+			return abort(fmt.Errorf("export: %w", err))
+		}
+		a.Logger().Info("static export written", "dir", dir)
+		return abort(nil)
+	}
 	// Check first-run setup status (WithSetup). When incomplete and not
 	// disabled via GOFASTR_SETUP=off, Start either runs the steps inline
 	// (headless: every required env present) or defers consumer startup

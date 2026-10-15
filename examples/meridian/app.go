@@ -314,7 +314,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	ui.MountSidebarFunc(routerMounter{fwApp.Router()}, sidebarConfig)
 	marketingLayout = app.NewLayout("marketing", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
 		header, _ := component.SafeRenderCtx(ctx, app.NewContextComponent(marketingHeader))
-		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
+		return ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},
 			header,
 			ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary()),
 			marketingFooter(),

@@ -48,6 +48,63 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   worker and agent roles' reduced muxes; a `WrapServer` wrapper does.
   The first one registered is outermost, and a call after `Start` has
   bound the server, or after `Shutdown`, panics.
+- **`ui.BoxConfig.Bounded`** caps a Box at the `--ui-box-bounded-size` knob
+  (20rem) and scrolls what overflows: a window for a long list in a panel,
+  or for previewing a viewport-height component such as `ui.Workbench`.
+- `ui.TerminalErr` marks a failure line in a `ui.TerminalBlock`
+  (danger tone, `--ui-terminal-block-err-color` knob), beside
+  `TerminalOut` and `TerminalOK`.
+- `HeroConfig.Lede` (inline markup in place of `Subtitle`) and
+  `HeroConfig.Footer` (content under the actions: an install line,
+  a byline, a stats line).
+- `SectionConfig.Band` gives a section without an eyebrow the
+  page-band treatment (display-size heading, more air under the head).
+- `ui.StackConfig.StickyHeader` pins the page frame's `<header>` and
+  publishes its height (`--size-header-height`) as `--ui-sticky-top`.
+  Every top-sticky part below reads it, at any layer depth: a `Sticky`
+  ContentRow's nav column and toolbar, `ui.StepRail`, the
+  `interactive.SectionMenu` rail, `ui.TableOfContents`,
+  `ui.AnchoredRail`, `ui.GlobalSearch`, `ui.NetworkRetryBanner`, a
+  top-edge `ui.Sticky`, a `FormFrame` side panel and an anchored
+  `ui.Section` stop under the header instead of sliding behind it. A
+  region that scrolls on its own (a bounded `ui.Box`, the pinned nav
+  column, a `ui.ListDetail` list, the PaneHost drawer, the Workbench
+  rail) resets the offset to 0. The layout declares the sticky header
+  once; no component takes a flag for it.
+- `SectionMenuConfig.Filter` puts a filter box above an
+  `interactive.SectionMenu`'s list, in the rail and in the phone sheet.
+  Typing hides the links that don't match, marks the match, shows
+  "matches/total" in each group header and says `FilterEmpty` when
+  nothing matches; Escape clears it. `FilterPlaceholder` sets the
+  prompt. `InlineTrigger` keeps the phone pill in flow, for a menu shown
+  inside a card or a demo.
+- `SectionMenuConfig.SwapAt` moves the width where an
+  `interactive.SectionMenu` trades its rail for its phone pill
+  from 900px to a `ui.ContentRow` breakpoint (`interactive.SwapMD`,
+  48rem, or `interactive.SwapLG`, 64rem), so a menu in a row's nav
+  column swaps where the row stacks.
+- **`ui.TOCConfig.PhoneSheet` folds a contents list into a bottom sheet
+  on phones.** Below `Breakpoint` (md by default) a pill floating at the
+  bottom of the screen names the section in view and opens the list;
+  at and above it the list renders as before. The sheet is a native
+  popover rendered with the page: it opens without script, closes on
+  Escape, a tap outside, its close button or a followed link, and with
+  script moves focus to the current entry when it opens.
+  `ui.ContentRowConfig.PhoneAsideFlush` drops the stacked aside's rule
+  and padding so an aside holding only that list leaves no band.
+  The pieces are public: `interactive.SheetPill` (the pill SectionMenu
+  uses too) and `interactive.PhoneSheet` (pill plus inline sheet for any
+  list that marks its current entry `aria-current`).
+  `ui.AnchoredRailConfig.PhoneSheet` folds a rail the same way (below
+  `SwapAt`, 900px by default); its pill names the section by the link's
+  text, without the parts marked `interactive.SheetChipClass` (the
+  rail marks its number and count chips). `PhoneSheetTop` on
+  either (`interactive.PhoneSheetConfig.Top`) pins that pill as an "On
+  this page: <section>" bar under the sticky header and hangs the list
+  from the bar, for a page whose SectionMenu pill already holds the
+  bottom edge. In a ContentRow aside the bar's aside moves above the
+  main column on a phone and sticks there. Anchored sections and the
+  rail's in-view band clear the bar through `--ui-sheet-bar-offset`.
 - **entityui lists warn when their row links lead nowhere.** The first
   time a list renders rows whose `<base>/<id>` matches no registered
   screen, it logs one warning per base naming the route to register.
@@ -86,6 +143,112 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   message in the success color between the alert and the body, for
   outcomes like "account created" that the danger-styled `Alert` would
   misreport (#503).
+- **`battery/sitesearch`: full-text search over every rendered page.**
+  The battery renders the pages a static export would write (dynamic
+  routes through `StaticPaths`), indexes each page's `<main>` with its
+  `h2`/`h3` sections as deep links, and answers at
+  `/__gofastr/search/query`; the index builds in the background when the
+  app starts. In a static export it writes the index as
+  content-hashed JSON shards under `/__gofastr/search/`, and a runtime
+  module only exported pages load (`sitesearch-static`) ranks from them
+  with no server, matching the Go ranking. A shard over 64 KB splits on
+  its next letter, so at 10,000 pages a query downloads 7–150 KB
+  gzipped, manifest included. The index is built as an
+  anonymous visitor, so a policy-gated page never enters it.
+  `Config.Groups` labels results by URL prefix, `Exclude` drops paths
+  (Sources' pages included), `Sources` adds pages no route renders;
+  `data-search-ignore` and `noindex` keep content out, and a page whose
+  URL is not a path on the site (a scheme, another host) is dropped. A
+  page that fails to render is logged and left out of a live index, and
+  a failed build waits 30 seconds before a query retries it. `Config.MaxAge`
+  rebuilds a live index older than it in the background, answering from
+  the old index meanwhile; `Refresh` builds beside the live index and
+  swaps it in. A page whose title
+  holds every query term ranks first, the title the query covers most
+  on top, so `table` finds DataTable and `form` the Form component.
+  Terms of three letters or more also match the words they begin.
+  Guide:
+  `gofastr docs site-search`.
+- **`ui.CommandPaletteConfig.Search`** makes the palette search the site
+  search index as the reader types, below its `Commands` (required: the
+  rows shown before the first keystroke). A slow answer shows a
+  "Loading…" row and an empty one "No matches". Result rows fade in as
+  they arrive; a row that stays across keystrokes does not replay.
+  `SearchPage` ends the results with a "See all results" row that opens
+  the search page for the query.
+- **`sitesearch.Screen`: a search page that works without script.** It
+  renders every result for `?q=`, 20 a page through `?page=`, as links
+  with their sections and excerpts, and tells crawlers `noindex`
+  (`ScreenPath` mounts it somewhere other than `/search`). With script,
+  the `sitesearch-page` module updates the page in place as the reader
+  types, from the server's own render on a live site and from the
+  static ranker in an export, and keeps `?q=` in the address without
+  adding history entries. `Index.SearchPage(q, offset, limit)` returns a
+  page of results and the total.
+- **`ui.SearchResults`** renders a results page: a GET search form, a
+  status line counting the matches, the results with their group,
+  excerpt hits in `<mark>` and section links, and `ui.Pagination`.
+- **`gofastr export [--base /sub] [--pkg ./cmd/web] <dir>`** writes any
+  app as a static site. It runs the app with `GOFASTR_EXPORT` (and
+  `GOFASTR_EXPORT_BASE`) set; `App.Start` then exports after
+  migrations, seeds and battery init and returns instead of serving.
+- **`static.Contributor`** lets a battery add files to an export from
+  the pages it renders (`ExportStart`, `ExportPage`, `ExportFiles`), and
+  `App.ExportStatic` passes every registered battery that implements it.
+  **`static.Walk`** renders the same page set at runtime, with a `skip`
+  func asked about each path before it renders. A page that fails to
+  render reaches `fn` with its error, as in `fs.WalkDir`.
+
+### Changed
+- **BREAKING: `ui.ContentRowConfig.BelowHeader` is removed.** Set
+  `StickyHeader: true` on the page-tall `ui.Stack` that holds the
+  header instead; a `Sticky` row under it sticks below the header on its
+  own. The site header sheets no longer set `position: sticky`
+  themselves: the stack pins the header. Owned sheets that offset a
+  sticky rail or a scroll margin by `--size-header-height` read
+  `var(--ui-sticky-top, 0px)`. A `Sticky` row with no toolbar no longer
+  adds the toolbar's height to the `--ui-sticky-top` its main column
+  sees; with a toolbar the workspace under it still does
+  (`gofastr upgrade` points at the field). `ui.AnchoredRail` no longer
+  reads `--nav-h` (60px when unset): it sticks 16px below
+  `--ui-sticky-top`, so on a page with no sticky header it now sits
+  16px from the top instead of 76px.
+- **`interactive.SectionMenu` is redesigned.** In the rail each group's
+  header pins to the top while its links scroll under it and shows the
+  group's link count; the current page carries an accent dot instead of
+  a left rule, and the group holding it takes the accent. A rail filling
+  a pinned column (`FillColumn`) insets its own links from the column's
+  edges, which had none, and scrolls its list under the filter. Below
+  `SwapAt` the "Sections" button becomes a pill floating at the bottom of
+  the screen that names the current page and its group, kept current
+  across client navigations (the page ends a pill's height lower, so it
+  never covers the last line), and `SectionMenuDrawer` is now a bottom
+  sheet (`preset.BottomSheet`) that opens on the current page's group.
+  Knobs: `--ui-section-menu-bg`, `--ui-section-menu-inset`,
+  `--ui-section-menu-dot`, and on the shared pill and sheet title row
+  `--ui-sheet-pill-bottom` and `--ui-sheet-close-size`, which replaces
+  `--ui-section-menu-close-size`. A `ui.ContentRow` holding the menu
+  sets `PhoneNavFlush`, so the empty stacked column draws no band.
+- **BREAKING: `gallery.ContributeCSS` and `gallery.BaseCSS` are removed.**
+  The `framework/gallery` demos lay out through `ui.Cluster`, `ui.Stack`,
+  `ui.Box` and `ui.Container` and ship no stylesheet, so a host renders the
+  catalog laid out with no CSS of its own. Delete the call (`gofastr upgrade`
+  points at it).
+- **`ui.HighlightLines` knows more languages.** Go now classes named
+  types in type position (`type Pong`, `Pong{`, `*http.Request`,
+  `[]schema.Field`); JS/TS, SQL, shell, YAML and JSON get their own
+  keyword sets, comment syntax and key classing instead of the generic
+  comments-strings-numbers pass. `text`/`plain` stay untokenized.
+  See `gofastr docs ui-new-components` → Syntax highlighting.
+- **`ui.CodeBlock` renders a tab four columns wide**
+  (`--ui-code-block-tab-size`) and draws the line-number gutter from
+  the code colors (`--ui-code-block-gutter-color`), not the page's
+  `--color-text-subtle`.
+- **`ui.CommandPalette` drops its keyboard hints on touch screens**
+  (`hover: none` and `pointer: coarse`); the footer keeps its close
+  button.
+- The static export's preview banner no longer lists search among the
+  features that need the Go server.
 
 ### Fixed
 - **`mcp.ServeStdio` no longer answers notifications.** The
@@ -96,6 +259,79 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   session with no reply; lines up to 1 MiB, the HTTP body limit, are
   read now, and a longer one gets an error reply before the session
   ends.
+- **A widget link inside a disclosure leaves it open.** The disclosure
+  closed on any link click, so an `<a data-cui-open>` in a phone menu
+  shut the menu as its widget opened, and closing the widget dropped
+  focus on the page body. Such a link opens a widget over the page, as
+  the router already treats it, so the menu stays and focus returns to
+  the link.
+- **`gofastr export --base` prefixes form actions.** A root-absolute
+  `action` kept the apex path, so a GET form on a project-page export
+  submitted outside the site. It now carries the base like `href` and
+  `src` do.
+- **The command palette keeps one height while the reader types.** The
+  panel sized to its list, so a keystroke that changed the row count
+  moved the field and footer. It now holds `--ui-cmd-palette-height`
+  (30rem, capped by the viewport) and the list fills what is left. The
+  knob replaces `--ui-cmd-palette-listbox-max-height`.
+- **Arrow keys keep a combobox's active option in sight.** The
+  highlight moved past the list's visible rows without scrolling, so a
+  keyboard reader of a long palette or picker list lost the selection.
+  The list now scrolls just far enough to show it.
+- **A sticky `ui.TableOfContents` in a `ui.ContentRow` aside sticks
+  when a layout outlet holds it.** The outlet was only as tall as the
+  list, so the list had no room to stick and scrolled away with the
+  page. An outlet in the aside now fills the column.
+- **A rail or contents list no longer marks the section behind a sticky
+  header.** The shared observer (`headless-rail`) counted a section
+  whose last lines sat under the header as the one in view, so after a
+  jump the entry above stayed marked. Its band now starts at
+  `--ui-sticky-top`, and the active entry is the first section in the
+  band in document order.
+- **A rail or contents list marks the last section after a jump past
+  them all.** Pressing End, or following a link to content below the
+  last section, crossed no band edge the observer reports, so the
+  entry marked before the jump stayed marked. With no section in the
+  band, the rail now marks the last one scrolled past, and it checks
+  again when a scroll settles.
+- **A padded `ui.Container` lines up with the header and footer bands.**
+  A `ContainerPadPage` or `ContainerPadEnd` container of any `Width`
+  stepped its inline padding 8/16/24px while the bands used the page
+  gutter (`--size-page-gutter`), so on a phone page text sat 12px left of
+  the header brand. It now takes the page gutter at every width. Inside
+  an app frame's content area (`ui.ContentRow` with a `Sidebar`), whose
+  own padding is the gutter, it adds none, where a phone used to show
+  two gutters stacked, and a `ContainerPage` there caps at the bare page
+  measure.
+- **A resolver-backed screen's `llm.md` carries its content.**
+  `app.ScreenLLMMDForPath`, behind every per-URL `/llm.md`, the
+  `Accept: text/markdown` response and the static export, ran `Load`
+  without the route match or the route resolvers, so a screen reading a
+  resolver (a catch-all docs route) fell back to the pattern doc. It now
+  runs them first, as the page render does, and a resolver or `Load`
+  answering `app.ErrNotFound` makes the doc a 404 instead of the
+  pattern doc.
+- **A section nested in a page band keeps its own heading.** The
+  display-size heading of an eyebrow section, and the small upper-case
+  label of an `Overline` one, reached every `ui.Section` heading in the
+  section's body too. Each rule now selects only the section's own
+  heading.
+- **`sdkdocs` marks only the current page in its phone menu.** The menu
+  sheet is mounted once for every page, and it marked Overview current
+  on all of them, as did the 404 page's rail, so a reader on Errors saw
+  two current pages. Neither marks a page now; the runtime marks the one
+  the reader is on.
+- **`core/markdown` hides HTML comment blocks.** A `<!-- … -->` block
+  rendered as escaped text, so every `<!-- gofastr:compile … -->`
+  directive in the embedded docs showed on the site's doc pages and in
+  `ui.Markdown`. A comment block now renders as nothing, at the top
+  level or under a list item. An unclosed comment, or text after the
+  close, still renders as escaped text.
+- `ui.Hero` (split) and `ui.HeroSplit` collapse to a `minmax(0, 1fr)`
+  track on phones, so a long unbreakable line in the media column no
+  longer widens the page past the viewport.
+- `ui.Card` headings and descriptions wrap long unbreakable tokens
+  (a query string, a URL) instead of overflowing the card.
 - **`core/static` answers `Range` requests.** `Range: bytes=0-99` got
   `200` and the whole file with no `Accept-Ranges`, so a video served by
   `static.Handler` could not seek, Safari would not play an mp4 from it,
@@ -139,6 +375,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   from `go install …/cmd/gofastr@v0.87.0` printed `GoFastr dev`. It now
   reads the module version from the build info, and a build from a
   checkout shows its VCS commit and commit time (#503).
+- **The command palette opens on its commands.** It focuses its input
+  before the combobox module binds, so no focus event reached the module
+  and the list stayed closed until the first keystroke. The module now
+  opens a static list whose input already has focus when it arrives.
+- **Exports are reproducible.** `Router.Paths` ranged a map, so the
+  route manifest in every exported page, and the page order, changed
+  from run to run; every page differed between two exports of the same
+  content. Exact paths now come back
+  sorted, then dynamic patterns in registration order.
 
 ## [0.87.2] - 2026-10-12
 

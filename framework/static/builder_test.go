@@ -521,6 +521,19 @@ func TestRewriteBaseURLs_PrefixesPushState(t *testing.T) {
 	}
 }
 
+// A form's action is where its submit navigates: on a subpath deploy a
+// root-absolute one must carry the base, or the search page's GET form
+// lands on the apex.
+func TestRewriteBaseURLsPrefixesAction(t *testing.T) {
+	b := &Builder{BasePath: "/gofastr"}
+	out := b.rewriteBaseURLs(`<form action="/search" method="GET"></form><form action="//x.example/s"></form><form data-action="/keep"></form>`)
+	for _, want := range []string{`action="/gofastr/search"`, `action="//x.example/s"`, `data-action="/keep"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("want %q in\n%s", want, out)
+		}
+	}
+}
+
 // renderScreen wraps a raw HTML body in a minimal Screen for tests.
 type renderScreen struct{ Body string }
 

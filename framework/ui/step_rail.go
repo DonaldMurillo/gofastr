@@ -142,7 +142,8 @@ func StepRail(cfg StepRailConfig) render.HTML {
 	if attrs == nil {
 		attrs = html.Attrs{}
 	}
-	cls := joinNonEmpty("fui-step-rail", cfg.Class)
+	base := "fui-step-rail"
+	cls := joinNonEmpty(base, cfg.Class)
 	attrs["class"] = cls
 	attrs["role"] = "complementary"
 	attrs["aria-label"] = aria
@@ -154,7 +155,9 @@ var stepRailStyle = registry.RegisterStyle("ui-step-rail", stepRailCSS)
 func stepRailCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-step-rail"] {
   position: sticky;
-  inset-block-start: var(--ui-step-rail-top, var(--spacing-xl, 24px));
+  /* --ui-sticky-top is where sticky parts start (under a StickyHeader
+     page's header); --ui-step-rail-top is the gap below it. */
+  inset-block-start: calc(var(--ui-sticky-top, 0px) + var(--ui-step-rail-top, var(--spacing-xl, 24px)));
   align-self: start;
   display: flex;
   flex-direction: column;

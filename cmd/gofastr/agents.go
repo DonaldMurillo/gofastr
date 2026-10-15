@@ -32,6 +32,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/battery/search"
 	_ "github.com/DonaldMurillo/gofastr/battery/service"
 	_ "github.com/DonaldMurillo/gofastr/battery/setup"
+	_ "github.com/DonaldMurillo/gofastr/battery/sitesearch"
 	_ "github.com/DonaldMurillo/gofastr/battery/storage"
 	_ "github.com/DonaldMurillo/gofastr/battery/webhook"
 	_ "github.com/DonaldMurillo/gofastr/framework"
@@ -510,7 +511,6 @@ markers (and outside ` + "`.agents/`" + `) freely.
 `
 
 const agentsTail = `
-
 ## Project conventions
 
 > Edit this section. Document app-specific rules an agent should

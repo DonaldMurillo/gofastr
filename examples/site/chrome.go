@@ -22,10 +22,10 @@ import (
 // bind ⌘K, so the header needs no injected trigger.
 func siteHeader(ctx context.Context) render.HTML {
 	return siteheader.Render(siteheader.Config{
-		Ctx:        ctx,
-		Version:    versionLabel(),
-		Links:      siteNavLinks(),
-		ExtraLinks: siteNavExtraLinks(),
+		Ctx:      ctx,
+		Version:  versionLabel(),
+		Links:    siteNavLinks(),
+		MenuLead: siteMenuLead(),
 	})
 }
 
@@ -37,7 +37,6 @@ func siteFooter() render.HTML {
 		Columns: siteFooterColumns(),
 		Bottom: []render.HTML{
 			html.Span(html.TextConfig{}, render.Text("© 2026. A research project, not a company.")),
-			html.Span(html.TextConfig{}, render.Text("Set in system sans + mono.")),
 		},
 	})
 }

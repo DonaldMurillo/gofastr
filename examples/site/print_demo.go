@@ -77,11 +77,11 @@ type printInvoiceDemo struct{ id string }
 func (d printInvoiceDemo) Render() render.HTML {
 	id := render.Escape(d.id)
 	return render.HTML(fmt.Sprintf(`
-<header class="inv-head">
+<header>
   <h1>Invoice %s</h1>
   <p>GoFastr, Inc. · 123 Demo Street · billing@example.com</p>
 </header>
-<table class="inv-table">
+<table>
   <thead><tr><th>Item</th><th>Qty</th><th>Price</th></tr></thead>
   <tbody>
     <tr><td>Widget Pro license</td><td>2</td><td>$49.00</td></tr>
@@ -99,7 +99,7 @@ func (printReceiptDemo) Render() render.HTML {
 	return render.HTML(`
 <h1>Receipt</h1>
 <p>GoFastr Cafe</p>
-<table class="inv-table">
+<table>
   <tbody>
     <tr><td>Espresso</td><td>$3.00</td></tr>
     <tr><td>Croissant</td><td>$4.50</td></tr>

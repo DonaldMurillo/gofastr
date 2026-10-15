@@ -19,6 +19,13 @@ type parser struct {
 	// headingUsed records every emitted ID, including IDs that are natural
 	// slugs for a different heading (e.g. "setup-2").
 	headingUsed map[string]bool
+	// closeLine caches the index of the first line below some earlier
+	// comment opener that holds "-->" (len(lines) when none does),
+	// closeClean whether that line ends at its "-->", and closeKnown that
+	// the cache is filled. See commentEnd.
+	closeLine  int
+	closeClean bool
+	closeKnown bool
 }
 
 func (p *parser) eof() bool    { return p.pos >= len(p.lines) }
@@ -38,6 +45,66 @@ func (p *parser) peek(n int) string {
 func (p *parser) atFence() bool {
 	_, ok := openFence(p.line())
 	return ok
+}
+
+// atComment reports whether an HTML comment block starts here: a line
+// opening with "<!--" (up to three spaces of indent) and a later or same
+// line ending in "-->". The block renders as nothing, the way a browser
+// hides a comment; this package never passes raw HTML through, so the
+// alternative is the escaped comment showing up as page text. Docs carry
+// tooling directives this way (<!-- gofastr:compile … --> above a fence).
+// An unclosed opener, or text after the closing "-->", stays an escaped
+// paragraph so no content is swallowed.
+func (p *parser) atComment() bool {
+	return p.commentEnd() >= 0
+}
+
+// commentEnd returns the index of the line that closes the comment block
+// starting at p.pos, or -1. The block ends at the first line below the
+// opener holding "-->", and that line is cached: no line between an
+// opener and it holds "-->", so every later opener above it ends at the
+// same line, and the next scan starts below it. Each line is scanned
+// once, so a document of openers stays linear whether its close is
+// missing or carries trailing text.
+func (p *parser) commentEnd() int {
+	t := p.line()
+	if indent := len(t) - len(strings.TrimLeft(t, " ")); indent > 3 {
+		return -1
+	}
+	if !strings.HasPrefix(strings.TrimLeft(t, " "), "<!--") {
+		return -1
+	}
+	rest := strings.TrimLeft(t, " ")[len("<!--"):]
+	if strings.Contains(rest, "-->") {
+		if closesAtEnd(rest) {
+			return p.pos
+		}
+		return -1
+	}
+	if !p.closeKnown || p.closeLine <= p.pos {
+		p.closeLine, p.closeClean, p.closeKnown = len(p.lines), false, true
+		for i := p.pos + 1; i < len(p.lines); i++ {
+			if strings.Contains(p.lines[i], "-->") {
+				p.closeLine, p.closeClean = i, closesAtEnd(p.lines[i])
+				break
+			}
+		}
+	}
+	if p.closeLine < len(p.lines) && p.closeClean {
+		return p.closeLine
+	}
+	return -1
+}
+
+// closesAtEnd reports whether the first "-->" on line is its last text,
+// so nothing after the comment's close is dropped with it.
+func closesAtEnd(line string) bool {
+	t := strings.TrimRight(line, " \t")
+	return strings.Index(t, "-->") == len(t)-len("-->")
+}
+
+func (p *parser) skipComment() {
+	p.pos = p.commentEnd() + 1
 }
 
 func (p *parser) atHR() bool {
@@ -205,7 +272,7 @@ func renderParagraph(p *parser, sb *strings.Builder) {
 		if strings.TrimSpace(raw) == "" {
 			break
 		}
-		if p.atFence() || p.atHR() || p.atHeading() || p.atBlockquote() ||
+		if p.atFence() || p.atComment() || p.atHR() || p.atHeading() || p.atBlockquote() ||
 			p.atUnorderedList() || p.atOrderedList() || p.atTable() {
 			break
 		}
@@ -267,6 +334,14 @@ func renderList(p *parser, sb *strings.Builder, ordered bool) {
 		p.advance()
 		for !p.eof() {
 			next := p.line()
+			// A comment block under the item hides as it would at the
+			// top level; the item's text continues after it.
+			if strings.HasPrefix(next, "  ") {
+				if end := p.commentEnd(); end >= 0 {
+					p.pos = end + 1
+					continue
+				}
+			}
 			if strings.HasPrefix(next, "  ") && strings.TrimSpace(next) != "" {
 				item = append(item, strings.TrimPrefix(next, "  "))
 				p.advance()

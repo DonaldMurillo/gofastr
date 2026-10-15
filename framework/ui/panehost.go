@@ -260,6 +260,8 @@ func paneHostCSS(_ style.Theme) string {
   border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, rgba(0, 0, 0, 0.10));
   box-shadow: var(--shadow-md, 0 10px 30px rgba(0, 0, 0, 0.18));
   overflow: auto;
+  /* The drawer scrolls on its own: sticky parts pin to its top. */
+  --ui-sticky-top: 0px;
 }
 
 /* Backdrop scrim while a drawer is open. The host's ::before covers the

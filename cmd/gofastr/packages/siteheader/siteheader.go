@@ -17,8 +17,9 @@
 //     sets aria-current on the nav links.
 //
 // The bar is the page's banner landmark and a direct child of the
-// page-tall ui.Stack, which is what lets it stay pinned for the whole
-// page. This package is the app's own code: edit it freely.
+// page-tall ui.Stack, which pins it for the whole page when the layout
+// sets StickyHeader (the stack also tells sticky parts below where the
+// bar ends). This package is the app's own code: edit it freely.
 package siteheader
 
 import (

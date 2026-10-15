@@ -30,6 +30,48 @@
   // tree is collected, and a nav handed to scan() twice is armed once.
   const observers = new WeakMap();
 
+  // What covers the top can change with the width: a phone sheet's bar
+  // publishes its offset below a breakpoint only. Each armed nav leaves
+  // a re-measure here, and one window listener runs them on a resize.
+  // A nav that left the document is dropped, and its observer
+  // disconnected, at the next resize or scan, so the module never holds
+  // a page the reader has navigated away from.
+  const remeasure = new Map();
+  // A scroll that jumps past every target (End, a link below them)
+  // crosses no band edge the observer reports, so each armed nav also
+  // leaves its pick here and a settled scroll runs them.
+  const repick = new Map();
+  function prune() {
+    for (const nav of remeasure.keys()) {
+      if (nav.isConnected) continue;
+      const o = observers.get(nav);
+      if (o) o.disconnect();
+      observers.delete(nav); // re-inserted later, it arms again
+      remeasure.delete(nav);
+      repick.delete(nav);
+    }
+  }
+  let resizePending = false;
+  addEventListener('resize', () => {
+    if (resizePending) return;
+    resizePending = true;
+    requestAnimationFrame(() => {
+      resizePending = false;
+      prune();
+      for (const f of remeasure.values()) f();
+    });
+  });
+  const settled = () => { for (const f of repick.values()) f(); };
+  if ('onscrollend' in window) {
+    addEventListener('scrollend', settled, { passive: true });
+  } else {
+    let scrollTimer = 0;
+    addEventListener('scroll', () => {
+      clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(settled, 120);
+    }, { passive: true });
+  }
+
   function within(root, sel) {
     const out = [];
     if (root.matches && root.matches(sel)) out.push(root);
@@ -50,11 +92,32 @@
     return out + s.replace(/([!"#$%&'()*+,./:;<=>?@[\]^`{|}~])/g, '\\$1');
   }
 
+  // stickyTop resolves what covers the top of the view where the nav
+  // sits: the sticky header (--ui-sticky-top) and a phone sheet's bar
+  // pinned under it (--ui-sheet-bar-offset). The values can be any
+  // length expression (a toolbar's workspace adds its row with calc),
+  // so the browser resolves them on a probe rather than this file
+  // parsing them.
+  function stickyTop(el) {
+    const cs = getComputedStyle(el);
+    if (!cs.getPropertyValue('--ui-sticky-top').trim() && !cs.getPropertyValue('--ui-sheet-bar-offset').trim()) return 0;
+    const probe = document.createElement('div');
+    probe.style.position = 'absolute';
+    probe.style.visibility = 'hidden';
+    probe.style.blockSize = '0';
+    probe.style.inlineSize = 'calc(var(--ui-sticky-top, 0px) + var(--ui-sheet-bar-offset, 0px))';
+    el.appendChild(probe);
+    const px = parseFloat(getComputedStyle(probe).inlineSize) || 0;
+    probe.remove();
+    return Math.max(0, Math.round(px));
+  }
+
   // watch arms one nav: resolve the anchors it lists, map each to the
   // element its fragment names inside the observed region, and mark
   // the anchor whose target holds the top of the view. Exported for
   // headless-toc, which passes its own selector pair.
   function watch(nav, observeSel, targetSel) {
+    prune();
     if (!nav || observers.has(nav)) return;
     if (!observeSel) return; // a static rail: links only
     let root = null;
@@ -100,12 +163,29 @@
       }
     };
 
-    const observer = new IntersectionObserver((entries) => {
-      const hits = entries.filter((e) => e.isIntersecting);
-      if (hits.length === 0) return;
-      hits.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-      markActive(hits[0].target.id);
-    }, { rootMargin: '0px 0px -70% 0px', threshold: 0 });
+    // The view starts under a sticky header: a section scrolled behind
+    // it is not in view. The band is that top edge down to 30% of the
+    // viewport, and the active anchor is the first target in it, in
+    // document order. The observer only says when to look: a target
+    // that moves from overlapping the band to touching its edge reports
+    // no change, so the pick reads each target's live box instead of
+    // remembering what the callbacks reported. In view means a whole
+    // pixel in the band: scroll positions round to pixels, so the
+    // section above one scrolled to the top can keep a sliver. With
+    // nothing in the band, the last target scrolled above it is the
+    // one being read past (the page's tail after the last section);
+    // above every target, the mark stays.
+    let bandTop = stickyTop(nav);
+    const pick = () => {
+      const bandBottom = innerHeight * 0.3;
+      let passed = null;
+      for (const t of targets) {
+        const r = t.getBoundingClientRect();
+        if (r.bottom - bandTop >= 1 && bandBottom - r.top >= 1) { markActive(t.id); return; }
+        if (r.bottom - bandTop < 1) passed = t;
+      }
+      if (passed) markActive(passed.id);
+    };
 
     // Document order, so the bootstrap below picks the DOM-topmost
     // section, not whatever the nav happened to list first.
@@ -115,8 +195,24 @@
       if (pos & 2) return 1;
       return 0;
     });
-    for (const t of targets) observer.observe(t);
-    observers.set(nav, observer);
+    let observer = null;
+    const arm = () => {
+      if (observer) observer.disconnect();
+      observer = new IntersectionObserver(pick, { rootMargin: '-' + bandTop + 'px 0px -70% 0px', threshold: 0 });
+      for (const t of targets) observer.observe(t);
+      observers.set(nav, observer);
+    };
+    arm();
+
+    // A resize that moves the covered edge re-arms the observer on the
+    // new band.
+    repick.set(nav, pick);
+    remeasure.set(nav, () => {
+      const top = stickyTop(nav);
+      if (top === bandTop) return;
+      bandTop = top;
+      arm();
+    });
 
     // Bootstrap an initial active anchor: on a page whose sections all
     // start below a tall header the observer never fires, and no anchor
@@ -138,6 +234,7 @@
   NS._huiRailWatch = watch;
 
   function scan(root) {
+    prune();
     const scope = root && root.querySelectorAll ? root : document;
     for (const nav of within(scope, '[data-hui-rail]')) {
       watch(
