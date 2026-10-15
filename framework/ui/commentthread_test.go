@@ -77,3 +77,12 @@ func TestCommentThreadSheetUsesTokens(t *testing.T) {
 		}
 	}
 }
+
+// list-style: none drops list semantics in WebKit/VoiceOver unless the
+// list says role="list"; the thread's depth is announced as nesting.
+func TestCommentThreadKeepsListRole(t *testing.T) {
+	h := string(CommentThread(CommentThreadConfig{Label: "Comments", Comments: chain(3)}))
+	if n := strings.Count(h, `role="list"`); n != 3 {
+		t.Errorf("lists with role=list = %d, want 3 (root + 2 reply lists):\n%s", n, h)
+	}
+}

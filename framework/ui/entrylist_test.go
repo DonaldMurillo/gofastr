@@ -94,3 +94,16 @@ func TestEntryListSheetUsesTokens(t *testing.T) {
 		t.Errorf("item rule changes display, which drops the rank marker:\n%s", item)
 	}
 }
+
+// The unranked list drops its markers, so it says role="list" to keep
+// its semantics in WebKit/VoiceOver; the ranked list keeps decimal
+// markers and needs no role.
+func TestEntryListKeepsListRole(t *testing.T) {
+	entries := []Entry{{Title: "a", Href: "/a"}}
+	if h := string(EntryList(EntryListConfig{Label: "L", Entries: entries})); !strings.Contains(h, `role="list"`) {
+		t.Errorf("unranked list has no role=list:\n%s", h)
+	}
+	if h := string(EntryList(EntryListConfig{Label: "L", Entries: entries, Ranked: true})); strings.Contains(h, `role="list"`) {
+		t.Errorf("ranked list carries a redundant role=list:\n%s", h)
+	}
+}

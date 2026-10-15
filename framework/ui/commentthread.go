@@ -65,6 +65,9 @@ func CommentThread(cfg CommentThreadConfig) render.HTML {
 	}
 	attrs["class"] = cls
 	attrs["aria-label"] = cfg.Label
+	// list-style: none drops list semantics in WebKit/VoiceOver; the
+	// role keeps the nesting a screen reader announces as depth.
+	attrs["role"] = "list"
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
@@ -98,7 +101,7 @@ func commentItems(cs []Comment) (out []render.HTML, held bool) {
 		if len(c.Replies) > 0 {
 			var replies []render.HTML
 			replies, repliesHeld = commentItems(c.Replies)
-			list := render.Tag("ul", map[string]string{"class": "fui-comment-thread__replies"}, replies...)
+			list := render.Tag("ul", map[string]string{"class": "fui-comment-thread__replies", "role": "list"}, replies...)
 			if !repliesHeld {
 				list = headless.Own(list)
 			}

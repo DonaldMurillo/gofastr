@@ -101,7 +101,11 @@ func EntryList(cfg EntryListConfig) render.HTML {
 		attrs["id"] = cfg.ID
 	}
 	tag := "ul"
+	// The unranked list drops its markers (list-style: none), which
+	// costs it list semantics in WebKit/VoiceOver unless it says so.
+	attrs["role"] = "list"
 	if cfg.Ranked {
+		delete(attrs, "role")
 		tag = "ol"
 		attrs["class"] += " fui-entry-list--ranked"
 		attrs["start"] = strconv.Itoa(max(cfg.Start, 1))
