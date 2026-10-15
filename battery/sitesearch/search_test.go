@@ -3,6 +3,7 @@ package sitesearch
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func extract(t *testing.T, url, doc string) Page {
@@ -341,5 +342,25 @@ func TestExcerptAnchorIgnoresTermOrder(t *testing.T) {
 		if got := marked(excerpt(text, terms)); !strings.Contains(got, "[forms]") {
 			t.Errorf("terms %q: excerpt %q, want it on forms", terms, got)
 		}
+	}
+}
+
+// Section text kept for excerpts ends on a whole word and says it was
+// cut, so an excerpt near the end never stops mid-word.
+func TestCappedTextEndsOnWord(t *testing.T) {
+	text := strings.Repeat("walrus ", 400) // 2800 runes
+	idx := Build([]Page{{URL: "/w", Title: "W", Sections: []Section{{Text: text}}}})
+	kept := idx.pages[0].Sections[0].Text
+	if !strings.HasSuffix(kept, "walrus…") {
+		t.Errorf("kept text ends %q, want a whole word and …", kept[len(kept)-12:])
+	}
+	if n := utf8.RuneCountInString(kept); n > excerptRunes {
+		t.Errorf("kept %d runes, cap %d", n, excerptRunes)
+	}
+	if got := capRunes("short text", 20); got != "short text" {
+		t.Errorf("uncut text changed to %q", got)
+	}
+	if got := capRunes(strings.Repeat("x", 30), 20); got != strings.Repeat("x", 19)+"…" {
+		t.Errorf("one long word cut to %q", got)
 	}
 }

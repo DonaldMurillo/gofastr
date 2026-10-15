@@ -210,7 +210,14 @@ func capRunes(s string, n int) string {
 	if utf8.RuneCountInString(s) <= n {
 		return s
 	}
-	return string([]rune(s)[:n])
+	// Cut on the last space that leaves room for the ellipsis, so the
+	// text ends on a whole word; a single word longer than that is cut
+	// inside it.
+	rs := []rune(s)[:n-1]
+	if i := lastIndexRune(rs, ' '); i > 0 {
+		rs = rs[:i]
+	}
+	return string(rs) + "…"
 }
 
 // matching returns the index terms a query term matches: every term q
