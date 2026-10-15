@@ -107,3 +107,31 @@ func TestCopyTreeRefusesExistingDestination(t *testing.T) {
 		t.Fatalf("existing destination overwritten: %q", got)
 	}
 }
+
+// A read-only source directory copies: the destination stays writable
+// while its children are copied, then takes the extractor's directory
+// mode, which keeps the owner able to remove it on the next update.
+func TestCopyTreeReadOnlyDirectory(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "src")
+	if err := os.Mkdir(src, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "f"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(src, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(src, 0o700) })
+	dst := filepath.Join(t.TempDir(), "dst")
+	if err := copyTree(src, dst); err != nil {
+		t.Fatalf("copyTree: %v", err)
+	}
+	info, err := os.Stat(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o755 {
+		t.Fatalf("dst mode = %o, want 755", got)
+	}
+}

@@ -88,7 +88,9 @@ func copyTree(src, dst string) error {
 		return err
 	}
 	if info.IsDir() {
-		if err := os.Mkdir(dst, info.Mode().Perm()); err != nil {
+		// Owner-only and writable while the children are copied; the
+		// extractor's directory mode (dirPerm) lands after.
+		if err := os.Mkdir(dst, 0o700); err != nil {
 			return err
 		}
 		entries, err := os.ReadDir(src)
@@ -100,7 +102,7 @@ func copyTree(src, dst string) error {
 				return err
 			}
 		}
-		return os.Chmod(dst, info.Mode().Perm())
+		return os.Chmod(dst, dirPerm(info.Mode()))
 	}
 	if !info.Mode().IsRegular() {
 		// A symlink or device in a bundle we just extracted and
