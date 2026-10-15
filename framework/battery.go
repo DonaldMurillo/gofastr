@@ -351,6 +351,17 @@ func (bm *BatteryManager) All() []Battery {
 	return result
 }
 
+// registered returns every registered battery in registration order;
+// unlike All it needs no InitAll first, so App.ExportStatic, which runs
+// without Start, sees them.
+func (bm *BatteryManager) registered() []Battery {
+	out := make([]Battery, 0, len(bm.order))
+	for _, name := range bm.order {
+		out = append(out, bm.entries[name].battery)
+	}
+	return out
+}
+
 // Names returns battery names in dependency-resolved order.
 func (bm *BatteryManager) Names() []string {
 	return append([]string{}, bm.resolved()...)

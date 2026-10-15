@@ -19,11 +19,11 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	gflog "github.com/DonaldMurillo/gofastr/battery/log"
+	"github.com/DonaldMurillo/gofastr/battery/sitesearch"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -160,26 +160,33 @@ func setupServer() *framework.App {
 
 	// CommandPalette, the global ⌘K palette. We only need the widget
 	// definition; the header's own search button opens it and binds the
-	// shortcut, so the returned trigger is discarded.
+	// shortcut, so the returned trigger is discarded. Search runs every
+	// query over the full-text index battery/sitesearch builds from the
+	// rendered pages (registered below); the Commands are the
+	// short list a reader sees before typing.
 	_, paletteBuilder := ui.CommandPalette(ui.CommandPaletteConfig{
 		Name:        "site-command-palette",
-		RPCPath:     "/__site/palette",
 		Placeholder: "Search docs, examples, components…",
-		// Static command list → client-side search. Works identically live
-		// and on the static export (no search endpoint needed). Takes
-		// precedence over RPCPath in the combobox.
-		Commands: paletteCommands(),
-		// The no-script destination: the docs index lists everything the
-		// palette lists (it is the palette's own catalog), so a reader
-		// without script reaches the same set by an ordinary link.
-		FallbackHref: "/docs/",
+		Commands:    paletteCommands(),
+		Search:      true,
+		// The search page the results end on ("See all results"), and
+		// the trigger's no-script destination: the same page, answering
+		// through its GET form.
+		SearchPage:   "/search",
+		FallbackHref: "/search",
 	})
+
+	// Full-text search over every rendered page: the palette's results
+	// and the /search page live, and the index files the static export
+	// writes for both to search with no server.
+	search := sitesearch.New(siteSearchConfig())
 
 	// The default layer every page renders in; the section layers nest
 	// under it (the tree is drawn in layout.go).
 	site.SetDefaultLayout(mainLayout())
 
 	registerScreens(site)
+	site.Register("/search", sitesearch.Screen(search), nil)
 
 	// allowAIBots is the *bool passed into WithAgentReady below so the
 	// robots.txt advertises explicit AI-crawler rules.
@@ -288,11 +295,12 @@ func setupServer() *framework.App {
 	})
 
 	// Mount the palette widget AFTER the host so its routes land on the
-	// same router instance. The palette's RPC handler runs an in-memory
-	// fuzzy match over a curated route catalog, no DB roundtrip.
+	// same router instance.
 	widget.MountBuilder(fwApp.Router(), paletteBuilder)
-	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
-	fwApp.Router().Post("/__site/palette", http.HandlerFunc(servePaletteSearch))
+
+	if err := fwApp.Batteries.Register(search); err != nil {
+		panic(err)
+	}
 
 	// Raw markdown for every embedded doc at /docs/<name>.md, the URLs
 	// /llms.txt indexes. The HTML page stays at /docs/<name>.
@@ -806,98 +814,38 @@ func setupServer() *framework.App {
 	return fwApp
 }
 
-// paletteRoute is one entry in the command palette's search catalog.
-type paletteRoute struct{ title, path string }
-
-// paletteCatalog seeds the ⌘K palette. Lives in main so add_routes
-// adds an entry here at the same time it adds a Register call below.
-// The headless showcase's entries are derived from landingRoutes —
-// the same table the routes come from (screen_headless_landing.go) —
-// so a new theme cannot miss the palette.
-var paletteCatalog = buildPaletteCatalog()
-
-func buildPaletteCatalog() []paletteRoute {
-	catalog := []paletteRoute{
-		{"Home", "/"},
-		{"Get started", "/get-started"},
-		{"Docs index", "/docs/"},
-		{"Entity declarations: modeling the domain", "/docs/entity-declarations"},
-		{"Examples: the reference apps", "/examples"},
-	}
-	for _, r := range landingRoutes {
-		catalog = append(catalog, paletteRoute{
-			"Headless landing: " + r.Name + " theme",
-			landingRoutePath(r.Segment),
-		})
-	}
-	catalog = append(catalog,
-		paletteRoute{"Live dashboard: SSE + signals reference", "/examples/live-dashboard?presence=live-dashboard-demo"},
-		paletteRoute{"Live presence: viewer roster demo", "/examples/presence?presence=presence-demo"},
-		paletteRoute{"Plugins: the gofastr-plugins registry", "/plugins"},
-		paletteRoute{"Workspace: master-detail pane-host example", "/examples/workspace"},
-		paletteRoute{"Kiln: agent build mode (experimental)", "/kiln"},
-		paletteRoute{"Philosophy: the convictions essay", "/philosophy"},
-		paletteRoute{"Reader-ready pages: browser Reader Mode", "/reader"},
-		paletteRoute{"Components: gallery index", "/components/"},
-		paletteRoute{"SEO: per-page meta, canonical, JSON-LD", "/seo"},
-		paletteRoute{"Forms wizard: multi-step round-trip", "/forms/wizard"},
-		paletteRoute{"Print: invoice / receipt documents", "/print/invoice/1"},
-	)
-	return catalog
-}
-
-// paletteCommands maps the curated route catalog into static palette
-// commands so ⌘K search is fully client-side, instant on the live server
-// and functional on the static export with no search endpoint.
+// paletteCommands is what the ⌘K palette lists before a reader types:
+// the site's entry points. Everything else is a search away.
 func paletteCommands() []ui.PaletteCommand {
-	cmds := make([]ui.PaletteCommand, 0, len(paletteCatalog))
-	for _, r := range paletteCatalog {
-		cmds = append(cmds, ui.PaletteCommand{Label: r.title, Href: r.path, Meta: r.path})
-	}
-	return cmds
-}
-
-// servePaletteSearch returns matching options as <li role="option">
-// fragments, the format ui.CommandPalette's combobox expects.
-func servePaletteSearch(w http.ResponseWriter, r *http.Request) {
-	// Cap + check, the sibling /__site handlers' shape: an uncapped POST is
-	// a memory lever on a public origin, and a discarded parse error would
-	// march on with a zero-value form.
-	r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
-	if err := r.ParseForm(); err != nil {
-		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
-			return
-		}
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	q := strings.ToLower(strings.TrimSpace(r.FormValue("q")))
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	matched := 0
-	for i, p := range paletteCatalog {
-		if q != "" && !strings.Contains(strings.ToLower(p.title), q) && !strings.Contains(strings.ToLower(p.path), q) {
-			continue
-		}
-		// data-cui-push-state navigates without a hard refresh on click.
-		// data-value is what the combobox echoes back to the input.
-		_, _ = fmt.Fprintf(w,
-			`<li role="option" id="site-pal-%d" data-value=%q data-cui-push-state=%q><span>%s</span><span>%s</span></li>`,
-			i, p.title, p.path, htmlEscape(p.title), htmlEscape(p.path))
-		matched++
-	}
-	if matched == 0 {
-		_, _ = w.Write([]byte(`<li role="option" aria-disabled="true">No matches</li>`))
+	return []ui.PaletteCommand{
+		{Label: "Get started", Href: "/get-started", Meta: "/get-started"},
+		{Label: "Docs", Href: "/docs/", Meta: "/docs/"},
+		{Label: "Components", Href: "/components/", Meta: "/components/"},
+		{Label: "Examples", Href: "/examples", Meta: "/examples"},
+		{Label: "Plugins", Href: "/plugins", Meta: "/plugins"},
+		{Label: "Kiln", Href: "/kiln", Meta: "/kiln"},
+		{Label: "Philosophy", Href: "/philosophy", Meta: "/philosophy"},
 	}
 }
 
-// htmlEscape escapes the palette options. The catalog values are
-// compile-time constants, so this is defensive only, it delegates to
-// the canonical 5-char escaper so no reduced-shape escaper survives in
-// the tree.
-func htmlEscape(s string) string {
-	return render.Escape(s)
+// siteSearchConfig labels results by section and indexes the headless
+// showcase once: its other themes render the default's text.
+func siteSearchConfig() sitesearch.Config {
+	var exclude []string
+	for _, r := range landingRoutes[1:] {
+		exclude = append(exclude, "/examples/headless/"+r.Segment)
+	}
+	return sitesearch.Config{
+		Exclude: exclude,
+		Groups: []sitesearch.Group{
+			{Prefix: "/docs/", Label: "Docs"},
+			{Prefix: "/components/", Label: "Components"},
+			{Prefix: "/examples", Label: "Examples"},
+			{Prefix: "/headless", Label: "Headless"},
+			{Prefix: "/plugins", Label: "Plugins"},
+			{Prefix: "/kiln", Label: "Kiln"},
+		},
+	}
 }
 
 // registerScreens wires every route, the main pages plus the per-
@@ -1015,9 +963,3 @@ func registerScreens(site *app.App) {
 	}
 	site.Router.ScreenGroup(componentsGroup)
 }
-
-// _ = strconv is here so the import survives even if servePaletteSearch
-// goes through a refactor that drops the explicit %d formatting; the
-// palette options must always carry a unique id for combobox arrow-key
-// navigation, so the strconv pattern stays load-bearing.
-var _ = strconv.Itoa

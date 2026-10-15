@@ -82,6 +82,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **toggleaction**: `framework/ui.ToggleAction`, three-state commit/untoggle button (idle → pending → committed) with optional mutex groups
 - **passwordinput**: `framework/ui.PasswordInput`, password field with a show/hide reveal button rendered through `headless.Password` — the headless behaviour module binds the reveal and its words come from `ui.StringsFor`; a control, not a field: the error belongs to the FormField around it
 - **searchinput**: `framework/ui.SearchInput`, search field with icon prefix + clear button
+- **searchresults**: `framework/ui.SearchResults`, a full search results page (GET form, match count, results with section links, pagination) that works without script
 - **inputgroup**: `framework/ui.InputGroup`, input with prepend / append addons
 - **rating**: `framework/ui.RatingInput`, 1-N star/heart with Size / Gap / Shape / Icon knobs
 - **rating-display**: `framework/ui.Rating` (`ui.RatingDisplayConfig`), a read-only score drawn as glyphs sized to themselves, one `role="img"` with a localized "4 out of 5" name. Shares Shape / Size and the `--ui-rating-color` knob with RatingInput. Use it for a testimonial or a product average, where a disabled RatingInput would announce a form control and space its stars on 44px tap targets.

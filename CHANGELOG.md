@@ -103,6 +103,61 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   message in the success color between the alert and the body, for
   outcomes like "account created" that the danger-styled `Alert` would
   misreport (#503).
+- **`battery/sitesearch`: full-text search over every rendered page.**
+  The battery renders the pages a static export would write (dynamic
+  routes through `StaticPaths`), indexes each page's `<main>` with its
+  `h2`/`h3` sections as deep links, and answers at
+  `/__gofastr/search/query`; the index builds in the background when the
+  app starts. In a static export it writes the index as
+  content-hashed JSON shards under `/__gofastr/search/`, and a runtime
+  module only exported pages load (`sitesearch-static`) ranks from them
+  with no server, matching the Go ranking. A shard over 64 KB splits on
+  its next letter, so at 10,000 pages a query downloads 7–150 KB
+  gzipped, manifest included. The index is built as an
+  anonymous visitor, so a policy-gated page never enters it.
+  `Config.Groups` labels results by URL prefix, `Exclude` drops paths
+  (Sources' pages included), `Sources` adds pages no route renders;
+  `data-search-ignore` and `noindex` keep content out, and a page whose
+  URL is not a path on the site (a scheme, another host) is dropped. A
+  page that fails to render is logged and left out of a live index, and
+  a failed build waits 30 seconds before a query retries it. `Config.MaxAge`
+  rebuilds a live index older than it in the background, answering from
+  the old index meanwhile; `Refresh` builds beside the live index and
+  swaps it in. A page whose title
+  holds every query term ranks first, the title the query covers most
+  on top, so `table` finds DataTable and `form` the Form component.
+  Terms of three letters or more also match the words they begin.
+  Guide:
+  `gofastr docs site-search`.
+- **`ui.CommandPaletteConfig.Search`** makes the palette search the site
+  search index as the reader types, below its `Commands` (required: the
+  rows shown before the first keystroke). A slow answer shows a
+  "Loading…" row and an empty one "No matches". Result rows fade in as
+  they arrive; a row that stays across keystrokes does not replay.
+  `SearchPage` ends the results with a "See all results" row that opens
+  the search page for the query.
+- **`sitesearch.Screen`: a search page that works without script.** It
+  renders every result for `?q=`, 20 a page through `?page=`, as links
+  with their sections and excerpts, and tells crawlers `noindex`
+  (`ScreenPath` mounts it somewhere other than `/search`). With script,
+  the `sitesearch-page` module updates the page in place as the reader
+  types, from the server's own render on a live site and from the
+  static ranker in an export, and keeps `?q=` in the address without
+  adding history entries. `Index.SearchPage(q, offset, limit)` returns a
+  page of results and the total.
+- **`ui.SearchResults`** renders a results page: a GET search form, a
+  status line counting the matches, the results with their group,
+  excerpt hits in `<mark>` and section links, and `ui.Pagination`.
+- **`gofastr export [--base /sub] [--pkg ./cmd/web] <dir>`** writes any
+  app as a static site. It runs the app with `GOFASTR_EXPORT` (and
+  `GOFASTR_EXPORT_BASE`) set; `App.Start` then exports after
+  migrations, seeds and battery init and returns instead of serving.
+- **`static.Contributor`** lets a battery add files to an export from
+  the pages it renders (`ExportStart`, `ExportPage`, `ExportFiles`), and
+  `App.ExportStatic` passes every registered battery that implements it.
+  **`static.Walk`** renders the same page set at runtime, with a `skip`
+  func asked about each path before it renders. A page that fails to
+  render reaches `fn` with its error, as in `fs.WalkDir`.
 
 ### Changed
 - **BREAKING: `ui.ContentRowConfig.BelowHeader` is removed.** Set
@@ -149,8 +204,32 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (`--ui-code-block-tab-size`) and draws the line-number gutter from
   the code colors (`--ui-code-block-gutter-color`), not the page's
   `--color-text-subtle`.
+- **`ui.CommandPalette` drops its keyboard hints on touch screens**
+  (`hover: none` and `pointer: coarse`); the footer keeps its close
+  button.
+- The static export's preview banner no longer lists search among the
+  features that need the Go server.
 
 ### Fixed
+- **A widget link inside a disclosure leaves it open.** The disclosure
+  closed on any link click, so an `<a data-cui-open>` in a phone menu
+  shut the menu as its widget opened, and closing the widget dropped
+  focus on the page body. Such a link opens a widget over the page, as
+  the router already treats it, so the menu stays and focus returns to
+  the link.
+- **`gofastr export --base` prefixes form actions.** A root-absolute
+  `action` kept the apex path, so a GET form on a project-page export
+  submitted outside the site. It now carries the base like `href` and
+  `src` do.
+- **The command palette keeps one height while the reader types.** The
+  panel sized to its list, so a keystroke that changed the row count
+  moved the field and footer. It now holds `--ui-cmd-palette-height`
+  (30rem, capped by the viewport) and the list fills what is left. The
+  knob replaces `--ui-cmd-palette-listbox-max-height`.
+- **Arrow keys keep a combobox's active option in sight.** The
+  highlight moved past the list's visible rows without scrolling, so a
+  keyboard reader of a long palette or picker list lost the selection.
+  The list now scrolls just far enough to show it.
 - **A sticky `ui.TableOfContents` in a `ui.ContentRow` aside sticks
   when a layout outlet holds it.** The outlet was only as tall as the
   list, so the list had no room to stick and scrolled away with the
@@ -248,6 +327,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   from `go install …/cmd/gofastr@v0.87.0` printed `GoFastr dev`. It now
   reads the module version from the build info, and a build from a
   checkout shows its VCS commit and commit time (#503).
+- **The command palette opens on its commands.** It focuses its input
+  before the combobox module binds, so no focus event reached the module
+  and the list stayed closed until the first keystroke. The module now
+  opens a static list whose input already has focus when it arrives.
+- **Exports are reproducible.** `Router.Paths` ranged a map, so the
+  route manifest in every exported page, and the page order, changed
+  from run to run; every page differed between two exports of the same
+  content. Exact paths now come back
+  sorted, then dynamic patterns in registration order.
 
 ## [0.87.2] - 2026-10-12
 

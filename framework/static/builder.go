@@ -9,12 +9,14 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -71,6 +73,25 @@ type Builder struct {
 	// nor is a src that is not a same-origin path (a CDN URL), nor a
 	// document-scoped script whose scope accepts no exported route.
 	Handler http.Handler
+	// Contributors add files built from the exported pages: each is
+	// told a build began (ExportStart), sees every page as it renders
+	// (ExportPage), then returns its files (ExportFiles), which the
+	// build writes under their root-absolute URL paths. battery/sitesearch writes its index this way.
+	// App.ExportStatic passes every registered battery that is one.
+	Contributors []Contributor
+}
+
+// Contributor adds files to an export from the pages it renders: a
+// search index, a feed. ExportStart runs when a build begins, so a
+// contributor drops what a build that failed partway left behind.
+// ExportPage gets each page's live HTML, before the export's static
+// rewrites; ExportFiles runs once, after the last page, and returns
+// files keyed by root-absolute URL path
+// ("/__gofastr/search/manifest.json").
+type Contributor interface {
+	ExportStart(ctx context.Context) error
+	ExportPage(path, html string) error
+	ExportFiles(ctx context.Context) (map[string][]byte, error)
 }
 
 // Result is a summary of a Build run.
@@ -97,69 +118,54 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// document-scoped rail script's scope is asked about.
 	var renderedRoutes []string
 
+	for _, c := range b.Contributors {
+		if err := c.ExportStart(ctx); err != nil {
+			return res, fmt.Errorf("static: contributor start: %w", err)
+		}
+	}
+
 	// Pages.
-	for _, route := range b.Host.App.Routes() {
-		if b.routeExcluded(route.Path) {
-			b.log("skipped excluded route %s", route.Path)
-			continue
+	err := walk(ctx, b.Host, b.routeExcluded, nil, b.log, nil, func(route, p, page string) error {
+		for _, c := range b.Contributors {
+			if err := c.ExportPage(p, page); err != nil {
+				return fmt.Errorf("static: contributor on %q: %w", p, err)
+			}
 		}
-		if route.RedirectTo != "" {
-			continue // redirects render no page
+		html := b.applyStaticMode(page)
+		dst := filepath.Join(b.OutDir, pathToFile(p))
+		if err := b.ensureContained(dst); err != nil {
+			return err
 		}
-		paths, err := expandRoute(ctx, b.Host.App, route.Path)
+		if err := writeFile(dst, []byte(html)); err != nil {
+			return err
+		}
+		b.log("rendered %s -> %s", p, dst)
+		res.Pages = append(res.Pages, p)
+		if len(renderedRoutes) == 0 || renderedRoutes[len(renderedRoutes)-1] != route {
+			renderedRoutes = append(renderedRoutes, route)
+		}
+		return nil
+	})
+	if err != nil {
+		return res, err
+	}
+
+	// Contributor files (a search index, a feed), written after every
+	// page so each saw them all.
+	for _, c := range b.Contributors {
+		files, err := c.ExportFiles(ctx)
 		if err != nil {
-			return res, fmt.Errorf("static: expand %q: %w", route.Path, err)
+			return res, fmt.Errorf("static: contributor files: %w", err)
 		}
-		for _, p := range paths {
-			page, fillFailures, err := b.Host.RenderStaticPageResult(ctx, p)
-			if err != nil {
-				if blocked, ok := errors.AsType[*uihost.PolicyBlockedError](err); ok {
-					slog.Warn("static: skipped gated screen: policy refused the static render; the route stays reachable via the live server. Use a policy that RenderAlts (e.g. a login prompt) to keep the page in the export.",
-						"path", p, "decision", blocked.Decision)
-					continue
-				}
-				// The 404-outlet outcome (FallbackNotFound, Decided 5):
-				// the route's own answer is 404, so there is no page to
-				// bake in — skip with a warning naming the route, the way
-				// a dynamic route without StaticPaths is skipped.
-				if nf, ok := errors.AsType[*uihost.NotFoundOutletError](err); ok {
-					slog.Warn("static: skipped 404-outlet route: a FallbackNotFound outlet had no fill at build time, the route's own answer is 404; it stays reachable via the live server",
-						"path", nf.Path)
-					continue
-				}
-				return res, fmt.Errorf("static: render %q: %w", p, err)
+		for _, urlPath := range slices.Sorted(maps.Keys(files)) {
+			if !strings.HasPrefix(urlPath, "/") {
+				return res, fmt.Errorf("static: contributor file %q is not a root-absolute path", urlPath)
 			}
-			// a fill that failed and was
-			// contained degrades its outlet on a LIVE server, but an
-			// export would freeze the degraded bytes into the page for
-			// every visitor — refuse, naming the route and each outlet
-			// address, so the operator fixes the fill or excludes the
-			// route on purpose.
-			if len(fillFailures) > 0 {
-				parts := make([]string, 0, len(fillFailures))
-				for _, f := range fillFailures {
-					// The error text can carry hostile bytes (the lab's
-					// broken fills do on purpose); a build log is a
-					// sink, so it reaches it scrubbed.
-					parts = append(parts, fmt.Sprintf("%s (%v)", f.Addr, textsafe.StripUnsafe(f.Err.Error())))
-				}
-				return res, fmt.Errorf(
-					"static: render %q refused: %d fill(s) failed and were contained (a live server degrades the outlet; the export will not bake it): %s",
-					p, len(fillFailures), strings.Join(parts, "; "))
-			}
-			html := b.applyStaticMode(page)
-			dst := filepath.Join(b.OutDir, pathToFile(p))
-			if err := b.ensureContained(dst); err != nil {
+			if err := b.writeRawAsset(urlPath, files[urlPath]); err != nil {
 				return res, err
 			}
-			if err := writeFile(dst, []byte(html)); err != nil {
-				return res, err
-			}
-			b.log("rendered %s -> %s", p, dst)
-			res.Pages = append(res.Pages, p)
-			if len(renderedRoutes) == 0 || renderedRoutes[len(renderedRoutes)-1] != route.Path {
-				renderedRoutes = append(renderedRoutes, route.Path)
-			}
+			res.Assets = append(res.Assets, urlPath)
+			b.log("wrote contributor file %s", urlPath)
 		}
 	}
 
@@ -385,6 +391,114 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	return res, nil
 }
 
+// Walk renders every page an export of host would contain, in route
+// order, and hands each to fn with its path and its live HTML (before
+// the export's static rewrites). Excluded routes, redirects, gated
+// screens and 404-outlet routes are skipped the way Build skips them.
+// A search index or a feed built at runtime reads the same pages an
+// export writes. skip, when set, is asked about each route pattern and
+// each expanded path before it renders, so a skipped page that cannot
+// render is never an error.
+//
+// A page that fails to render, or whose fill failed and was contained,
+// reaches fn with an empty html and the error; so does a dynamic route
+// whose StaticPaths failed, under its pattern. As with fs.WalkDir, fn
+// returning nil walks on without the page and returning an error stops
+// the walk with it.
+func Walk(ctx context.Context, host *uihost.UIHost, skip func(path string) bool, fn func(path, html string, err error) error) error {
+	if host == nil {
+		return fmt.Errorf("static: Walk needs a host")
+	}
+	if skip == nil {
+		skip = func(string) bool { return false }
+	}
+	return walk(ctx, host, skip, skip, nil,
+		func(path string, err error) error { return fn(path, "", err) },
+		func(_, p, page string) error { return fn(p, page, nil) })
+}
+
+// walk is the page loop Build and Walk share: excluded is asked about
+// route patterns, skipPath (when set) about expanded paths, and fn gets
+// the route pattern, the concrete path and the rendered page. fail,
+// when set, gets each route or page that could not render and decides
+// whether the walk goes on (nil) or stops; unset, the first one stops
+// it.
+func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(string) bool, logf func(string, ...any), fail func(path string, err error) error, fn func(route, path, page string) error) error {
+	if logf == nil {
+		logf = func(string, ...any) {}
+	}
+	if fail == nil {
+		fail = func(_ string, err error) error { return err }
+	}
+	for _, route := range host.App.Routes() {
+		if excluded(route.Path) {
+			logf("skipped excluded route %s", route.Path)
+			continue
+		}
+		if route.RedirectTo != "" {
+			continue // redirects render no page
+		}
+		paths, err := expandRoute(ctx, host.App, route.Path)
+		if err != nil {
+			if err := fail(route.Path, fmt.Errorf("static: expand %q: %w", route.Path, err)); err != nil {
+				return err
+			}
+			continue
+		}
+		for _, p := range paths {
+			if skipPath != nil && skipPath(p) {
+				continue
+			}
+			page, fillFailures, err := host.RenderStaticPageResult(ctx, p)
+			if err != nil {
+				if blocked, ok := errors.AsType[*uihost.PolicyBlockedError](err); ok {
+					slog.Warn("static: skipped gated screen: policy refused the static render; the route stays reachable via the live server. Use a policy that RenderAlts (e.g. a login prompt) to keep the page in the export.",
+						"path", p, "decision", blocked.Decision)
+					continue
+				}
+				// The 404-outlet outcome (FallbackNotFound, Decided 5):
+				// the route's own answer is 404, so there is no page to
+				// bake in — skip with a warning naming the route, the way
+				// a dynamic route without StaticPaths is skipped.
+				if nf, ok := errors.AsType[*uihost.NotFoundOutletError](err); ok {
+					slog.Warn("static: skipped 404-outlet route: a FallbackNotFound outlet had no fill at build time, the route's own answer is 404; it stays reachable via the live server",
+						"path", nf.Path)
+					continue
+				}
+				if err := fail(p, fmt.Errorf("static: render %q: %w", p, err)); err != nil {
+					return err
+				}
+				continue
+			}
+			// a fill that failed and was
+			// contained degrades its outlet on a LIVE server, but an
+			// export would freeze the degraded bytes into the page for
+			// every visitor — refuse, naming the route and each outlet
+			// address, so the operator fixes the fill or excludes the
+			// route on purpose.
+			if len(fillFailures) > 0 {
+				parts := make([]string, 0, len(fillFailures))
+				for _, f := range fillFailures {
+					// The error text can carry hostile bytes (the lab's
+					// broken fills do on purpose); a build log is a
+					// sink, so it reaches it scrubbed.
+					parts = append(parts, fmt.Sprintf("%s (%v)", f.Addr, textsafe.StripUnsafe(f.Err.Error())))
+				}
+				if err := fail(p, fmt.Errorf(
+					"static: render %q refused: %d fill(s) failed and were contained (a live server degrades the outlet; the export will not bake it): %s",
+					p, len(fillFailures), strings.Join(parts, "; "))); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := fn(route.Path, p, page); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // routeExcluded reports whether a route pattern is covered by an
 // ExcludeRoutes entry: exact match, or the pattern sits under the
 // entry as a whole path segment ("/broken" covers "/broken/load" but
@@ -555,7 +669,7 @@ func (b *Builder) applyStaticMode(page string) string {
 	page = b.rewriteBaseURLs(page)
 	notice := string(ui.Banner(ui.BannerConfig{
 		Title:       "Static preview",
-		Body:        "This is a read-only export. Run the app locally for full interactivity: live search, demos, and server-driven islands need the Go server.",
+		Body:        "This is a read-only export. Run the app locally for full interactivity: demos and server-driven islands need the Go server.",
 		Variant:     ui.BannerInfo,
 		Dismissible: true,
 		DismissID:   "gofastr-static-preview",
@@ -581,17 +695,18 @@ func stampStatic(page string) string {
 	return page
 }
 
-// baseAttrURL matches a whitespace-delimited src="…", href="…", or
-// data-cui-push-state="…" whose value is root-absolute (leading "/") but
+// baseAttrURL matches a whitespace-delimited src="…", href="…", action="…"
+// or data-cui-push-state="…" whose value is root-absolute (leading "/") but
 // NOT protocol-relative ("//"). data-cui-push-state is included so combobox/
 // palette selection targets get base-prefixed on subpath deploys (otherwise
-// selecting a command navigates to the apex path and 404s). The leading
+// selecting a command navigates to the apex path and 404s), and action so
+// a GET form (the search page's) submits under the base. The leading
 // ([\s]) anchor ensures only real attributes match, never "data-src" /
 // "srcset", and code samples are safe because core/markdown escapes quotes
 // inside <code> to &quot; (so the ="… pattern never appears in rendered code
 // text). Group 3 is the first path byte, re-emitted so the prefix is inserted
 // after the leading slash.
-var baseAttrURL = regexp.MustCompile(`([\s])(src|href|data-cui-push-state)="/([^/])`)
+var baseAttrURL = regexp.MustCompile(`([\s])(src|href|action|data-cui-push-state)="/([^/])`)
 
 // rewriteBaseURLs prefixes every root-absolute asset and navigation URL in
 // the page with b.BasePath. No-op when BasePath is empty (apex deploy /
@@ -603,7 +718,7 @@ func (b *Builder) rewriteBaseURLs(page string) string {
 	if b.BasePath == "" {
 		return page
 	}
-	// 1. Attributes: src="…"/href="…" (assets + nav links).
+	// 1. Attributes: src="…"/href="…"/action="…" (assets, nav links, forms).
 	page = baseAttrURL.ReplaceAllString(page, "${1}${2}=\""+b.BasePath+"/${3}")
 	// 2. Inline JSON values: the component catalog seeds
 	// "stylePath":"/__gofastr/comp/<name>.css" entries the runtime

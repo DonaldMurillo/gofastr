@@ -830,6 +830,12 @@ magnifier, `TriggerText` (default: the placeholder) and the shortcut's
 keycaps (`⌘K`). Below 48rem it shrinks to a 44px icon button. The knob
 `--ui-cmd-trigger-width` (default 16rem) sets the field's width.
 
+The panel keeps one height while the reader types, so a filter that
+leaves one row does not move the field or footer: the list fills what
+they leave and scrolls. `--ui-cmd-palette-height` (default 30rem,
+capped by the viewport) and `--ui-cmd-palette-width` (default 36rem)
+size it; on a phone it fills the screen.
+
 A palette with `RPCPath` searches on the server. The endpoint reads `q`
 from the form body and answers option rows built by
 `ui.PaletteResults(ctx, name, cmds, empty)`, where `name` is the
@@ -837,6 +843,15 @@ palette's `Name`. Each row navigates to its command's `Href` on pick;
 an href that is not a safe link (a `javascript:` URL) renders no
 navigation. With no commands it answers one disabled row reading
 `empty`, or the localized "No matches" when `empty` is `""`.
+
+A palette with `Search: true` searches the pages instead: the
+[site search](site-search.md) battery's index, live or from a static
+export's index files. It needs `Commands`, the rows shown before the
+first keystroke, and adds page and section rows below the matching
+commands as the reader types. They fade in as they arrive, except a
+row that stays across keystrokes, and not at all under reduced motion.
+On a phone or tablet the footer drops its keyboard hints and keeps the
+close button.
 
 ```go
 trigger, palette := ui.CommandPalette(ui.CommandPaletteConfig{

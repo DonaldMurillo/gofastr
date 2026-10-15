@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"sync/atomic"
 
@@ -404,12 +406,12 @@ func (r *Router) ValidateRequires() {
 	}
 }
 
-// Paths returns all registered paths (exact + dynamic patterns).
+// Paths returns all registered paths: the exact paths sorted, then the
+// dynamic patterns in registration order. The order is stable because
+// the route manifest every page embeds and a static export's page
+// order follow it.
 func (r *Router) Paths() []string {
-	paths := make([]string, 0, len(r.screens)+len(r.dynamic))
-	for p := range r.screens {
-		paths = append(paths, p)
-	}
+	paths := slices.Sorted(maps.Keys(r.screens))
 	for _, dr := range r.dynamic {
 		paths = append(paths, "/"+strings.Join(dr.segments, "/"))
 	}

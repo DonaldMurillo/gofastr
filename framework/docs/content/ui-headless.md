@@ -561,8 +561,12 @@ registered the same way:
   traversal, typeahead and focus return, on top of the disclosure
   primitive. It replaced the retired `menu` runtime module.
 - **headless-combobox** (`[data-hui-combobox]`): the listbox filter,
-  the count announcement and the loading word. It replaced the retired
-  `combobox` runtime module.
+  the count announcement and the loading word. A combobox with a static
+  list whose input already has focus when the module binds opens that
+  list at once (the command palette focuses its input before the module
+  loads). The arrow keys, Home and End scroll the list to keep the
+  active option in sight. It replaced the retired `combobox` runtime
+  module.
 - **headless-navigation** also carries the keyboard-shortcut family
   (`data-hui-shortcut-*`), and **headless-tabs**
   (`[data-hui-tabs]`) owns the roving tabindex and the vacate stash;
