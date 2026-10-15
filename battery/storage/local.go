@@ -288,7 +288,7 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 			}
 			resolvedTemp, rerr := filepath.EvalSymlinks(absTemp)
 			if rerr != nil || !lexicallyUnder(resolvedTemp, root) {
-				return ls.saveResolveThenOpen(key, dstPath, tempDir, root, r)
+				return ls.saveResolveThenOpen(ctx, key, dstPath, tempDir, root, r)
 			}
 			relTempDir = rootRel(resolvedTemp, root)
 		}
@@ -327,7 +327,11 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 		if err := rt.Chmod(tmpRel, ls.fileMode); err != nil {
 			return fmt.Errorf("storage: chmod temp file: %w", scrubPathError(err))
 		}
-		// Atomic rename
+		// The rename is the commit: a save canceled during the copy
+		// leaves the stored object as it was.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := rt.Rename(tmpRel, rel); err != nil {
 			return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(err.Error(), root, dstPath))
 		}
@@ -337,7 +341,7 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 		success = true
 		return nil
 	}
-	return ls.saveResolveThenOpen(key, dstPath, tempDir, root, r)
+	return ls.saveResolveThenOpen(ctx, key, dstPath, tempDir, root, r)
 }
 
 // saveResolveThenOpen is the pre-root staging path: CreateTemp in the
@@ -346,7 +350,7 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 // root and when WithTempDir points outside BaseDir — os.Root.Rename
 // cannot cross the root, so a scratch directory elsewhere is staged
 // resolve-then-open by necessity.
-func (ls *LocalStorage) saveResolveThenOpen(key, dstPath, tempDir, root string, r io.Reader) error {
+func (ls *LocalStorage) saveResolveThenOpen(ctx context.Context, key, dstPath, tempDir, root string, r io.Reader) error {
 
 	// Write to temp file first (atomic)
 	tmpFile, err := os.CreateTemp(tempDir, ".gofastr-tmp-*")
@@ -382,7 +386,10 @@ func (ls *LocalStorage) saveResolveThenOpen(key, dstPath, tempDir, root string, 
 		return fmt.Errorf("storage: chmod temp file: %w", scrubPathError(err))
 	}
 
-	// Atomic rename
+	// The rename is the commit; see Save.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := os.Rename(tmpPath, dstPath); err != nil {
 		return fmt.Errorf("storage: rename temp to final: %s", upload.ScrubPath(err.Error(), root, dstPath))
 	}

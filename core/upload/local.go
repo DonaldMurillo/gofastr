@@ -200,7 +200,10 @@ func CreateTempInRoot(root *os.Root, relDir, pattern string) (*os.File, string, 
 // + LocalStorage pairing) sees the previous whole object or the new
 // one, never the torn window of an in-flight copy. A failed copy leaves
 // no partial file at the final path.
-func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
+func (s *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	rk, err := s.resolveKey(key)
 	if err != nil {
 		return err
@@ -288,6 +291,11 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 		if err := root.Chmod(tmpRel, 0o600); err != nil {
 			return scrub("restricting file", tmpRel, err)
 		}
+		// The rename is the commit: a save canceled during the copy
+		// leaves the stored object as it was.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err := root.Rename(tmpRel, rel); err != nil {
 			return scrub("renaming into place", rk.path, err)
 		}
@@ -336,6 +344,9 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 		return scrub("restricting file", tmpPath, err)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := os.Rename(tmpPath, rk.path); err != nil {
 		return scrub("renaming into place", rk.path, err)
 	}
@@ -348,7 +359,10 @@ func (s *LocalStorage) Save(_ context.Context, key string, r io.Reader) error {
 }
 
 // Delete removes the file at key from the local filesystem.
-func (s *LocalStorage) Delete(_ context.Context, key string) error {
+func (s *LocalStorage) Delete(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	rk, err := s.resolveKey(key)
 	if err != nil {
 		return err
