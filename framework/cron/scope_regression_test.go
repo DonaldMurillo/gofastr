@@ -29,6 +29,34 @@ func TestStopDeadlineBoundsLoopJoin(t *testing.T) {
 type scopeLease struct{}
 
 func (scopeLease) Acquire(context.Context) (bool, func(), error) { return false, nil, nil }
+
+// runTick reads the leader under s.mu, the lock WithLeaderElection
+// writes it under. Holding the write lock must hold the tick back; a
+// tick that reads the field bare (a data race with a concurrent
+// replacement) finishes at once. This fails without -race.
+func TestTickReadsLeaderUnderLock(t *testing.T) {
+	s := NewScheduler()
+	s.WithLeaderElection(scopeLease{})
+	s.mu.Lock()
+	done := make(chan struct{})
+	go func() {
+		s.runTick(context.Background(), time.Now())
+		close(done)
+	}()
+	select {
+	case <-done:
+		s.mu.Unlock()
+		t.Fatal("runTick read the leader without taking s.mu")
+	case <-time.After(50 * time.Millisecond):
+	}
+	s.mu.Unlock()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("runTick never finished after the lock was released")
+	}
+}
+
 func TestLeaderReplacementConcurrent(t *testing.T) {
 	s := NewScheduler()
 	s.WithLeaderElection(scopeLease{})

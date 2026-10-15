@@ -12,18 +12,24 @@ func TestTemplateTruncateNegativeCap(t *testing.T) {
 		t.Fatal(got)
 	}
 }
-func TestRegisterFuncRefusesReplacement(t *testing.T) {
+
+// RegisterFunc replaces a function already registered under the name:
+// that is how a host overrides a built-in (audit-deps.md).
+func TestRegisterFuncReplaces(t *testing.T) {
 	const name = "scope-duplicate"
-	RegisterFunc(name, func() string { return "old" })
 	defer func() {
 		funcMu.Lock()
 		delete(FuncMap, name)
 		funcMu.Unlock()
-		if r := recover(); r == nil {
-			t.Error("duplicate function silently replaced")
-		}
 	}()
+	RegisterFunc(name, func() string { return "old" })
 	RegisterFunc(name, func() string { return "new" })
+	funcMu.RLock()
+	fn := FuncMap[name].(func() string)
+	funcMu.RUnlock()
+	if got := fn(); got != "new" {
+		t.Fatalf("FuncMap[%q]() = %q, want the replacement", name, got)
+	}
 }
 
 func TestTemplateTruncateZeroKeepsMarker(t *testing.T) {

@@ -13,10 +13,22 @@ func TestKeysFollowASCIIGrammar(t *testing.T) {
 	}
 }
 
-func TestQuotedValuesRejectUnescapedInteriorQuotes(t *testing.T) {
-	for _, input := range []string{`KEY="one"two"`, `KEY='one'two'`} {
-		if _, err := Parse(strings.NewReader(input)); err == nil {
-			t.Errorf("accepted malformed quoted value %s", input)
+// The outer quotes delimit the value; a quote inside it is part of the
+// value, as it was before (dotenv.md: single quotes are verbatim).
+func TestInteriorQuotesStayInValue(t *testing.T) {
+	cases := map[string]string{
+		`KEY='it''s'`:   `it''s`,
+		`KEY='one'two'`: `one'two`,
+		`KEY="one"two"`: `one"two`,
+	}
+	for input, want := range cases {
+		got, err := Parse(strings.NewReader(input))
+		if err != nil {
+			t.Errorf("%s: %v", input, err)
+			continue
+		}
+		if got["KEY"] != want {
+			t.Errorf("%s: KEY = %q, want %q", input, got["KEY"], want)
 		}
 	}
 }

@@ -22,7 +22,7 @@ global registries:
 | `registry.RegisterStyle`   | Registers a named, lazy-loaded per-component CSS sheet         |
 | `render.RegisterComponent` | Replaces / extends a named render component                    |
 | `render.RegisterLayout`    | Replaces / extends a named layout                              |
-| `render.RegisterFunc`      | Adds a named template function; rejects replacement                   |
+| `render.RegisterFunc`      | Adds or replaces a named template function                            |
 
 If you didn't expect a particular dependency to appear in this list,
 that's the signal to investigate it.

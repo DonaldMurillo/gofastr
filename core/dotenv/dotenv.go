@@ -142,9 +142,6 @@ func parseValue(v string, seen map[string]string) (string, error) {
 		if len(v) < 2 || v[len(v)-1] != '\'' {
 			return "", fmt.Errorf("unterminated single-quoted value")
 		}
-		if strings.ContainsRune(v[1:len(v)-1], '\'') {
-			return "", fmt.Errorf("unescaped quote in single-quoted value")
-		}
 		// Single quotes: verbatim, no escapes, no expansion.
 		return v[1 : len(v)-1], nil
 	default:
@@ -172,9 +169,6 @@ func unescapeDouble(s string) (string, error) {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c != '\\' {
-			if c == '"' {
-				return "", fmt.Errorf("unescaped quote in double-quoted value")
-			}
 			b.WriteByte(c)
 			continue
 		}

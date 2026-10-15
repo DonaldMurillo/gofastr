@@ -33,15 +33,13 @@ var FuncMap = map[string]any{
 var funcMu sync.RWMutex
 
 // RegisterFunc adds a named function to the global FuncMap.
-// It panics if fn is nil or a function is already registered under name.
+// It panics if fn is nil. A later call under the same name replaces the
+// earlier function, built-ins included.
 func RegisterFunc(name string, fn any) {
 	if fn == nil {
 		panic(fmt.Sprintf("render: RegisterFunc(%q, nil)", name))
 	}
 	funcMu.Lock()
 	defer funcMu.Unlock()
-	if _, exists := FuncMap[name]; exists {
-		panic(fmt.Sprintf("render: function %q already registered", name))
-	}
 	FuncMap[name] = fn
 }
