@@ -271,7 +271,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   a NUL byte is refused, and the invalid-key error no longer echoes the key.
 
 ### Fixed
-- **Regression audit: 100 defects fixed**, each pinned by a regression
+- **Regression audit: 96 defects fixed**, each pinned by a regression
   test that failed before its fix. They cover retry arithmetic, SQL
   transactions and identifiers, configuration, YAML and dotenv parsing,
   validation and generated schemas, localization, pagination, module framing,
