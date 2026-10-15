@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,18 +56,22 @@ type Platform interface {
 }
 
 // MoveTree moves src (a directory tree) to dst, which must not exist.
-// The fast path is os.Rename; when the two are on different volumes
-// (staging under the app-data dir, bundle under /Applications) the
-// rename fails and the tree is copied with modes preserved and the
-// source removed.
+// The fast path is a rename that refuses an existing dst in the same
+// syscall; when the two are on different volumes (staging under the
+// app-data dir, bundle under /Applications) the rename fails and the
+// tree is copied, every create exclusive, and the source removed.
 func MoveTree(src, dst string) error {
 	if _, err := os.Lstat(dst); err == nil {
 		return fmt.Errorf("MoveTree: destination already exists")
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if err := os.Rename(src, dst); err == nil {
+	err := renameNoReplace(src, dst)
+	if err == nil {
 		return nil
+	}
+	if errors.Is(err, fs.ErrExist) { // EEXIST or ENOTEMPTY
+		return fmt.Errorf("MoveTree: destination already exists")
 	}
 	if err := copyTree(src, dst); err != nil {
 		return err
