@@ -61,6 +61,11 @@ app := framework.NewApp(framework.WithConfig(framework.AppConfig{
 _ = app
 ```
 
+A compressed page that reflects attacker input next to a secret leaks
+the secret through response sizes (BREACH). The framework's own secret
+in pages is the CSRF token, and it never appears raw; see
+[masked tokens](#masked-tokens) below.
+
 Router middleware runs only for requests the router answers. A gate
 that must hold for every byte the listener serves, the interactive
 setup wizard and the worker and agent roles' reduced muxes included,
@@ -217,6 +222,19 @@ that's guaranteed to 403 the next POST. To carry tokens across a
 planned rotation without bouncing in-flight forms, list the previous
 secret(s) in `AdditionalKeys`; drain once the old tokens have
 expired.
+
+### Masked tokens
+
+Render `middleware.MaskCSRFToken(token)` into a page, never the raw
+cookie value. The masked form is `m1.` plus a fresh one-time pad and the
+token XORed with it, so its bytes differ on every render and a compressed
+response gives a BREACH-style attacker nothing to converge on. `CSRF`
+unmasks a submitted value before comparing it, and still accepts the raw
+token from scripts that read the cookie. `ui.Form`'s hidden field and
+the auth battery's `CSRFToken` / `CSRFTokenFromCtx` already return masked
+tokens, so a `<meta name="csrf-token">` rendered from them (the tag the
+runtime forwards as `X-CSRF-Token`) is masked too.
+`middleware.TokenFromContext` stays raw: never render it.
 
 ## Cross-site form guard (Fetch Metadata)
 
@@ -415,6 +433,8 @@ in the gateway / docs pipeline.
 - `SecurityHeaders(SecurityHeadersConfig)`: defensive headers above.
 - `CORS(CORSConfig)`: cross-origin headers + preflight.
 - `CSRF(CSRFConfig)`: double-submit cookie pattern.
+- `MaskCSRFToken(token)`: per-render masked form of a CSRF token for
+  page bodies.
 - `Compress()`: gzip for text responses (see [Compression](#compression)).
 - `RateLimit(RateLimitConfig)`: token-bucket per key.
 - `Timeout(d)`: per-request deadline; cancels context on expiry.

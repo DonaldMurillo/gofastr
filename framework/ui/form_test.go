@@ -292,9 +292,12 @@ func TestFormAutoStampsCSRFInput(t *testing.T) {
 	ctx, token := ctxWithCSRFToken(t)
 	h := string(Form(FormConfig{Action: "/x", Ctx: ctx},
 		FormField(FormFieldConfig{Label: "n", For: "n", Input: testControl("n")})))
-	want := `<input type="hidden" name="_csrf" value="` + token + `">`
+	want := `<input type="hidden" name="_csrf" value="m1.`
 	if !strings.Contains(h, want) {
-		t.Errorf("missing CSRF hidden input %q in: %s", want, h)
+		t.Errorf("missing masked CSRF hidden input %q in: %s", want, h)
+	}
+	if strings.Contains(h, token) {
+		t.Errorf("form rendered the raw CSRF token, want it masked: %s", h)
 	}
 	// The token input is the FIRST child of the body, before the fields.
 	body := strings.Index(h, `fui-form__body`)

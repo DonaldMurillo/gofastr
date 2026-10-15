@@ -206,8 +206,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the best level and cached by content hash. It skips `HEAD`, `Range`,
   event streams and already-encoded bodies. `AppConfig.DisableCompression`
   turns it off for apps behind a compressing proxy.
+- **`middleware.MaskCSRFToken`** renders a CSRF token under a fresh
+  one-time pad (`m1.` prefix), so a compressed page never repeats the
+  token's bytes (BREACH). `CSRF` accepts masked and raw tokens alike.
 
 ### Changed
+- `ui.Form`'s hidden CSRF field and `auth.CSRFToken` /
+  `auth.CSRFTokenFromCtx` now return masked tokens. Code that compared
+  their result with the CSRF cookie should compare
+  `middleware.TokenFromContext` instead.
 - **BREAKING: `ui.ContentRowConfig.BelowHeader` is removed.** Set
   `StickyHeader: true` on the page-tall `ui.Stack` that holds the
   header instead; a `Sticky` row under it sticks below the header on its
