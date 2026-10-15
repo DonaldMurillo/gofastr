@@ -108,6 +108,13 @@ func TestRedisBrowsable_ListJobsAllStatus(t *testing.T) {
 			t.Errorf("ListJobs(%q): expected 1 job, got %d", status, len(jobs))
 		}
 	}
+	// Redis keeps no other state it can list without a scan.
+	for _, status := range []string{"pending", "bogus"} {
+		jobs, err := q.ListJobs(ctx, status, 10, 0)
+		if err != nil || len(jobs) != 0 {
+			t.Errorf("ListJobs(%q) = %d jobs, %v; want none", status, len(jobs), err)
+		}
+	}
 }
 
 // ─── F17: Scheduler uses slog not fmt.Printf ────────────────────────────────
