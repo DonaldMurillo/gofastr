@@ -249,3 +249,36 @@ func TestCommandPaletteSearchNeedsCommands(t *testing.T) {
 	}()
 	CommandPalette(CommandPaletteConfig{RPCPath: "/s", Search: true, FallbackHref: "/s"})
 }
+
+// SearchPage marks the listbox with the page the last row opens.
+func TestCommandPaletteSearchPageMarks(t *testing.T) {
+	cmds := []PaletteCommand{{Label: "Docs", Href: "/docs"}}
+	_, b := CommandPalette(CommandPaletteConfig{Commands: cmds, Search: true, SearchPage: "/search", FallbackHref: "/search"})
+	h := string(b.Definition().Slots[0].Component.Render())
+	for _, want := range []string{`data-search-all="/search"`, `data-search-all-label="See all results for “{q}”"`} {
+		if !strings.Contains(h, want) {
+			t.Errorf("listbox lacks %s", want)
+		}
+	}
+	_, b = CommandPalette(CommandPaletteConfig{Commands: cmds, Search: true, FallbackHref: "/docs"})
+	if strings.Contains(string(b.Definition().Slots[0].Component.Render()), "data-search-all") {
+		t.Error("a palette with no SearchPage carries data-search-all")
+	}
+}
+
+func TestCommandPaletteSearchPageRefused(t *testing.T) {
+	cmds := []PaletteCommand{{Label: "Docs", Href: "/docs"}}
+	for _, c := range []struct {
+		search bool
+		page   string
+	}{{false, "/search"}, {true, "search"}, {true, "//evil.example"}, {true, "/s?x=1"}, {true, `/\evil`}, {true, "https://x/y"}} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("Search %v SearchPage %q did not panic", c.search, c.page)
+				}
+			}()
+			CommandPalette(CommandPaletteConfig{Commands: cmds, Search: c.search, SearchPage: c.page, FallbackHref: "/docs"})
+		}()
+	}
+}

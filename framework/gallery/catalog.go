@@ -651,6 +651,19 @@ var Catalog = []Entry{
 	{"searchinput", "SearchInput", "Forms", "Search field with leading icon + clear button.", func() render.HTML {
 		return ui.SearchInput(ui.SearchInputConfig{Name: "q", ID: "demo-search", Placeholder: "Search docs…"})
 	}},
+	{"searchresults", "SearchResults", "Navigation", "A search results page: GET form, match count, results with section links, pagination.", func() render.HTML {
+		return ui.SearchResults(ui.SearchResultsConfig{
+			Action: "/search", Query: "form", Total: 45, Page: 1, PerPage: 2, ID: "demo-search-results",
+			Results: []ui.SearchResult{
+				{URL: "/components/form", Title: "Form", Group: "Components",
+					Excerpt: []ui.SearchSegment{{Text: "Form", Hit: true}, {Text: " container with submit and validation."}}},
+				{URL: "/docs/forms", Title: "Forms", Group: "Docs",
+					Excerpt: []ui.SearchSegment{{Text: "Build a "}, {Text: "form", Hit: true}, {Text: " from fields; the server validates it."}},
+					Sections: []ui.SearchSection{{URL: "/docs/forms#validation", Heading: "Validation",
+						Excerpt: []ui.SearchSegment{{Text: "Errors render beside each "}, {Text: "form", Hit: true}, {Text: " field."}}}}},
+			},
+		})
+	}},
 	{"rangeslider", "RangeSlider", "Forms", "Min/max thumb pair.", func() render.HTML {
 		return ui.RangeSlider(ui.RangeSliderConfig{Name: "price", Label: "Price range", Min: 0, Max: 1000, ValueLow: 100, ValueHigh: 700, ShowValue: true})
 	}},
@@ -1642,6 +1655,13 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 // to the map after init would race the reader (fatal concurrent map
 // access, not recoverable).
 var codeSnippets = map[string]string{
+	"searchresults": `// battery/sitesearch renders it from its index:
+//     site.Register("/search", sitesearch.Screen(bat), nil)
+ui.SearchResults(ui.SearchResultsConfig{
+    Action: "/search", Query: q,
+    Results: results, Total: total,
+    Page: page, PerPage: 20,
+})`,
 	"listdetail": `ui.ListDetail(ui.ListDetailConfig{
     ListLabel: "Layout guides",
     List: ui.Stack(ui.StackConfig{Gap: ui.GapSM},

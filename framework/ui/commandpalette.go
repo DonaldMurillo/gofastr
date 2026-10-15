@@ -95,6 +95,12 @@ type CommandPaletteConfig struct {
 	// browser client that fills the rows.
 	Search bool
 
+	// SearchPage is the path of the site's search page (battery/
+	// sitesearch's Screen). With Search on, the results end with a "See
+	// all results" row that opens it for the reader's query. Empty
+	// shows no such row. It must be same-origin and start with /.
+	SearchPage string
+
 	// FallbackHref is the ordinary same-origin destination the trigger
 	// navigates to without script: a modal trigger with no navigation
 	// path is a button a scriptless reader cannot use. Required; "#"
@@ -143,6 +149,10 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 	}
 	if cfg.Search && len(cfg.Commands) == 0 {
 		panic("ui: CommandPalette Search requires Commands — they are the list a reader sees before typing")
+	}
+	if cfg.SearchPage != "" && (!cfg.Search || !strings.HasPrefix(cfg.SearchPage, "/") ||
+		strings.HasPrefix(cfg.SearchPage, "//") || strings.ContainsAny(cfg.SearchPage, "\\?#")) {
+		panic("ui: CommandPalette SearchPage needs Search and a same-origin path starting with /, not " + strconv.Quote(cfg.SearchPage))
 	}
 	if cfg.FallbackHref == "" {
 		panic("ui: CommandPalette requires FallbackHref — a modal trigger with no ordinary navigation path is a button a scriptless reader cannot use")
@@ -229,6 +239,8 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 		closeLabel:    i18nui.T(ctx, i18nui.KeyCommandPaletteClose),
 		loadingLabel:  i18nui.T(ctx, i18nui.KeyHuiComboboxLoading),
 		emptyLabel:    i18nui.T(ctx, i18nui.KeyHuiComboboxNoResults),
+		searchPage:    cfg.SearchPage,
+		allLabel:      i18nui.T(ctx, i18nui.KeySearchResultsAll),
 		extraAttrs:    html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}
 	b := preset.Modal(name).
@@ -327,6 +339,8 @@ type commandPaletteSlot struct {
 	closeLabel    string
 	loadingLabel  string // search: the row shown while results load
 	emptyLabel    string // search: the row shown when nothing matches
+	searchPage    string // search: the search page the last row opens
+	allLabel      string // search: that row's words
 	extraAttrs    html.Attrs
 }
 
@@ -371,6 +385,10 @@ func (s *commandPaletteSlot) Render() render.HTML {
 			"data-search-loading": s.loadingLabel,
 			"data-search-empty":   s.emptyLabel,
 		}}
+		if s.searchPage != "" {
+			parts.Attrs[headless.PartComboboxListbox]["data-search-all"] = s.searchPage
+			parts.Attrs[headless.PartComboboxListbox]["data-search-all-label"] = s.allLabel
+		}
 	}
 	combo := headless.Combobox(headless.ComboboxProps{
 		ID:             inputID,
@@ -584,6 +602,16 @@ func commandPaletteCSS(_ style.Theme) string {
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__option-excerpt mark {
   background: transparent;
   color: var(--color-text, #09090B);
+  font-weight: var(--font-weight-medium);
+}
+/* The last result row opens the search page for the query: a link
+   out of the list, set apart from the results above it. */
+:where([data-cui-comp="ui-cmd-palette"]) .fui-cmd-palette__option--all {
+  margin-block-start: var(--spacing-xs, 2px);
+  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+  color: var(--color-primary);
   font-weight: var(--font-weight-medium);
 }
 :where([data-cui-comp="ui-cmd-palette"]) .fui-cmd-palette__option--section {

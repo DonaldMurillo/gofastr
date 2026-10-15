@@ -751,6 +751,7 @@ var kitComponents = []kitComponent{
 	{name: "Repeater", fn: Repeater},
 	{name: "Responsive", fn: Responsive},
 	{name: "SearchInput", fn: SearchInput},
+	{name: "SearchResults", fn: SearchResults, prep: prepSet("Total", 30, "PerPage", 10, "Page", 2)},
 	{name: "Section", fn: Section},
 	{name: "SegmentedControl", fn: SegmentedControl, prep: func(args []reflect.Value) {
 		opts := args[0].FieldByName("Options")
