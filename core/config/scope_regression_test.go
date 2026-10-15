@@ -95,3 +95,23 @@ func TestUnappliableValidationRulesRefused(t *testing.T) {
 		}
 	}
 }
+
+// Integer and duration bounds compare exactly: past 2^53 a float64 bound
+// rounds, and a value one below the declared minimum would pass.
+func TestIntegerBoundsCompareExactly(t *testing.T) {
+	d := struct {
+		Wait time.Duration `validate:"min=9007199254740993ns"`
+	}{}
+	if Load(&d, MapSource{"WAIT": "9007199254740992ns"}) == nil {
+		t.Fatal("duration below min accepted")
+	}
+	n := struct {
+		N int64 `validate:"max=9007199254740992"`
+	}{}
+	if Load(&n, MapSource{"N": "9007199254740993"}) == nil {
+		t.Fatal("int above max accepted")
+	}
+	if err := Load(&n, MapSource{"N": "9007199254740992"}); err != nil {
+		t.Fatalf("int at max refused: %v", err)
+	}
+}

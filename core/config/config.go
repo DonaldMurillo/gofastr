@@ -418,21 +418,31 @@ func validateTags(v reflect.Value, tag string) error {
 		}
 		switch key {
 		case "min", "max":
-			// A Duration's bounds are durations ("1s", "5m"), compared
-			// in nanoseconds like the value.
-			var n float64
-			if isDuration {
-				d, err := parseDuration(arg)
+			if v.Kind() == reflect.Int || v.Kind() == reflect.Int64 {
+				// Integer and Duration bounds compare as int64: a float64
+				// bound rounds past 2^53. A Duration's bounds are durations
+				// ("1s", "5m"), compared in nanoseconds like the value.
+				var b int64
+				var err error
+				if isDuration {
+					b, err = parseDuration(arg)
+				} else {
+					b, err = strconv.ParseInt(arg, 10, 64)
+				}
 				if err != nil {
 					return fmt.Errorf("invalid %s bound", key)
 				}
-				n = float64(d)
-			} else {
-				var err error
-				n, err = strconv.ParseFloat(arg, 64)
-				if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
-					return fmt.Errorf("invalid %s bound", key)
+				if key == "min" && v.Int() < b {
+					return fmt.Errorf("must be at least %s", arg)
 				}
+				if key == "max" && v.Int() > b {
+					return fmt.Errorf("must be at most %s", arg)
+				}
+				continue
+			}
+			n, err := strconv.ParseFloat(arg, 64)
+			if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
+				return fmt.Errorf("invalid %s bound", key)
 			}
 			if key == "min" {
 				f.Min = &n
