@@ -42,7 +42,7 @@ follows the OS light or dark setting.
 ## Run it
 
 ```bash
-go run ./examples/hn            # http://localhost:8097, or $PORT
+go run ./examples/hn            # http://localhost:8098, or $PORT
 ```
 
 The database is `hn.db` in the working directory, or the path in
@@ -52,7 +52,7 @@ For numbers, build and run the production binary:
 
 ```bash
 go build -o dist/examples/hn ./examples/hn
-GOFASTR_ENV=production PORT=8097 ./dist/examples/hn
+GOFASTR_ENV=production PORT=8098 ./dist/examples/hn
 ```
 
 In a linked git worktree, also set `GOFASTR_ISOLATION=off`, or the port
@@ -65,8 +65,8 @@ comments in the seeded data is `/item/46106605` (279 comments). With
 Lighthouse on its default mobile profile:
 
 ```bash
-npx lighthouse http://localhost:8097/ --only-categories=performance
-npx lighthouse http://localhost:8097/item/46106605 --only-categories=performance
+npx lighthouse http://localhost:8098/ --only-categories=performance
+npx lighthouse http://localhost:8098/item/46106605 --only-categories=performance
 ```
 
 Run each page a few times and take the median; one run moves by

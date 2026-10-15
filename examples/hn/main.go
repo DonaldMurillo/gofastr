@@ -17,7 +17,7 @@
 //
 // Run with:
 //
-//	go run ./examples/hn    # :8097, or $PORT; data in ./hn.db, or $HN_DB
+//	go run ./examples/hn    # :8098, or $PORT; data in ./hn.db, or $HN_DB
 package main
 
 import (
@@ -34,7 +34,7 @@ import (
 )
 
 // defaultAddr is the fallback when $PORT is unset.
-const defaultAddr = ":8097"
+const defaultAddr = ":8098"
 
 func main() {
 	path := os.Getenv("HN_DB")
