@@ -4410,6 +4410,7 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 	}
 	sort.Strings(names)
 	theme := ds.activeTheme()
+	th := style.ThemeHash(theme) // once per page, not once per component
 	if len(names) == 1 || !bundle {
 		// Static-export path also takes this branch: emit one <link>
 		// per component to avoid the query-paramed bundle URL.
@@ -4435,7 +4436,7 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 			// app.css on load, which reversed the cascade against the
 			// host's own overrides.
 			fmt.Fprintf(b, `<link rel="stylesheet" href="/__gofastr/comp/%s.css?v=%s" data-cui-style="%s" id="cui-css-%s">`,
-				n, e.VersionFor(theme), n, n)
+				n, e.VersionForHash(theme, th), n, n)
 		}
 		return b.String()
 	}
@@ -4448,7 +4449,7 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 		if !ok {
 			continue
 		}
-		versions = append(versions, e.VersionFor(theme))
+		versions = append(versions, e.VersionForHash(theme, th))
 	}
 	bundleV := hashStrings(versions...)
 	joined := strings.Join(names, ",")
@@ -4929,6 +4930,7 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	// frame and the theme editor's preview showed a half-applied theme, and
 	// the editor could write a theme its operator had never actually seen.
 	theme := ds.requestTheme(r)
+	th := style.ThemeHash(theme)
 	versions := make([]string, 0, len(names))
 	bodies := make([]string, 0, len(names))
 	seen := make(map[string]struct{}, len(names))
@@ -4947,8 +4949,8 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		versions = append(versions, e.VersionFor(theme))
-		bodies = append(bodies, e.CSSFor(theme))
+		versions = append(versions, e.VersionForHash(theme, th))
+		bodies = append(bodies, e.CSSForHash(theme, th))
 	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	wantV := hashStrings(versions...)

@@ -215,6 +215,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `auth.CSRFTokenFromCtx` now return masked tokens. Code that compared
   their result with the CSRF cookie should compare
   `middleware.TokenFromContext` instead.
+- Component CSS lookups compute the theme hash once per request instead
+  of once per component, halving allocations on a typical page render.
 - **BREAKING: `ui.ContentRowConfig.BelowHeader` is removed.** Set
   `StickyHeader: true` on the page-tall `ui.Stack` that holds the
   header instead; a `Sticky` row under it sticks below the header on its

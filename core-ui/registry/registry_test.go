@@ -354,6 +354,19 @@ func TestCSSAndVersionCacheStable(t *testing.T) {
 	}
 }
 
+func TestHashVariantsMatchThemeVariants(t *testing.T) {
+	reset()
+	h := RegisterStyle("c", func(t style.Theme) string { return ".x { color: red }" })
+	theme := style.DefaultTheme()
+	th := style.ThemeHash(theme)
+	if got, want := h.Entry().VersionForHash(theme, th), h.Entry().VersionFor(theme); got != want {
+		t.Errorf("VersionForHash = %q, VersionFor = %q", got, want)
+	}
+	if got, want := h.Entry().CSSForHash(theme, th), h.Entry().CSSFor(theme); got != want {
+		t.Errorf("CSSForHash = %q, CSSFor = %q", got, want)
+	}
+}
+
 // Catch panic with string message, RegisterStyle panics with
 // fmt.Sprintf, so the value is a string.
 func init() {

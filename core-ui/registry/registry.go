@@ -83,7 +83,15 @@ type Entry struct {
 // CSSFor returns the scoped CSS bytes for this entry under the given
 // theme, building and caching on first call.
 func (e *Entry) CSSFor(theme style.Theme) string {
-	h := themeHash(theme)
+	return e.CSSForHash(theme, themeHash(theme))
+}
+
+// CSSForHash is CSSFor for a caller that already holds
+// style.ThemeHash(theme). Hashing a theme renders its whole token
+// sheet, so a page that versions twenty components hashes once and
+// passes the result here instead of paying for it twenty times. h
+// must be ThemeHash(theme): the cache is keyed by it.
+func (e *Entry) CSSForHash(theme style.Theme, h string) string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.cssCache == nil {
@@ -103,8 +111,13 @@ func (e *Entry) CSSFor(theme style.Theme) string {
 // VersionFor returns the content-addressed version string for this
 // entry's CSS under the given theme. Build is shared with CSSFor.
 func (e *Entry) VersionFor(theme style.Theme) string {
-	_ = e.CSSFor(theme) // ensure cache is warm
-	h := themeHash(theme)
+	return e.VersionForHash(theme, themeHash(theme))
+}
+
+// VersionForHash is VersionFor with the theme hash supplied; see
+// CSSForHash.
+func (e *Entry) VersionForHash(theme style.Theme, h string) string {
+	_ = e.CSSForHash(theme, h) // ensure cache is warm
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.versionCache[h]
