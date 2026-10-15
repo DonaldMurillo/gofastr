@@ -19,14 +19,18 @@ func ServedCSS(css string) string {
 // sources carry long explanatory comments, and those, with the
 // indentation, are about half of every sheet after gzip.
 //
-//   - Strip comments. A comment between two tokens leaves a space, so
-//     `1px/**/solid` stays two tokens.
+//   - Strip comments. A comment is not whitespace: `.a/**/.b` selects
+//     one element with both classes, and a space would make it a
+//     descendant combinator. So a comment goes where whitespace would
+//     go too, beside `{` `;` and the like, and where no whitespace
+//     surrounds it and the tokens around it could join (`1px/**/solid`)
+//     it stays as an empty `/**/`.
 //   - Collapse each whitespace run to one space, then drop the space
 //     next to `{`, `}`, `;` and `,`, after `(` and `:`, and before `)`.
 //     The space before `(` stays (`and (` must not become the function
 //     token `and(`), and so does the space before `:` (`a :hover`
 //     selects descendants), around `>`/`+`/`~`, and inside calc().
-//   - Drop a `;` right before `}`.
+//   - Drop the run of `;` right before `}`: `a:b;;}` is `a:b}`.
 //   - Keep strings, escapes and unquoted url() bodies byte for byte.
 //     A hex escape keeps its terminating space (`\31 0` is "10").
 //   - A space between `:` and `;` or `}` stays: `--x: ;` declares an
@@ -42,15 +46,18 @@ func CSS(src string) string {
 type cssMinifier struct {
 	src string
 	out []byte
-	// space records whitespace or a comment since the last token.
+	// space records whitespace since the last token.
 	space bool
+	// comment records a comment since the last token.
+	comment bool
 	// punct is the last token when it was a bare `{};,(:` character,
 	// 0 otherwise: an escaped `\;` or a string ending in `;` is not
 	// punctuation and keeps the space after it.
 	punct byte
-	// semi is the length of the output just past a bare `;`, so a
-	// following `}` can drop it.
-	semi int
+	// semi is the length of the output just past a bare `;`, and
+	// semiRun where the run of bare `;` ending there began, so a
+	// following `}` can drop the whole run.
+	semi, semiRun int
 }
 
 func (m *cssMinifier) run() {
@@ -64,7 +71,7 @@ func (m *cssMinifier) run() {
 				return
 			}
 			i += 2 + end + 2
-			m.space = true
+			m.comment = true
 		case isCSSSpace(c):
 			m.space = true
 			i++
@@ -95,18 +102,26 @@ func (m *cssMinifier) run() {
 // token writes t, first settling the pending space. p is t's byte when
 // t is bare punctuation, 0 otherwise.
 func (m *cssMinifier) token(t string, p byte) {
-	if m.space && len(m.out) > 0 && m.keepSpace(p) {
-		m.out = append(m.out, ' ')
+	if (m.space || m.comment) && len(m.out) > 0 && m.keepSpace(p) {
+		if m.space {
+			m.out = append(m.out, ' ')
+		} else {
+			m.out = append(m.out, "/**/"...)
+		}
 	}
-	m.space = false
+	m.space, m.comment = false, false
 	if p == '}' && m.semi > 0 && m.semi == len(m.out) {
-		m.out = m.out[:m.semi-1]
+		m.out = m.out[:m.semiRun]
+	}
+	run := len(m.out)
+	if p == ';' && m.semi > 0 && m.semi == len(m.out) {
+		run = m.semiRun
 	}
 	m.out = append(m.out, t...)
 	m.punct = p
 	m.semi = 0
 	if p == ';' {
-		m.semi = len(m.out)
+		m.semi, m.semiRun = len(m.out), run
 	}
 }
 
@@ -139,15 +154,21 @@ func (m *cssMinifier) url(i int) int {
 		m.token(src[i:i+4], '(')
 		return i + 4
 	}
-	k := j
+	// end is past the body's last unit that is not whitespace: an
+	// escaped space (`url(a\ )`) is part of the URL.
+	k, end := j, j
 	for k < len(src) && src[k] != ')' {
 		if src[k] == '\\' {
 			k = scanCSSEscape(src, k)
+			end = k
 			continue
+		}
+		if !isCSSSpace(src[k]) {
+			end = k + 1
 		}
 		k++
 	}
-	body := strings.TrimRight(src[j:k], " \t\n\r\f")
+	body := src[j:end]
 	m.token(src[i:i+4]+body, 0)
 	if k < len(src) {
 		m.token(")", ')')

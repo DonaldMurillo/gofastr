@@ -10,8 +10,8 @@ func TestEnabledEnvTable(t *testing.T) {
 		env, dev, nomin, min string
 		want                 bool
 	}{
-		{want: true},                              // nothing set: production default
-		{dev: "1", want: false},                   // dev keeps sources raw
+		{want: true},            // nothing set: production default
+		{dev: "1", want: false}, // dev keeps sources raw
 		{env: "production", dev: "1", want: true}, // a prod env beats a stray dev flag
 		{env: "STAGING", want: true},
 		{env: "development", dev: "true", want: false},

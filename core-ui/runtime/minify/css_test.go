@@ -9,7 +9,10 @@ func TestCSS(t *testing.T) {
 		// --- comments ---
 		{"comment", "a{color:red}/* x */b{c:d}", "a{color:red}b{c:d}"},
 		{"multi-line comment", "/* a\n * b\n */\na{c:d}", "a{c:d}"},
-		{"comment separates tokens", "a{border:1px/**/solid}", "a{border:1px solid}"},
+		{"comment between tokens stays", "a{border:1px/**/solid}", "a{border:1px/**/solid}"},
+		{"comment is not a combinator", ".a/**/.b{x:y}", ".a/**/.b{x:y}"},
+		{"comment beside punctuation", "a/* c */{/* d */color:red/* e */;}", "a{color:red}"},
+		{"comment beside a space", ".a /* c */.b{x:y}", ".a .b{x:y}"},
 		{"unterminated comment", "a{c:d}/* open", "a{c:d}"},
 
 		// --- whitespace ---
@@ -29,6 +32,9 @@ func TestCSS(t *testing.T) {
 		{"nesting", ".a{\n  &:hover{x:y}\n  & .b{x:y}\n}", ".a{&:hover{x:y}& .b{x:y}}"},
 		{"attribute value", `[data-x="a  b"] a{c:d}`, `[data-x="a  b"] a{c:d}`},
 		{"empty custom property", ":root{--x: ;}", ":root{--x: }"},
+		{"semicolon run before brace", "a{b:c; ;;}", "a{b:c}"},
+		{"semicolon run mid-block stays", "a{b:c;;d:e}", "a{b:c;;d:e}"},
+		{"empty property then semicolons", ":root{--x: ;;}", ":root{--x: }"},
 
 		// --- payloads kept byte for byte ---
 		{"string", `a::before{content: "  /* not */  ";}`, `a::before{content:"  /* not */  "}`},
@@ -36,6 +42,7 @@ func TestCSS(t *testing.T) {
 		{"single quotes", `a{content:' ; } '}`, `a{content:' ; } '}`},
 		{"unquoted url", "a{background:url( data:image/svg+xml;utf8,<svg/*x*/> )}", "a{background:url(data:image/svg+xml;utf8,<svg/*x*/>)}"},
 		{"url escaped paren", `a{background:url(a\)b.png)}`, `a{background:url(a\)b.png)}`},
+		{"url escaped trailing space", `a{background:url(foo\ );x:y}`, `a{background:url(foo\ );x:y}`},
 		{"quoted url", `a{background:url( "a b.png" )}`, `a{background:url("a b.png")}`},
 		{"import", "@import url(x.css) screen;", "@import url(x.css) screen;"},
 		{"hex escape terminator", `.\31 0{x:y}`, `.\31 0{x:y}`},
