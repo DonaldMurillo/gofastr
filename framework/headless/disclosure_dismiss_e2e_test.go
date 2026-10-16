@@ -54,10 +54,12 @@ func TestE2E_DisclosureDismissOutside(t *testing.T) {
 // A touch release outside a popup dismisses it with no click at all:
 // iOS Safari sends none for a tap on content with no click handler of
 // its own, so a page-text tap reaches the module only as pointerup.
+// The text sits in a <main tabindex="-1">, as on every gofastr page: a
+// focus target the skip link moves to is not a control.
 func TestE2E_DisclosureDismissOnTouchRelease(t *testing.T) {
 	pop := Disclosure(DisclosureProps{Summary: render.Text("Filters"), Dismiss: true, Open: true, ID: "pop",
 		Content: render.Text("panel")}, nil)
-	b := startBehaviorServer(t, string(pop)+`<p id="outside">outside</p>`)
+	b := startBehaviorServer(t, string(pop)+`<main tabindex="-1"><p id="outside">outside</p></main>`)
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, disclosureLoaded) {
 		t.Fatal("the disclosure marker never loaded headless-disclosure")
