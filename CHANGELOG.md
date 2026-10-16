@@ -7,6 +7,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.88.1] - 2026-10-16
+
+### Fixed
+- **A client navigation no longer paints the new page unstyled.** Since
+  v0.88.0 each page links only the component sheets it renders, so
+  nearly every navigation brings markup whose sheet the current page
+  never loaded. The runtime swapped first and linked the sheet after,
+  and on a phone with a slow connection every page change flashed
+  unstyled before the styles arrived. The navigator now scans the
+  incoming markup, links its sheets while the old page is still on
+  screen, and commits once they load, each sheet bounded at 3 s so a
+  stalled fetch delays a navigation and never freezes it. This covers
+  every swap path: fetched partials, whole documents, cross-layout
+  swaps, cached and prefetched screens, and envelope fills. A hover or
+  visible prefetch starts its page's sheets when it lands, so the click
+  usually finds them loaded. The core runtime grows 53 bytes at gzip
+  level 1 (15556 → 15609).
+
 ## [0.88.0] - 2026-10-16
 
 **BREAKING.** v0.88.0 stops first paint waiting on the runtime, and a

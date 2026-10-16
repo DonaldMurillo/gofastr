@@ -1,0 +1,7 @@
+version: v0.88.1
+title: client navigation waits for the incoming page's component sheets
+notes:
+  - change: "a client navigation links the component sheets its incoming markup renders while the old page is on screen and commits once they load (each bounded at 3 s), on every swap path"
+    nodetect: "runtime behaviour only; no app spelling changes"
+    breaking: false
+    guidance: "Nothing to change. A navigation to a page with a new component now shows the old page until its sheet arrives instead of the new page unstyled."
