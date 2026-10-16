@@ -8,6 +8,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Fixed
+- **A tap on a control below an open popup reaches that control.** A
+  dismissable disclosure closed on the touch release, before the
+  browser aimed the tap's click, so an in-flow panel collapsed and the
+  click landed on whatever moved under the finger. A tap on a link,
+  button, field, label or summary now closes it through that click; a
+  tap on plain content still closes it on the release.
 - **The docs site's phone menu scrolls on a short screen.** On a phone
   held sideways the open menu ran past the bottom of the viewport and
   its last links could not be reached. It now stops at the viewport

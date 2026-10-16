@@ -362,11 +362,14 @@
   // A click on the popup's own controller (a caller-owned menu trigger
   // outside the details) is the controller's to handle.
   //
-  // A touch or pen release dismisses too: iOS Safari sends no click
-  // for a tap on content with no click handler of its own (a listener
-  // on document does not count), so a tap on the page's text would
-  // leave the popup open. The release still precedes the click, and a
-  // scroll gesture ends in pointercancel, never pointerup.
+  // A touch or pen release on plain content dismisses too: iOS Safari
+  // sends no click for a tap on content with no click handler of its
+  // own (a listener on document does not count), so a tap on the
+  // page's text would leave the popup open. A control gets its click,
+  // which dismisses: the browser hit-tests that click after the
+  // release, so closing on the release would collapse an in-flow
+  // panel and move the control out from under the finger. A scroll
+  // gesture ends in pointercancel, never pointerup.
   const dismissOutside = (e) => {
     const t = e.target;
     for (const d of document.querySelectorAll(HOOK + '[data-hui-disclosure-dismiss][open]')) {
@@ -378,7 +381,7 @@
   };
   document.addEventListener('click', dismissOutside, true);
   document.addEventListener('pointerup', (e) => {
-    if (e.pointerType && e.pointerType !== 'mouse') dismissOutside(e);
+    if (e.pointerType && e.pointerType !== 'mouse' && !e.target.closest?.('a,button,input,select,textarea,label,summary,[tabindex]')) dismissOutside(e);
   }, true);
 
   // A click on an ordinary link inside a disclosure closes it (the
