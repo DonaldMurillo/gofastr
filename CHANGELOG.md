@@ -205,10 +205,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   JSON, SVG) of 1 KB or more for clients that accept gzip, with
   `Vary: Accept-Encoding` and a `-gzip` ETag suffix that still
   revalidates to `304`. Immutable assets are compressed once at the best
-  level and cached by content hash, from their second request; a body
-  under any strong ETag is compressed in one pass, so the tag names one
-  encoding, and one whose handler flushes streams under a weak ETag. A
-  panic after the response started cuts the connection. It skips
+  level and cached by content hash, from their second request. A body
+  under a strong ETag is compressed in one pass, so the tag names one
+  encoding. If its handler flushes, the body streams instead and its
+  ETag turns weak. A panic after the response started cuts the
+  connection. It skips
   `HEAD`, `Range`, event streams and already-encoded bodies.
 - **`middleware.MaskCSRFToken`** renders a CSRF token under a fresh
   one-time pad (`m1.` prefix), so a compressed page never repeats the
