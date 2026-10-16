@@ -7,6 +7,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.88.2] - 2026-10-16
+
 ### Fixed
 - **A page can no longer freeze while a navigation waits for its
   sheets.** On a page where the `fullbundle` module left a
