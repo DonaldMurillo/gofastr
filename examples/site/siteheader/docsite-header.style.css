@@ -18,6 +18,7 @@
 }
 
 .bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--spacing-2xl);
@@ -203,7 +204,7 @@
 }
 
 /* The phone menu: hidden on wide screens. */
-.menu { display: none; position: relative; }
+.menu { display: none; }
 .toggle {
   display: inline-grid;
   place-items: center;
@@ -231,11 +232,14 @@
 .menu[open] .glyph-open { display: none; }
 .menu[open] .glyph-close { display: flex; }
 
-/* The open menu is a fixed sheet under the bar, spanning between the
-   md gutters so the right edge can't clip on narrow viewports. */
+/* The open menu is a sheet hung from the bar's bottom edge, spanning
+   between the md gutters so the right edge can't clip on narrow
+   viewports. It hangs from the bar, not the viewport top: anything
+   above the bar (the static export's preview banner) would otherwise
+   put the sheet over the bar and its close button. */
 .panel {
-  position: fixed;
-  inset-block-start: calc(var(--size-header-height) + var(--spacing-sm));
+  position: absolute;
+  inset-block-start: calc(100% + var(--spacing-sm));
   inset-inline: var(--spacing-md);
   display: flex;
   flex-direction: column;
