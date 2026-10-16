@@ -45,9 +45,11 @@ const (
 // 304, and the 304 echoes the gzip tag.
 //
 // A Flush from the handler flushes the gzip stream, so progressive
-// rendering keeps painting. An immutable body that flushes streams
-// instead of using the cached copy below, and its tag turns weak, since
-// the streamed bytes differ from the cached ones.
+// rendering keeps painting. A body under a strong ETag is held until
+// the handler returns and compressed in one pass, since a stream's
+// bytes depend on where the handler flushes and a strong tag names one
+// encoding. A held body that flushes streams instead, and its tag
+// turns weak.
 //
 // Responses marked Cache-Control: immutable are compressed once at
 // the best level, from the second time the same bytes are served, and
@@ -75,9 +77,23 @@ func Compress() Middleware {
 			cw := &compressWriter{rw: w, accepts: accepts, revalidatingGzip: revalidatingGzip, status: http.StatusOK}
 			returned := false
 			defer func() {
-				// Not a recover: the panic keeps its stack for Recovery.
-				if !returned {
-					cw.abort()
+				if returned {
+					return
+				}
+				// A panic before anything was sent stays as it is, for
+				// Recovery's 500. One after the headers went out is
+				// re-raised as abortedStream (the original frames are
+				// still below this one, so the stack Recovery logs
+				// holds them).
+				if cw.abort() {
+					// nil: runtime.Goexit, which must keep unwinding.
+					switch v := recover(); v {
+					case nil:
+					case http.ErrAbortHandler:
+						panic(v)
+					default:
+						panic(abortedStream{v})
+					}
 				}
 			}()
 			next.ServeHTTP(cw, r)
@@ -186,7 +202,8 @@ type compressWriter struct {
 	wroteHeader bool // the status is committed: later WriteHeader calls are no-ops
 	decided     bool
 	encoding    bool // gzip chosen
-	immutable   bool // buffer the whole body for the compressed-copy cache
+	held        bool // buffer the whole body: one encoding per strong tag
+	cacheable   bool // a held body marked immutable: use the compressed-copy cache
 	passthrough bool // identity, headers sent
 	hijacked    bool
 	headerSent  bool
@@ -236,11 +253,10 @@ func (w *compressWriter) Write(p []byte) (int, error) {
 		switch {
 		case w.buf.Len() > compressCacheMaxBody:
 			_ = w.decide(true)
-			if w.immutable { // too big to cache: stream it
-				w.immutable = false
-				w.startStream()
+			if w.held { // too big to hold: stream it
+				w.spill(false)
 			}
-		case w.buf.Len() >= compressMinBytes && !w.wantsImmutableBuffer():
+		case w.buf.Len() >= compressMinBytes && !w.holdsWhole():
 			_ = w.decide(true)
 		}
 		return len(p), nil
@@ -248,11 +264,10 @@ func (w *compressWriter) Write(p []byte) (int, error) {
 	if w.passthrough {
 		return w.rw.Write(p)
 	}
-	if w.immutable {
+	if w.held {
 		w.buf.Write(p)
 		if w.buf.Len() > compressCacheMaxBody {
-			w.immutable = false // too big to cache: stream the rest
-			w.startStream()
+			w.spill(false) // too big to hold: stream the rest
 		}
 		return len(p), nil
 	}
@@ -316,9 +331,38 @@ func (w *compressWriter) eligible() bool {
 	return true
 }
 
-func (w *compressWriter) wantsImmutableBuffer() bool {
-	return w.accepts && w.status == http.StatusOK &&
-		strings.Contains(w.Header().Get("Cache-Control"), "immutable")
+// holdsWhole reports whether the body is held until the handler
+// returns and compressed in one pass: an immutable body, for the
+// compressed-copy cache, or one under a strong ETag, which must name
+// one encoding. A stream's bytes depend on where the handler flushes.
+func (w *compressWriter) holdsWhole() bool {
+	if !w.accepts || w.status != http.StatusOK {
+		return false
+	}
+	h := w.Header()
+	if strings.Contains(h.Get("Cache-Control"), "immutable") {
+		return true
+	}
+	et := h.Get("ETag")
+	return et != "" && !strings.HasPrefix(et, "W/")
+}
+
+// spill turns a held body into a stream, with the headers still
+// unsent. A body that outgrew the hold streams on every request, so
+// its stream is its one encoding and the tag stays. A flush streams
+// only this request, so the tag turns weak: it now names two.
+func (w *compressWriter) spill(flushed bool) {
+	w.held, w.cacheable = false, false
+	if flushed {
+		weakenETag(w.Header())
+	}
+	w.startStream()
+}
+
+func weakenETag(h http.Header) {
+	if et := h.Get("ETag"); et != "" && !strings.HasPrefix(et, "W/") {
+		h.Set("ETag", "W/"+et)
+	}
 }
 
 // decide commits the encoding choice and sends the headers. An
@@ -358,9 +402,10 @@ func (w *compressWriter) decide(compress bool) error {
 	if et := h.Get("ETag"); et != "" {
 		h.Set("ETag", gzipETag(et))
 	}
-	if w.wantsImmutableBuffer() {
-		w.immutable = true
-		return nil // headers go out with the cached body in finish
+	if w.holdsWhole() {
+		w.held = true
+		w.cacheable = strings.Contains(h.Get("Cache-Control"), "immutable")
+		return nil // headers go out with the body in finish
 	}
 	w.startStream()
 	return nil
@@ -394,16 +439,8 @@ func (w *compressWriter) Flush() {
 		w.sniff()
 		_ = w.decide(w.eligible() && w.buf.Len() > 0)
 	}
-	if w.immutable {
-		w.immutable = false // a flushing handler is streaming
-		// The stream deflates at the default level, so its bytes differ
-		// from the best-level copy a request that did not flush gets:
-		// the strong tag would name two encodings. The headers are still
-		// unsent here.
-		if et := w.Header().Get("ETag"); et != "" && !strings.HasPrefix(et, "W/") {
-			w.Header().Set("ETag", "W/"+et)
-		}
-		w.startStream()
+	if w.held {
+		w.spill(true)
 	}
 	if w.zw != nil {
 		_ = w.zw.Flush()
@@ -441,7 +478,7 @@ func (w *compressWriter) finish() {
 		// would never type it.
 		w.sniff()
 		big := w.buf.Len() >= compressMinBytes
-		if big && w.wantsImmutableBuffer() && w.eligible() {
+		if big && w.holdsWhole() && w.eligible() {
 			_ = w.decide(true)
 		} else {
 			if !big {
@@ -453,8 +490,13 @@ func (w *compressWriter) finish() {
 			_ = w.decide(big && w.eligible())
 		}
 	}
-	if w.immutable {
-		body := cachedGzip(w.buf.Bytes())
+	if w.held {
+		var body []byte
+		if w.cacheable {
+			body = cachedGzip(w.buf.Bytes())
+		} else {
+			body = gzipOnce(w.buf.Bytes(), gzip.DefaultCompression)
+		}
 		w.buf.Reset()
 		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 		w.sendHeader()
@@ -472,21 +514,29 @@ func (w *compressWriter) finish() {
 	}
 }
 
-// abort runs when the handler panics. A gzip stream already on the
-// wire is closed, so the bytes sent decode and whatever Recovery
-// writes next lands after the gzip trailer, where decoders stop. A
-// response still buffered is dropped: Recovery's 500 replaces it. (An
-// immutable body sets its gzip headers only in finish, so a panic
-// never finds them set and unsent.)
-func (w *compressWriter) abort() {
+// abort runs when the handler panics, and reports whether the headers
+// were already sent. A gzip stream in progress is dropped without its
+// trailer: the response is cut short, and a complete-looking gzip
+// member would hide that. A response still buffered is dropped:
+// Recovery's 500 replaces it. (A held body sets its gzip headers only
+// in finish, so a panic never finds them set and unsent.)
+func (w *compressWriter) abort() bool {
 	if w.zw != nil {
-		_ = w.zw.Close()
 		w.zw.Reset(nil)
 		gzipWriters.Put(w.zw)
 		w.zw = nil
 	}
 	w.buf.Reset()
+	return w.headerSent
 }
+
+// abortedStream carries a handler's panic past a response whose
+// headers were already sent. Recovery logs v and cuts the connection
+// (http.ErrAbortHandler) instead of writing a 500. Without Recovery,
+// net/http logs it and closes the connection all the same.
+type abortedStream struct{ v any }
+
+func (a abortedStream) Error() string { return fmt.Sprint(a.v) }
 
 // addVary appends a token to Vary unless it is already listed.
 func addVary(h http.Header, token string) {
@@ -540,11 +590,7 @@ func cachedGzip(body []byte) []byte {
 	}
 	compressCache.Unlock()
 
-	var out bytes.Buffer
-	zw, _ := gzip.NewWriterLevel(&out, gzip.BestCompression)
-	_, _ = zw.Write(body)
-	_ = zw.Close()
-	gz := out.Bytes()
+	gz := gzipOnce(body, gzip.BestCompression)
 	if !again {
 		return gz
 	}
@@ -564,6 +610,16 @@ func cachedGzip(body []byte) []byte {
 		compressCache.bytes += len(gz)
 	}
 	return gz
+}
+
+// gzipOnce compresses a held body in one pass, so the same bytes at the
+// same level always encode the same way.
+func gzipOnce(body []byte, level int) []byte {
+	var out bytes.Buffer
+	zw, _ := gzip.NewWriterLevel(&out, level)
+	_, _ = zw.Write(body)
+	_ = zw.Close()
+	return out.Bytes()
 }
 
 // compressCacheLen reports how many compressed copies are cached.

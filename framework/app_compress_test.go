@@ -30,20 +30,20 @@ func getGzipProbe(t *testing.T, app *App) *http.Response {
 	return resp
 }
 
-func TestDefaultChainGzipsResponses(t *testing.T) {
+func TestDefaultChainLeavesIdentity(t *testing.T) {
 	resp := getGzipProbe(t, NewApp())
-	if got := resp.Header.Get("Content-Encoding"); got != "gzip" {
-		t.Fatalf("Content-Encoding = %q, want gzip from the default chain", got)
-	}
-}
-
-func TestDisableCompressionLeavesIdentity(t *testing.T) {
-	resp := getGzipProbe(t, NewApp(WithConfig(AppConfig{DisableCompression: true})))
 	if got := resp.Header.Get("Content-Encoding"); got != "" {
-		t.Fatalf("Content-Encoding = %q with DisableCompression", got)
+		t.Fatalf("Content-Encoding = %q from the default chain, want identity", got)
 	}
 	b, _ := io.ReadAll(resp.Body)
 	if string(b) != compressProbeBody {
 		t.Fatal("identity body differs")
+	}
+}
+
+func TestCompressionGzipsResponses(t *testing.T) {
+	resp := getGzipProbe(t, NewApp(WithConfig(AppConfig{Compression: true})))
+	if got := resp.Header.Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("Content-Encoding = %q with Compression, want gzip", got)
 	}
 }

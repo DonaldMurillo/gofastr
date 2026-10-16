@@ -198,15 +198,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   **`static.Walk`** renders the same page set at runtime, with a `skip`
   func asked about each path before it renders. A page that fails to
   render reaches `fn` with its error, as in `fs.WalkDir`.
-- **Responses are gzipped by default.** `middleware.Compress()` joins
-  the default chain after `RequestID` and encodes text responses (HTML,
-  CSS, JavaScript, JSON, SVG) of 1 KB or more for clients that accept
-  gzip, with `Vary: Accept-Encoding` and a `-gzip` ETag suffix that
-  still revalidates to `304`. Immutable assets are compressed once at
-  the best level and cached by content hash, from their second request;
-  one whose handler flushes streams instead, under a weak ETag. It skips `HEAD`, `Range`,
-  event streams and already-encoded bodies. `AppConfig.DisableCompression`
-  turns it off for apps behind a compressing proxy.
+- **`AppConfig.Compression` gzips responses.** Set, it adds
+  `middleware.Compress()` to the default chain after `RequestID`; it is
+  off by default, since a reverse proxy or CDN in front of the app
+  usually compresses. It encodes text responses (HTML, CSS, JavaScript,
+  JSON, SVG) of 1 KB or more for clients that accept gzip, with
+  `Vary: Accept-Encoding` and a `-gzip` ETag suffix that still
+  revalidates to `304`. Immutable assets are compressed once at the best
+  level and cached by content hash, from their second request; a body
+  under any strong ETag is compressed in one pass, so the tag names one
+  encoding, and one whose handler flushes streams under a weak ETag. A
+  panic after the response started cuts the connection. It skips
+  `HEAD`, `Range`, event streams and already-encoded bodies.
 - **`middleware.MaskCSRFToken`** renders a CSRF token under a fresh
   one-time pad (`m1.` prefix), so a compressed page never repeats the
   token's bytes (BREACH). `CSRF` accepts masked and raw tokens alike.
@@ -304,7 +307,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   never names are the only ones dropped. The examples/site homepage's
   bundle goes from 10.2 KB to 7.8 KB gzipped, its head fits, and first
   paint goes from 1.30 s to 0.71 s (0.45 s to 0.71 s on a warm return
-  visit).
+  visit). These figures are with gzip on the wire
+  (`AppConfig.Compression`, or a compressing proxy); the 16 KiB budget
+  counts gzipped bytes.
 - `ui.Form`'s hidden CSRF field and `auth.CSRFToken` /
   `auth.CSRFTokenFromCtx` now return masked tokens. Code that compared
   their result with the CSRF cookie should compare

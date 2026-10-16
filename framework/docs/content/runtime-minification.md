@@ -111,10 +111,9 @@ loaded only when a route declares `app.Preload`), and `actionloader`
 (per-screen compiled action scripts, loaded only when the app has
 compiled actions).
 
-The default middleware chain gzips these responses for clients that
-accept it (`middleware.Compress`; see [security](security.md#compression)
-for the chain). An app behind a proxy that compresses on its own sets
-`AppConfig.DisableCompression`.
+Gzip these responses at a reverse proxy or CDN, or set
+`AppConfig.Compression`, which adds `middleware.Compress` to the default
+chain (see [security](security.md#compression)).
 
 ## Verifying behaviour in your app
 

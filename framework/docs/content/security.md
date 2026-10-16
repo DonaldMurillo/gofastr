@@ -19,7 +19,7 @@ import "time"
 ```go
 middleware.Recovery()
 middleware.RequestID()
-middleware.Compress()
+middleware.Compress()          // only with AppConfig.Compression
 middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})
 middleware.Timeout(30 * time.Second)
 ```
@@ -29,12 +29,26 @@ middleware.Timeout(30 * time.Second)
 
 `Recovery` is outermost so a panic anywhere below it produces a clean
 `500`. `RequestID` runs next so every later log line carries the trace
-ID. `Compress` gzips text responses for clients that send
-`Accept-Encoding: gzip`; it sits outside everything that writes the body,
-so it sees the final bytes. `Timeout` is innermost: a `30s` deadline that
+ID. `Compress`, when `AppConfig.Compression` is set, gzips text
+responses for clients that send `Accept-Encoding: gzip`; it sits outside
+everything that writes the body, so it sees the final bytes. `Timeout` is innermost: a `30s` deadline that
 cancels the request context if the handler hangs.
 
 ### Compression
+
+The default chain does not compress: most deployments put a reverse
+proxy or CDN in front of the app, and it compresses there. Set
+`AppConfig.Compression` when the app faces clients directly:
+
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+-->
+```go
+app := framework.NewApp(framework.WithConfig(framework.AppConfig{
+    Compression: true,
+}))
+_ = app
+```
 
 `Compress` encodes HTML, CSS, JavaScript, JSON, XML, SVG and plain text
 of 1 KB or more for clients whose `Accept-Encoding` admits gzip (a
@@ -50,26 +64,21 @@ Responses marked `immutable` (hashed static assets, `runtime.js`,
 content hash from the second time the same bytes are served. A one-off
 body is not kept, so a client that mints immutable URLs has to request
 each one twice to displace a cached entry, and the cache's byte bound
-holds either way. Everything else
-compresses per request at the default level. The encoding is gzip only: the standard library has no Brotli.
-
-Set `AppConfig.DisableCompression` when a reverse proxy or CDN in front
-of the app compresses instead:
-
-<!-- gofastr:compile
-import "github.com/DonaldMurillo/gofastr/framework"
--->
-```go
-app := framework.NewApp(framework.WithConfig(framework.AppConfig{
-    DisableCompression: true,
-}))
-_ = app
-```
+holds either way. A body under a strong `ETag` is held until the
+handler returns and compressed in one pass, so the tag names one
+encoding; if its handler flushes, it streams and the tag turns weak.
+Everything else streams at the default level. A handler that panics
+after the response started cannot get a `500`: the connection is cut,
+so the client sees a truncated response. The encoding is gzip only:
+the standard library has no Brotli.
 
 A compressed page that reflects attacker input next to a secret leaks
-the secret through response sizes (BREACH). The framework's own secret
-in pages is the CSRF token, and it never appears raw; see
-[masked tokens](#masked-tokens) below.
+the secret through response sizes (BREACH), whether the app or a proxy
+in front of it compresses. The framework's own secret in pages is the
+CSRF token, and it never appears raw; see
+[masked tokens](#masked-tokens) below. A secret the app renders itself
+(an API key, an invite link) next to reflected input is the app's to
+mask or move out of the page.
 
 Router middleware runs only for requests the router answers. A gate
 that must hold for every byte the listener serves, the interactive

@@ -34,6 +34,18 @@ func RecoveryFn(getLogger func() *slog.Logger) Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if err := recover(); err != nil {
+					// net/http's own signal to cut the connection quietly.
+					if err == http.ErrAbortHandler {
+						panic(err)
+					}
+					// Compress raised it: the response was already on the
+					// wire, so a 500 cannot follow. Log the handler's panic,
+					// then cut the connection so the client sees a
+					// truncated response, not text after the body.
+					cut := false
+					if a, ok := err.(abortedStream); ok {
+						err, cut = a.v, true
+					}
 					logger := slog.Default()
 					if getLogger != nil {
 						if l := getLogger(); l != nil {
@@ -46,6 +58,9 @@ func RecoveryFn(getLogger func() *slog.Logger) Middleware {
 						"method", textsafe.Truncate(safeLogMethod(r.Method), maxRecoveryMethodLen),
 						"stack", textsafe.Truncate(string(debug.Stack()), maxRecoveryStackLen),
 					)
+					if cut {
+						panic(http.ErrAbortHandler)
+					}
 					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				}
 			}()

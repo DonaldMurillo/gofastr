@@ -65,7 +65,8 @@ func buildApp(dbPath string) (*framework.App, error) {
 	}
 	app := framework.NewApp(
 		framework.WithDB(db),
-		framework.WithConfig(framework.AppConfig{Name: "hn"}),
+		// Benchmarked served directly, with no proxy in front to gzip.
+		framework.WithConfig(framework.AppConfig{Name: "hn", Compression: true}),
 	)
 	registerEntities(app)
 	if err := framework.AutoMigrate(db, app.Registry); err != nil {

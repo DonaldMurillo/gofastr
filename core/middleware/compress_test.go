@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -495,32 +497,76 @@ func TestCompressSightingsShareBytes(t *testing.T) {
 	}
 }
 
-func TestCompressClosesStreamOnPanic(t *testing.T) {
-	// A panic after the gzip stream started: the stream is closed on
-	// the way out, so the bytes already sent decode, and Recovery's
-	// 500 text lands after the gzip trailer, where decoders stop.
+func TestCompressPanicMidStreamCutsTheResponse(t *testing.T) {
+	// A panic after the gzip stream started: the status line and part
+	// of the body are on the wire, so no 500 can follow. The connection
+	// is cut, which the client reads as a truncated response, instead
+	// of plain text landing after the compressed bytes.
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = io.WriteString(w, bigHTML)
 		http.NewResponseController(w).Flush()
 		panic("boom")
 	})
-	rec := httptest.NewRecorder()
-	RecoveryFn(func() *slog.Logger { return slog.New(slog.DiscardHandler) })(Compress()(h)).ServeHTTP(rec, gzipReq("/"))
-	if rec.Header().Get("Content-Encoding") != "gzip" {
-		t.Fatal("premise: the stream had not started")
-	}
-	zr, err := gzip.NewReader(bytes.NewReader(rec.Body.Bytes()))
+	srv := httptest.NewUnstartedServer(RecoveryFn(func() *slog.Logger { return slog.New(slog.DiscardHandler) })(Compress()(h)))
+	srv.Config.ErrorLog = log.New(io.Discard, "", 0)
+	srv.Start()
+	t.Cleanup(srv.Close)
+	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	resp, err := http.DefaultTransport.RoundTrip(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	zr.Multistream(false)
-	got, err := io.ReadAll(zr)
-	if err != nil {
-		t.Fatalf("the sent gzip stream does not decode: %v", err)
+	defer resp.Body.Close()
+	if resp.Header.Get("Content-Encoding") != "gzip" {
+		t.Fatal("premise: the stream had not started")
 	}
-	if string(got) != bigHTML {
-		t.Fatalf("decoded %d bytes, want the %d written before the panic", len(got), len(bigHTML))
+	raw, err := io.ReadAll(resp.Body)
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("reading the body: err = %v, want a truncated response", err)
+	}
+	if bytes.Contains(raw, []byte("Internal Server Error")) {
+		t.Fatal("the 500 text was appended to the gzip stream")
+	}
+}
+
+func TestRecoveryLetsAbortHandlerThrough(t *testing.T) {
+	h := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) })
+	defer func() {
+		if v := recover(); v != http.ErrAbortHandler {
+			t.Fatalf("recovered %v, want http.ErrAbortHandler re-raised for net/http", v)
+		}
+	}()
+	RecoveryFn(func() *slog.Logger { return slog.New(slog.DiscardHandler) })(h).ServeHTTP(httptest.NewRecorder(), gzipReq("/"))
+	t.Fatal("Recovery swallowed http.ErrAbortHandler")
+}
+
+func TestCompressFlushedTaggedBodyTagIsWeak(t *testing.T) {
+	// A tagged body that is not immutable: held whole, so a request
+	// that does not flush gets one deterministic encoding under the
+	// strong tag, and one that flushes streams under a weak one.
+	serve := func(flush bool) *httptest.ResponseRecorder {
+		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/html")
+			w.Header().Set("ETag", `"v1"`)
+			_, _ = io.WriteString(w, bigHTML[:len(bigHTML)/2])
+			if flush {
+				w.(http.Flusher).Flush()
+			}
+			_, _ = io.WriteString(w, bigHTML[len(bigHTML)/2:])
+		})
+		return serveCompress(h, gzipReq("/page"))
+	}
+	buffered, flushed := serve(false), serve(true)
+	if gunzip(t, buffered.Body.Bytes()) != bigHTML || gunzip(t, flushed.Body.Bytes()) != bigHTML {
+		t.Fatal("a body does not decode")
+	}
+	if got := buffered.Header().Get("ETag"); got != `"v1-gzip"` {
+		t.Errorf("buffered ETag = %q, want the strong gzip tag", got)
+	}
+	if got := flushed.Header().Get("ETag"); got != `W/"v1-gzip"` {
+		t.Errorf("flushed ETag = %q, want it weakened", got)
 	}
 }
 
