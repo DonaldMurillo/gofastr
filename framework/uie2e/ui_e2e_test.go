@@ -299,27 +299,17 @@ func TestUIE2E_OwnerScope_CrossUserIsolation(t *testing.T) {
 		chromedp.WaitVisible(`#dashboard`, chromedp.ByID),
 		chromedp.Text(`#user-email`, &aliceDashboard, chromedp.ByID),
 		chromedp.SendKeys(`#notes`, "alice-secret-log", chromedp.ByID),
+		// The runtime posts the application/json form to /api/logs with
+		// fetch and stays on the page, firing gofastr:formresult when the
+		// response lands. Wait for that before reloading: a reload while
+		// the POST is in flight cancels it, which a fixed sleep lost to
+		// under a loaded pre-commit sweep.
+		chromedp.Evaluate(`window.__addlog = null; document.addEventListener('gofastr:formresult', (e) => { window.__addlog = e.detail.ok; }, { once: true })`, nil),
 		chromedp.Click(`#addlog-submit`, chromedp.ByID),
-		// Form posts to /api/logs which returns JSON 201, no redirect;
-		// reload the dashboard until the log shows up. A fixed sleep
-		// before the reload let a slow POST lose to the navigation that
-		// aborted it, under a loaded pre-commit sweep.
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			deadline := time.Now().Add(10 * time.Second)
-			for {
-				if err := chromedp.Run(ctx,
-					chromedp.Sleep(100*time.Millisecond),
-					chromedp.Navigate(fx.URL()+"/dashboard"),
-					chromedp.WaitVisible(`#dashboard`, chromedp.ByID),
-					chromedp.Text(`#logs`, &aliceLogText, chromedp.ByID),
-				); err != nil {
-					return err
-				}
-				if strings.Contains(aliceLogText, "alice-secret-log") || time.Now().After(deadline) {
-					return nil
-				}
-			}
-		}),
+		chromedp.Poll(`window.__addlog === true`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Navigate(fx.URL()+"/dashboard"),
+		chromedp.WaitVisible(`#dashboard`, chromedp.ByID),
+		chromedp.Text(`#logs`, &aliceLogText, chromedp.ByID),
 	); err != nil {
 		t.Fatalf("alice flow: %v", err)
 	}
