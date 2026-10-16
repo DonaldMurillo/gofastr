@@ -101,6 +101,7 @@ func TestSubsetCompletesInTheBrowser(t *testing.T) {
 	ctx := chromedptest.Context(t)
 	var got struct {
 		Waited     bool     `json:"waited"`
+		NavWaited  bool     `json:"navWaited"`
 		Used       string   `json:"used"`
 		Other      string   `json:"other"`
 		Order      bool     `json:"order"`
@@ -132,6 +133,10 @@ func TestSubsetCompletesInTheBrowser(t *testing.T) {
 					if (!l) return;
 					o.disconnect();
 					window.__gofastr._stylesReady.then(() => { window.__waited = !!l.sheet; });
+					// A navigation bringing markup for a component the subset
+					// covers waits on the same sheet before it swaps.
+					const n = (l.getAttribute('data-cui-bundle') || '').split(',')[0];
+					window.__gofastr._cssReady('<div data-cui-comp="' + n + '"></div>').then(() => { window.__navWaited = !!n && !!l.sheet; });
 				}).observe(document, {childList: true, subtree: true});`).Do(ctx)
 			return err
 		}),
@@ -141,6 +146,7 @@ func TestSubsetCompletesInTheBrowser(t *testing.T) {
 			const link = document.querySelector('link[rel="stylesheet"][href^="/__gofastr/comp-bundle.css"]');
 			await window.__gofastr._stylesReady;
 			const waited = window.__waited === true;
+			const navWaited = window.__navWaited === true;
 			const style = document.querySelector('style[data-cui-bundle]');
 			const app = document.getElementById('cui-app-css');
 			const probe = document.createElement('p');
@@ -148,6 +154,7 @@ func TestSubsetCompletesInTheBrowser(t *testing.T) {
 			document.querySelector('.fui-sub-used').parentElement.appendChild(probe);
 			return {
 				waited,
+				navWaited,
 				used: getComputedStyle(document.querySelector('.fui-sub-used')).color,
 				other: getComputedStyle(probe).color,
 				order: style.nextElementSibling === link &&
@@ -163,6 +170,9 @@ func TestSubsetCompletesInTheBrowser(t *testing.T) {
 	}
 	if !got.Waited {
 		t.Error("the kernel's stylesheet wait settled before the full bundle loaded")
+	}
+	if !got.NavWaited {
+		t.Error("a navigation's sheet wait for a subset component settled before the full bundle loaded")
 	}
 	if got.Used != "rgb(1, 2, 3)" {
 		t.Errorf("the rendered class is %s, not styled by the subset", got.Used)

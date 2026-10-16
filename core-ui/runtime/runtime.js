@@ -469,6 +469,18 @@
         this.loadComponentCSS(el.dataset.cuiScope);
       });
     },
+    // A navigation awaits this before it swaps: the incoming markup (an
+    // HTML string, parsed inert by DOMParser, or a parsed node) starts
+    // its component sheets while the old page is still on screen, so the
+    // new page paints styled. Each page links only the sheets it renders,
+    // so swapping first and linking after flashed nearly every new page
+    // unstyled. It resolves through _stylesReady, so it also waits out
+    // any sheet already in flight (each bounded at 3 s), the full bundle
+    // a first-paint subset links among them.
+    _cssReady(src) {
+      this.scanAndLoadCSS(typeof src == 'string' ? new DOMParser().parseFromString(src, 'text/html') : src);
+      return this._stylesReady;
+    },
     _idleQueue: [],
     _idleFlushing: false,
     scheduleIdleLoads() {
@@ -1327,7 +1339,10 @@
   // transition (a plain page declaring data-cui-vt runs this — its
   // swaps animate); without the module the commit applies directly,
   // the pre-layout behaviour, behind the supersede rule's check.
-  const _swapCommit = (epoch, from, to, apply, pickSrc) => {
+  // css: the incoming markup; its component sheets load while the old
+  // page is still on screen (kernel _cssReady) before anything commits.
+  const _swapCommit = async (epoch, from, to, apply, pickSrc, css) => {
+    await window.__gofastr._cssReady(css);
     const T = window.__gofastr._navHooks.transition;
     if (T) return T.commit(epoch, from, to, apply, pickSrc);
     if (_navLive(epoch)) apply();
@@ -1410,9 +1425,9 @@
           // before pushState fires (the click handler does pushState).
           document.title = cached.title;
           announceRoute(cached.title);
-          _swapCommit(myEpoch, prevPath, path, () => {
+          await _swapCommit(myEpoch, prevPath, path, () => {
             finishNav(path, prevPath, true, swapAtSlot(slot, cached.html), ps);
-          }, cached);
+          }, cached, cached.html);
           return;
         }
       }
@@ -1428,10 +1443,10 @@
           if (slot) {
             document.title = pf.title;
             announceRoute(pf.title);
-            _swapCommit(myEpoch, prevPath, path, () => {
+            await _swapCommit(myEpoch, prevPath, path, () => {
               cacheScreen(path, pf.html, pf.title, pf.layer);
               finishNav(path, prevPath, false, swapAtSlot(slot, pf.html), ps);
-            }, null);
+            }, null, pf.html);
             return;
           }
         }
@@ -1470,7 +1485,7 @@
         const fm = sseMeta(pdoc), lm = sseMeta();
         if (fm && lm) lm.setAttribute('content', fm.getAttribute('content'));
         const nm = pdoc.querySelector('main');
-        _swapCommit(myEpoch, prevPath, dest, () => {
+        await _swapCommit(myEpoch, prevPath, dest, () => {
           const el = swapShell(shellEl(pdoc) || nm);
           if (!el) {
             // No live shell to replace (layout-less origin), fall back to
@@ -1480,7 +1495,7 @@
           }
           cacheScreen(dest, nm ? nm.innerHTML : '', t, nm ? (nm.getAttribute('data-cui-layout-slot') || '') : '');
           finishNav(dest, prevPath, false, el || mainEl(), ps);
-        }, null);
+        }, null, pdoc);
         return;
       }
 
@@ -1559,11 +1574,11 @@
       }
       document.title = title;
       announceRoute(title);
-      _swapCommit(myEpoch, prevPath, path, () => {
+      await _swapCommit(myEpoch, prevPath, path, () => {
         const root = swapAtSlot(slot, body);
         if (!notOk) cacheScreen(path, body, title, swapKey);
         finishNav(path, prevPath, false, root, ps);
-      }, resp);
+      }, resp, body);
     } catch (err) {
       if (!_navLive(myEpoch)) return;
       // CLAUDE.md hard rule 4, no location.href fallback. Surface a

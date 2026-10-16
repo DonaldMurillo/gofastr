@@ -1794,6 +1794,20 @@ the sheet as served (minified outside dev), so a deploy that changes
 the bytes, a source edit or a minifier change, busts the URL
 automatically.
 
+A client navigation does not paint the new page before its sheets
+arrive. Each page links only the sheets it renders, so nearly every
+navigation brings markup whose component sheet the current page never
+loaded. Before it commits, the navigator scans the incoming markup (the
+fetched partial, the whole document, a cached or prefetched screen, and
+every envelope fill) with `__gofastr._cssReady`, which links the new
+sheets while the old page is still on screen and resolves through
+`_stylesReady` once they, and any other sheet already in flight, have
+loaded. Each sheet's wait is bounded at 3 s, so a stalled fetch delays
+a navigation and never freezes it. A hover or visible prefetch starts
+its page's sheets when the prefetch lands, so the click that takes the
+entry usually finds them loaded. Swapping first and linking after
+showed a phone on a slow link every new page unstyled for a moment.
+
 ### Three load modes
 
 | Mode         | First-paint cost           | Behavior                                                                              |
@@ -1902,8 +1916,8 @@ The `fullbundle` behaviour links that URL at boot, right after the
 `<style>` and so before `app.css`, so the states a click or a client
 navigation adds are styled once it arrives, in the cascade position the
 full bundle would have had. The link joins the kernel's stylesheet wait
-(`_stylesReady`), so a client navigation settles scroll only after it
-loads. Until then a class the page did not render
+(`_stylesReady`), so a client navigation commits and settles scroll
+only after it loads. Until then a class the page did not render
 at first paint has no rules. If the subset misses the budget too, the
 head links as before.
 

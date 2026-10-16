@@ -461,6 +461,18 @@
         this.loadComponentCSS(el.dataset.cuiScope);
       });
     },
+    // A navigation awaits this before it swaps: the incoming markup (an
+    // HTML string, parsed inert by DOMParser, or a parsed node) starts
+    // its component sheets while the old page is still on screen, so the
+    // new page paints styled. Each page links only the sheets it renders,
+    // so swapping first and linking after flashed nearly every new page
+    // unstyled. It resolves through _stylesReady, so it also waits out
+    // any sheet already in flight (each bounded at 3 s), the full bundle
+    // a first-paint subset links among them.
+    _cssReady(src) {
+      this.scanAndLoadCSS(typeof src == 'string' ? new DOMParser().parseFromString(src, 'text/html') : src);
+      return this._stylesReady;
+    },
     _idleQueue: [],
     _idleFlushing: false,
     scheduleIdleLoads() {

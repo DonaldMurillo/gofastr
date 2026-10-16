@@ -255,6 +255,13 @@
 
   const bumpEpoch = () => ++NS._navEpoch;
 
+  // Starts the component sheets an incoming page and its fills render
+  // and resolves once they have loaded (each bounded by the kernel), so
+  // the commit never paints a new page unstyled. False when a newer
+  // navigation took over during the wait.
+  const cssWait = (epoch, src, fills) =>
+    Promise.all([src, ...(fills || []).map((f) => f.html)].map((h) => NS._cssReady(h))).then(() => NS._navLive(epoch));
+
   // Parse an envelope body into a detached <template> (inert) and
   // collect fills by looping the DIRECT children (no :scope selector).
   // The template addressed by the bare swap key is the primary.
@@ -793,6 +800,7 @@
             _pend.delete(path);
             return retry(path, { bypassCache: true, forceFull: true, from: prevPath, restore: ps });
           }
+          if (!(await cssWait(myEpoch, cached.html, cx.fills))) return;
           document.title = cached.title;
           announceRoute(cached.title);
           if (parts && P) {
@@ -813,6 +821,7 @@
           return;
         }
         if (slot) {
+          if (!(await cssWait(myEpoch, cached.html))) return;
           document.title = cached.title;
           announceRoute(cached.title);
           swapCommit(myEpoch, prevPath, path, () => {
@@ -841,6 +850,7 @@
               pfSeed = snap.seed;
             }
             const pfResolved = pfFills ? resolveFillTargets(pfFills) : null;
+            if (!(await cssWait(myEpoch, body, pfFills))) return;
             document.title = pf.title;
             announceRoute(pf.title);
             if (parts && P) {
@@ -878,6 +888,7 @@
         let dest = path;
         if (fr.redirected && fr.url) dest = _resolvePath(fr.url);
         if (dest !== path) { NS._pushURL(dest, { replace: true }); NS._setCurrentPath(dest); }
+        if (!(await cssWait(myEpoch, pdoc.body))) return;
         const t = pdoc.querySelector('title')?.textContent || document.title;
         document.title = t;
         announceRoute(t);
@@ -982,6 +993,7 @@
           _pend.delete(path);
           return retry(path, { bypassCache: true, forceFull: true, from: prevPath, restore: ps });
         }
+        if (!(await cssWait(myEpoch, snap.primary.html, snap.fills))) return;
         const envTitle = decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
         document.title = envTitle;
         announceRoute(envTitle);
@@ -1017,6 +1029,7 @@
           let dest = path;
           if (resp.redirected && resp.url) dest = _resolvePath(resp.url);
           if (dest !== path) { NS._pushURL(dest, { replace: true }); NS._setCurrentPath(dest); }
+          if (!(await cssWait(myEpoch, docEnv.html, docEnv.fills))) return;
           document.title = docEnv.title;
           announceRoute(docEnv.title);
           if (parts) parts.pending = true;
@@ -1057,6 +1070,7 @@
           }
         }
       }
+      if (!(await cssWait(myEpoch, body))) return;
       document.title = title;
       announceRoute(title);
       if (parts) parts.pending = true;

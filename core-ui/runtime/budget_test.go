@@ -542,6 +542,16 @@ const (
 	//        whatever order the sheets load in (pinned in Chromium by
 	//        TestOwnedRuleWinsTieInEitherOrder). Measured 13424 → 13450
 	//        at level 6. (l1: 15)
+	//   +74  a navigation waits for the component sheets its incoming
+	//        markup renders before it commits: _cssReady parses an HTML
+	//        string inert, scans it and returns _stylesReady, and
+	//        _swapCommit awaits it while the old page is still on
+	//        screen. Un-carvable: it is the click path, and each page
+	//        links only the sheets it renders, so swapping first and
+	//        linking after painted nearly every client navigation
+	//        unstyled on a slow link (TestNavWaitsForIncomingSheet and
+	//        its cached and prefetched twins, one case per swap path).
+	//        Measured 13470 → 13544 at level 6. (l1: 53)
 	//
 	// HALT NOTE: the bundle measures 13391 at level 6 — 291 over the
 	// 13100 target (the Back/Forward leave capture every page runs is
@@ -554,7 +564,7 @@ const (
 	// spelling) plus the fixes and boot rows named with their tests.
 	// The line is the measurement plus clearance (moved DOWN from
 	// 13527, never up).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 8
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 74 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -890,7 +900,16 @@ const (
 	// the smallest step that fits. The decision is finishNav's own
 	// scroll write, the tail every plain-page navigation runs, so no
 	// carve exists. Three spellings were measured (15563 to 15567).
-	coreCongestionWindowGZ = 14*1024 + 1227
+	//
+	// 2026-10-16: a client navigation waits for the component sheets its
+	// incoming markup renders before it commits (kernel _cssReady, awaited
+	// in _swapCommit). It took the real bundle 15556 -> 15609. 15609, the
+	// smallest step that fits. The wait sits between the response and the
+	// swap on every navigation, so no carve exists: a demand module loaded
+	// there would delay the very commit it guards. Three spellings were
+	// measured (15609 to 15662): a per-sheet promise map, a wait at each of
+	// the four swap sites, and this one.
+	coreCongestionWindowGZ = 14*1024 + 1273
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -932,6 +951,7 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"scroll settle cancels on user intent, not anchoring drift":             67,  // (l1: 49)
 		"first-nav pointer modality rides the delegated opts":                   33,  // (l1: 34)
 		"owned styles load by marker (data-cui-scope scan)":                     26,  // (l1: 15)
+		"nav waits for incoming component sheets (_cssReady in _swapCommit)":    74,  // (l1: 53)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1073,7 +1093,10 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 7679 measured after finishNav kept the scroll on a query-only
 		// change of the same path (core's rule; the module carries its
 		// own navigation tail, so it spells the same decision).
-		"envelope": 7679,
+		// 7797 measured after every swap path learned to wait for the
+		// component sheets its incoming page and fills render (cssWait),
+		// so the module never paints a new page unstyled.
+		"envelope": 7797,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for

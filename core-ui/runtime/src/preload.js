@@ -120,7 +120,17 @@
           at: Date.now(),
         }));
       })
-      .then((e) => { if (e) put(path, e); })
+      // The entry's component sheets start now too, so the click that
+      // takes it swaps at once instead of waiting on them. An envelope
+      // body holds its page in <template> fills, which the kernel's scan
+      // does not enter, so each one's content is scanned too.
+      .then((e) => {
+        if (!e) return;
+        put(path, e);
+        const t = document.createElement('template');
+        t.innerHTML = e.html;
+        for (const r of [t, ...t.content.querySelectorAll('template')]) NS.scanAndLoadCSS(r.content);
+      })
       .catch(() => {})
       .finally(() => inFlight.delete(path));
   };
