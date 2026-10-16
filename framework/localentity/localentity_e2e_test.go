@@ -131,6 +131,20 @@ func submit() chromedp.Action {
 	return chromedp.Click(`#`+noteForm+` button[type=submit]`, chromedp.ByQuery)
 }
 
+// save submits a form whose save succeeds and waits for the list to
+// draw it. Every write replaces the list's rows a moment after the
+// commit, so a row control clicked before then can be detached
+// between chromedp finding it and clicking it ("Could not find node
+// with given id"). The rows on screen are marked first, and the save
+// is done once a row without the mark is there.
+func save() chromedp.Action {
+	return chromedp.Tasks{
+		chromedp.Evaluate(`document.querySelectorAll('[data-fui-local-item]').forEach((n) => n.setAttribute('data-test-drawn', ''))`, nil),
+		submit(),
+		poll(`!!document.querySelector('[data-fui-local-item]:not([data-test-drawn])')`),
+	}
+}
+
 func countIs(n int) chromedp.Action {
 	return poll(`(document.querySelector('[data-fui-local-count]') || {}).textContent === '` + strconv.Itoa(n) + `'`)
 }
@@ -149,7 +163,7 @@ func TestLocalEntityFormsInBrowser(t *testing.T) {
 		chromedp.SetValue(`#f-title`, "🐉🐉🐉", chromedp.ByQuery),
 		chromedp.SetValue(`#f-memo`, "first", chromedp.ByQuery),
 		chromedp.Click(`#f-starred`, chromedp.ByQuery),
-		submit(), countIs(1),
+		save(), countIs(1),
 	); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -167,7 +181,7 @@ func TestLocalEntityFormsInBrowser(t *testing.T) {
 		chromedp.Evaluate(`document.querySelector('#f-memo').value = ''`, nil),
 		chromedp.Click(`#f-starred`, chromedp.ByQuery),
 		chromedp.Click(`#f-visible`, chromedp.ByQuery),
-		submit(),
+		save(),
 		poll(`document.querySelector('#f-title').value === ''`),
 	); err != nil {
 		t.Fatalf("edit: %v", err)
@@ -194,13 +208,13 @@ func TestLocalEntityFormsInBrowser(t *testing.T) {
 		poll(`document.querySelector('#f-title').value === '🐉🐉🐉'`),
 		chromedp.SetValue(`#f-memo`, "kept", chromedp.ByQuery),
 		chromedp.Click(`#f-visible`, chromedp.ByQuery),
-		submit(),
+		save(),
 		poll(`document.querySelector('#f-title').value === ''`),
 		chromedp.Click(`[data-fui-local-item] [data-fui-local-edit] button`, chromedp.ByQuery),
 		poll(`document.querySelector('#f-memo').value === 'kept'`),
 		chromedp.Evaluate(`document.querySelector('#f-memo').disabled = true; document.querySelector('#f-visible').disabled = true;`, nil),
 		chromedp.SetValue(`#f-title`, "abc", chromedp.ByQuery),
-		submit(),
+		save(),
 		poll(`document.querySelector('#f-title').value === ''`),
 		chromedp.Evaluate(`document.querySelector('#f-memo').disabled = false; document.querySelector('#f-visible').disabled = false;`, nil),
 	); err != nil {
@@ -220,7 +234,7 @@ func TestLocalEntityFormsInBrowser(t *testing.T) {
 		poll(`!!document.querySelector('#f-due[aria-invalid="true"]')`),
 		chromedp.SetValue(`#f-due`, "2024-02-29", chromedp.ByQuery),
 		chromedp.SetValue(`#f-at`, "2024-05-01T14:30", chromedp.ByQuery),
-		submit(), countIs(2),
+		save(), countIs(2),
 	); err != nil {
 		t.Fatalf("dates: %v", err)
 	}
@@ -284,7 +298,7 @@ func TestLocalEntityFormsInBrowser(t *testing.T) {
 		chromedp.Click(`[data-fui-local-item] [data-fui-local-delete] button`, chromedp.ByQuery),
 		countIs(0),
 		chromedp.SetValue(`#f-title`, "new", chromedp.ByQuery),
-		submit(), countIs(1),
+		save(), countIs(1),
 	); err != nil {
 		t.Fatalf("edit of a deleted record: %v", err)
 	}
