@@ -35,7 +35,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **An ordinary navigation drops a record pane still loading.** A pane
   waiting for its sheets when a plain navigation started could still
   open and push its record URL, so the page that then loaded sat under
-  the record's URL. The pane is now dropped once any navigation starts.
+  the record's URL. A pane that came back declined or failed fell back to
+  a plain navigation to the record, replacing the newer page. The pane
+  is now dropped once any navigation starts, whatever its answer.
 - **The docs site's phone menu scrolls on a short screen.** On a phone
   held sideways the open menu ran past the bottom of the viewport and
   its last links could not be reached. It now stops at the viewport

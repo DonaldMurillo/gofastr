@@ -131,6 +131,11 @@ type interceptStackServer struct {
 	froms []string
 	// cssDelay holds the pane's component stylesheet back, in ms.
 	cssDelay atomic.Int64
+	// overlayMiss, when set, answers every overlay request after 300 ms
+	// without a pane: "decline" (200, no X-Gofastr-Overlay), "fail"
+	// (500) or "drop" (the connection closes; Chrome retries a dropped
+	// GET twice, so the fetch rejects after about 900 ms).
+	overlayMiss atomic.Value
 }
 
 func (s *interceptStackServer) overlayFroms() []string {
@@ -177,6 +182,17 @@ func startInterceptStackServer(t *testing.T) *interceptStackServer {
 			s.mu.Unlock()
 			if r.URL.RawQuery == "page=slow" {
 				time.Sleep(800 * time.Millisecond)
+			}
+			if miss, _ := s.overlayMiss.Load().(string); miss != "" {
+				time.Sleep(300 * time.Millisecond)
+				switch miss {
+				case "fail":
+					w.WriteHeader(http.StatusInternalServerError)
+				case "drop":
+					panic(http.ErrAbortHandler)
+				}
+				fmt.Fprint(w, `<p>no pane</p>`)
+				return
 			}
 			w.Header().Set("X-Gofastr-Overlay", interceptOverlayAs(r.URL.Path))
 			fmt.Fprint(w, interceptOverlayBody(r.URL.Path, r.URL.RawQuery))

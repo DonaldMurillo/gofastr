@@ -1817,7 +1817,9 @@ or eager prefetch leaves them for the click. A deferred part lands
 only once the sheets it renders have loaded, so it enters styled
 whether it answers before the commit, during the page's own wait, or
 after. An intercept pane that an ordinary navigation overtakes during
-its wait is dropped, never mounted over that navigation's URL. Hash and history scroll
+its wait is dropped, never mounted over that navigation's URL; one that comes
+back declined or failed is dropped too, so its fallback never navigates over
+the newer page. Hash and history scroll
 writes wait on the current page's sheets the same way. Swapping first and linking after
 showed a phone on a slow link every new page unstyled for a moment.
 

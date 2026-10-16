@@ -1178,7 +1178,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// overtook while it waited is dropped, never mounted over the
 		// navigation's URL (TestPlainNavDropsPendingPane). Pinned at the
 		// measured size plus 2 clearance.
-		"intercept": 3389,
+		// 3415 measured (2026-10-16): the same drop covers an overtaken
+		// pane that comes back declined, failed or rejected, whose
+		// fallback would navigate over the newer page
+		// (TestPlainNavOutlivesMissedPane). Pinned at the measured size
+		// plus 2 clearance.
+		"intercept": 3417,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
