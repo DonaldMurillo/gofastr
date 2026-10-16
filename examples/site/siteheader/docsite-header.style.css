@@ -236,11 +236,16 @@
    between the md gutters so the right edge can't clip on narrow
    viewports. It hangs from the bar, not the viewport top: anything
    above the bar (the static export's preview banner) would otherwise
-   put the sheet over the bar and its close button. */
+   put the sheet over the bar and its close button. On a short screen
+   (a phone held sideways) the sheet scrolls within the viewport below
+   the bar instead of running off its bottom edge. */
 .panel {
   position: absolute;
   inset-block-start: calc(100% + var(--spacing-sm));
   inset-inline: var(--spacing-md);
+  max-block-size: calc(100dvh - 100% - 2 * var(--spacing-md));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);

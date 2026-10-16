@@ -7,6 +7,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+- **The docs site's phone menu scrolls on a short screen.** On a phone
+  held sideways the open menu ran past the bottom of the viewport and
+  its last links could not be reached. It now stops at the viewport
+  edge and scrolls.
+
 ## [0.88.1] - 2026-10-16
 
 ### Fixed

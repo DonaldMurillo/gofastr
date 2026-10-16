@@ -1,6 +1,7 @@
 package siteheader_test
 
 import (
+	"context"
 	"fmt"
 	"net/http/httptest"
 	"testing"
@@ -22,43 +23,13 @@ import (
 // preview banner above it), so its own close button stays reachable,
 // and a tap outside it closes it.
 func TestPhoneMenuDismisses(t *testing.T) {
-	paras := make([]render.HTML, 40)
-	for i := range paras {
-		paras[i] = html.Paragraph(html.TextConfig{}, render.Text(fmt.Sprintf("Paragraph %d of a long page.", i)))
-	}
-	page := render.Join(
-		// Stands in for the static export's banner above the page.
-		html.Div(html.DivConfig{ID: "above"}, render.Text("above the bar"), html.Div(html.DivConfig{}, render.Join(paras[:8]...))),
-		ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},
-			siteheader.Render(siteheader.Config{
-				Version:  "dev",
-				Links:    []siteheader.Link{{Label: "Framework", Href: "/framework"}, {Label: "Examples", Href: "/examples"}},
-				MenuLead: []siteheader.Link{{Label: "Docs", Href: "/docs/"}},
-			}),
-			html.Main(html.MainConfig{}, render.Join(paras...)),
-		),
-	)
-	site := app.NewApp("Header")
-	site.RegisterScreen(app.NewScreen("/", app.NewStaticComponent(page)), nil)
-	host := uihost.New(site)
-	fw := framework.NewApp()
-	fw.Use(host.RouteMatchMiddleware())
-	fw.Mount(host)
-	if err := fw.InitPlugins(); err != nil {
-		t.Fatal(err)
-	}
-	srv := httptest.NewServer(fw.Router())
-	defer srv.Close()
+	srv := menuSite(t)
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(390, 800), chromedptest.Timeout(60*time.Second))
 
-	const menu = `[data-cui-scope="docsite-header"] details`
 	var below, toggleHit, openAfter bool
 	var panelBottom float64
 	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/"),
-		chromedp.Poll(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-disclosure'])`, nil),
-		chromedp.Click(menu+` > summary`, chromedp.NodeVisible),
-		chromedp.Poll(`document.querySelector('`+menu+`').open && document.getAnimations().every(a => a.playState === 'finished')`, nil),
+		openMenu(srv.URL),
 		chromedp.Evaluate(`(() => { const d = document.querySelector('`+menu+`');
 			const bar = d.closest('header').getBoundingClientRect(), p = d.querySelector(':scope > summary + *').getBoundingClientRect();
 			return p.top >= bar.bottom - 1; })()`, &below),
@@ -87,4 +58,91 @@ func TestPhoneMenuDismisses(t *testing.T) {
 	if openAfter {
 		t.Error("a tap outside the open menu left it open")
 	}
+}
+
+// TestPhoneMenuFitsShortScreen: on a phone held sideways the open menu
+// is taller than the room below the bar. It stays inside the viewport
+// and scrolls, so its last item can still be reached.
+func TestPhoneMenuFitsShortScreen(t *testing.T) {
+	srv := menuSite(t)
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(740, 360), chromedptest.Timeout(60*time.Second))
+	var got struct {
+		Bottom  float64 `json:"bottom"`
+		Height  float64 `json:"height"`
+		Reached bool    `json:"reached"`
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		// The bar at the top of the viewport, where the sticky header
+		// sits once the page scrolls.
+		chromedp.Evaluate(`window.scrollTo(0, document.querySelector('header').getBoundingClientRect().top + scrollY); true`, nil),
+		openMenu(""),
+		chromedp.Evaluate(`(() => { const p = document.querySelector('`+menu+` > summary + *');
+			const last = [...p.querySelectorAll('a')].pop();
+			last.scrollIntoView({ block: 'nearest' });
+			const r = last.getBoundingClientRect();
+			return { bottom: p.getBoundingClientRect().bottom, height: innerHeight,
+				reached: r.bottom <= innerHeight && r.top >= p.getBoundingClientRect().top - 1 }; })()`, &got),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if got.Bottom > got.Height {
+		t.Errorf("the open menu runs to %v, past the %v-pixel viewport", got.Bottom, got.Height)
+	}
+	if !got.Reached {
+		t.Error("the menu's last item cannot be brought into view")
+	}
+}
+
+const menu = `[data-cui-scope="docsite-header"] details`
+
+// openMenu loads url (when given), waits for the disclosure module and
+// opens the phone menu, letting its entrance animation finish.
+func openMenu(url string) chromedp.Action {
+	return chromedp.ActionFunc(func(ctx context.Context) error {
+		if url != "" {
+			if err := chromedp.Navigate(url + "/").Do(ctx); err != nil {
+				return err
+			}
+		}
+		return chromedp.Run(ctx,
+			chromedp.Poll(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-disclosure'])`, nil),
+			chromedp.Click(menu+` > summary`, chromedp.NodeVisible),
+			chromedp.Poll(`document.querySelector('`+menu+`').open && document.getAnimations().every(a => a.playState === 'finished')`, nil),
+		)
+	})
+}
+
+// menuSite serves the docs-site header over a long page, with a block
+// standing in for the static export's banner above the bar.
+func menuSite(t *testing.T) *httptest.Server {
+	t.Helper()
+	paras := make([]render.HTML, 40)
+	for i := range paras {
+		paras[i] = html.Paragraph(html.TextConfig{}, render.Text(fmt.Sprintf("Paragraph %d of a long page.", i)))
+	}
+	page := render.Join(
+		// Stands in for the static export's banner above the page.
+		html.Div(html.DivConfig{ID: "above"}, render.Text("above the bar"), html.Div(html.DivConfig{}, render.Join(paras[:8]...))),
+		ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},
+			siteheader.Render(siteheader.Config{
+				Version:  "dev",
+				Links:    []siteheader.Link{{Label: "Framework", Href: "/framework"}, {Label: "Examples", Href: "/examples"}},
+				MenuLead: []siteheader.Link{{Label: "Docs", Href: "/docs/"}},
+			}),
+			html.Main(html.MainConfig{}, render.Join(paras...)),
+		),
+	)
+	site := app.NewApp("Header")
+	site.RegisterScreen(app.NewScreen("/", app.NewStaticComponent(page)), nil)
+	host := uihost.New(site)
+	fw := framework.NewApp()
+	fw.Use(host.RouteMatchMiddleware())
+	fw.Mount(host)
+	if err := fw.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(fw.Router())
+	t.Cleanup(srv.Close)
+	return srv
 }
