@@ -133,6 +133,9 @@ func printHelp() {
                        --pkg ./cmd/<name> when main lives under cmd/, so the
                        watcher still sees internal/ and relative paths resolve
                        against the project root
+  export <dir>          Render every page into <dir> as a static site
+                        --base=<subpath> serves it under a URL subpath;
+                        --pkg=<path> selects the main package (default .)
   migrate (m) [up|down|status|generate|force|repair]  Run database migrations
   test (t)              Run project tests
   semantic <sub>        Local semantic index (index/watch/query/stats/clear): experimental
@@ -186,7 +189,7 @@ func printHelp() {
   gofastr verify
   gofastr verify security --json
   gofastr verify --explain GOFASTR1002
-`, bold("GoFastr"), version, bold("Usage"), bold("Commands"), bold("Flags"), bold("Examples"))
+`, bold("GoFastr"), cliVersion(), bold("Usage"), bold("Commands"), bold("Flags"), bold("Examples"))
 }
 
 func main() {
@@ -222,6 +225,7 @@ var ownsHelp = map[string]bool{
 	"harness":  true,
 	"agents":   true,
 	"desktop":  true,
+	"export":   true,
 }
 
 func hasHelpFlag(args []string) bool {
@@ -254,7 +258,7 @@ func dispatch(args []string) {
 			if a == "--version" && desktopCommandOwnsVersionFlag(args, i) {
 				continue
 			}
-			fmt.Printf("GoFastr %s (commit: %s, built: %s)\n", version, commit, buildDate)
+			fmt.Println(versionLine())
 			return
 		}
 	}
@@ -285,6 +289,8 @@ func dispatch(args []string) {
 		runBuild(cmdArgs)
 	case "dev":
 		runDev(cmdArgs)
+	case "export":
+		runExport(cmdArgs)
 	case "new":
 		runNew(cmdArgs)
 	case "migrate", "m":
@@ -308,11 +314,11 @@ func dispatch(args []string) {
 	case "desktop":
 		runDesktop(cmdArgs)
 	case "version":
-		fmt.Printf("GoFastr %s (commit: %s, built: %s)\n", version, commit, buildDate)
+		fmt.Println(versionLine())
 	default:
 		fmt.Printf("%s Unknown command: %s\n\n", red("✗"), cmd)
 		// Fuzzy suggestion: check if it's close to a known command
-		suggestions := []string{"init", "new", "generate", "pack", "validate", "build", "dev", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "audit", "verify", "upgrade", "theme", "version"}
+		suggestions := []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "audit", "verify", "upgrade", "theme", "version"}
 		for _, s := range suggestions {
 			if strings.HasPrefix(s, cmd) || fuzzy.Levenshtein(cmd, s) <= 2 {
 				fmt.Printf("  Did you mean: %s?\n", bold("gofastr "+s))

@@ -14,6 +14,7 @@ package headless
 
 import (
 	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
@@ -382,6 +383,34 @@ func TestE2E_MenuLazyPanelInflatesOnOpen(t *testing.T) {
 	}
 }
 
+// A lazy panel's rows sit in an inert template, so the host's first
+// paint only prefetched the sheets they need. Inflating them into the
+// panel loads those sheets: a component row is styled once it mounts.
+func TestE2E_MenuLazyRowsLoadTheirSheets(t *testing.T) {
+	icon := render.HTML(`<span data-cui-comp="lazy-row-probe" id="lz-icon">*</span>`)
+	menu := Menu(MenuProps{ID: "lzs", Label: "View", LazyPanel: true, Items: []MenuItem{
+		{Label: "Row one", Icon: icon},
+	}}, nil)
+	page := `<script>window.__gofastr_catalog={"lazy-row-probe":{stylePath:"/css/lazy-row-probe.css"}};</script>` + menuPage(t, menu)
+	b := startBehaviorServer(t, page, func(mux *http.ServeMux) {
+		mux.HandleFunc("/css/lazy-row-probe.css", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/css")
+			w.Write([]byte(`#lz-icon{outline:5px solid rgb(1, 2, 3)}`))
+		})
+	})
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, menuLoaded) {
+		t.Fatal("the module never loaded")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelector('details[data-hui-menu="lzs"] > summary').click()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `!!document.getElementById('lz-icon') && getComputedStyle(document.getElementById('lz-icon')).outlineWidth === '5px'`) {
+		t.Fatal("the lazy row mounted but its component sheet was never loaded")
+	}
+}
+
 // The caller-owned trigger path inflates a lazy panel too, and a lazy
 // menu that is ALREADY open at scan (server-rendered open, or inserted
 // open) has its rows mounted by the arrival pass — no toggle will ever
@@ -597,6 +626,34 @@ func TestE2E_DisclosureNavigateClosesAndRestores(t *testing.T) {
 	}
 	if !pollTrue(ctx, `!document.querySelector('details:not([data-hui-disclosure-persist])').open`) {
 		t.Fatal("the navigate pass left an ordinary disclosure open")
+	}
+}
+
+// A link that opens a widget (data-cui-open) is no navigation: the
+// disclosure holding it stays open, so the widget's return focus lands
+// on the visible trigger. An ordinary link still closes it.
+func TestE2E_DisclosureKeepsWidgetLinkOpen(t *testing.T) {
+	d := Disclosure(DisclosureProps{Summary: render.Text("Menu"), Open: true,
+		Content: render.Raw(`<a id="w" href="/search" data-cui-open="palette">Search</a><a id="o" href="#o">Docs</a>`)}, nil)
+	b := startBehaviorServer(t, string(d))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, disclosureLoaded) {
+		t.Fatal("the disclosure marker never loaded headless-disclosure")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.addEventListener('click', e => e.preventDefault()); document.getElementById('w').click()`, nil),
+	); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if !pollTrue(ctx, `document.querySelector('details[data-hui-disclosure]').open`) {
+		t.Fatal("a widget trigger link closed the disclosure")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.getElementById('o').click()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `!document.querySelector('details[data-hui-disclosure]').open`) {
+		t.Fatal("an ordinary link left the disclosure open")
 	}
 }
 

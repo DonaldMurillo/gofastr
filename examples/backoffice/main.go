@@ -90,6 +90,9 @@ func setupApp(dsn string) *framework.App {
 	// (including the host-served admin screens) so the admin's authorize gate
 	// sees a non-nil user.
 	app.Use(demoSession)
+	// A custom auth layer tells the app it signs callers in, so the
+	// startup banner does not claim the auth-gated URLs are unreachable.
+	app.NoteAuthenticator()
 
 	registerEntities(app)
 	// Every admin write lands in the audit log, which the dashboard's

@@ -81,6 +81,13 @@ func activelinkSweepServer(t *testing.T, hold chan struct{}) *httptest.Server {
 	return srv
 }
 
+// navLanded waits for the swap, not the URL: the click handler pushes
+// /settings before the partial is fetched, and gofastr:navigate (which
+// sets _navigated) fires only once it is applied. Polling the pathname
+// alone let a loaded machine release the held module between the two,
+// so its load-time sweep saw no navigation and rightly kept the mark.
+const navLanded = `location.pathname === '/settings' && !!(window.__gofastr && window.__gofastr._navigated)`
+
 const activelinkLoaded = `!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules.activelink)`
 
 func ariaCurrent(id string) string {
@@ -113,7 +120,7 @@ func TestActiveLeafKeepsMarkOnQueryLoad(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`window.__softNav = 1`, nil),
 		chromedp.Click(`#go-settings`, chromedp.ByID),
-		chromedp.Poll(`location.pathname === '/settings'`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Poll(navLanded, nil, chromedp.WithPollingTimeout(10*time.Second)),
 		chromedp.Sleep(300*time.Millisecond),
 		chromedp.Evaluate(`window.__softNav === 1 ? location.pathname : 'full load'`, &path),
 		chromedp.Evaluate(ariaCurrent("orders"), &orders),
@@ -149,7 +156,7 @@ func TestLeafMarkClearedIfNavBeforeLoad(t *testing.T) {
 		chromedp.Poll(`document.readyState === 'complete'`, nil, chromedp.WithPollingTimeout(10*time.Second)),
 		chromedp.Evaluate(`window.__softNav = 1`, nil),
 		chromedp.Click(`#go-settings`, chromedp.ByID),
-		chromedp.Poll(`location.pathname === '/settings'`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Poll(navLanded, nil, chromedp.WithPollingTimeout(10*time.Second)),
 		chromedp.Evaluate(`window.__softNav === 1`, &soft),
 		chromedp.Evaluate(activelinkLoaded, &loaded),
 		chromedp.Evaluate(ariaCurrent("orders"), &orders),

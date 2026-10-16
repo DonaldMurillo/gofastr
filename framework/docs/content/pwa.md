@@ -37,7 +37,7 @@ Blueprint-generated apps scaffold placeholder icons automatically (see
 |-------|---------|---------|
 | `/manifest.webmanifest` | The web app manifest, generated from `PWAConfig` via `encoding/json` (all values escaped) | `application/manifest+json`, `no-cache` |
 | `/service-worker.js` | The generated worker. Served from the root so its default scope covers the whole app | `application/javascript`, `no-cache` (browsers re-fetch it to detect updates) |
-| `/__gofastr/pwa/register.js` | External registration script, injected before `</body>` on every page; CSP-safe under the default `default-src 'self'` policy (no inline JS) | `application/javascript`, `no-cache` |
+| `/__gofastr/pwa/register.js` | External registration script, injected on the deferred script rail at the end of `<head>` on every page; CSP-safe under the default `default-src 'self'` policy (no inline JS) | `application/javascript`, `no-cache` |
 | `/__gofastr/pwa/offline` | The offline fallback page, precached at install time | `text/html`, `no-cache` |
 
 Every rendered page also gains `<link rel="manifest">` and, when

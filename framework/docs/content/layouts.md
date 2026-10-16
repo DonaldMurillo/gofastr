@@ -744,6 +744,32 @@ layout := app.NewLayout("app", app.LayoutSpec{}, func(ctx context.Context, l *ap
 site.SetDefaultLayout(layout)
 ```
 
+`Screen: true` makes the stack the page column: at least one viewport
+tall, with its last child pushed to the bottom (a footer on a short
+page). Put the header inside it as the first child, as `buildShell`
+above does. A screen-tall stack placed *below* a header is a viewport
+plus the header tall, so every page scrolls and a header-height dead
+band opens above the last child. Inside a layout that already provides
+the page column, use a plain `ui.Stack` for the screen's content.
+
+`StickyHeader: true` pins the stack's `<header>` child (the banner
+landmark) while the page scrolls, and says where it ends: the stack
+publishes the header's height, `--size-header-height`, as
+`--ui-sticky-top`, and every sticky part inside the page reads it. A
+`Sticky` content row's nav column and toolbar, a `ui.StepRail`, an
+`interactive.SectionMenu` rail, a `ui.TableOfContents`, a
+`ui.AnchoredRail`, a `ui.GlobalSearch`, a `ui.NetworkRetryBanner`, a
+top-edge `ui.Sticky`, a `FormFrame` side panel and an anchored
+`ui.Section` all stop under the header instead of sliding behind it, at
+any layer depth, with no flag of their own. A region that scrolls on
+its own (a bounded `ui.Box`, the pinned nav column, a `ui.ListDetail`
+list, the PaneHost drawer) resets the offset to 0, so a sticky part
+inside it pins to that region's top. Children
+above the header (an announcement strip) scroll away. The header's own
+style sheet leaves positioning to the stack, and its bar is that token
+tall. An owned sheet that pins something of its own (a docs rail)
+offsets it by `var(--ui-sticky-top, 0px)`.
+
 ### Context columns and list/detail panes
 
 `ui.ContentRowConfig.Aside` adds a labelled context column after main.
@@ -760,35 +786,120 @@ Below the breakpoint it returns to document flow, without hiding either
 pane — and it reads the header band's height from
 `--size-header-height` (`Theme.Layout.HeaderHeight`), so recipes pair it with a page-tall
 `ui.Stack{Screen: true}` and an app bar whose height is that token.
-`Sticky: true` is the frame for a shell with no header band (the
-admin's): the window still scrolls the page, the nav column sticks to
-the top at one viewport tall and scrolls its own overflow, and the
-`Toolbar` row sticks to the top at every width, painted over the
-content beneath it. The client router's scroll restore and fragment
+`Sticky: true` keeps the window as the scroller: the nav column sticks
+at one viewport tall and scrolls its own overflow, and the `Toolbar`
+row sticks at every width, painted over the content beneath it. Both
+stick at `--ui-sticky-top`: the window's top in a shell with no header
+band (the admin's), under the header when the page stack sets
+`StickyHeader` (the column is then the rest of the viewport tall). The
+workspace under the toolbar publishes `--ui-sticky-top` grown by the
+toolbar's height, so sticky parts in main clear the toolbar too. The client router's scroll restore and fragment
 jumps keep working because the window stays the scroller. Sticky and
 Viewport are two scroll models; setting both panics.
-`BelowHeader: true` (with `Sticky`) is the same frame under a sticky
-page header: the nav column and the toolbar stick below
-`--size-header-height` instead of behind the header, and the column is
-the rest of the viewport tall, so a long menu scrolls on its own while
-the page scrolls beside it. Setting it without `Sticky` panics. The
-footer stays where the page layout puts it, full width below the row:
+Under a sticky site header the row needs nothing extra: the page
+layout's stack sets `StickyHeader`, this inner layer's row sets
+`Sticky`, and a long menu scrolls on its own under the header while the
+page scrolls beside it. The footer stays where the page layout puts it,
+full width below the row:
 
 ```go
 layout := app.NewLayout("docs", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
 	nav, _ := component.SafeRenderCtx(ctx, ui.Sidebar(cfg))
-	return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true, BelowHeader: true}, l.Primary())
+	return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav, Sticky: true}, l.Primary())
 })
 ```
 
 An `interactive.SectionMenu` in that column sets `FillColumn: true`:
 its rail drops its own sticky offset and viewport cap, fills the pinned
-column to the bottom of the screen and scrolls there.
+column to the bottom of the screen and scrolls there. The column has no
+padding of its own, so the filled rail insets its links from the
+column's edges. In the rail each group's header pins to the top while
+its links scroll under it, the current page carries an accent dot, and
+the group holding it takes the accent. `Filter: true` adds a filter box
+above the list: typing hides the links that don't match, marks the
+match, shows "matches/total" in each group header, and Escape clears
+it. `FilterPlaceholder` and `FilterEmpty` set its text.
+Set `SwapAt` to the row's breakpoint too: the menu swaps its rail for a
+pill at 900px by default, while the row stacks at 48rem
+(`interactive.SwapMD`) or, with `Breakpoint: ui.StackBelowLG`,
+at 64rem (`interactive.SwapLG`). A mismatch leaves the column
+holding a lone pill beside the content, or a full rail stacked above
+it. An unknown value panics.
+The pill floats at the bottom of the screen, names the current page and
+its group (kept current across client navigations), and opens
+`interactive.SectionMenuDrawer` as a bottom sheet with the current
+page's group open. The page ends a pill's height lower, so the pill
+never covers its last line. Mount that drawer once in the layout, under the same
+`DrawerName`. `InlineTrigger: true` keeps the pill in flow instead, for
+a menu shown inside a card or a demo. The knobs are
+`--ui-section-menu-bg` (behind the pinned group headers: the page background, or the surface color in a filled column and the sheet),
+`--ui-section-menu-inset` (the link inset) and `--ui-section-menu-dot`
+(the current page's dot). The pill is `interactive.SheetPill` and the
+sheet's title row is shared with `interactive.PhoneSheet` (below), so
+their knobs carry the sheet's name: `--ui-sheet-pill-bottom` (the
+pill's gap above the screen edge; set it on `:root`, where the page's
+end padding reads it too) and `--ui-sheet-close-size` (the close
+button).
 `PhoneNavFlush: true` drops the nav column's phone separator below the
-breakpoint — set it when the sidebar's phone navigation lives outside
-the column (a `NativeMobile` sidebar whose drawer trigger,
-`ui.SidebarDrawerTrigger`, the app bar hosts), so an empty column
-draws no rule.
+breakpoint. Set it when the sidebar's phone navigation lives outside
+the column: a SectionMenu, whose pill floats over the page, or a
+`NativeMobile` sidebar whose drawer trigger, `ui.SidebarDrawerTrigger`,
+the app bar hosts. The column then renders empty and draws no rule.
+
+The aside's contents list folds the same way. `ui.TableOfContents` with
+`PhoneSheet: true` renders as it always does at and above its
+`Breakpoint` (md by default; match the row's). Below it the list moves
+into a bottom sheet and the same floating pill opens it, naming the
+section in view: the pill follows the entry the `Target` observer
+marks, so set `Target` as well. The sheet is a native popover rendered
+with the page, so it holds that page's own entries, opens with no
+script, and closes on Escape, a tap outside it, its close button, or a
+followed link. Opening it moves focus to the current entry (or the
+close button), and closing it returns focus to the pill. Set
+`PhoneAsideFlush: true` on the row: the stacked aside then holds
+nothing on a phone and draws no rule. The pill floats at the bottom of
+the screen, so a page carries one floating pill. On a page whose
+SectionMenu already floats its own, set `PhoneSheetTop`: the contents
+pill becomes a full-width "On this page: <section>" bar pinned under
+the sticky header (`--ui-sticky-top`), and the list hangs from the
+bar's bottom edge instead of rising: the header and the bar stay above
+the dim, the bar's chevron turns, and a second tap on the bar closes
+it. Before the page scrolls to the bar it sits in flow, and the list
+hangs from where it is drawn. In a ContentRow aside the row needs no
+`PhoneAsideFlush` for a top bar: on a phone the aside moves above the
+main column and sticks under the header itself. Below the swap the page publishes the
+bar's height as `--ui-sheet-bar-offset`, and anchored `ui.Section`s and
+the rail's in-view band start below it; a theme that sets
+`--ui-section-scroll-margin` adds it itself
+(`calc(var(--size-header-height) + var(--ui-sheet-bar-offset, 0px))`).
+Knobs: `--ui-sheet-bar-height` (2.75rem; set it on `:root`, where the
+offset reads it) and `--ui-sheet-bar-bleed`
+(0; set it to a padded column's gutter so the bar runs edge to edge
+and the list hanging from it lines up with the bar's text).
+A page carries one `PhoneSheet`; two overlap. The sheet's id is the list's `ID` plus
+`-sheet` (`fui-toc-sheet` without one). `ui.AnchoredRail` takes the
+same `PhoneSheet` option, with `SwapAt` (900px by default, or
+`interactive.SwapMD`/`SwapLG`) in place of `Breakpoint`: the pill names
+the section in view by the link's text without the parts marked
+`interactive.SheetChipClass` (the rail marks its number and count
+chips; formatting in the label stays), and the sheet's title is the
+rail's `Label`.
+
+```go
+ui.ContentRow(ui.ContentRowConfig{
+	Aside: ui.TableOfContents(ui.TOCConfig{
+		Items: items, Target: "main", Sticky: true, PhoneSheet: true,
+	}),
+	AsideLabel:      "On this page",
+	PhoneAsideFlush: true,
+}, l.Primary())
+```
+
+`interactive.PhoneSheet` is that sheet on its own, for any list that
+marks its current entry `aria-current`: body in flow at and above
+`SwapAt`, a pill and sheet below it. A sticky part in an outlet that
+fills the aside sticks to the whole column, since the outlet is as tall
+as the column.
 `Dense: true` gives the page the compact density on a fine pointer (a
 mouse or trackpad), declared on the document root so the drawers,
 dialogs and menus mounted outside the row follow: buttons, fields, the toolbar's controls and table

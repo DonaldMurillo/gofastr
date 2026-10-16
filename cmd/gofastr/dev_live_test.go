@@ -594,7 +594,7 @@ func TestBuildAndServeReturnsFalseOnBuildError(t *testing.T) {
 	var mu sync.Mutex
 	var cmd *exec.Cmd
 
-	ok := buildAndServe(dir, ".", "localhost:0", nil, &mu, &cmd, false)
+	ok := buildAndServe(dir, ".", "localhost:0", nil, &mu, &cmd, false, nil)
 	if ok {
 		t.Fatal("buildAndServe should return false for invalid Go code")
 		killServer(&mu, &cmd)

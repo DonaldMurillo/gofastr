@@ -81,13 +81,16 @@
   // A lazy menu ships its rows inside an inert template as the panel's
   // only child, so page-scoped queries cannot see closed-menu rows.
   // Inflate = move the fragment's children into the panel and drop the
-  // template; idempotent by construction.
+  // template; idempotent by construction. The host's first paint only
+  // prefetched the sheets template content names, so the rows' sheets
+  // load as they mount (normally a cache hit).
   function inflateLazy(d) {
     const panel = d.querySelector(':scope > [data-hui-menu-panel]');
     const tpl = panel && panel.querySelector(':scope > template[data-hui-menu-lazy]');
     if (!tpl) return;
     panel.insertBefore(tpl.content, tpl);
     tpl.remove();
+    window.__gofastr?.scanAndLoadCSS?.(panel);
   }
 
   // ─── focus on open ───────────────────────────────────────────────

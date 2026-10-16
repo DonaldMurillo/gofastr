@@ -8,6 +8,535 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`battery/service`: the app binary as a per-user OS service
+  (experimental).** `service.New(Config{ID, Name, Port})` and
+  `svc.Run(ctx, os.Args[1:], build)` give a binary the verbs
+  `service install|uninstall|start|stop|restart|status|logs|open|mcp|run|rotate-secret`.
+  `install` copies the binary to a managed path and registers it as a
+  launchd agent (macOS), a `systemctl --user` unit (Linux) or a
+  logon-triggered Task Scheduler task (Windows), then starts it on the
+  fixed loopback port; a held port fails the start instead of moving.
+  Every request passes a Host pin, a cross-site refusal and a signed
+  session cookie, which `open` mints by handing the browser a 0600
+  local page that POSTs a 60-second single-use token. CLI clients reach
+  the daemon over a Unix socket in the 0700 state directory, checked
+  against the daemon's OS user by peer credentials. A signed session is
+  the local user, so owner-scoped entities work without `battery/auth`;
+  with auth linked, auth keeps identity. Agents reach the App's MCP tools
+  through `service mcp`, a stdio server tunnelled over that socket and
+  run as the same local user; `Runtime.MCPCommand()` gives the argv with
+  `--state-dir`, so it reaches the right daemon from any directory. The
+  dev run keeps its own state directory and port (one per isolated
+  worktree), and `gofastr dev` runs it gated on the address it passes. `stop`, reinstall and
+  `uninstall` wait for the old process to exit, and an instance lock
+  keeps one process per state directory. Windows has no crash restart,
+  and its backend is unit-tested but has not run on a real Windows
+  machine. Guide: `gofastr docs service`; example:
+  `examples/gofastr-runs`, which lists the machine's running gofastr
+  apps and serves the list to agents.
+- **Running Apps record themselves in a local run registry.** `App.Start`
+  writes a 0600 JSON record (name, pid, URL, MCP path or command,
+  service id, dev flag) into `<UserConfigDir>/gofastr/runs` once the
+  port is bound and removes it when the server stops.
+  `framework/localrun.List` returns the live runs and deletes the
+  records of dead pids. `GOFASTR_RUNS=off` opts a process out,
+  `GOFASTR_RUNS_DIR` moves the directory, and test binaries, and the
+  apps they start, skip it unless the directory is set. Guide:
+  `gofastr docs local-runs`.
+- **`App.WrapServer` wraps everything the listener serves.** Router
+  middleware (`Use`) never sees the interactive setup wizard or the
+  worker and agent roles' reduced muxes; a `WrapServer` wrapper does.
+  The first one registered is outermost, and a call after `Start` has
+  bound the server, or after `Shutdown`, panics.
+- **`ui.BoxConfig.Bounded`** caps a Box at the `--ui-box-bounded-size` knob
+  (20rem) and scrolls what overflows: a window for a long list in a panel,
+  or for previewing a viewport-height component such as `ui.Workbench`.
+- `ui.TerminalErr` marks a failure line in a `ui.TerminalBlock`
+  (danger tone, `--ui-terminal-block-err-color` knob), beside
+  `TerminalOut` and `TerminalOK`.
+- `HeroConfig.Lede` (inline markup in place of `Subtitle`) and
+  `HeroConfig.Footer` (content under the actions: an install line,
+  a byline, a stats line).
+- `SectionConfig.Band` gives a section without an eyebrow the
+  page-band treatment (display-size heading, more air under the head).
+- `ui.StackConfig.StickyHeader` pins the page frame's `<header>` and
+  publishes its height (`--size-header-height`) as `--ui-sticky-top`.
+  Every top-sticky part below reads it, at any layer depth: a `Sticky`
+  ContentRow's nav column and toolbar, `ui.StepRail`, the
+  `interactive.SectionMenu` rail, `ui.TableOfContents`,
+  `ui.AnchoredRail`, `ui.GlobalSearch`, `ui.NetworkRetryBanner`, a
+  top-edge `ui.Sticky`, a `FormFrame` side panel and an anchored
+  `ui.Section` stop under the header instead of sliding behind it. A
+  region that scrolls on its own (a bounded `ui.Box`, the pinned nav
+  column, a `ui.ListDetail` list, the PaneHost drawer, the Workbench
+  rail) resets the offset to 0. The layout declares the sticky header
+  once; no component takes a flag for it.
+- `SectionMenuConfig.Filter` puts a filter box above an
+  `interactive.SectionMenu`'s list, in the rail and in the phone sheet.
+  Typing hides the links that don't match, marks the match, shows
+  "matches/total" in each group header and says `FilterEmpty` when
+  nothing matches; Escape clears it. `FilterPlaceholder` sets the
+  prompt. `InlineTrigger` keeps the phone pill in flow, for a menu shown
+  inside a card or a demo.
+- `SectionMenuConfig.SwapAt` moves the width where an
+  `interactive.SectionMenu` trades its rail for its phone pill
+  from 900px to a `ui.ContentRow` breakpoint (`interactive.SwapMD`,
+  48rem, or `interactive.SwapLG`, 64rem), so a menu in a row's nav
+  column swaps where the row stacks.
+- **`ui.TOCConfig.PhoneSheet` folds a contents list into a bottom sheet
+  on phones.** Below `Breakpoint` (md by default) a pill floating at the
+  bottom of the screen names the section in view and opens the list;
+  at and above it the list renders as before. The sheet is a native
+  popover rendered with the page: it opens without script, closes on
+  Escape, a tap outside, its close button or a followed link, and with
+  script moves focus to the current entry when it opens.
+  `ui.ContentRowConfig.PhoneAsideFlush` drops the stacked aside's rule
+  and padding so an aside holding only that list leaves no band.
+  The pieces are public: `interactive.SheetPill` (the pill SectionMenu
+  uses too) and `interactive.PhoneSheet` (pill plus inline sheet for any
+  list that marks its current entry `aria-current`).
+  `ui.AnchoredRailConfig.PhoneSheet` folds a rail the same way (below
+  `SwapAt`, 900px by default); its pill names the section by the link's
+  text, without the parts marked `interactive.SheetChipClass` (the
+  rail marks its number and count chips). `PhoneSheetTop` on
+  either (`interactive.PhoneSheetConfig.Top`) pins that pill as an "On
+  this page: <section>" bar under the sticky header and hangs the list
+  from the bar, for a page whose SectionMenu pill already holds the
+  bottom edge. In a ContentRow aside the bar's aside moves above the
+  main column on a phone and sticks there. Anchored sections and the
+  rail's in-view band clear the bar through `--ui-sheet-bar-offset`.
+- **entityui lists warn when their row links lead nowhere.** The first
+  time a list renders rows whose `<base>/<id>` matches no registered
+  screen, it logs one warning per base naming the route to register.
+  Until now every row link 404ed with nothing in the log. The check runs
+  through `App.EntityUI` with a mounted `uihost` (`UIHost.HasScreen`);
+  a custom host opts in through `entityui.ScreenHost`. `NoLinks()` lists
+  skip it, and it remembers at most 256 bases (#503).
+- **The startup banner says how to get past the 401s.** When an entity
+  requires auth and nothing on the app signs callers in, the banner
+  prints one line: wire `battery/auth`, or set `Exposure.Public`.
+  `battery/auth` calls the new `App.NoteAuthenticator()` once `Init` has
+  run and a middleware that resolves callers exists
+  (`SessionMiddleware(mgr)`, `mgr.Middleware()`, or
+  `RequireAuth(mgr.JWT())`), so an `Init` with no middleware keeps the
+  hint up. `battery/desktop` calls it when its window identity takes
+  effect; a custom auth layer or a `TokenMiddleware`-only app calls it
+  too, and `App.AuthenticatorNoted()` reads it back (#503).
+- **An unknown `?include=` names the relation it was close to.**
+  `?include=issue` on an entity whose relation is `issue_id` now answers
+  `did you mean "issue_id"?`. Only a near miss (the `_id` form, the
+  foreign key, or the target entity) gets a suggestion; the error never
+  lists an entity's relations (#503).
+- **`gofastr init` scaffolds sign-in.** The sample app shipped CRUD
+  that answered 401 with no way to sign in. It now wires `battery/auth`
+  (users and sessions in the app's database, `SessionMiddleware`) and
+  writes `screens_auth.go` with `/login` and `/register`; the login form
+  carries `?next=` through to the redirect. Registering
+  lands on `/login?registered=1` with a notice rather than a session,
+  because the register endpoint answers a new and a taken address alike.
+  Entity CRUD mounts under `/api`, so a screen can own `/posts`. `.env`
+  gains a per-checkout `JWT_SECRET`. Auth dev mode follows `GOFASTR_DEV`
+  (set by `gofastr dev`), never `.env`, so outside the dev loop auth
+  issues Secure cookies and refuses to boot without a secret. `init .`
+  refuses a directory whose `.env` git already tracks (#503).
+- **`ui.AuthCard` has a `Notice` slot.** It renders a `role="status"`
+  message in the success color between the alert and the body, for
+  outcomes like "account created" that the danger-styled `Alert` would
+  misreport (#503).
+- **`battery/sitesearch`: full-text search over every rendered page.**
+  The battery renders the pages a static export would write (dynamic
+  routes through `StaticPaths`), indexes each page's `<main>` with its
+  `h2`/`h3` sections as deep links, and answers at
+  `/__gofastr/search/query`; the index builds in the background when the
+  app starts. In a static export it writes the index as
+  content-hashed JSON shards under `/__gofastr/search/`, and a runtime
+  module only exported pages load (`sitesearch-static`) ranks from them
+  with no server, matching the Go ranking. A shard over 64 KB splits on
+  its next letter, so at 10,000 pages a query downloads 7–150 KB
+  gzipped, manifest included. The index is built as an
+  anonymous visitor, so a policy-gated page never enters it.
+  `Config.Groups` labels results by URL prefix, `Exclude` drops paths
+  (Sources' pages included), `Sources` adds pages no route renders;
+  `data-search-ignore` and `noindex` keep content out, and a page whose
+  URL is not a path on the site (a scheme, another host) is dropped. A
+  page that fails to render is logged and left out of a live index, and
+  a failed build waits 30 seconds before a query retries it. `Config.MaxAge`
+  rebuilds a live index older than it in the background, answering from
+  the old index meanwhile; `Refresh` builds beside the live index and
+  swaps it in. A page whose title
+  holds every query term ranks first, the title the query covers most
+  on top, so `table` finds DataTable and `form` the Form component.
+  Terms of three letters or more also match the words they begin.
+  Guide:
+  `gofastr docs site-search`.
+- **`ui.CommandPaletteConfig.Search`** makes the palette search the site
+  search index as the reader types, below its `Commands` (required: the
+  rows shown before the first keystroke). A slow answer shows a
+  "Loading…" row and an empty one "No matches". Result rows fade in as
+  they arrive; a row that stays across keystrokes does not replay.
+  `SearchPage` ends the results with a "See all results" row that opens
+  the search page for the query.
+- **`sitesearch.Screen`: a search page that works without script.** It
+  renders every result for `?q=`, 20 a page through `?page=`, as links
+  with their sections and excerpts, and tells crawlers `noindex`
+  (`ScreenPath` mounts it somewhere other than `/search`). With script,
+  the `sitesearch-page` module updates the page in place as the reader
+  types, from the server's own render on a live site and from the
+  static ranker in an export, and keeps `?q=` in the address without
+  adding history entries. `Index.SearchPage(q, offset, limit)` returns a
+  page of results and the total.
+- **`ui.SearchResults`** renders a results page: a GET search form, a
+  status line counting the matches, the results with their group,
+  excerpt hits in `<mark>` and section links, and `ui.Pagination`.
+- **`gofastr export [--base /sub] [--pkg ./cmd/web] <dir>`** writes any
+  app as a static site. It runs the app with `GOFASTR_EXPORT` (and
+  `GOFASTR_EXPORT_BASE`) set; `App.Start` then exports after
+  migrations, seeds and battery init and returns instead of serving.
+- **`static.Contributor`** lets a battery add files to an export from
+  the pages it renders (`ExportStart`, `ExportPage`, `ExportFiles`), and
+  `App.ExportStatic` passes every registered battery that implements it.
+  **`static.Walk`** renders the same page set at runtime, with a `skip`
+  func asked about each path before it renders. A page that fails to
+  render reaches `fn` with its error, as in `fs.WalkDir`.
+- **`AppConfig.Compression` gzips responses.** Set, it adds
+  `middleware.Compress()` to the default chain after `RequestID`; it is
+  off by default, since a reverse proxy or CDN in front of the app
+  usually compresses. It encodes text responses (HTML, CSS, JavaScript,
+  JSON, SVG) of 1 KB or more for clients that accept gzip, with
+  `Vary: Accept-Encoding` and a `-gzip` ETag suffix that still
+  revalidates to `304`. Immutable assets are compressed once at the best
+  level and cached by content hash, from their second request. A body
+  under a strong ETag is compressed in one pass, so the tag names one
+  encoding. If its handler flushes, the body streams instead and its
+  ETag turns weak. A panic after the response started cuts the
+  connection. It skips
+  `HEAD`, `Range`, event streams and already-encoded bodies.
+- **`middleware.MaskCSRFToken`** renders a CSRF token under a fresh
+  one-time pad (`m1.` prefix), so a compressed page never repeats the
+  token's bytes (BREACH). `CSRF` accepts masked and raw tokens alike.
+- **`ui.EntryList`** renders a dense list of links to read: a title
+  link, its source beside it in muted text, and a meta line under it
+  (`Entry.Meta`, the caller's markup). `Ranked` makes it an `<ol>`
+  numbered from `Start`, so page two of a thirty-row list reads 31, 32,
+  and the numbers are the browser's list markers. Knobs:
+  `--ui-entry-list-gap`, `--ui-entry-list-rank-width`.
+- **`ui.CommentThread`** renders a discussion with replies nested as
+  deep as they go: each comment an `<article>` (byline, then body) in a
+  list item, its replies a list inside that item. Each level is
+  indented and ruled on its leading edge; in a container under 30rem
+  the step shrinks so a deep thread keeps a readable column on a phone.
+  Knobs: `--ui-comment-thread-gap`, `--ui-comment-thread-indent`,
+  `--ui-comment-thread-indent-compact`.
+- **`examples/hn`** is a Hacker News reader in the HNPWA shape, for
+  comparing first loads with other frameworks: five ranked lists paged
+  with `?page=N`, story pages with full comment threads, user pages,
+  and real 404s. Its data is synthetic and seeded from a fixed seed
+  into SQLite through the entity layer.
+
+### Changed
+- **First paint no longer waits on the runtime.** `manifest.js`,
+  `runtime.js`, the per-screen action scripts and the extra-script
+  rail are emitted with `defer` at the end of `<head>` instead of
+  `<body>` (still in document order, and still ahead of any deferred
+  script in the page's `<body>`); the color-scheme bootstrap is the
+  only blocking script. The runtime's initial pass waits for
+  `DOMContentLoaded`, so `data-action-mount` handlers are registered
+  before mounts fire. Runtime-module
+  preloads carry `fetchpriority="low"`. Live pages read the route graph
+  from `manifest.js` instead of an inline `#gofastr-routes` block, and
+  the graph drops route titles and descriptions, which nothing read
+  (exports keep the inline block). A script registered on the rail that
+  relied on running while the document was still parsing now runs after
+  parsing ends. The color-scheme bootstrap is served minified. With
+  compression, the examples/site homepage drops from 445 KB to 99 KB
+  transferred (HTML 74 KB to 11 KB), and its Lighthouse mobile run goes
+  from 80 to 100, LCP 3.9 s to 1.7 s; on a 400 kbps, 300 ms RTT, 6x CPU
+  profile LCP goes from 14.4 s to 5.1 s.
+- **Served CSS is minified outside dev**, under the same switch as the
+  runtime JS (`GOFASTR_DEV=1` or `RUNTIME_NOMINIFY=1` keeps it
+  readable). `app.css`, component sheets, the component bundle, widget
+  sheets, the setup and print sheets and a static export's `app.css`
+  and widget sheets all go through `minify.ServedCSS`. On the examples/hn front page the
+  component bundle drops from 11.4 KB to 5.7 KB gzipped and `app.css`
+  from 5.0 KB to 2.6 KB, so HTML plus CSS fits in about 12 KB, and its
+  first paint under real 300 ms, 400 kbps, 6x CPU throttling moves from
+  1.25 s to 1.0 s. The examples/site homepage's HTML plus CSS goes from
+  44 KB to 27 KB.
+  A custom property read through `getComputedStyle` now returns the
+  minified spelling (`minmax(0,1fr)`), and a test that greps served CSS
+  should build its needle with `minify.ServedCSS`.
+  `registry.Entry.ServedCSSFor` returns a component's sheet as served;
+  `CSSFor` stays the readable source. Component versions and theme
+  variant keys hash the served bytes, so a minifier change gets new
+  immutable URLs. `widget.RenderCSS` returns the served sheet.
+- **First paint links only the sheets the page renders.** The SSR
+  scan skips markers inside an inert `<template>` (the confirm dialog,
+  a toast item, a menu row, a loading skeleton). Each sheet only
+  template content needs gets a `<link rel="prefetch">` at the URL the
+  runtime will request, so the later clone is a cache hit; a declarative
+  shadow root still counts. `ui-sidebar` and `ui-page-header` move
+  from `LoadAlways` to `LoadPrewarm`: a page that renders one links it,
+  and a page without one no longer blocks on it. `registry.ScanSplit`
+  returns the rendered and template-only names. The examples/hn front
+  page's component bundle drops from 5.7 KB to 3.1 KB gzipped, the
+  examples/site homepage's from 12.4 KB to 10.0 KB, and the
+  examples/meridian homepage's from 7.8 KB to 5.4 KB.
+- The confirm dialog opens once the sheets it names have loaded
+  (bounded at 3 seconds), so a click that beats the prefetch no longer
+  shows the browser's default dialog for a round trip. It waits for
+  those sheets only, and an ask made while one is waiting or open
+  answers no, so a double click opens one dialog and sends one request.
+- **A small head is inlined, so the first response is enough to
+  paint.** When the color-scheme bootstrap, the component bundle and
+  `app.css` fit 16 KiB gzipped together, a live page carries them in
+  the document (`<style data-cui-bundle>`, `<style id="cui-app-css">`, an
+  inline bootstrap `<script>`) instead of linking them, and the UI host
+  adds each block's `'sha256-…'` hash to the response's
+  `Content-Security-Policy` and any Report-Only policy. A policy that
+  refuses the kind (`'none'`) keeps the links. A CSP written by a proxy,
+  a CDN or a `<meta>` tag cannot learn the hashes: set
+  `uihost.WithNoInlineFirstPaint()` there. Static exports always link.
+  Under real 300 ms, 400 kbps, 6x CPU throttling, first paint on the
+  examples/hn front page goes from 0.93 s to 0.54 s and on the
+  examples/meridian homepage from 1.05 s to 0.64 s. A return visit with
+  a warm cache pays for the inlined bytes again: Meridian's goes from
+  0.45 s to 0.64 s. A page whose whole component bundle misses the
+  budget inlines the part its markup can match instead, when that fits,
+  marked `data-cui-bundle-href` with the full sheet's URL; the new
+  `fullbundle` behaviour links the full sheet at boot, before `app.css`,
+  so states added later are styled. Rules on `fui-` classes the document
+  never names are the only ones dropped. The examples/site homepage's
+  bundle goes from 10.2 KB to 7.8 KB gzipped, its head fits, and first
+  paint goes from 1.30 s to 0.71 s (0.45 s to 0.71 s on a warm return
+  visit). These figures are with gzip on the wire
+  (`AppConfig.Compression`, or a compressing proxy); the 16 KiB budget
+  counts gzipped bytes.
+- `ui.Form`'s hidden CSRF field and `auth.CSRFToken` /
+  `auth.CSRFTokenFromCtx` now return masked tokens. Code that compared
+  their result with the CSRF cookie should compare
+  `middleware.TokenFromContext` instead.
+- Component CSS lookups compute the theme hash once per request instead
+  of once per component, halving allocations on a typical page render.
+- **BREAKING: `ui.ContentRowConfig.BelowHeader` is removed.** Set
+  `StickyHeader: true` on the page-tall `ui.Stack` that holds the
+  header instead; a `Sticky` row under it sticks below the header on its
+  own. The site header sheets no longer set `position: sticky`
+  themselves: the stack pins the header. Owned sheets that offset a
+  sticky rail or a scroll margin by `--size-header-height` read
+  `var(--ui-sticky-top, 0px)`. A `Sticky` row with no toolbar no longer
+  adds the toolbar's height to the `--ui-sticky-top` its main column
+  sees; with a toolbar the workspace under it still does
+  (`gofastr upgrade` points at the field). `ui.AnchoredRail` no longer
+  reads `--nav-h` (60px when unset): it sticks 16px below
+  `--ui-sticky-top`, so on a page with no sticky header it now sits
+  16px from the top instead of 76px.
+- **`interactive.SectionMenu` is redesigned.** In the rail each group's
+  header pins to the top while its links scroll under it and shows the
+  group's link count; the current page carries an accent dot instead of
+  a left rule, and the group holding it takes the accent. A rail filling
+  a pinned column (`FillColumn`) insets its own links from the column's
+  edges, which had none, and scrolls its list under the filter. Below
+  `SwapAt` the "Sections" button becomes a pill floating at the bottom of
+  the screen that names the current page and its group, kept current
+  across client navigations (the page ends a pill's height lower, so it
+  never covers the last line), and `SectionMenuDrawer` is now a bottom
+  sheet (`preset.BottomSheet`) that opens on the current page's group.
+  Knobs: `--ui-section-menu-bg`, `--ui-section-menu-inset`,
+  `--ui-section-menu-dot`, and on the shared pill and sheet title row
+  `--ui-sheet-pill-bottom` and `--ui-sheet-close-size`, which replaces
+  `--ui-section-menu-close-size`. A `ui.ContentRow` holding the menu
+  sets `PhoneNavFlush`, so the empty stacked column draws no band.
+- **BREAKING: `gallery.ContributeCSS` and `gallery.BaseCSS` are removed.**
+  The `framework/gallery` demos lay out through `ui.Cluster`, `ui.Stack`,
+  `ui.Box` and `ui.Container` and ship no stylesheet, so a host renders the
+  catalog laid out with no CSS of its own. Delete the call (`gofastr upgrade`
+  points at it).
+- **`ui.HighlightLines` knows more languages.** Go now classes named
+  types in type position (`type Pong`, `Pong{`, `*http.Request`,
+  `[]schema.Field`); JS/TS, SQL, shell, YAML and JSON get their own
+  keyword sets, comment syntax and key classing instead of the generic
+  comments-strings-numbers pass. `text`/`plain` stay untokenized.
+  See `gofastr docs ui-new-components` → Syntax highlighting.
+- **`ui.CodeBlock` renders a tab four columns wide**
+  (`--ui-code-block-tab-size`) and draws the line-number gutter from
+  the code colors (`--ui-code-block-gutter-color`), not the page's
+  `--color-text-subtle`.
+- **`ui.CommandPalette` drops its keyboard hints on touch screens**
+  (`hover: none` and `pointer: coarse`); the footer keeps its close
+  button.
+- The static export's preview banner no longer lists search among the
+  features that need the Go server.
+
+### Fixed
+- **The request-timeout middleware no longer hides upstream response
+  headers from the handler.** It handed the handler an empty header map
+  and copied it over the real one afterwards, so a handler could not
+  read the `Content-Security-Policy` the security middleware had set,
+  could not delete an upstream header, and an `Add` to `Vary`
+  replaced the upstream values instead of joining them. The handler now
+  starts from a copy of the upstream headers, and a header it deletes
+  stays deleted.
+- **SQLite write transactions no longer fail when another writer
+  commits mid-transaction.** `sqlite/stdlib` now adds `_txlock=immediate`
+  to every DSN. Under SQLite's default deferred `BEGIN`, a transaction
+  that read before writing (the CRUD delete reads the row for its audit
+  snapshot first) got `SQLITE_BUSY` (517) at once if another connection
+  committed between the read and the write; the busy timeout does not
+  cover that case. A delete racing a background job queue returned 500.
+  Read-only transactions still begin deferred; `_txlock=deferred` in the
+  DSN keeps SQLite's default.
+- **Active links survive a query change.** After a client navigation
+  from `/ask` to `/ask?page=2`, the active-link module cleared the mark
+  on a `data-cui-activelink` link to `/ask`, though the server marks it
+  current there. A link whose href has no query now matches the URL's
+  path; an href with its own query still needs the exact URL, and so
+  does a query-less link in a nav that also links the same path with a
+  query (a tab strip's "All" tab stays dark on a filtered view).
+- **`mcp.ServeStdio` no longer answers notifications.** The
+  `notifications/initialized` every client sends after the handshake got
+  a method-not-found error line with no id, which JSON-RPC forbids and
+  stdio clients read as a protocol fault. An id-less `notifications/*`
+  message now gets no reply. A request line over 64 KiB also ended the
+  session with no reply; lines up to 1 MiB, the HTTP body limit, are
+  read now, and a longer one gets an error reply before the session
+  ends.
+- **A widget link inside a disclosure leaves it open.** The disclosure
+  closed on any link click, so an `<a data-cui-open>` in a phone menu
+  shut the menu as its widget opened, and closing the widget dropped
+  focus on the page body. Such a link opens a widget over the page, as
+  the router already treats it, so the menu stays and focus returns to
+  the link.
+- **`gofastr export --base` prefixes form actions.** A root-absolute
+  `action` kept the apex path, so a GET form on a project-page export
+  submitted outside the site. It now carries the base like `href` and
+  `src` do.
+- **The command palette keeps one height while the reader types.** The
+  panel sized to its list, so a keystroke that changed the row count
+  moved the field and footer. It now holds `--ui-cmd-palette-height`
+  (30rem, capped by the viewport) and the list fills what is left. The
+  knob replaces `--ui-cmd-palette-listbox-max-height`.
+- **Arrow keys keep a combobox's active option in sight.** The
+  highlight moved past the list's visible rows without scrolling, so a
+  keyboard reader of a long palette or picker list lost the selection.
+  The list now scrolls just far enough to show it.
+- **A sticky `ui.TableOfContents` in a `ui.ContentRow` aside sticks
+  when a layout outlet holds it.** The outlet was only as tall as the
+  list, so the list had no room to stick and scrolled away with the
+  page. An outlet in the aside now fills the column.
+- **A rail or contents list no longer marks the section behind a sticky
+  header.** The shared observer (`headless-rail`) counted a section
+  whose last lines sat under the header as the one in view, so after a
+  jump the entry above stayed marked. Its band now starts at
+  `--ui-sticky-top`, and the active entry is the first section in the
+  band in document order.
+- **A rail or contents list marks the last section after a jump past
+  them all.** Pressing End, or following a link to content below the
+  last section, crossed no band edge the observer reports, so the
+  entry marked before the jump stayed marked. With no section in the
+  band, the rail now marks the last one scrolled past, and it checks
+  again when a scroll settles.
+- **A padded `ui.Container` lines up with the header and footer bands.**
+  A `ContainerPadPage` or `ContainerPadEnd` container of any `Width`
+  stepped its inline padding 8/16/24px while the bands used the page
+  gutter (`--size-page-gutter`), so on a phone page text sat 12px left of
+  the header brand. It now takes the page gutter at every width. Inside
+  an app frame's content area (`ui.ContentRow` with a `Sidebar`), whose
+  own padding is the gutter, it adds none, where a phone used to show
+  two gutters stacked, and a `ContainerPage` there caps at the bare page
+  measure.
+- **A resolver-backed screen's `llm.md` carries its content.**
+  `app.ScreenLLMMDForPath`, behind every per-URL `/llm.md`, the
+  `Accept: text/markdown` response and the static export, ran `Load`
+  without the route match or the route resolvers, so a screen reading a
+  resolver (a catch-all docs route) fell back to the pattern doc. It now
+  runs them first, as the page render does, and a resolver or `Load`
+  answering `app.ErrNotFound` makes the doc a 404 instead of the
+  pattern doc.
+- **A section nested in a page band keeps its own heading.** The
+  display-size heading of an eyebrow section, and the small upper-case
+  label of an `Overline` one, reached every `ui.Section` heading in the
+  section's body too. Each rule now selects only the section's own
+  heading.
+- **`sdkdocs` marks only the current page in its phone menu.** The menu
+  sheet is mounted once for every page, and it marked Overview current
+  on all of them, as did the 404 page's rail, so a reader on Errors saw
+  two current pages. Neither marks a page now; the runtime marks the one
+  the reader is on.
+- **`core/markdown` hides HTML comment blocks.** A `<!-- … -->` block
+  rendered as escaped text, so every `<!-- gofastr:compile … -->`
+  directive in the embedded docs showed on the site's doc pages and in
+  `ui.Markdown`. A comment block now renders as nothing, at the top
+  level or under a list item. An unclosed comment, or text after the
+  close, still renders as escaped text.
+- `ui.Hero` (split) and `ui.HeroSplit` collapse to a `minmax(0, 1fr)`
+  track on phones, so a long unbreakable line in the media column no
+  longer widens the page past the viewport.
+- `ui.Card` headings and descriptions wrap long unbreakable tokens
+  (a query string, a URL) instead of overflowing the card.
+- **`core/static` answers `Range` requests.** `Range: bytes=0-99` got
+  `200` and the whole file with no `Accept-Ranges`, so a video served by
+  `static.Handler` could not seek, Safari would not play an mp4 from it,
+  and an interrupted download restarted from zero. A seekable file now
+  goes through `http.ServeContent`: `206` with `Content-Range`,
+  multi-range, `416` for a range past the end, and `If-Range`. A file
+  that cannot seek, or can only rewind, keeps the full-body answer and
+  advertises no ranges. A `HEAD` ignores `Range`, which RFC 9110
+  defines for `GET` only. The `NotFoundFile` page ignores `Range` and
+  preconditions, which name the missing URL, not the page (#507).
+- **`core/static` evaluates preconditions in RFC 9110 order.** A failed
+  `If-Match` or `If-Unmodified-Since` now answers `412`, ahead of the
+  `304` an `If-None-Match` match gives, on every filesystem.
+  `If-None-Match` compares weakly, so `W/"<etag>"` revalidates.
+  `If-Modified-Since` compares at the one-second precision
+  `Last-Modified` is sent with, so a disk file with a sub-second modtime
+  answers `304` to its own `Last-Modified` (#507).
+- **`core/static` no longer hashes a large file before serving it.**
+  The first request for a multi-GB video read the whole file through
+  SHA-256 before sending a byte. A file over 16 MiB is now hashed in the
+  background, at most two at a time per handler, and served without an
+  `ETag` until the digest lands; `Last-Modified` still revalidates it.
+  The `ETag` stays a content hash: one built from size and modtime
+  repeats across releases with pinned build timestamps, which would let
+  `If-Range` splice a resumed download from two versions. On Linux and
+  macOS the cached digest is also keyed on the file's inode and change
+  time, so an in-place rewrite of the same size with its modtime put back
+  (`cp -p`, `rsync -t`) gets a fresh ETag instead of the old one (#507).
+- **`/api/llm.md` links honor `WithAPIPrefix`.** Under
+  `WithAPIPrefix("/api")` the index linked each resource to
+  `/<table>/llm.md` and showed unprefixed base paths, so every link
+  404ed, and each entity's own page listed `GET /<table>`. The index and
+  the per-entity pages now name the path the routes are mounted at, read-
+  only views included (#503).
+- **Active-link highlighting works outside a `<nav>`.** A link carrying
+  `data-cui-match-prefix` or `data-cui-activelink` in a header with no
+  `<nav>` landmark was never marked. The `activelink` module now sweeps
+  opt-in links wherever they sit; plain links outside a nav stay
+  untouched (#503).
+- **`gofastr version` names the release a `go install` built.** A binary
+  from `go install …/cmd/gofastr@v0.87.0` printed `GoFastr dev`. It now
+  reads the module version from the build info, and a build from a
+  checkout shows its VCS commit and commit time (#503).
+- **The command palette opens on its commands.** It focuses its input
+  before the combobox module binds, so no focus event reached the module
+  and the list stayed closed until the first keystroke. The module now
+  opens a static list whose input already has focus when it arrives.
+- **Exports are reproducible.** `Router.Paths` ranged a map, so the
+  route manifest in every exported page, and the page order, changed
+  from run to run; every page differed between two exports of the same
+  content. Exact paths now come back
+  sorted, then dynamic patterns in registration order.
+
+## [0.87.2] - 2026-10-12
+
+### Added
+- **`gofastr dev` answers while the app is down.** During the first
+  build, after a failed build, and after the app exits, the dev address
+  returns 503 with `Retry-After` and says which of the three it is, the
+  build or lint output included, instead of refusing connections. Open
+  tabs reload into that page when a build fails and back into the app
+  when it is up again. A second `gofastr dev` on a busy address now
+  stops at startup instead of after its first build, except in a linked
+  worktree, where isolation moves it to the next free port (#483).
 - **`entityui.UI.WithCreatePath` sets the create screen's route.** An app
   that mounts its create screen at `/deals/new` instead of
   `/deals/create` passes one path function, and New, Duplicate, Create
@@ -20,6 +549,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   runtime now sends `Content-Type: application/json` on writes that have
   no body, which the transition route requires. GET and HEAD send no
   content type, and multipart forms keep the browser's boundary (#500).
+- **Worktree isolation remaps a listen port once.** In a linked
+  worktree, `gofastr dev --addr localhost:8791` printed one port while
+  the app bound another: the child remapped the address it was handed,
+  and `App.Start` remapped the result of `isolation.ListenAddr` again.
+  `Runtime.Env` now passes every recorded mapping to the child, and
+  active runtimes in one process with the same project, isolation ID
+  and port config share their mappings, so the app binds the address `gofastr dev` names.
 
 ## [0.87.1] - 2026-10-11
 

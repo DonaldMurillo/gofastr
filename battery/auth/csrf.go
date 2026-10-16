@@ -134,20 +134,24 @@ func WithCSRFSkipPaths(prefixes ...string) CSRFOption {
 	}
 }
 
-// CSRFToken returns the current request's CSRF token. Prefers the
-// value stashed on ctx by middleware.CSRF (which works on the SAME
-// request that minted the cookie); falls back to reading the cookie
-// (for follow-up requests where the cookie is already in r.Cookies()).
-// Returns "" when no token is available, typically because the
-// route isn't behind CSRF middleware.
+// CSRFToken returns the current request's CSRF token, masked for
+// rendering (middleware.MaskCSRFToken): a fresh one-time pad on every
+// call, so a compressed page that carries it leaks nothing to a
+// BREACH-style size probe. The CSRF middleware accepts the masked
+// value in the header or form field. Prefers the value stashed on ctx
+// by middleware.CSRF (which works on the SAME request that minted the
+// cookie); falls back to reading the cookie (for follow-up requests
+// where the cookie is already in r.Cookies()). Returns "" when no
+// token is available, typically because the route isn't behind CSRF
+// middleware. middleware.TokenFromContext is the raw value.
 func CSRFToken(r *http.Request) string {
 	if tok := middleware.TokenFromContext(r.Context()); tok != "" {
-		return tok
+		return middleware.MaskCSRFToken(tok)
 	}
 	// Also try the __Host- prefixed variant when running secure.
 	for _, name := range []string{CSRFCookieName, "__Host-" + CSRFCookieName} {
 		if c, err := r.Cookie(name); err == nil && c.Value != "" {
-			return c.Value
+			return middleware.MaskCSRFToken(c.Value)
 		}
 	}
 	return ""
@@ -174,17 +178,18 @@ func CSRFInputHTML(r *http.Request) template.HTML {
 	return renderCSRFInput(CSRFToken(r))
 }
 
-// CSRFTokenFromCtx returns the request's CSRF token from a context. It
-// reads the value the CSRF middleware stashes on ctx via
-// middleware.TokenFromContext, works on the SAME request that minted
-// the cookie, where the cookie isn't in r.Cookies() yet. Returns "" if
-// the route isn't behind CSRF middleware or no token is available.
+// CSRFTokenFromCtx returns the request's CSRF token from a context,
+// masked like CSRFToken. It reads the value the CSRF middleware
+// stashes on ctx via middleware.TokenFromContext, so it works on the
+// SAME request that minted the cookie, where the cookie isn't in
+// r.Cookies() yet. Returns "" if the route isn't behind CSRF
+// middleware or no token is available.
 //
 // Use this from any code path that holds only a context.Context (e.g.
 // core-ui Screen.Load, Screen.Render) rather than threading a
 // *http.Request through.
 func CSRFTokenFromCtx(ctx context.Context) string {
-	return middleware.TokenFromContext(ctx)
+	return middleware.MaskCSRFToken(middleware.TokenFromContext(ctx))
 }
 
 // CSRFInputFromCtx is the ctx-based counterpart to CSRFInputHTML, same
@@ -210,7 +215,7 @@ func renderCSRFInput(tok string) template.HTML {
 	if tok == "" {
 		return ""
 	}
-	// tok is base64url + "." + base64url(HMAC), no HTML metachars need
+	// tok is masked ("m1." + base64url), no HTML metachars need
 	// escaping. EscapeString is still applied as defense in depth.
 	return template.HTML(`<input type="hidden" name="` + CSRFFormField +
 		`" value="` + template.HTMLEscapeString(tok) + `">`)

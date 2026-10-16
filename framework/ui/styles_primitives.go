@@ -10,9 +10,7 @@ import (
 
 // Style handles for the 10 layout / primitive components added in
 // the same commit. Each registers a scoped stylesheet that the SSR
-// host and runtime load on first appearance, except where
-// LoadAlways is explicitly opted into for chrome that's on every
-// screen.
+// host and runtime load on first appearance.
 
 var (
 	layoutStyle      = registry.RegisterStyle("ui-layout", layoutCSS)
@@ -56,6 +54,11 @@ func layoutCSS(_ style.Theme) string {
    so earlier children and their gaps keep their rhythm. */
 :where([data-cui-comp="ui-layout"]).fui-stack--screen { min-block-size: 100dvh; }
 [data-cui-comp="ui-layout"].fui-stack--screen > :last-child { margin-block-start: auto; }
+/* StickyHeader: the page frame pins its banner and publishes the
+   banner's height as --ui-sticky-top, the offset every sticky part
+   below it reads, so none of them slides behind the header. */
+:where([data-cui-comp="ui-layout"]).fui-stack--sticky-header { --ui-sticky-top: var(--size-header-height, 56px); }
+:where([data-cui-comp="ui-layout"]).fui-stack--sticky-header > header { position: sticky; inset-block-start: 0; z-index: var(--z-sticky, 200); }
 :where([data-cui-comp="ui-layout"]).fui-stack {
   display: flex;
   flex-direction: column;
@@ -116,6 +119,15 @@ func layoutCSS(_ style.Theme) string {
 [data-cui-comp="ui-layout"].fui-box--outlined {
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
+}
+/* Bounded: a scrolling window at a fixed cap. Knob: --ui-box-bounded-size.
+   It scrolls on its own, so a sticky part inside pins to its top, not
+   under the page header. */
+:where([data-cui-comp="ui-layout"]).fui-box--bounded {
+  max-block-size: var(--ui-box-bounded-size, 20rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  --ui-sticky-top: 0px;
 }
 [data-cui-comp="ui-layout"].fui-box--pad-sm { padding: var(--spacing-sm, 4px); }
 [data-cui-comp="ui-layout"].fui-box--pad-md { padding: var(--spacing-md, 8px); }
@@ -234,11 +246,13 @@ func cardCSS(t style.Theme) string {
   letter-spacing: var(--tracking-snug, -0.01em);
   line-height: calc(var(--leading-snug, 1.4) - 0.1);
   color: var(--color-text);
+  overflow-wrap: anywhere;
 }
 [data-cui-comp="ui-card"] .fui-card__description {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted);
+  overflow-wrap: anywhere;
 }
 [data-cui-comp="ui-card"] .fui-card__body {
   padding: var(--spacing-xl, 24px);
@@ -915,13 +929,14 @@ func stickyCSS(_ style.Theme) string {
   opacity: 0;
   transition: opacity var(--duration-fast, 150ms);
 }
-/* Edge offsets */
-:where([data-cui-comp="ui-sticky"]).fui-sticky--top { top: 0; }
+/* Edge offsets. A top edge starts at --ui-sticky-top: under a
+   StickyHeader page's header, or the window's top. */
+:where([data-cui-comp="ui-sticky"]).fui-sticky--top { top: var(--ui-sticky-top, 0px); }
 :where([data-cui-comp="ui-sticky"]).fui-sticky--bottom { bottom: 0; }
-:where([data-cui-comp="ui-sticky"]).fui-sticky--offset-sm { top: var(--spacing-sm, 4px); }
-:where([data-cui-comp="ui-sticky"]).fui-sticky--offset-md { top: var(--spacing-md, 8px); }
-:where([data-cui-comp="ui-sticky"]).fui-sticky--offset-lg { top: var(--spacing-lg, 16px); }
-:where([data-cui-comp="ui-sticky"]).fui-sticky--offset-xl { top: var(--spacing-xl, 24px); }
+:where([data-cui-comp="ui-sticky"]).fui-sticky--offset-sm { top: calc(var(--ui-sticky-top, 0px) + var(--spacing-sm, 4px)); }
+:where([data-cui-comp="ui-sticky"]).fui-sticky--offset-md { top: calc(var(--ui-sticky-top, 0px) + var(--spacing-md, 8px)); }
+:where([data-cui-comp="ui-sticky"]).fui-sticky--offset-lg { top: calc(var(--ui-sticky-top, 0px) + var(--spacing-lg, 16px)); }
+:where([data-cui-comp="ui-sticky"]).fui-sticky--offset-xl { top: calc(var(--ui-sticky-top, 0px) + var(--spacing-xl, 24px)); }
 /* Show a subtle bottom border when the element is stuck (only top-sticky) */
 @supports ((position: -webkit-sticky) or (position: sticky)) {
   [data-cui-comp="ui-sticky"].fui-sticky--top:not(:is(:first-child))::after {

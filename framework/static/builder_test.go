@@ -2,6 +2,7 @@ package static
 
 import (
 	"context"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,7 +88,7 @@ func TestBuildWritesIndexHTMLPerRoute(t *testing.T) {
 		if strings.Contains(string(data), "gofastr-sse") {
 			t.Errorf("%s should not include SSE meta tag — SSG pages are session-less", rel)
 		}
-		if !strings.Contains(string(data), `<script src="/__gofastr/runtime.js">`) {
+		if !strings.Contains(string(data), `<script defer src="/__gofastr/runtime.js">`) {
 			t.Errorf("%s missing runtime.js script tag", rel)
 		}
 	}
@@ -521,6 +522,19 @@ func TestRewriteBaseURLs_PrefixesPushState(t *testing.T) {
 	}
 }
 
+// A form's action is where its submit navigates: on a subpath deploy a
+// root-absolute one must carry the base, or the search page's GET form
+// lands on the apex.
+func TestRewriteBaseURLsPrefixesAction(t *testing.T) {
+	b := &Builder{BasePath: "/gofastr"}
+	out := b.rewriteBaseURLs(`<form action="/search" method="GET"></form><form action="//x.example/s"></form><form data-action="/keep"></form>`)
+	for _, want := range []string{`action="/gofastr/search"`, `action="//x.example/s"`, `data-action="/keep"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("want %q in\n%s", want, out)
+		}
+	}
+}
+
 // renderScreen wraps a raw HTML body in a minimal Screen for tests.
 type renderScreen struct{ Body string }
 
@@ -541,7 +555,8 @@ func TestBuildDumpsWidgetCatalogAndChrome(t *testing.T) {
 		Hidden().
 		Slot("body", homeScreen{}).
 		Build()
-	widget.Mount(router.New(), &def)
+	live := router.New()
+	widget.Mount(live, &def)
 
 	out := t.TempDir()
 	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
@@ -561,6 +576,17 @@ func TestBuildDumpsWidgetCatalogAndChrome(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(out, rel)); err != nil {
 			t.Errorf("missing widget asset %s: %v", rel, err)
 		}
+	}
+	// The exported sheet is the bytes the live endpoint serves, minified
+	// outside dev, not the commented source.
+	exported, err := os.ReadFile(filepath.Join(out, "core-ui/widget/ssg-dump-test/style.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	live.ServeHTTP(rec, httptest.NewRequest("GET", def.StylePath, nil))
+	if string(exported) != rec.Body.String() {
+		t.Errorf("exported widget CSS (%d bytes) differs from the live endpoint's (%d bytes)", len(exported), rec.Body.Len())
 	}
 }
 

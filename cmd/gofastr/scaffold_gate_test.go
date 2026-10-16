@@ -14,7 +14,8 @@ import (
 // through `gofastr init` and makes runtime claims about the result: the
 // home screen renders, the sample posts entity exists in
 // entities/entities.go with the declaration the page shows, and
-// anonymous CRUD answers 401 (secure by default). This test runs the
+// anonymous CRUD answers 401 (secure by default) until the reader signs in
+// on the scaffolded /login. This test runs the
 // real init, builds the scaffolded app against the working tree, boots
 // it, and asserts those claims, so the scaffold can't drift away from
 // the page that teaches it.
@@ -121,7 +122,7 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	// so anonymous CRUD refuses: the 401 /get-started demonstrates.
 	for _, probe := range []struct {
 		method, path string
-	}{{"GET", "/posts"}, {"POST", "/posts"}} {
+	}{{"GET", "/api/posts"}, {"POST", "/api/posts"}} {
 		req, _ := http.NewRequest(probe.method, baseURL+probe.path, strings.NewReader(`{"title":"x"}`))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := http.DefaultClient.Do(req)
@@ -132,6 +133,65 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Fatalf("anonymous %s %s = %d, want 401 — the scaffold must stay secure by default\n%s", probe.method, probe.path, resp.StatusCode, output.String())
 		}
+	}
+
+	// The scaffold wires battery/auth with /login and /register screens
+	// (#503: it used to ship the 401 above with no way past it). Register
+	// lands on /login with a notice and no cookie; signing in then reaches
+	// the same CRUD route.
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	postForm := func(t *testing.T, path, form string) *http.Response {
+		t.Helper()
+		req, _ := http.NewRequest("POST", baseURL+path, strings.NewReader(form))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		resp, err := noFollow.Do(req)
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		resp.Body.Close()
+		return resp
+	}
+	const creds = "email=first%40example.com&password=correct-horse-9"
+	reg := postForm(t, "/auth/register", creds+"&next=%2Flogin%3Fregistered%3D1")
+	if reg.StatusCode != http.StatusSeeOther || reg.Header.Get("Location") != "/login?registered=1" {
+		t.Fatalf("register = %d → %q, want 303 → /login?registered=1\n%s", reg.StatusCode, reg.Header.Get("Location"), output.String())
+	}
+	if len(reg.Cookies()) != 0 {
+		t.Fatalf("register set %d cookies; it must not sign the caller in (anti-enumeration)", len(reg.Cookies()))
+	}
+	noticeResp, err := http.Get(baseURL + "/login?registered=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	noticeBody, _ := io.ReadAll(noticeResp.Body)
+	noticeResp.Body.Close()
+	if !strings.Contains(string(noticeBody), "Account created. Sign in to continue.") {
+		t.Fatalf("GET /login?registered=1 lost the account-created notice:\n%s", noticeBody)
+	}
+	nextResp, err := http.Get(baseURL + "/login?next=%2Fposts%3Fpage%3D2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nextBody, _ := io.ReadAll(nextResp.Body)
+	nextResp.Body.Close()
+	if !strings.Contains(string(nextBody), `name="next" type="hidden" value="/posts?page=2"`) {
+		t.Fatalf("GET /login?next=… must carry next into the form:\n%s", nextBody)
+	}
+	login := postForm(t, "/auth/login", creds+"&next=%2F")
+	if login.StatusCode != http.StatusSeeOther || len(login.Cookies()) == 0 {
+		t.Fatalf("login = %d with %d cookies, want 303 with a session cookie\n%s", login.StatusCode, len(login.Cookies()), output.String())
+	}
+	authed, _ := http.NewRequest("GET", baseURL+"/api/posts", nil)
+	for _, c := range login.Cookies() {
+		authed.AddCookie(c)
+	}
+	authedResp, err := http.DefaultClient.Do(authed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authedResp.Body.Close()
+	if authedResp.StatusCode != http.StatusOK {
+		t.Fatalf("signed-in GET /api/posts = %d, want 200\n%s", authedResp.StatusCode, output.String())
 	}
 
 	// The agent surface is the one thing a first-run user cannot discover by
@@ -166,11 +226,17 @@ func TestInitScaffoldBootsSecureByDefault(t *testing.T) {
 	// Auth parity is the actual claim, not merely "MCP exists": tool calls run
 	// through the same router and Exposure as the REST routes, so anonymous
 	// access must fail here exactly as it failed above. A tools/call that
-	// succeeded while GET /posts returned 401 would mean a second, unguarded
+	// succeeded while GET /api/posts returned 401 would mean a second, unguarded
 	// authorization path: the failure this assertion exists to catch.
 	_, callBody := mcpCall(t, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"posts_list","arguments":{}}}`)
 	if !strings.Contains(callBody, "401") || !strings.Contains(callBody, "authentication required") {
 		t.Fatalf("anonymous MCP posts_list did not answer the REST route's 401 — MCP must not bypass entity auth:\n%s", callBody)
+	}
+
+	// battery/auth is wired, so the banner's "nothing signs callers in"
+	// line must stay quiet.
+	if strings.Contains(output.String(), "No auth is wired") {
+		t.Fatalf("banner claims no auth is wired on a scaffold that wires battery/auth:\n%s", output.String())
 	}
 
 	// The banner is how the endpoint gets discovered at all.

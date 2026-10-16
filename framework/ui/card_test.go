@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -120,5 +122,21 @@ func TestCardLinkWithHeadingContentIsNotInternal(t *testing.T) {
 	}
 	if plain := string(Card(CardConfig{Href: "/x", Heading: "x"})); !strings.Contains(plain, "data-cui-internal") {
 		t.Fatalf("a link card with only its own markup lost its internal mark: %s", plain)
+	}
+}
+
+// A card heading or description holding one long unbreakable token (a
+// query string, a URL) wraps instead of overflowing the card.
+func TestCardTextWrapsLongTokens(t *testing.T) {
+	css := cardCSS(style.Theme{})
+	for _, sel := range []string{".fui-card__heading {", ".fui-card__description {"} {
+		i := strings.Index(css, sel)
+		if i < 0 {
+			t.Fatalf("card CSS missing %s", sel)
+		}
+		block := css[i : i+strings.Index(css[i:], "}")]
+		if !strings.Contains(block, "overflow-wrap: anywhere") {
+			t.Errorf("%s must set overflow-wrap: anywhere:\n%s", sel, block)
+		}
 	}
 }

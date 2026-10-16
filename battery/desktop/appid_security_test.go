@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/localuser"
 )
 
 // PROPERTY
@@ -33,8 +35,8 @@ import (
 //
 // SURFACE 2, the identity file (D-13)
 //
-//	loadOrMintLocalUser returns &localUser{id: string(b)} with the file's
-//	bytes verbatim. A truncated, newline-terminated or oversized file
+//	The identity loader (now localuser.LoadOrMint) returned the file's
+//	bytes verbatim as the id. A truncated, newline-terminated or oversized file
 //	becomes the owner id every owner-scoped query compares against and
 //	the string GetEmail() interpolates. An id differing by one trailing
 //	newline from the one that wrote the rows silently hides every note;
@@ -90,10 +92,10 @@ func TestIdentityFileIsRevalidated(t *testing.T) {
 		strings.Repeat("a", 4096),            // oversized
 	} {
 		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, identityFileName), []byte(content), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, localuser.FileName), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		u, err := loadOrMintLocalUser(dir)
+		u, err := localuser.LoadOrMint(dir)
 		if err != nil {
 			continue // refused or repaired: acceptable
 		}
@@ -107,11 +109,11 @@ func TestIdentityFileIsRevalidated(t *testing.T) {
 // TestIdentityMintingStillRoundTrips is the anti-vacuity half.
 func TestIdentityMintingStillRoundTrips(t *testing.T) {
 	dir := t.TempDir()
-	first, err := loadOrMintLocalUser(dir)
+	first, err := localuser.LoadOrMint(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := loadOrMintLocalUser(dir)
+	second, err := localuser.LoadOrMint(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

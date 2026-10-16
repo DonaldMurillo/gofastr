@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -19,16 +20,20 @@ import (
 // cannot use them: a `go func(){}` or `import "os"` in a .ui.go file breaks
 // hydration at runtime. Unlike the accessibility gate this is a correctness
 // floor, so it is NOT bound to --no-a11y and runs on every build/dev rebuild.
-func buildSandboxGate(root string) bool {
+func buildSandboxGate(root string) bool { return buildSandboxGateTo(root, os.Stdout, os.Stderr) }
+
+// buildSandboxGateTo is buildSandboxGate writing to the given streams,
+// so `gofastr dev` can also show the report on its hold page.
+func buildSandboxGateTo(root string, stdout, stderr io.Writer) bool {
 	findings, err := auditSandbox(root)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, ".ui.go sandbox lint: %v\n", err)
+		fmt.Fprintf(stderr, ".ui.go sandbox lint: %v\n", err)
 		return false
 	}
 	if len(findings) == 0 {
 		return true
 	}
-	fmt.Print(formatSandboxReport(findings))
+	fmt.Fprint(stdout, formatSandboxReport(findings))
 	return false
 }
 

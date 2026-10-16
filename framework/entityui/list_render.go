@@ -158,6 +158,9 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 		}, render.Text(i18nui.T(ctx, i18nui.KeyEntitySlotFailedBody))), nil
 	}
 	b.ui.pageTitles(ctx, s, rows)
+	if len(rows) > 0 && !b.embedded && !b.noLinks && !s.deletedView {
+		b.ui.checkRecordScreen(ctx, m.name, s.base, cell(rowValue(rows[0], m.pk)))
+	}
 	if b.inlineEdit && !s.deletedView && !b.top && m.hasAPI {
 		// The same page read without read hooks: an inline editor
 		// prefills only a value the hooks left as stored.

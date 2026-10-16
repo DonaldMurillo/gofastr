@@ -24,6 +24,9 @@ import (
 // claims-derived principal (service-to-server deployments with no user
 // table).
 func RequireAuth(jwt *JWTAuth) middleware.Middleware {
+	if jwt != nil && jwt.onResolve != nil {
+		jwt.onResolve()
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			tokenStr := extractBearerToken(r)

@@ -34,12 +34,12 @@ func (s *ArticleScreen) Render() render.HTML {
 	// The article body. A single <h1> matching the title, then prose. The
 	// framework supplies the surrounding <article> wrapper; this method
 	// returns only what goes inside it, exactly what any screen returns.
-	return render.Join(
+	return ui.Container(ui.ContainerConfig{Width: ui.ContainerNarrow, Pad: ui.ContainerPadPage}, ui.Stack(ui.StackConfig{},
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Reader-ready pages")),
-		html.Paragraph(html.TextConfig{Class: "article-byline"},
+		html.Paragraph(html.TextConfig{}, ui.Muted(
 			render.Text("By Donald Murillo · "),
 			html.Time(html.TimeConfig{Datetime: "2026-08-01"}, render.Text("August 1, 2026")),
-		),
+		)),
 		html.Paragraph(html.TextConfig{},
 			render.Text("Safari, Firefox, and Edge each ship a built-in Reader Mode: a button in the address bar that strips a page to its article and re-renders it in a clean, distraction-free view. The button only appears when the browser is confident the page "),
 			html.Em(html.TextConfig{}, render.Text("is")),
@@ -68,7 +68,7 @@ func (s *ArticleScreen) Render() render.HTML {
 			codeText("AsArticle"),
 			render.Text(". Its fields (author, date, cover image) fill what the screen's title can't carry. But for the common case you just read, the one option is the whole feature."),
 		),
-	)
+	))
 }
 
 // articleDemoSource is the code sample shown on the page. Built with string

@@ -1,8 +1,11 @@
-/* GoFastr's top bar. It pins to the top of the page (the banner
-   landmark is a direct child of the page-tall ui.Stack, so sticky
-   travels the whole page) and its content sits on the site's full-bleed
-   rhythm: --spacing-2xl of side padding, the same inset the page
-   sections use. Below the xl breakpoint the seven section links give
+/* GoFastr's top bar. The page-tall ui.Stack pins it (StickyHeader:
+   the banner landmark is the stack's direct child, so it stays put the
+   whole page) and its content sits on the site's full-bleed
+   rhythm: --size-page-gutter of side padding, the inset a page-level
+   ui.Container and the footer use, so the brand, the page text and
+   the colophon start on one edge up to the wide cap. Past it the bar
+   stays full bleed while the page and the colophon center. Below the
+   xl breakpoint the seven section links give
    way to a phone menu, a native <details> that works without
    JavaScript; below md the search and toggle cluster collapses into it
    too, leaving brand + toggle in the bar. Every dimension is a theme
@@ -10,9 +13,6 @@
    built-ins don't have (11/13/15px) and the faint hairline under the
    bar are this package's tokens. */
 :scope {
-  position: sticky;
-  inset-block-start: 0;
-  z-index: var(--z-sticky);
   background: var(--color-background);
   border-block-end: var(--stroke-thin) solid var(--color-line-faint);
 }
@@ -22,7 +22,7 @@
   align-items: center;
   gap: var(--spacing-2xl);
   block-size: var(--size-header-height);
-  padding-inline: var(--spacing-2xl);
+  padding-inline: var(--size-page-gutter);
   font-size: var(--text-ui);
 }
 
@@ -144,7 +144,7 @@
 .bar-actions { display: contents; }
 
 /* The search pill: mono placeholder on the left, the ⌘K keycaps on the
-   right. Inside the phone menu it collapses to its 44px icon shape. */
+   right. The phone menu has its own full-width field (.panel-search). */
 .cmd {
   display: inline-flex;
   align-items: center;
@@ -156,6 +156,7 @@
   color: var(--color-text-subtle);
   font-size: var(--text-xs);
   font-family: var(--font-body);
+  text-decoration: none;
   background: var(--color-surface);
   transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease, background var(--duration-fast) ease;
 }
@@ -261,29 +262,51 @@
 }
 .panel-links a:hover,
 .panel-links a:focus-visible { background: var(--color-surface-soft); }
-.panel-actions {
+/* The entry points above the sections, set off by a hairline. */
+.panel-lead {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: var(--spacing-sm);
-  margin-block-start: var(--spacing-md);
-  padding-block-start: var(--spacing-md);
-  border-block-start: var(--stroke-thin) solid var(--color-border);
+  gap: var(--spacing-xs);
+  padding-block-end: var(--spacing-xs);
+  margin-block-end: var(--spacing-xs);
+  border-block-end: var(--stroke-thin) solid var(--color-border);
 }
-/* The drawer's search control is the icon shape: a 44px square button
-   with the glyph only, the same treatment the GitHub mark gets. */
-.cmd-icon {
-  display: grid;
-  place-items: center;
-  inline-size: var(--spacing-touch-target);
-  block-size: var(--spacing-touch-target);
+/* The menu's search: a full-width field with the glyph and the
+   placeholder, the pill's palette. */
+.panel-search {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  inline-size: 100%;
+  min-block-size: var(--spacing-touch-target);
+  margin-block-end: var(--spacing-xs);
+  padding-inline: var(--spacing-md);
   border: var(--stroke-thin) solid var(--color-border);
   border-radius: var(--radii-md);
+  background: var(--color-background);
   color: var(--color-text-subtle);
+  font: inherit;
+  font-size: var(--text-ui);
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
 }
-.cmd-icon:hover {
-  background: var(--color-surface-soft);
-  color: var(--color-text);
+.panel-search:hover { color: var(--color-text); }
+/* The theme toggle and the GitHub mark, one row under the links. */
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-block-start: var(--spacing-xs);
+  padding-block-start: var(--spacing-xs);
+  border-block-start: var(--stroke-thin) solid var(--color-border);
+}
+
+/* From md the bar keeps its search, toggle and mark, so the menu holds
+   the links only. */
+@media (--above-md) {
+  .panel-search,
+  .panel-actions { display: none; }
 }
 
 /* Tablet: the dense seven-link nav gives way to the menu below xl. */
@@ -295,7 +318,7 @@
 /* Phones: the bar tightens, the version capsule goes, and the search +
    toggle cluster collapses into the drawer, leaving brand + toggle. */
 @media (--below-md) {
-  .bar { padding-inline: var(--spacing-sm); gap: var(--spacing-sm); }
+  .bar { gap: var(--spacing-sm); }
   .brand-status { display: none; }
   .bar-actions { display: none; }
   .end { gap: var(--spacing-xs); }

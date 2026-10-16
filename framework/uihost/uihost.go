@@ -38,6 +38,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/island"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core-ui/seo"
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -110,7 +111,7 @@ type UIHost struct {
 	actionComps         map[string]component.Component       // componentID → the component the registry was compiled FROM (embed_actions.go walks it)
 	actionScreens       map[string]*app.Screen               // componentID → the screen whose Policy chain gates its actions (AutoCompileActions)
 	customCSS           string                               // extra CSS to inject (e.g. demo.css)
-	extraScripts        []externalScript                     // extra <script src="…"> rail before </body>; every-page + document-lifetime entries (register_script.go)
+	extraScripts        []externalScript                     // extra <script defer src="…"> rail closing <head>; every-page + document-lifetime entries (register_script.go)
 	scriptMu            sync.Mutex                           // guards post-construction extraScripts appends + the servingStarted latch (see register_script.go)
 	servingStarted      atomic.Bool                          // latched on the first full-shell render; RegisterExternalScript refuses after it
 	staticDir           string                               // directory to serve static files from
@@ -124,6 +125,8 @@ type UIHost struct {
 	headTags            []string                             // typed head tags built from convenience options
 	faviconURL          string                               // configured WithFavicon URL: serveOrRender 204s it when no static file matches
 	noLiveChannel       bool                                 // WithNoLiveChannel: omit the gofastr-sse meta (no EventSource)
+	noInlineFirstPaint  bool                                 // WithNoInlineFirstPaint: head CSS and the color-scheme bootstrap always ship as links
+	firstPaint          firstPaintCache                      // blocks a live page carries inline in its head (firstpaint.go)
 	appIcons            map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
 	notFoundScreen      component.Component                  // when set, serveNotFound renders this through the default layout instead of the bare 404 fallback
 	errorScreen         component.Component                  // when set, a whole-page resolver failure (app.PageError) renders this through the default layout instead of the bare 500 fallback
@@ -349,10 +352,11 @@ type ScreenSEO interface {
 }
 
 // routeInfoJSON is the JSON shape sent to the browser as __gofastr_routes.
+// Every visitor downloads it (in manifest.js on live pages, inline in
+// exports), so it carries only what the runtime reads: no titles or
+// descriptions (a navigation takes its title from the response).
 type routeInfoJSON struct {
-	Path        string `json:"path"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
+	Path string `json:"path"`
 	// Preload is the route's prefetch mode ("hover"/"visible"/"eager");
 	// absent means never. Any non-empty value in the manifest loads the
 	// prefetch runtime module.
@@ -1036,7 +1040,7 @@ func (ds *UIHost) ComponentCSSFiles() map[string]string {
 	theme := ds.activeTheme()
 	out := make(map[string]string, len(all))
 	for _, e := range all {
-		out["/__gofastr/comp/"+e.Name+".css"] = e.CSSFor(theme)
+		out["/__gofastr/comp/"+e.Name+".css"] = e.ServedCSSFor(theme)
 	}
 	return out
 }
@@ -1211,13 +1215,11 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 	infos := make([]routeInfoJSON, len(routes))
 	for i, r := range routes {
 		infos[i] = routeInfoJSON{
-			Path:        r.Path,
-			Title:       r.Title,
-			Description: r.Description,
-			Preload:     r.Preload,
-			Layouts:     r.Layouts,
-			Deferred:    r.Deferred,
-			Redirect:    r.RedirectTo,
+			Path:     r.Path,
+			Preload:  r.Preload,
+			Layouts:  r.Layouts,
+			Deferred: r.Deferred,
+			Redirect: r.RedirectTo,
 		}
 		// Document-lifetime scripts in scope for this route, sorted so
 		// the manifest bytes are deterministic. The scope sees the
@@ -1246,10 +1248,9 @@ func (ds *UIHost) buildRouteScriptUncached() string {
 	}
 	ds.routeMarshalCount.Add(1)
 	rgJSON, _ := json.Marshal(infos)
-	// JS body only, no <script> wrapper. The body is served as an
-	// external file via /__gofastr/routes.js (CSP-safe under
-	// default-src 'self'); injectChrome references it with
-	// <script src="…">. SSG writes the same body to disk.
+	// JS body only, no <script> wrapper. Live pages get it inside
+	// /__gofastr/manifest.js (CSP-safe under default-src 'self');
+	// exports and the PWA offline shell inline it as #gofastr-routes.
 	return fmt.Sprintf("window.__gofastr_routes = %s;", string(rgJSON))
 }
 
@@ -1310,7 +1311,7 @@ func (ds *UIHost) actionScriptTags(page string) []string {
 	sort.Strings(ids)
 	tags := make([]string, len(ids))
 	for i, id := range ids {
-		tags[i] = `<script src="/__gofastr/widget/` + id + `.js?v=` + ds.actionHash[id] + `"></script>`
+		tags[i] = `<script defer src="/__gofastr/widget/` + id + `.js?v=` + ds.actionHash[id] + `"></script>`
 	}
 	return tags
 }
@@ -1673,15 +1674,26 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 	// The confirm dialog goes in before the chrome: the head's
 	// component-stylesheet scan must see the markers inside it.
 	out := injectConfirmTemplate(string(page), r)
-	out = ds.injectChromeFor(out, path, sessionID, boundedPresenceParam(r), comp)
-	out = injectSignalSeed(ctx, out)
+	// A head small enough for the first round trip ships inline; the
+	// response's own policy then allows exactly those blocks by hash.
 	// SSR-inline registered widgets: non-hidden auto-mount widgets
 	// always go in, and a Hidden deep-link widget goes in when the
 	// request URL matches its deep link (open at first paint). The
 	// widget chrome lives just inside </body>; the runtime's
 	// _mountByName checks for an existing root before fetching
-	// cfg.chromePath.
-	out = injectWidgetSSR(out, r)
+	// cfg.chromePath. It goes in after the chrome, so a widget's sheets
+	// load on demand rather than in the head, but a first-paint subset
+	// keeps the rules its classes need.
+	widgets := widgetSSRHTML(r)
+	inline := &inlineHead{
+		allow:  func(styles, scripts []string) bool { return allowInlineHashes(w.Header(), styles, scripts) },
+		markup: widgets,
+	}
+	out = ds.injectChromeDoc(out, path, sessionID, boundedPresenceParam(r), true, comp, inline)
+	out = injectSignalSeed(ctx, out)
+	if widgets != "" {
+		out = replaceChromeMarker(out, "</body>", widgets+"</body>", "widget chrome")
+	}
 
 	ds.writeAgentLinkHeaders(w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -1709,6 +1721,15 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 // TestInjectWidgetSSR_HiddenDeepLinkInlinedOnMatch here and
 // TestWidgetChromeCtx_SSRInlinedDeepLinkOpensPerCtx in core-ui/runtime.
 func injectWidgetSSR(page string, r *http.Request) string {
+	html := widgetSSRHTML(r)
+	if html == "" {
+		return page
+	}
+	return replaceChromeMarker(page, "</body>", html+"</body>", "widget chrome")
+}
+
+// widgetSSRHTML renders the widget chrome injectWidgetSSR places.
+func widgetSSRHTML(r *http.Request) string {
 	b := borrowBuilder()
 	defer returnBuilder(b)
 	u := r.URL
@@ -1750,10 +1771,7 @@ func injectWidgetSSR(page string, r *http.Request) string {
 		// and personalized when the user reopens it.
 		b.WriteString(widget.RenderChromeCtx(r.Context(), d))
 	}
-	if b.Len() == 0 {
-		return page
-	}
-	return replaceChromeMarker(page, "</body>", b.String()+"</body>", "widget chrome")
+	return b.String()
 }
 
 // injectConfirmTemplate emits the kit's confirm dialog
@@ -2051,6 +2069,24 @@ func (ds *UIHost) injectChromeMode(page, pagePath, sessionID, presenceTopic stri
 }
 
 func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component) string {
+	return ds.injectChromeDoc(page, pagePath, sessionID, presenceTopic, bundle, comp, nil)
+}
+
+// inlineHead is how a live page may inline its head (firstpaint.go).
+type inlineHead struct {
+	// allow is asked whether the response's policy can take the hashes
+	// of the blocks the head would inline; it allows them on the
+	// response when it says yes.
+	allow func(styles, scripts []string) bool
+	// markup is what the response adds to the page after the chrome
+	// (the first-paint widgets), whose classes a subset must keep.
+	markup string
+}
+
+// injectChromeDoc is the chrome injector. inline, when set, lets a head
+// small enough for the first round trip carry its resources. A nil
+// inline, or export mode, links every head resource.
+func (ds *UIHost) injectChromeDoc(page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component, inline *inlineHead) string {
 	// First full-shell render freezes the extra-script rail: registering
 	// after this point would ship a script on some pages and not others.
 	ds.markServingBegun()
@@ -2069,8 +2105,8 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	}
 	headClose := borrowBuilder()
 	defer returnBuilder(headClose)
-	bodyClose := borrowBuilder()
-	defer returnBuilder(bodyClose)
+	scripts := borrowBuilder()
+	defer returnBuilder(scripts)
 
 	if sessionID != "" && !ds.noLiveChannel {
 		// The SSE connection URL. presenceTopic (from the page's ?presence=
@@ -2132,25 +2168,48 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		headClose.WriteString(strings.Join(headParts, "\n"))
 		headClose.WriteByte('\n')
 	}
-	// Route graph + component catalog ship as inline JSON in
-	// <script type="application/json"> blocks. The browser treats
-	// these as inert data (NOT scripts) so they pass under strict
-	// CSP (default-src 'self'). runtime.js reads + parses them on
-	// boot. Saves two HTTP requests per page load vs separate
-	// /__gofastr/{routes,catalog}.js files.
-	if routes := routesJSONScript(ds); routes != "" {
-		headClose.WriteString(routes)
-		headClose.WriteByte('\n')
+	// Route graph: live pages get it from manifest.js (one cached,
+	// content-addressed fetch per deploy) instead of paying its bytes
+	// in every document; it grows with the app, and nothing reads it
+	// before the runtime boots. Export mode keeps the inline JSON
+	// block (inert data, CSP-safe) because exported pages must be
+	// self-contained files.
+	if !bundle {
+		if routes := routesJSONScript(ds); routes != "" {
+			headClose.WriteString(routes)
+			headClose.WriteByte('\n')
+		}
 	}
 
 	// Component CSS: scan the rendered page for data-cui-comp markers
 	// and emit a single bundled <link> (or one direct <link> for a
 	// single component) so first paint has every needed sheet in
 	// <head>. LoadAlways entries are included whether the page used
-	// them or not.
-	if tags := ds.componentCSSTags(page, bundle); tags != "" {
-		headClose.WriteString(tags)
-		headClose.WriteByte('\n')
+	// them or not; sheets only <template> content needs are prefetched.
+	var inlined *firstPaintPlan
+	if bundle && inline != nil && !ds.noInlineFirstPaint {
+		names, held := pageSheetNames(page)
+		if p, ok := ds.planFirstPaint(names, page, inline.markup); ok && inline.allow(p.styleHashes(), p.scriptHashes()) {
+			inlined = p
+			if p.comp != nil {
+				headClose.WriteString(`<style data-cui-bundle="` + strings.Join(p.comp.names, ","))
+				if p.comp.href != "" {
+					headClose.WriteString(`" data-cui-bundle-href="` + stdhtml.EscapeString(p.comp.href))
+				}
+				headClose.WriteString(`">` + p.comp.body + "</style>\n")
+			}
+			theme := ds.activeTheme()
+			if prefetch := prefetchLinks(held, setOf(names), theme, style.ThemeHash(theme)); prefetch != "" {
+				headClose.WriteString(prefetch)
+				headClose.WriteByte('\n')
+			}
+		}
+	}
+	if inlined == nil {
+		if tags := ds.componentCSSTags(page, bundle); tags != "" {
+			headClose.WriteString(tags)
+			headClose.WriteByte('\n')
+		}
 	}
 	// app.css comes AFTER the component CSS so it wins cascade ties
 	// against framework defaults. Hosts that override e.g. a button's
@@ -2161,7 +2220,9 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	// query-free because the files land on disk under their bare paths
 	// and naive static hosts/mirrors resolve by path (the wget
 	// regression that already forced query-free module writes).
-	if ds.App != nil {
+	if inlined != nil {
+		headClose.WriteString(`<style id="cui-app-css">` + inlined.app.body + "</style>\n")
+	} else if ds.App != nil {
 		href := "/__gofastr/app.css"
 		if bundle {
 			_, cssHash := ds.appCSSCached()
@@ -2211,19 +2272,21 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		headClose.WriteByte('\n')
 	}
 
-	// <body>
+	// Deferred scripts, emitted at the end of <head> below.
 	runtimeSrc := "/__gofastr/runtime.js"
 	if bundle {
 		// manifest.js assigns the catalog/module/action globals and MUST
-		// precede runtime.js: classic scripts execute in order, so the
-		// kernel finds them set at boot.
+		// precede runtime.js: deferred scripts execute in document order,
+		// so the kernel finds them set at boot. Every rail script carries
+		// defer, so none of them blocks the parser or first paint, and
+		// they all run after the document is parsed, still in order.
 		_, mHash := ds.manifestJS()
-		bodyClose.WriteString(`<script src="/__gofastr/manifest.js?v=` + mHash + `"></script>`)
-		bodyClose.WriteByte('\n')
+		scripts.WriteString(`<script defer src="/__gofastr/manifest.js?v=` + mHash + `"></script>`)
+		scripts.WriteByte('\n')
 		runtimeSrc += "?v=" + widget.RuntimeHash()
 	}
-	bodyClose.WriteString(`<script src="` + runtimeSrc + `"></script>`)
-	bodyClose.WriteByte('\n')
+	scripts.WriteString(`<script defer src="` + runtimeSrc + `"></script>`)
+	scripts.WriteByte('\n')
 	if bundle {
 		// Per-screen action scripts: only the compiled registries whose
 		// component ids actually appear on THIS page, each content-
@@ -2232,13 +2295,13 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 		// Navigation to a screen whose actions aren't loaded yet is
 		// covered by the actionloader module reading __gofastr_actions.
 		for _, tag := range ds.actionScriptTags(page) {
-			bodyClose.WriteString(tag)
-			bodyClose.WriteByte('\n')
+			scripts.WriteString(tag)
+			scripts.WriteByte('\n')
 		}
 	} else if ds.HasActions() {
 		// Export mode keeps the self-contained concat file.
-		bodyClose.WriteString(`<script src="/__gofastr/actions.js"></script>`)
-		bodyClose.WriteByte('\n')
+		scripts.WriteString(`<script defer src="/__gofastr/actions.js"></script>`)
+		scripts.WriteByte('\n')
 	}
 	// Document-lifetime scopes are asked about the ROUTE, not the
 	// concrete path: the same identity the manifest uses. A predicate
@@ -2261,7 +2324,7 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 			docAttr = " data-cui-doc"
 		}
 		//gofastr:allow(GOFASTR1412) src passed validExternalScriptSrc at registration: a same-origin path, no scheme or host.
-		fmt.Fprintf(bodyClose, `<script src="%s"%s></script>`+"\n", stdhtml.EscapeString(s.src), docAttr)
+		fmt.Fprintf(scripts, `<script defer src="%s"%s></script>`+"\n", stdhtml.EscapeString(s.src), docAttr)
 	}
 
 	// Color-scheme bootstrap runs SYNCHRONOUSLY at the top of <head>
@@ -2269,19 +2332,21 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	// the same first paint, no FOUC. Reads localStorage("gofastr.
 	// colorScheme") + prefers-color-scheme media query, sets
 	// <html data-color-scheme="dark|light">.
-	colorSrc := "/__gofastr/color-scheme.js"
-	if bundle {
-		colorSrc += "?v=" + colorSchemeHash()
+	colorTag := `<script src="/__gofastr/color-scheme.js"></script>`
+	switch {
+	case inlined != nil:
+		colorTag = "<script>" + inlined.scheme.body + "</script>"
+	case bundle:
+		colorTag = `<script src="/__gofastr/color-scheme.js?v=` + colorSchemeHash() + `"></script>`
 	}
-	page = replaceChromeMarker(page,
-		"<head>",
-		`<head><script src="`+colorSrc+`"></script>`, "color-scheme bootstrap")
-	if headClose.Len() > 0 {
-		page = replaceChromeMarker(page, "</head>", headClose.String()+"</head>", "head chrome (SEO/CSS)")
-	}
-	if bodyClose.Len() > 0 {
-		page = replaceChromeMarker(page, "</body>", bodyClose.String()+"</body>", "body-close scripts")
-	}
+	page = replaceChromeMarker(page, "<head>", "<head>"+colorTag, "color-scheme bootstrap")
+	// The deferred scripts close <head>, after the stylesheets: defer
+	// keeps them off the first paint, the preload scanner finds them
+	// with the first bytes, and they run before any deferred script
+	// in the page's own markup, which may reach for window.__gofastr
+	// the way it could when runtime.js ran synchronously.
+	headClose.WriteString(scripts.String())
+	page = replaceChromeMarker(page, "</head>", headClose.String()+"</head>", "head chrome (SEO/CSS/scripts)")
 	return page
 }
 
@@ -2306,7 +2371,7 @@ func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
 		if t, ok := ds.themeVariant(hash); ok {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-			fmt.Fprint(w, ds.AppCSSFor(t))
+			fmt.Fprint(w, minify.ServedCSS(ds.AppCSSFor(t)))
 			return
 		}
 		// Unknown variant: serve the app theme, but do NOT mark it immutable.
@@ -2336,7 +2401,7 @@ func (ds *UIHost) appCSSCached() (body, hash string) {
 		for _, l := range ds.App.Layouts() {
 			ds.appCSSTransitionLayouts[l] = true
 		}
-		ds.appCSSBody = ds.AppCSS()
+		ds.appCSSBody = minify.ServedCSS(ds.AppCSS())
 		ds.appCSSHash = style.CSSFingerprint(ds.appCSSBody)
 	})
 	if style.ContributedCount() != ds.appCSSContribN {
@@ -4400,25 +4465,81 @@ func (ds *UIHost) PushUpdate(islandID string, html string, sessionID string) {
 // otherwise). Inline emission is forbidden: the bundle endpoint is
 // content-addressed so the browser caches it across pages with the
 // same component set.
+//
+// A sheet only <template> content needs (a confirm dialog, a toast
+// item) gets a <link rel="prefetch"> instead: the browser fetches it at
+// idle priority, off the render-blocking path, and the runtime's link
+// for the clone it makes later is a cache hit.
 func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
-	used := registry.Scan(page)
-	eager := registry.EagerNames()
-	if len(used) == 0 && len(eager) == 0 {
+	names, held := pageSheetNames(page)
+	if len(names) == 0 && len(held) == 0 {
 		return ""
 	}
-	seen := make(map[string]struct{}, len(used)+len(eager))
-	for _, n := range used {
-		seen[n] = struct{}{}
+	theme := ds.activeTheme()
+	th := style.ThemeHash(theme) // once per page, not once per component
+	links := ds.stylesheetLinks(names, bundle, theme, th)
+	prefetch := prefetchLinks(held, setOf(names), theme, th)
+	if links != "" && prefetch != "" {
+		return links + "\n" + prefetch
 	}
+	return links + prefetch
+}
+
+// pageSheetNames returns the sorted component sheets a page's first
+// paint needs (rendered markers plus every LoadAlways entry) and the
+// sheets only its <template> content needs.
+func pageSheetNames(page string) (names, held []string) {
+	used, held := registry.ScanSplit(page)
+	eager := registry.EagerNames()
+	seen := setOf(used)
 	for _, n := range eager {
 		seen[n] = struct{}{}
 	}
-	names := make([]string, 0, len(seen))
+	names = make([]string, 0, len(seen))
 	for n := range seen {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	theme := ds.activeTheme()
+	return names, held
+}
+
+func setOf(names []string) map[string]struct{} {
+	m := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		m[n] = struct{}{}
+	}
+	return m
+}
+
+// prefetchLinks returns a <link rel="prefetch"> for each held sheet not
+// already in linked. The href is the URL loadComponentCSS builds from
+// the catalog (stylePath + "?v=" + version), so the prefetch is the
+// cache entry the runtime's own link reads.
+func prefetchLinks(held []string, linked map[string]struct{}, theme style.Theme, th string) string {
+	b := borrowBuilder()
+	defer returnBuilder(b)
+	for _, n := range held {
+		if _, ok := linked[n]; ok || !safeComponentName(n) {
+			continue
+		}
+		e, ok := registry.Lookup(n)
+		if !ok {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		fmt.Fprintf(b, `<link rel="prefetch" href="/__gofastr/comp/%s.css?v=%s">`, n, e.VersionForHash(theme, th))
+	}
+	return b.String()
+}
+
+// stylesheetLinks returns the render-blocking links for names: one per
+// component, or one bundle link for two or more on a live page.
+func (ds *UIHost) stylesheetLinks(names []string, bundle bool, theme style.Theme, th string) string {
+	if len(names) == 0 {
+		return ""
+	}
 	if len(names) == 1 || !bundle {
 		// Static-export path also takes this branch: emit one <link>
 		// per component to avoid the query-paramed bundle URL.
@@ -4444,26 +4565,35 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 			// app.css on load, which reversed the cascade against the
 			// host's own overrides.
 			fmt.Fprintf(b, `<link rel="stylesheet" href="/__gofastr/comp/%s.css?v=%s" data-cui-style="%s" id="cui-css-%s">`,
-				n, e.VersionFor(theme), n, n)
+				n, e.VersionForHash(theme, th), n, n)
 		}
 		return b.String()
 	}
-	// Bundle. The hash combines the per-component versions in the
-	// sorted order embedded in `names`, so any change to any included
-	// component busts the bundle URL.
+	return fmt.Sprintf(`<link rel="stylesheet" href="%s" data-cui-bundle="%s">`,
+		liveSheetURL(names, theme, th), strings.Join(names, ","))
+}
+
+// liveSheetURL is the URL a live page's head links for names: the
+// component's own sheet for one, the bundle for several. The bundle's
+// hash combines the per-component versions in the sorted order embedded
+// in names, so any change to any included component busts the URL.
+func liveSheetURL(names []string, theme style.Theme, th string) string {
+	if len(names) == 1 {
+		e, ok := registry.Lookup(names[0])
+		if !ok || !safeComponentName(names[0]) {
+			return ""
+		}
+		return "/__gofastr/comp/" + names[0] + ".css?v=" + e.VersionForHash(theme, th)
+	}
 	versions := make([]string, 0, len(names))
 	for _, n := range names {
 		e, ok := registry.Lookup(n)
 		if !ok {
 			continue
 		}
-		versions = append(versions, e.VersionFor(theme))
+		versions = append(versions, e.VersionForHash(theme, th))
 	}
-	bundleV := hashStrings(versions...)
-	joined := strings.Join(names, ",")
-	return fmt.Sprintf(
-		`<link rel="stylesheet" href="/__gofastr/comp-bundle.css?names=%s&v=%s" data-cui-bundle="%s">`,
-		joined, bundleV, joined)
+	return "/__gofastr/comp-bundle.css?names=" + strings.Join(names, ",") + "&v=" + hashStrings(versions...)
 }
 
 // safeComponentName reports whether n is safe to interpolate as the
@@ -4577,7 +4707,7 @@ func signalsJSONScript(seed map[string]any) string {
 // injectSignalSeed resolves the signal seed for the rendered page (names
 // referenced in the HTML plus all app-global slices), and splices the
 // JSON block into <head> just before </head> so it is in place before
-// runtime.js (end of <body>) reads it. ctx must carry the request value
+// runtime.js (deferred, after parsing) reads it. ctx must carry the request value
 // bag (store.WithValues), so producer-seeded per-request values win over
 // declared defaults. No-op when there is nothing to seed.
 func injectSignalSeed(ctx context.Context, page string) string {
@@ -4657,6 +4787,11 @@ func runtimeModuleManifestScript() string {
 // a modulepreload'd response is fetched with module destination/
 // credentials semantics the classic request does not match. The browser
 // would not reuse it, so every hinted module was fetched twice.
+//
+// fetchpriority="low": a script preload otherwise fetches at high
+// priority and competes with the stylesheets and the document itself
+// for the first-paint bandwidth. Modules hydrate after paint, so the
+// hint only has to land before the kernel asks for them.
 func runtimeModulePreloadLinks(pageHTML string) string {
 	mods := runtime.NeededModules(pageHTML)
 	if len(mods) == 0 {
@@ -4672,7 +4807,7 @@ func runtimeModulePreloadLinks(pageHTML string) string {
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
-		b.WriteString(`<link rel="preload" as="script" href="` + href + `">`)
+		b.WriteString(`<link rel="preload" as="script" fetchpriority="low" href="` + href + `">`)
 	}
 	return b.String()
 }
@@ -4901,7 +5036,7 @@ func (ds *UIHost) handleComponentCSS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	theme := ds.requestTheme(r)
-	css := e.CSSFor(theme)
+	css := e.ServedCSSFor(theme)
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	if v := r.URL.Query().Get("v"); v != "" && v == e.VersionFor(theme) {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
@@ -4938,6 +5073,7 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	// frame and the theme editor's preview showed a half-applied theme, and
 	// the editor could write a theme its operator had never actually seen.
 	theme := ds.requestTheme(r)
+	th := style.ThemeHash(theme)
 	versions := make([]string, 0, len(names))
 	bodies := make([]string, 0, len(names))
 	seen := make(map[string]struct{}, len(names))
@@ -4956,8 +5092,8 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		versions = append(versions, e.VersionFor(theme))
-		bodies = append(bodies, e.CSSFor(theme))
+		versions = append(versions, e.VersionForHash(theme, th))
+		bodies = append(bodies, e.ServedCSSForHash(theme, th))
 	}
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	wantV := hashStrings(versions...)

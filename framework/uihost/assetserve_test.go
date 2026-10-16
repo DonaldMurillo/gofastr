@@ -70,11 +70,13 @@ func TestVersionedAssetPolicy(t *testing.T) {
 }
 
 // The injected chrome must reference the versioned URLs, or the immutable
-// path never gets exercised by real pages.
+// path never gets exercised by real pages. A head small enough to inline
+// references none of its stylesheets, so the links are checked with
+// inlining off; runtime.js is linked either way.
 func TestChromeReferencesVersionedAssets(t *testing.T) {
 	application := app.NewApp("t")
 	application.Register("/", &testHomeComp{}, nil)
-	ds := New(application)
+	ds := New(application, WithNoInlineFirstPaint())
 
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()

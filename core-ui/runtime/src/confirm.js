@@ -41,10 +41,42 @@
     });
   }
 
+  // One question at a time. A second ask while one waits on its sheets
+  // or stands open (a double click, a second gated control) is declined:
+  // two dialogs would mean two answers and two submits. A dialog that
+  // was opened and has since left the page (a swap removed it without
+  // a close event) no longer counts.
+  let pending = null;
+  const busy = () => !!pending && (!pending.opened || pending.dlg.isConnected);
+
+  // sheetsReady resolves when every sheet the dialog names (its own root
+  // included) has loaded or failed, each wait bounded like the kernel's.
+  // Sheets the page already applied, or the eager bundle carries, need
+  // no wait. Unrelated idle prewarms do not hold the dialog back.
+  function sheetsReady(dlg) {
+    const els = [dlg, ...dlg.querySelectorAll('[data-cui-comp],[data-cui-scope]')];
+    const waits = [];
+    for (const el of els) {
+      for (const n of [el.getAttribute('data-cui-comp'), el.getAttribute('data-cui-scope')]) {
+        if (!n) continue;
+        NS.loadComponentCSS(n);
+        const link = document.querySelector('link[data-cui-style="' + CSS.escape(n) + '"]');
+        if (!link || link.sheet) continue;
+        waits.push(new Promise((r) => {
+          link.addEventListener('load', r);
+          link.addEventListener('error', r);
+          setTimeout(r, 3000);
+        }));
+      }
+    }
+    return Promise.all(waits);
+  }
+
   // askWords: {message, title, accept, danger}; an empty title or
   // accept keeps the template's own.
   function askWords(w) {
     const msg = w.message || '';
+    if (busy()) return Promise.resolve(false);
     const tpl = document.querySelector('template[data-cui-confirm-dialog]');
     const dlg = tpl && tpl.content.firstElementChild && tpl.content.firstElementChild.cloneNode(true);
     if (!dlg || typeof dlg.showModal !== 'function') {
@@ -66,6 +98,8 @@
       text.textContent = label;
     }
     const back = document.activeElement;
+    const mine = { dlg, opened: false };
+    pending = mine;
     return new Promise((resolve) => {
       let answer = false;
       const finish = (v) => {
@@ -77,15 +111,23 @@
       // A click on the backdrop lands on the dialog element itself.
       dlg.addEventListener('click', (e) => { if (e.target === dlg) finish(false); });
       dlg.addEventListener('close', () => {
+        if (pending === mine) pending = null;
         dlg.remove();
         if (back && back.isConnected && typeof back.focus === 'function') back.focus();
         resolve(answer);
       }, { once: true });
-      document.body.appendChild(dlg);
-      dlg.showModal();
-      // Cancel takes focus: Enter on an open confirm must never be the
-      // destructive answer.
-      if (cancel) cancel.focus();
+      // The template is inert, so the host's first paint left the
+      // dialog's sheets out. Open once they have loaded: showModal on an
+      // unstyled clone paints the browser's default dialog for a round
+      // trip.
+      (NS.loadComponentCSS ? sheetsReady(dlg) : Promise.resolve()).then(() => {
+        document.body.appendChild(dlg);
+        mine.opened = true;
+        dlg.showModal();
+        // Cancel takes focus: Enter on an open confirm must never be
+        // the destructive answer.
+        if (cancel) cancel.focus();
+      });
     });
   }
 

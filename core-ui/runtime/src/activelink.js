@@ -28,12 +28,34 @@
   // data-cui-activelink link is then still the truth, even where the
   // href is not exactly the URL (Active on /orders served at
   // /orders?page=2, or on a detail page), so the sweep leaves it.
+  // Every link inside a <nav> landmark, plus links that opt in by
+  // attribute wherever they sit: a header link carrying
+  // data-cui-match-prefix outside a nav was silently never marked (#503).
+  const LINKS = 'nav a, a[data-cui-activelink], a[data-cui-match-prefix]';
   const update = (path, navigated, scope) => {
-    for (const link of (scope || document).querySelectorAll('nav a')) {
+    const pathOnly = (path || '').split('?')[0].split('#')[0];
+    // Whether the link's nav (or the document, outside one) also holds
+    // a link to this path WITH a query: a tab strip, whose current tab
+    // the server picks.
+    const tabsIn = new Map();
+    const inTabStrip = (link) => {
+      const box = link.closest('nav') || document;
+      if (!tabsIn.has(box)) {
+        tabsIn.set(box, [...box.querySelectorAll('a[href]')].some((a) => a.getAttribute('href').startsWith(pathOnly + '?')));
+      }
+      return tabsIn.get(box);
+    };
+    for (const link of (scope || document).querySelectorAll(LINKS)) {
       const href = link.getAttribute('href');
       if (!href) continue; // server-managed (MatchPath, dynamic), hands off
       if (link.hasAttribute('data-cui-activelink-skip')) continue;
-      let active = href === path;
+      // A query-less href names a screen, and the URL's query is that
+      // screen's in-page state (sort, page, filter), so /ask stays
+      // current on /ask?page=2, as the server marks it. An href with
+      // its own query (a filter tab) can only match the exact URL, and
+      // so can its query-less sibling in a tab strip: the "All" tab
+      // (/orders) stays dark on /orders?status=open and on its pages.
+      let active = href === path || (href === pathOnly && !inTabStrip(link));
       if (!active && link.hasAttribute('data-cui-match-prefix')) {
         // The attribute's VALUE is the prefix when non-empty — the
         // sidebar emits its MatchPath there, and the owned section can
@@ -42,7 +64,6 @@
         // the prefix, the original opt-in spelling.
         const attrPrefix = (link.getAttribute('data-cui-match-prefix') || '').trim();
         const hrefPath = (attrPrefix !== '' ? attrPrefix : href).split('?')[0].split('#')[0];
-        const pathOnly = (path || '').split('?')[0].split('#')[0];
         // Match on SEGMENT boundaries, and accept the canonical
         // no-trailing-slash href (/docs) as well as the trailing-slash
         // form (/docs/), apps register /docs, so requiring the slash

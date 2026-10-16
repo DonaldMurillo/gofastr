@@ -93,6 +93,9 @@ type UI struct {
 	actorName func(ctx context.Context, id string) string
 	// now is the clock queued runs lease and finish by.
 	now func() time.Time
+	// screens backs the missing-record-screen warning, nil when the host
+	// cannot see the app's screen routes.
+	screens *recordScreens
 }
 
 // New checks ext against the app's entities and returns the app's UI.
@@ -118,7 +121,11 @@ func New(h Host, ext Extensions) (*UI, error) {
 			return nil, fmt.Errorf("entityui: Extensions.Jobs needs a Host that keeps bulk snapshots (BulkHost with a BulkStore)")
 		}
 	}
-	return &UI{host: h, ext: ext.clone(), now: time.Now}, nil
+	u := &UI{host: h, ext: ext.clone(), now: time.Now}
+	if sh, ok := h.(ScreenHost); ok {
+		u.screens = &recordScreens{host: sh}
+	}
+	return u, nil
 }
 
 // WithAPIPath returns a UI that draws the same screens with the same

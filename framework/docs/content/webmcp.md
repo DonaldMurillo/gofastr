@@ -512,8 +512,9 @@ evaluating script; the bridge does not depend on it.
 - **CSRF-protected tools on a page without the token meta tag.** The
   bridge can only send what the page renders: if the shell does not
   emit `meta[name="csrf-token"]`, every unsafe-method tool behind
-  `middleware.CSRF` 403s. Render the meta tag (the token is available
-  server-side via `middleware.TokenFromContext`).
+  `middleware.CSRF` 403s. Render the meta tag with the masked token,
+  `middleware.MaskCSRFToken(middleware.TokenFromContext(ctx))`, never
+  the raw value (see `security.md`, "Masked tokens").
 
 ## Reference example
 

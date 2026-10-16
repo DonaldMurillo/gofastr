@@ -24,16 +24,17 @@ Only add a `replace` directive pointing at a local checkout if you are
 hacking on the framework itself and want your app to pick up unreleased
 changes.
 
-Visit <http://localhost:8080>; you should see a placeholder home page served by `screens.go`. The CRUD entity at `/posts` works too.
+Visit <http://localhost:8080>; you should see a placeholder home page served by `screens.go`. The sample `posts` entity serves JSON at `/api/posts` and answers 401 until you sign in: create an account at `/register`, then sign in at `/login`. Registering does not sign you in, because `battery/auth` answers a new and an already-registered address with the same redirect.
 
 Scaffold layout:
 
 ```
 myapp/
-  main.go            # wires entities + adaptive framework theme + UI host
+  main.go            # wires entities + battery/auth + adaptive framework theme + UI host
   screens.go         # the home page you'll edit
+  screens_auth.go    # /login and /register over battery/auth's form endpoints
   DESIGN.md          # product intent, hierarchy, composition, and mobile direction
-  entities/entities.go # Go-declared CRUD entities (try /posts)
+  entities/entities.go # Go-declared CRUD entities (served under /api)
   migrations/
   .env
   .gitignore
@@ -45,6 +46,15 @@ myapp/
 
 `gofastr docs` lists every framework reference doc embedded in the
 binary; `gofastr docs --grep <term>` searches them. No internet needed.
+`gofastr docs ui-new-components` is the component catalog. For a
+component's exact config fields or a token's constants, ask `go doc`
+from the app directory; it reads the pinned module, so the answer
+matches the version you build against:
+
+```bash
+go doc github.com/DonaldMurillo/gofastr/framework/ui StatStripConfig
+go doc -all github.com/DonaldMurillo/gofastr/framework/ui Gap   # GapXS … Gap2XL
+```
 
 In Go tests, serving the UI host through `httptest.NewServer(app.Router())`
 returns HTTP 500 when rendering recovers a component or layout panic.

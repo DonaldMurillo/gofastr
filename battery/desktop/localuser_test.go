@@ -8,7 +8,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/localuser"
+
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 )
 
@@ -28,14 +31,14 @@ func restoreExtractor(t *testing.T) {
 
 func TestIdentityFileMinted0600AndStable(t *testing.T) {
 	dir := t.TempDir()
-	u1, err := loadOrMintLocalUser(dir)
+	u1, err := localuser.LoadOrMint(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u1.id == "" {
+	if u1.GetID() == "" {
 		t.Fatal("minted identity is empty")
 	}
-	info, err := os.Stat(filepath.Join(dir, identityFileName))
+	info, err := os.Stat(filepath.Join(dir, localuser.FileName))
 	if err != nil {
 		t.Fatalf("identity file: %v", err)
 	}
@@ -48,15 +51,15 @@ func TestIdentityFileMinted0600AndStable(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = dirMode
-	u2, err := loadOrMintLocalUser(dir)
+	u2, err := localuser.LoadOrMint(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u1.id != u2.id {
-		t.Fatalf("identity not stable: %q vs %q", u1.id, u2.id)
+	if u1.GetID() != u2.GetID() {
+		t.Fatalf("identity not stable: %q vs %q", u1.GetID(), u2.GetID())
 	}
 	// The structural battery/auth User contract.
-	if u1.GetEmail() != "local@"+u1.id {
+	if u1.GetEmail() != "local@"+u1.GetID() {
 		t.Errorf("GetEmail = %q", u1.GetEmail())
 	}
 	// KEPT, deliberately, by the 2026-09-04 security pass. The local
@@ -95,7 +98,7 @@ func TestDataDirCreated0700(t *testing.T) {
 
 func TestLocalUserMiddlewareSetsContextUser(t *testing.T) {
 	b, _ := newTestBattery(t)
-	b.user = &localUser{id: "id123"}
+	b.user = localuser.ForID("id123")
 	b.armGate() // desktop mode: Run arms the gate before the listener opens
 	var got any
 	var ok bool
@@ -112,8 +115,8 @@ func TestLocalUserMiddlewareSetsContextUser(t *testing.T) {
 	if !ok {
 		t.Fatal("handler.GetUser not set")
 	}
-	u, isLocal := got.(*localUser)
-	if !isLocal || u.id != "id123" {
+	u, isLocal := got.(*localuser.User)
+	if !isLocal || u.GetID() != "id123" {
 		t.Fatalf("context user = %#v", got)
 	}
 }
@@ -122,7 +125,7 @@ func TestOwnerExtractorInstalledWhenAbsent(t *testing.T) {
 	restoreExtractor(t)
 	owner.SetExtractor(nil)
 	b, _ := newTestBattery(t)
-	b.user = &localUser{id: "own-id"}
+	b.user = localuser.ForID("own-id")
 	b.installOwnerExtractor()
 	if owner.GetExtractor() == nil {
 		t.Fatal("extractor not installed")
@@ -138,7 +141,7 @@ func TestOwnerExtractorNotReplacedWhenPresent(t *testing.T) {
 	sentinel := func(ctx context.Context) (any, bool) { return "sentinel", true }
 	owner.SetExtractor(sentinel)
 	b, _ := newTestBattery(t)
-	b.user = &localUser{id: "should-not-win"}
+	b.user = localuser.ForID("should-not-win")
 	b.installOwnerExtractor()
 	id, ok := owner.Get(nil2Ctx())
 	if !ok || id != "sentinel" {
@@ -152,7 +155,7 @@ func TestOwnerExtractorNotReplacedWhenPresent(t *testing.T) {
 // every anonymous visitor would be the local admin.
 func TestLocalUserNotInjectedWhenGateUnarmed(t *testing.T) {
 	b, _ := newTestBattery(t)
-	b.user = &localUser{id: "id123"}
+	b.user = localuser.ForID("id123")
 	var ok bool
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, ok = handler.GetUser(r.Context())
@@ -166,5 +169,20 @@ func TestLocalUserNotInjectedWhenGateUnarmed(t *testing.T) {
 	}
 	if ok {
 		t.Fatal("local identity injected while the boot gate is unarmed (serve mode)")
+	}
+}
+
+// Arming the gate puts the local user on every window request, so the
+// startup banner must not claim nothing signs callers in. --serve mode
+// never arms it and keeps the hint: there every request is anonymous.
+func TestArmGateNotesAuthenticator(t *testing.T) {
+	b, _ := newTestBattery(t)
+	b.app = framework.NewApp()
+	if b.app.AuthenticatorNoted() {
+		t.Fatal("noted before the gate armed")
+	}
+	b.armGate()
+	if !b.app.AuthenticatorNoted() {
+		t.Error("an armed gate installs the local user: the app must be noted")
 	}
 }

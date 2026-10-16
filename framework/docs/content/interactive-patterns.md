@@ -161,8 +161,16 @@ The scroll-spy rail is `framework/ui.AnchoredRail` over
 naming the observed region): the `headless-rail` module
 IntersectionObserves which section is currently in the upper portion
 of the viewport and marks the corresponding nav link
-`aria-current="true"` / `.is-active`. The table of contents
+`aria-current="true"` / `.is-active`. Below the last section (a page's
+"next steps" tail) the last section stays marked, and the pick runs
+again when a scroll settles, so a jump to the end lands on it too. The table of contents
 (`headless.TableOfContents`, `data-hui-toc`) shares the same observer.
+On phones `AnchoredRailConfig.PhoneSheet` folds the rail into a pill
+that names the section in view and opens the rail as a bottom sheet,
+or with `PhoneSheetTop` into a bar under the sticky header that opens
+it beneath (layouts → the aside's contents list). The observer's band starts
+below the header and that bar: `--ui-sticky-top` plus
+`--ui-sheet-bar-offset`.
 The retired scrollspy spelling is gone with its module.
 
 ---
@@ -822,6 +830,12 @@ magnifier, `TriggerText` (default: the placeholder) and the shortcut's
 keycaps (`⌘K`). Below 48rem it shrinks to a 44px icon button. The knob
 `--ui-cmd-trigger-width` (default 16rem) sets the field's width.
 
+The panel keeps one height while the reader types, so a filter that
+leaves one row does not move the field or footer: the list fills what
+they leave and scrolls. `--ui-cmd-palette-height` (default 30rem,
+capped by the viewport) and `--ui-cmd-palette-width` (default 36rem)
+size it; on a phone it fills the screen.
+
 A palette with `RPCPath` searches on the server. The endpoint reads `q`
 from the form body and answers option rows built by
 `ui.PaletteResults(ctx, name, cmds, empty)`, where `name` is the
@@ -829,6 +843,15 @@ palette's `Name`. Each row navigates to its command's `Href` on pick;
 an href that is not a safe link (a `javascript:` URL) renders no
 navigation. With no commands it answers one disabled row reading
 `empty`, or the localized "No matches" when `empty` is `""`.
+
+A palette with `Search: true` searches the pages instead: the
+[site search](site-search.md) battery's index, live or from a static
+export's index files. It needs `Commands`, the rows shown before the
+first keystroke, and adds page and section rows below the matching
+commands as the reader types. They fade in as they arrive, except a
+row that stays across keystrokes, and not at all under reduced motion.
+On a phone or tablet the footer drops its keyboard hints and keeps the
+close button.
 
 ```go
 trigger, palette := ui.CommandPalette(ui.CommandPaletteConfig{

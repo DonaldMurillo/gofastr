@@ -1,0 +1,37 @@
+version: v0.88.0
+title: The component gallery ships no CSS
+notes:
+  - change: "gallery.ContributeCSS and gallery.BaseCSS are removed: the framework/gallery demos lay out through ui.Cluster, ui.Stack, ui.Box and ui.Container and ship no stylesheet, and the .demo-row / .demo-stack / .demo-stack-lg / .demo-viewport / .demo-measure-* classes are gone"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/framework/gallery.ContributeCSS
+        - gofastr/framework/gallery.BaseCSS
+    guidance: "Delete the call and whatever it was concatenated into (uihost.WithCustomCSS(gallery.BaseCSS(t)+…) keeps the rest): the demos render laid out with no host CSS. Markup of your own that borrowed a .demo-* class composes ui.Cluster (a row), ui.Stack (a stack) or ui.Box{Bounded: true} (a capped, scrolling window) instead."
+  - change: "a ui.Container with Pad: ContainerPadPage or ContainerPadEnd takes the page gutter (--size-page-gutter, clamp(20px, 5vw, 32px)) inline at every Width instead of the 8/16/24px container steps, and none inside an app frame's content area (ui.ContentRow with a Sidebar)"
+    nodetect: "a layout change, not an API one: page text on a phone moves from 8px to 20px off the edge, in line with the header and footer bands; a screen that measured its own inline offsets sees the new gutter"
+    guidance: "Nothing to change. A screen that padded its own inline edge to make up for the 8px phone gutter can drop that padding; a padded container nested inside another page container takes the gutter twice, so give the inner one Pad: ContainerPadNone."
+  - change: "ui.ContentRowConfig.BelowHeader is removed: the page frame says the header is sticky once, with ui.StackConfig.StickyHeader, and every sticky part under it (a Sticky ContentRow's nav column and toolbar, a StepRail, a SectionMenu rail, a FormFrame side panel, an anchored Section) stops below the header through the --ui-sticky-top the stack publishes"
+    breaking: true
+    hits: edit
+    find:
+      fields:
+        - field: gofastr/framework/ui.ContentRowConfig.BelowHeader
+    guidance: "Delete BelowHeader: true from the ContentRow and set StickyHeader: true on the page-tall ui.Stack that holds the site header (ui.StackConfig{Screen: true, StickyHeader: true}). The stack pins its <header> child, so drop position: sticky, inset-block-start and z-index from the header's own style sheet. A sheet that offset a sticky rail or a scroll margin by var(--size-header-height) reads var(--ui-sticky-top, 0px) instead."
+  - change: "live pages read the route graph from /__gofastr/manifest.js (window.__gofastr_routes) instead of an inline #gofastr-routes block, and route entries no longer carry title or description; every script the host emits besides the color-scheme bootstrap carries defer and closes <head> instead of <body>"
+    breaking: true
+    hits: review
+    guidance: "Code that scraped the inline #gofastr-routes block on a live page reads window.__gofastr_routes once the deferred scripts have run (DOMContentLoaded or later); a route's title comes from the page it navigates to. Static exports keep the inline block, so a hit on an export surface may still be right. A script on the WithExtraScripts / RegisterExternalScript rail now runs after the document is parsed, still after runtime.js; one that relied on running mid-parse moves its work to that point. A test or scraper that looked for the host's script tags before </body> finds them before </head>."
+    find:
+      strings:
+        match: 'gofastr-routes'
+      text:
+        - glob: "**/*.js"
+          match: 'gofastr-routes'
+  - change: "auth.CSRFToken, auth.CSRFTokenFromCtx and ui.Form's hidden field return a masked token (m1. prefix, a fresh pad per render) instead of the raw cookie value; middleware.CSRF accepts both"
+    find:
+      uses:
+        - gofastr/battery/auth.CSRFToken
+        - gofastr/battery/auth.CSRFTokenFromCtx
+    guidance: "Rendering the token into a page or a header needs no change. Code that compared the returned value with the CSRF cookie compares middleware.TokenFromContext(ctx) instead, which stays raw; never render that raw value, mask it with middleware.MaskCSRFToken."

@@ -110,10 +110,13 @@ func TestEveryScreenRendersDesignSystemMarkup(t *testing.T) {
 		if !strings.Contains(body, s.want) {
 			t.Fatalf("%s missing %q", s.path, s.want)
 		}
-		if strings.Contains(body, "<style") || strings.Contains(body, "style=\"") {
+		// The head may carry the design system's sheets inline (first-paint
+		// inlining); the screen's own markup is the body.
+		_, markup, _ := strings.Cut(body, "<body")
+		if strings.Contains(markup, "<style") || strings.Contains(markup, "style=\"") {
 			t.Fatalf("%s carries inline CSS", s.path)
 		}
-		if strings.Contains(body, "<script>") {
+		if strings.Contains(markup, "<script>") {
 			t.Fatalf("%s carries an inline script", s.path)
 		}
 	}
@@ -185,7 +188,10 @@ func TestSettingsScreenRendersDeclaredPreferences(t *testing.T) {
 			t.Fatalf("/settings missing %q", want)
 		}
 	}
-	if strings.Contains(body, "<style") || strings.Contains(body, `style="`) {
+	// The head may carry the design system's sheets inline (first-paint
+	// inlining); the screen's own markup is the body.
+	_, markup, _ := strings.Cut(body, "<body")
+	if strings.Contains(markup, "<style") || strings.Contains(markup, `style="`) {
 		t.Fatal("the settings screen ships CSS")
 	}
 }

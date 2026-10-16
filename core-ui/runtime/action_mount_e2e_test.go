@@ -17,6 +17,21 @@ import (
 // populate itself. This is the keystone the blueprint entity_list / detail /
 // relation-select blocks rely on to fetch their data on first paint.
 func TestActionMount_FiresOnHydration(t *testing.T) {
+	runActionMount(t, "")
+}
+
+// The host emits runtime.js and the action scripts with defer. Deferred
+// scripts run while readyState is already "interactive", so a runtime
+// that ran its mount pass on the spot fired before the action scripts
+// after it had registered anything, and the mount was lost. The first
+// pass has to wait for DOMContentLoaded, which follows every deferred
+// script.
+func TestActionMount_FiresWhenDeferred(t *testing.T) {
+	runActionMount(t, " defer")
+}
+
+func runActionMount(t *testing.T, attr string) {
+	t.Helper()
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
@@ -40,14 +55,14 @@ func TestActionMount_FiresOnHydration(t *testing.T) {
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<!doctype html><html><head></head><body>
+		fmt.Fprintf(w, `<!doctype html><html><head></head><body>
   <div data-component="test-comp">
     <section data-action-mount="fill-on-mount" data-param-label="ok"></section>
     <span id="out">idle</span>
   </div>
-  <script src="/__gofastr/runtime.js"></script>
-  <script src="/__gofastr/actions.js"></script>
-</body></html>`)
+  <script%[1]s src="/__gofastr/runtime.js"></script>
+  <script%[1]s src="/__gofastr/actions.js"></script>
+</body></html>`, attr)
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

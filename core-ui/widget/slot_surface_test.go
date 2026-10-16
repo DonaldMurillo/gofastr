@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -84,13 +85,13 @@ func TestCenterPanelPaintsSurface(t *testing.T) {
 		t.Fatalf("no `.cui-pos-center > .cui-panel` rule in widget CSS:\n%s", css)
 	}
 	for _, want := range []string{
-		"background: var(--color-surface)",
+		minify.ServedCSS("background: var(--color-surface)"),
 		"border-radius:",
 		"padding:",
 		"box-shadow:",
 		"max-inline-size:",
 		"max-block-size:",
-		"overflow: auto",
+		minify.ServedCSS("overflow: auto"),
 	} {
 		if !strings.Contains(block, want) {
 			t.Errorf("center slot panel rule missing %q:\n%s", want, block)
@@ -108,35 +109,35 @@ func TestBottomSheetPaintsPanel(t *testing.T) {
 		Build()
 	css := fetchWidgetCSS(t, &def)
 
-	block := ruleBlock(css, ".cui-pos-bottom {")
-	if !strings.Contains(block, "background: var(--color-surface)") {
+	block := ruleBlock(css, minify.ServedCSS(".cui-pos-bottom {"))
+	if !strings.Contains(block, minify.ServedCSS("background: var(--color-surface)")) {
 		// The position loop emits a bare placement rule first; find
 		// the surface rule among all .cui-pos-bottom blocks.
 		rest := css
 		found := false
 		for {
-			i := strings.Index(rest, ".cui-pos-bottom {")
+			i := strings.Index(rest, minify.ServedCSS(".cui-pos-bottom {"))
 			if i < 0 {
 				break
 			}
-			b := ruleBlock(rest[i:], ".cui-pos-bottom {")
-			if strings.Contains(b, "background: var(--color-surface)") {
+			b := ruleBlock(rest[i:], minify.ServedCSS(".cui-pos-bottom {"))
+			if strings.Contains(b, minify.ServedCSS("background: var(--color-surface)")) {
 				block = b
 				found = true
 				break
 			}
-			rest = rest[i+len(".cui-pos-bottom {"):]
+			rest = rest[i+len(minify.ServedCSS(".cui-pos-bottom {")):]
 		}
 		if !found {
 			t.Fatalf("no .cui-pos-bottom rule paints a surface:\n%s", css)
 		}
 	}
 	for _, want := range []string{
-		"background: var(--color-surface)",
+		minify.ServedCSS("background: var(--color-surface)"),
 		"box-shadow:",
 		"border-radius:",
 		"max-block-size:",
-		"overflow: auto",
+		minify.ServedCSS("overflow: auto"),
 	} {
 		if !strings.Contains(block, want) {
 			t.Errorf("bottom-sheet panel rule missing %q:\n%s", want, block)

@@ -8,6 +8,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
+// envExport and envExportBase ask Start for an export instead of a
+// server: the output directory and the deploy's URL subpath. `gofastr
+// export` sets them.
+const (
+	envExport     = "GOFASTR_EXPORT"
+	envExportBase = "GOFASTR_EXPORT_BASE"
+)
+
 // ExportStatic renders the app to a folder of static HTML + assets
 // using the SSG Builder (framework/static). It locates the mounted
 // UIHost and renders every declared route to a directory-style file,
@@ -26,6 +34,9 @@ import (
 // router (uihost.WithExtraScripts("/__site/x.js") plus a router.Get for
 // that path) are fetched through the router and exported too.
 //
+// A registered battery that implements static.Contributor (the
+// battery/sitesearch index) sees every page and adds its files.
+//
 // This is the native replacement for the wget mirror the Pages deploy
 // used to ship: declaration-driven (no crawling), and it dumps the
 // split modules the crawl baked a "?v=" into and 404'd.
@@ -34,7 +45,13 @@ import (
 func (a *App) ExportStatic(ctx context.Context, dir, basePath string) error {
 	for _, m := range a.Mountables() {
 		if host, ok := m.(*uihost.UIHost); ok {
-			_, err := (&static.Builder{Host: host, OutDir: dir, BasePath: basePath, Handler: a.router}).Build(ctx)
+			var contributors []static.Contributor
+			for _, b := range a.Batteries.registered() {
+				if c, ok := b.(static.Contributor); ok {
+					contributors = append(contributors, c)
+				}
+			}
+			_, err := (&static.Builder{Host: host, OutDir: dir, BasePath: basePath, Handler: a.router, Contributors: contributors}).Build(ctx)
 			return err
 		}
 	}

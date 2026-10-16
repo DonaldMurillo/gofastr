@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
@@ -80,7 +81,9 @@ func (ds *UIHost) RegisterThemeVariant(t style.Theme) string {
 	t.Knobs = copyStringMap(t.Knobs)
 	t.Components = copyStringMap(t.Components)
 
-	key := style.CSSFingerprint(ds.AppCSSFor(t))
+	// The key is the immutable cache address of the variant's app.css,
+	// so it fingerprints the bytes handleAppCSS serves for it.
+	key := style.CSSFingerprint(minify.ServedCSS(ds.AppCSSFor(t)))
 
 	ds.variants.mu.Lock()
 	defer ds.variants.mu.Unlock()

@@ -335,8 +335,13 @@ type SidebarConfig struct {
 	ExtraAttrs html.Attrs
 }
 
+// LoadPrewarm, not LoadAlways: a page that renders a sidebar links its
+// sheet through the SSR scan, and a page without one (a marketing page,
+// a reader's article) does not pay 2.6 KB of render-blocking CSS for it.
+// The idle prewarm puts it in the cache before a client navigation is
+// likely to swap one in.
 var sidebarStyle = registry.RegisterStyle("ui-sidebar", sidebarCSS,
-	registry.WithLoad(registry.LoadAlways))
+	registry.WithLoad(registry.LoadPrewarm))
 
 // sidebarClasses is the fui-sidebar class map over the primitive's
 // parts. Variant classes ride the root's class string; the sub-item

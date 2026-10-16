@@ -8,13 +8,14 @@ import (
 // pageHeaderStyle registers PageHeader's CSS with the framework
 // component registry. The handle wraps every PageHeader render so
 // the runtime auto-loads /__gofastr/comp/ui-page-header.css on
-// first appearance, dedup'd globally. LoadAlways because page
-// headers appear on essentially every screen. Paying the eager
-// link saves a flash of unstyled chrome on first paint.
+// first appearance, dedup'd globally. LoadPrewarm: a page that
+// renders a PageHeader links the sheet through the SSR scan, so first
+// paint is styled either way, and a page without one does not block
+// on it. The idle prewarm covers a client navigation that swaps one in.
 var pageHeaderStyle = registry.RegisterStyle(
 	"ui-page-header",
 	pageHeaderCSS,
-	registry.WithLoad(registry.LoadAlways),
+	registry.WithLoad(registry.LoadPrewarm),
 )
 
 func pageHeaderCSS(t style.Theme) string {

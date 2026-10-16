@@ -267,6 +267,9 @@ framework/
 │                    core-ui/localdb store, Form/List/Count helpers that
 │                    wrap ui components, and the `localentity` (lists)
 │                    and `localentity-form` (forms) behaviours.
+├── localrun/        Machine-local registry of running Apps: one 0600
+│                    record per run (URL, MCP entry), written by
+│                    App.Start, listed with dead pids pruned
 ├── migrate/         AutoMigrate / DiffSchema / Dialect / Bulk queries
 ├── openapi/         EntityOpenAPI spec generator + the entity-endpoint
 │                    URL builders (EntityEndpointPath etc.)
@@ -380,7 +383,7 @@ L3  hook, event, file, cron, access, db,    (leaf packages, no framework-
     pagination, filter, owner, agentsinv,    internal imports at all)
     axecov, datexport, fanout, i18nui,
     image, lifecycle, ratelimit, semcov,
-    docs, dev, routegroup, headless
+    docs, dev, routegroup, headless, localrun
     dsl, tenant, softdelete, migrate, sdk    (each imports entity)
     slowquery, outbox, embed, imagefield,    (intra-L3 edges, listed
     contracts                                 below)

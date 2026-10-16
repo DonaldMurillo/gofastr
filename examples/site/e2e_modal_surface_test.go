@@ -103,7 +103,7 @@ func TestE2E_PaletteSlotUnstyled(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/"),
 		pageReady(),
-		chromedp.Evaluate(`document.querySelector('button[data-cui-open="site-command-palette"]').click()`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-cui-open="site-command-palette"]').click()`, nil),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`(() => {
             const p = document.querySelector('[data-cui-widget="site-command-palette"] .cui-panel');

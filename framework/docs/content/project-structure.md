@@ -13,8 +13,9 @@ projects actually evolve, not the way a framework dictates on day one.
 myapp/
 ├── main.go             # the entrypoint + UI host: one binary at the root
 ├── screens.go          # the sample HomeScreen (package main, beside main.go)
+├── screens_auth.go     # /login and /register over battery/auth (wired in main.go)
 ├── entities/           # Go entity declarations: the source of truth
-│   └── entities.go     # app.Entity(...) registrations (sample: posts)
+│   └── entities.go     # app.Entity(...) registrations (sample: posts, at /api/posts)
 ├── migrations/         # versioned SQL (reversible)
 ├── static/             # assets served as-is
 ├── gofastr.isolation.yml  # process-isolation config (local DB per worktree)

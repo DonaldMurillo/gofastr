@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"net/http/httptest"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
@@ -40,5 +41,20 @@ func TestReleaseThemeVariantKeepsAVariantWhileAHolderRemains(t *testing.T) {
 	ds.ReleaseThemeVariant(key1)
 	if _, ok := ds.themeVariant(key1); ok {
 		t.Error("variant still resolvable after the last holder released")
+	}
+}
+
+// A variant's key is the immutable cache address of its app.css, so it
+// fingerprints the bytes that URL serves, minified outside dev.
+func TestThemeVariantKeyAddressesServedCSS(t *testing.T) {
+	ds := hostWithTheme(t, style.DefaultTheme())
+	key := ds.RegisterThemeVariant(brandTheme("#00ff00"))
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, httptest.NewRequest("GET", "/__gofastr/app.css?t="+key, nil))
+	if rec.Code != 200 {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if got := style.CSSFingerprint(rec.Body.String()); got != key {
+		t.Fatalf("variant key %s, but the sheet it serves fingerprints to %s", key, got)
 	}
 }

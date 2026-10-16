@@ -38,6 +38,10 @@ type JWTAuth struct {
 	// with no user table) leaves it nil and RequireAuth falls back to the
 	// historical claims-derived principal.
 	users UserStore
+
+	// onResolve, set by AuthManager.Init, tells the manager a resolving
+	// middleware exists when RequireAuth is built over this helper.
+	onResolve func()
 }
 
 // NewJWTAuth creates a new JWTAuth with the given secret and token expiry duration.

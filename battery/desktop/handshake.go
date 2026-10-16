@@ -125,8 +125,16 @@ func (b *Battery) gateMiddleware() func(next http.Handler) http.Handler {
 // armGate arms the boot gate and is called by Run before the app's
 // listener opens. In-memory tests arm it directly instead of running
 // the whole Run flow.
+//
+// From here localUserMiddleware signs every window request in as the
+// local user (unless battery/auth owns identity, and auth notes itself),
+// so the app's startup banner stops saying nothing signs callers in.
+// --serve mode never arms the gate and keeps that hint, correctly.
 func (b *Battery) armGate() {
 	b.gateArmed.Store(true)
+	if b.app != nil && !b.authOwnsIdentity {
+		b.app.NoteAuthenticator()
+	}
 }
 
 // requestHasSession checks EVERY cookie of the session name, not only

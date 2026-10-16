@@ -65,8 +65,9 @@ app.Start(":8080")
 See [Entity declarations](/docs/entity-declarations). The `app.Entity` call
 above is a runtime registration; it wires the table, routes, and tools in
 memory and writes no files. `gofastr init` scaffolds the project that hosts it:
-`main.go`, `screens.go`, and `entities/entities.go` at the module root, all plain
-Go you read, edit, and commit. When the framework is in your way, drop back to
+`main.go`, `screens.go`, `screens_auth.go` (sign-in over `battery/auth`), and
+`entities/entities.go` at the module root, all plain Go you read, edit, and
+commit. When the framework is in your way, drop back to
 `core/`. You can also scaffold a whole app from a `gofastr.yml` blueprint with
 the [code generator](/docs/codegen); the running app never needs the file.
 

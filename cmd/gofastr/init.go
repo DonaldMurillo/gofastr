@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,6 +44,13 @@ func runInit(args []string) {
 			info("Use a different name, or cd into the existing directory and run 'gofastr init .'")
 			osExit(1)
 		}
+	} else if envTrackedByGit(".") {
+		// init . rewrites .env with a fresh JWT_SECRET. The .gitignore entry
+		// the scaffold adds does not untrack a file git already tracks, so
+		// the next commit would publish the key. Refuse before writing.
+		fail(".env is tracked by git; init would write a signing key into it.")
+		info("Untrack it first: git rm --cached .env")
+		osExit(1)
 	}
 
 	// Check for 'go' in PATH
@@ -128,9 +138,11 @@ func runInit(args []string) {
 	// Write screens.go (owned package main: HomeScreen beside main.go).
 	writeScreensGo(name, noEntity)
 
-	// Write entities/entities.go (only when --no-entity is not set)
+	// Write entities/entities.go and the sign-in screens (only when
+	// --no-entity is not set: auth needs the database).
 	if !noEntity {
 		writeEntitiesGo(name)
+		writeAuthScreensGo(name)
 	}
 
 	// Write .env
@@ -151,6 +163,10 @@ PORT=localhost:8080
 		envContent = fmt.Sprintf(`# GoFastr Environment Configuration
 DATABASE_URL=%s
 
+# JWT_SECRET signs session tokens. This one was generated for this checkout
+# only; set your own in every deployed environment.
+JWT_SECRET=%s
+
 # PORT is the listen address, not only a port number. The default below is
 # loopback-only, so nothing outside this machine can reach the dev server.
 #
@@ -159,7 +175,7 @@ DATABASE_URL=%s
 # means everyone on your network can reach the app. Keep the host prefix
 # locally; use the bare form only where you intend to serve publicly.
 PORT=localhost:8080
-`, dbURL)
+`, dbURL, newJWTSecret())
 	}
 	// 0600, not 0644: this file already carries DATABASE_URL (which may
 	// embed a password) and is where the operator is told to put
@@ -276,7 +292,8 @@ bin/
 	fmt.Println("    main.go              : Application entry point + UI host")
 	fmt.Println("    screens.go           : Sample UI page (HomeScreen) served at /")
 	if !noEntity {
-		fmt.Println("    entities/entities.go : Sample entity (posts) served at /posts")
+		fmt.Println("    screens_auth.go      : Sign-in screens at /login and /register")
+		fmt.Println("    entities/entities.go : Sample entity (posts) served at /api/posts")
 	}
 	fmt.Println("    .env                 : Environment configuration")
 	fmt.Println("    gofastr.isolation.yml : Process-isolation configuration")
@@ -317,8 +334,9 @@ func printInitNextSteps(name string, noEntity bool) {
 	fmt.Println("    go mod tidy          : Resolve dependencies")
 	fmt.Println("    gofastr dev          : Start development server with hot-reload")
 	if !noEntity {
-		fmt.Println("    Note: /posts CRUD needs a session by default. Add Public: true (see")
-		fmt.Println("    entities/entities.go) for anonymous access, or wire battery/auth.")
+		fmt.Println("    Note: /api/posts needs a session by default. Register at /register,")
+		fmt.Println("    sign in at /login (battery/auth is already wired), or add Public: true")
+		fmt.Println("    (see entities/entities.go) for anonymous access.")
 	}
 	fmt.Println()
 }
@@ -469,10 +487,12 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/core/migrate"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/dev"
 	"github.com/DonaldMurillo/gofastr/framework/docs/mcptools"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
@@ -519,6 +539,9 @@ func main() {
 		// discard it (the framework warns at boot if that happens).
 		framework.WithConfig(framework.AppConfig{Name: "%[2]s"}),
 		framework.WithDB(db),
+		// Entity CRUD lives under /api (/api/posts), so a screen can own
+		// /posts without colliding with the JSON route.
+		framework.WithAPIPrefix("/api"),
 		// Mounts /mcp (POST JSON-RPC + GET SSE). Every entity with
 		// Exposure.MCP gets list/get/create/update/delete tools, and each tool
 		// call runs through this app's router, so an agent gets exactly the
@@ -539,9 +562,34 @@ func main() {
 	// Register entities from the entities package.
 	entities.RegisterAll(fwApp)
 
-	// Wire the UI layer: site app + home screen + host.
+	// Sign-in: POST /auth/register, /auth/login and /auth/logout, with
+	// users and sessions in this database. SessionMiddleware resolves the
+	// session cookie on every request, so /api/posts sees the signed-in
+	// user. Dev mode (plain session cookie, relaxed login limiter) follows
+	// the dev loop's own signal: GOFASTR_DEV, which `+"`gofastr dev`"+` sets and
+	// GOFASTR_ENV=production overrides. It is never read from .env, so a
+	// copied .env cannot downgrade a deployment; outside the dev loop auth
+	// issues Secure cookies and refuses to boot without JWT_SECRET.
+	authMgr := auth.New(auth.AuthConfig{
+		DevMode:      dev.Enabled(),
+		JWTSecret:    os.Getenv("JWT_SECRET"),
+		UserStore:    auth.NewEntityUserStore(db, "auth_users"),
+		SessionStore: auth.NewEntitySessionStore(db, "auth_sessions"),
+	})
+	authMgr.Use(auth.NewCorePlugin())
+	if err := authMgr.Init(fwApp); err != nil {
+		log.Fatal(err)
+	}
+	// A failed form post with no usable Referer lands back on /login
+	// with ?error= instead of a raw JSON body.
+	auth.SetDefaultLoginErrorPath("/login")
+	fwApp.Use(auth.SessionMiddleware(authMgr))
+
+	// Wire the UI layer: site app + screens + host.
 	site := app.NewApp("%[2]s").WithTheme(uitheme.Default())
 	site.Register("/", &HomeScreen{}, nil)
+	site.Register("/login", &LoginScreen{}, nil)
+	site.Register("/register", &RegisterScreen{}, nil)
 
 	fwApp.Mount(uihost.New(site))
 
@@ -581,6 +629,17 @@ func getEnv(key, fallback string) string {
 		fail("Failed to write main.go: %v", err)
 		osExit(1)
 	}
+}
+
+// envTrackedByGit reports whether dir/.env is in git's index. No git, or
+// no repository, means nothing is tracked.
+func envTrackedByGit(dir string) bool {
+	if _, err := os.Stat(filepath.Join(dir, ".env")); err != nil {
+		return false
+	}
+	cmd := exec.Command("git", "-C", dir, "ls-files", "--error-unmatch", "--", ".env")
+	cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
+	return cmd.Run() == nil
 }
 
 // writeEnvFile writes the scaffolded .env with owner-only permissions,
@@ -637,9 +696,14 @@ isolation:
 func writeScreensGo(name string, noEntity bool) {
 	// The entity hint is prose for the Section description; the CodeBlock
 	// stays commands-only so nothing nonsensical is copy-pasteable.
-	var entityHint string
+	var entityHint, actions string
 	if !noEntity {
-		entityHint = " The sample posts entity lives in entities/entities.go and serves at /posts."
+		actions = `
+				Actions: ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
+					ui.LinkButton(ui.LinkButtonConfig{Label: "Sign in", Href: "/login"}),
+					ui.LinkButton(ui.LinkButtonConfig{Label: "Create account", Href: "/register", Variant: ui.ButtonSecondary}),
+				),`
+		entityHint = " The sample posts entity lives in entities/entities.go and serves JSON at /api/posts once you sign in."
 	}
 	content := fmt.Sprintf(`package main
 
@@ -657,7 +721,7 @@ func (h *HomeScreen) Render() render.HTML {
 			ui.PageHeader(ui.PageHeaderConfig{
 				Eyebrow:  "GoFastr",
 				Title:    "%[1]s",
-				Subtitle: "Your app is running. Replace this screen with a composition chosen from DESIGN.md.",
+				Subtitle: "Your app is running. Replace this screen with a composition chosen from DESIGN.md.",%[3]s
 			}),
 			ui.Section(ui.SectionConfig{
 				Heading:     "Start with intent",
@@ -677,9 +741,137 @@ func (h *HomeScreen) Render() render.HTML {
 // where the screen name differs from the site's.
 func (h *HomeScreen) ScreenDescription() string  { return "" }
 func (h *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
-`, name, entityHint)
+`, name, entityHint, actions)
 	if err := os.WriteFile(filepath.Join(name, "screens.go"), []byte(content), 0o644); err != nil {
 		fail("Failed to write screens.go: %v", err)
+		osExit(1)
+	}
+}
+
+// newJWTSecret mints the scaffold's session-signing key: 32 bytes from
+// crypto/rand, hex-encoded, written only to the 0600 gitignored .env.
+func newJWTSecret() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		fail("Failed to generate JWT_SECRET: %v", err)
+		osExit(1)
+	}
+	return hex.EncodeToString(b)
+}
+
+// writeAuthScreensGo generates screens_auth.go: the /login and /register
+// screens over battery/auth's form endpoints, composed from ui.AuthCard
+// with no CSS of their own.
+func writeAuthScreensGo(name string) {
+	const content = `package main
+
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
+)
+
+type LoginScreen struct{ component.ContextOnly }
+
+func (s *LoginScreen) ScreenTitle() string        { return "Sign in" }
+func (s *LoginScreen) ScreenDescription() string  { return "" }
+func (s *LoginScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+
+func (s *LoginScreen) RenderCtx(ctx context.Context) render.HTML {
+	q := app.QueryFromContext(ctx)
+	var notice render.HTML
+	if q.Get("registered") == "1" {
+		notice = render.Text("Account created. Sign in to continue.")
+	}
+	// A screen behind auth.SessionPolicy sends the visitor here with
+	// ?next=<where they were going>; carry it through the form. The auth
+	// battery redirects only to a same-site relative path, whatever the
+	// form posts.
+	next := q.Get("next")
+	if next == "" {
+		next = "/"
+	}
+	return ui.Container(ui.ContainerConfig{Width: ui.ContainerNarrow},
+		ui.AuthCard(ui.AuthCardConfig{
+			Title:  "Sign in",
+			Alert:  authError(ctx),
+			Notice: notice,
+			Body: ui.Form(ui.FormConfig{Action: "/auth/login", Method: "POST", SubmitLabel: "Sign in", SubmitFullWidth: true},
+				html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: next}),
+				emailField(),
+				passwordField("current-password", 0),
+			),
+			Footer: ui.Link(ui.LinkConfig{Href: "/register", Text: "Create an account"}),
+		}),
+	)
+}
+
+type RegisterScreen struct{ component.ContextOnly }
+
+func (s *RegisterScreen) ScreenTitle() string        { return "Create account" }
+func (s *RegisterScreen) ScreenDescription() string  { return "" }
+func (s *RegisterScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+
+// Registering does not sign the user in. battery/auth answers a new
+// address and an already-registered one with the same redirect, so the
+// form cannot be used to learn who has an account; a session cookie set
+// only for new accounts would give that away. The user lands on /login
+// with a notice and signs in.
+func (s *RegisterScreen) RenderCtx(ctx context.Context) render.HTML {
+	return ui.Container(ui.ContainerConfig{Width: ui.ContainerNarrow},
+		ui.AuthCard(ui.AuthCardConfig{
+			Title: "Create your account",
+			Alert: authError(ctx),
+			Body: ui.Form(ui.FormConfig{Action: "/auth/register", Method: "POST", SubmitLabel: "Create account", SubmitFullWidth: true},
+				html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/login?registered=1"}),
+				emailField(),
+				passwordField("new-password", 8),
+			),
+			Footer: ui.Link(ui.LinkConfig{Href: "/login", Text: "Already have an account? Sign in"}),
+		}),
+	)
+}
+
+func emailField() render.HTML {
+	return ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
+		return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "email"})
+	}})
+}
+
+// minLength mirrors battery/auth's 8-character rule on the register
+// form only: a sign-in form leaves the check to the server.
+func passwordField(autocomplete string, minLength int) render.HTML {
+	return ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true, Input: func(c headless.FieldControl) render.HTML {
+		return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password", AutoComplete: autocomplete, MinLength: minLength})
+	}})
+}
+
+// authError maps the ?error= code battery/auth redirects back with to the
+// message the card shows. The copy is yours to change.
+func authError(ctx context.Context) render.HTML {
+	switch app.QueryFromContext(ctx).Get("error") {
+	case "":
+		return ""
+	case "invalid_credentials":
+		return render.Text("Invalid email or password.")
+	case "credentials_required":
+		return render.Text("Enter your email and password.")
+	case "weak_password":
+		return render.Text("Use a password of at least 8 characters.")
+	case "rate_limit":
+		return render.Text("Too many attempts. Wait a moment and try again.")
+	default:
+		return render.Text("Something went wrong. Try again.")
+	}
+}
+`
+	if err := os.WriteFile(filepath.Join(name, "screens_auth.go"), []byte(content), 0o644); err != nil {
+		fail("Failed to write screens_auth.go: %v", err)
 		osExit(1)
 	}
 }
@@ -708,9 +900,9 @@ func RegisterAll(app *framework.App) {
 		// REST routes: an unauthenticated tools/call gets the same 401, never
 		// a bypass.
 		//
-		// Secure by default: CRUD requires a signed-in session. Add
-		// Public: true for anonymous access, or wire battery/auth for a
-		// real login flow (gofastr docs auth).
+		// Secure by default: CRUD requires a signed-in session, which
+		// battery/auth (wired in main.go) issues at /login. Add
+		// Public: true for anonymous access (gofastr docs auth).
 		Exposure: &entity.ExposureConfig{CRUD: boolPtr(true), MCP: true},
 	})
 }

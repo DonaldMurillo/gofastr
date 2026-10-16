@@ -160,6 +160,25 @@ func (h entityUIHost) APIPath(e *entity.Entity) (string, bool) {
 
 func (h entityUIHost) Translator() *i18n.Translator { return h.a.Translator() }
 
+// HasScreen asks every mounted UI host (uihost.UIHost answers it) whether
+// a screen serves path, so an entityui list can warn when its row links
+// lead nowhere. With no UI host mounted the answer is unknown.
+func (h entityUIHost) HasScreen(path string) (has, known bool) {
+	for _, m := range h.a.Mountables() {
+		sh, ok := m.(entityui.ScreenHost)
+		if !ok {
+			continue
+		}
+		if got, ok := sh.HasScreen(path); ok {
+			known = true
+			if got {
+				return true, true
+			}
+		}
+	}
+	return false, known
+}
+
 func (h entityUIHost) Audit() entityui.AuditReader {
 	if h.a.auditTable == "" || h.a.DB == nil {
 		return nil

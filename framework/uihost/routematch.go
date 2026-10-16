@@ -34,3 +34,15 @@ func (ds *UIHost) RouteMatchMiddleware() func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// HasScreen reports whether a screen route serves path, by the same
+// resolution RouteMatchMiddleware uses. known is false when the host has
+// no app router to ask. entityui calls it, through the framework's
+// entityui host, to warn when a list's row links lead to no screen.
+func (ds *UIHost) HasScreen(path string) (has, known bool) {
+	if ds.App == nil || ds.App.Router == nil {
+		return false, false
+	}
+	_, ok := ds.App.Router.MatchFor(path)
+	return ok, true
+}

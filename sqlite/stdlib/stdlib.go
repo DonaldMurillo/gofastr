@@ -6,8 +6,9 @@
 // They can therefore build on Windows with CGO_ENABLED=0.
 //
 // The driver is wrapped to restore the two mattn/go-sqlite3 defaults the
-// framework was written against: the time bind layout and busy_timeout. See
-// compat.go — both are silent when wrong, and one is an auth outage.
+// framework was written against, the time bind layout and busy_timeout, and
+// to turn on foreign keys and IMMEDIATE write transactions. See compat.go:
+// each one is silent when wrong, and one is an auth outage.
 package stdlib
 
 import (

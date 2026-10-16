@@ -209,7 +209,15 @@ and silently cost the block its syntax highlighting.
 
 A hardened file server for `embed.FS` / `fs.FS`: ETag caching,
 configurable `Cache-Control`, MIME detection, SPA fallback, and
-traversal / dotfile / forbidden-config rejection. On a disk-backed
+traversal / dotfile / forbidden-config rejection. Seekable files (disk,
+`embed.FS`) are served through `http.ServeContent`, so `Range`,
+`If-Range` and multi-range requests get `206` and video can seek; a
+filesystem whose files cannot seek gets the whole body and no
+`Accept-Ranges`. Preconditions follow RFC 9110 order (`412` for a
+failed `If-Match` before any `304`). The ETag is a content hash; a file
+over 16 MiB is hashed in the background and served without an ETag
+until the hash lands, so the first request does not read the whole
+file. On a disk-backed
 `FS` (`os.DirFS`), a request whose target resolves through a symlink
 out of the root is refused with 404 — the read side is contained by
 the configured root the same way write sinks elsewhere in the repo
@@ -272,5 +280,5 @@ at `core/fuzzy/fuzzy.go`: `Levenshtein`.
 
 - **Conflating the two `HTML` symbols.** `render.HTML` is the safe, auto-escaped HTML fragment value type; `handler.HTML` is a `ResponseType` that writes `text/html` through `Respond`. They share a name and little else. Check which one a function returns before passing it on.
 - **Treating `fanout` as durable.** It is lossy and best-effort: a subscriber that is not connected when a message is published misses it. Use it for real-time fan-out, not for work that must be delivered.
-- **Expecting `markdown` to pass through raw HTML.** It escapes all source HTML by design. If you need embedded HTML, build it with `render` directly rather than smuggling it through markdown.
+- **Expecting `markdown` to pass through raw HTML.** It escapes all source HTML by design. If you need embedded HTML, build it with `render` directly rather than smuggling it through markdown. An HTML comment block (`<!-- … -->` on its own lines, also under a list item) is the one exception: it renders as nothing, so a tooling directive such as `<!-- gofastr:compile … -->` never shows up as page text.
 - **Adding `on*` handlers via `render.Attr`.** The attribute allow-list drops them; use a real event binding (`data-cui-*` via `core-ui/interactive`) instead.

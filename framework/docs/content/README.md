@@ -94,8 +94,9 @@ results, the harness contract) are exempt. The exemption list lives in
   registry convention.
 - [Dev-mode livereload](dev-livereload.md): auto-wired SSE refresh
   under `gofastr dev`; env kill switches for prod.
-- [Runtime JS minification](runtime-minification.md): embedded
-  `runtime.js` minifier, env gating, prod-wins defaults.
+- [Runtime JS and CSS minification](runtime-minification.md): embedded
+  `runtime.js` minifier, served-CSS minifier, env gating, prod-wins
+  defaults.
 - [WebMCP bridge (experimental)](webmcp.md): expose server-declared
   tools to in-browser agents via the page's `modelContext` (the Chrome
   origin-trial WebMCP API); execute() proxies to same-origin endpoints
@@ -117,6 +118,12 @@ results, the harness contract) are exempt. The exemption list lives in
   chokepoint, menus, tray, deep links, remembered window state, app
   state, declared preferences with a settings screen, single-user
   mode, and the fs allow-list. Experimental: pin a version.
+- [OS service host (experimental)](service.md): `battery/service`:
+  `<app> service install` registers the binary as a per-user launchd
+  agent, `systemd --user` unit or Task Scheduler task; the loopback
+  gate (Host pin, cross-site refusal, signed session), the token
+  sign-in `open` performs, the control channel, the local identity,
+  and the dev run. Experimental: pin a version.
 
 ## Building UI
 
@@ -234,6 +241,9 @@ results, the harness contract) are exempt. The exemption list lives in
   any static host (GitHub Pages, S3). Replaces the broken `wget` crawl;
   stamps pages with `data-cui-static` so server-backed islands no-op
   instead of 404'ing.
+- [Site search](site-search.md): `battery/sitesearch`: a full-text index
+  of every rendered page, searched from the command palette on a live
+  server or from JSON files in a static export.
 
 - [Codegen](codegen.md): YAML-configured generators, external extension
   protocol, safe output paths, and manifest-based cleaning.

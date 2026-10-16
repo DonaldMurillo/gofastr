@@ -168,7 +168,9 @@ func TestAuditFilterFormDraws(t *testing.T) {
 	}
 	// The filters sit in the list toolbar's Filters dropdown, one Apply,
 	// with a badge counting the three set.
-	if !strings.Contains(body, "fui-filter-toolbar--dropdown") || strings.Count(body, "fui-filter-toolbar__apply") != 1 {
+	// Count in the markup: an inlined head's sheets name the classes too.
+	_, markup, _ := strings.Cut(body, "<body")
+	if !strings.Contains(markup, "fui-filter-toolbar--dropdown") || strings.Count(markup, "fui-filter-toolbar__apply") != 1 {
 		t.Errorf("the audit filters are not one Filters dropdown:\n%s", body)
 	}
 	if !strings.Contains(body, `<span class="fui-dropmenu__count" data-cui-internal="">3</span>`) {

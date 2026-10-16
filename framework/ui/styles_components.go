@@ -13,9 +13,10 @@ import (
 // appearance.
 //
 // LoadAuto is the default: load when the marker first hits the DOM.
-// PageHeader uses LoadAlways (separate file) because it's on every
-// screen. Anything that would benefit from idle prefetch should use
-// registry.WithLoad(registry.LoadPrewarm).
+// Button uses LoadAlways (below). PageHeader and Sidebar use
+// LoadPrewarm: a page that renders one links its sheet through the SSR
+// scan, and the idle prefetch covers a client navigation that swaps one
+// in. Anything else that is likely soon should prewarm the same way.
 
 var (
 	sectionStyle      = registry.RegisterStyle("ui-section", sectionCSS)
@@ -217,16 +218,18 @@ func buttonCSS(t style.Theme) string {
 }
 
 func codeBlockCSS(_ style.Theme) string {
-	// Uses the dedicated code-surface tokens (defined in style.Theme
-	// defaults) so dark mode can override them independently of the
-	// page Text/Background pair. Light-mode fallback values keep the
-	// classic "dark inkwell" feel; dark-mode apps redefine the tokens
-	// in their app stylesheet under [data-color-scheme="dark"].
+	// Uses the dedicated code-surface tokens (style.ColorSet.CodeSurface/
+	// CodeText/CodeBorder) and the syntax slots (style.Theme.Code, dark
+	// values in Theme.DarkCode), so a theme re-skins or dark-adapts code
+	// independently of the page Text/Background pair. The stock values
+	// keep the classic "dark inkwell" in both schemes.
 	//
 	// Knobs: --ui-code-block-status-size (7px) sizes the head's status
 	// dot; --ui-code-block-gutter-width (28px) sizes the numbered line
 	// gutter, and the body's numbered padding, the band margins and the
-	// ::before anchor are calc()s over it.
+	// ::before anchor are calc()s over it; --ui-code-block-tab-size (4)
+	// sets how wide a tab indent renders (Go source is tab-indented, and
+	// the browser default of 8 pushes nested code off the panel).
 	return `[data-cui-comp="ui-code-block"] {
   display: block;
   overflow-x: auto;
@@ -240,6 +243,7 @@ func codeBlockCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   line-height: var(--leading-relaxed, 1.6);
   white-space: pre;
+  tab-size: var(--ui-code-block-tab-size, 4);
   -webkit-text-size-adjust: 100%;
 }
 [data-cui-comp="ui-code-block"] .tok-kw     { color: var(--tk-kw, #C792EA); }
@@ -340,7 +344,10 @@ func codeBlockCSS(_ style.Theme) string {
   top: 0;
   width: var(--ui-code-block-gutter-width, 28px);
   text-align: right;
-  color: var(--color-text-subtle, #71717A);
+  /* Derived from the code pair, not the page's text-subtle: the gutter
+     sits on the code surface, which a theme may keep dark on a light
+     page or re-skin light, and the number must recede on either. */
+  color: var(--ui-code-block-gutter-color, color-mix(in oklab, var(--color-code-text, #E4E4E7) 45%, var(--color-code-surface, #18181B)));
   font-size: var(--text-xs, 0.75rem);
   user-select: none;
 }
@@ -410,9 +417,11 @@ func sectionCSS(_ style.Theme) string {
   gap: var(--spacing-lg, 16px);
   margin: var(--spacing-xl, 24px) 0;
   border: 0;
-  /* Anchored sections clear a sticky header when scrolled into view. Apps
-     with a fixed header set --ui-section-scroll-margin to its height. */
-  scroll-margin-top: var(--ui-section-scroll-margin, 0);
+  /* Anchored sections clear a sticky header when scrolled into view:
+     the --ui-sticky-top a StickyHeader page stack publishes, plus a
+     phone sheet's bar pinned under it (--ui-sheet-bar-offset), or the
+     --ui-section-scroll-margin knob. */
+  scroll-margin-top: var(--ui-section-scroll-margin, calc(var(--ui-sticky-top, 0px) + var(--ui-sheet-bar-offset, 0px)));
 }
 :where([data-cui-comp="ui-section"]).fui-section--compact { margin-block: 0; }
 [data-cui-comp="ui-section"] .fui-section__head {
@@ -440,20 +449,24 @@ func sectionCSS(_ style.Theme) string {
   letter-spacing: var(--ui-section-heading-tracking, -0.01em);
   color: var(--color-text, #18181B);
 }
-/* An eyebrow marks a page band (marketing, landing), not an in-app
-   group, so its heading steps up to display size and the band opens
-   more air under its head. The knobs still win. */
+/* An eyebrow (or SectionConfig.Band) marks a page band (marketing,
+   landing), not an in-app group, so its heading steps up to display
+   size and the band opens more air under its head. The knobs still
+   win. The rules reach only the section's own heading, so a section
+   nested in the band's body keeps its own size. */
+[data-cui-comp="ui-section"].fui-section--band,
 [data-cui-comp="ui-section"]:has(> .fui-section__head > .fui-section__eyebrow) {
   gap: var(--spacing-xl, 24px);
 }
-[data-cui-comp="ui-section"]:has(> .fui-section__head > .fui-section__eyebrow) .fui-section__heading {
+[data-cui-comp="ui-section"].fui-section--band > .fui-section__head > .fui-section__heading,
+[data-cui-comp="ui-section"]:has(> .fui-section__head > .fui-section__eyebrow) > .fui-section__head > .fui-section__heading {
   font-size: var(--ui-section-heading-size, var(--text-3xl, 1.875rem));
   letter-spacing: var(--ui-section-heading-tracking, -0.025em);
   line-height: var(--leading-tight, 1.2);
 }
 /* Overline: the heading is a group label over a run of cards.
    Knobs: --ui-section-overline-size/-weight/-tracking/-color. */
-[data-cui-comp="ui-section"].fui-section--overline .fui-section__heading {
+[data-cui-comp="ui-section"].fui-section--overline > .fui-section__head > .fui-section__heading {
   font-size: var(--ui-section-overline-size, var(--text-xs, 0.75rem));
   font-weight: var(--ui-section-overline-weight, 600);
   letter-spacing: var(--ui-section-overline-tracking, 0.06em);
@@ -1910,14 +1923,6 @@ func backToTopCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-back-to-top"] svg {
   pointer-events: none;
-}
-/* Inside demo frames, show BackToTop inline (not fixed). */
-:where(.demo-live) [data-cui-comp="ui-back-to-top"] {
-  position: relative;
-  opacity: 1;
-  visibility: visible;
-  transform: none;
-  pointer-events: auto;
 }
 
 /* ── Positions (defaults to bottom-right) ── */

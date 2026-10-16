@@ -68,26 +68,29 @@ func TestTimeRoundTripsThroughTextColumn(t *testing.T) {
 
 func TestWithCompatDefaultsRespectsExplicitSettings(t *testing.T) {
 	const fk = "&_pragma=foreign_keys(1)"
+	const tx = "&_txlock=immediate"
 	cases := []struct{ in, want string }{
-		{":memory:", ":memory:?_time_format=sqlite&_pragma=busy_timeout(5000)" + fk},
-		{"./blog.db", "./blog.db?_time_format=sqlite&_pragma=busy_timeout(5000)" + fk},
-		{":memory:?cache=shared", ":memory:?cache=shared&_time_format=sqlite&_pragma=busy_timeout(5000)" + fk},
-		{"file:/tmp/x.db?_journal=WAL", "file:/tmp/x.db?_journal=WAL&_time_format=sqlite&_pragma=busy_timeout(5000)" + fk},
+		{":memory:", ":memory:?_time_format=sqlite&_pragma=busy_timeout(5000)" + fk + tx},
+		{"./blog.db", "./blog.db?_time_format=sqlite&_pragma=busy_timeout(5000)" + fk + tx},
+		{":memory:?cache=shared", ":memory:?cache=shared&_time_format=sqlite&_pragma=busy_timeout(5000)" + fk + tx},
+		{"file:/tmp/x.db?_journal=WAL", "file:/tmp/x.db?_journal=WAL&_time_format=sqlite&_pragma=busy_timeout(5000)" + fk + tx},
 		// Explicit caller settings win.
-		{"x.db?_time_format=datetime", "x.db?_time_format=datetime&_pragma=busy_timeout(5000)" + fk},
-		{"x.db?_time_integer_format=unix", "x.db?_time_integer_format=unix&_pragma=busy_timeout(5000)" + fk},
-		{"x.db?_pragma=busy_timeout(1)", "x.db?_pragma=busy_timeout(1)&_time_format=sqlite" + fk},
+		{"x.db?_time_format=datetime", "x.db?_time_format=datetime&_pragma=busy_timeout(5000)" + fk + tx},
+		{"x.db?_time_integer_format=unix", "x.db?_time_integer_format=unix&_pragma=busy_timeout(5000)" + fk + tx},
+		{"x.db?_pragma=busy_timeout(1)", "x.db?_pragma=busy_timeout(1)&_time_format=sqlite" + fk + tx},
 		// An explicit foreign_keys choice is left alone in BOTH directions —
 		// the opt-out is the upgrade path for an app holding dangling rows,
 		// and re-adding the default beside it would silently override it.
-		{"x.db?_pragma=foreign_keys(0)", "x.db?_pragma=foreign_keys(0)&_time_format=sqlite&_pragma=busy_timeout(5000)"},
-		{"x.db?_pragma=foreign_keys(1)", "x.db?_pragma=foreign_keys(1)&_time_format=sqlite&_pragma=busy_timeout(5000)"},
+		{"x.db?_pragma=foreign_keys(0)", "x.db?_pragma=foreign_keys(0)&_time_format=sqlite&_pragma=busy_timeout(5000)" + tx},
+		{"x.db?_pragma=foreign_keys(1)", "x.db?_pragma=foreign_keys(1)&_time_format=sqlite&_pragma=busy_timeout(5000)" + tx},
+		// An explicit begin mode wins, deferred included.
+		{"x.db?_txlock=deferred", "x.db?_txlock=deferred&_time_format=sqlite&_pragma=busy_timeout(5000)" + fk},
 		// A query url.ParseQuery cannot decode. The driver will reject such a
 		// DSN outright, so this is unobservable through a live connection —
 		// but the fallback still must not append a default beside the opt-out
 		// sitting right next to the malformed pair, or a later driver that
 		// tolerated it would silently invert the caller's choice.
-		{"x.db?_pragma=foreign_keys%280%29&%zz=1", "x.db?_pragma=foreign_keys%280%29&%zz=1&_time_format=sqlite&_pragma=busy_timeout(5000)"},
+		{"x.db?_pragma=foreign_keys%280%29&%zz=1", "x.db?_pragma=foreign_keys%280%29&%zz=1&_time_format=sqlite&_pragma=busy_timeout(5000)" + tx},
 	}
 	for _, c := range cases {
 		if got := withCompatDefaults(c.in); got != c.want {
@@ -291,5 +294,54 @@ func TestForeignKeysOptOutSurvivesEncodingAndCase(t *testing.T) {
 		if on != c.want {
 			t.Errorf("%q → PRAGMA foreign_keys = %d, want %d", c.dsn, on, c.want)
 		}
+	}
+}
+
+// A transaction that reads before it writes (the CRUD delete snapshots the
+// row for the audit hook first) must not fail because another connection
+// committed in between. Under SQLite's default DEFERRED begin the read takes
+// a snapshot, the late write cannot upgrade past the other commit, and
+// SQLite answers SQLITE_BUSY at once: busy_timeout never applies. Meridian's
+// e2e saw it as a 500 on DELETE while its job queue wrote in the background.
+func TestReadThenWriteTxWaitsForWriter(t *testing.T) {
+	path := "file:" + t.TempDir() + "/tx.db"
+	db, err := sql.Open("sqlite3", path+"?_pragma=journal_mode(WAL)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE t (id INTEGER PRIMARY KEY)`); err != nil {
+		t.Fatal(err)
+	}
+	// A second handle that never waits for a lock: its write either goes
+	// through at once or fails at once, so no timing decides the outcome.
+	other, err := sql.Open("sqlite3", path+"?_pragma=busy_timeout(0)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := tx.QueryRow(`SELECT count(*) FROM t`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	// The transaction holds the write lock from BEGIN, so the other write
+	// is refused. Under a deferred begin it commits here, and tx's write
+	// below then fails on its stale snapshot.
+	if _, err := other.Exec(`INSERT INTO t (id) VALUES (1)`); err == nil {
+		t.Fatal("another connection wrote while the transaction was open: BEGIN did not take the write lock")
+	}
+	if _, err := tx.Exec(`INSERT INTO t (id) VALUES (2)`); err != nil {
+		t.Fatalf("write after read in a transaction: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := other.Exec(`INSERT INTO t (id) VALUES (1)`); err != nil {
+		t.Fatalf("write after the transaction committed: %v", err)
 	}
 }

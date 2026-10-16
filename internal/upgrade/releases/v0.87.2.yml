@@ -1,0 +1,15 @@
+version: v0.87.2
+title: gofastr dev answers while the app is down, and worktree isolation remaps a port once
+notes:
+  - change: "gofastr dev holds the dev address during the first build, after a failed build and after the app exits, answering 503 with Retry-After and an X-Gofastr-Dev header (building, build-failed or exited) instead of refusing connections; a second gofastr dev on a busy address stops at startup"
+    nodetect: "a script that waits for the dev server by treating any HTTP response as up now sees 503 while the app builds"
+    breaking: false
+    guidance: "If a script polls the dev address, wait for a response without the X-Gofastr-Dev header (or for a 2xx) instead of the first answer."
+  - change: "worktree isolation remaps a listen port once: Runtime.Env passes every recorded mapping to the child, and active runtimes in one process with the same project, isolation ID and port config share their mappings, so App.Start keeps the address isolation.ListenAddr returned"
+    nodetect: "in a linked worktree the app may now bind a different port than before, the one gofastr dev and ListenAddr print"
+    breaking: false
+    guidance: "Nothing to change. Use the address gofastr dev prints; if two servers in one process use isolation, give them base ports far apart."
+  - change: "entityui.UI.WithCreatePath sets the create screen's route for every create link"
+    nodetect: "additive option; links keep using <base>/create without it"
+    breaking: false
+    guidance: "Optional. Pass WithCreatePath when the create screen is mounted somewhere other than <base>/create."
