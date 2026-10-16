@@ -1,0 +1,7 @@
+version: v0.88.2
+title: static exports link pages with a trailing slash
+notes:
+  - change: "a static export writes every link, widget chrome link, offline-page link and sitemap URL that names an exported page in its slashed form (/about/), the form static hosts serve without a 301"
+    nodetect: "export output only; no app spelling changes"
+    breaking: false
+    guidance: "Nothing to change. Re-export to drop the redirect round trip on each page switch; a hand-written link to /about still lands on the page."
