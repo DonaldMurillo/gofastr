@@ -304,7 +304,8 @@ func TestForeignKeysOptOutSurvivesEncodingAndCase(t *testing.T) {
 // SQLite answers SQLITE_BUSY at once: busy_timeout never applies. Meridian's
 // e2e saw it as a 500 on DELETE while its job queue wrote in the background.
 func TestReadThenWriteTxWaitsForWriter(t *testing.T) {
-	db, err := sql.Open("sqlite3", "file:"+t.TempDir()+"/tx.db?_pragma=journal_mode(WAL)")
+	path := "file:" + t.TempDir() + "/tx.db"
+	db, err := sql.Open("sqlite3", path+"?_pragma=journal_mode(WAL)")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -312,6 +313,14 @@ func TestReadThenWriteTxWaitsForWriter(t *testing.T) {
 	if _, err := db.Exec(`CREATE TABLE t (id INTEGER PRIMARY KEY)`); err != nil {
 		t.Fatal(err)
 	}
+	// A second handle that never waits for a lock: its write either goes
+	// through at once or fails at once, so no timing decides the outcome.
+	other, err := sql.Open("sqlite3", path+"?_pragma=busy_timeout(0)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+
 	tx, err := db.Begin()
 	if err != nil {
 		t.Fatal(err)
@@ -320,22 +329,19 @@ func TestReadThenWriteTxWaitsForWriter(t *testing.T) {
 	if err := tx.QueryRow(`SELECT count(*) FROM t`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	other := make(chan error, 1)
-	go func() {
-		_, err := db.Exec(`INSERT INTO t (id) VALUES (1)`)
-		other <- err
-	}()
-	// Give the other writer time to commit if nothing holds it back: under
-	// a deferred begin it does, and the next statement is the one that
-	// failed. Under the fix it waits on tx's lock.
-	time.Sleep(200 * time.Millisecond)
+	// The transaction holds the write lock from BEGIN, so the other write
+	// is refused. Under a deferred begin it commits here, and tx's write
+	// below then fails on its stale snapshot.
+	if _, err := other.Exec(`INSERT INTO t (id) VALUES (1)`); err == nil {
+		t.Fatal("another connection wrote while the transaction was open: BEGIN did not take the write lock")
+	}
 	if _, err := tx.Exec(`INSERT INTO t (id) VALUES (2)`); err != nil {
 		t.Fatalf("write after read in a transaction: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if err := <-other; err != nil {
-		t.Fatalf("background insert: %v", err)
+	if _, err := other.Exec(`INSERT INTO t (id) VALUES (1)`); err != nil {
+		t.Fatalf("write after the transaction committed: %v", err)
 	}
 }
