@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -275,4 +276,31 @@ func TestBehaviorShadowingAnEmbeddedModuleIsRefused(t *testing.T) {
 		expectPanic(t, func() { ModuleNames() })
 		expectPanic(t, func() { BehaviorsJSON() })
 	})
+}
+
+// An on-request module is served and versioned like every module (it
+// is in ModuleNames, so the module manifest hands loadModule its hash)
+// but stays out of the behaviours block: the kernel's marker scan
+// would run querySelector on its empty selector and throw mid-scan. A
+// behaviour may still Require it.
+func TestBehaviorsJSONLeavesOnRequestModulesOut(t *testing.T) {
+	registry.IsolateForTest(t)
+	registry.RegisterBehavior("api-mod", probeJS, registry.OnRequest())
+	registry.RegisterBehavior("uses-api", probeJS, registry.Markers("[data-uses]"), registry.Requires("api-mod"))
+	var got map[string]json.RawMessage
+	if err := json.Unmarshal(BehaviorsJSON(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, in := got["api-mod"]; in {
+		t.Fatalf("an on-request module reached the marker block: %s", got["api-mod"])
+	}
+	if _, in := got["uses-api"]; !in {
+		t.Fatal("the behaviour that requires it is missing from the block")
+	}
+	if !slices.Contains(ModuleNames(), "api-mod") {
+		t.Fatal("an on-request module must be in the module manifest, or loadModule cannot version its URL")
+	}
+	if src, ok := Module("api-mod"); !ok || src == "" {
+		t.Fatal("an on-request module must be served at /__gofastr/runtime/<name>.js")
+	}
 }

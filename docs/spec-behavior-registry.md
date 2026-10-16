@@ -140,6 +140,16 @@ startup failure and not a dead marker:
   `core-ui/runtime`, so the two kinds of module are one kind from the
   host down.
 
+### On-request modules and data blocks
+
+`registry.OnRequest()` registers an API module with no markers: it is
+served and listed in the module manifest, left out of the marker block,
+and loaded only by `__gofastr.loadModule` or a behaviour's `Requires`.
+`registry.RegisterDataBlock(id, fn)` gives such a module
+server-declared data as an inert JSON block the host emits without
+importing the package. `core-ui/localdb` uses both, which is what keeps
+it out of every binary that does not import it.
+
 ### The module contract
 
 A registered module is an IIFE with the contract every `src/*.js` module

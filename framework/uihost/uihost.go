@@ -2241,6 +2241,15 @@ func (ds *UIHost) injectChromeDoc(page, pagePath, sessionID, presenceTopic strin
 			headClose.WriteString(compute)
 			headClose.WriteByte('\n')
 		}
+		// Registered data blocks (registry.RegisterDataBlock): an
+		// optional package's server-declared data for its module,
+		// core-ui/localdb's schema among them. Small and static per
+		// deploy, inline like compute's; a host that links no such
+		// package emits nothing.
+		if blocks := registry.DataBlocksHTML(); blocks != "" {
+			headClose.WriteString(blocks)
+			headClose.WriteByte('\n')
+		}
 	} else {
 		// Export mode: static pages and the PWA offline shell must be
 		// self-contained files, so the inline blocks stay.

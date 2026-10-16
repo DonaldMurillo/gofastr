@@ -47,10 +47,11 @@ func TestBuildAgentsMDIsThinTOC(t *testing.T) {
 	}
 
 	// Size sanity: TOC should be small. Full inlined version was ~500
-	// lines; the TOC should be well under 100.
+	// lines; the TOC grows one row per inventory entry, so the cap
+	// leaves room for that and still catches a return to inlining.
 	lines := strings.Count(body, "\n")
-	if lines > 100 {
-		t.Fatalf("AGENTS.md = %d lines — TOC bloat regressed past 100", lines)
+	if lines > 120 {
+		t.Fatalf("AGENTS.md = %d lines — TOC bloat regressed past 120", lines)
 	}
 }
 

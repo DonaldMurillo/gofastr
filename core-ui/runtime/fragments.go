@@ -73,7 +73,9 @@ type fragmentDef struct {
 // The ws module also owns zero data-cui-* attributes and has no marker
 // at all: it is a pure API module an application loads explicitly with
 // __gofastr.loadModule('ws') (connectWebSocket /
-// createSequencedReducer). Nothing scans the DOM for it.
+// createSequencedReducer). Nothing scans the DOM for it. An optional
+// API module of that shape outside core registers instead with
+// registry.OnRequest (core-ui/localdb), so it never enters this tree.
 // boot-embed depends on kernel. RPC requests inside an embed route through
 // boot's delegation bridge and load src/rpc.js at interaction time. It also
 // relies on boot's mutation observer to hydrate injected content, but boot is

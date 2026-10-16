@@ -36,6 +36,7 @@ server, so `go run` it.
 | `webmcp-remote-assist` | Authenticated WebMCP + WebRTC remote support: support-only tool discovery, one typed command behind the manual button and the AI tools, role-filtered realtime state, peer-to-peer camera with server-side signaling only. |
 | `rtc-call` | WebRTC rooms the packaged way: `battery/rtc` signaling (zero hand-rolled relay), anonymous cookie identity through `Authorize`, the `rtc` runtime module with one peer connection per peer, peer-to-peer camera plus chat on a negotiated data channel. |
 | `site` | The framework's live component gallery and reference docs site: every UI component rendered one per page, the hosted examples, and the gofastr-plugins registry rendered from a vendored `plugins.json` (`scripts/vendor-plugins-json.sh` refreshes it). Run with `cd examples/site && gofastr dev`. |
+| `team-builder` | Records kept in the visitor's browser: a Pokémon team saved to IndexedDB through `framework/localentity` (a `ui.Form` saves, a `ui.Grid` of cards lists, every tab stays in step), no database and no app JavaScript. |
 | `hn` | A Hacker News reader in the [HNPWA](https://hnpwa.com/) shape, for comparing first loads with other frameworks: five ranked lists, story pages with full comment threads, user pages. Synthetic seeded data in SQLite through the entity layer, `ui.EntryList` and `ui.CommentThread`, no app CSS beyond its top bar. See [`hn/README.md`](hn/README.md). |
 | `layoutlab` | Tree-layout outlets prototype a shell layout with outlets, a route area, and per-screen/group fills. |
 

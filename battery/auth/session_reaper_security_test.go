@@ -11,7 +11,7 @@ import (
 
 func TestMemorySessionStoreCreateSweepsExpiredSessions(t *testing.T) {
 	store := NewMemorySessionStore()
-	store.sessions["abandoned"] = &Session{Token: "abandoned", ExpiresAt: time.Now().Add(-time.Hour)}
+	store.sessions["abandoned"] = &Session{Token: "abandoned", ExpiresAt: time.Now().Add(-time.Hour)} // not-a-secret: fixture session token for the expiry sweep test
 
 	if _, err := store.Create(context.Background(), "fresh-user", time.Hour); err != nil {
 		t.Fatalf("Create: %v", err)

@@ -17,6 +17,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/compute"
+	uiregistry "github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -98,7 +99,7 @@ func RuntimeModuleManifestScript() string {
 			escapeJSONForScript(buf) +
 			`</script>`
 	}
-	return script + BehaviorsManifestScript() + ComputeManifestScript()
+	return script + BehaviorsManifestScript() + ComputeManifestScript() + uiregistry.DataBlocksHTML()
 }
 
 // BehaviorsManifestScript emits the inert JSON block the kernel reads

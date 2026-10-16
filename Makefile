@@ -19,7 +19,7 @@ build-examples: csp-check embed-check $(DIST_DIR)
 	LDFLAGS=$$( [ -n "$$SITE_VER" ] && echo "-ldflags=-X=main.siteVersion=$$SITE_VER" ); \
 	for dir in examples/api-tour examples/blog examples/semantic-demo \
 	            examples/embed-demo examples/spa examples/static-site \
-	            examples/rtc-call examples/webmcp-remote-assist examples/site \
+	            examples/rtc-call examples/team-builder examples/webmcp-remote-assist examples/site \
 	            examples/hn; do \
 		name=$$(basename $$dir); \
 		echo "  building $$name → $(DIST_DIR)/examples/$$name"; \
