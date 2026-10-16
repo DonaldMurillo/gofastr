@@ -44,6 +44,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   in the open menu was a 28px row of 13px text, short of the 44px touch
   target and smaller than the page's body text. The rows are now 44px
   tall at the body size, and so is the menu's search field text.
+- **Page switches on a static export take one request, not two.** An
+  exported page lives at `<path>/index.html`, which GitHub Pages, S3,
+  Netlify and Cloudflare Pages serve at `<path>/` and answer `<path>`
+  with a 301. Every link was written as `<path>`, so each click paid a
+  redirect round trip before the page arrived. Links to exported pages
+  now carry the trailing slash; on a throttled mobile connection a
+  docs-site switch went from about 465 ms to about 315 ms.
 - **A static export's sitemap names its base path once.** A site whose
   `SitemapConfig.BaseURL` already ends in the export's base path
   (`https://donaldmurillo.github.io/gofastr` with `--export-base

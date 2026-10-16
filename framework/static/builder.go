@@ -202,6 +202,11 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		b.log("rendered not-found page -> %s", dst)
 	}
 
+	// Page links, once every page is known: see slashPageLinks.
+	if err := b.slashLinks(res); err != nil {
+		return res, err
+	}
+
 	// LLM documentation: per-page llm.md and top-level index.
 	if !b.Host.App.NoLLMMD {
 		for _, route := range b.Host.App.Routes() {
@@ -708,6 +713,70 @@ func stampStatic(page string) string {
 // text). Group 3 is the first path byte, re-emitted so the prefix is inserted
 // after the leading slash.
 var baseAttrURL = regexp.MustCompile(`([\s])(src|href|action|data-cui-push-state)="/([^/])`)
+
+// pageLinkAttr matches a root-absolute href, action or
+// data-cui-push-state value (the attributes baseAttrURL prefixes), split
+// into the path and its optional query or fragment.
+var pageLinkAttr = regexp.MustCompile(`([\s](?:href|action|data-cui-push-state)=")(/[^"?#]*)([?#][^"]*)?"`)
+
+// slashPageLinks writes every link to an exported page in the form its
+// host serves without a redirect. A page is written as <path>/index.html,
+// and GitHub Pages, S3 website hosting, Netlify, Cloudflare Pages and the
+// common file servers serve a directory index at <path>/ and answer
+// <path> with a 301, so a link spelled /docs cost every click, client
+// navigation included, an extra round trip. pages holds the exported
+// route paths ("/docs"); a link to anything else (an asset, a contributor
+// file, a route the export skipped) is left as written.
+func (b *Builder) slashPageLinks(page string, pages map[string]bool) string {
+	return pageLinkAttr.ReplaceAllStringFunc(page, func(m string) string {
+		sub := pageLinkAttr.FindStringSubmatch(m)
+		p := sub[2]
+		rel := p
+		if b.BasePath != "" {
+			var ok bool
+			if rel, ok = strings.CutPrefix(p, b.BasePath); !ok || (rel != "" && rel[0] != '/') {
+				return m
+			}
+		}
+		if rel == "" {
+			rel = "/" // the base path itself, the exported root
+		} else if strings.HasSuffix(rel, "/") {
+			return m
+		}
+		if !pages[rel] {
+			return m
+		}
+		return sub[1] + p + "/" + sub[3] + `"`
+	})
+}
+
+// slashLinks applies slashPageLinks to every written page and to
+// 404.html.
+func (b *Builder) slashLinks(res Result) error {
+	pages := make(map[string]bool, len(res.Pages))
+	for _, p := range res.Pages {
+		pages[p] = true
+	}
+	files := make([]string, 0, len(res.Pages)+1)
+	for _, p := range res.Pages {
+		files = append(files, filepath.Join(b.OutDir, pathToFile(p)))
+	}
+	if slices.Contains(res.Assets, "/404.html") {
+		files = append(files, filepath.Join(b.OutDir, "404.html"))
+	}
+	for _, f := range files {
+		page, err := os.ReadFile(f)
+		if err != nil {
+			return fmt.Errorf("static: slash page links: %w", err)
+		}
+		if out := b.slashPageLinks(string(page), pages); out != string(page) {
+			if err := writeFile(f, []byte(out)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
 
 // rewriteBaseURLs prefixes every root-absolute asset and navigation URL in
 // the page with b.BasePath. No-op when BasePath is empty (apex deploy /
