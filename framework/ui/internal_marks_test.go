@@ -665,6 +665,7 @@ var kitComponents = []kitComponent{
 	{name: "CodeBlock", fn: CodeBlock},
 	{name: "CodeTabs", fn: CodeTabs},
 	{name: "Collapsible", fn: Collapsible},
+	{name: "CommentThread", fn: CommentThread},
 	{name: "ColorField", fn: ColorField},
 	{name: "ColorPicker", fn: ColorPicker},
 	{name: "Combobox", fn: Combobox},
@@ -688,6 +689,7 @@ var kitComponents = []kitComponent{
 		prepZero("Icon", "Count")(args)
 	}},
 	{name: "EmptyState", fn: EmptyState},
+	{name: "EntryList", fn: EntryList},
 	{name: "EmptyValue", fn: EmptyValue},
 	{name: "FactBox", fn: FactBox},
 	{name: "FileDropzone", fn: FileDropzone},

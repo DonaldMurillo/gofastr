@@ -111,7 +111,7 @@ func TestQueueLoadFailureHidesDriverText(t *testing.T) {
 func TestQueueStatsErrorDropsCounts(t *testing.T) {
 	q := &fakeQueue{stats: queue.JobStats{"pending": 7, "failed": 4}, statsErr: errors.New("rows error mid-scan")}
 	x := queueEnv(t, q)
-	if body := get(x.as(theAdmin), "/admin/queue").Body.String(); strings.Contains(body, "fui-seglinks__count") {
+	if body := get(x.as(theAdmin), "/admin/queue").Body.String(); strings.Contains(body, `class="fui-seglinks__count"`) {
 		t.Error("the jobs page showed a count from a failed Stats")
 	}
 	q.jobs = failedJobs("j1")

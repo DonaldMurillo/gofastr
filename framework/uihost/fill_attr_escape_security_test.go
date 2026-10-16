@@ -110,7 +110,7 @@ func TestScriptSrcHTMLEscapesQuote(t *testing.T) {
 	if strings.Contains(page, `\"b`) {
 		t.Fatalf("the script src was Go-quoted, which ends the attribute at the quote:\n%s", page)
 	}
-	if !strings.Contains(page, `<script src="/plug.js?a=&#34;b"></script>`) {
+	if !strings.Contains(page, `<script defer src="/plug.js?a=&#34;b"></script>`) {
 		t.Fatalf("no HTML-escaped script src in the page:\n%s", page)
 	}
 }

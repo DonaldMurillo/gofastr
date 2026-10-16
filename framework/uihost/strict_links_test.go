@@ -34,8 +34,8 @@ type footerLink struct {
 //
 // It is raw anchor markup, not the generated package, and nothing here
 // enforces that the two agree: importing framework/ui into this package
-// registers ui-button/ui-page-header/ui-sidebar as LoadAlways in the
-// process-global style registry, which breaks TestComponentCSS_* in the
+// registers ui-button as LoadAlways in the process-global style
+// registry, which breaks TestComponentCSS_* in the
 // same package (proven by a three-way isolation run). So this pins the
 // CHECK, not the component. Fidelity to the generator's real output is
 // pinned where framework/ui is importable, by the marketing-link test in

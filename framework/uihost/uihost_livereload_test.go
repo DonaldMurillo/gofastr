@@ -23,7 +23,7 @@ func TestUIHostAutoInjectsLiveReloadScriptWhenDev(t *testing.T) {
 	ds.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
 	page := rec.Body.String()
 
-	if !strings.Contains(page, `<script src="/__livereload.js"></script>`) {
+	if !strings.Contains(page, `<script defer src="/__livereload.js"></script>`) {
 		t.Fatalf("livereload script not auto-injected:\n%s", page)
 	}
 }

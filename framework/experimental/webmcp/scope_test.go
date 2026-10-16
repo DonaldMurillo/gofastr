@@ -282,8 +282,10 @@ func TestWithDocumentScopeRidesHostRail(t *testing.T) {
 	if n := strings.Count(page, `data-cui-doc`); n != 1 {
 		t.Errorf("/support carries %d data-cui-doc tags, want 1:\n%s", n, page)
 	}
-	if !strings.Contains(page, `"docScripts":["/__gofastr/webmcp.js`) {
-		t.Errorf("route manifest does not declare the bridge for /support:\n%s", page)
+	rec = httptest.NewRecorder()
+	rt.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/__gofastr/manifest.js", nil))
+	if manifest := rec.Body.String(); !strings.Contains(manifest, `"docScripts":["/__gofastr/webmcp.js`) {
+		t.Errorf("route manifest does not declare the bridge for /support:\n%s", manifest)
 	}
 
 	rec = httptest.NewRecorder()

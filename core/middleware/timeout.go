@@ -20,7 +20,10 @@ import (
 //
 // Buffered mode (default): handler writes land in a private http.Header
 // + body buffer; nothing reaches the underlying ResponseWriter until the
-// handler returns successfully. On timeout, the buffer is abandoned and
+// handler returns successfully. The private header map starts as a copy
+// of the headers earlier middleware set, and replaces them on commit, so
+// the handler reads, adds to and deletes them exactly as it would with no
+// timeout in the chain. On timeout, the buffer is abandoned and
 // a 504 is written directly to the underlying writer. The handler never
 // shares its header map with the timeout goroutine, eliminating the
 // `concurrent map writes` panic that triggered on the pagination island
@@ -46,7 +49,7 @@ type timeoutWriter struct {
 func newTimeoutWriter(w http.ResponseWriter) *timeoutWriter {
 	return &timeoutWriter{
 		w:    w,
-		h:    make(http.Header),
+		h:    w.Header().Clone(),
 		body: &bytes.Buffer{},
 		code: http.StatusOK,
 	}
@@ -119,10 +122,16 @@ func (tw *timeoutWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, fmt.Errorf("timeout middleware: underlying ResponseWriter does not support hijacking")
 }
 
-// copyHeadersToUnderlyingLocked merges the handler's buffered http.Header
-// into the underlying ResponseWriter's. Caller holds tw.mu.
+// copyHeadersToUnderlyingLocked makes the underlying ResponseWriter's
+// headers the handler's buffered set. The buffer began as a copy of them,
+// so a header the handler deleted is deleted here too. Caller holds tw.mu.
 func (tw *timeoutWriter) copyHeadersToUnderlyingLocked() {
 	dst := tw.w.Header()
+	for k := range dst {
+		if _, ok := tw.h[k]; !ok {
+			delete(dst, k)
+		}
+	}
 	maps.Copy(dst, tw.h)
 }
 

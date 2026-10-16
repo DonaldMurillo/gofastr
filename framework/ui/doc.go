@@ -58,6 +58,7 @@
 //	ColorField:           colour swatch beside a text input, one control
 //	ColorPicker:          styled native <input type=color>
 //	CommandPalette:       ⌘K modal + combobox composition
+//	CommentThread:        nested discussion: each comment a byline and body, replies indented under it
 //	ConditionalField:     form region visible until the watched field mismatches (the runtime hides it)
 //	ConfirmAction:        trigger + themed alertdialog modal pair
 //	Container:            max-width page wrapper with breakpoint padding
@@ -73,6 +74,7 @@
 //	Divider:              <hr> for plain horizontal; role="separator" otherwise
 //	DrawerBar:            close / path / copy-link bar atop an intercepted drawer
 //	EmptyState:           title/description/action block for no-data screens
+//	EntryList:            dense list of title links with a source and a meta line, optionally ranked
 //	FactBox:              labelled tile (label-first OR value-first KPI)
 //	FileDropzone:         hero file-drop surface with image previews
 //	FileUpload:           drag-drop file picker over <input type="file">

@@ -111,7 +111,10 @@ func TestScreensRender(t *testing.T) {
 			t.Fatalf("/ missing %q", want)
 		}
 	}
-	if strings.Contains(home.Body(), "<style") {
+	// The head may carry the design system's sheets inline (first-paint
+	// inlining); the screen's own markup is the body.
+	_, markup, _ := strings.Cut(home.Body(), "<body")
+	if strings.Contains(markup, "<style") {
 		t.Fatal("bespoke inline CSS on the list screen")
 	}
 	// Record links hang off the /notes base even at "/".
@@ -131,7 +134,7 @@ func TestScreensRender(t *testing.T) {
 			t.Fatalf("/notes/create missing %q", want)
 		}
 	}
-	if strings.Contains(create.Body(), "<script>") {
+	if _, markup, _ := strings.Cut(create.Body(), "<body"); strings.Contains(markup, "<script>") {
 		t.Fatal("inline script on the create screen")
 	}
 

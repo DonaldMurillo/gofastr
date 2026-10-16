@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
@@ -74,7 +75,7 @@ func TestThemeEditVariantCSSCarriesEditedValue(t *testing.T) {
 		t.Fatalf("app.css?t=%s: status %d, want 200", hash, rec.Code)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "--color-primary: #B91C1C") {
+	if !strings.Contains(body, minify.ServedCSS("--color-primary: #B91C1C")) {
 		t.Fatalf("variant CSS does not carry the edited value:\n%s", truncate(body, 400))
 	}
 	// The variant must be served immutable: the content-addressed URL is

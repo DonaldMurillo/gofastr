@@ -226,7 +226,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-push-state="<path>"` | After the RPC succeeds, apply this URL via `history.pushState` (no re-fetch). Useful when the button knows the canonical URL ahead of time (e.g. pagination button "page 3" → `data-cui-push-state="?p=3"`). Server-supplied `X-Gofastr-Push-State` header takes precedence. The runtime also refuses a destination that is not same-origin: the SPA navigator applies its own origin check, and the pre-boot `location.href` fallback applies the same one inline, so a `javascript:` or cross-origin value in this attribute navigates nowhere. |
 | `data-cui-confirm="<message>"` | Pre-flight confirmation gate, honored on every form submit the runtime sees — native POST, `data-cui-spa`, and `data-cui-rpc` forms alike — and on non-form `data-cui-rpc` clicks. On a form, an attribute on the submit button takes precedence over one on the form element. The ask is the `confirm` module's themed dialog: the submit is cancelled while it is open and submitted again on an accept (a module that cannot load fails closed: nothing is sent). A page with no confirm template, or a browser without `showModal`, asks with `window.confirm(<message>)`. Cancel aborts: the submit stays prevented (a native form never navigates), the RPC never fires. Use for destructive actions (delete, revoke). |
 | `data-cui-confirm-title="<text>"` / `data-cui-confirm-accept="<label>"` / `data-cui-confirm-tone="danger"` | Beside `data-cui-confirm`, on the element that carries it: the dialog's heading, its accept button's label, and the danger tone, which shows the template's danger accept button in place of the primary one. Absent, the template's own defaults stand. `interactive.Action.WithConfirmDialog` writes all four. |
-| `<template data-cui-confirm-dialog>` / `data-cui-confirm-part="title\|message\|accept\|accept-danger\|cancel\|label"` | The kit's confirm dialog, rendered once per page by the host from the template a kit registers (`preset.ConfirmTemplate`; `framework/ui` registers one). The `confirm` module clones the template's `<dialog>`, writes the gated element's text into the `title` and `message` parts (and `label`, the accept button's text node, when one is marked), drops the accept button the tone does not pick, opens it with `showModal()`, focuses `cancel`, and resolves true on the accept button and false on cancel, Escape or a backdrop click. The clone is removed on close and focus returns to the trigger. The module names no class. |
+| `<template data-cui-confirm-dialog>` / `data-cui-confirm-part="title\|message\|accept\|accept-danger\|cancel\|label"` | The kit's confirm dialog, rendered once per page by the host from the template a kit registers (`preset.ConfirmTemplate`; `framework/ui` registers one). The `confirm` module clones the template's `<dialog>`, writes the gated element's text into the `title` and `message` parts (and `label`, the accept button's text node, when one is marked), drops the accept button the tone does not pick, loads the sheets the clone names (`data-cui-comp` and `data-cui-scope` on its root and inside it) and waits for those alone, not for unrelated prewarms (the host prefetched them at first paint, so this is normally a cache hit; each wait is bounded at 3 seconds), opens it with `showModal()`, focuses `cancel`, and resolves true on the accept button and false on cancel, Escape or a backdrop click. The clone is removed on close and focus returns to the trigger. One question at a time: an ask made while another waits on its sheets or stands open resolves false at once, so a double click opens one dialog and sends at most one request. The module names no class. |
 | `data-cui-rpc-trigger="input"` | On a `<form data-cui-rpc=…>`, dispatch the RPC on every `input` event from any control inside, after a debounce window. |
 | `data-cui-rpc-debounce-ms="<ms>"` | Debounce window for `data-cui-rpc-trigger="input"`. Default 250. |
 | `data-cui-rpc-after-text="<text>"` | On 2xx RPC, replace the trigger's text content with `<text>`. One-shot, idempotent on re-click via `data-cui-rpc-after-done`. |
@@ -238,7 +238,8 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-comp="<name>"` | Marks an instance of a registered styled component. The runtime scans for it on every DOM insertion and lazily loads `/<__gofastr/comp/<name>.css>` once per session via a `<link data-cui-style="<name>">` (dedup'd, never re-fetched). See "Component CSS" below. |
 | `data-cui-scope="<name>"` | Marks the root of an owned style: a layout root (`LayoutSpec.Style`), a screen's wrapper (`Screen.WithStyle`: its `<article>`, or one plain `<div>`, never the primary cell), or a component root (`Style.Scope`). The server writes it; the runtime never does. It is two things at once: the root of the style's compiled `@scope`, whose lower bound stops at the children of any nested owner, and a loader marker, read exactly like `data-cui-comp`: the SSR head scan (`registry.Scan`) links `/__gofastr/comp/<name>.css` for every name on the page, and the runtime's `scanAndLoadCSS` loads it on insertion (a cross-layout `swapShell` scans the new shell's parent, because the shell root carries its layout's scope). An element may carry both markers (`Style.Scope(ui.Card(...))`) and loads both sheets. Owned rules are scoped, so they beat an equal-specificity kit rule by scope proximity whatever order the sheets load in. App markup cannot set it: `html.SafeExtraAttrs` drops every `data-cui-*` key. |
 | `data-cui-internal` | Marks kit component markup that holds none of the caller's content: a label or title built from a string field, a control's input, a dismiss button, an icon the component draws. Every compiled owned style's `@scope` lower bound stops at it, so an owner styles the content it passes into a component and never the component's insides. Components set it through `headless.Internal`, and a component that builds markup and hands it to another as slot content marks it with `headless.Own`, which also marks the element holding that slot. Never on a component's root (an owner may place the root), never on an element that holds a slot or on an ancestor of one; a mark inside a marked subtree is allowed and inert. `TestKitMarksInternalSubtrees` (framework/ui) renders every kit component with every slot filled and every slot empty and fails on unmarked internal markup, a marked root, or caller content under a mark. The server writes it; the runtime never reads it. App markup cannot set it: `html.SafeExtraAttrs` drops every `data-cui-*` key. |
-| `data-cui-bundle="<a,b,c>"` | Set on the SSR-emitted bundle `<link>` to list the components it covers. The runtime reads it at boot and seeds `_pendingLinks` so the per-component scan never double-loads anything already in the bundle. |
+| `data-cui-bundle="<a,b,c>"` | Set on the SSR-emitted bundle, a `<link>` or, when the page inlines its first-paint head, a `<style>`, to list the components it covers. The runtime reads it from either element at boot and seeds `_pendingLinks` so the per-component scan never double-loads anything already in the bundle. |
+| `data-cui-bundle-href="<url>"` | Set beside `data-cui-bundle` on an inline `<style>` that carries only the rules the page's markup can match (see "First-paint inlining"). The value is the URL a linked head would name for the same sheets. The `fullbundle` behaviour, a registered module `framework/uihost` ships, links that URL right after the `<style>` at boot and removes the attribute. It reads the attribute in `<head>` only, links nothing for a URL other than a component-sheet route (`/__gofastr/comp-bundle.css?…`, `/__gofastr/comp/<name>.css?…`), and joins the link to the kernel's stylesheet wait. |
 | `data-cui-layout="<name>"` | Set by EVERY layout layer on its wrapper `<div>` with the layout's name (e.g. `app`, `marketing`). Emit-only since the layout-chain rewrite: it is the CSS/debug contract (`.layout-<name>` pairing), and the runtime's swap decisions read `data-cui-layout-key` instead. |
 | `data-cui-layout-key="<key>"` | The layer's comparable identity, on the same wrapper `<div>`: `l:<name>` for a plain layout (the app default root, a direct screen's layout) (`l:<key>` in both forms when the layout declares `Layout.WithKey`, so a shell's identity can vary per language while its name keeps the CSS contract), `g:<prefix>:<name>` for a screen-group layer (`g:<prefix>` when the level is marker-only because its layout already renders at an outer level). The route manifest carries each route's chain as the `layouts` array of these keys, outermost → innermost; document order of the marked elements is the chain order. On SPA navigation the runtime compares the DOM's key spine against the destination's chain positionally: it swaps at the deepest shared layer, and when no root is shared it fetches the full page and replaces the whole shell. A group layer's key embeds the layout name so a per-screen layout override inside a group compares as a different layer than its siblings. |
 | `data-cui-layout-slot="<key>"` | On the layer's content cell: the `<main id="main-content">` for layer 0, the `.layout-content` div (tabindex="-1") for nested layers, the group wrapper itself for marker-only levels. This is the runtime's swap target: a partial response's `X-Gofastr-Swap: <key>` (or a cache entry's recorded layer) selects the cell whose slot key matches, replacing the old `.layout-content ?? [role=main] ?? main` structural guess. After the swap the runtime focuses the cell (screen-reader announcement); a pointer-initiated navigation passes `focusVisible: false` so the focus ring stays keyboard signal, and uihost's base CSS suppresses `outline` on the swap targets when they are not `:focus-visible`. |
@@ -286,8 +287,8 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-embed-state` *(on the embed root)* | Lifecycle of an embedded surface. The server writes `loading` into the shell HTML; the `boot-embed` fragment writes every later value, and ships **only** in the `embed` bundle served at `/__gofastr/embed-runtime.js`. `ready` once the handshake completed and the surface's server-rendered content was injected. `error` when there is no parent to hand over a nonce, no token arrived within 15s, the exchange was refused, or the content fetch failed. `expired` when the grant's absolute lifetime ran out and refresh could not renew it. Nothing in the runtime branches on it; it exists so tests can see the frame's state. The host page is cross-origin and can neither read nor style inside the frame. See `framework/docs/content/embed.md`. |
 | `data-cui-toast-fallback` | Marks the degraded inline container core injects when the `headless-feedback` module fails to load (transient 5xx, network hiccup). Used by `__gofastr._fallbackToast(cfg)` so an X-Gofastr-Toast payload still reaches the user even when the full module is unavailable. Unstyled-but-visible; no TTL, no animation. |
 | `data-hui-menu` / `data-hui-menu-trigger="<id>"` / `data-hui-menu-panel` / `data-hui-menu-radio="<group>"` / `data-hui-menu-lazy` | On a `framework/ui.Menu` (headless.Menu anatomy): the dropdown and its submenus are disclosures (`data-hui-disclosure` beside `data-hui-menu`), `headless-menu` (a registered behaviour of `framework/headless`, `Requires("headless-disclosure", "widgets")`) owns the keyboard contract — roving focus scoped to the item's own panel, wrapping arrows, Home/End, bounded type-ahead, RTL-aware submenu open/close, Tab closing the chain, radio arbitration across the whole menu, focus-on-open, and the lazy template's inflation. The retired menu-module attribute family is gone with the `menu` module. |
-| `data-cui-match-prefix` | On an `<a>` link, inside a `<nav>` landmark or not: opts the link into prefix-matching for active-route highlighting. The attribute's VALUE, when non-empty, names the section prefix — a link can own a section it does not live at (`framework/ui.Sidebar` emits its items' `MatchPath` there, which is how a section stays lit across client navigations into it); an empty value falls back to the href. The runtime tags it `aria-current="page"` + `.active` when the current path equals the prefix or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact-href matching only, so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
-| `data-cui-activelink` | On an `<a>` link, inside a `<nav>` landmark or not: hands the link's current-state to the `activelink` module without changing how it matches (exact href unless `data-cui-match-prefix` is present too). `headless.Sidebar` marks every leaf with it, so the `aria-current="page"` the server settled for first paint is the module's to clear after a client navigation. The module loads idle, so a navigation can land before it ever stamped `.active` on the old link; without the handover the stale first-paint mark survived beside the fresh one, two lit entries. The handover covers navigations only: on a document that has not navigated client-side, the load-time sweep stamps matches and leaves these marks alone, so `Active` on `/orders` served at `/orders?page=2` or on a detail page keeps its mark. Links with neither handover attribute nor the module's `.active` class keep owning their attributes. |
+| `data-cui-match-prefix` | On an `<a>` link, inside a `<nav>` landmark or not: opts the link into prefix-matching for active-route highlighting. The attribute's VALUE, when non-empty, names the section prefix — a link can own a section it does not live at (`framework/ui.Sidebar` emits its items' `MatchPath` there, which is how a section stays lit across client navigations into it); an empty value falls back to the href. The runtime tags it `aria-current="page"` + `.active` when the current path equals the prefix or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact matching only (a query-less href matches the URL's path, since a screen's sort, page and filter live in its query, unless its nav also links that path with a query, a tab strip whose current tab the server picks; an href with a query must equal the URL), so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
+| `data-cui-activelink` | On an `<a>` link, inside a `<nav>` landmark or not: hands the link's current-state to the `activelink` module without changing how it matches (exact, as above, unless `data-cui-match-prefix` is present too). `headless.Sidebar` marks every leaf with it, so the `aria-current="page"` the server settled for first paint is the module's to clear after a client navigation. The module loads idle, so a navigation can land before it ever stamped `.active` on the old link; without the handover the stale first-paint mark survived beside the fresh one, two lit entries. The handover covers navigations only: on a document that has not navigated client-side, the load-time sweep stamps matches and leaves these marks alone, so `Active` on `/orders` served at `/orders?page=2` or on a detail page keeps its mark. Links with neither handover attribute nor the module's `.active` class keep owning their attributes. |
 | `data-cui-activelink-skip` | On a `<nav> <a>` link: opts OUT of active-route highlighting entirely. The `activelink` runtime module neither sets nor clears `aria-current` or `.active` on it, at load or after SPA navigation. The escape hatch for a link whose current-state is owned by something else: a hand-set attribute (`aria-current="location"` on an in-page anchor), app JS, a signal binding. Same hands-off treatment as href-less links. |
 | `data-cui-popover-anchor` | On a `data-cui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side: `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances: popovers are click-driven and don't deep-link. |
 | `data-hui-multiselect` / `data-hui-multiselect-chips` / `data-hui-multiselect-placeholder="<text>"` / `data-hui-multiselect-remove-label="<fmt>"` / `data-hui-multiselect-remove="<input-id>"` | On a `framework/ui.MultiSelect` (headless.MultiSelect anatomy; the disclosure itself is `data-hui-disclosure`'s): the registered `headless-multiselect` module (framework/headless, `Requires("headless-disclosure")`) rebuilds the chips strip from the checkboxes' own state after every change, names each chip's × from the remove-label format ({label} substituted), and closes the disclosure on click-outside. The placeholder is the sheet's `:empty::before` content. The submit contract is the plain form: every checkbox shares the field name, no script needed. |
@@ -798,10 +799,37 @@ client-side with no per-consumer round-trip.
 
 See `framework/docs/content/signal-store.md` for the full guide.
 
-### Extra scripts (the body-close script rail)
+### First-load order
 
-`uihost.WithExtraScripts` adds external `<script src="…">` tags just
-before `</body>`, after `runtime.js` and the per-screen action scripts.
+A live page paints from its document and stylesheets alone. The one
+script that blocks is the color-scheme bootstrap at the top of `<head>`
+(dark tokens must apply before CSS parses). Every other script the host
+emits (`manifest.js`, `runtime.js`, the per-screen action scripts, the
+extra-script rail) carries `defer` and closes `<head>`, after the
+stylesheets: none blocks the parser or first paint, the preload scanner
+finds them in the first bytes, and they execute in document order once
+parsing ends, so `manifest.js` globals are set when the kernel boots,
+rail scripts see `runtime.js`, and a deferred script in the page's
+`<body>` runs after all of them. A layout's own deferred script in
+`<head>` sits before the host's and runs first, so it cannot read
+runtime globals at execution time. Because `runtime.js` is deferred, its
+initial pass (component CSS, demand modules, `data-action-mount`) waits
+for `DOMContentLoaded`, after the action scripts that register the
+mount handlers. Runtime-module preload hints carry
+`fetchpriority="low"` so they warm the cache without competing with
+the document and its stylesheets. The route graph rides in
+`manifest.js` (`window.__gofastr_routes`, cached once per deploy) rather
+than in every document; exported pages keep the inline
+`#gofastr-routes` block because they must be self-contained.
+`framework/uihost/first_load_contract_test.go` pins the script and
+preload rules, and `examples/site` holds its landing pages under one
+round trip of compressed HTML.
+
+### Extra scripts (the script rail)
+
+`uihost.WithExtraScripts` adds external `<script defer src="…">` tags
+at the end of `<head>`, after `runtime.js` and the per-screen action
+scripts.
 They are same-origin resources under the default CSP (`default-src
 'self'`), so every URL on the rail must be a path the app itself serves;
 the dev livereload client is the canonical example. The tags ship only on
@@ -1066,7 +1094,7 @@ the rest of this document:
 
 - **Chrome injection.** `WithPWA` adds `<link rel="manifest">` (+ a
   `theme-color` meta when configured) to `<head>` and an external
-  `<script src="/__gofastr/pwa/register.js" defer>` before `</body>`:
+  `<script defer src="/__gofastr/pwa/register.js">` on the script rail:
   no inline JS, same CSP posture as `runtime.js`. Routes mounted:
   `/manifest.webmanifest`, `/service-worker.js` (root-scoped),
   `/__gofastr/pwa/register.js`, `/__gofastr/pwa/offline`.
@@ -1563,13 +1591,25 @@ SSG output emits the same single file. (`/__gofastr/theme.css`
 and `/__gofastr/styles.css` are retained as `410 GONE` so stale
 references surface clearly.)
 
+Served CSS is minified outside dev: app.css, component sheets, the
+bundle, widget sheets and the static export all pass through
+`minify.ServedCSS`, gated like the runtime JS (`GOFASTR_DEV`,
+`RUNTIME_NOMINIFY`; see `framework/docs/content/runtime-minification.md`).
+`AppCSS()` and `Entry.CSSFor` stay the readable source and the version
+hash is taken over it; `Entry.ServedCSSFor` is what goes on the wire.
+A custom property reads back through `getComputedStyle` in the served
+spelling (`minmax(0,1fr)`), so compare tokens, not spacing.
+
 ---
 
 ## Component CSS
 
-Every component-owned stylesheet ships as a real `<link>`,
-**never inline**, loaded lazily per-component, dedup'd globally,
-and **always scoped** to `[data-cui-comp="<name>"]`. There is no
+Every component-owned stylesheet is registered, served and versioned
+by the host, loaded lazily per-component, dedup'd globally, and
+**always scoped** to `[data-cui-comp="<name>"]`. A first-load page
+whose head is small carries its sheets in the document instead of
+linking them (see "First-paint inlining" below); that is the host's
+choice, never a component's or an app's. There is no
 "unscoped component CSS"; global rules (resets, typography, theme
 tokens) live in `theme.css` / `WithCustomCSS`.
 
@@ -1678,22 +1718,38 @@ A component declares its CSS by calling
 `data-cui-comp="<name>"` onto its outermost tag (no extra DOM
 node). The SSR host string-scans the final rendered HTML for those
 markers and emits **one** `<link rel="stylesheet">` in `<head>` for
-the page's exact set of components. After hydration, the runtime
+the page's exact set of components (or the same bytes as one `<style>`,
+under the first-paint budget). Markers inside an inert
+`<template>` (the confirm dialog, a toast item, a menu row, a loading
+skeleton) do not count: the browser renders none of it at first paint.
+Each sheet only template content needs gets a
+`<link rel="prefetch" href="/__gofastr/comp/<name>.css?v=<hash>">`
+instead, the exact URL the runtime builds from the catalog, so the
+clone the runtime makes later finds its sheet in the HTTP cache. A
+declarative shadow root (`<template shadowrootmode>`) renders, so its
+markers count. After hydration, the runtime
 scans newly inserted DOM (cross-page swap, island response, widget
 mount, intercepted pane) and lazy-loads any new component's CSS as a `<link>` once
-per session, dedup'd by `data-cui-style="<name>"`. The browser
+per session, dedup'd by `data-cui-style="<name>"`. The kernel does
+not watch every insertion, so code that moves template content into
+the page (the confirm module, the toast stack, a lazy menu panel, a
+loading skeleton) calls `__gofastr.scanAndLoadCSS(container)` on what
+it inserted. The scan reads descendants only: pass the element that
+holds the new nodes, or load the root's own `data-cui-comp` /
+`data-cui-scope` by name. The browser
 caches the stylesheet by URL (`/__gofastr/comp/<name>.css?v=<hash>`)
-under `immutable` headers in prod, content-addressed via the
-component's CSS hash, so a deploy that changes the sheet busts the
-URL automatically.
+under `immutable` headers in prod, content-addressed by a hash of
+the sheet as served (minified outside dev), so a deploy that changes
+the bytes, a source edit or a minifier change, busts the URL
+automatically.
 
 ### Three load modes
 
 | Mode         | First-paint cost           | Behavior                                                                              |
 | ------------ | -------------------------- | ------------------------------------------------------------------------------------- |
-| `LoadAlways` | 1 request, render-blocking | SSR emits `<link>` in `<head>` on every page, regardless of whether the page renders the component. Use for chrome that's on essentially every screen. |
+| `LoadAlways` | 1 request, render-blocking | SSR emits `<link>` in `<head>` on every page, regardless of whether the page renders the component. Only for a sheet the scan cannot see is needed: `ui-button`'s classes are worn by ToggleAction and OptimisticAction under their own markers. |
 | `LoadAuto` (default) | 0 (deferred)               | SSR collector emits `<link>` only on pages that actually render the component. After hydration, the on-demand scanner picks up newly-inserted markers from partial responses. |
-| `LoadPrewarm`| 0 (deferred)               | `LoadAuto` plus a throttled `requestIdleCallback` prefetch (serialized, one in flight). Use for components that are likely soon (a hotkey-opened palette). |
+| `LoadPrewarm`| 0 (deferred)               | `LoadAuto` plus a throttled `requestIdleCallback` prefetch (serialized, one in flight). Use for components that are likely soon: a hotkey-opened palette, or app chrome a client navigation may swap in. `ui-sidebar` and `ui-page-header` prewarm: a page that renders one links it through the scan, and a page without one (a marketing page, an article) does not block on it. |
 
 All three converge on `loadComponentCSS(name)`. The function is
 **synchronous**: no `await` between the existence check and
@@ -1742,6 +1798,82 @@ Content-addressed via the SHA of the concatenated component
 versions, served `immutable` in prod. After hydration, the on-
 demand path uses single-component `<link>`s; the bundle is just a
 first-paint optimization.
+
+### First-paint inlining
+
+A live page cannot paint until it holds its document and every
+render-blocking resource its `<head>` names: the color-scheme bootstrap,
+the component bundle and `app.css`. As links they cost a round trip
+after the document arrives, which on a slow link is most of the time to
+first paint. When the three together fit the budget, 16 KiB compressed,
+the host writes them into the document:
+
+```html
+<head><script>/* color-scheme bootstrap */</script>
+<style data-cui-bundle="a,b,c">/* the comp-bundle.css bytes */</style>
+<style id="cui-app-css">/* the app.css bytes */</style>
+```
+
+The bytes are the ones the endpoints serve, minified the same way, in
+the same order. A heavier head keeps its links, and so does a sheet
+holding a relative URL (in `url()`, an `@import` string or
+`image-set()`), which would resolve against the page's address once
+inlined instead of the sheet's. The budget counts gzipped bytes, the
+way they cross the wire once the app (`AppConfig.Compression`) or a
+proxy in front of it compresses. The budget weighs a first
+visit against a return visit: linked sheets come from the HTTP cache on
+the next full load, inlined ones arrive again inside every document, and
+16 KiB is about one round trip on a slow mobile link (400 kbps, 300 ms),
+so a return visit never pays more than the first visit saved. Client
+navigation is unaffected: the runtime seeds its dedup from the inline
+bundle's `data-cui-bundle` and loads only the sheets a later page adds.
+
+When the whole bundle misses the budget, the page may still inline the
+part of it its markup can match. A component sheet styles every variant
+and state of its component and a page renders a few: the site's home
+page uses five of the data table's thirteen classes. The host drops each
+rule on a `fui-` class that appears nowhere in the document: not in a
+class attribute, a `<template>`, an attribute value or the head, nor in
+the widget chrome the response inlines, nor in a registered behaviour's
+source. Classes inside `:not()`, `:is()`, `:has()` and attribute
+selectors never drop a rule, and neither does a selector with an
+escape. Other rules, at-rules and owned sheets ship whole, and a group
+rule (`@media`, `@supports`, `@container`, `@scope`) is dropped only
+when nothing inside it is left. An emptied `@layer` block stays as
+`@layer name{}`, since its first appearance fixes the layer order. If the subset fits, the page
+inlines it marked with the full sheet's URL:
+
+```html
+<style data-cui-bundle="a,b,c" data-cui-bundle-href="/__gofastr/comp-bundle.css?names=a,b,c&amp;v=…">/* the rules the page can match */</style>
+```
+
+The `fullbundle` behaviour links that URL at boot, right after the
+`<style>` and so before `app.css`, so the states a click or a client
+navigation adds are styled once it arrives, in the cascade position the
+full bundle would have had. The link joins the kernel's stylesheet wait
+(`_stylesReady`), so a client navigation settles scroll only after it
+loads. Until then a class the page did not render
+at first paint has no rules. If the subset misses the budget too, the
+head links as before.
+
+Every block is allowed by its `'sha256-…'` hash in the response's own
+`Content-Security-Policy`, never by `'unsafe-inline'`. The host patches
+each policy on the response: the hash joins the governing
+`style-src-elem`/`style-src` (`script-src-elem`/`script-src`) list, or a
+new `style-src`/`script-src` copying `default-src` when that governs. A
+policy that refuses the kind outright (`'none'`) keeps the page linked,
+untouched; a list that already allows `'unsafe-inline'` without a nonce
+or hash is left alone, since adding a hash would switch it off.
+Report-Only policies get the hashes too. A body that could close its
+element early (`</style`, `</script`, `<!--`) always links.
+
+The patch only reaches a policy set on the response before the page
+renders, the framework's own middleware or the host's. A policy written
+elsewhere (a proxy, a CDN rule, a `<meta>` tag in a custom layout) never
+learns the hashes; such an app sets `uihost.WithNoInlineFirstPaint()` and
+keeps every head resource a link. Static exports and the PWA shell always
+link: their files are served by hosts whose policy the framework does
+not write.
 
 ### Runtime catalog
 
@@ -1848,7 +1980,7 @@ var Behavior = registry.RegisterBehavior("headless", runtimeJS,
 From the host down a registered behaviour is a runtime module like the
 embedded ones: served at `/__gofastr/runtime/<name>.js?v=<hash>`,
 minified under the same gate, listed in the module manifest, preloaded
-when its marker is in the rendered page. The kernel learns registered
+at low priority when its marker is in the rendered page. The kernel learns registered
 markers from one block beside the manifest (`window.__gofastr_behaviors`
 from `manifest.js` on live pages, the inline `#gofastr-behaviors` block
 in exports and the embed frame) and scans them after its own table.

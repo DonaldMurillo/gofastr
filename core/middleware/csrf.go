@@ -264,6 +264,9 @@ func CSRF(cfg CSRFConfig) Middleware {
 				submitted = parseFormField(buf, r.Header.Get("Content-Type"), cfg.FormField)
 				r.Body = io.NopCloser(bytes.NewReader(buf))
 			}
+			// Rendered tokens arrive masked (MaskCSRFToken); scripts that
+			// read the cookie send it raw. Both unmask to the cookie value.
+			submitted = unmaskCSRFToken(submitted)
 			if submitted == "" || subtle.ConstantTimeCompare([]byte(submitted), []byte(cookie.Value)) != 1 {
 				http.Error(w, "csrf: token mismatch", http.StatusForbidden)
 				return

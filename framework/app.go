@@ -118,6 +118,14 @@ type AppConfig struct {
 	// deadlines if you still need bounded request lifetime.
 	DisableRequestTimeout bool
 
+	// Compression adds the Compress middleware to the default chain:
+	// text responses (HTML, CSS, JavaScript, JSON) are gzipped for
+	// clients that accept gzip; see middleware.Compress for what is
+	// skipped. Off by default, since a reverse proxy or CDN in front of
+	// the app usually compresses; set it when the app faces clients
+	// directly.
+	Compression bool
+
 	// HTTPServerTimeouts overrides the four connection deadlines on the
 	// underlying http.Server: ReadHeaderTimeout, ReadTimeout,
 	// WriteTimeout, IdleTimeout. Every field is a *time.Duration so an
@@ -1208,6 +1216,11 @@ func DefaultMiddleware(a *App) []router.Middleware {
 	chain := []router.Middleware{
 		middleware.RecoveryFn(getLogger),
 		middleware.RequestID(),
+	}
+	// Compress sits outside the timeout and every handler-facing
+	// middleware, so it sees the final bytes and the timeout's flushes.
+	if a != nil && a.Config.Compression {
+		chain = append(chain, middleware.Compress())
 	}
 	// Stamp the App's *sql.DB onto each request context so screens and
 	// handlers can reach it via DBFromContext without a package-level

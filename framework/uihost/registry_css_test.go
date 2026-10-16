@@ -66,7 +66,7 @@ func TestCSSLoadOrder_AppCSSWinsOverComponentCSS(t *testing.T) {
 	registry.IsolateForTest(t) // its styles register after other tests' hosts froze the catalog
 	st := registerTestStyle(t, "order")
 	ds := newTestUIHostFor(st)
-	body := pageBody(t, ds, "/")
+	body := linkedPageBody(t, ds, "/")
 
 	appCSSIdx := strings.Index(body, `href="/__gofastr/app.css?v=`)
 	compIdx := strings.Index(body, "/__gofastr/comp/")
@@ -97,7 +97,7 @@ func TestComponentCSS_SingleComponentEmitsDirectLink(t *testing.T) {
 	registry.IsolateForTest(t)
 	st := registerTestStyle(t, "single")
 	ds := newTestUIHostFor(st)
-	body := pageBody(t, ds, "/")
+	body := linkedPageBody(t, ds, "/")
 	want := `<link rel="stylesheet" href="/__gofastr/comp/` + st.Name() + `.css?v=`
 	if !strings.Contains(body, want) {
 		t.Errorf("missing direct <link>:\n%s", truncate(body, 800))
@@ -116,7 +116,7 @@ func TestComponentCSS_MultipleComponentsBundleLink(t *testing.T) {
 	a := registerTestStyle(t, "bundle-a")
 	b := registerTestStyle(t, "bundle-b")
 	ds := newTestUIHostForMany(a, b)
-	body := pageBody(t, ds, "/")
+	body := linkedPageBody(t, ds, "/")
 	if !strings.Contains(body, "/__gofastr/comp-bundle.css?names=") {
 		t.Errorf("multi-component page must use bundle endpoint:\n%s", truncate(body, 800))
 	}
@@ -147,7 +147,7 @@ func TestComponentCSS_MixedRenderedAutoAndEagerUnion(t *testing.T) {
 	eagerOnly := registerTestStyle(t, "mix-always", registry.WithLoad(registry.LoadAlways))   // never rendered
 	eagerRendered := registerTestStyle(t, "mix-both", registry.WithLoad(registry.LoadAlways)) // rendered + eager: the overlap
 	ds := newTestUIHostForMany(auto, eagerRendered)
-	body := pageBody(t, ds, "/")
+	body := linkedPageBody(t, ds, "/")
 
 	links := regexp.MustCompile(`comp-bundle\.css\?names=([^&"]+)`).FindAllStringSubmatch(body, -1)
 	if len(links) != 1 {
@@ -181,7 +181,7 @@ func TestComponentCSS_EagerLinkEvenWithoutRender(t *testing.T) {
 	st := registerTestStyle(t, "always", registry.WithLoad(registry.LoadAlways))
 	// Use the default test host whose home page does NOT render this style.
 	ds := newTestUIHost()
-	body := pageBody(t, ds, "/")
+	body := linkedPageBody(t, ds, "/")
 	want := "/__gofastr/comp/" + st.Name() + ".css"
 	if !strings.Contains(body, want) {
 		t.Errorf("LoadAlways link missing from page that doesn't render it:\n%s", truncate(body, 800))
@@ -466,6 +466,23 @@ func newTestUIHostForMany(ss ...*registry.Style) *UIHost {
 		nil,
 	)
 	return New(application)
+}
+
+// linkedPageBody is pageBody with every head resource linked
+// (WithNoInlineFirstPaint): the shape the link-format tests pin, which a
+// page small enough to inline its head no longer has.
+func linkedPageBody(t *testing.T, ds *UIHost, path string) string {
+	t.Helper()
+	WithNoInlineFirstPaint()(ds)
+	return pageBody(t, ds, path)
+}
+
+// blocksOn reports whether head makes first paint wait on component
+// name's sheet: a stylesheet link naming it, or the inline bundle.
+func blocksOn(head, name string) bool {
+	q := regexp.QuoteMeta(name)
+	return regexp.MustCompile(`rel="stylesheet"[^>]*[/=,]`+q+`[.&,"]`).MatchString(head) ||
+		regexp.MustCompile(`<style data-cui-bundle="(?:[^"]*,)?`+q+`[,"]`).MatchString(head)
 }
 
 func pageBody(t *testing.T, ds *UIHost, path string) string {

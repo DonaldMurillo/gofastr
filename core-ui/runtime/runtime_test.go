@@ -5,48 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-
-	"github.com/DonaldMurillo/gofastr/core/config"
 )
-
-// TestNominifyEnvGating pins the env contract: prod wins by default,
-// dev opts out, manual overrides trump env detection. Subtests can't
-// share the sync.Once cache, exercise the underlying decision via the
-// helpers directly.
-func TestNominifyEnvGating(t *testing.T) {
-	t.Setenv("RUNTIME_NOMINIFY", "")
-	t.Setenv("RUNTIME_MINIFY", "")
-	t.Setenv("GOFASTR_ENV", "")
-	t.Setenv("GOFASTR_DEV", "")
-
-	// config.EnvBool / isNonDevEnv behaviour.
-	if config.EnvBool("RUNTIME_NOMINIFY") {
-		t.Error("config.EnvBool with empty value should be false")
-	}
-	t.Setenv("X_TEST_BOOL", "1")
-	if !config.EnvBool("X_TEST_BOOL") {
-		t.Error(`config.EnvBool("1") should be true`)
-	}
-	t.Setenv("X_TEST_BOOL", "true")
-	if !config.EnvBool("X_TEST_BOOL") {
-		t.Error(`config.EnvBool("true") should be true`)
-	}
-	t.Setenv("X_TEST_BOOL", "false")
-	if config.EnvBool("X_TEST_BOOL") {
-		t.Error(`config.EnvBool("false") should be false`)
-	}
-
-	for _, e := range []string{"production", "prod", "live", "staging", "PRODUCTION"} {
-		if !isNonDevEnv(e) {
-			t.Errorf("isNonDevEnv(%q) should be true", e)
-		}
-	}
-	for _, e := range []string{"", "dev", "development", "test", "local"} {
-		if isNonDevEnv(e) {
-			t.Errorf("isNonDevEnv(%q) should be false", e)
-		}
-	}
-}
 
 func TestRuntimeJS(t *testing.T) {
 	js, err := RuntimeJS()

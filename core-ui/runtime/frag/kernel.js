@@ -113,14 +113,13 @@
   // -----------------------------------------------------------------------
   // Router: known routes from screen registration
   // -----------------------------------------------------------------------
-  const routes = new Map(); // path → { title, preload, layouts, redirect, docScripts }
+  const routes = new Map(); // path → { preload, layouts, redirect, docScripts }
   let currentPath = location.pathname + location.search;
 
   const registerRoutes = (routeList) => {
     if (!Array.isArray(routeList)) return;
     for (const r of routeList) {
       routes.set(r.path ?? r.Path, {
-        title: r.title ?? r.Title ?? '',
         // Prefetch mode: '' (never) | 'hover' | 'visible' | 'eager'.
         preload: r.preload ?? r.Preload ?? '',
         // Layout chain as layer keys, outermost → innermost.

@@ -43,6 +43,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
@@ -78,12 +79,21 @@ type Entry struct {
 	mu           sync.Mutex
 	versionCache map[string]string
 	cssCache     map[string]string
+	servedCache  map[string]string
 }
 
 // CSSFor returns the scoped CSS bytes for this entry under the given
 // theme, building and caching on first call.
 func (e *Entry) CSSFor(theme style.Theme) string {
-	h := themeHash(theme)
+	return e.CSSForHash(theme, themeHash(theme))
+}
+
+// CSSForHash is CSSFor for a caller that already holds
+// style.ThemeHash(theme). Hashing a theme renders its whole token
+// sheet, so a page that versions twenty components hashes once and
+// passes the result here instead of paying for it twenty times. h
+// must be ThemeHash(theme): the cache is keyed by it.
+func (e *Entry) CSSForHash(theme style.Theme, h string) string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.cssCache == nil {
@@ -95,19 +105,60 @@ func (e *Entry) CSSFor(theme style.Theme) string {
 	}
 	css := e.StyleFn(theme)
 	e.cssCache[h] = css
-	sum := sha256.Sum256([]byte(h + "\x00" + css))
-	e.versionCache[h] = hex.EncodeToString(sum[:6])
 	return css
 }
 
-// VersionFor returns the content-addressed version string for this
-// entry's CSS under the given theme. Build is shared with CSSFor.
-func (e *Entry) VersionFor(theme style.Theme) string {
-	_ = e.CSSFor(theme) // ensure cache is warm
-	h := themeHash(theme)
+// ServedCSSFor is CSSFor as it goes on the wire: minified unless the
+// process keeps sources readable (minify.Enabled). Every path that
+// sends component CSS to a browser (the per-component and bundle
+// endpoints, a static export, an inlined sheet) reads this one, and
+// the version hash is taken over it; CSSFor stays the readable source.
+func (e *Entry) ServedCSSFor(theme style.Theme) string {
+	return e.ServedCSSForHash(theme, themeHash(theme))
+}
+
+// ServedCSSForHash is ServedCSSFor with the theme hash supplied; see
+// CSSForHash.
+func (e *Entry) ServedCSSForHash(theme style.Theme, h string) string {
+	css := e.CSSForHash(theme, h)
+	if !minify.Enabled() {
+		return css
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.versionCache[h]
+	if e.servedCache == nil {
+		e.servedCache = make(map[string]string, 1)
+	}
+	if out, ok := e.servedCache[h]; ok {
+		return out
+	}
+	out := minify.CSS(css)
+	e.servedCache[h] = out
+	return out
+}
+
+// VersionFor returns the content-addressed version string for this
+// entry's CSS under the given theme. It hashes the served bytes
+// (ServedCSSFor), the ones a browser caches as immutable under
+// ?v=<version>: hashed over the source, a minifier change would ship
+// new bytes under an old URL.
+func (e *Entry) VersionFor(theme style.Theme) string {
+	return e.VersionForHash(theme, themeHash(theme))
+}
+
+// VersionForHash is VersionFor with the theme hash supplied; see
+// CSSForHash.
+func (e *Entry) VersionForHash(theme style.Theme, h string) string {
+	served := e.ServedCSSForHash(theme, h)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if v, ok := e.versionCache[h]; ok {
+		return v
+	}
+	sum := sha256.Sum256([]byte(h + "\x00" + served))
+	v := hex.EncodeToString(sum[:6])
+	e.versionCache[h] = v
+	return v
 }
 
 // EvictTheme drops the cached CSS + version for hash from this entry. A no-op
@@ -119,6 +170,7 @@ func (e *Entry) EvictTheme(hash string) {
 	defer e.mu.Unlock()
 	delete(e.cssCache, hash)
 	delete(e.versionCache, hash)
+	delete(e.servedCache, hash)
 }
 
 // HasCachedTheme reports whether this entry currently holds a cached stylesheet
@@ -256,8 +308,9 @@ type testCleanup interface{ Cleanup(func()) }
 // Why it exists: the registry is process-global and a Go test binary
 // is one process per package, so any package linked into the binary
 // that registers styles at init time (framework/ui registers
-// ui-button, ui-page-header and ui-sidebar as LoadAlways) changes what
-// All, Lookup and EagerNames report for EVERY test in that binary.
+// ui-button as LoadAlways, ui-page-header and ui-sidebar as
+// LoadPrewarm) changes what All, Lookup and EagerNames report for
+// EVERY test in that binary.
 // Tests that assert on registry-shaped behaviour — the SSR host's
 // single-direct-link vs bundle decision, exact bundle name sets — must
 // state that premise by isolating rather than assume a clean process.

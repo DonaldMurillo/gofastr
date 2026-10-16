@@ -94,8 +94,9 @@ results, the harness contract) are exempt. The exemption list lives in
   registry convention.
 - [Dev-mode livereload](dev-livereload.md): auto-wired SSE refresh
   under `gofastr dev`; env kill switches for prod.
-- [Runtime JS minification](runtime-minification.md): embedded
-  `runtime.js` minifier, env gating, prod-wins defaults.
+- [Runtime JS and CSS minification](runtime-minification.md): embedded
+  `runtime.js` minifier, served-CSS minifier, env gating, prod-wins
+  defaults.
 - [WebMCP bridge (experimental)](webmcp.md): expose server-declared
   tools to in-browser agents via the page's `modelContext` (the Chrome
   origin-trial WebMCP API); execute() proxies to same-origin endpoints

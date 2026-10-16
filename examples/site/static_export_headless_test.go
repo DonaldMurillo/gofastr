@@ -102,16 +102,18 @@ func TestStaticExportWritesHeadlessLanding(t *testing.T) {
 }
 
 // withoutOptionLines drops the compiled --fui-* option declarations from
-// a scope block so what remains is the palette: tokens and aliases.
+// a scope block so what remains is the palette: tokens and aliases. It
+// splits on declarations, not lines: a minified sheet is one line.
 func withoutOptionLines(block string) string {
 	var keep []string
-	for _, line := range strings.Split(block, "\n") {
-		if strings.Contains(line, "--fui-") {
+	for _, decl := range strings.Split(block, ";") {
+		decl = strings.TrimSpace(decl)
+		if decl == "" || strings.HasPrefix(decl, "--fui-") {
 			continue
 		}
-		keep = append(keep, line)
+		keep = append(keep, decl)
 	}
-	return strings.Join(keep, "\n")
+	return strings.Join(keep, ";")
 }
 
 // scopedCSSBlock extracts the `{ … }` body of the first `.cui-theme-<ref>`

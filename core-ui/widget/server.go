@@ -421,10 +421,7 @@ func (s *server) serveChrome(w http.ResponseWriter, r *http.Request) {
 func (s *server) serveStyle(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/css; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	fmt.Fprint(w, widgetCSS(s.def))
-	if extra := safeExtraCSS(s.def); extra != "" {
-		fmt.Fprint(w, "\n", extra)
-	}
+	fmt.Fprint(w, RenderCSS(&s.def))
 }
 
 // safeExtraCSS invokes the host ExtraCSS hook under the chrome containment

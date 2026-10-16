@@ -129,8 +129,8 @@ func TestAppStyleReachesEveryHead(t *testing.T) {
 	a := app.NewApp("appstyle")
 	a.RegisterScreen(app.NewScreen("/", &rawHTMLComp{html: `<p>no markers</p>`}).WithTitle("Home"), nil)
 	ds := New(a)
-	if body := pageBody(t, ds, "/"); !strings.Contains(body, `/__gofastr/comp/app.css`) {
-		t.Errorf("a page with no markers must still link the app style:\n%s", truncate(body, 800))
+	if body := pageBody(t, ds, "/"); !blocksOn(body, "app") {
+		t.Errorf("a page with no markers must still carry the app style:\n%s", truncate(body, 800))
 	}
 	if tags := ds.componentCSSTags(`<p>no markers</p>`, false); !strings.Contains(tags, `href="/__gofastr/comp/app.css?v=`) {
 		t.Errorf("the export path must link the app style directly, got %q", tags)
@@ -190,7 +190,7 @@ func TestOwnedRuleWinsTieInEitherOrder(t *testing.T) {
 		if err := chromedp.Run(ctx,
 			chromedp.Navigate(srv.URL+"/styled/a"),
 			chromedp.WaitVisible(`#slot`, chromedp.ByID),
-			chromedp.Evaluate(`[...document.querySelectorAll('link[rel=stylesheet]')].map(l => l.href).find(h => h.includes('own-layout')) || ''`, &href),
+			chromedp.Evaluate(`(document.querySelector('[data-cui-bundle*="own-layout"]') || {getAttribute: () => ''}).getAttribute('data-cui-bundle')`, &href),
 		); err != nil {
 			t.Fatal(err)
 		}
@@ -212,7 +212,7 @@ func TestOwnedRuleWinsTieInEitherOrder(t *testing.T) {
 			chromedp.Navigate(srv.URL+"/styled/lazy"),
 			chromedp.WaitVisible(`#lazy`, chromedp.ByID),
 			chromedp.Evaluate(`(() => {
-				if (document.querySelector('link[href*="tie-kit"]')) return 'kit already in head';
+				if (document.querySelector('link[href*="tie-kit"], [data-cui-bundle*="tie-kit"]')) return 'kit already in head';
 				const p = document.getElementById('lazy');
 				p.insertAdjacentHTML('afterend',
 					'<p class="tie" id="lazy-in">t</p>' +
@@ -225,11 +225,13 @@ func TestOwnedRuleWinsTieInEitherOrder(t *testing.T) {
 			t.Fatalf("lazy kit load: %v", err)
 		}
 		var order []string
-		if err := chromedp.Run(ctx, chromedp.Evaluate(`[...document.querySelectorAll('link[rel=stylesheet]')].map(l => l.href).filter(h => h.includes('own-layout') || h.includes('tie-kit'))`, &order)); err != nil {
+		// The head's sheets in document order, each by what it carries: a
+		// link's URL, or the names an inline bundle lists.
+		if err := chromedp.Run(ctx, chromedp.Evaluate(`[...document.querySelectorAll('link[rel=stylesheet], style[data-cui-bundle]')].map(l => l.href || l.getAttribute('data-cui-bundle')).filter(h => h.includes('own-layout') || h.includes('tie-kit'))`, &order)); err != nil {
 			t.Fatal(err)
 		}
 		if len(order) != 2 || !strings.Contains(order[0], "own-layout") || !strings.Contains(order[1], "tie-kit") {
-			t.Fatalf("want the kit link after the owned one, got %q", order)
+			t.Fatalf("want the kit link after the owned sheet, got %q", order)
 		}
 		wantProps(t, "lazy tie", ownProp(t, ctx, "color", "lazy-in", "lazy-out"), map[string]string{
 			"lazy-in":  ownGreen,

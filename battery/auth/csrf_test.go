@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -135,9 +136,34 @@ func TestCSRFInputHTML_EmitsHiddenInput(t *testing.T) {
 	if !strings.Contains(htmlOut, `name="_csrf"`) {
 		t.Errorf("missing name attr: %q", htmlOut)
 	}
-	if !strings.Contains(htmlOut, `value="`+cookie.Value+`"`) {
-		t.Errorf("missing token value: %q", htmlOut)
+	if strings.Contains(htmlOut, cookie.Value) {
+		t.Errorf("hidden input carries the raw token, want it masked: %q", htmlOut)
 	}
+	if !csrfValueAccepted(t, cookie, htmlOut) {
+		t.Errorf("CSRF middleware rejected the rendered token: %q", htmlOut)
+	}
+}
+
+var csrfValueRe = regexp.MustCompile(`value="([^"]+)"`)
+
+// csrfValueAccepted posts the hidden input's value as the _csrf form
+// field, with the cookie, through the CSRF middleware.
+func csrfValueAccepted(t *testing.T, cookie *http.Cookie, input string) bool {
+	t.Helper()
+	m := csrfValueRe.FindStringSubmatch(input)
+	if m == nil {
+		t.Fatalf("no value in %q", input)
+	}
+	h := CSRF()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	form := url.Values{CSRFFormField: {m[1]}}.Encode()
+	r := httptest.NewRequest(http.MethodPost, "/save", strings.NewReader(form))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	return rec.Code == http.StatusOK
 }
 
 // TestCSRFInputFromCtx_MatchesRequestVariant pins the ctx-based helper:
@@ -148,22 +174,30 @@ func TestCSRFInputHTML_EmitsHiddenInput(t *testing.T) {
 func TestCSRFInputFromCtx_MatchesRequestVariant(t *testing.T) {
 	mw := CSRF()
 	rec := httptest.NewRecorder()
-	var ctxToken string
-	var fromReq template.HTML
+	var fromCtx, fromReq template.HTML
 	mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctxToken = CSRFTokenFromCtx(r.Context())
+		fromCtx = CSRFInputFromCtx(r.Context())
 		fromReq = CSRFInputHTML(r)
 	})).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
-	if ctxToken == "" {
-		t.Fatal("ctx had no token after CSRF middleware ran")
+	var cookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == CSRFCookieName {
+			cookie = c
+		}
 	}
-	fromCtx := CSRFInputFromCtx(contextWithCSRFTok(ctxToken))
-	if string(fromCtx) != string(fromReq) {
-		t.Errorf("ctx-based input differs from request-based:\n  ctx: %s\n  req: %s", fromCtx, fromReq)
+	if cookie == nil || fromCtx == "" {
+		t.Fatal("no token after CSRF middleware ran")
 	}
-	if !strings.Contains(string(fromCtx), `name="_csrf"`) {
-		t.Errorf("ctx variant missing _csrf name: %q", fromCtx)
+	// Each render masks with a fresh pad, so the two differ byte for
+	// byte; both must still carry the request's token.
+	for name, in := range map[string]template.HTML{"ctx": fromCtx, "req": fromReq} {
+		if !strings.Contains(string(in), `name="_csrf"`) {
+			t.Errorf("%s variant missing _csrf name: %q", name, in)
+		}
+		if !csrfValueAccepted(t, cookie, string(in)) {
+			t.Errorf("%s variant's token rejected: %q", name, in)
+		}
 	}
 }
 
@@ -177,23 +211,6 @@ func TestCSRFInputFromCtx_EmptyWhenNoToken(t *testing.T) {
 	if got := CSRFTokenFromCtx(context.Background()); got != "" {
 		t.Errorf("expected empty token when none on ctx, got %q", got)
 	}
-}
-
-// contextWithCSRFTok builds a context carrying tok where the auth
-// helpers expect to find it (the middleware's internal ctx key).
-// Using middleware.TokenFromContext indirectly via a real request is
-// brittle for unit tests; the helper exposes the same surface.
-func contextWithCSRFTok(tok string) context.Context {
-	// We rely on the middleware running once to set ctx; replay via a
-	// fresh request whose cookie carries tok, then capture ctx in a handler.
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: tok})
-	rec := httptest.NewRecorder()
-	var captured context.Context
-	CSRF()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		captured = r.Context()
-	})).ServeHTTP(rec, req)
-	return captured
 }
 
 // TestCSRF_WithDevCSRFKey_StableAcrossInstantiation pins V3 #5: a

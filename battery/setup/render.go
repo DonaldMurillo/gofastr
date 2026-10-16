@@ -8,6 +8,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -224,5 +225,5 @@ func (r *Runner) serveCSS(w http.ResponseWriter) {
 		b.WriteString(e.CSSFor(theme))
 		b.WriteString("\n")
 	}
-	_, _ = fmt.Fprint(w, b.String())
+	_, _ = fmt.Fprint(w, minify.ServedCSS(b.String()))
 }

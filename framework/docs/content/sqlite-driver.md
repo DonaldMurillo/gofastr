@@ -25,7 +25,7 @@ generated app already has it.
 
 ## What the DSN rewrite adds
 
-Three parameters go onto every DSN. Set any of them yourself and your
+Four parameters go onto every DSN. Set any of them yourself and your
 value wins.
 
 ### Foreign keys are on
@@ -88,6 +88,25 @@ SQLite allows one writer at a time. modernc defaults the timeout to 0,
 so a second writer gets `SQLITE_BUSY` immediately rather than waiting.
 Any app serving concurrent requests depends on the wait. mattn defaulted
 to 5000ms and this restores it.
+
+### Write transactions take the lock when they begin
+
+`_txlock=immediate`.
+
+The busy timeout covers waiting for a lock, not every way a write can
+lose to another writer. SQLite's default `BEGIN` is `DEFERRED`: a
+transaction that reads before it writes holds a snapshot from that read,
+and if another connection commits before the first write, the write
+cannot move past that commit. SQLite returns `SQLITE_BUSY` (extended code
+517, `SQLITE_BUSY_SNAPSHOT`) at once and the timeout never runs. The CRUD
+delete reads the row for the audit snapshot before it deletes, so with a
+job queue writing in the background a plain `DELETE` failed with a 500.
+
+`BEGIN IMMEDIATE` takes the write lock as the transaction starts, where
+the busy timeout applies, so concurrent writers queue instead of failing.
+A read-only transaction (`sql.TxOptions{ReadOnly: true}`) still begins
+deferred and takes no write lock. `_txlock=deferred` restores SQLite's
+default.
 
 ## In-memory databases need one connection
 
