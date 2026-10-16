@@ -239,6 +239,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-scope="<name>"` | Marks the root of an owned style: a layout root (`LayoutSpec.Style`), a screen's wrapper (`Screen.WithStyle`: its `<article>`, or one plain `<div>`, never the primary cell), or a component root (`Style.Scope`). The server writes it; the runtime never does. It is two things at once: the root of the style's compiled `@scope`, whose lower bound stops at the children of any nested owner, and a loader marker, read exactly like `data-cui-comp`: the SSR head scan (`registry.Scan`) links `/__gofastr/comp/<name>.css` for every name on the page, and the runtime's `scanAndLoadCSS` loads it on insertion (a cross-layout `swapShell` scans the new shell's parent, because the shell root carries its layout's scope). An element may carry both markers (`Style.Scope(ui.Card(...))`) and loads both sheets. Owned rules are scoped, so they beat an equal-specificity kit rule by scope proximity whatever order the sheets load in. App markup cannot set it: `html.SafeExtraAttrs` drops every `data-cui-*` key. |
 | `data-cui-internal` | Marks kit component markup that holds none of the caller's content: a label or title built from a string field, a control's input, a dismiss button, an icon the component draws. Every compiled owned style's `@scope` lower bound stops at it, so an owner styles the content it passes into a component and never the component's insides. Components set it through `headless.Internal`, and a component that builds markup and hands it to another as slot content marks it with `headless.Own`, which also marks the element holding that slot. Never on a component's root (an owner may place the root), never on an element that holds a slot or on an ancestor of one; a mark inside a marked subtree is allowed and inert. `TestKitMarksInternalSubtrees` (framework/ui) renders every kit component with every slot filled and every slot empty and fails on unmarked internal markup, a marked root, or caller content under a mark. The server writes it; the runtime never reads it. App markup cannot set it: `html.SafeExtraAttrs` drops every `data-cui-*` key. |
 | `data-cui-bundle="<a,b,c>"` | Set on the SSR-emitted bundle, a `<link>` or, when the page inlines its first-paint head, a `<style>`, to list the components it covers. The runtime reads it from either element at boot and seeds `_pendingLinks` so the per-component scan never double-loads anything already in the bundle. |
+| `data-cui-bundle-href="<url>"` | Set beside `data-cui-bundle` on an inline `<style>` that carries only the rules the page's markup can match (see "First-paint inlining"). The value is the URL a linked head would name for the same sheets. The `fullbundle` behaviour, a registered module `framework/uihost` ships, links that URL right after the `<style>` at boot and removes the attribute. It reads the attribute in `<head>` only, links nothing for a URL other than a component-sheet route (`/__gofastr/comp-bundle.css?…`, `/__gofastr/comp/<name>.css?…`), and joins the link to the kernel's stylesheet wait. |
 | `data-cui-layout="<name>"` | Set by EVERY layout layer on its wrapper `<div>` with the layout's name (e.g. `app`, `marketing`). Emit-only since the layout-chain rewrite: it is the CSS/debug contract (`.layout-<name>` pairing), and the runtime's swap decisions read `data-cui-layout-key` instead. |
 | `data-cui-layout-key="<key>"` | The layer's comparable identity, on the same wrapper `<div>`: `l:<name>` for a plain layout (the app default root, a direct screen's layout) (`l:<key>` in both forms when the layout declares `Layout.WithKey`, so a shell's identity can vary per language while its name keeps the CSS contract), `g:<prefix>:<name>` for a screen-group layer (`g:<prefix>` when the level is marker-only because its layout already renders at an outer level). The route manifest carries each route's chain as the `layouts` array of these keys, outermost → innermost; document order of the marked elements is the chain order. On SPA navigation the runtime compares the DOM's key spine against the destination's chain positionally: it swaps at the deepest shared layer, and when no root is shared it fetches the full page and replaces the whole shell. A group layer's key embeds the layout name so a per-screen layout override inside a group compares as a different layer than its siblings. |
 | `data-cui-layout-slot="<key>"` | On the layer's content cell: the `<main id="main-content">` for layer 0, the `.layout-content` div (tabindex="-1") for nested layers, the group wrapper itself for marker-only levels. This is the runtime's swap target: a partial response's `X-Gofastr-Swap: <key>` (or a cache entry's recorded layer) selects the cell whose slot key matches, replacing the old `.layout-content ?? [role=main] ?? main` structural guess. After the swap the runtime focuses the cell (screen-reader announcement); a pointer-initiated navigation passes `focusVisible: false` so the focus ring stays keyboard signal, and uihost's base CSS suppresses `outline` on the swap targets when they are not `:focus-visible`. |
@@ -1821,6 +1822,34 @@ the next full load, inlined ones arrive again inside every document, and
 so a return visit never pays more than the first visit saved. Client
 navigation is unaffected: the runtime seeds its dedup from the inline
 bundle's `data-cui-bundle` and loads only the sheets a later page adds.
+
+When the whole bundle misses the budget, the page may still inline the
+part of it its markup can match. A component sheet styles every variant
+and state of its component and a page renders a few: the site's home
+page uses five of the data table's thirteen classes. The host drops each
+rule on a `fui-` class that appears nowhere in the document: not in a
+class attribute, a `<template>`, an attribute value or the head, nor in
+the widget chrome the response inlines, nor in a registered behaviour's
+source. Classes inside `:not()`, `:is()`, `:has()` and attribute
+selectors never drop a rule, and neither does a selector with an
+escape. Other rules, at-rules and owned sheets ship whole, and a group
+rule (`@media`, `@supports`, `@container`, `@scope`) is dropped only
+when nothing inside it is left. An emptied `@layer` block stays as
+`@layer name{}`, since its first appearance fixes the layer order. If the subset fits, the page
+inlines it marked with the full sheet's URL:
+
+```html
+<style data-cui-bundle="a,b,c" data-cui-bundle-href="/__gofastr/comp-bundle.css?names=a,b,c&amp;v=…">/* the rules the page can match */</style>
+```
+
+The `fullbundle` behaviour links that URL at boot, right after the
+`<style>` and so before `app.css`, so the states a click or a client
+navigation adds are styled once it arrives, in the cascade position the
+full bundle would have had. The link joins the kernel's stylesheet wait
+(`_stylesReady`), so a client navigation settles scroll only after it
+loads. Until then a class the page did not render
+at first paint has no rules. If the subset misses the budget too, the
+head links as before.
 
 Every block is allowed by its `'sha256-…'` hash in the response's own
 `Content-Security-Policy`, never by `'unsafe-inline'`. The host patches

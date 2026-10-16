@@ -296,8 +296,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   examples/hn front page goes from 0.93 s to 0.54 s and on the
   examples/meridian homepage from 1.05 s to 0.64 s. A return visit with
   a warm cache pays for the inlined bytes again: Meridian's goes from
-  0.45 s to 0.64 s. The examples/site homepage's head is 17 KiB and
-  stays linked.
+  0.45 s to 0.64 s. A page whose whole component bundle misses the
+  budget inlines the part its markup can match instead, when that fits,
+  marked `data-cui-bundle-href` with the full sheet's URL; the new
+  `fullbundle` behaviour links the full sheet at boot, before `app.css`,
+  so states added later are styled. Rules on `fui-` classes the document
+  never names are the only ones dropped. The examples/site homepage's
+  bundle goes from 10.2 KB to 7.8 KB gzipped, its head fits, and first
+  paint goes from 1.30 s to 0.71 s (0.45 s to 0.71 s on a warm return
+  visit).
 - `ui.Form`'s hidden CSRF field and `auth.CSRFToken` /
   `auth.CSRFTokenFromCtx` now return masked tokens. Code that compared
   their result with the CSRF cookie should compare

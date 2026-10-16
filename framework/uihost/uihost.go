@@ -1676,16 +1676,24 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 	out := injectConfirmTemplate(string(page), r)
 	// A head small enough for the first round trip ships inline; the
 	// response's own policy then allows exactly those blocks by hash.
-	allow := func(styles, scripts []string) bool { return allowInlineHashes(w.Header(), styles, scripts) }
-	out = ds.injectChromeDoc(out, path, sessionID, boundedPresenceParam(r), true, comp, allow)
-	out = injectSignalSeed(ctx, out)
 	// SSR-inline registered widgets: non-hidden auto-mount widgets
 	// always go in, and a Hidden deep-link widget goes in when the
 	// request URL matches its deep link (open at first paint). The
 	// widget chrome lives just inside </body>; the runtime's
 	// _mountByName checks for an existing root before fetching
-	// cfg.chromePath.
-	out = injectWidgetSSR(out, r)
+	// cfg.chromePath. It goes in after the chrome, so a widget's sheets
+	// load on demand rather than in the head, but a first-paint subset
+	// keeps the rules its classes need.
+	widgets := widgetSSRHTML(r)
+	inline := &inlineHead{
+		allow:  func(styles, scripts []string) bool { return allowInlineHashes(w.Header(), styles, scripts) },
+		markup: widgets,
+	}
+	out = ds.injectChromeDoc(out, path, sessionID, boundedPresenceParam(r), true, comp, inline)
+	out = injectSignalSeed(ctx, out)
+	if widgets != "" {
+		out = replaceChromeMarker(out, "</body>", widgets+"</body>", "widget chrome")
+	}
 
 	ds.writeAgentLinkHeaders(w, r)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -1713,6 +1721,15 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 // TestInjectWidgetSSR_HiddenDeepLinkInlinedOnMatch here and
 // TestWidgetChromeCtx_SSRInlinedDeepLinkOpensPerCtx in core-ui/runtime.
 func injectWidgetSSR(page string, r *http.Request) string {
+	html := widgetSSRHTML(r)
+	if html == "" {
+		return page
+	}
+	return replaceChromeMarker(page, "</body>", html+"</body>", "widget chrome")
+}
+
+// widgetSSRHTML renders the widget chrome injectWidgetSSR places.
+func widgetSSRHTML(r *http.Request) string {
 	b := borrowBuilder()
 	defer returnBuilder(b)
 	u := r.URL
@@ -1754,10 +1771,7 @@ func injectWidgetSSR(page string, r *http.Request) string {
 		// and personalized when the user reopens it.
 		b.WriteString(widget.RenderChromeCtx(r.Context(), d))
 	}
-	if b.Len() == 0 {
-		return page
-	}
-	return replaceChromeMarker(page, "</body>", b.String()+"</body>", "widget chrome")
+	return b.String()
 }
 
 // injectConfirmTemplate emits the kit's confirm dialog
@@ -2058,12 +2072,21 @@ func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic s
 	return ds.injectChromeDoc(page, pagePath, sessionID, presenceTopic, bundle, comp, nil)
 }
 
-// injectChromeDoc is the chrome injector. allowInline, when set, is
-// asked whether the response's policy can take the hashes of the blocks
-// a head small enough for the first round trip would inline (see
-// firstpaint.go); it allows them on the response when it says yes. A nil
-// allowInline, or export mode, links every head resource.
-func (ds *UIHost) injectChromeDoc(page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component, allowInline func(styles, scripts []string) bool) string {
+// inlineHead is how a live page may inline its head (firstpaint.go).
+type inlineHead struct {
+	// allow is asked whether the response's policy can take the hashes
+	// of the blocks the head would inline; it allows them on the
+	// response when it says yes.
+	allow func(styles, scripts []string) bool
+	// markup is what the response adds to the page after the chrome
+	// (the first-paint widgets), whose classes a subset must keep.
+	markup string
+}
+
+// injectChromeDoc is the chrome injector. inline, when set, lets a head
+// small enough for the first round trip carry its resources. A nil
+// inline, or export mode, links every head resource.
+func (ds *UIHost) injectChromeDoc(page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component, inline *inlineHead) string {
 	// First full-shell render freezes the extra-script rail: registering
 	// after this point would ship a script on some pages and not others.
 	ds.markServingBegun()
@@ -2163,13 +2186,17 @@ func (ds *UIHost) injectChromeDoc(page, pagePath, sessionID, presenceTopic strin
 	// single component) so first paint has every needed sheet in
 	// <head>. LoadAlways entries are included whether the page used
 	// them or not; sheets only <template> content needs are prefetched.
-	var inline *firstPaintPlan
-	if bundle && allowInline != nil && !ds.noInlineFirstPaint {
+	var inlined *firstPaintPlan
+	if bundle && inline != nil && !ds.noInlineFirstPaint {
 		names, held := pageSheetNames(page)
-		if p, ok := ds.planFirstPaint(names); ok && allowInline(p.styleHashes(), p.scriptHashes()) {
-			inline = p
+		if p, ok := ds.planFirstPaint(names, page, inline.markup); ok && inline.allow(p.styleHashes(), p.scriptHashes()) {
+			inlined = p
 			if p.comp != nil {
-				headClose.WriteString(`<style data-cui-bundle="` + strings.Join(p.comp.names, ",") + `">` + p.comp.body + "</style>\n")
+				headClose.WriteString(`<style data-cui-bundle="` + strings.Join(p.comp.names, ","))
+				if p.comp.href != "" {
+					headClose.WriteString(`" data-cui-bundle-href="` + stdhtml.EscapeString(p.comp.href))
+				}
+				headClose.WriteString(`">` + p.comp.body + "</style>\n")
 			}
 			theme := ds.activeTheme()
 			if prefetch := prefetchLinks(held, setOf(names), theme, style.ThemeHash(theme)); prefetch != "" {
@@ -2178,7 +2205,7 @@ func (ds *UIHost) injectChromeDoc(page, pagePath, sessionID, presenceTopic strin
 			}
 		}
 	}
-	if inline == nil {
+	if inlined == nil {
 		if tags := ds.componentCSSTags(page, bundle); tags != "" {
 			headClose.WriteString(tags)
 			headClose.WriteByte('\n')
@@ -2193,8 +2220,8 @@ func (ds *UIHost) injectChromeDoc(page, pagePath, sessionID, presenceTopic strin
 	// query-free because the files land on disk under their bare paths
 	// and naive static hosts/mirrors resolve by path (the wget
 	// regression that already forced query-free module writes).
-	if inline != nil {
-		headClose.WriteString(`<style id="cui-app-css">` + inline.app.body + "</style>\n")
+	if inlined != nil {
+		headClose.WriteString(`<style id="cui-app-css">` + inlined.app.body + "</style>\n")
 	} else if ds.App != nil {
 		href := "/__gofastr/app.css"
 		if bundle {
@@ -2298,8 +2325,8 @@ func (ds *UIHost) injectChromeDoc(page, pagePath, sessionID, presenceTopic strin
 	// <html data-color-scheme="dark|light">.
 	colorTag := `<script src="/__gofastr/color-scheme.js"></script>`
 	switch {
-	case inline != nil:
-		colorTag = "<script>" + inline.scheme.body + "</script>"
+	case inlined != nil:
+		colorTag = "<script>" + inlined.scheme.body + "</script>"
 	case bundle:
 		colorTag = `<script src="/__gofastr/color-scheme.js?v=` + colorSchemeHash() + `"></script>`
 	}
@@ -4533,9 +4560,22 @@ func (ds *UIHost) stylesheetLinks(names []string, bundle bool, theme style.Theme
 		}
 		return b.String()
 	}
-	// Bundle. The hash combines the per-component versions in the
-	// sorted order embedded in `names`, so any change to any included
-	// component busts the bundle URL.
+	return fmt.Sprintf(`<link rel="stylesheet" href="%s" data-cui-bundle="%s">`,
+		liveSheetURL(names, theme, th), strings.Join(names, ","))
+}
+
+// liveSheetURL is the URL a live page's head links for names: the
+// component's own sheet for one, the bundle for several. The bundle's
+// hash combines the per-component versions in the sorted order embedded
+// in names, so any change to any included component busts the URL.
+func liveSheetURL(names []string, theme style.Theme, th string) string {
+	if len(names) == 1 {
+		e, ok := registry.Lookup(names[0])
+		if !ok || !safeComponentName(names[0]) {
+			return ""
+		}
+		return "/__gofastr/comp/" + names[0] + ".css?v=" + e.VersionForHash(theme, th)
+	}
 	versions := make([]string, 0, len(names))
 	for _, n := range names {
 		e, ok := registry.Lookup(n)
@@ -4544,11 +4584,7 @@ func (ds *UIHost) stylesheetLinks(names []string, bundle bool, theme style.Theme
 		}
 		versions = append(versions, e.VersionForHash(theme, th))
 	}
-	bundleV := hashStrings(versions...)
-	joined := strings.Join(names, ",")
-	return fmt.Sprintf(
-		`<link rel="stylesheet" href="/__gofastr/comp-bundle.css?names=%s&v=%s" data-cui-bundle="%s">`,
-		joined, bundleV, joined)
+	return "/__gofastr/comp-bundle.css?names=" + strings.Join(names, ",") + "&v=" + hashStrings(versions...)
 }
 
 // safeComponentName reports whether n is safe to interpolate as the

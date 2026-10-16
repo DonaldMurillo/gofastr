@@ -145,8 +145,8 @@ sees plain HTTP there). Plain-HTTP local dev never receives it. Set
 The CSP default works with the built-in UI runtime because its CSS and
 scripts are served from `/__gofastr/*`, with one exception the host
 allows by hash. A first-load page whose head resources fit 16 KiB
-compressed carries the color-scheme bootstrap, the component bundle and
-app.css inline, so it paints from the first response, and the UI host
+compressed carries the color-scheme bootstrap, the component bundle (or
+the part of it the page's markup can match) and app.css inline, so it paints from the first response, and the UI host
 adds each block's `'sha256-…'` hash to the response's
 `Content-Security-Policy` (and any Report-Only policy). The hashes go
 into the governing `style-src-elem`/`style-src` and

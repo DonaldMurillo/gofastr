@@ -178,7 +178,9 @@ Useful options:
 - `uihost.WithNoInlineFirstPaint()`: keep the color-scheme bootstrap,
   the component bundle and app.css as links on every page. By default a
   first-load page whose head fits 16 KiB compressed carries them inline,
-  allowed by hashes the host adds to the response's CSP; set this when
+  or, when the whole bundle is too heavy, the rules its markup can match
+  (the full sheet then loads after first paint), allowed by hashes the
+  host adds to the response's CSP; set this when
   the CSP is written by a proxy, a CDN or a `<meta>` tag the host cannot
   patch. See `gofastr docs security`.
 - `uihost.WithNotFoundScreen(c)`, `WithFavicon`, `WithDescription`,

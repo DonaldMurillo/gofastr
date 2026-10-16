@@ -64,7 +64,18 @@ type inlineBlock struct {
 // newInlineBlock refuses a body that could end its element early or open
 // a comment the parser would carry past the closing tag: such a body
 // ships as a link instead. HTML matches end tags ASCII case-insensitively.
+//
+// The browser hashes the element's text after HTML preprocessing, which
+// turns CR LF and a lone CR into LF, so the body is normalized the same
+// way first; CSS and JS read every one of them as the same newline. A NUL
+// the parser would replace refuses the block.
 func newInlineBlock(body string) (inlineBlock, bool) {
+	if strings.IndexByte(body, 0) >= 0 {
+		return inlineBlock{}, false
+	}
+	if strings.IndexByte(body, '\r') >= 0 {
+		body = strings.ReplaceAll(strings.ReplaceAll(body, "\r\n", "\n"), "\r", "\n")
+	}
 	low := asciiLower(body)
 	if strings.Contains(low, "</style") || strings.Contains(low, "</script") || strings.Contains(body, "<!--") {
 		return inlineBlock{}, false
@@ -111,6 +122,11 @@ type firstPaintCache struct {
 	appOK   bool
 	bundles sync.Map // bundleKey → bundleBlock
 	n       atomic.Int32
+	// subsets holds the first-paint subsets of bundles (firstpaint_prune.go).
+	subsets        sync.Map // subsetKey → bundleBlock
+	nSubsets       atomic.Int32
+	behaviorOnce   sync.Once
+	behaviorTokens map[string]struct{}
 }
 
 type bundleKey struct{ names, version string }
@@ -118,7 +134,16 @@ type bundleKey struct{ names, version string }
 type bundleBlock struct {
 	inlineBlock
 	names []string // the components the block carries, for data-cui-bundle
-	ok    bool
+	key   bundleKey
+	// droppable lists the fui- classes the bundle's selectors require,
+	// the ones a subset may drop rules for.
+	droppable []string
+	// fullURL is the URL a linked head names for the same sheets.
+	fullURL string
+	// href is set on a subset: fullURL, which the runtime links at boot
+	// (data-cui-bundle-href).
+	href string
+	ok   bool
 }
 
 var (
@@ -175,7 +200,11 @@ func (ds *UIHost) bundleBlockFor(names []string) bundleBlock {
 		b.WriteByte('\n')
 	}
 	blk, ok := newInlineBlock(b.String())
-	out := bundleBlock{inlineBlock: blk, names: kept, ok: ok}
+	out := bundleBlock{
+		inlineBlock: blk, names: kept, key: key, ok: ok,
+		droppable: droppableClasses(blk.body),
+		fullURL:   liveSheetURL(names, theme, th),
+	}
 	if c.n.Load() < maxCachedBundles {
 		if _, loaded := c.bundles.LoadOrStore(key, out); !loaded {
 			c.n.Add(1)
@@ -202,8 +231,9 @@ func (p *firstPaintPlan) scriptHashes() []string { return []string{p.scheme.hash
 
 // planFirstPaint returns the blocks a page with these component sheets
 // inlines, or false when any block cannot be inlined or together they
-// exceed the budget.
-func (ds *UIHost) planFirstPaint(names []string) (*firstPaintPlan, bool) {
+// exceed the budget. A page whose whole bundle does not fit inlines the
+// subset its markup can match, when that fits.
+func (ds *UIHost) planFirstPaint(names []string, markup ...string) (*firstPaintPlan, bool) {
 	if ds.App == nil {
 		return nil, false
 	}
@@ -223,6 +253,11 @@ func (ds *UIHost) planFirstPaint(names []string) (*firstPaintPlan, bool) {
 			return nil, false
 		}
 		if len(b.names) > 0 {
+			if total+b.gz > firstPaintBudget {
+				if sub, ok := ds.subsetBlockFor(b, markup...); ok {
+					b = sub
+				}
+			}
 			p.comp = &b
 			total += b.gz
 		}

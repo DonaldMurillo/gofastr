@@ -264,3 +264,20 @@ func TestFirstPaintReportOnlyGetsHashes(t *testing.T) {
 		t.Errorf("report-only policy lacks the bundle hash: %s", ro)
 	}
 }
+
+// TestInlineBlockMatchesTheParsedText: the browser hashes the element's
+// text after HTML preprocessing, which turns CR LF and lone CR into LF
+// and a NUL into U+FFFD. A block is hashed as the browser will see it,
+// and one whose text the parser would rewrite otherwise is not inlined.
+func TestInlineBlockMatchesTheParsedText(t *testing.T) {
+	b, ok := newInlineBlock(".a{content:\"x\\\r\ny\"}\r.b{}")
+	if !ok {
+		t.Fatal("a CR LF body was refused")
+	}
+	if want := ".a{content:\"x\\\ny\"}\n.b{}"; b.body != want || b.hash != cspHash(want) {
+		t.Errorf("body %q hash %s, want the LF form %q", b.body, b.hash, want)
+	}
+	if _, ok := newInlineBlock(".a{content:\"\x00\"}"); ok {
+		t.Error("a body with a NUL was inlined; the parser rewrites it and the hash misses")
+	}
+}
