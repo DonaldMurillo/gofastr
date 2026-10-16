@@ -195,8 +195,9 @@
 
   // In-flight dedup: if a SPA-nav to the same path is already
   // running, drop the redundant call. Matches the DataTable + search
-  // dedup pattern (one click = one request).
-  const _pendingNav = new Set();
+  // dedup pattern (one click = one request). Path -> the epoch of the
+  // navigation that requested it.
+  const _pendingNav = new Map();
   // Monotonic nav generation. Captured at the start of each loadPage
   // call; after any await, a response whose epoch is no longer the
   // latest MUST NOT touch the DOM, currentPath, or history. Without
@@ -245,7 +246,7 @@
   const _settleScroll = async (fn) => {
     const epoch = window.__gofastr._navEpoch;
     const u0 = _userScrolls;
-    await window.__gofastr._stylesReady;
+    await window.__gofastr._sheetsFor(document);
     if (!_navLive(epoch) || _userScrolls !== u0) return;
     fn();
     const x = scrollX, y = scrollY;
@@ -446,10 +447,17 @@
   // transition (a plain page declaring data-cui-vt runs this — its
   // swaps animate); without the module the commit applies directly,
   // the pre-layout behaviour, behind the supersede rule's check.
-  const _swapCommit = (epoch, from, to, apply, pickSrc) => {
+  // css: the incoming markup. Its component sheets load while the old
+  // page is still on screen (kernel _cssReady), before the title, the
+  // route announcement or the swap move to the new page.
+  const _swapCommit = async (epoch, from, to, apply, pickSrc, css, title) => {
+    await window.__gofastr._cssReady(css);
+    if (!_navLive(epoch)) return;
+    document.title = title;
+    announceRoute(title);
     const T = window.__gofastr._navHooks.transition;
     if (T) return T.commit(epoch, from, to, apply, pickSrc);
-    if (_navLive(epoch)) apply();
+    apply();
   };
 
   const loadPage = (path, opts) => {
@@ -491,12 +499,13 @@
     // popstate gate this BEFORE any history write; this arm covers the
     // X-Gofastr-Location redirect leg and any future caller.
     if (crossesDocBoundary(path)) { location.assign(path); return; }
-    // Dedup in-flight nav (10 clicks → 1 fetch), but only while path is
-    // still the destination: on A→B→A the pending A fetch holds a stale
-    // epoch and is dropped, so returning here left the URL at /a showing B.
-    if (_pendingNav.has(path) && currentPath === path) return;
-    _pendingNav.add(path);
+    // Dedup in-flight nav (10 clicks → 1 fetch), but only while the
+    // pending one is the live navigation: on A→B→A the pending A holds
+    // a stale epoch, and returning here left B live, committing under
+    // the URL /a.
+    if (_pendingNav.get(path) === window.__gofastr._navEpoch) return;
     const myEpoch = ++window.__gofastr._navEpoch;
+    _pendingNav.set(path, myEpoch);
     // The transition module's direction seam (its twin sits in the
     // module navigator's entry): binds the recorded direction and
     // pick-edge rule to THIS navigation's epoch before any await.
@@ -525,13 +534,9 @@
           ? findSlot(cached.layer)
           : ((layouts.length === 0 && domChainKeys().length === 0) ? mainEl() : null);
         if (slot) {
-          // Title first so SR + browser-history see the new title
-          // before pushState fires (the click handler does pushState).
-          document.title = cached.title;
-          announceRoute(cached.title);
-          _swapCommit(myEpoch, prevPath, path, () => {
+          await _swapCommit(myEpoch, prevPath, path, () => {
             finishNav(path, prevPath, true, swapAtSlot(slot, cached.html), ps);
-          }, cached);
+          }, cached, cached.html, cached.title);
           return;
         }
       }
@@ -545,12 +550,10 @@
         if (pf) {
           const slot = pf.layer ? findSlot(pf.layer) : ((layouts.length === 0) ? mainEl() : null);
           if (slot) {
-            document.title = pf.title;
-            announceRoute(pf.title);
-            _swapCommit(myEpoch, prevPath, path, () => {
+            await _swapCommit(myEpoch, prevPath, path, () => {
               cacheScreen(path, pf.html, pf.title, pf.layer);
               finishNav(path, prevPath, false, swapAtSlot(slot, pf.html), ps);
-            }, null);
+            }, null, pf.html, pf.title);
             return;
           }
         }
@@ -579,8 +582,6 @@
         if (fr.redirected && fr.url) dest = resolvePath(fr.url);
         if (dest !== path) { _pushPub(dest, { replace: true }); currentPath = dest; }
         const t = pdoc.querySelector('title')?.textContent || document.title;
-        document.title = t;
-        announceRoute(t);
         // The full fetch re-renders chrome under the CURRENT session,
         // if the server re-minted (restart/rotation/expiry), the fresh
         // head carries the new stream id. Copy it onto the live meta so
@@ -589,7 +590,7 @@
         const fm = sseMeta(pdoc), lm = sseMeta();
         if (fm && lm) lm.setAttribute('content', fm.getAttribute('content'));
         const nm = pdoc.querySelector('main');
-        _swapCommit(myEpoch, prevPath, dest, () => {
+        await _swapCommit(myEpoch, prevPath, dest, () => {
           const el = swapShell(shellEl(pdoc) || nm);
           if (!el) {
             // No live shell to replace (layout-less origin), fall back to
@@ -599,7 +600,7 @@
           }
           cacheScreen(dest, nm ? nm.innerHTML : '', t, nm ? (nm.getAttribute('data-cui-layout-slot') || '') : '');
           finishNav(dest, prevPath, false, el || mainEl(), ps);
-        }, null);
+        }, null, pdoc, t);
         return;
       }
 
@@ -676,13 +677,11 @@
         _pendingNav.delete(path);
         return loadPage(path, { bypassCache: true, forceFull: true, from: prevPath, restore: ps });
       }
-      document.title = title;
-      announceRoute(title);
-      _swapCommit(myEpoch, prevPath, path, () => {
+      await _swapCommit(myEpoch, prevPath, path, () => {
         const root = swapAtSlot(slot, body);
         if (!notOk) cacheScreen(path, body, title, swapKey);
         finishNav(path, prevPath, false, root, ps);
-      }, resp);
+      }, resp, body, title);
     } catch (err) {
       if (!_navLive(myEpoch)) return;
       // CLAUDE.md hard rule 4, no location.href fallback. Surface a

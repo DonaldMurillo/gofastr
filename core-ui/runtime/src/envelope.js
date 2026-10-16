@@ -60,7 +60,7 @@
   // NS._navEpoch slot and the one decision, NS._navLive.
 
   const G = NS;
-  let _pend = new Set();          // in-flight dedup, module side
+  let _pend = new Map();          // in-flight dedup, module side: path -> epoch
   let _navPointer = false;        // pointer modality, set from nav's `pointer` opt
 
   // The module's screen cache: same LRU contract as core's, its own
@@ -254,6 +254,22 @@
   };
 
   const bumpEpoch = () => ++NS._navEpoch;
+
+  // Starts the component sheets an incoming page, its fills and a
+  // cached entry's held parts render, and resolves once they have
+  // loaded (each bounded by the kernel), so the commit never paints
+  // them unstyled. A fetched part waits for its own sheets before it
+  // lands (parts module). load: the loading regions' Min hold and exit
+  // run after the sheets, so a region shown during the wait still
+  // leaves through them. False when a newer navigation took over. A
+  // kernel older than this module (a tab opened before a deploy) has
+  // no _cssReady and commits without the sheet wait.
+  const cssWait = async (epoch, src, fills, parts, load) => {
+    await Promise.all([src, ...(fills || []).map((f) => f.html), ...(parts || [])]
+      .map((h) => NS._cssReady && NS._cssReady(h)));
+    if (load && NS._navLive(epoch)) await load.wait();
+    return NS._navLive(epoch);
+  };
 
   // Parse an envelope body into a detached <template> (inert) and
   // collect fills by looping the DIRECT children (no :scope selector).
@@ -671,11 +687,12 @@
     // Core's modality record for THIS navigation, bound at entry
     // before the first await: the swap tail focuses with it.
     _navPointer = pointer;
-    // Dedup in-flight nav, but only while path is still the
-    // destination (the epoch makes a stale fetch harmless).
-    if (_pend.has(path) && NS.currentPath === path) return;
-    _pend.add(path);
+    // Dedup in-flight nav, but only while the pending one is the live
+    // navigation: on A→B→A the pending A is stale, and returning left B
+    // live under the URL /a.
+    if (_pend.get(path) === NS._navEpoch) return;
     const myEpoch = bumpEpoch();
+    _pend.set(path, myEpoch);
     const H = NS._navHooks;
     const P = H.parts;
     // The destination's deferred outlets (manifest `deferred`): one
@@ -793,6 +810,7 @@
             _pend.delete(path);
             return retry(path, { bypassCache: true, forceFull: true, from: prevPath, restore: ps });
           }
+          if (!(await cssWait(myEpoch, cached.html, cx.fills, cx.parts && [...cx.parts.values()]))) return;
           document.title = cached.title;
           announceRoute(cached.title);
           if (parts && P) {
@@ -813,6 +831,7 @@
           return;
         }
         if (slot) {
+          if (!(await cssWait(myEpoch, cached.html))) return;
           document.title = cached.title;
           announceRoute(cached.title);
           swapCommit(myEpoch, prevPath, path, () => {
@@ -841,6 +860,7 @@
               pfSeed = snap.seed;
             }
             const pfResolved = pfFills ? resolveFillTargets(pfFills) : null;
+            if (!(await cssWait(myEpoch, body, pfFills))) return;
             document.title = pf.title;
             announceRoute(pf.title);
             if (parts && P) {
@@ -878,6 +898,7 @@
         let dest = path;
         if (fr.redirected && fr.url) dest = _resolvePath(fr.url);
         if (dest !== path) { NS._pushURL(dest, { replace: true }); NS._setCurrentPath(dest); }
+        if (!(await cssWait(myEpoch, pdoc.body))) return;
         const t = pdoc.querySelector('title')?.textContent || document.title;
         document.title = t;
         announceRoute(t);
@@ -958,14 +979,11 @@
       // read it to the end.
       const html = await resp.text();
       if (!NS._navLive(myEpoch)) return;
-      // P9-A/P9-ANIM: honor Min across every shown loading region and
-      // run each one's exit animation — ONE hold for the whole apply
-      // transaction (the seed merge is global). A fast response that
-      // beat every After timer holds and exits nothing.
-      if (load) {
-        await load.wait();
-        if (!NS._navLive(myEpoch)) return;
-      }
+      // P9-A/P9-ANIM: each commit below honors Min across every shown
+      // loading region and runs each one's exit animation — ONE hold
+      // for the whole apply transaction (the seed merge is global),
+      // after the sheet wait (cssWait). A fast response that beat
+      // every After timer holds and exits nothing.
 
       // The envelope answer: parse inert, resolve every target before
       // touching the DOM (any miss recovers with a full load), apply,
@@ -982,6 +1000,7 @@
           _pend.delete(path);
           return retry(path, { bypassCache: true, forceFull: true, from: prevPath, restore: ps });
         }
+        if (!(await cssWait(myEpoch, snap.primary.html, snap.fills, null, load))) return;
         const envTitle = decodeURIComponent(resp.headers.get('X-Gofastr-Title') || document.title);
         document.title = envTitle;
         announceRoute(envTitle);
@@ -1017,6 +1036,7 @@
           let dest = path;
           if (resp.redirected && resp.url) dest = _resolvePath(resp.url);
           if (dest !== path) { NS._pushURL(dest, { replace: true }); NS._setCurrentPath(dest); }
+          if (!(await cssWait(myEpoch, docEnv.html, docEnv.fills, null, load))) return;
           document.title = docEnv.title;
           announceRoute(docEnv.title);
           if (parts) parts.pending = true;
@@ -1057,6 +1077,7 @@
           }
         }
       }
+      if (!(await cssWait(myEpoch, body, null, null, load))) return;
       document.title = title;
       announceRoute(title);
       if (parts) parts.pending = true;

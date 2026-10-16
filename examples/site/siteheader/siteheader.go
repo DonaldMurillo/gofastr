@@ -12,9 +12,10 @@
 //     hairline under the bar are docsite-header.tokens.css tokens, generated
 //     as Tokens for the site to Extend its theme with;
 //   - the behaviour is the framework's: headless.Disclosure (Trap) is
-//     the phone menu — the headless-disclosure module closes it on
-//     Escape, on a link tap and on navigation, and traps focus while it
-//     is open — and the runtime's active-link pass sets aria-current on
+//     the phone menu, a light-dismiss popup (Dismiss) — the
+//     headless-disclosure module closes it on Escape, on a link tap, on
+//     a tap outside it and on navigation, and traps focus while it is
+//     open — and the runtime's active-link pass sets aria-current on
 //     the nav links (data-cui-match-prefix keeps a section link lit).
 //
 // The bar is the page's banner landmark and a direct child of the
@@ -216,7 +217,8 @@ func Render(cfg Config) render.HTML {
 					githubLink(),
 				),
 			),
-			Trap: true,
+			Trap:    true,
+			Dismiss: true,
 			Parts: headless.Parts{Attrs: headless.PartAttrs{
 				headless.PartSummary: {"aria-label": i18nui.T(ctx, i18nui.KeyNavToggle)},
 			}},

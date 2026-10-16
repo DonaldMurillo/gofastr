@@ -257,6 +257,14 @@
       if (snap.seed) {
         try { p.seed = JSON.parse(snap.seed.textContent || 'null'); } catch (_) { p.seed = null; }
       }
+      // A part lands once the component sheets it renders have loaded
+      // (kernel _cssReady, each bounded), so it never paints unstyled,
+      // whether it lands before the commit, during the page's own
+      // sheet wait, or after. An older cached kernel has no wait.
+      if (NS._cssReady) {
+        await NS._cssReady(p.html);
+        if (st.dead || !NS._navLive(st.epoch)) { restore(addr); return; }
+      }
       if (st.committed) applyPart(st, addr, p);
       else st.landed.set(addr, p);
     };

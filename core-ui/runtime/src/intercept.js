@@ -168,7 +168,10 @@
   // fetchOverlay asks the server for the overlay variant of path,
   // naming fromURL as the origin the way a host resolves it. Resolves
   // null when the server declines (the caller falls back to a plain
-  // navigation) and rejects on network failure.
+  // navigation) and rejects on network failure. It resolves once the
+  // pane's component sheets have loaded (kernel _cssReady), so the
+  // pane never paints unstyled; each caller's epoch check drops an
+  // answer a newer move overtook during that wait.
   function fetchOverlay(path, fromURL) {
     const hdrs = {
       'X-Gofastr-Navigate': '1',
@@ -182,7 +185,7 @@
       if (r.ok) NS._inval?.(r);
       const as = r.headers.get('X-Gofastr-Overlay');
       if (!r.ok || !as || r.headers.get('X-Gofastr-Location')) return null;
-      return r.text().then((html) => ({ html, as }));
+      return r.text().then((html) => Promise.resolve(NS._cssReady && NS._cssReady(html)).then(() => ({ html, as })));
     });
   }
 

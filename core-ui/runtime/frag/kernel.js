@@ -415,11 +415,10 @@
     // Component CSS: three modes share _pendingLinks + data-cui-style dedup.
     // See core-ui/ARCHITECTURE.md for the model. Catalog seeded by /__gofastr/catalog.js.
     _pendingLinks: new Set(),
-    // Page-lifetime conjunction of every component stylesheet load, awaited
-    // by _settleScroll before hash/history scroll writes. Initialized
-    // resolved so the first loadComponentCSS chains onto a real promise
-    // instead of relying on Promise.all tolerating undefined.
-    _stylesReady: Promise.resolve(),
+    // Sheet links a wait has already settled on (loaded, failed or
+    // timed out), so a sheet that never answers stalls one wait, not
+    // every later one.
+    _sheetDone: new WeakSet(),
     loadComponentCSS(name) {
       if (!name || this._pendingLinks.has(name)) return;
       if (document.querySelector('link[data-cui-style="' + CSS.escape(name) + '"]')) return;
@@ -437,17 +436,6 @@
       link.href = e.stylePath + (e.version ? (e.stylePath.indexOf('?') >= 0 ? '&' : '?') + 'v=' + e.version : '');
       link.setAttribute('data-cui-style', name);
       link.id = 'cui-css-' + name;
-      // Each link's promise is BOUNDED: a stalled fetch (connection
-      // accepted, response never arriving) fires neither onload nor
-      // onerror and <link> has no network timeout of its own, so an
-      // unbounded promise would poison this conjunction — and every
-      // later one chained onto it — freezing scroll settling for the
-      // rest of the session. resolve is idempotent, so a timer left
-      // running after the link settled fires harmlessly into it.
-      this._stylesReady = Promise.all([this._stylesReady, new Promise((resolve) => {
-        link.onload = link.onerror = () => resolve();
-        setTimeout(resolve, 3000);
-      })]).then(() => {});
       document.head.appendChild(link);
     },
     // Loads the sheet each kit root (data-cui-comp) and owned-style
@@ -460,6 +448,39 @@
         this.loadComponentCSS(el.dataset.cuiComp);
         this.loadComponentCSS(el.dataset.cuiScope);
       });
+    },
+    // Starts the sheets of the components under root and resolves once
+    // each one root renders has loaded: its own link, or, for a name a
+    // first-paint subset covers, the full bundle link it is waiting on.
+    // Sheets root does not render (idle prewarms, a prefetch's) are not
+    // waited on. Each wait is bounded: a stalled fetch fires neither
+    // load nor error, and <link> has no timeout of its own.
+    _sheetsFor(root) {
+      // A first-paint subset whose full bundle is not linked yet: the
+      // fullbundle module links it, so wait for that module first.
+      if (document.querySelector('[data-cui-bundle-href]')) return this.loadModule('fullbundle').then(() => this._sheetsFor(root), () => {});
+      this.scanAndLoadCSS(root);
+      const links = new Set();
+      root.querySelectorAll?.('[data-cui-comp],[data-cui-scope]').forEach((el) => {
+        for (const n of [el.dataset.cuiComp, el.dataset.cuiScope]) {
+          const l = n && (document.querySelector('link[data-cui-style="' + CSS.escape(n) + '"]') || document.querySelector('link[data-cui-bundle]'));
+          if (l && !l.sheet && !this._sheetDone.has(l)) links.add(l);
+        }
+      });
+      return Promise.all([...links].map((l) => new Promise((r) => {
+        l.addEventListener('load', r);
+        l.addEventListener('error', r);
+        setTimeout(r, 3000);
+      }).then(() => this._sheetDone.add(l))));
+    },
+    // A navigation awaits this before it swaps: the incoming markup (an
+    // HTML string, parsed inert by DOMParser, or a parsed node) starts
+    // its component sheets while the old page is still on screen, so the
+    // new page paints styled. Each page links only the sheets it renders,
+    // so swapping first and linking after flashed nearly every new page
+    // unstyled.
+    _cssReady(src) {
+      return this._sheetsFor(typeof src == 'string' ? new DOMParser().parseFromString(src, 'text/html') : src);
     },
     _idleQueue: [],
     _idleFlushing: false,

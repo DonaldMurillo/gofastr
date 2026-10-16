@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,7 +92,7 @@ func TestSubsetCompletesInTheBrowser(t *testing.T) {
 	// The full bundle arrives late, so the page can see whether the
 	// kernel's stylesheet wait covers it.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/__gofastr/comp-bundle.css" {
+		if r.URL.Path == "/__gofastr/comp-bundle.css" || strings.HasPrefix(r.URL.Path, "/__gofastr/runtime/fullbundle") {
 			time.Sleep(400 * time.Millisecond)
 		}
 		host.ServeHTTP(w, r)
@@ -101,6 +102,8 @@ func TestSubsetCompletesInTheBrowser(t *testing.T) {
 	ctx := chromedptest.Context(t)
 	var got struct {
 		Waited     bool     `json:"waited"`
+		EarlyNav   bool     `json:"earlyNav"`
+		NavWaited  bool     `json:"navWaited"`
 		Used       string   `json:"used"`
 		Other      string   `json:"other"`
 		Order      bool     `json:"order"`
@@ -126,21 +129,39 @@ func TestSubsetCompletesInTheBrowser(t *testing.T) {
 					}
 				}).observe(document, {childList: true, subtree: true});
 				// When the full bundle's link goes in, ask the kernel's
-				// stylesheet wait whether it settles only once the sheet has.
+				// stylesheet wait over this page (the scroll settle's)
+				// whether it settles only once the sheet has.
 				new MutationObserver((_, o) => {
 					const l = document.querySelector('link[rel="stylesheet"][href^="/__gofastr/comp-bundle.css"]');
 					if (!l) return;
 					o.disconnect();
-					window.__gofastr._stylesReady.then(() => { window.__waited = !!l.sheet; });
-				}).observe(document, {childList: true, subtree: true});`).Do(ctx)
+					window.__gofastr._sheetsFor(document).then(() => { window.__waited = !!l.sheet; });
+					// A navigation bringing markup for a component the subset
+					// covers waits on the same sheet before it swaps.
+					const n = (l.getAttribute('data-cui-bundle') || '').split(',')[0];
+					window.__gofastr._cssReady('<div data-cui-comp="' + n + '"></div>').then(() => { window.__navWaited = !!n && !!l.sheet; });
+				}).observe(document, {childList: true, subtree: true});
+				// A navigation before the fullbundle module has linked the
+				// bundle at all waits for it too.
+				document.addEventListener('DOMContentLoaded', () => setTimeout(() => {
+					const s = document.querySelector('style[data-cui-bundle]');
+					if (!s || document.querySelector('link[data-cui-bundle]')) return;
+					const n = (s.getAttribute('data-cui-bundle') || '').split(',')[0];
+					window.__gofastr._cssReady('<div data-cui-comp="' + n + '"></div>').then(() => {
+						const l = document.querySelector('link[data-cui-bundle]');
+						window.__earlyNav = !!n && !!l && !!l.sheet;
+					});
+				}));`).Do(ctx)
 			return err
 		}),
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.WaitReady(`link[rel="stylesheet"][href^="/__gofastr/comp-bundle.css"]`, chromedp.ByQuery),
 		chromedp.Evaluate(`(async () => {
 			const link = document.querySelector('link[rel="stylesheet"][href^="/__gofastr/comp-bundle.css"]');
-			await window.__gofastr._stylesReady;
+			await window.__gofastr._sheetsFor(document);
 			const waited = window.__waited === true;
+			const navWaited = window.__navWaited === true;
+			const earlyNav = window.__earlyNav === true;
 			const style = document.querySelector('style[data-cui-bundle]');
 			const app = document.getElementById('cui-app-css');
 			const probe = document.createElement('p');
@@ -148,6 +169,8 @@ func TestSubsetCompletesInTheBrowser(t *testing.T) {
 			document.querySelector('.fui-sub-used').parentElement.appendChild(probe);
 			return {
 				waited,
+				navWaited,
+				earlyNav,
 				used: getComputedStyle(document.querySelector('.fui-sub-used')).color,
 				other: getComputedStyle(probe).color,
 				order: style.nextElementSibling === link &&
@@ -163,6 +186,12 @@ func TestSubsetCompletesInTheBrowser(t *testing.T) {
 	}
 	if !got.Waited {
 		t.Error("the kernel's stylesheet wait settled before the full bundle loaded")
+	}
+	if !got.EarlyNav {
+		t.Error("a navigation before the fullbundle module linked the bundle settled before the bundle loaded")
+	}
+	if !got.NavWaited {
+		t.Error("a navigation's sheet wait for a subset component settled before the full bundle loaded")
 	}
 	if got.Used != "rgb(1, 2, 3)" {
 		t.Errorf("the rendered class is %s, not styled by the subset", got.Used)

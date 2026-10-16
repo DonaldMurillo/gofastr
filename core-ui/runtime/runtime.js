@@ -423,11 +423,10 @@
     // Component CSS: three modes share _pendingLinks + data-cui-style dedup.
     // See core-ui/ARCHITECTURE.md for the model. Catalog seeded by /__gofastr/catalog.js.
     _pendingLinks: new Set(),
-    // Page-lifetime conjunction of every component stylesheet load, awaited
-    // by _settleScroll before hash/history scroll writes. Initialized
-    // resolved so the first loadComponentCSS chains onto a real promise
-    // instead of relying on Promise.all tolerating undefined.
-    _stylesReady: Promise.resolve(),
+    // Sheet links a wait has already settled on (loaded, failed or
+    // timed out), so a sheet that never answers stalls one wait, not
+    // every later one.
+    _sheetDone: new WeakSet(),
     loadComponentCSS(name) {
       if (!name || this._pendingLinks.has(name)) return;
       if (document.querySelector('link[data-cui-style="' + CSS.escape(name) + '"]')) return;
@@ -445,17 +444,6 @@
       link.href = e.stylePath + (e.version ? (e.stylePath.indexOf('?') >= 0 ? '&' : '?') + 'v=' + e.version : '');
       link.setAttribute('data-cui-style', name);
       link.id = 'cui-css-' + name;
-      // Each link's promise is BOUNDED: a stalled fetch (connection
-      // accepted, response never arriving) fires neither onload nor
-      // onerror and <link> has no network timeout of its own, so an
-      // unbounded promise would poison this conjunction — and every
-      // later one chained onto it — freezing scroll settling for the
-      // rest of the session. resolve is idempotent, so a timer left
-      // running after the link settled fires harmlessly into it.
-      this._stylesReady = Promise.all([this._stylesReady, new Promise((resolve) => {
-        link.onload = link.onerror = () => resolve();
-        setTimeout(resolve, 3000);
-      })]).then(() => {});
       document.head.appendChild(link);
     },
     // Loads the sheet each kit root (data-cui-comp) and owned-style
@@ -468,6 +456,39 @@
         this.loadComponentCSS(el.dataset.cuiComp);
         this.loadComponentCSS(el.dataset.cuiScope);
       });
+    },
+    // Starts the sheets of the components under root and resolves once
+    // each one root renders has loaded: its own link, or, for a name a
+    // first-paint subset covers, the full bundle link it is waiting on.
+    // Sheets root does not render (idle prewarms, a prefetch's) are not
+    // waited on. Each wait is bounded: a stalled fetch fires neither
+    // load nor error, and <link> has no timeout of its own.
+    _sheetsFor(root) {
+      // A first-paint subset whose full bundle is not linked yet: the
+      // fullbundle module links it, so wait for that module first.
+      if (document.querySelector('[data-cui-bundle-href]')) return this.loadModule('fullbundle').then(() => this._sheetsFor(root), () => {});
+      this.scanAndLoadCSS(root);
+      const links = new Set();
+      root.querySelectorAll?.('[data-cui-comp],[data-cui-scope]').forEach((el) => {
+        for (const n of [el.dataset.cuiComp, el.dataset.cuiScope]) {
+          const l = n && (document.querySelector('link[data-cui-style="' + CSS.escape(n) + '"]') || document.querySelector('link[data-cui-bundle]'));
+          if (l && !l.sheet && !this._sheetDone.has(l)) links.add(l);
+        }
+      });
+      return Promise.all([...links].map((l) => new Promise((r) => {
+        l.addEventListener('load', r);
+        l.addEventListener('error', r);
+        setTimeout(r, 3000);
+      }).then(() => this._sheetDone.add(l))));
+    },
+    // A navigation awaits this before it swaps: the incoming markup (an
+    // HTML string, parsed inert by DOMParser, or a parsed node) starts
+    // its component sheets while the old page is still on screen, so the
+    // new page paints styled. Each page links only the sheets it renders,
+    // so swapping first and linking after flashed nearly every new page
+    // unstyled.
+    _cssReady(src) {
+      return this._sheetsFor(typeof src == 'string' ? new DOMParser().parseFromString(src, 'text/html') : src);
     },
     _idleQueue: [],
     _idleFlushing: false,
@@ -1076,8 +1097,9 @@
 
   // In-flight dedup: if a SPA-nav to the same path is already
   // running, drop the redundant call. Matches the DataTable + search
-  // dedup pattern (one click = one request).
-  const _pendingNav = new Set();
+  // dedup pattern (one click = one request). Path -> the epoch of the
+  // navigation that requested it.
+  const _pendingNav = new Map();
   // Monotonic nav generation. Captured at the start of each loadPage
   // call; after any await, a response whose epoch is no longer the
   // latest MUST NOT touch the DOM, currentPath, or history. Without
@@ -1126,7 +1148,7 @@
   const _settleScroll = async (fn) => {
     const epoch = window.__gofastr._navEpoch;
     const u0 = _userScrolls;
-    await window.__gofastr._stylesReady;
+    await window.__gofastr._sheetsFor(document);
     if (!_navLive(epoch) || _userScrolls !== u0) return;
     fn();
     const x = scrollX, y = scrollY;
@@ -1327,10 +1349,17 @@
   // transition (a plain page declaring data-cui-vt runs this — its
   // swaps animate); without the module the commit applies directly,
   // the pre-layout behaviour, behind the supersede rule's check.
-  const _swapCommit = (epoch, from, to, apply, pickSrc) => {
+  // css: the incoming markup. Its component sheets load while the old
+  // page is still on screen (kernel _cssReady), before the title, the
+  // route announcement or the swap move to the new page.
+  const _swapCommit = async (epoch, from, to, apply, pickSrc, css, title) => {
+    await window.__gofastr._cssReady(css);
+    if (!_navLive(epoch)) return;
+    document.title = title;
+    announceRoute(title);
     const T = window.__gofastr._navHooks.transition;
     if (T) return T.commit(epoch, from, to, apply, pickSrc);
-    if (_navLive(epoch)) apply();
+    apply();
   };
 
   const loadPage = (path, opts) => {
@@ -1372,12 +1401,13 @@
     // popstate gate this BEFORE any history write; this arm covers the
     // X-Gofastr-Location redirect leg and any future caller.
     if (crossesDocBoundary(path)) { location.assign(path); return; }
-    // Dedup in-flight nav (10 clicks → 1 fetch), but only while path is
-    // still the destination: on A→B→A the pending A fetch holds a stale
-    // epoch and is dropped, so returning here left the URL at /a showing B.
-    if (_pendingNav.has(path) && currentPath === path) return;
-    _pendingNav.add(path);
+    // Dedup in-flight nav (10 clicks → 1 fetch), but only while the
+    // pending one is the live navigation: on A→B→A the pending A holds
+    // a stale epoch, and returning here left B live, committing under
+    // the URL /a.
+    if (_pendingNav.get(path) === window.__gofastr._navEpoch) return;
     const myEpoch = ++window.__gofastr._navEpoch;
+    _pendingNav.set(path, myEpoch);
     // The transition module's direction seam (its twin sits in the
     // module navigator's entry): binds the recorded direction and
     // pick-edge rule to THIS navigation's epoch before any await.
@@ -1406,13 +1436,9 @@
           ? findSlot(cached.layer)
           : ((layouts.length === 0 && domChainKeys().length === 0) ? mainEl() : null);
         if (slot) {
-          // Title first so SR + browser-history see the new title
-          // before pushState fires (the click handler does pushState).
-          document.title = cached.title;
-          announceRoute(cached.title);
-          _swapCommit(myEpoch, prevPath, path, () => {
+          await _swapCommit(myEpoch, prevPath, path, () => {
             finishNav(path, prevPath, true, swapAtSlot(slot, cached.html), ps);
-          }, cached);
+          }, cached, cached.html, cached.title);
           return;
         }
       }
@@ -1426,12 +1452,10 @@
         if (pf) {
           const slot = pf.layer ? findSlot(pf.layer) : ((layouts.length === 0) ? mainEl() : null);
           if (slot) {
-            document.title = pf.title;
-            announceRoute(pf.title);
-            _swapCommit(myEpoch, prevPath, path, () => {
+            await _swapCommit(myEpoch, prevPath, path, () => {
               cacheScreen(path, pf.html, pf.title, pf.layer);
               finishNav(path, prevPath, false, swapAtSlot(slot, pf.html), ps);
-            }, null);
+            }, null, pf.html, pf.title);
             return;
           }
         }
@@ -1460,8 +1484,6 @@
         if (fr.redirected && fr.url) dest = resolvePath(fr.url);
         if (dest !== path) { _pushPub(dest, { replace: true }); currentPath = dest; }
         const t = pdoc.querySelector('title')?.textContent || document.title;
-        document.title = t;
-        announceRoute(t);
         // The full fetch re-renders chrome under the CURRENT session,
         // if the server re-minted (restart/rotation/expiry), the fresh
         // head carries the new stream id. Copy it onto the live meta so
@@ -1470,7 +1492,7 @@
         const fm = sseMeta(pdoc), lm = sseMeta();
         if (fm && lm) lm.setAttribute('content', fm.getAttribute('content'));
         const nm = pdoc.querySelector('main');
-        _swapCommit(myEpoch, prevPath, dest, () => {
+        await _swapCommit(myEpoch, prevPath, dest, () => {
           const el = swapShell(shellEl(pdoc) || nm);
           if (!el) {
             // No live shell to replace (layout-less origin), fall back to
@@ -1480,7 +1502,7 @@
           }
           cacheScreen(dest, nm ? nm.innerHTML : '', t, nm ? (nm.getAttribute('data-cui-layout-slot') || '') : '');
           finishNav(dest, prevPath, false, el || mainEl(), ps);
-        }, null);
+        }, null, pdoc, t);
         return;
       }
 
@@ -1557,13 +1579,11 @@
         _pendingNav.delete(path);
         return loadPage(path, { bypassCache: true, forceFull: true, from: prevPath, restore: ps });
       }
-      document.title = title;
-      announceRoute(title);
-      _swapCommit(myEpoch, prevPath, path, () => {
+      await _swapCommit(myEpoch, prevPath, path, () => {
         const root = swapAtSlot(slot, body);
         if (!notOk) cacheScreen(path, body, title, swapKey);
         finishNav(path, prevPath, false, root, ps);
-      }, resp);
+      }, resp, body, title);
     } catch (err) {
       if (!_navLive(myEpoch)) return;
       // CLAUDE.md hard rule 4, no location.href fallback. Surface a

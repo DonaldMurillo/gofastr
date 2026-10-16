@@ -117,7 +117,8 @@ var fragments = map[string]fragmentDef{
 //     inside setSignal's attr-mode branch (aria-selected mirroring).
 //   - The <a>-click hijack owns the nav markers; data-cui-layout /
 //     data-cui-screen-group decide shell-vs-<main> swaps on navigation.
-//   - kernel owns the CSS scanner (data-cui-comp / data-cui-scope / data-cui-style), the
+//   - kernel owns the CSS scanner (data-cui-comp / data-cui-scope / data-cui-style;
+//     the sheet wait reads an unspent data-cui-bundle-href), the
 //     boot-mode read (data-cui-static), the module-prefetch bridge
 //     (data-cui-prefetch), and the module-load-failure safety net
 //     (data-cui-toast-fallback, created by window.__gofastr._fallbackToast).
@@ -135,6 +136,7 @@ var fragmentAttrs = map[string][]string{
 	"kernel": {
 		"data-cui-os",
 		"data-cui-bundle",
+		"data-cui-bundle-href",
 		"data-cui-trusted",
 		"data-cui-comp",
 		"data-cui-scope",

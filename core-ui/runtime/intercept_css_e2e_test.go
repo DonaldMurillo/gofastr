@@ -28,3 +28,29 @@ func TestInterceptPaneLoadsComponentCSS(t *testing.T) {
 		t.Fatal("the pane's component stylesheet never loaded")
 	}
 }
+
+// An intercepted pane enters the DOM styled: it waits for the sheets it
+// brings the way a navigation does, so a slow sheet never shows the pane
+// unstyled first.
+func TestInterceptPaneWaitsForSheet(t *testing.T) {
+	s := startInterceptStackServer(t)
+	s.cssDelay.Store(700)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+	if err := chromedp.Run(ctx, chromedp.Navigate(s.srv.URL+"/list"), chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Evaluate(`new MutationObserver(() => { const p = document.querySelector('#rec-a [data-cui-comp="intercept-probe"]');
+			if (p && window.__paneW === undefined) window.__paneW = p.getBoundingClientRect().width; })
+			.observe(document.body, { childList: true, subtree: true }); true`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	stackStep(t, ctx, 0)
+	if !interceptWait(ctx, `!!document.getElementById('rec-a')`) {
+		t.Fatalf("the record pane never opened: %+v", readStack(ctx))
+	}
+	var w float64
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__paneW`, &w)); err != nil {
+		t.Fatal(err)
+	}
+	if w != 7 {
+		t.Fatalf("the pane entered the DOM %vpx wide, want 7: it painted before its component sheet loaded", w)
+	}
+}

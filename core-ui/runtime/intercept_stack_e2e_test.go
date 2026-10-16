@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -128,6 +129,8 @@ type interceptStackServer struct {
 	srv   *httptest.Server
 	mu    sync.Mutex
 	froms []string
+	// cssDelay holds the pane's component stylesheet back, in ms.
+	cssDelay atomic.Int64
 }
 
 func (s *interceptStackServer) overlayFroms() []string {
@@ -152,6 +155,7 @@ func startInterceptStackServer(t *testing.T) *interceptStackServer {
 	})
 	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/css/intercept-probe.css", func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(time.Duration(s.cssDelay.Load()) * time.Millisecond)
 		w.Header().Set("Content-Type", "text/css")
 		fmt.Fprint(w, `[data-cui-comp="intercept-probe"]{display:block;inline-size:7px}`)
 	})

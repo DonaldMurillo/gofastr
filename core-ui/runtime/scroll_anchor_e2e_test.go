@@ -90,6 +90,12 @@ func scrollAnchorSite(t *testing.T, delayMs int, padPx int) *httptest.Server {
 // cancel test read that drift as a user scroll and dropped the first
 // write entirely — the hash target was never reached. Only real input
 // (wheel/touchmove/keydown/pointerdown) may cancel the write.
+//
+// A navigation now waits for the sheets its incoming markup renders
+// before it swaps (TestNavWaitsForIncomingSheet), so a plain navigation
+// no longer leaves a sheet in flight for the settle to wait on. The
+// settle wait still covers any sheet that starts after the swap, so this
+// test turns the navigation's own wait off to open that window again.
 func TestScrollAnchoringDriftDoesNotCancelHashScroll(t *testing.T) {
 	srv := scrollAnchorSite(t, 1200, 1500)
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800), chromedptest.Timeout(90*time.Second))
@@ -98,6 +104,7 @@ func TestScrollAnchoringDriftDoesNotCancelHashScroll(t *testing.T) {
 		chromedp.Navigate(srv.URL+"/a"),
 		chromedp.WaitVisible(`#screen-a`, chromedp.ByID),
 		chromedp.Evaluate(`window.scrollTo(0, 1200)`, nil),
+		chromedp.Evaluate(`window.__gofastr._cssReady = () => Promise.resolve()`, nil),
 		chromedp.Sleep(250*time.Millisecond),
 		// The navigation whose destination grows above the viewport when
 		// its cold stylesheet finally arrives (~1.2s after the swap).
@@ -125,5 +132,37 @@ func TestScrollAnchoringDriftDoesNotCancelHashScroll(t *testing.T) {
 	}
 	if diff := yFinal - deepFinal; diff < -25 || diff > 25 {
 		t.Errorf("final scrollY = %v, want ≈%v (the hash target): scroll-anchoring drift during the stylesheet wait cancelled the hash write", yFinal, deepFinal)
+	}
+}
+
+// TestHashNavLandsWithSheetWait: with the navigation's own sheet wait in
+// place, the destination enters the DOM already grown by its cold sheet,
+// so the hash write lands on the target with no drift to survive.
+func TestHashNavLandsWithSheetWait(t *testing.T) {
+	srv := scrollAnchorSite(t, 1200, 1500)
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800), chromedptest.Timeout(90*time.Second))
+	var deepAtSwap, yFinal, deepFinal float64
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/a"),
+		chromedp.WaitVisible(`#screen-a`, chromedp.ByID),
+		chromedp.Evaluate(`window.scrollTo(0, 1200);
+			new MutationObserver(() => { const d = document.getElementById('screen-b') && document.getElementById('deep');
+				if (d && window.__deepAtSwap === undefined) window.__deepAtSwap = d.offsetTop; })
+				.observe(document.body, { childList: true, subtree: true }); true`, nil),
+		chromedp.Sleep(250*time.Millisecond),
+		chromedp.Click(`#to-b`, chromedp.ByID),
+		chromedp.WaitVisible(`#screen-b`, chromedp.ByID),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`window.__deepAtSwap`, &deepAtSwap),
+		chromedp.Evaluate(`window.scrollY`, &yFinal),
+		chromedp.Evaluate(`document.getElementById('deep').offsetTop`, &deepFinal),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if deepAtSwap < 2000 {
+		t.Fatalf("the hash target sat at %v when the page entered the DOM, want ≈2200: the swap ran before its cold sheet", deepAtSwap)
+	}
+	if diff := yFinal - deepFinal; diff < -25 || diff > 25 {
+		t.Errorf("final scrollY = %v, want ≈%v (the hash target)", yFinal, deepFinal)
 	}
 }

@@ -505,14 +505,14 @@ const (
 	//        needs parts at boot) + the sse row's push-target
 	//        selector. (l1: 57)
 	//   +73  the chain's residue: declaration relocations. (l1: 78)
-	//   +79  the scroll settle's stylesheet wait: _settleScroll awaits the
-	//        kernel's _stylesReady conjunction so hash/history scroll
-	//        writes measure after cold component CSS lands, and each
-	//        loadComponentCSS link promise is bounded by a 3s timer so a
-	//        stalled fetch cannot poison the page-lifetime conjunction
-	//        and freeze scrolling for the rest of the session (the
-	//        conjunction is also initialized resolved). Measured as one
-	//        piece: reverting the wait AND its bound together. (l1: 69)
+	//   +79  the scroll settle's stylesheet wait: _settleScroll waits
+	//        for the component sheets the page renders so hash/history
+	//        scroll writes measure after cold component CSS lands, each
+	//        sheet's wait bounded by a 3s timer so a stalled fetch
+	//        cannot freeze scrolling. Measured as one piece when it
+	//        landed as a page-lifetime conjunction (_stylesReady); the
+	//        per-sheet waits of the +151 entry below replaced that
+	//        conjunction and carry its bytes now. (l1: 69)
 	//   +67  the settle's cancel test is USER INTENT, not pixel identity:
 	//        a wheel/touchmove/keydown/pointerdown counter replaces the
 	//        pre-await scrollX/scrollY capture, because cold CSS landing
@@ -542,6 +542,30 @@ const (
 	//        whatever order the sheets load in (pinned in Chromium by
 	//        TestOwnedRuleWinsTieInEitherOrder). Measured 13424 → 13450
 	//        at level 6. (l1: 15)
+	//   +174 a navigation waits for the component sheets its incoming
+	//        markup renders before it commits: _cssReady parses an HTML
+	//        string inert and _sheetsFor waits on each sheet that markup
+	//        renders and nothing else (an idle prewarm or a stalled
+	//        unrelated sheet never holds a click), each wait bounded at
+	//        3s and a settled link never waited on twice; behind a
+	//        first-paint subset it first waits for the fullbundle module
+	//        that links the full bundle. _swapCommit
+	//        awaits it while the old page is still on screen, then sets
+	//        the title and announces the route, so neither moves to a
+	//        page a newer navigation superseded during the wait.
+	//        Un-carvable: it is the click path, and each page links only
+	//        the sheets it renders, so swapping first and linking after
+	//        painted nearly every client navigation unstyled on a slow
+	//        link (TestNavWaitsForIncomingSheet and its cached and
+	//        prefetched twins, TestNavIgnoresUnrelatedSheet,
+	//        TestSubsetCompletesInTheBrowser). Measured 13470 → 13644 at
+	//        level 6. (l1: 220)
+	//   +3   the in-flight dedup is epoch-owned: _pendingNav maps a path
+	//        to the epoch that requested it and joins only the live
+	//        navigation, so A→B→A runs the last A instead of leaving B
+	//        to commit under the URL /a (TestReturnToPendingPathWins;
+	//        the sheet wait widened that window on every swap path).
+	//        Measured 13644 → 13647. (l1: -20)
 	//
 	// HALT NOTE: the bundle measures 13391 at level 6 — 291 over the
 	// 13100 target (the Back/Forward leave capture every page runs is
@@ -554,7 +578,7 @@ const (
 	// spelling) plus the fixes and boot rows named with their tests.
 	// The line is the measurement plus clearance (moved DOWN from
 	// 13527, never up).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 8
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -890,7 +914,21 @@ const (
 	// the smallest step that fits. The decision is finishNav's own
 	// scroll write, the tail every plain-page navigation runs, so no
 	// carve exists. Three spellings were measured (15563 to 15567).
-	coreCongestionWindowGZ = 14*1024 + 1227
+	//
+	// 2026-10-16: a client navigation waits for the component sheets its
+	// incoming markup renders before it commits (kernel _cssReady, awaited
+	// in _swapCommit). It took the real bundle 15556 -> 15609. The same
+	// day the wait narrowed to the sheets the incoming markup renders
+	// (kernel _sheetsFor, per link, bounded) and the title and route
+	// announcement moved behind it, taking the bundle to 15741; waiting
+	// for the fullbundle module behind a first-paint subset and the
+	// epoch-owned in-flight dedup took it to 15756. 15756, the smallest
+	// step that fits. The wait sits between the response and the
+	// swap on every navigation, so no carve exists: a demand module loaded
+	// there would delay the very commit it guards. Spellings measured: a
+	// wait plus title at each of the four swap sites (15830), and this
+	// one, where _swapCommit owns the wait, the title and the announce.
+	coreCongestionWindowGZ = 14*1024 + 1420
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -909,8 +947,11 @@ const (
 // keep the revert, continue with the next piece. The chain ends with
 // nav/boot/kernel differing from the pre-layout source by comments
 // only — the composed bundle measures 12718/14721 byte for byte — so
-// the entries sum to the measured endpoint delta EXACTLY (level 6:
-// 13538 − 12718 = 820; level 1 in parentheses, 15624 − 14721 = 903).
+// the ablation's entries summed to its measured endpoint delta EXACTLY
+// (level 6: 13538 − 12718 = 820; level 1 in parentheses, 15624 − 14721
+// = 903). Each entry added since carries its own before/after
+// measurement on the tree it landed on; gzip sizes are not additive,
+// so today's sum drifts from today's endpoint by a few dozen bytes.
 // The rule each entry is reviewed against: code a plain page never
 // runs is not core — the pieces that failed it were moved into the
 // demand modules in the same carve (see the derivation comment on
@@ -919,19 +960,21 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 	const preLayoutCoreGZ = 12718
 	const clearanceGZ = 8
 	itemised := map[string]int{
-		"supersede rule + shared epoch + transition take/pick seams":            60,  // (l1: 99)
-		"commit seam (_swapCommit delegation + wrapped sites)":                  30,  // (l1: 15)
-		"opt-in hand-off + delegation split + public push alias":                113, // (l1: 110)
-		"p14 error pages apply through the swap path":                           79,  // (l1: 113)
-		"f2 pointer-modality focus ring":                                        55,  // (l1: 83)
-		"data-cui-open anchor guard (+chain residue)":                           33,  // (l1: 23)
-		"p7-c atomic seed merge":                                                65,  // (l1: 91)
-		"kernel navHooks/epoch + transition row + deferred line + sse selector": 71,  // (l1: 57)
-		"ablation residue (declaration relocations)":                            73,  // (l1: 78)
-		"scroll settle stylesheet wait + its stall bound":                       79,  // (l1: 69)
-		"scroll settle cancels on user intent, not anchoring drift":             67,  // (l1: 49)
-		"first-nav pointer modality rides the delegated opts":                   33,  // (l1: 34)
-		"owned styles load by marker (data-cui-scope scan)":                     26,  // (l1: 15)
+		"supersede rule + shared epoch + transition take/pick seams":               60,  // (l1: 99)
+		"commit seam (_swapCommit delegation + wrapped sites)":                     30,  // (l1: 15)
+		"opt-in hand-off + delegation split + public push alias":                   113, // (l1: 110)
+		"p14 error pages apply through the swap path":                              79,  // (l1: 113)
+		"f2 pointer-modality focus ring":                                           55,  // (l1: 83)
+		"data-cui-open anchor guard (+chain residue)":                              33,  // (l1: 23)
+		"p7-c atomic seed merge":                                                   65,  // (l1: 91)
+		"kernel navHooks/epoch + transition row + deferred line + sse selector":    71,  // (l1: 57)
+		"ablation residue (declaration relocations)":                               73,  // (l1: 78)
+		"scroll settle stylesheet wait + its stall bound":                          79,  // (l1: 69)
+		"scroll settle cancels on user intent, not anchoring drift":                67,  // (l1: 49)
+		"first-nav pointer modality rides the delegated opts":                      33,  // (l1: 34)
+		"owned styles load by marker (data-cui-scope scan)":                        26,  // (l1: 15)
+		"nav waits for the incoming page's own sheets (_sheetsFor in _swapCommit)": 174, // (l1: 220)
+		"in-flight dedup joins only the live navigation (epoch-owned)":             3,   // (l1: -20)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1073,7 +1116,17 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 7679 measured after finishNav kept the scroll on a query-only
 		// change of the same path (core's rule; the module carries its
 		// own navigation tail, so it spells the same decision).
-		"envelope": 7679,
+		// 7797 measured after every swap path learned to wait for the
+		// component sheets its incoming page and fills render (cssWait),
+		// so the module never paints a new page unstyled.
+		// 7859 measured after the wait narrowed to the incoming page's
+		// own sheets, took in the parts that landed before the commit,
+		// and moved ahead of the title and the route announcement; the
+		// cssWait guard keeps an older cached kernel without _cssReady
+		// navigating.
+		// 7833 after the parts wait moved into the parts module and the
+		// loading hold moved behind the sheet wait.
+		"envelope": 7833,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
@@ -1097,7 +1150,10 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// over the page's history entry and mounts the named record
 		// over the page it lands on. Pinned at the measured size plus 2
 		// clearance.
-		"intercept": 3337,
+		// 3363 measured (2026-10-16): a pane waits for the component
+		// sheets its markup renders before it opens, so a drawer never
+		// paints unstyled. Pinned at the measured size plus 2 clearance.
+		"intercept": 3365,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
@@ -1111,7 +1167,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// sets, the enqueue seam on the navigation's pump, and the
 		// commit-side flush. Before that: 1834 (the row was 1865).
 		// parts 2009 (2007 + 2): the _navLive conversion.
-		"parts": 2089,
+		// parts 2108 measured (2026-10-16): a part lands only once the
+		// component sheets it renders have loaded, so it never paints
+		// unstyled before or after its page commits. Pinned at the
+		// measured size plus 2 clearance.
+		"parts": 2110,
 		// The transition module owns the whole view-transition
 		// machinery (the startViewTransition wrapper, the direction
 		// types, the gofastr:transition event, the reduced-motion
