@@ -9,12 +9,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [0.88.0] - 2026-10-16
 
-**BREAKING.** v0.88.0 stops first paint waiting on the runtime and
-fits a page's first view into its first response, adds browser-local
-data (`core-ui/localdb`, `framework/localentity`), site search
-(`battery/sitesearch`), static export (`gofastr export`) and the app
-binary as an OS service (`battery/service`, experimental), and fixes
-the defects of the regression audit. Four changes break callers:
+**BREAKING.** v0.88.0 stops first paint waiting on the runtime, and a
+live page whose head sheets fit 16 KiB gzipped carries them in its
+first response (a heavier page inlines the rules its markup can match
+when those fit; static exports and a policy that cannot take hashes
+keep the links).
+It adds browser-local data (`core-ui/localdb`,
+`framework/localentity`), site search (`battery/sitesearch`), static
+export (`gofastr export`) and the app binary as an OS service
+(`battery/service`, experimental), and fixes the defects of the
+regression audit. Four changes break callers:
 `ui.ContentRowConfig.BelowHeader` and `gallery.ContributeCSS` /
 `BaseCSS` are removed, live pages read the route graph from
 `/__gofastr/manifest.js`, and `core/config` enforces `validate:` tags.
