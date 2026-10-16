@@ -301,11 +301,25 @@ func TestUIE2E_OwnerScope_CrossUserIsolation(t *testing.T) {
 		chromedp.SendKeys(`#notes`, "alice-secret-log", chromedp.ByID),
 		chromedp.Click(`#addlog-submit`, chromedp.ByID),
 		// Form posts to /api/logs which returns JSON 201, no redirect;
-		// reload the dashboard to verify the log shows up.
-		chromedp.Sleep(200*time.Millisecond),
-		chromedp.Navigate(fx.URL()+"/dashboard"),
-		chromedp.WaitVisible(`#dashboard`, chromedp.ByID),
-		chromedp.Text(`#logs`, &aliceLogText, chromedp.ByID),
+		// reload the dashboard until the log shows up. A fixed sleep
+		// before the reload let a slow POST lose to the navigation that
+		// aborted it, under a loaded pre-commit sweep.
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			deadline := time.Now().Add(10 * time.Second)
+			for {
+				if err := chromedp.Run(ctx,
+					chromedp.Sleep(100*time.Millisecond),
+					chromedp.Navigate(fx.URL()+"/dashboard"),
+					chromedp.WaitVisible(`#dashboard`, chromedp.ByID),
+					chromedp.Text(`#logs`, &aliceLogText, chromedp.ByID),
+				); err != nil {
+					return err
+				}
+				if strings.Contains(aliceLogText, "alice-secret-log") || time.Now().After(deadline) {
+					return nil
+				}
+			}
+		}),
 	); err != nil {
 		t.Fatalf("alice flow: %v", err)
 	}
