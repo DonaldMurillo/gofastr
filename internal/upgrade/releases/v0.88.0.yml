@@ -35,3 +35,12 @@ notes:
         - gofastr/battery/auth.CSRFToken
         - gofastr/battery/auth.CSRFTokenFromCtx
     guidance: "Rendering the token into a page or a header needs no change. Code that compared the returned value with the CSRF cookie compares middleware.TokenFromContext(ctx) instead, which stays raw; never render that raw value, mask it with middleware.MaskCSRFToken."
+  - change: "core/config.Load enforces validate: tags: min, max and oneof run on every tagged field after loading, one left at its default included, and a rule Load cannot apply (an unknown name such as url, min on a bool, oneof on an int) fails Load instead of being skipped"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/core/config.Load
+        - gofastr/core/config.LoadWith
+        - gofastr/core/config.MustLoad
+    guidance: "Read the validate: tags on the config struct you load. A field whose default sits outside its own min/max/oneof now fails Load, so fix the default or the bound. Delete or replace a rule Load does not know (url, email, required as a validate rule; required is its own tag), and drop min/max from bool fields and oneof from numbers. Bound a time.Duration field in duration units (min=1s,max=5m), not nanoseconds."
