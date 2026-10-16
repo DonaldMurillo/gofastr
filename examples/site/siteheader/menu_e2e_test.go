@@ -94,6 +94,32 @@ func TestPhoneMenuFitsShortScreen(t *testing.T) {
 	}
 }
 
+// TestPhoneMenuRowsAreTapTargets: each link in the phone menu is a
+// full touch target, not the desktop chrome's short row.
+func TestPhoneMenuRowsAreTapTargets(t *testing.T) {
+	srv := menuSite(t)
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(390, 800), chromedptest.Timeout(60*time.Second))
+	var rows []struct {
+		Text string  `json:"text"`
+		H    float64 `json:"h"`
+	}
+	if err := chromedp.Run(ctx,
+		openMenu(srv.URL),
+		chromedp.Evaluate(`[...document.querySelectorAll('`+menu+` > summary + * a')].filter((a) => a.offsetParent)
+			.map((a) => ({ text: a.textContent.trim(), h: a.getBoundingClientRect().height }))`, &rows),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if len(rows) == 0 {
+		t.Fatal("the open menu shows no links")
+	}
+	for _, r := range rows {
+		if r.H < 44 {
+			t.Errorf("menu row %q is %vpx tall; want at least 44px", r.Text, r.H)
+		}
+	}
+}
+
 const menu = `[data-cui-scope="docsite-header"] details`
 
 // openMenu loads url (when given), waits for the disclosure module and

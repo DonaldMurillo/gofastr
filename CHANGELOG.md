@@ -40,6 +40,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   held sideways the open menu ran past the bottom of the viewport and
   its last links could not be reached. It now stops at the viewport
   edge and scrolls.
+- **The docs site's phone menu rows are full tap targets.** Each link
+  in the open menu was a 28px row of 13px text, short of the 44px touch
+  target and smaller than the page's body text. The rows are now 44px
+  tall at the body size, and so is the menu's search field text.
 
 ## [0.88.1] - 2026-10-16
 

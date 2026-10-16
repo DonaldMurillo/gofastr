@@ -325,10 +325,20 @@
 }
 
 /* Phones: the bar tightens, the version capsule goes, and the search +
-   toggle cluster collapses into the drawer, leaving brand + toggle. */
+   toggle cluster collapses into the drawer, leaving brand + toggle.
+   The drawer's rows take the body size and a full touch target each:
+   the desktop chrome's 13px links made 28px rows on a phone. */
 @media (--below-md) {
   .bar { gap: var(--spacing-sm); }
   .brand-status { display: none; }
   .bar-actions { display: none; }
   .end { gap: var(--spacing-xs); }
+  .panel-links { gap: 0; }
+  .panel-links a {
+    display: flex;
+    align-items: center;
+    min-block-size: var(--spacing-touch-target);
+    font-size: var(--text-base);
+  }
+  .panel-search { font-size: var(--text-base); }
 }
