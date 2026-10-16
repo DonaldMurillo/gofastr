@@ -44,6 +44,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   in the open menu was a 28px row of 13px text, short of the 44px touch
   target and smaller than the page's body text. The rows are now 44px
   tall at the body size, and so is the menu's search field text.
+- **A static export's sitemap names its base path once.** A site whose
+  `SitemapConfig.BaseURL` already ends in the export's base path
+  (`https://donaldmurillo.github.io/gofastr` with `--export-base
+  /gofastr`) listed `/gofastr/gofastr/...` URLs in sitemap.xml and
+  robots.txt, and every one of them 404ed. The base path is now added
+  only when the URL does not already end in it.
 
 ## [0.88.1] - 2026-10-16
 
