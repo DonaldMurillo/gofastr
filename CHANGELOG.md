@@ -338,6 +338,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   features that need the Go server.
 
 ### Fixed
+- **The request-timeout middleware no longer hides upstream response
+  headers from the handler.** It handed the handler an empty header map
+  and copied it over the real one afterwards, so a handler could not
+  read the `Content-Security-Policy` the security middleware had set,
+  could not delete an upstream header, and an `Add` to `Vary`
+  replaced the upstream values instead of joining them. The handler now
+  starts from a copy of the upstream headers, and a header it deletes
+  stays deleted.
 - **SQLite write transactions no longer fail when another writer
   commits mid-transaction.** `sqlite/stdlib` now adds `_txlock=immediate`
   to every DSN. Under SQLite's default deferred `BEGIN`, a transaction
