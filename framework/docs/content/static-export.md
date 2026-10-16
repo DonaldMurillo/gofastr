@@ -62,8 +62,8 @@ go build -o site ./examples/site/
   `data-cui-push-state` that names an exported page is written as
   `/about/` (query and fragment kept). A click, client navigation
   included, then costs one request instead of two. The same rewrite
-  covers each hidden widget's dumped chrome and the sitemap's `<loc>`
-  URLs. Links to anything else (assets, routes the export skipped,
+  covers each hidden widget's dumped chrome, the PWA offline page and
+  the sitemap's `<loc>` URLs. Links to anything else (assets, routes the export skipped,
   absolute URLs) are left as written.
 - `/__gofastr/runtime.js`: the runtime core.
 - `404.html` at the export root: the not-found page the live server

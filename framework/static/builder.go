@@ -1007,8 +1007,9 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	// asset links get the same base rewrite as every exported page. It
 	// also gets the data-cui-static stamp so the runtime's static-mode
 	// guards apply, but not the "run locally" banner. An offline
-	// fallback is not a demo page.
-	offline := b.rewriteBaseURLs(stampStatic(b.Host.PWAOfflineHTML()))
+	// fallback is not a demo page. Its page links take the slash the
+	// pages' own do (slashPageLinks).
+	offline := b.slashPageLinks(b.rewriteBaseURLs(stampStatic(b.Host.PWAOfflineHTML())), pageSet(res.Pages))
 	files := []struct {
 		urlPath string
 		relFile string

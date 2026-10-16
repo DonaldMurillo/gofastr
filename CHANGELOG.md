@@ -57,8 +57,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   docs-site switch went from about 465 ms to about 315 ms. An installed
   PWA's service worker keys its precached pages the same way, so a
   client-side switch still finds them offline, and a hidden widget's
-  chrome (a section menu opened from the header) links them the same
-  way too. A link the export does not write, such as a search result,
+  chrome (a section menu opened from the header) and the PWA offline
+  page link them the same way too. A link the export does not write, such as a search result,
   still lands on the page, and the current-page highlight now treats
   `/about` and `/about/` as one page.
 - **A static export's sitemap names its base path once.** A site whose

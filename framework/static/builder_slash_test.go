@@ -91,3 +91,23 @@ func checkSlashedLinks(t *testing.T, f, page, base string) {
 		}
 	}
 }
+
+// TestExportOfflinePageLinksWithSlash: an app's offline screen links
+// pages the same way the pages do.
+func TestExportOfflinePageLinksWithSlash(t *testing.T) {
+	a := coreapp.NewApp("SSGTest")
+	a.Register("/", &homeScreen{}, nil)
+	a.Register("/about", &homeScreen{}, nil)
+	host := uihost.New(a, uihost.WithPWA(uihost.PWAConfig{OfflineScreen: linksScreen{}}))
+	out := t.TempDir()
+	if _, err := (&Builder{Host: host, OutDir: out}).Build(context.Background()); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(out, "__gofastr", "pwa", "offline", "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page := string(raw); !strings.Contains(page, `href="/about/"`) || strings.Contains(page, `href="/about"`) {
+		t.Errorf("offline page does not link /about/: %s", page)
+	}
+}
