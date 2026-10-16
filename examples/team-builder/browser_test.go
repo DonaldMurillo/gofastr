@@ -135,7 +135,12 @@ func TestTeamBuilderInBrowser(t *testing.T) {
 	// A second tab sees the team and every later change.
 	tab2, cancel := chromedp.NewContext(tab)
 	defer cancel()
-	if err := chromedp.Run(tab2,
+	// An empty Run creates the tab's target; front then needs one to
+	// activate before the first poll.
+	if err := chromedp.Run(tab2); err != nil {
+		t.Fatalf("open second tab: %v", err)
+	}
+	if err := chromedp.Run(front(tab2, t),
 		chromedp.Navigate(base+"/"),
 		waitText(`[data-fui-local-count]`, "3"),
 	); err != nil {

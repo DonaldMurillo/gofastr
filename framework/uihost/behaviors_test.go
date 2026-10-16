@@ -105,3 +105,26 @@ func TestPreloadLinkForBehaviorMarker(t *testing.T) {
 		t.Errorf("page carrying [data-x] missing preload link %q", want)
 	}
 }
+
+// A registered data block (registry.RegisterDataBlock, core-ui/localdb's
+// schema among them) reaches the head exactly once in both modes: the
+// live branch writes it beside the compute manifest, and export mode
+// gets it through widget.RuntimeModuleManifestScript.
+func TestDataBlockOncePerPageLiveAndExport(t *testing.T) {
+	registry.IsolateForTest(t)
+	registry.RegisterDataBlock("gofastr-test-block", func() []byte { return []byte(`{"k":1}`) })
+	ds := actionsHost()
+
+	req := httptest.NewRequest("GET", "/plain", nil)
+	w := httptest.NewRecorder()
+	ds.ServeHTTP(w, req)
+	exported, err := ds.RenderStaticPage(context.Background(), "/plain")
+	if err != nil {
+		t.Fatalf("RenderStaticPage: %v", err)
+	}
+	for _, c := range []struct{ mode, page string }{{"live", w.Body.String()}, {"export", exported}} {
+		if n := strings.Count(c.page, `id="gofastr-test-block"`); n != 1 {
+			t.Errorf("%s page carries the data block %d times; want 1", c.mode, n)
+		}
+	}
+}
