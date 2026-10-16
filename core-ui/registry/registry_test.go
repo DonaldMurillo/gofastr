@@ -1,6 +1,8 @@
 package registry
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -354,9 +356,79 @@ func TestCSSAndVersionCacheStable(t *testing.T) {
 	}
 }
 
+func TestHashVariantsMatchThemeVariants(t *testing.T) {
+	reset()
+	h := RegisterStyle("c", func(t style.Theme) string { return ".x { color: red }" })
+	theme := style.DefaultTheme()
+	th := style.ThemeHash(theme)
+	if got, want := h.Entry().VersionForHash(theme, th), h.Entry().VersionFor(theme); got != want {
+		t.Errorf("VersionForHash = %q, VersionFor = %q", got, want)
+	}
+	if got, want := h.Entry().CSSForHash(theme, th), h.Entry().CSSFor(theme); got != want {
+		t.Errorf("CSSForHash = %q, CSSFor = %q", got, want)
+	}
+}
+
 // Catch panic with string message, RegisterStyle panics with
 // fmt.Sprintf, so the value is a string.
 func init() {
 	// Ensure component package is reachable for type checks.
 	var _ component.Component = (*stubComponent)(nil)
+}
+
+// A <template> is inert: the browser never renders its content, and the
+// runtime's boot scan (querySelectorAll) does not reach into it. The SSR
+// scan must agree, or a dialog or toast kept in a template makes its
+// sheet render-blocking on every page that merely carries it.
+func TestScanSkipsInertTemplates(t *testing.T) {
+	for _, c := range []struct{ name, html, want, held string }{
+		{"template content", `<template data-cui-confirm-dialog><dialog data-cui-comp="dlg"></dialog></template><div data-cui-comp="real"></div>`, "real", "dlg"},
+		{"marker on the template", `<template data-cui-comp="tpl"></template><i data-cui-comp="real"></i>`, "real", "tpl"},
+		{"nested", `<template><template><i data-cui-comp="a"></i></template><i data-cui-comp="b"></i></template><i data-cui-comp="c"></i>`, "c", "a,b"},
+		{"unterminated", `<i data-cui-comp="c"></i><template><i data-cui-comp="a"></i>`, "c", "a"},
+		{"uppercase", `<TEMPLATE><i data-cui-comp="a"></i></TEMPLATE><i data-cui-comp="c"></i>`, "c", "a"},
+		{"declarative shadow root renders", `<div><template shadowrootmode="open"><i data-cui-comp="shadow"></i></template></div>`, "shadow", ""},
+		{"shadow root name in uppercase", `<div><template SHADOWROOTMODE=open><i data-cui-comp="shadow"></i></template></div>`, "shadow", ""},
+		{"shadowrootmode as a value", `<template title="shadowrootmode"><i data-cui-comp="c"></i></template>`, "", "c"},
+		{"shadowrootmode after a value", `<template data-x='a b' shadowrootmode="open"><i data-cui-comp="shadow"></i></template>`, "shadow", ""},
+		{"custom element named template-x", `<template-x data-cui-comp="t"></template-x>`, "t", ""},
+		{"text mentioning a template", `<p>&lt;template&gt;</p><i data-cui-comp="c"></i>`, "c", ""},
+		{"held and rendered", `<template><i data-cui-comp="c"></i><i data-cui-comp="d"></i></template><i data-cui-comp="c"></i>`, "c", "d"},
+		{"two templates", `<template><i data-cui-comp="a"></i></template><p></p><template><i data-cui-comp="b"></i></template>`, "", "a,b"},
+		{"template in a comment", `<!-- <template> --><i data-cui-comp="c"></i>`, "c", ""},
+		{"template in an attribute", `<p title="<template>"></p><i data-cui-comp="c"></i>`, "c", ""},
+		{"template in a script", `<script>let t = "<template>";</script><i data-cui-comp="c"></i>`, "c", ""},
+		{"template in a textarea", `<TEXTAREA><template></TEXTAREA><i data-cui-comp="c"></i>`, "c", ""},
+		{"end tag in a held comment", `<template><!-- </template> --><i data-cui-comp="a"></i></template><i data-cui-comp="c"></i>`, "c", "a"},
+		{"unterminated comment", `<i data-cui-comp="c"></i><!-- <template>`, "c", ""},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := strings.Join(Scan(c.html), ","); got != c.want {
+				t.Fatalf("Scan = %q, want %q", got, c.want)
+			}
+			live, held := ScanSplit(c.html)
+			if got := strings.Join(live, ","); got != c.want {
+				t.Fatalf("ScanSplit live = %q, want %q", got, c.want)
+			}
+			if got := strings.Join(held, ","); got != c.held {
+				t.Fatalf("ScanSplit held = %q, want %q", got, c.held)
+			}
+		})
+	}
+}
+
+// The ?v= version addresses the bytes a browser caches as immutable,
+// so it is taken over the served (minified) sheet. Taken over the
+// source, a minifier change would ship new bytes under an old URL.
+func TestVersionCoversServedBytes(t *testing.T) {
+	reset()
+	h := RegisterStyle("c", func(style.Theme) string { return ".x {\n  color: red;\n}\n/* note */" })
+	theme := style.DefaultTheme()
+	th := themeHash(theme)
+	e := h.Entry()
+	served := e.ServedCSSForHash(theme, th)
+	sum := sha256.Sum256([]byte(th + "\x00" + served))
+	if got, want := e.VersionForHash(theme, th), hex.EncodeToString(sum[:6]); got != want {
+		t.Fatalf("version %s, want %s (the served bytes' hash)", got, want)
+	}
 }

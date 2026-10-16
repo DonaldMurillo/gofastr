@@ -19,6 +19,7 @@ import "time"
 ```go
 middleware.Recovery()
 middleware.RequestID()
+middleware.Compress()          // only with AppConfig.Compression
 middleware.SecurityHeaders(middleware.SecurityHeadersConfig{})
 middleware.Timeout(30 * time.Second)
 ```
@@ -28,8 +29,56 @@ middleware.Timeout(30 * time.Second)
 
 `Recovery` is outermost so a panic anywhere below it produces a clean
 `500`. `RequestID` runs next so every later log line carries the trace
-ID. `Timeout` is innermost: a `30s` deadline that cancels the request
-context if the handler hangs.
+ID. `Compress`, when `AppConfig.Compression` is set, gzips text
+responses for clients that send `Accept-Encoding: gzip`; it sits outside
+everything that writes the body, so it sees the final bytes. `Timeout` is innermost: a `30s` deadline that
+cancels the request context if the handler hangs.
+
+### Compression
+
+The default chain does not compress: most deployments put a reverse
+proxy or CDN in front of the app, and it compresses there. Set
+`AppConfig.Compression` when the app faces clients directly:
+
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/framework"
+-->
+```go
+app := framework.NewApp(framework.WithConfig(framework.AppConfig{
+    Compression: true,
+}))
+_ = app
+```
+
+`Compress` encodes HTML, CSS, JavaScript, JSON, XML, SVG and plain text
+of 1 KB or more for clients whose `Accept-Encoding` admits gzip (a
+named `gzip;q=0` refuses it even beside a `*` wildcard), and adds `Vary: Accept-Encoding` to every response it
+could have compressed. It leaves alone `HEAD` requests, `Range` requests,
+`text/event-stream`, bodies that already carry a `Content-Encoding`,
+`204`/`206`/`304` answers and hijacked connections. An `ETag` gains a
+`-gzip` suffix on the compressed variant, and a conditional request
+carrying that suffix still revalidates to `304`. A compressed response
+drops `Accept-Ranges`, since a range request is served uncompressed.
+Responses marked `immutable` (hashed static assets, `runtime.js`,
+`manifest.js`) are compressed at the best level and cached in memory by
+content hash from the second time the same bytes are served. A one-off
+body is not kept, so a client that mints immutable URLs has to request
+each one twice to displace a cached entry, and the cache's byte bound
+holds either way. A body under a strong `ETag` is held until the
+handler returns and compressed in one pass, so the tag names one
+encoding; if its handler flushes, it streams and the tag turns weak.
+Everything else streams at the default level. A handler that panics
+after the response started cannot get a `500`: the connection is cut,
+so the client sees a truncated response. The encoding is gzip only:
+the standard library has no Brotli.
+
+A compressed page that reflects attacker input next to a secret leaks
+the secret through response sizes (BREACH), whether the app or a proxy
+in front of it compresses. The framework's own secret in pages is the
+CSRF token, and it never appears raw; see
+[masked tokens](#masked-tokens) below. A secret the app renders itself
+(an API key, an invite link) next to reflected input is the app's to
+mask or move out of the page.
 
 Router middleware runs only for requests the router answers. A gate
 that must hold for every byte the listener serves, the interactive
@@ -102,9 +151,29 @@ sees plain HTTP there). Plain-HTTP local dev never receives it. Set
 `HSTSMaxAge: -1` to disable, a positive value to change the age, or
 `HSTSIncludeSub` / `HSTSPreload` to extend it.
 
-The CSP default works with the built-in UI runtime because all CSS and
-scripts are served as external resources under `/__gofastr/*`. If you
-embed third-party scripts, fonts, or frames you must override
+The CSP default works with the built-in UI runtime because its CSS and
+scripts are served from `/__gofastr/*`, with one exception the host
+allows by hash. A first-load page whose head resources fit 16 KiB
+compressed carries the color-scheme bootstrap, the component bundle (or
+the part of it the page's markup can match) and app.css inline, so it paints from the first response, and the UI host
+adds each block's `'sha256-…'` hash to the response's
+`Content-Security-Policy` (and any Report-Only policy). The hashes go
+into the governing `style-src-elem`/`style-src` and
+`script-src-elem`/`script-src` lists, or into a new `style-src` /
+`script-src` copied from `default-src`. A policy that refuses the kind
+outright (`'none'`) keeps the page on links and is left untouched; a
+list that already allows `'unsafe-inline'` with no nonce or hash is left
+alone.
+
+The host can only patch a policy that is on the response when the page
+renders: the default chain's, or one your own middleware set. If the
+policy is written somewhere else (a reverse proxy, a CDN rule, a
+`<meta>` tag in a custom layout), the hashes never reach it and the
+browser would refuse the inlined blocks. Pass
+`uihost.WithNoInlineFirstPaint()` there to keep every head resource an
+external link. Static exports always link.
+
+If you embed third-party scripts, fonts, or frames you must override
 `ContentSecurityPolicy` explicitly; do not relax it with
 `'unsafe-inline'` globally.
 
@@ -187,6 +256,19 @@ that's guaranteed to 403 the next POST. To carry tokens across a
 planned rotation without bouncing in-flight forms, list the previous
 secret(s) in `AdditionalKeys`; drain once the old tokens have
 expired.
+
+### Masked tokens
+
+Render `middleware.MaskCSRFToken(token)` into a page, never the raw
+cookie value. The masked form is `m1.` plus a fresh one-time pad and the
+token XORed with it, so its bytes differ on every render and a compressed
+response gives a BREACH-style attacker nothing to converge on. `CSRF`
+unmasks a submitted value before comparing it, and still accepts the raw
+token from scripts that read the cookie. `ui.Form`'s hidden field and
+the auth battery's `CSRFToken` / `CSRFTokenFromCtx` already return masked
+tokens, so a `<meta name="csrf-token">` rendered from them (the tag the
+runtime forwards as `X-CSRF-Token`) is masked too.
+`middleware.TokenFromContext` stays raw: never render it.
 
 ## Cross-site form guard (Fetch Metadata)
 
@@ -385,6 +467,9 @@ in the gateway / docs pipeline.
 - `SecurityHeaders(SecurityHeadersConfig)`: defensive headers above.
 - `CORS(CORSConfig)`: cross-origin headers + preflight.
 - `CSRF(CSRFConfig)`: double-submit cookie pattern.
+- `MaskCSRFToken(token)`: per-render masked form of a CSRF token for
+  page bodies.
+- `Compress()`: gzip for text responses (see [Compression](#compression)).
 - `RateLimit(RateLimitConfig)`: token-bucket per key.
 - `Timeout(d)`: per-request deadline; cancels context on expiry.
 - `NewMetrics()` + `MetricsMiddleware` + `MetricsHandler`: RED metrics.

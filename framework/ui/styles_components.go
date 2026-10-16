@@ -13,9 +13,10 @@ import (
 // appearance.
 //
 // LoadAuto is the default: load when the marker first hits the DOM.
-// PageHeader uses LoadAlways (separate file) because it's on every
-// screen. Anything that would benefit from idle prefetch should use
-// registry.WithLoad(registry.LoadPrewarm).
+// Button uses LoadAlways (below). PageHeader and Sidebar use
+// LoadPrewarm: a page that renders one links its sheet through the SSR
+// scan, and the idle prefetch covers a client navigation that swaps one
+// in. Anything else that is likely soon should prewarm the same way.
 
 var (
 	sectionStyle      = registry.RegisterStyle("ui-section", sectionCSS)

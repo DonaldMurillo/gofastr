@@ -118,7 +118,7 @@ func componentCSS(body render.HTML) string {
 	var b strings.Builder
 	for _, n := range uniq {
 		if e, ok := registry.Lookup(n); ok {
-			b.WriteString(e.CSSFor(theme))
+			b.WriteString(e.ServedCSSFor(theme))
 		}
 	}
 	return b.String()

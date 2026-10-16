@@ -14,6 +14,7 @@ package headless
 
 import (
 	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
@@ -379,6 +380,34 @@ func TestE2E_MenuLazyPanelInflatesOnOpen(t *testing.T) {
 	}
 	if !pollTrue(ctx, `document.activeElement && document.activeElement.textContent.trim() === 'Row two'`) {
 		t.Fatal("ArrowDown did not walk the mounted lazy rows")
+	}
+}
+
+// A lazy panel's rows sit in an inert template, so the host's first
+// paint only prefetched the sheets they need. Inflating them into the
+// panel loads those sheets: a component row is styled once it mounts.
+func TestE2E_MenuLazyRowsLoadTheirSheets(t *testing.T) {
+	icon := render.HTML(`<span data-cui-comp="lazy-row-probe" id="lz-icon">*</span>`)
+	menu := Menu(MenuProps{ID: "lzs", Label: "View", LazyPanel: true, Items: []MenuItem{
+		{Label: "Row one", Icon: icon},
+	}}, nil)
+	page := `<script>window.__gofastr_catalog={"lazy-row-probe":{stylePath:"/css/lazy-row-probe.css"}};</script>` + menuPage(t, menu)
+	b := startBehaviorServer(t, page, func(mux *http.ServeMux) {
+		mux.HandleFunc("/css/lazy-row-probe.css", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/css")
+			w.Write([]byte(`#lz-icon{outline:5px solid rgb(1, 2, 3)}`))
+		})
+	})
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, menuLoaded) {
+		t.Fatal("the module never loaded")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`document.querySelector('details[data-hui-menu="lzs"] > summary').click()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `!!document.getElementById('lz-icon') && getComputedStyle(document.getElementById('lz-icon')).outlineWidth === '5px'`) {
+		t.Fatal("the lazy row mounted but its component sheet was never loaded")
 	}
 }
 

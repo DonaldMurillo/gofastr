@@ -99,3 +99,43 @@ func TestStaticPage_UnmarkedSSRLinkIsLoadedAgain(t *testing.T) {
 		t.Fatalf("an unmarked SSR link was loaded %d times, want 2: the runtime dedupes on data-cui-style, and this page has none", links)
 	}
 }
+
+// TestInlineBundleLoadsNoLink: a live page whose head fits the first
+// round trip carries its component sheets in <style data-cui-bundle>. The
+// boot scan seeds its dedup from that element exactly as it does from a
+// bundle <link>, or every component on the page loads a second time.
+func TestInlineBundleLoadsNoLink(t *testing.T) {
+	var cssHits atomic.Int32
+	js, err := RuntimeJS()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
+	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Write([]byte(js))
+	})
+	mux.HandleFunc("/css/static-probe.css", func(w http.ResponseWriter, _ *http.Request) {
+		cssHits.Add(1)
+		w.Header().Set("Content-Type", "text/css")
+		w.Write([]byte(`body{}`))
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!doctype html><html><head><style data-cui-bundle="static-probe">body{}</style>`+
+			`<script>window.__gofastr_catalog={"static-probe":{stylePath:"/css/static-probe.css",version:"1"}};</script>`+
+			`</head><body>`+
+			`<span data-cui-comp="static-probe">styled</span>`+
+			`<span id="ready">ready</span>`+
+			`<script src="/__gofastr/runtime.js"></script></body></html>`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	if links := countStaticProbeLinks(t, srv); links != 0 {
+		t.Fatalf("the runtime linked an inlined component %d times", links)
+	}
+	if hits := cssHits.Load(); hits != 0 {
+		t.Fatalf("the inlined sheet was fetched %d times", hits)
+	}
+}

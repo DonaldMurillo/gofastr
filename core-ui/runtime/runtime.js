@@ -121,14 +121,13 @@
   // -----------------------------------------------------------------------
   // Router: known routes from screen registration
   // -----------------------------------------------------------------------
-  const routes = new Map(); // path → { title, preload, layouts, redirect, docScripts }
+  const routes = new Map(); // path → { preload, layouts, redirect, docScripts }
   let currentPath = location.pathname + location.search;
 
   const registerRoutes = (routeList) => {
     if (!Array.isArray(routeList)) return;
     for (const r of routeList) {
       routes.set(r.path ?? r.Path, {
-        title: r.title ?? r.Title ?? '',
         // Prefetch mode: '' (never) | 'hover' | 'visible' | 'eager'.
         preload: r.preload ?? r.Preload ?? '',
         // Layout chain as layer keys, outermost → innermost.
@@ -2760,11 +2759,12 @@
     const G = window.__gofastr;
     if (!G?.scanAndLoadCSS) return;
     // Seed _pendingLinks with names already covered by the SSR
-    // bundle link, so the on-demand scanner doesn't redundantly load
-    // per-component sheets. The names live on the bundle <link>'s
+    // bundle, so the on-demand scanner doesn't redundantly load
+    // per-component sheets. The names live on the bundle's
     // data-cui-bundle attribute (a stable contract), not parsed
-    // from the URL.
-    document.head.querySelectorAll('link[data-cui-bundle]').forEach((l) => {
+    // from the URL: a <link> to the bundle, or the <style> a page
+    // whose head fits the first round trip carries it in.
+    document.head.querySelectorAll('[data-cui-bundle]').forEach((l) => {
       const names = (l.getAttribute('data-cui-bundle') || '').split(',');
       for (const n of names) if (n) G._pendingLinks.add(n);
     });
@@ -2865,7 +2865,12 @@
     _injectSignalAria();
     _runMountActions(document);
   };
-  if (document.readyState === 'loading') {
+  // A deferred runtime.js runs at readyState 'interactive' but before
+  // the deferred action scripts after it, so it waits for
+  // DOMContentLoaded too, or mounts fire at handlers not registered yet.
+  // Nothing injects runtime.js after parsing, the one spot where a
+  // deferred tag would miss that event.
+  if (document.readyState === 'loading' || document.currentScript?.defer) {
     document.addEventListener('DOMContentLoaded', _initialPass);
   } else {
     _initialPass();

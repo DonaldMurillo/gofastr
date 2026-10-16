@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
@@ -342,16 +343,17 @@ func RenderChromeCtx(ctx context.Context, d *Definition) string {
 	return string((&server{def: *d}).renderSkeletonCtx(ctx))
 }
 
-// RenderCSS returns the widget's stylesheet: the framework positioning +
-// chrome rules plus the widget's optional ExtraCSS. Exported so the static
-// exporter can dump each widget's CSS as a query-free file alongside its
-// chrome HTML. Mirrors what serveStyle writes to the live style endpoint.
+// RenderCSS returns the widget's stylesheet as served: the framework
+// positioning + chrome rules plus the widget's optional ExtraCSS, minified
+// outside dev (minify.ServedCSS). The live style endpoint writes it, and
+// the static exporter dumps it as a query-free file beside the chrome
+// HTML, so both send the same bytes.
 func RenderCSS(d *Definition) string {
 	css := widgetCSS(*d)
 	if extra := safeExtraCSS(*d); extra != "" {
 		css += "\n" + extra
 	}
-	return css
+	return minify.ServedCSS(css)
 }
 
 // New starts a builder for a widget Definition with sensible defaults.

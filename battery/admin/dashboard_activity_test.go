@@ -131,7 +131,8 @@ func TestRecentActivityListsChanges(t *testing.T) {
 	x.seedAuditDiff("a1", "", "posts", "update", "p-1", userID, now,
 		`{"old":{"title":"Hello world","status":"draft"},"new":{"title":"Hello world","status":"published"}}`)
 	x.seedAuditDiff("a2", "", "posts", "create", "p-1", userID, now.Add(-time.Minute), `{"new":{"title":"Hello world","status":"draft"}}`)
-	body := get(x.as(theAdmin), "/admin").Body.String()
+	// The markup only: an inlined head's sheets name the marker too.
+	_, body, _ := strings.Cut(get(x.as(theAdmin), "/admin").Body.String(), "<body")
 	if n := strings.Count(body, `data-cui-comp="ui-change-list"`); n != 1 {
 		t.Fatalf("recent activity draws %d change lists, want 1 (the edit's):\n%s", n, body)
 	}

@@ -444,7 +444,9 @@ func TestLayoutlabWithoutJS(t *testing.T) {
 		if !strings.Contains(page, tc.want) {
 			t.Errorf("GET %s: SSR body lacks %q", tc.path, tc.want)
 		}
-		if strings.Contains(page, "aria-busy") {
+		// The head may carry the design system's sheets inline, whose
+		// selectors name aria-busy; the busy state is about the markup.
+		if _, markup, _ := strings.Cut(page, "<body"); strings.Contains(markup, "aria-busy") {
 			t.Errorf("GET %s: SSR body ships aria-busy; busy state must be runtime-only", tc.path)
 		}
 	}

@@ -45,6 +45,13 @@ func activelinkHandoverPage() string {
 
 func activelinkHandoverServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	return activelinkServer(t, activelinkHandoverPage())
+}
+
+// activelinkServer serves page at every path beside the runtime and its
+// demand modules.
+func activelinkServer(t *testing.T, page string) *httptest.Server {
+	t.Helper()
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +73,7 @@ func activelinkHandoverServer(t *testing.T) *httptest.Server {
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, activelinkHandoverPage())
+		fmt.Fprint(w, page)
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

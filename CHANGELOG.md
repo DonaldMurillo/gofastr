@@ -198,8 +198,125 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   **`static.Walk`** renders the same page set at runtime, with a `skip`
   func asked about each path before it renders. A page that fails to
   render reaches `fn` with its error, as in `fs.WalkDir`.
+- **`AppConfig.Compression` gzips responses.** Set, it adds
+  `middleware.Compress()` to the default chain after `RequestID`; it is
+  off by default, since a reverse proxy or CDN in front of the app
+  usually compresses. It encodes text responses (HTML, CSS, JavaScript,
+  JSON, SVG) of 1 KB or more for clients that accept gzip, with
+  `Vary: Accept-Encoding` and a `-gzip` ETag suffix that still
+  revalidates to `304`. Immutable assets are compressed once at the best
+  level and cached by content hash, from their second request. A body
+  under a strong ETag is compressed in one pass, so the tag names one
+  encoding. If its handler flushes, the body streams instead and its
+  ETag turns weak. A panic after the response started cuts the
+  connection. It skips
+  `HEAD`, `Range`, event streams and already-encoded bodies.
+- **`middleware.MaskCSRFToken`** renders a CSRF token under a fresh
+  one-time pad (`m1.` prefix), so a compressed page never repeats the
+  token's bytes (BREACH). `CSRF` accepts masked and raw tokens alike.
+- **`ui.EntryList`** renders a dense list of links to read: a title
+  link, its source beside it in muted text, and a meta line under it
+  (`Entry.Meta`, the caller's markup). `Ranked` makes it an `<ol>`
+  numbered from `Start`, so page two of a thirty-row list reads 31, 32,
+  and the numbers are the browser's list markers. Knobs:
+  `--ui-entry-list-gap`, `--ui-entry-list-rank-width`.
+- **`ui.CommentThread`** renders a discussion with replies nested as
+  deep as they go: each comment an `<article>` (byline, then body) in a
+  list item, its replies a list inside that item. Each level is
+  indented and ruled on its leading edge; in a container under 30rem
+  the step shrinks so a deep thread keeps a readable column on a phone.
+  Knobs: `--ui-comment-thread-gap`, `--ui-comment-thread-indent`,
+  `--ui-comment-thread-indent-compact`.
+- **`examples/hn`** is a Hacker News reader in the HNPWA shape, for
+  comparing first loads with other frameworks: five ranked lists paged
+  with `?page=N`, story pages with full comment threads, user pages,
+  and real 404s. Its data is synthetic and seeded from a fixed seed
+  into SQLite through the entity layer.
 
 ### Changed
+- **First paint no longer waits on the runtime.** `manifest.js`,
+  `runtime.js`, the per-screen action scripts and the extra-script
+  rail are emitted with `defer` at the end of `<head>` instead of
+  `<body>` (still in document order, and still ahead of any deferred
+  script in the page's `<body>`); the color-scheme bootstrap is the
+  only blocking script. The runtime's initial pass waits for
+  `DOMContentLoaded`, so `data-action-mount` handlers are registered
+  before mounts fire. Runtime-module
+  preloads carry `fetchpriority="low"`. Live pages read the route graph
+  from `manifest.js` instead of an inline `#gofastr-routes` block, and
+  the graph drops route titles and descriptions, which nothing read
+  (exports keep the inline block). A script registered on the rail that
+  relied on running while the document was still parsing now runs after
+  parsing ends. The color-scheme bootstrap is served minified. With
+  compression, the examples/site homepage drops from 445 KB to 99 KB
+  transferred (HTML 74 KB to 11 KB), and its Lighthouse mobile run goes
+  from 80 to 100, LCP 3.9 s to 1.7 s; on a 400 kbps, 300 ms RTT, 6x CPU
+  profile LCP goes from 14.4 s to 5.1 s.
+- **Served CSS is minified outside dev**, under the same switch as the
+  runtime JS (`GOFASTR_DEV=1` or `RUNTIME_NOMINIFY=1` keeps it
+  readable). `app.css`, component sheets, the component bundle, widget
+  sheets, the setup and print sheets and a static export's `app.css`
+  and widget sheets all go through `minify.ServedCSS`. On the examples/hn front page the
+  component bundle drops from 11.4 KB to 5.7 KB gzipped and `app.css`
+  from 5.0 KB to 2.6 KB, so HTML plus CSS fits in about 12 KB, and its
+  first paint under real 300 ms, 400 kbps, 6x CPU throttling moves from
+  1.25 s to 1.0 s. The examples/site homepage's HTML plus CSS goes from
+  44 KB to 27 KB.
+  A custom property read through `getComputedStyle` now returns the
+  minified spelling (`minmax(0,1fr)`), and a test that greps served CSS
+  should build its needle with `minify.ServedCSS`.
+  `registry.Entry.ServedCSSFor` returns a component's sheet as served;
+  `CSSFor` stays the readable source. Component versions and theme
+  variant keys hash the served bytes, so a minifier change gets new
+  immutable URLs. `widget.RenderCSS` returns the served sheet.
+- **First paint links only the sheets the page renders.** The SSR
+  scan skips markers inside an inert `<template>` (the confirm dialog,
+  a toast item, a menu row, a loading skeleton). Each sheet only
+  template content needs gets a `<link rel="prefetch">` at the URL the
+  runtime will request, so the later clone is a cache hit; a declarative
+  shadow root still counts. `ui-sidebar` and `ui-page-header` move
+  from `LoadAlways` to `LoadPrewarm`: a page that renders one links it,
+  and a page without one no longer blocks on it. `registry.ScanSplit`
+  returns the rendered and template-only names. The examples/hn front
+  page's component bundle drops from 5.7 KB to 3.1 KB gzipped, the
+  examples/site homepage's from 12.4 KB to 10.0 KB, and the
+  examples/meridian homepage's from 7.8 KB to 5.4 KB.
+- The confirm dialog opens once the sheets it names have loaded
+  (bounded at 3 seconds), so a click that beats the prefetch no longer
+  shows the browser's default dialog for a round trip. It waits for
+  those sheets only, and an ask made while one is waiting or open
+  answers no, so a double click opens one dialog and sends one request.
+- **A small head is inlined, so the first response is enough to
+  paint.** When the color-scheme bootstrap, the component bundle and
+  `app.css` fit 16 KiB gzipped together, a live page carries them in
+  the document (`<style data-cui-bundle>`, `<style id="cui-app-css">`, an
+  inline bootstrap `<script>`) instead of linking them, and the UI host
+  adds each block's `'sha256-…'` hash to the response's
+  `Content-Security-Policy` and any Report-Only policy. A policy that
+  refuses the kind (`'none'`) keeps the links. A CSP written by a proxy,
+  a CDN or a `<meta>` tag cannot learn the hashes: set
+  `uihost.WithNoInlineFirstPaint()` there. Static exports always link.
+  Under real 300 ms, 400 kbps, 6x CPU throttling, first paint on the
+  examples/hn front page goes from 0.93 s to 0.54 s and on the
+  examples/meridian homepage from 1.05 s to 0.64 s. A return visit with
+  a warm cache pays for the inlined bytes again: Meridian's goes from
+  0.45 s to 0.64 s. A page whose whole component bundle misses the
+  budget inlines the part its markup can match instead, when that fits,
+  marked `data-cui-bundle-href` with the full sheet's URL; the new
+  `fullbundle` behaviour links the full sheet at boot, before `app.css`,
+  so states added later are styled. Rules on `fui-` classes the document
+  never names are the only ones dropped. The examples/site homepage's
+  bundle goes from 10.2 KB to 7.8 KB gzipped, its head fits, and first
+  paint goes from 1.30 s to 0.71 s (0.45 s to 0.71 s on a warm return
+  visit). These figures are with gzip on the wire
+  (`AppConfig.Compression`, or a compressing proxy); the 16 KiB budget
+  counts gzipped bytes.
+- `ui.Form`'s hidden CSRF field and `auth.CSRFToken` /
+  `auth.CSRFTokenFromCtx` now return masked tokens. Code that compared
+  their result with the CSRF cookie should compare
+  `middleware.TokenFromContext` instead.
+- Component CSS lookups compute the theme hash once per request instead
+  of once per component, halving allocations on a typical page render.
 - **BREAKING: `ui.ContentRowConfig.BelowHeader` is removed.** Set
   `StickyHeader: true` on the page-tall `ui.Stack` that holds the
   header instead; a `Sticky` row under it sticks below the header on its
@@ -292,6 +409,30 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **A canceled local save or delete changes nothing.** `core/upload` and
   `battery/storage` local backends check the context before the rename
   that replaces the object, and `core/upload` before a delete.
+- **The request-timeout middleware no longer hides upstream response
+  headers from the handler.** It handed the handler an empty header map
+  and copied it over the real one afterwards, so a handler could not
+  read the `Content-Security-Policy` the security middleware had set,
+  could not delete an upstream header, and an `Add` to `Vary`
+  replaced the upstream values instead of joining them. The handler now
+  starts from a copy of the upstream headers, and a header it deletes
+  stays deleted.
+- **SQLite write transactions no longer fail when another writer
+  commits mid-transaction.** `sqlite/stdlib` now adds `_txlock=immediate`
+  to every DSN. Under SQLite's default deferred `BEGIN`, a transaction
+  that read before writing (the CRUD delete reads the row for its audit
+  snapshot first) got `SQLITE_BUSY` (517) at once if another connection
+  committed between the read and the write; the busy timeout does not
+  cover that case. A delete racing a background job queue returned 500.
+  Read-only transactions still begin deferred; `_txlock=deferred` in the
+  DSN keeps SQLite's default.
+- **Active links survive a query change.** After a client navigation
+  from `/ask` to `/ask?page=2`, the active-link module cleared the mark
+  on a `data-cui-activelink` link to `/ask`, though the server marks it
+  current there. A link whose href has no query now matches the URL's
+  path; an href with its own query still needs the exact URL, and so
+  does a query-less link in a nav that also links the same path with a
+  query (a tab strip's "All" tab stays dark on a filtered view).
 - **`mcp.ServeStdio` no longer answers notifications.** The
   `notifications/initialized` every client sends after the handshake got
   a method-not-found error line with no id, which JSON-RPC forbids and

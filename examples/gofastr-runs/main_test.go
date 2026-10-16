@@ -147,7 +147,10 @@ func TestScreensShowRuns(t *testing.T) {
 			t.Errorf("list screen lacks %q", want)
 		}
 	}
-	if strings.Contains(list, "<style") {
+	// The head may carry the design system's sheets inline (first-paint
+	// inlining); the screen's own markup is the body.
+	_, markup, _ := strings.Cut(list, "<body")
+	if strings.Contains(markup, "<style") {
 		t.Error("bespoke inline CSS on the list screen")
 	}
 

@@ -3,6 +3,7 @@ package uihost
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
@@ -11,7 +12,8 @@ import (
 // /__gofastr/manifest.js is the externalized form of the per-page inline
 // data blocks: the component catalog (every registered component × its
 // stylesheet path/version/load mode) and the runtime-module hash
-// manifest, plus the compiled-action hash map the action loader reads.
+// manifest, plus the compiled-action hash map the action loader reads
+// and the route graph the client router reads.
 // Inlining them cost ~2.5–3 KB gz of head JSON on EVERY page render and
 // every full-shell navigation; as one external content-addressed script
 // they are fetched once per deploy and revalidate with a 304 after.
@@ -29,6 +31,10 @@ import (
 // and content hashes. It is deliberately ungated.
 func (ds *UIHost) manifestJS() (body, hash string) {
 	ds.manifestOnce.Do(func() {
+		// The body freezes the route graph, document scripts included,
+		// so registration closes here as it does on the first render: a
+		// script added later would be missing from the graph.
+		ds.markServingBegun()
 		var b []byte
 		b = append(b, "window.__gofastr_catalog="...)
 		if cat := catalogJSON(ds, ds.activeTheme(), ""); cat != nil {
@@ -58,6 +64,13 @@ func (ds *UIHost) manifestJS() (body, hash string) {
 			b = append(b, "{}"...)
 		}
 		b = append(b, ";\n"...)
+		// The route graph rides here too on live pages (the page head
+		// drops its inline block), so a 185-route app stops shipping
+		// ~15 KB of route JSON in every document.
+		if rs := strings.TrimSpace(ds.buildRouteScript()); rs != "" {
+			b = append(b, rs...)
+			b = append(b, '\n')
+		}
 		ds.manifestBody = string(b)
 		ds.manifestHash = hashStrings(ds.manifestBody)
 	})

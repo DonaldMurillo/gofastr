@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
@@ -42,7 +43,7 @@ func TestAppCSS_DefaultURLUnchanged(t *testing.T) {
 	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
 		t.Errorf("Cache-Control = %q, want no-cache", got)
 	}
-	if !strings.Contains(rec.Body.String(), "--color-primary: #4F46E5") {
+	if !strings.Contains(rec.Body.String(), minify.ServedCSS("--color-primary: #4F46E5")) {
 		t.Error("default app.css should declare the app theme's primary token")
 	}
 }
@@ -58,10 +59,10 @@ func TestAppCSS_RegisteredVariantIsServedImmutable(t *testing.T) {
 	// Assert on the TOKEN DECLARATION, not on raw substrings: a var()
 	// fallback legitimately mentions a hex that is not the effective value,
 	// so substring matching would both false-positive and miss real leaks.
-	if !strings.Contains(body, "--color-primary: #0D9488") {
+	if !strings.Contains(body, minify.ServedCSS("--color-primary: #0D9488")) {
 		t.Error("variant response should declare the VARIANT's primary token")
 	}
-	if strings.Contains(body, "--color-primary: #4F46E5") {
+	if strings.Contains(body, minify.ServedCSS("--color-primary: #4F46E5")) {
 		t.Error("variant response declared the app theme's primary token — themes leaked")
 	}
 	if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "immutable") {
@@ -76,7 +77,7 @@ func TestAppCSS_UnknownVariantFallsBackAndIsNotImmutable(t *testing.T) {
 	ds := hostWithTheme(t, brandTheme("#4F46E5"))
 
 	rec := getAppCSS(t, ds, "t=deadbeefcafe")
-	if !strings.Contains(rec.Body.String(), "--color-primary: #4F46E5") {
+	if !strings.Contains(rec.Body.String(), minify.ServedCSS("--color-primary: #4F46E5")) {
 		t.Error("unknown variant should fall back to the app theme")
 	}
 	if got := rec.Header().Get("Cache-Control"); strings.Contains(got, "immutable") {
@@ -97,10 +98,10 @@ func TestAppCSS_RequestCannotInjectCSS(t *testing.T) {
 	} {
 		rec := getAppCSS(t, ds, probe)
 		body := rec.Body.String()
-		if strings.Contains(body, "display:none") || strings.Contains(body, "<script") {
+		if strings.Contains(body, "body{display:none}") || strings.Contains(body, "<script") {
 			t.Errorf("probe %q injected content into app.css", probe)
 		}
-		if !strings.Contains(body, "--color-primary: #4F46E5") {
+		if !strings.Contains(body, minify.ServedCSS("--color-primary: #4F46E5")) {
 			t.Errorf("probe %q should have fallen back to the app theme", probe)
 		}
 	}
@@ -192,7 +193,7 @@ func TestAppCSS_VariantComponentsIsolatedFromCallerMutation(t *testing.T) {
 
 	key := ds.RegisterThemeVariant(th)
 	before := getAppCSS(t, ds, "t="+key).Body.String()
-	if !strings.Contains(before, "--fui-density-control-h: 36px;") {
+	if !strings.Contains(before, minify.ServedCSS("--fui-density-control-h: 36px;")) {
 		t.Fatalf("precondition: the compact option must reach the served CSS:\n%s", before)
 	}
 

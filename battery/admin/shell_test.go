@@ -54,7 +54,10 @@ func TestShellFrame(t *testing.T) {
 	if chrome := get(x.as(theAdmin), "/core-ui/widget/admin-palette/chrome").Body.String(); !strings.Contains(chrome, "/admin/_palette") {
 		t.Error("the palette does not search through /admin/_palette")
 	}
-	if strings.Contains(body, "<style") {
+	// The head may carry the design system's sheets inline (first-paint
+	// inlining); the screen's own markup is the body.
+	_, markup, _ := strings.Cut(body, "<body")
+	if strings.Contains(markup, "<style") {
 		t.Error("the admin shipped a style block")
 	}
 }

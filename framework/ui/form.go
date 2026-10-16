@@ -95,7 +95,8 @@ type FormConfig struct {
 	// Ctx, when non-nil, lets Form auto-stamp the hidden CSRF input
 	// (the framework's "_csrf" field) on unsafe-method submits. It
 	// reads middleware.TokenFromContext(Ctx), i.e. the token the CSRF
-	// middleware stashes on every request, so callers do not have to
+	// middleware stashes on every request, and renders it masked
+	// (middleware.MaskCSRFToken), so callers do not have to
 	// remember `render.HTML(csrfInput(ctx))` as the first child of
 	// every form. Nil-safe: a form rendered without Ctx omits the
 	// hidden input (matches pre-v3 behavior so existing tests and
@@ -157,7 +158,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	// on ctx". GET forms get nothing. They aren't behind CSRF.
 	if method == "POST" && cfg.Ctx != nil {
 		if tok := middleware.TokenFromContext(cfg.Ctx); tok != "" {
-			body = append(body, csrfHiddenInput(tok))
+			body = append(body, csrfHiddenInput(middleware.MaskCSRFToken(tok)))
 		}
 	}
 	body = append(body, fields...)

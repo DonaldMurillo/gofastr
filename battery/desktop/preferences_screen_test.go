@@ -49,7 +49,10 @@ func TestPreferencesScreenRendersEveryDeclaredField(t *testing.T) {
 	if !strings.Contains(body, `data-cui-comp`) {
 		t.Fatal("the screen carries no design-system component markup")
 	}
-	if strings.Contains(body, "<style") || strings.Contains(body, `style="`) {
+	// The head may carry the design system's sheets inline (first-paint
+	// inlining); the screen's own markup is the body.
+	_, screen, _ := strings.Cut(body, "<body")
+	if strings.Contains(screen, "<style") || strings.Contains(screen, `style="`) {
 		t.Fatal("the settings screen ships CSS")
 	}
 }

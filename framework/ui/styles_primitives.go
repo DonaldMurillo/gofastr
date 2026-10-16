@@ -10,9 +10,7 @@ import (
 
 // Style handles for the 10 layout / primitive components added in
 // the same commit. Each registers a scoped stylesheet that the SSR
-// host and runtime load on first appearance, except where
-// LoadAlways is explicitly opted into for chrome that's on every
-// screen.
+// host and runtime load on first appearance.
 
 var (
 	layoutStyle      = registry.RegisterStyle("ui-layout", layoutCSS)

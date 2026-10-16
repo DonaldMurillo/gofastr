@@ -45,6 +45,7 @@ var devExamples = []devExample{
 	{"meridian", "/", http.StatusOK},
 	{"ecommerce/app", "/", http.StatusOK},
 	{"site", "/examples", http.StatusOK},
+	{"hn", "/", http.StatusOK},
 	{"gofastr-runs", "/", http.StatusUnauthorized}, // the loopback gate answers: sign in with `gofastr-runs service open --dev`
 }
 

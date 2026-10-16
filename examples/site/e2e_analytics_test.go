@@ -318,7 +318,10 @@ func (n *netRecorder) offOrigin() []string {
 }
 
 // assertDefaultCSP fetches url over plain HTTP and asserts the response
-// carries the framework's strict default Content-Security-Policy.
+// carries the framework's strict default Content-Security-Policy. The one
+// addition allowed is the hashes of the framework's own inlined first-paint
+// blocks: a style-src or script-src of 'self' plus 'sha256-' sources,
+// which admits those exact bytes and no origin.
 func assertDefaultCSP(t *testing.T, url string) {
 	t.Helper()
 	resp, err := http.Get(url)
@@ -326,9 +329,31 @@ func assertDefaultCSP(t *testing.T, url string) {
 		t.Fatalf("GET %s: %v", url, err)
 	}
 	defer resp.Body.Close()
-	if got := resp.Header.Get("Content-Security-Policy"); got != wantDefaultCSP {
+	got := resp.Header.Get("Content-Security-Policy")
+	var rest []string
+	for _, d := range strings.Split(got, "; ") {
+		if !inlineHashDirective(d) {
+			rest = append(rest, d)
+		}
+	}
+	if strings.Join(rest, "; ") != wantDefaultCSP {
 		t.Errorf("Content-Security-Policy = %q, want the framework default %q", got, wantDefaultCSP)
 	}
+}
+
+// inlineHashDirective reports whether d is a style-src or script-src
+// naming 'self' and at least one hash, and nothing else.
+func inlineHashDirective(d string) bool {
+	f := strings.Fields(d)
+	if len(f) < 3 || f[0] != "style-src" && f[0] != "script-src" || f[1] != "'self'" {
+		return false
+	}
+	for _, src := range f[2:] {
+		if !strings.HasPrefix(src, "'sha256-") || !strings.HasSuffix(src, "'") {
+			return false
+		}
+	}
+	return true
 }
 
 // TestE2E_Analytics_InitialLoad: full first paint under the strict default
