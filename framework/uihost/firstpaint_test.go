@@ -281,3 +281,46 @@ func TestInlineBlockMatchesTheParsedText(t *testing.T) {
 		t.Error("a body with a NUL was inlined; the parser rewrites it and the hash misses")
 	}
 }
+
+// TestFirstPaintRelativeURLLinks: a relative url() resolves against the
+// sheet's URL when linked and against the page's when inlined, so a
+// sheet holding one keeps its link.
+func TestFirstPaintRelativeURLLinks(t *testing.T) {
+	registry.IsolateForTest(t)
+	name := uniqueName("fp-relurl")
+	rel := registry.RegisterStyle(name, func(style.Theme) string {
+		return "." + name + "{background:url(img/a.png)}"
+	})
+	w := servePage(t, newTestUIHostForMany(rel), "/")
+	body := w.Body.String()
+	if inlineBundleRe.MatchString(body) {
+		t.Fatal("a sheet with a relative url() was inlined")
+	}
+	if !strings.Contains(body, "/__gofastr/comp/"+name+".css") && !strings.Contains(body, "/__gofastr/comp-bundle.css?names=") {
+		t.Error("the sheet lost its link")
+	}
+}
+
+func TestCSSHasRelativeRef(t *testing.T) {
+	for css, want := range map[string]bool{
+		`@font-face{src:url('/fonts/a.woff2')}`:        false,
+		`.a{background:url(data:image/png;base64,AA)}`: false,
+		`.a{fill:url(#g)}`:                             false,
+		`.a{background:url(https://x.test/y.png)}`:     false,
+		`.a{background:url(//cdn.test/y.png)}`:         false,
+		`@import url("/x.css");`:                       false,
+		`@import "/x.css";`:                            false,
+		`.a{color:red}`:                                false,
+		`.a{background:url(../img/a.png)}`:             true,
+		`.a{background:url("img/a.png")}`:              true,
+		`.a{background:URL( 'a.png' )}`:                true,
+		`.a{background:url()}`:                         true,
+		`@import "x.css";`:                             true,
+		`@import url(x.css);`:                          true,
+		`.a{background:image-set("/a.png" 1x)}`:        true,
+	} {
+		if got := cssHasRelativeRef(css); got != want {
+			t.Errorf("cssHasRelativeRef(%q) = %v, want %v", css, got, want)
+		}
+	}
+}

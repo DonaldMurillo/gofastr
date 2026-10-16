@@ -170,7 +170,9 @@ Useful options:
 - `uihost.WithCustomCSS(css)`: append site CSS (e.g. `@font-face`
   rules) to `app.css`; combine with
   `uihost.ReadCustomCSSFile("static/app.css")` for a file you edit
-  without recompiling.
+  without recompiling. Give URLs in it from the root (`/fonts/a.woff2`):
+  a relative one keeps `app.css` linked, since inlined it would resolve
+  against the page's address.
 - `uihost.WithNoLiveChannel()`: omit the live-channel meta from every
   page, so the runtime never opens the shared SSE bus. For hosts (or
   test rigs waiting on network-idle) that want zero held connections;
@@ -182,7 +184,9 @@ Useful options:
   (the full sheet then loads after first paint), allowed by hashes the
   host adds to the response's CSP; set this when
   the CSP is written by a proxy, a CDN or a `<meta>` tag the host cannot
-  patch. See `gofastr docs security`.
+  patch, or when most full loads are return visits (a dashboard used all
+  day): linked sheets come from the cache, inlined ones arrive again in
+  every document. See `gofastr docs security`.
 - `uihost.WithNotFoundScreen(c)`, `WithFavicon`, `WithDescription`,
   `WithOpenGraph`, `WithCanonicalURL`: 404 page and head metadata.
   Custom 404s go through `WithNotFoundScreen`, never

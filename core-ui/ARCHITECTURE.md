@@ -1815,7 +1815,12 @@ the host writes them into the document:
 ```
 
 The bytes are the ones the endpoints serve, minified the same way, in
-the same order. A heavier head keeps its links. The budget weighs a first
+the same order. A heavier head keeps its links, and so does a sheet
+holding a relative URL (in `url()`, an `@import` string or
+`image-set()`), which would resolve against the page's address once
+inlined instead of the sheet's. The budget counts gzipped bytes, the
+way they cross the wire once the app (`AppConfig.Compression`) or a
+proxy in front of it compresses. The budget weighs a first
 visit against a return visit: linked sheets come from the HTTP cache on
 the next full load, inlined ones arrive again inside every document, and
 16 KiB is about one round trip on a slow mobile link (400 kbps, 300 ms),

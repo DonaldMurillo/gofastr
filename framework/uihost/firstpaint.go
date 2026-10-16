@@ -23,7 +23,9 @@ import (
 // are small carries them in the document instead, so the first response
 // is enough to paint.
 //
-// The budget is in gzip-compressed bytes, the way they cross the wire.
+// The budget is in gzip-compressed bytes, the way they cross the wire
+// once the app (AppConfig.Compression) or a proxy in front of it
+// compresses.
 // Inlining trades a first visit's round trip for a return visit's
 // download: linked sheets come from the cache on the next full load,
 // inlined ones arrive again inside every document. 16 KiB takes about one
@@ -86,6 +88,74 @@ func newInlineBlock(body string) (inlineBlock, bool) {
 		gz:   gzipLen(body),
 		hash: "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'",
 	}, true
+}
+
+// newStyleBlock is newInlineBlock for a stylesheet. A relative URL
+// resolves against the sheet's address when the sheet is linked and
+// against the page's when it is inlined, so a sheet holding one keeps
+// its link.
+func newStyleBlock(css string) (inlineBlock, bool) {
+	if cssHasRelativeRef(css) {
+		return inlineBlock{}, false
+	}
+	return newInlineBlock(css)
+}
+
+// cssHasRelativeRef reports whether css names a resource by a relative
+// URL: in a url(), in an @import string, or anywhere it uses
+// image-set(), whose bare strings are URLs too. It reads text, not
+// tokens, so a match inside a comment or a string counts as well; that
+// only keeps a link.
+func cssHasRelativeRef(css string) bool {
+	low := asciiLower(css)
+	if strings.Contains(low, "image-set(") {
+		return true
+	}
+	for rest := low; ; {
+		k := strings.Index(rest, "url(")
+		if k < 0 {
+			break
+		}
+		rest = rest[k+len("url("):]
+		if relativeTarget(rest) {
+			return true
+		}
+	}
+	for rest := low; ; {
+		k := strings.Index(rest, "@import")
+		if k < 0 {
+			break
+		}
+		rest = rest[k+len("@import"):]
+		if q := strings.TrimLeft(rest, " \t\n\r\f"); q != "" && (q[0] == '"' || q[0] == '\'') && relativeTarget(q) {
+			return true
+		}
+	}
+	return false
+}
+
+// relativeTarget reports whether the URL starting s (after any space
+// and an opening quote) is relative: not rooted at /, not a fragment,
+// and without a scheme. An empty URL is relative.
+func relativeTarget(s string) bool {
+	s = strings.TrimLeft(s, " \t\n\r\f")
+	if s != "" && (s[0] == '"' || s[0] == '\'') {
+		s = s[1:]
+	}
+	if s == "" || s[0] == '/' || s[0] == '#' {
+		return s == ""
+	}
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; {
+		case c == ':':
+			return i == 0
+		case 'a' <= c && c <= 'z':
+		case i > 0 && ('0' <= c && c <= '9' || c == '+' || c == '-' || c == '.'):
+		default:
+			return true
+		}
+	}
+	return true
 }
 
 func asciiLower(s string) string {
@@ -165,7 +235,7 @@ func (ds *UIHost) appCSSBlock() (inlineBlock, bool) {
 	c := &ds.firstPaint
 	c.appOnce.Do(func() {
 		body, _ := ds.appCSSCached()
-		c.app, c.appOK = newInlineBlock(body)
+		c.app, c.appOK = newStyleBlock(body)
 	})
 	return c.app, c.appOK
 }
@@ -199,7 +269,7 @@ func (ds *UIHost) bundleBlockFor(names []string) bundleBlock {
 		b.WriteString(e.ServedCSSForHash(theme, th))
 		b.WriteByte('\n')
 	}
-	blk, ok := newInlineBlock(b.String())
+	blk, ok := newStyleBlock(b.String())
 	out := bundleBlock{
 		inlineBlock: blk, names: kept, key: key, ok: ok,
 		droppable: droppableClasses(blk.body),
