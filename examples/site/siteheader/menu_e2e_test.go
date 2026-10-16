@@ -120,6 +120,29 @@ func TestPhoneMenuRowsAreTapTargets(t *testing.T) {
 	}
 }
 
+// TestPhoneMenuOverPinnedChrome: chrome pinned at the sticky layer
+// later in the document (a page's floating section pill) stays under
+// the open menu instead of covering its last rows.
+func TestPhoneMenuOverPinnedChrome(t *testing.T) {
+	srv := menuSite(t)
+	ctx := chromedptest.Context(t, chromedptest.WindowSize(390, 800), chromedptest.Timeout(60*time.Second))
+	var onTop bool
+	if err := chromedp.Run(ctx,
+		openMenu(srv.URL),
+		chromedp.Evaluate(`(() => { const d = document.createElement('div');
+			Object.assign(d.style, { position: 'fixed', insetInline: '0', insetBlockEnd: '0', blockSize: '90vh', zIndex: 'var(--z-sticky)' });
+			document.body.append(d);
+			const last = [...document.querySelectorAll('`+menu+` > summary + * a')].filter((a) => a.offsetParent).pop();
+			const r = last.getBoundingClientRect();
+			return last.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); })()`, &onTop),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !onTop {
+		t.Error("a fixed element at the sticky layer covers the open menu's last link")
+	}
+}
+
 const menu = `[data-cui-scope="docsite-header"] details`
 
 // openMenu loads url (when given), waits for the disclosure module and

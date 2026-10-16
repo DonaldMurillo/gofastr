@@ -43,7 +43,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **The docs site's phone menu rows are full tap targets.** Each link
   in the open menu was a 28px row of 13px text, short of the 44px touch
   target and smaller than the page's body text. The rows are now 44px
-  tall at the body size, and so is the menu's search field text.
+  tall at the body size, and so is the menu's search field text. The
+  open menu also sits above a page's floating section pill, which
+  otherwise covered its last row.
 - **Page switches on a static export take one request, not two.** An
   exported page lives at `<path>/index.html`, which GitHub Pages, S3,
   Netlify and Cloudflare Pages serve at `<path>/` and answer `<path>`

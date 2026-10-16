@@ -16,6 +16,11 @@
   background: var(--color-background);
   border-block-end: var(--stroke-thin) solid var(--color-line-faint);
 }
+/* The open menu is a popover over the page, so the bar it hangs from
+   rises to that layer while it is open: chrome pinned at the sticky
+   layer after it in the document (a page's floating section pill)
+   would otherwise paint over the menu's last rows. */
+:scope:has(.menu[open]) { z-index: var(--z-popover); }
 
 .bar {
   position: relative;
