@@ -138,16 +138,25 @@ func TestRegisterScriptKeepsDefaultCSP(t *testing.T) {
 		return csp
 	}
 
-	before := get(newTestUIHost())
-
-	withScript := newTestUIHost()
-	if err := withScript.RegisterExternalScript("/plug.js?v=abc"); err != nil {
-		t.Fatalf("RegisterExternalScript: %v", err)
-	}
-	after := get(withScript)
-
-	if before != defaultCSP || after != defaultCSP || before != after {
-		t.Errorf("CSP changed across script registration:\nbefore: %q\nafter:  %q", before, after)
+	for _, inline := range []bool{false, true} {
+		host := func() *UIHost {
+			ds := newTestUIHost()
+			if !inline {
+				// An inlined head adds its blocks' hashes; the exact
+				// default is checked with inlining off.
+				WithNoInlineFirstPaint()(ds)
+			}
+			return ds
+		}
+		before := get(host())
+		withScript := host()
+		if err := withScript.RegisterExternalScript("/plug.js?v=abc"); err != nil {
+			t.Fatalf("RegisterExternalScript: %v", err)
+		}
+		after := get(withScript)
+		if before != after || (!inline && before != defaultCSP) {
+			t.Errorf("inline=%v: CSP changed across script registration:\nbefore: %q\nafter:  %q", inline, before, after)
+		}
 	}
 }
 

@@ -622,6 +622,9 @@ func TestUIHostAppCSSShipsFrameworkBuiltinCSS(t *testing.T) {
 
 func TestUIHostCustomCSS(t *testing.T) {
 	ds := newTestUIHostWithCSS()
+	// The link form; a head small enough for the first round trip
+	// carries app.css inline instead (firstpaint_test.go).
+	WithNoInlineFirstPaint()(ds)
 
 	// Page references the single merged app.css.
 	pageReq := httptest.NewRequest("GET", "/", nil)

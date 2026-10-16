@@ -93,7 +93,7 @@ func TestScreenPages(t *testing.T) {
 func TestScreenDropsLongQuery(t *testing.T) {
 	app, _ := searchSite(t, 0)
 	body := get(t, app.Router(), "/search?q="+strings.Repeat("valid+", 60)).Body.String()
-	if strings.Contains(body, "fui-search-results__item") {
+	if strings.Contains(body, `class="fui-search-results__item"`) {
 		t.Error("a query over 256 bytes was searched")
 	}
 }

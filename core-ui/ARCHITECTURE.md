@@ -238,7 +238,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-comp="<name>"` | Marks an instance of a registered styled component. The runtime scans for it on every DOM insertion and lazily loads `/<__gofastr/comp/<name>.css>` once per session via a `<link data-cui-style="<name>">` (dedup'd, never re-fetched). See "Component CSS" below. |
 | `data-cui-scope="<name>"` | Marks the root of an owned style: a layout root (`LayoutSpec.Style`), a screen's wrapper (`Screen.WithStyle`: its `<article>`, or one plain `<div>`, never the primary cell), or a component root (`Style.Scope`). The server writes it; the runtime never does. It is two things at once: the root of the style's compiled `@scope`, whose lower bound stops at the children of any nested owner, and a loader marker, read exactly like `data-cui-comp`: the SSR head scan (`registry.Scan`) links `/__gofastr/comp/<name>.css` for every name on the page, and the runtime's `scanAndLoadCSS` loads it on insertion (a cross-layout `swapShell` scans the new shell's parent, because the shell root carries its layout's scope). An element may carry both markers (`Style.Scope(ui.Card(...))`) and loads both sheets. Owned rules are scoped, so they beat an equal-specificity kit rule by scope proximity whatever order the sheets load in. App markup cannot set it: `html.SafeExtraAttrs` drops every `data-cui-*` key. |
 | `data-cui-internal` | Marks kit component markup that holds none of the caller's content: a label or title built from a string field, a control's input, a dismiss button, an icon the component draws. Every compiled owned style's `@scope` lower bound stops at it, so an owner styles the content it passes into a component and never the component's insides. Components set it through `headless.Internal`, and a component that builds markup and hands it to another as slot content marks it with `headless.Own`, which also marks the element holding that slot. Never on a component's root (an owner may place the root), never on an element that holds a slot or on an ancestor of one; a mark inside a marked subtree is allowed and inert. `TestKitMarksInternalSubtrees` (framework/ui) renders every kit component with every slot filled and every slot empty and fails on unmarked internal markup, a marked root, or caller content under a mark. The server writes it; the runtime never reads it. App markup cannot set it: `html.SafeExtraAttrs` drops every `data-cui-*` key. |
-| `data-cui-bundle="<a,b,c>"` | Set on the SSR-emitted bundle `<link>` to list the components it covers. The runtime reads it at boot and seeds `_pendingLinks` so the per-component scan never double-loads anything already in the bundle. |
+| `data-cui-bundle="<a,b,c>"` | Set on the SSR-emitted bundle, a `<link>` or, when the page inlines its first-paint head, a `<style>`, to list the components it covers. The runtime reads it from either element at boot and seeds `_pendingLinks` so the per-component scan never double-loads anything already in the bundle. |
 | `data-cui-layout="<name>"` | Set by EVERY layout layer on its wrapper `<div>` with the layout's name (e.g. `app`, `marketing`). Emit-only since the layout-chain rewrite: it is the CSS/debug contract (`.layout-<name>` pairing), and the runtime's swap decisions read `data-cui-layout-key` instead. |
 | `data-cui-layout-key="<key>"` | The layer's comparable identity, on the same wrapper `<div>`: `l:<name>` for a plain layout (the app default root, a direct screen's layout) (`l:<key>` in both forms when the layout declares `Layout.WithKey`, so a shell's identity can vary per language while its name keeps the CSS contract), `g:<prefix>:<name>` for a screen-group layer (`g:<prefix>` when the level is marker-only because its layout already renders at an outer level). The route manifest carries each route's chain as the `layouts` array of these keys, outermost → innermost; document order of the marked elements is the chain order. On SPA navigation the runtime compares the DOM's key spine against the destination's chain positionally: it swaps at the deepest shared layer, and when no root is shared it fetches the full page and replaces the whole shell. A group layer's key embeds the layout name so a per-screen layout override inside a group compares as a different layer than its siblings. |
 | `data-cui-layout-slot="<key>"` | On the layer's content cell: the `<main id="main-content">` for layer 0, the `.layout-content` div (tabindex="-1") for nested layers, the group wrapper itself for marker-only levels. This is the runtime's swap target: a partial response's `X-Gofastr-Swap: <key>` (or a cache entry's recorded layer) selects the cell whose slot key matches, replacing the old `.layout-content ?? [role=main] ?? main` structural guess. After the swap the runtime focuses the cell (screen-reader announcement); a pointer-initiated navigation passes `focusVisible: false` so the focus ring stays keyboard signal, and uihost's base CSS suppresses `outline` on the swap targets when they are not `:focus-visible`. |
@@ -1603,9 +1603,12 @@ spelling (`minmax(0,1fr)`), so compare tokens, not spacing.
 
 ## Component CSS
 
-Every component-owned stylesheet ships as a real `<link>`,
-**never inline**, loaded lazily per-component, dedup'd globally,
-and **always scoped** to `[data-cui-comp="<name>"]`. There is no
+Every component-owned stylesheet is registered, served and versioned
+by the host, loaded lazily per-component, dedup'd globally, and
+**always scoped** to `[data-cui-comp="<name>"]`. A first-load page
+whose head is small carries its sheets in the document instead of
+linking them (see "First-paint inlining" below); that is the host's
+choice, never a component's or an app's. There is no
 "unscoped component CSS"; global rules (resets, typography, theme
 tokens) live in `theme.css` / `WithCustomCSS`.
 
@@ -1714,7 +1717,8 @@ A component declares its CSS by calling
 `data-cui-comp="<name>"` onto its outermost tag (no extra DOM
 node). The SSR host string-scans the final rendered HTML for those
 markers and emits **one** `<link rel="stylesheet">` in `<head>` for
-the page's exact set of components. Markers inside an inert
+the page's exact set of components (or the same bytes as one `<style>`,
+under the first-paint budget). Markers inside an inert
 `<template>` (the confirm dialog, a toast item, a menu row, a loading
 skeleton) do not count: the browser renders none of it at first paint.
 Each sheet only template content needs gets a
@@ -1793,6 +1797,49 @@ Content-addressed via the SHA of the concatenated component
 versions, served `immutable` in prod. After hydration, the on-
 demand path uses single-component `<link>`s; the bundle is just a
 first-paint optimization.
+
+### First-paint inlining
+
+A live page cannot paint until it holds its document and every
+render-blocking resource its `<head>` names: the color-scheme bootstrap,
+the component bundle and `app.css`. As links they cost a round trip
+after the document arrives, which on a slow link is most of the time to
+first paint. When the three together fit the budget, 16 KiB compressed,
+the host writes them into the document:
+
+```html
+<head><script>/* color-scheme bootstrap */</script>
+<style data-cui-bundle="a,b,c">/* the comp-bundle.css bytes */</style>
+<style id="cui-app-css">/* the app.css bytes */</style>
+```
+
+The bytes are the ones the endpoints serve, minified the same way, in
+the same order. A heavier head keeps its links. The budget weighs a first
+visit against a return visit: linked sheets come from the HTTP cache on
+the next full load, inlined ones arrive again inside every document, and
+16 KiB is about one round trip on a slow mobile link (400 kbps, 300 ms),
+so a return visit never pays more than the first visit saved. Client
+navigation is unaffected: the runtime seeds its dedup from the inline
+bundle's `data-cui-bundle` and loads only the sheets a later page adds.
+
+Every block is allowed by its `'sha256-…'` hash in the response's own
+`Content-Security-Policy`, never by `'unsafe-inline'`. The host patches
+each policy on the response: the hash joins the governing
+`style-src-elem`/`style-src` (`script-src-elem`/`script-src`) list, or a
+new `style-src`/`script-src` copying `default-src` when that governs. A
+policy that refuses the kind outright (`'none'`) keeps the page linked,
+untouched; a list that already allows `'unsafe-inline'` without a nonce
+or hash is left alone, since adding a hash would switch it off.
+Report-Only policies get the hashes too. A body that could close its
+element early (`</style`, `</script`, `<!--`) always links.
+
+The patch only reaches a policy set on the response before the page
+renders, the framework's own middleware or the host's. A policy written
+elsewhere (a proxy, a CDN rule, a `<meta>` tag in a custom layout) never
+learns the hashes; such an app sets `uihost.WithNoInlineFirstPaint()` and
+keeps every head resource a link. Static exports and the PWA shell always
+link: their files are served by hosts whose policy the framework does
+not write.
 
 ### Runtime catalog
 

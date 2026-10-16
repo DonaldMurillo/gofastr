@@ -2,7 +2,6 @@ package uihost
 
 import (
 	"encoding/json"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -19,12 +18,12 @@ func TestChromeSheetsPrewarmNotEager(t *testing.T) {
 	body := pageBody(t, ds, "/")
 	head := body[:strings.Index(body, "</head>")]
 	for _, n := range []string{"ui-sidebar", "ui-page-header"} {
-		if regexp.MustCompile(`rel="stylesheet"[^>]*[/=,]` + n + `[.&,"]`).MatchString(head) {
+		if blocksOn(head, n) {
 			t.Errorf("%s is render-blocking on a page that does not render it:\n%s", n, head)
 		}
 	}
-	if !regexp.MustCompile(`rel="stylesheet"[^>]*[/=,]ui-button[.&,"]`).MatchString(head) {
-		t.Errorf("ui-button lost its eager link:\n%s", head)
+	if !blocksOn(head, "ui-button") {
+		t.Errorf("ui-button lost its eager sheet:\n%s", head)
 	}
 	var cat map[string]struct {
 		LoadMode string `json:"loadMode"`

@@ -2759,11 +2759,12 @@
     const G = window.__gofastr;
     if (!G?.scanAndLoadCSS) return;
     // Seed _pendingLinks with names already covered by the SSR
-    // bundle link, so the on-demand scanner doesn't redundantly load
-    // per-component sheets. The names live on the bundle <link>'s
+    // bundle, so the on-demand scanner doesn't redundantly load
+    // per-component sheets. The names live on the bundle's
     // data-cui-bundle attribute (a stable contract), not parsed
-    // from the URL.
-    document.head.querySelectorAll('link[data-cui-bundle]').forEach((l) => {
+    // from the URL: a <link> to the bundle, or the <style> a page
+    // whose head fits the first round trip carries it in.
+    document.head.querySelectorAll('[data-cui-bundle]').forEach((l) => {
       const names = (l.getAttribute('data-cui-bundle') || '').split(',');
       for (const n of names) if (n) G._pendingLinks.add(n);
     });

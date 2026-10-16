@@ -281,6 +281,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   shows the browser's default dialog for a round trip. It waits for
   those sheets only, and an ask made while one is waiting or open
   answers no, so a double click opens one dialog and sends one request.
+- **A small head is inlined, so the first response is enough to
+  paint.** When the color-scheme bootstrap, the component bundle and
+  `app.css` fit 16 KiB gzipped together, a live page carries them in
+  the document (`<style data-cui-bundle>`, `<style id="cui-app-css">`, an
+  inline bootstrap `<script>`) instead of linking them, and the UI host
+  adds each block's `'sha256-…'` hash to the response's
+  `Content-Security-Policy` and any Report-Only policy. A policy that
+  refuses the kind (`'none'`) keeps the links. A CSP written by a proxy,
+  a CDN or a `<meta>` tag cannot learn the hashes: set
+  `uihost.WithNoInlineFirstPaint()` there. Static exports always link.
+  Under real 300 ms, 400 kbps, 6x CPU throttling, first paint on the
+  examples/hn front page goes from 0.93 s to 0.54 s and on the
+  examples/meridian homepage from 1.05 s to 0.64 s. A return visit with
+  a warm cache pays for the inlined bytes again: Meridian's goes from
+  0.45 s to 0.64 s. The examples/site homepage's head is 17 KiB and
+  stays linked.
 - `ui.Form`'s hidden CSRF field and `auth.CSRFToken` /
   `auth.CSRFTokenFromCtx` now return masked tokens. Code that compared
   their result with the CSRF cookie should compare

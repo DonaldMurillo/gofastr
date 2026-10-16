@@ -43,7 +43,7 @@ func TestTemplateSheetIsPrefetched(t *testing.T) {
 	live := registerTestStyle(t, "tpl-live")
 	held := registerTestStyle(t, "tpl-held")
 	ds := newTemplateHeldHost(live, held)
-	body := pageBody(t, ds, "/")
+	body := linkedPageBody(t, ds, "/")
 
 	var cat map[string]struct {
 		StylePath string `json:"stylePath"`
@@ -127,7 +127,7 @@ func TestEagerTemplateSheetNotPrefetched(t *testing.T) {
 	registry.IsolateForTest(t)
 	live := registerTestStyle(t, "tpl-live")
 	held := registerTestStyle(t, "tpl-eager", registry.WithLoad(registry.LoadAlways))
-	body := pageBody(t, newTemplateHeldHost(live, held), "/")
+	body := linkedPageBody(t, newTemplateHeldHost(live, held), "/")
 	if strings.Contains(body, `rel="prefetch" href="/__gofastr/comp/`+held.Name()) {
 		t.Errorf("eager %s was prefetched as well as linked", held.Name())
 	}

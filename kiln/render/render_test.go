@@ -158,7 +158,9 @@ func TestApplyPageRendersHTML(t *testing.T) {
 	if !strings.Contains(body, "/__gofastr/runtime.js") {
 		t.Errorf("page should auto-inject the widget bootstrap script: %q", body)
 	}
-	if !strings.Contains(body, "/__gofastr/app.css") {
+	// app.css arrives linked, or inline when the page's head fits the
+	// first-paint budget.
+	if !strings.Contains(body, "/__gofastr/app.css") && !strings.Contains(body, `<style id="cui-app-css">`) {
 		t.Errorf("page should use the current UI host stylesheet: %q", body)
 	}
 	if strings.Contains(body, "/kiln/theme.css") || strings.Contains(body, "kiln-page") {

@@ -175,6 +175,12 @@ Useful options:
   page, so the runtime never opens the shared SSE bus. For hosts (or
   test rigs waiting on network-idle) that want zero held connections;
   polling (`data-cui-poll`) and islands still work.
+- `uihost.WithNoInlineFirstPaint()`: keep the color-scheme bootstrap,
+  the component bundle and app.css as links on every page. By default a
+  first-load page whose head fits 16 KiB compressed carries them inline,
+  allowed by hashes the host adds to the response's CSP; set this when
+  the CSP is written by a proxy, a CDN or a `<meta>` tag the host cannot
+  patch. See `gofastr docs security`.
 - `uihost.WithNotFoundScreen(c)`, `WithFavicon`, `WithDescription`,
   `WithOpenGraph`, `WithCanonicalURL`: 404 page and head metadata.
   Custom 404s go through `WithNotFoundScreen`, never

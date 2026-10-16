@@ -142,9 +142,29 @@ sees plain HTTP there). Plain-HTTP local dev never receives it. Set
 `HSTSMaxAge: -1` to disable, a positive value to change the age, or
 `HSTSIncludeSub` / `HSTSPreload` to extend it.
 
-The CSP default works with the built-in UI runtime because all CSS and
-scripts are served as external resources under `/__gofastr/*`. If you
-embed third-party scripts, fonts, or frames you must override
+The CSP default works with the built-in UI runtime because its CSS and
+scripts are served from `/__gofastr/*`, with one exception the host
+allows by hash. A first-load page whose head resources fit 16 KiB
+compressed carries the color-scheme bootstrap, the component bundle and
+app.css inline, so it paints from the first response, and the UI host
+adds each block's `'sha256-…'` hash to the response's
+`Content-Security-Policy` (and any Report-Only policy). The hashes go
+into the governing `style-src-elem`/`style-src` and
+`script-src-elem`/`script-src` lists, or into a new `style-src` /
+`script-src` copied from `default-src`. A policy that refuses the kind
+outright (`'none'`) keeps the page on links and is left untouched; a
+list that already allows `'unsafe-inline'` with no nonce or hash is left
+alone.
+
+The host can only patch a policy that is on the response when the page
+renders: the default chain's, or one your own middleware set. If the
+policy is written somewhere else (a reverse proxy, a CDN rule, a
+`<meta>` tag in a custom layout), the hashes never reach it and the
+browser would refuse the inlined blocks. Pass
+`uihost.WithNoInlineFirstPaint()` there to keep every head resource an
+external link. Static exports always link.
+
+If you embed third-party scripts, fonts, or frames you must override
 `ContentSecurityPolicy` explicitly; do not relax it with
 `'unsafe-inline'` globally.
 
