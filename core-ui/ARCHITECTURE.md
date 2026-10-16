@@ -1804,7 +1804,7 @@ with its fills and held parts, and an intercept pane) with
 still on screen and resolves once each sheet that markup renders has
 loaded: its own link, or the full bundle link while a first-paint
 subset is completing (before the `fullbundle` module has linked it, the
-wait loads that module first). The title, the route announcement and
+wait loads that module first, once and bounded at 3 s like a sheet). The title, the route announcement and
 the loading regions' `data-cui-min` hold and exit move only after that
 wait, so a loading region its `data-cui-after` timer showed during the
 wait still holds and leaves as declared. Sheets the incoming markup does not render
@@ -1816,7 +1816,8 @@ so the click that takes the entry usually finds them loaded; a visible
 or eager prefetch leaves them for the click. A deferred part lands
 only once the sheets it renders have loaded, so it enters styled
 whether it answers before the commit, during the page's own wait, or
-after. Hash and history scroll
+after. An intercept pane that an ordinary navigation overtakes during
+its wait is dropped, never mounted over that navigation's URL. Hash and history scroll
 writes wait on the current page's sheets the same way. Swapping first and linking after
 showed a phone on a slow link every new page unstyled for a moment.
 
@@ -1929,8 +1930,8 @@ The `fullbundle` behaviour links that URL at boot, right after the
 navigation adds are styled once it arrives, in the cascade position the
 full bundle would have had. A client navigation that renders a
 component the subset covers waits on that link (the kernel finds it by
-`data-cui-bundle`, and while the marker is unspent it first waits for
-the `fullbundle` module), so it commits and settles scroll only after
+`data-cui-bundle`, and while the marker is unspent it first waits, once
+and for at most 3 s, for the `fullbundle` module), so it commits and settles scroll only after
 it loads. Until then a class the page did not render
 at first paint has no rules. If the subset misses the budget too, the
 head links as before.

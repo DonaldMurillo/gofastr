@@ -694,7 +694,8 @@
       _pushPub(prevPath || location.pathname, { replace: true });
       currentPath = prevPath;
     } finally {
-      _pendingNav.delete(path);
+      // A stale navigation leaves a newer one's dedup entry alone.
+      if (_pendingNav.get(path) === myEpoch) _pendingNav.delete(path);
       // Only the latest nav owns the aria-busy flag; a superseded nav
       // that bailed early must leave it for the in-flight one to clear.
       if (_navLive(myEpoch)) doc.removeHtmlAttr('aria-busy');

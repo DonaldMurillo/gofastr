@@ -181,6 +181,9 @@ func startInterceptStackServer(t *testing.T) *interceptStackServer {
 			w.Header().Set("X-Gofastr-Overlay", interceptOverlayAs(r.URL.Path))
 			fmt.Fprint(w, interceptOverlayBody(r.URL.Path, r.URL.RawQuery))
 		case r.Header.Get("X-Gofastr-Navigate") == "1":
+			if r.URL.Path == "/slow-page" {
+				time.Sleep(1500 * time.Millisecond)
+			}
 			w.Header().Set("X-Gofastr-Partial", "true")
 			fmt.Fprintf(w, `<p id="plain-screen">plain %s</p>`, key)
 		default:
