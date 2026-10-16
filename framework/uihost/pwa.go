@@ -552,7 +552,9 @@ func (ds *UIHost) PWAServiceWorkerJS(basePath string) (string, error) {
 // PWAStaticExport describes a completed static export to the full-site
 // worker generator.
 type PWAStaticExport struct {
-	// Pages are the exported route paths: precached atomically.
+	// Pages are the exported page URLs, precached atomically. Pass them
+	// in the form the export's links name (framework/static writes
+	// "/about/"): a client navigation's fetch is matched exactly.
 	Pages []string
 	// Assets are framework-generated files (runtime, CSS, widget chrome,
 	// llm.md): precached atomically with the pages.

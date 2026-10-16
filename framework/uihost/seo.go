@@ -23,7 +23,9 @@ import (
 type SitemapConfig struct {
 	// BaseURL is the canonical origin (scheme + host) for emitted
 	// <loc> elements. Required: sitemap.xml entries must be absolute
-	// URLs per the protocol spec.
+	// URLs per the protocol spec. It may carry the subpath a static
+	// export is mounted under ("https://x.github.io/docs" beside
+	// --export-base /docs); the export then adds the subpath once.
 	BaseURL string
 
 	// LastMod sets the <lastmod> timestamp emitted for every page.
@@ -113,7 +115,7 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 		return "", false
 	}
 	cfg := ds.sitemapConfig
-	base := strings.TrimRight(cfg.BaseURL, "/") + strings.TrimRight(basePath, "/")
+	base := joinBaseURL(cfg.BaseURL, basePath)
 	lastmod := cfg.LastMod.UTC().Format("2006-01-02")
 
 	var b strings.Builder
@@ -150,6 +152,19 @@ func (ds *UIHost) SitemapXML(basePath string) (string, bool) {
 // so the sitemap never lists a URL the export left out or a crawler cannot
 // read. The evaluation ignores the sitemap request's own credentials: the
 // document is the same for every caller.
+// joinBaseURL inserts a static deploy's basePath after baseURL, unless
+// baseURL already ends in it: a site whose canonical URL names its
+// mount ("https://x.github.io/gofastr") exported with
+// --export-base /gofastr is served from /gofastr once, not
+// /gofastr/gofastr.
+func joinBaseURL(baseURL, basePath string) string {
+	base, sub := strings.TrimRight(baseURL, "/"), strings.TrimRight(basePath, "/")
+	if sub != "" && strings.HasSuffix(base, sub) {
+		return base
+	}
+	return base + sub
+}
+
 func (ds *UIHost) sitemapPublic(p string) bool {
 	screen, _, ok := ds.App.Router.Resolve(p)
 	if !ok {
@@ -231,7 +246,7 @@ func (ds *UIHost) RobotsTXT(basePath string) (string, bool) {
 	}
 	sm := cfg.SitemapURL
 	if sm == "" && ds.sitemapConfig != nil {
-		sm = strings.TrimRight(ds.sitemapConfig.BaseURL, "/") + strings.TrimRight(basePath, "/") + "/sitemap.xml"
+		sm = joinBaseURL(ds.sitemapConfig.BaseURL, basePath) + "/sitemap.xml"
 	}
 	if sm != "" {
 		fmt.Fprintf(&b, "Sitemap: %s\n", sm)

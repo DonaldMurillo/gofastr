@@ -455,10 +455,13 @@
     // Sheets root does not render (idle prewarms, a prefetch's) are not
     // waited on. Each wait is bounded: a stalled fetch fires neither
     // load nor error, and <link> has no timeout of its own.
-    _sheetsFor(root) {
+    async _sheetsFor(root) {
       // A first-paint subset whose full bundle is not linked yet: the
-      // fullbundle module links it, so wait for that module first.
-      if (document.querySelector('[data-cui-bundle-href]')) return this.loadModule('fullbundle').then(() => this._sheetsFor(root), () => {});
+      // fullbundle module links it, so wait for that module first,
+      // bounded like a sheet. One wait, then on: a marker the module
+      // does not spend (page content, a module from another release)
+      // must not send the wait back to the module forever.
+      if (document.querySelector('[data-cui-bundle-href]')) await new Promise((r) => { this.loadModule('fullbundle').then(r, r); setTimeout(r, 3000); });
       this.scanAndLoadCSS(root);
       const links = new Set();
       root.querySelectorAll?.('[data-cui-comp],[data-cui-scope]').forEach((el) => {

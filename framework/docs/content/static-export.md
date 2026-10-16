@@ -57,6 +57,14 @@ go build -o site ./examples/site/
 
 - One `index.html` per route (`/` → `index.html`, `/about` →
   `about/index.html`, `/products/:slug` → `products/<slug>/index.html`).
+  Static hosts serve a directory index at the trailing-slash URL and
+  answer `/about` with a 301 to `/about/`, so every `href`, `action` and
+  `data-cui-push-state` that names an exported page is written as
+  `/about/` (query and fragment kept). A click, client navigation
+  included, then costs one request instead of two. The same rewrite
+  covers each hidden widget's dumped chrome, the PWA offline page and
+  the sitemap's `<loc>` URLs. Links to anything else (assets, routes the export skipped,
+  absolute URLs) are left as written.
 - `/__gofastr/runtime.js`: the runtime core.
 - `404.html` at the export root: the not-found page the live server
   answers with, rendered through the app's root layout (see
@@ -78,7 +86,8 @@ go build -o site ./examples/site/
   route expansion via `StaticPathsProvider`, same `ExcludePaths`, same
   AI-bot rules). A gated screen the export skips is not in the sitemap
   either. Under `--export-base` every sitemap `<loc>` and the
-  derived `Sitemap:` line in robots.txt include the subpath. A
+  derived `Sitemap:` line in robots.txt include the subpath, once
+  even when the sitemap's `BaseURL` already ends in it. A
   `sitemap.xml` or `robots.txt` in the app's static dir wins over the
   generated one. Note that on a subpath deploy (e.g. a GitHub Pages
   *project* site) crawlers only honor a robots.txt at the origin root;

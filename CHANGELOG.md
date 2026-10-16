@@ -7,6 +7,68 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+- **A page can no longer freeze while a navigation waits for its
+  sheets.** On a page where the `fullbundle` module left a
+  `data-cui-bundle-href` marker in place (markup carrying the attribute
+  in its content, or a module from another release), every navigation
+  waited for the module, found the marker again and asked again, in a
+  loop that starved the page's timers and input. The wait now asks for
+  the module once. It is also bounded at 3 s, like a sheet, so a
+  `fullbundle.js` fetch that never answers no longer holds every
+  navigation and the scroll settle for good.
+- **A cached or prefetched screen honours its loading region.** Since
+  the sheet wait, a loading region whose `data-cui-after` timer fired
+  during the wait was cut off by the commit on a cached replay or a
+  prefetched screen, with no `data-cui-min` hold and no exit animation.
+  Both now hold and exit as a fetched page does.
+- **Clicking A, B, then A again no longer fetches A a third time.**
+  When the first A's late answer came back, its cleanup dropped the
+  in-flight entry the second A owned, so a further navigation to A
+  fetched again and replaced the live one.
+- **A tap on a control below an open popup reaches that control.** A
+  dismissable disclosure closed on the touch release, before the
+  browser aimed the tap's click, so an in-flow panel collapsed and the
+  click landed on whatever moved under the finger. A tap on a link,
+  button, field, label or summary now closes it through that click; a
+  tap on plain content still closes it on the release.
+- **An ordinary navigation drops a record pane still loading.** A pane
+  waiting for its sheets when a plain navigation started could still
+  open and push its record URL, so the page that then loaded sat under
+  the record's URL. A pane that came back declined or failed fell back to
+  a plain navigation to the record, replacing the newer page. The pane
+  is now dropped once any navigation starts, whatever its answer.
+- **The docs site's phone menu scrolls on a short screen.** On a phone
+  held sideways the open menu ran past the bottom of the viewport and
+  its last links could not be reached. It now stops at the viewport
+  edge and scrolls.
+- **The docs site's phone menu rows are full tap targets.** Each link
+  in the open menu was a 28px row of 13px text, short of the 44px touch
+  target and smaller than the page's body text. The rows are now 44px
+  tall at the body size, and so is the menu's search field text. The
+  open menu also sits above a page's floating section pill, which
+  otherwise covered its last row.
+- **Page switches on a static export take one request, not two.** An
+  exported page lives at `<path>/index.html`, which GitHub Pages, S3,
+  Netlify and Cloudflare Pages serve at `<path>/` and answer `<path>`
+  with a 301. Every link was written as `<path>`, so each click paid a
+  redirect round trip before the page arrived. Links to exported pages
+  now carry the trailing slash; on a throttled mobile connection a
+  docs-site switch went from about 465 ms to about 315 ms. An installed
+  PWA's service worker keys its precached pages the same way, so a
+  client-side switch still finds them offline, and a hidden widget's
+  chrome (a section menu opened from the header) and the PWA offline
+  page link them the same way too. A link the export does not write, such as a search result,
+  still lands on the page, and the current-page highlight now treats
+  `/about` and `/about/` as one page.
+- **A static export's sitemap names its base path once.** A site whose
+  `SitemapConfig.BaseURL` already ends in the export's base path
+  (`https://donaldmurillo.github.io/gofastr` with `--export-base
+  /gofastr`) listed `/gofastr/gofastr/...` URLs in sitemap.xml and
+  robots.txt, and every one of them 404ed. The base path is now added
+  only when the URL does not already end in it, and each page URL
+  carries the trailing slash the export's links do.
+
 ## [0.88.1] - 2026-10-16
 
 ### Fixed

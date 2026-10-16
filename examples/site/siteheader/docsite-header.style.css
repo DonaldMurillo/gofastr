@@ -16,6 +16,11 @@
   background: var(--color-background);
   border-block-end: var(--stroke-thin) solid var(--color-line-faint);
 }
+/* The open menu is a popover over the page, so the bar it hangs from
+   rises to that layer while it is open: chrome pinned at the sticky
+   layer after it in the document (a page's floating section pill)
+   would otherwise paint over the menu's last rows. */
+:scope:has(.menu[open]) { z-index: var(--z-popover); }
 
 .bar {
   position: relative;
@@ -236,11 +241,16 @@
    between the md gutters so the right edge can't clip on narrow
    viewports. It hangs from the bar, not the viewport top: anything
    above the bar (the static export's preview banner) would otherwise
-   put the sheet over the bar and its close button. */
+   put the sheet over the bar and its close button. On a short screen
+   (a phone held sideways) the sheet scrolls within the viewport below
+   the bar instead of running off its bottom edge. */
 .panel {
   position: absolute;
   inset-block-start: calc(100% + var(--spacing-sm));
   inset-inline: var(--spacing-md);
+  max-block-size: calc(100dvh - 100% - 2 * var(--spacing-md));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
@@ -320,10 +330,20 @@
 }
 
 /* Phones: the bar tightens, the version capsule goes, and the search +
-   toggle cluster collapses into the drawer, leaving brand + toggle. */
+   toggle cluster collapses into the drawer, leaving brand + toggle.
+   The drawer's rows take the body size and a full touch target each:
+   the desktop chrome's 13px links made 28px rows on a phone. */
 @media (--below-md) {
   .bar { gap: var(--spacing-sm); }
   .brand-status { display: none; }
   .bar-actions { display: none; }
   .end { gap: var(--spacing-xs); }
+  .panel-links { gap: 0; }
+  .panel-links a {
+    display: flex;
+    align-items: center;
+    min-block-size: var(--spacing-touch-target);
+    font-size: var(--text-base);
+  }
+  .panel-search { font-size: var(--text-base); }
 }

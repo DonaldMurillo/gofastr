@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	stdhtml "html"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -200,6 +201,11 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		}
 		res.Assets = append(res.Assets, "/404.html")
 		b.log("rendered not-found page -> %s", dst)
+	}
+
+	// Page links, once every page is known: see slashPageLinks.
+	if err := b.slashLinks(res); err != nil {
+		return res, err
 	}
 
 	// LLM documentation: per-page llm.md and top-level index.
@@ -709,6 +715,87 @@ func stampStatic(page string) string {
 // after the leading slash.
 var baseAttrURL = regexp.MustCompile(`([\s])(src|href|action|data-cui-push-state)="/([^/])`)
 
+// pageLinkAttr matches a root-absolute href, action or
+// data-cui-push-state value (the attributes baseAttrURL prefixes), split
+// into the path and its optional query or fragment.
+var pageLinkAttr = regexp.MustCompile(`([\s](?:href|action|data-cui-push-state)=")(/[^"?#]*)([?#][^"]*)?"`)
+
+// slashPageLinks writes every link to an exported page in the form its
+// host serves without a redirect. A page is written as <path>/index.html,
+// and GitHub Pages, S3 website hosting, Netlify, Cloudflare Pages and the
+// common file servers serve a directory index at <path>/ and answer
+// <path> with a 301, so a link spelled /docs cost every click, client
+// navigation included, an extra round trip. pages holds the exported
+// route paths ("/docs"); a link to anything else (an asset, a contributor
+// file, a route the export skipped) is left as written.
+func (b *Builder) slashPageLinks(page string, pages map[string]bool) string {
+	return pageLinkAttr.ReplaceAllStringFunc(page, func(m string) string {
+		sub := pageLinkAttr.FindStringSubmatch(m)
+		p := sub[2]
+		rel := p
+		if b.BasePath != "" {
+			var ok bool
+			if rel, ok = strings.CutPrefix(p, b.BasePath); !ok || (rel != "" && rel[0] != '/') {
+				return m
+			}
+		}
+		if rel == "" {
+			rel = "/" // the base path itself, the exported root
+		} else if strings.HasSuffix(rel, "/") {
+			return m
+		}
+		// A route registered with its slash (/components/) is linked
+		// without one too.
+		if !pages[rel] && !pages[rel+"/"] {
+			return m
+		}
+		return sub[1] + slashed(p) + sub[3] + `"`
+	})
+}
+
+// slashed is an exported page's URL path in the form its host serves
+// without a redirect: "/" stays, "/about" becomes "/about/".
+func slashed(p string) string {
+	if strings.HasSuffix(p, "/") {
+		return p
+	}
+	return p + "/"
+}
+
+// pageSet is the exported route paths, as slashPageLinks looks them up.
+func pageSet(paths []string) map[string]bool {
+	pages := make(map[string]bool, len(paths))
+	for _, p := range paths {
+		pages[p] = true
+	}
+	return pages
+}
+
+// slashLinks applies slashPageLinks to every written page and to
+// 404.html. dumpWidgetAssets applies it to each widget's chrome.
+func (b *Builder) slashLinks(res Result) error {
+	pages := pageSet(res.Pages)
+	files := make([]string, 0, len(res.Pages)+1)
+	for _, p := range res.Pages {
+		files = append(files, filepath.Join(b.OutDir, pathToFile(p)))
+	}
+	if slices.Contains(res.Assets, "/404.html") {
+		files = append(files, filepath.Join(b.OutDir, "404.html"))
+	}
+	for _, f := range files {
+		page, err := os.ReadFile(f)
+		if err != nil {
+			return fmt.Errorf("static: slash page links: %w", err)
+		}
+		if out := b.slashPageLinks(string(page), pages); out != string(page) {
+			if err := writeFile(f, []byte(out)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // rewriteBaseURLs prefixes every root-absolute asset and navigation URL in
 // the page with b.BasePath. No-op when BasePath is empty (apex deploy /
 // live server). Covers /__gofastr/… assets (runtime.js, modules, CSS,
@@ -771,10 +858,13 @@ func (b *Builder) dumpWidgetAssets(res *Result) error {
 	}
 	res.Assets = append(res.Assets, "/__gofastr/widgets.json")
 	b.log("wrote %s", "/__gofastr/widgets.json")
+	pages := pageSet(res.Pages)
 	for _, d := range defs {
 		// Chrome HTML may carry root-absolute nav links (/docs/…); rewrite
-		// them the same way page HTML is rewritten for a subpath deploy.
-		chrome := b.rewriteBaseURLs(widget.RenderChrome(d))
+		// them the same way page HTML is rewritten for a subpath deploy,
+		// and slash its page links the way slashLinks does a page's (a
+		// section menu's links live here).
+		chrome := b.slashPageLinks(b.rewriteBaseURLs(widget.RenderChrome(d)), pages)
 		if err := b.writeRawAsset("/core-ui/widget/"+d.Name+"/chrome", []byte(chrome)); err != nil {
 			return err
 		}
@@ -799,6 +889,7 @@ func (b *Builder) dumpSEOAssets(res *Result) error {
 		ok   bool
 	}
 	sitemap, sitemapOK := b.Host.SitemapXML(b.BasePath)
+	sitemap = slashSitemapLocs(sitemap, pageSet(res.Pages))
 	robots, robotsOK := b.Host.RobotsTXT(b.BasePath)
 	for _, f := range []seoFile{
 		{"sitemap.xml", sitemap, sitemapOK},
@@ -818,6 +909,30 @@ func (b *Builder) dumpSEOAssets(res *Result) error {
 		b.log("wrote /%s", f.name)
 	}
 	return nil
+}
+
+// sitemapLoc matches one sitemap URL.
+var sitemapLoc = regexp.MustCompile(`<loc>([^<]*)</loc>`)
+
+// slashSitemapLocs gives every sitemap URL that names an exported page
+// the trailing slash its links carry (see slashPageLinks), so a crawler
+// is not sent through the host's 301 for every page. A <loc> is the
+// site URL followed by the page path, so the page is found as a
+// segment-aligned suffix of the URL's path.
+func slashSitemapLocs(doc string, pages map[string]bool) string {
+	return sitemapLoc.ReplaceAllStringFunc(doc, func(m string) string {
+		loc := sitemapLoc.FindStringSubmatch(m)[1]
+		u, err := url.Parse(stdhtml.UnescapeString(loc))
+		if err != nil || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(u.Path, "/") {
+			return m
+		}
+		for i := 0; i < len(u.Path); i++ {
+			if u.Path[i] == '/' && (pages[u.Path[i:]] || pages[u.Path[i:]+"/"]) {
+				return "<loc>" + loc + "/</loc>"
+			}
+		}
+		return m
+	})
 }
 
 // dumpAppIcons writes the WithAppIcon-generated PNGs (and the
@@ -872,8 +987,15 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	if frameworkAssetCount > len(res.Assets) {
 		frameworkAssetCount = len(res.Assets)
 	}
+	// Pages are precached under the URL their links name (see
+	// slashPageLinks): a client navigation is a plain fetch, which the
+	// worker matches exactly, so /about would never answer /about/.
+	pages := make([]string, len(res.Pages))
+	for i, p := range res.Pages {
+		pages[i] = slashed(p)
+	}
 	sw, err := b.Host.PWAStaticServiceWorkerJS(b.BasePath, uihost.PWAStaticExport{
-		Pages:          res.Pages,
+		Pages:          pages,
 		Assets:         res.Assets[:frameworkAssetCount],
 		OptionalAssets: res.Assets[frameworkAssetCount:],
 		ContentHash:    contentHash,
@@ -885,8 +1007,9 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	// asset links get the same base rewrite as every exported page. It
 	// also gets the data-cui-static stamp so the runtime's static-mode
 	// guards apply, but not the "run locally" banner. An offline
-	// fallback is not a demo page.
-	offline := b.rewriteBaseURLs(stampStatic(b.Host.PWAOfflineHTML()))
+	// fallback is not a demo page. Its page links take the slash the
+	// pages' own do (slashPageLinks).
+	offline := b.slashPageLinks(b.rewriteBaseURLs(stampStatic(b.Host.PWAOfflineHTML())), pageSet(res.Pages))
 	files := []struct {
 		urlPath string
 		relFile string

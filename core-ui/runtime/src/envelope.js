@@ -810,7 +810,7 @@
             _pend.delete(path);
             return retry(path, { bypassCache: true, forceFull: true, from: prevPath, restore: ps });
           }
-          if (!(await cssWait(myEpoch, cached.html, cx.fills, cx.parts && [...cx.parts.values()]))) return;
+          if (!(await cssWait(myEpoch, cached.html, cx.fills, cx.parts && [...cx.parts.values()], load))) return;
           document.title = cached.title;
           announceRoute(cached.title);
           if (parts && P) {
@@ -822,6 +822,7 @@
           swapCommit(myEpoch, prevPath, path, () => {
             applyEnvelope(slot, cached.html, resolved, cx.seed);
             _applied(slot, resolved);
+            if (load) load.sweep();
             if (parts && P && P.commit(parts, true)) {
               for (const a of heldAddrs) P.applyNow(parts, a, { html: cx.parts.get(a), seed: null });
               P.flush(parts);
@@ -831,12 +832,14 @@
           return;
         }
         if (slot) {
-          if (!(await cssWait(myEpoch, cached.html))) return;
+          if (!(await cssWait(myEpoch, cached.html, null, null, load))) return;
           document.title = cached.title;
           announceRoute(cached.title);
           swapCommit(myEpoch, prevPath, path, () => {
             _applied(slot);
-            _done(path, prevPath, true, swapAtSlot(slot, cached.html), ps);
+            const root = swapAtSlot(slot, cached.html);
+            if (load) load.sweep();
+            _done(path, prevPath, true, root, ps);
           }, cached);
           return;
         }
@@ -860,7 +863,7 @@
               pfSeed = snap.seed;
             }
             const pfResolved = pfFills ? resolveFillTargets(pfFills) : null;
-            if (!(await cssWait(myEpoch, body, pfFills))) return;
+            if (!(await cssWait(myEpoch, body, pfFills, null, load))) return;
             document.title = pf.title;
             announceRoute(pf.title);
             if (parts && P) {
@@ -874,6 +877,7 @@
               if (pfResolved) applyEnvelope(slot, body, pfResolved, pfSeed);
               else swapAtSlot(slot, body);
               _applied(slot, pfResolved);
+              if (load) load.sweep();
               if (parts && P && P.commit(parts, true)) P.flush(parts);
               _done(path, prevPath, false, slot, ps);
             }, null);
@@ -1101,7 +1105,8 @@
       NS._pushURL(prevPath || location.pathname, { replace: true });
       NS._setCurrentPath(prevPath);
     } finally {
-      _pend.delete(path);
+      // A stale navigation leaves a newer one's dedup entry alone.
+      if (_pend.get(path) === myEpoch) _pend.delete(path);
       // P9-A: a navigation that owns the epoch RESTORES (failure,
       // abort); a superseded one only settles — the newer navigation
       // owns the regions now.

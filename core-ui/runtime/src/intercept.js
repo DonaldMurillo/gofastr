@@ -171,8 +171,13 @@
   // navigation) and rejects on network failure. It resolves once the
   // pane's component sheets have loaded (kernel _cssReady), so the
   // pane never paints unstyled; each caller's epoch check drops an
-  // answer a newer move overtook during that wait.
+  // answer a newer move overtook during that wait. An ordinary
+  // navigation started meanwhile (the shared epoch moved) drops every
+  // outcome, and it never settles: mounting would push the record's URL
+  // over the navigation's own, and a decline's or failure's fallback
+  // would navigate over it.
   function fetchOverlay(path, fromURL) {
+    const n = NS._navEpoch;
     const hdrs = {
       'X-Gofastr-Navigate': '1',
       'X-Gofastr-Intercept': '1',
@@ -186,6 +191,9 @@
       const as = r.headers.get('X-Gofastr-Overlay');
       if (!r.ok || !as || r.headers.get('X-Gofastr-Location')) return null;
       return r.text().then((html) => Promise.resolve(NS._cssReady && NS._cssReady(html)).then(() => ({ html, as })));
+    }).then((v) => n === NS._navEpoch ? v : new Promise(() => {}), (err) => {
+      if (n !== NS._navEpoch) return new Promise(() => {});
+      throw err;
     });
   }
 

@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -403,6 +404,78 @@ func TestRepeatNavFetchesOnce(t *testing.T) {
 			r.mu.Unlock()
 			if n != 1 {
 				t.Errorf("four navigations sent %d requests for /a, want 1", n)
+			}
+		})
+	}
+}
+
+// TestStaleNavKeepsDedup: after A, B, A, the first A's late answer is
+// stale. Its cleanup must leave the live A's dedup entry in place, so
+// a further navigation to A joins the live one instead of fetching
+// again and superseding it. (Chrome holds a second request for a URL
+// until the first one's answer is in, its cache lock, so the second A
+// reaches the server only once the first is freed.)
+func TestStaleNavKeepsDedup(t *testing.T) {
+	for _, plain := range []bool{true, false} {
+		name := map[bool]string{true: "core", false: "envelope"}[plain]
+		t.Run(name, func(t *testing.T) {
+			r := newDoubleClickRig(t, false, plain)
+			ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+			if err := chromedp.Run(ctx,
+				chromedp.Navigate(r.srv.URL+"/"),
+				chromedp.WaitVisible(`#goA`, chromedp.ByID),
+			); err != nil {
+				t.Fatalf("navigate: %v", err)
+			}
+			hitsA := func(n int) chromedp.Action {
+				return chromedp.ActionFunc(func(context.Context) error {
+					for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(20 * time.Millisecond) {
+						r.mu.Lock()
+						got := r.hits["/a"]
+						r.mu.Unlock()
+						if got >= n {
+							return nil
+						}
+					}
+					return fmt.Errorf("never saw %d requests for /a", n)
+				})
+			}
+			r.hold("/a")
+			r.hold("/b")
+			r.mu.Lock()
+			first := r.gates["/a"]
+			r.mu.Unlock()
+			var once sync.Once
+			freeFirst := func() { once.Do(func() { close(first) }) }
+			t.Cleanup(func() { freeFirst(); r.release("/a"); r.release("/b") })
+			if err := chromedp.Run(ctx,
+				chromedp.Click(`#goA`, chromedp.ByID),
+				hitsA(1),
+				chromedp.Click(`#goB`, chromedp.ByID),
+				chromedp.ActionFunc(func(context.Context) error { r.hold("/a"); return nil }),
+				chromedp.Click(`#goA`, chromedp.ByID),
+				chromedp.ActionFunc(func(context.Context) error { freeFirst(); return nil }),
+				hitsA(2),
+				// The first A's answer is in and stale; its cleanup has run.
+				chromedp.Sleep(300*time.Millisecond),
+				chromedp.Evaluate(`window.__gofastr.navigate('/a', { force: true }); true`, nil),
+				chromedp.Sleep(300*time.Millisecond),
+			); err != nil {
+				t.Fatalf("navigations: %v", err)
+			}
+			r.release("/a")
+			r.release("/b")
+			if err := chromedp.Run(ctx,
+				chromedp.Poll(`document.getElementById('main').textContent.includes('MAIN-A')`, new(bool), chromedp.WithPollingTimeout(10*time.Second)),
+				chromedp.Sleep(500*time.Millisecond),
+			); err != nil {
+				t.Fatal(err)
+			}
+			r.mu.Lock()
+			n := r.hits["/a"]
+			r.mu.Unlock()
+			if n != 2 {
+				t.Errorf("sent %d requests for /a, want 2: the stale navigation's cleanup dropped the live one's dedup entry", n)
 			}
 		})
 	}

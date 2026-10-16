@@ -58,9 +58,9 @@ func TestBuildWritesSitemapAndRobots(t *testing.T) {
 	body := string(sm)
 	for _, loc := range []string{
 		"<loc>https://example.com/</loc>",
-		"<loc>https://example.com/about</loc>",
-		"<loc>https://example.com/products/alpha</loc>",
-		"<loc>https://example.com/products/beta</loc>",
+		"<loc>https://example.com/about/</loc>",
+		"<loc>https://example.com/products/alpha/</loc>",
+		"<loc>https://example.com/products/beta/</loc>",
 	} {
 		if !strings.Contains(body, loc) {
 			t.Errorf("sitemap.xml missing %s, got:\n%s", loc, body)
@@ -95,37 +95,54 @@ func TestBuildWritesSitemapAndRobots(t *testing.T) {
 	}
 }
 
+// TestBuildSitemapRobotsBasePath: the export's base path appears once
+// in every sitemap URL, whether the configured BaseURL is the bare
+// origin or already names the mount (the docs site's
+// "https://donaldmurillo.github.io/gofastr" once listed
+// /gofastr/gofastr/... URLs that 404). Page URLs carry the slash the
+// export's links do, the form the host serves without a redirect.
 func TestBuildSitemapRobotsBasePath(t *testing.T) {
-	a := coreapp.NewApp("SSGTest")
-	a.Register("/", &homeScreen{}, nil)
-	a.Register("/about", &homeScreen{}, nil)
-	host := uihost.New(a,
-		uihost.WithSitemap(uihost.SitemapConfig{BaseURL: "https://user.github.io"}),
-		uihost.WithRobots(uihost.RobotsConfig{}),
-	)
+	for _, c := range []struct{ baseURL, site string }{
+		{"https://user.github.io", "https://user.github.io/gofastr"},
+		{"https://user.github.io/gofastr", "https://user.github.io/gofastr"},
+		{"https://user.github.io/gofastr/", "https://user.github.io/gofastr"},
+		{"https://user.github.io/mygofastr", "https://user.github.io/mygofastr/gofastr"},
+	} {
+		t.Run(c.baseURL, func(t *testing.T) {
+			a := coreapp.NewApp("SSGTest")
+			a.Register("/", &homeScreen{}, nil)
+			a.Register("/about", &homeScreen{}, nil)
+			host := uihost.New(a,
+				uihost.WithSitemap(uihost.SitemapConfig{BaseURL: c.baseURL}),
+				uihost.WithRobots(uihost.RobotsConfig{}),
+			)
 
-	out := t.TempDir()
-	if _, err := (&Builder{Host: host, OutDir: out, BasePath: "/gofastr"}).Build(context.Background()); err != nil {
-		t.Fatalf("Build: %v", err)
-	}
+			out := t.TempDir()
+			if _, err := (&Builder{Host: host, OutDir: out, BasePath: "/gofastr"}).Build(context.Background()); err != nil {
+				t.Fatalf("Build: %v", err)
+			}
 
-	sm, err := os.ReadFile(filepath.Join(out, "sitemap.xml"))
-	if err != nil {
-		t.Fatalf("missing sitemap.xml: %v", err)
-	}
-	if !strings.Contains(string(sm), "<loc>https://user.github.io/gofastr/about</loc>") {
-		t.Errorf("sitemap locs must include the base path, got:\n%s", sm)
-	}
-	if strings.Contains(string(sm), "github.io/about") {
-		t.Errorf("sitemap contains un-prefixed loc:\n%s", sm)
-	}
+			sm, err := os.ReadFile(filepath.Join(out, "sitemap.xml"))
+			if err != nil {
+				t.Fatalf("missing sitemap.xml: %v", err)
+			}
+			for _, loc := range []string{c.site + "/", c.site + "/about/"} {
+				if !strings.Contains(string(sm), "<loc>"+loc+"</loc>") {
+					t.Errorf("sitemap missing <loc>%s</loc>, got:\n%s", loc, sm)
+				}
+			}
+			if n := strings.Count(string(sm), "<loc>"); n != 2 {
+				t.Errorf("sitemap lists %d URLs, want 2:\n%s", n, sm)
+			}
 
-	rb, err := os.ReadFile(filepath.Join(out, "robots.txt"))
-	if err != nil {
-		t.Fatalf("missing robots.txt: %v", err)
-	}
-	if !strings.Contains(string(rb), "Sitemap: https://user.github.io/gofastr/sitemap.xml") {
-		t.Errorf("robots.txt Sitemap line must include base path, got:\n%s", rb)
+			rb, err := os.ReadFile(filepath.Join(out, "robots.txt"))
+			if err != nil {
+				t.Fatalf("missing robots.txt: %v", err)
+			}
+			if !strings.Contains(string(rb), "Sitemap: "+c.site+"/sitemap.xml\n") {
+				t.Errorf("robots.txt Sitemap line must be %s/sitemap.xml, got:\n%s", c.site, rb)
+			}
+		})
 	}
 }
 

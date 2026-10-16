@@ -32,6 +32,13 @@
   // attribute wherever they sit: a header link carrying
   // data-cui-match-prefix outside a nav was silently never marked (#503).
   const LINKS = 'nav a, a[data-cui-activelink], a[data-cui-match-prefix]';
+  // /about and /about/ name one page: a static export links the
+  // slashed form its host serves, and a link it did not rewrite (a
+  // search result, a widget's chrome) lands on the bare one.
+  // A tab strip keeps its rule across the slash too, so an href's query
+  // is compared after its path's bare form.
+  const bare = (p) => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p);
+  const key = (u) => { const i = u.indexOf('?'); return i < 0 ? bare(u) : bare(u.slice(0, i)) + u.slice(i); };
   const update = (path, navigated, scope) => {
     const pathOnly = (path || '').split('?')[0].split('#')[0];
     // Whether the link's nav (or the document, outside one) also holds
@@ -41,7 +48,7 @@
     const inTabStrip = (link) => {
       const box = link.closest('nav') || document;
       if (!tabsIn.has(box)) {
-        tabsIn.set(box, [...box.querySelectorAll('a[href]')].some((a) => a.getAttribute('href').startsWith(pathOnly + '?')));
+        tabsIn.set(box, [...box.querySelectorAll('a[href]')].some((a) => { const h = a.getAttribute('href'); return h.includes('?') && key(h).startsWith(bare(pathOnly) + '?'); }));
       }
       return tabsIn.get(box);
     };
@@ -55,7 +62,7 @@
       // its own query (a filter tab) can only match the exact URL, and
       // so can its query-less sibling in a tab strip: the "All" tab
       // (/orders) stays dark on /orders?status=open and on its pages.
-      let active = href === path || (href === pathOnly && !inTabStrip(link));
+      let active = key(href) === key(path || '') || (bare(href) === bare(pathOnly) && !inTabStrip(link));
       if (!active && link.hasAttribute('data-cui-match-prefix')) {
         // The attribute's VALUE is the prefix when non-empty — the
         // sidebar emits its MatchPath there, and the owned section can

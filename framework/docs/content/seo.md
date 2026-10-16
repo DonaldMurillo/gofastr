@@ -167,7 +167,9 @@ and a `Content-Signal` directive; see [Agent-ready](/docs/agent-ready).
 Both endpoints are **also written as files by static export**
 (`app --export`, `ExportStatic`): same bytes as the live handlers, with
 `--export-base` folded into every `<loc>` and the derived `Sitemap:`
-URL. See [Static-site export](/docs/static-export).
+URL. A `BaseURL` that already ends in the base path
+(`https://user.github.io/docs` beside `--export-base /docs`) gets it
+once, not twice. See [Static-site export](/docs/static-export).
 
 ## Icons: one source image → every icon file
 

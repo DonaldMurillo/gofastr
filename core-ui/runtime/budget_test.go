@@ -566,6 +566,14 @@ const (
 	//        to commit under the URL /a (TestReturnToPendingPathWins;
 	//        the sheet wait widened that window on every swap path).
 	//        Measured 13644 → 13647. (l1: -20)
+	//   +8   a stale navigation's cleanup leaves the live one's dedup
+	//        entry (TestStaleNavKeepsDedup: A, B, A, then the first A's
+	//        late answer dropped the entry and a further A fetched
+	//        again), and the fullbundle module wait is bounded and runs
+	//        once with no recursion (TestBundleMarkerCannotLoop: a
+	//        marker the module left behind froze the page in a
+	//        microtask loop; TestStalledBundleModuleIsBounded).
+	//        Measured 13647 → 13655. (l1: 23)
 	//
 	// HALT NOTE: the bundle measures 13391 at level 6 — 291 over the
 	// 13100 target (the Back/Forward leave capture every page runs is
@@ -578,7 +586,7 @@ const (
 	// spelling) plus the fixes and boot rows named with their tests.
 	// The line is the measurement plus clearance (moved DOWN from
 	// 13527, never up).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -928,7 +936,15 @@ const (
 	// there would delay the very commit it guards. Spellings measured: a
 	// wait plus title at each of the four swap sites (15830), and this
 	// one, where _swapCommit owns the wait, the title and the announce.
-	coreCongestionWindowGZ = 14*1024 + 1420
+	//
+	// 2026-10-16, later: the review round's fixes (the epoch check on the
+	// dedup cleanup, the bounded one-shot fullbundle module wait) took it
+	// 15756 -> 15779. 15779, the smallest step that fits. Both sit on the
+	// navigation path for the reason above. Spellings measured for the
+	// module wait: a shared bound helper (15811, 13682 at level 6), an
+	// inline bound with a one-pass flag (15777, but 13665 at level 6), and
+	// this one, an async wait with no recursion at all (13655 at level 6).
+	coreCongestionWindowGZ = 14*1024 + 1443
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -975,6 +991,7 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"owned styles load by marker (data-cui-scope scan)":                        26,  // (l1: 15)
 		"nav waits for the incoming page's own sheets (_sheetsFor in _swapCommit)": 174, // (l1: 220)
 		"in-flight dedup joins only the live navigation (epoch-owned)":             3,   // (l1: -20)
+		"stale cleanup keeps the live dedup + one-shot bounded module wait":        8,   // (l1: 23)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1126,7 +1143,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// navigating.
 		// 7833 after the parts wait moved into the parts module and the
 		// loading hold moved behind the sheet wait.
-		"envelope": 7833,
+		// 7843 after the cached and prefetched commits joined the
+		// loading hold and sweep (TestLoadingMinSpansSheetWait's cached
+		// and prefetched arms) and a stale navigation's cleanup stopped
+		// dropping the live one's dedup entry (TestStaleNavKeepsDedup).
+		"envelope": 7843,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
@@ -1153,7 +1174,16 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 3363 measured (2026-10-16): a pane waits for the component
 		// sheets its markup renders before it opens, so a drawer never
 		// paints unstyled. Pinned at the measured size plus 2 clearance.
-		"intercept": 3365,
+		// 3387 measured (2026-10-16): a pane an ordinary navigation
+		// overtook while it waited is dropped, never mounted over the
+		// navigation's URL (TestPlainNavDropsPendingPane). Pinned at the
+		// measured size plus 2 clearance.
+		// 3415 measured (2026-10-16): the same drop covers an overtaken
+		// pane that comes back declined, failed or rejected, whose
+		// fallback would navigate over the newer page
+		// (TestPlainNavOutlivesMissedPane). Pinned at the measured size
+		// plus 2 clearance.
+		"intercept": 3417,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and

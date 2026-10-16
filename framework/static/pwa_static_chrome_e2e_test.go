@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -103,5 +104,17 @@ func TestPWAStaticChromeE2E(t *testing.T) {
 	}
 	if strings.Contains(body, "offline") && !strings.Contains(body, "product-beta") {
 		t.Errorf("offline screen shown instead of precached content: %q", body)
+	}
+
+	// A client navigation is a plain fetch of the URL the link names,
+	// which the export writes with a trailing slash; the worker matches
+	// a fetch exactly, so the precache must hold that form.
+	var spa string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`fetch('/products/alpha/').then((r) => r.text(), (e) => 'failed: ' + e)`, &spa,
+		func(p *cdpruntime.EvaluateParams) *cdpruntime.EvaluateParams { return p.WithAwaitPromise(true) })); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(spa, "product-alpha") {
+		t.Errorf("an offline client navigation to a never-visited page missed the precache: %.200q", spa)
 	}
 }

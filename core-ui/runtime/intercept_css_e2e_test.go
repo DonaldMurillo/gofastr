@@ -54,3 +54,55 @@ func TestInterceptPaneWaitsForSheet(t *testing.T) {
 		t.Fatalf("the pane entered the DOM %vpx wide, want 7: it painted before its component sheet loaded", w)
 	}
 }
+
+// TestPlainNavDropsPendingPane: a pane still waiting for its sheet
+// when an ordinary navigation starts is dropped. Mounting it would push
+// the record's URL over the navigation's own, and the page that then
+// commits would sit under a URL that is not its own.
+func TestPlainNavDropsPendingPane(t *testing.T) {
+	s := startInterceptStackServer(t)
+	s.cssDelay.Store(700)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+	if err := chromedp.Run(ctx, chromedp.Navigate(s.srv.URL+"/list"), chromedp.WaitVisible(`#ready`, chromedp.ByID)); err != nil {
+		t.Fatal(err)
+	}
+	stackStep(t, ctx, 0)
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr.navigate('/slow-page'); true`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !interceptWait(ctx, `!!document.getElementById('plain-screen')`) {
+		t.Fatalf("the navigation never committed: %+v", readStack(ctx))
+	}
+	time.Sleep(300 * time.Millisecond)
+	if st := readStack(ctx); st.URL != "/slow-page" || len(st.Layers) != 0 {
+		t.Fatalf("after the navigation: %+v; want /slow-page with no pane: the overtaken pane mounted and pushed its URL", st)
+	}
+}
+
+// TestPlainNavOutlivesMissedPane: an overlay request a navigation
+// overtook and that then comes back without a pane (declined, failed,
+// or dropped) is dropped too. Its fallback is a plain navigation to the
+// record, which would replace the page the user asked for after it.
+func TestPlainNavOutlivesMissedPane(t *testing.T) {
+	for _, miss := range []string{"decline", "fail", "drop"} {
+		t.Run(miss, func(t *testing.T) {
+			s := startInterceptStackServer(t)
+			s.overlayMiss.Store(miss)
+			ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+			if err := chromedp.Run(ctx, chromedp.Navigate(s.srv.URL+"/list"), chromedp.WaitVisible(`#ready`, chromedp.ByID)); err != nil {
+				t.Fatal(err)
+			}
+			stackStep(t, ctx, 0)
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr.navigate('/slow-page'); true`, nil)); err != nil {
+				t.Fatal(err)
+			}
+			if !interceptWait(ctx, `!!document.getElementById('plain-screen')`) {
+				t.Fatalf("the navigation never committed: %+v", readStack(ctx))
+			}
+			time.Sleep(500 * time.Millisecond)
+			if st := readStack(ctx); st.URL != "/slow-page" || len(st.Layers) != 0 {
+				t.Fatalf("after the navigation: %+v; want /slow-page: the missed pane's fallback navigated over it", st)
+			}
+		})
+	}
+}

@@ -624,9 +624,10 @@ func TestBuildStaticWorkerPrecachesExportedSite(t *testing.T) {
 	if len(res.Pages) != 3 {
 		t.Fatalf("expected 3 pages, got %v", res.Pages)
 	}
+	// Keyed by the slashed URL the export's links name (slashLinks).
 	for _, p := range res.Pages {
-		if !strings.Contains(sw, `"`+p+`"`) {
-			t.Errorf("exported page %s missing from worker precache:\n%s", p, sw)
+		if !strings.Contains(sw, `"`+slashed(p)+`"`) {
+			t.Errorf("exported page %s missing from worker precache:\n%s", slashed(p), sw)
 		}
 	}
 	for _, a := range []string{"/__gofastr/runtime.js", "/__gofastr/color-scheme.js"} {
