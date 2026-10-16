@@ -21,15 +21,22 @@ func NewMemory() *Memory {
 }
 
 // Index inserts or replaces a document.
-func (m *Memory) Index(_ context.Context, doc Document) error {
+func (m *Memory) Index(ctx context.Context, doc Document) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	doc.Fields = maps.Clone(doc.Fields)
 	m.docs[doc.ID] = doc
 	return nil
 }
 
 // Delete removes a document by ID.
-func (m *Memory) Delete(_ context.Context, id string) error {
+func (m *Memory) Delete(ctx context.Context, id string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.docs, id)
@@ -43,13 +50,19 @@ func (m *Memory) Delete(_ context.Context, id string) error {
 const maxQueryTerms = 64
 
 // Search returns documents whose text or string fields contain all query terms.
-func (m *Memory) Search(_ context.Context, query Query) ([]Result, error) {
+func (m *Memory) Search(ctx context.Context, query Query) ([]Result, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	terms := normalizeTerms(query.Text)
 	var results []Result
 	for _, doc := range m.docs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if query.Type != "" && doc.Type != query.Type {
 			continue
 		}
@@ -84,7 +97,13 @@ func (m *Memory) Search(_ context.Context, query Query) ([]Result, error) {
 			end = sum
 		}
 	}
-	return append([]Result(nil), results[offset:end]...), nil
+	// Copy Fields for the returned page only, still under the read
+	// lock: the caller owns them, the rest never leave.
+	page := append([]Result(nil), results[offset:end]...)
+	for i := range page {
+		page[i].Document.Fields = maps.Clone(page[i].Document.Fields)
+	}
+	return page, nil
 }
 
 // normalizeTerms lowercases, splits, dedups, and caps the query into a bounded

@@ -81,7 +81,10 @@ func NewMemoryKeyword() *MemoryKeyword {
 
 // Index implements [KeywordBackend]. Re-indexing the same id replaces
 // the prior entry so totals stay consistent.
-func (m *MemoryKeyword) Index(_ context.Context, id, text string) error {
+func (m *MemoryKeyword) Index(ctx context.Context, id, text string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if prior, ok := m.docs[id]; ok {
@@ -105,7 +108,10 @@ func (m *MemoryKeyword) Index(_ context.Context, id, text string) error {
 }
 
 // Delete implements [KeywordBackend].
-func (m *MemoryKeyword) Delete(_ context.Context, id string) error {
+func (m *MemoryKeyword) Delete(ctx context.Context, id string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	doc, ok := m.docs[id]
@@ -124,11 +130,23 @@ func (m *MemoryKeyword) Delete(_ context.Context, id string) error {
 
 // Search implements [KeywordBackend]. Documents with zero matching
 // terms are not returned.
-func (m *MemoryKeyword) Search(_ context.Context, text string, top int) ([]KeywordHit, error) {
+func (m *MemoryKeyword) Search(ctx context.Context, text string, top int) ([]KeywordHit, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if top <= 0 {
 		top = 10
 	}
 	terms := keywordTokens(text)
+	seen := make(map[string]bool, len(terms))
+	unique := terms[:0]
+	for _, term := range terms {
+		if !seen[term] {
+			seen[term] = true
+			unique = append(unique, term)
+		}
+	}
+	terms = unique
 	if len(terms) == 0 {
 		return nil, nil
 	}
@@ -144,6 +162,9 @@ func (m *MemoryKeyword) Search(_ context.Context, text string, top int) ([]Keywo
 	}
 	hits := make([]scored, 0, len(m.docs))
 	for id, doc := range m.docs {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		var s float64
 		for _, term := range terms {
 			tf := doc.tf[term]

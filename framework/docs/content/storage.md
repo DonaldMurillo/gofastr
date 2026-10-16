@@ -2,8 +2,7 @@
 
 `battery/storage` backs file uploads with a storage backend. It
 re-exports the `upload.Storage` interface (defined in `core/upload`) and
-ships two implementations: a local-filesystem backend and an
-S3-compatible backend. You construct one and hand it to
+ships local-filesystem, in-memory, and S3-compatible backends. You construct one and hand it to
 `framework.WithFileStorage`.
 
 ```go
@@ -81,6 +80,14 @@ with folded spellings follow the filesystem's folding, not the store's.
 handle. Local is the right default for single-host deployments; under
 multiple replicas an upload to replica A is invisible to B unless the
 directory is shared storage.
+
+## Memory backend
+
+`storage.NewMemoryStorage()` stores objects in process memory and exposes
+seekable reads through `RangeGetter`. `Save` caps each object at 50 MiB.
+All operations return a canceled context error before acting; `Save` also
+checks cancellation after reading, before replacing the stored object.
+Contents disappear when the process exits.
 
 ## S3 backend
 

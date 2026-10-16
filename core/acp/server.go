@@ -251,6 +251,7 @@ func (c *Client) RequestPermission(ctx context.Context, toolCall ToolCallUpdate,
 type conn struct {
 	mu        sync.Mutex
 	w         io.Writer
+	werr      error // set once a frame is cut short; guarded by mu
 	pmu       sync.Mutex
 	pending   map[int64]chan pendingResp
 	nextID    atomic.Int64
@@ -269,7 +270,18 @@ func (c *conn) writeFrame(v any) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	_, err = c.w.Write(append(buf, '\n'))
+	if c.werr != nil {
+		return c.werr
+	}
+	n, err := c.w.Write(append(buf, '\n'))
+	if err == nil && n != len(buf)+1 {
+		err = io.ErrShortWrite
+	}
+	if err != nil && n > 0 {
+		// Part of a frame reached the peer; anything written after it
+		// would read as the rest of that frame.
+		c.werr = fmt.Errorf("acp: stream broken by a partial frame: %w", err)
+	}
 	return err
 }
 

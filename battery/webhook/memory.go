@@ -3,6 +3,7 @@ package webhook
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ func NewMemoryStore() *MemoryStore {
 // AddSubscriber stores s, replacing any existing record with the same ID.
 func (m *MemoryStore) AddSubscriber(_ context.Context, s Subscriber) error {
 	m.mu.Lock()
+	s.Events = slices.Clone(s.Events)
 	m.subscribers[s.ID] = s
 	m.mu.Unlock()
 	return nil
@@ -41,6 +43,7 @@ func (m *MemoryStore) GetSubscriber(_ context.Context, id string) (*Subscriber, 
 	if !ok {
 		return nil, nil
 	}
+	s.Events = slices.Clone(s.Events)
 	return &s, nil
 }
 
@@ -49,6 +52,7 @@ func (m *MemoryStore) ListSubscribers(_ context.Context) ([]Subscriber, error) {
 	defer m.mu.RUnlock()
 	out := make([]Subscriber, 0, len(m.subscribers))
 	for _, s := range m.subscribers {
+		s.Events = slices.Clone(s.Events)
 		out = append(out, s)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
@@ -64,6 +68,7 @@ func (m *MemoryStore) DeleteSubscriber(_ context.Context, id string) error {
 
 func (m *MemoryStore) AddDelivery(_ context.Context, d Delivery) error {
 	m.mu.Lock()
+	d.Payload = cloneBytes(d.Payload)
 	m.deliveries[d.ID] = d
 	m.mu.Unlock()
 	return nil
@@ -87,6 +92,7 @@ func (m *MemoryStore) UpdateDelivery(_ context.Context, d Delivery) error {
 			return nil
 		}
 	}
+	d.Payload = cloneBytes(d.Payload)
 	m.deliveries[d.ID] = d
 	m.mu.Unlock()
 	return nil
@@ -100,6 +106,7 @@ func (m *MemoryStore) ListDeliveries(_ context.Context, subscriberID string, lim
 		if subscriberID != "" && d.SubscriberID != subscriberID {
 			continue
 		}
+		d.Payload = cloneBytes(d.Payload)
 		out = append(out, d)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
@@ -117,6 +124,7 @@ func (m *MemoryStore) ListDeadDeliveries(_ context.Context, limit int) ([]Delive
 	out := []Delivery{}
 	for _, d := range m.deliveries {
 		if d.Status == StatusDead {
+			d.Payload = cloneBytes(d.Payload)
 			out = append(out, d)
 		}
 	}
@@ -157,6 +165,7 @@ func (m *MemoryStore) DueDeliveries(_ context.Context, now time.Time, limit int)
 		if d.NextAttemptAt.After(now) {
 			continue
 		}
+		d.Payload = cloneBytes(d.Payload)
 		out = append(out, d)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].NextAttemptAt.Before(out[j].NextAttemptAt) })
@@ -206,17 +215,14 @@ func (m *MemoryStore) ClaimDueDeliveries(_ context.Context, now time.Time, limit
 		candidates = candidates[:limit]
 	}
 	leaseUntil := now.Add(leasePeriod)
-	for _, d := range candidates {
+	for i := range candidates {
+		d := &candidates[i]
 		d.Attempts++
 		d.NextAttemptAt = leaseUntil
 		d.UpdatedAt = leaseUntil
-		m.deliveries[d.ID] = d
-	}
-	// Reflect the lease and the consumed attempt in the returned snapshot.
-	for i := range candidates {
-		candidates[i].Attempts++
-		candidates[i].NextAttemptAt = leaseUntil
-		candidates[i].UpdatedAt = leaseUntil
+		// The store keeps its own payload; the caller gets one copy.
+		m.deliveries[d.ID] = *d
+		d.Payload = cloneBytes(d.Payload)
 	}
 	return candidates, nil
 }

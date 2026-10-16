@@ -187,6 +187,15 @@ func (n *Notifier) Send(ctx context.Context, msg Notification) error {
 	if rerr != nil {
 		return rerr
 	}
+	resolved := make([]string, 0, len(selected))
+	seen := make(map[string]bool, len(selected))
+	for _, name := range selected {
+		if _, ok := channels[name]; ok && !seen[name] {
+			resolved = append(resolved, name)
+			seen[name] = true
+		}
+	}
+	selected = resolved
 	if len(selected) == 0 {
 		return ErrNoChannels
 	}
@@ -390,6 +399,7 @@ func (m *MapTemplater) Set(notifType, channel string, t Template) {
 	if m.templates[notifType] == nil {
 		m.templates[notifType] = map[string]Template{}
 	}
+	t.Extra = maps.Clone(t.Extra)
 	m.templates[notifType][channel] = t
 	m.mu.Unlock()
 }
@@ -423,7 +433,7 @@ func (m *MapTemplater) Render(_ context.Context, notifType, channel string, data
 		Subject:  stripHeaderUnsafe(interpolate(t.Subject, data)),
 		TextBody: interpolate(t.TextBody, data),
 		HTMLBody: interpolateValues(t.HTMLBody, data, escapeHTMLValue),
-		Extra:    t.Extra,
+		Extra:    maps.Clone(t.Extra),
 	}, nil
 }
 

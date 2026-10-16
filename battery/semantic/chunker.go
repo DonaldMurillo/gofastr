@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"unicode/utf8"
 )
 
 // FixedWindow is a language-agnostic chunker that splits text into
@@ -34,6 +35,12 @@ func NewFixedWindow(size, overlap int) *FixedWindow {
 
 // Chunk implements [Chunker].
 func (f *FixedWindow) Chunk(doc Document) ([]Chunk, error) {
+	if !utf8.ValidString(doc.Text) {
+		return nil, fmt.Errorf("semantic: document text must be valid UTF-8")
+	}
+	if f.Size <= 0 {
+		return nil, fmt.Errorf("semantic: window size must be positive")
+	}
 	text := doc.Text
 	if strings.TrimSpace(text) == "" {
 		return nil, nil

@@ -2,9 +2,11 @@ package semantic
 
 import (
 	"fmt"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"strings"
+	"unicode/utf8"
 )
 
 // LangAware is a structure-aware chunker that splits Go source on
@@ -37,6 +39,8 @@ func NewLangAware() *LangAware {
 // per-request recover — a panic becomes an attributed error instead of
 // killing the process.
 func (l *LangAware) Chunk(doc Document) ([]Chunk, error) {
+	config := *l
+	l = &config
 	if l.MaxRunes == 0 {
 		l.MaxRunes = 1024
 	}
@@ -46,14 +50,41 @@ func (l *LangAware) Chunk(doc Document) ([]Chunk, error) {
 	switch l.detectKind(doc) {
 	case "go":
 		if cs, ok := l.chunkGo(doc); ok {
-			return l.flatten(cs), nil
+			return l.flatten(cs)
 		}
 	case "md", "markdown":
 		if cs, ok := l.chunkMarkdown(doc); ok {
-			return l.flatten(cs), nil
+			return l.flatten(cs)
 		}
 	}
-	return chunkSafely(l.Fallback, doc)
+	cs, err := chunkSafely(l.Fallback, doc)
+	if err != nil {
+		return nil, err
+	}
+	return l.bound(cs)
+}
+
+// bound splits any chunk over MaxRunes into MaxRunes windows, keeping
+// offsets in the same frame as the input.
+func (l *LangAware) bound(in []Chunk) ([]Chunk, error) {
+	var out []Chunk
+	for _, c := range in {
+		if utf8.RuneCountInString(c.Text) <= l.MaxRunes {
+			out = append(out, c)
+			continue
+		}
+		parts, err := NewFixedWindow(l.MaxRunes, 0).Chunk(Document{ID: c.DocID, Source: c.Source, Text: c.Text, Metadata: c.Metadata})
+		if err != nil {
+			return nil, err
+		}
+		for j := range parts {
+			parts[j].Offset[0] += c.Offset[0]
+			parts[j].Offset[1] += c.Offset[0]
+			parts[j].ID = chunkID(parts[j].DocID, parts[j].Offset[0], parts[j].Offset[1])
+		}
+		out = append(out, parts...)
+	}
+	return out, nil
 }
 
 // chunkSafely invokes one host-supplied Chunker under a recover net:
@@ -80,6 +111,9 @@ func (l *LangAware) detectKind(doc Document) string {
 			if lang, ok := doc.Metadata["lang"].(string); ok && lang != "" {
 				return lang
 			}
+		}
+		if v != "code" && v != "doc" {
+			return v
 		}
 	}
 	source := strings.ToLower(doc.Source)
@@ -108,6 +142,16 @@ func (l *LangAware) chunkGo(doc Document) ([]Chunk, bool) {
 		// Include any leading line of doc comments by widening to the
 		// start of the decl's line.
 		start := startPos.Offset
+		switch node := decl.(type) {
+		case *ast.FuncDecl:
+			if node.Doc != nil {
+				start = fset.Position(node.Doc.Pos()).Offset
+			}
+		case *ast.GenDecl:
+			if node.Doc != nil {
+				start = fset.Position(node.Doc.Pos()).Offset
+			}
+		}
 		end := endPos.Offset
 		if start < 0 || end > len(doc.Text) || end <= start {
 			continue
@@ -143,10 +187,32 @@ func (l *LangAware) chunkMarkdown(doc Document) ([]Chunk, bool) {
 		}
 		out = append(out, newChunk(doc, start, endOffset, text))
 	}
+	var fence byte
+	var fenceLen int
 	for _, line := range lines {
-		isHeading := strings.HasPrefix(line, "# ") ||
+		trimmed := strings.TrimLeft(line, " ")
+		insideFence := fence != 0
+		isFence := false
+		if len(line)-len(trimmed) <= 3 && len(trimmed) >= 3 && (trimmed[0] == '`' || trimmed[0] == '~') {
+			marker := trimmed[0]
+			count := 0
+			for count < len(trimmed) && trimmed[count] == marker {
+				count++
+			}
+			if count >= 3 {
+				if fence == 0 {
+					fence = marker
+					fenceLen = count
+					isFence = true
+				} else if marker == fence && count >= fenceLen && strings.TrimSpace(trimmed[count:]) == "" {
+					fence = 0
+					isFence = true
+				}
+			}
+		}
+		isHeading := !insideFence && !isFence && (strings.HasPrefix(line, "# ") ||
 			strings.HasPrefix(line, "## ") ||
-			strings.HasPrefix(line, "### ")
+			strings.HasPrefix(line, "### "))
 		if isHeading && section.Len() > 0 {
 			flush(pos)
 			start = pos
@@ -164,7 +230,7 @@ func (l *LangAware) chunkMarkdown(doc Document) ([]Chunk, bool) {
 // flatten sub-chunks any structural chunk longer than MaxRunes via the
 // fallback chunker so we never ship a chunk that overflows the
 // embedder's context.
-func (l *LangAware) flatten(in []Chunk) []Chunk {
+func (l *LangAware) flatten(in []Chunk) ([]Chunk, error) {
 	out := make([]Chunk, 0, len(in))
 	for _, c := range in {
 		if len([]rune(c.Text)) <= l.MaxRunes {
@@ -177,16 +243,20 @@ func (l *LangAware) flatten(in []Chunk) []Chunk {
 			Text:     c.Text,
 			Metadata: c.Metadata,
 		})
-		if err != nil || len(sub) == 0 {
-			out = append(out, c)
-			continue
+		if err != nil {
+			return nil, err
+		}
+		// No chunks back means the fallback chose to drop the section.
+		if sub, err = l.bound(sub); err != nil {
+			return nil, err
 		}
 		// Re-base sub-chunk offsets against the parent chunk's start.
 		for i := range sub {
 			sub[i].Offset[0] += c.Offset[0]
 			sub[i].Offset[1] += c.Offset[0]
+			sub[i].ID = chunkID(sub[i].DocID, sub[i].Offset[0], sub[i].Offset[1])
 		}
 		out = append(out, sub...)
 	}
-	return out
+	return out, nil
 }

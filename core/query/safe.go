@@ -51,7 +51,11 @@ func SafeQuote(s string) (string, error) {
 	if _, err := SafeIdent(s); err != nil {
 		return "", err
 	}
-	return QuoteIdent(s), nil
+	parts := strings.Split(s, ".")
+	for i, part := range parts {
+		parts[i] = QuoteIdent(part)
+	}
+	return strings.Join(parts, "."), nil
 }
 
 // reservedSQLIdents are tokens refused as bare table names regardless of

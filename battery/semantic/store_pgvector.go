@@ -174,19 +174,33 @@ func (s *PgVectorStore) Add(ctx context.Context, chunks []Chunk) error {
 		offset_end   = EXCLUDED.offset_end,
 		meta         = EXCLUDED.meta,
 		embedding    = EXCLUDED.embedding`, s.quotedTable)
+	// The batch is one transaction, so a chunk that fails leaves none of
+	// the batch stored, as FlatStore.Add does.
+	metas := make([][]byte, len(chunks))
+	for i := range chunks {
+		meta, err := marshalMeta(chunks[i].Metadata)
+		if err != nil {
+			return fmt.Errorf("semantic: marshal meta for chunk %q: %w", chunks[i].ID, err)
+		}
+		metas[i] = meta
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("semantic: begin add: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
 	for i := range chunks {
 		c := &chunks[i]
-		meta, err := marshalMeta(c.Metadata)
-		if err != nil {
-			return fmt.Errorf("semantic: marshal meta for chunk %q: %w", c.ID, err)
-		}
 		kind, _ := c.Metadata["kind"].(string)
-		if _, err := s.db.ExecContext(ctx, stmt,
+		if _, err := tx.ExecContext(ctx, stmt,
 			c.ID, c.DocID, c.Source, kind, c.Text,
-			c.Offset[0], c.Offset[1], meta, encodeVector(c.Vec),
+			c.Offset[0], c.Offset[1], metas[i], encodeVector(c.Vec),
 		); err != nil {
 			return fmt.Errorf("semantic: insert chunk %q: %w", c.ID, err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("semantic: commit add: %w", err)
 	}
 	return nil
 }

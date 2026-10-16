@@ -98,10 +98,10 @@ func validateInt(f Field, value any) error {
 	// Compare bounds in integer space. The bounds are stored as *float64,
 	// so first clamp them to the int64 range; widening n to float64 instead
 	// would lose precision above 2^53 and admit values strictly over Max.
-	if f.Min != nil && n < floatBoundToInt64(*f.Min, true) {
+	if f.Min != nil && (math.IsNaN(*f.Min) || *f.Min >= math.Exp2(63) || n < floatBoundToInt64(*f.Min, true)) {
 		return fmt.Errorf("must be at least %v", *f.Min)
 	}
-	if f.Max != nil && n > floatBoundToInt64(*f.Max, false) {
+	if f.Max != nil && (math.IsNaN(*f.Max) || *f.Max < math.MinInt64 || n > floatBoundToInt64(*f.Max, false)) {
 		return fmt.Errorf("must be at most %v", *f.Max)
 	}
 	return nil
@@ -188,23 +188,23 @@ func validateDecimal(f Field, value any) error {
 	// stored as a string precisely to avoid float rounding, so the bound check
 	// must not round-trip through float64 (which would lose precision above
 	// 2^53 and admit values strictly over Max / under Min). big.Rat parses the
-	// canonical decimal text exactly, and a float64 bound converts to big.Rat
-	// without loss, so the comparison is exact.
+	// canonical decimal text exactly, and each bound uses its shortest decimal spelling, so configured decimal
+	// values compare exactly at the boundary.
 	dv, ok := new(big.Rat).SetString(s)
 	if !ok {
 		// decimalRe already vetted the form; defensive fail-closed.
 		return fmt.Errorf("must be a valid decimal number")
 	}
 	if f.Min != nil {
-		// SetFloat64 returns nil for a NaN/Inf bound; such a bound can never be
+		// decimalBound returns nil for a NaN/Inf bound; such a bound can never be
 		// satisfied, so reject (fail closed) rather than panic in Cmp.
-		min := new(big.Rat).SetFloat64(*f.Min)
+		min := decimalBound(*f.Min)
 		if min == nil || dv.Cmp(min) < 0 {
 			return fmt.Errorf("must be at least %v", *f.Min)
 		}
 	}
 	if f.Max != nil {
-		max := new(big.Rat).SetFloat64(*f.Max)
+		max := decimalBound(*f.Max)
 		if max == nil || dv.Cmp(max) > 0 {
 			return fmt.Errorf("must be at most %v", *f.Max)
 		}
@@ -303,9 +303,6 @@ func validateJSON(value any) error {
 		if !json.Valid([]byte(v)) {
 			return fmt.Errorf("must be valid JSON")
 		}
-		return nil
-	case map[string]any, []any:
-		// already parsed Go value, always valid
 		return nil
 	default:
 		// try marshaling and re-checking
@@ -419,6 +416,9 @@ func toInt64(v any) (int64, bool) {
 			return int64(n), true
 		}
 		return 0, false
+	case json.Number:
+		parsed, err := n.Int64()
+		return parsed, err == nil
 	case string:
 		parsed, err := strconv.ParseInt(n, 10, 64)
 		if err != nil {
@@ -432,6 +432,9 @@ func toInt64(v any) (int64, bool) {
 
 func toFloat64(v any) (float64, bool) {
 	switch n := v.(type) {
+	case json.Number:
+		parsed, err := n.Float64()
+		return parsed, err == nil
 	case float64:
 		return n, true
 	case float32:
@@ -459,4 +462,17 @@ func toFloat64(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// Decimal bounds use their shortest decimal spelling, matching configuration
+// and JSON, rather than the binary floating-point approximation.
+func decimalBound(v float64) *big.Rat {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return nil
+	}
+	if math.Trunc(v) == v {
+		return new(big.Rat).SetFloat64(v)
+	}
+	n, _ := new(big.Rat).SetString(strconv.FormatFloat(v, 'g', -1, 64))
+	return n
 }

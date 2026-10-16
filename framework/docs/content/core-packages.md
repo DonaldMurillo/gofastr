@@ -20,6 +20,10 @@ accessors (`SetUser`, `GetUser`, `SetTenant`, `SetRequestID`) the
 middleware chain populates. Author-facing: you write handlers against
 this. Start at `core/handler/handler.go`: `HandlerAdapter`.
 
+`Bind` applies header, query, path, then JSON values in that priority order.
+A present higher-priority value replaces an earlier value, including a JSON
+zero value; an omitted property preserves the value already bound.
+
 Every decode of client-controlled JSON outside `Bind` goes through the
 same strict rule: `DecodeStrict(r, &dst)` for a reader,
 `UnmarshalStrict(data, &dst)` for bytes already in memory (a websocket
@@ -145,6 +149,15 @@ spec from your routes and entities. Reach for it directly to add custom
 operations or mount the docs endpoint. Start at `core/openapi/spec.go`:
 `Spec`.
 
+### schema
+
+`core/schema` defines entity fields, validates values, and generates JSON
+schemas. Start at `core/schema/schema.go`: `Field`, `Validate`, `JSONSchema`.
+Validation accepts precise `json.Number` numeric values. Generated JSON
+and OpenAPI object properties and required lists use an explicit `WireName`.
+Character bounds and text patterns match validation; generated enum lists
+own their slices, so editing a schema does not change its declaration.
+
 ### jcs
 
 RFC 8785 JSON Canonicalization Scheme (JCS), stdlib-only: the invariant
@@ -238,7 +251,14 @@ pluggable `Source`s (default `EnvSource`; `MapSource` for tests),
 recursing into nested structs with a `SCREAMING_SNAKE` prefix (value or
 pointer form: a pointer is allocated and bound when any nested key is
 present, left nil otherwise) and redacting `sensitive` values from
-errors. Direct: call `config.Load(&cfg)` at startup. Start at
+errors. `validate:"min=1,max=65535"` enforces numeric bounds (string bounds
+count characters; a `time.Duration` takes duration bounds such as
+`min=1s,max=5m`); `validate:"oneof=debug info warn error"` restricts string
+choices. A rule `Load` cannot apply (an unknown rule, a bound on a bool)
+fails `Load`. An empty value (`KEY=`) leaves the field as it was, without
+the `default:` tag, and the rules still check it. Recursive configuration
+struct shapes are rejected.
+Direct: call `config.Load(&cfg)` at startup. Start at
 `core/config/config.go`: `Load`.
 
 ### netguard

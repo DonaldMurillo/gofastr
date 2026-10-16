@@ -87,6 +87,9 @@ func startTLSServer(t *testing.T, h http.HandlerFunc) *testTLSServer {
 func resolverForServer(t *testing.T, srv *testTLSServer) *directoryResolver {
 	t.Helper()
 	tr := guardedTransport(true) // tests dial loopback by design
+	// The custom dialer below always connects to our local TLS fixture,
+	// so a proxy CONNECT request would hit that TLS listener as plaintext.
+	tr.Proxy = nil
 	tr.TLSClientConfig = &tls.Config{RootCAs: srv.pool}
 	addr := srv.srv.Listener.Addr().String()
 	tr.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {

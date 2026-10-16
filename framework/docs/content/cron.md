@@ -100,6 +100,8 @@ Supported within each field:
 - `a,b,c`: list, e.g. `0,15,30,45`.
 - `*/N`: step, e.g. `*/15` for every 15 minutes.
 - `a-b/N`: stepped range.
+- `a/N`: step from `a` through the field maximum; minute `5/10` means
+  `5,15,25,35,45,55`.
 
 ## Shortcuts
 
@@ -192,6 +194,9 @@ if err := sched.StopContext(ctx); err != nil {
     // abandoned so shutdown can proceed
 }
 ```
+
+`StopContext` bounds both the tick-loop join and the in-flight job join.
+A blocked custom leader-election callback cannot extend that deadline.
 
 `App.AddCron` wires the stop side through `StopContext` automatically,
 bounded by the app's shutdown drain deadline, so a hung job cannot stall

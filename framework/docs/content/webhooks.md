@@ -238,6 +238,10 @@ type Store interface {
 }
 ```
 
+`MemoryStore` copies subscriber event slices and delivery payload bytes
+when storing and returning records, so editing a returned record requires
+an explicit store write to change delivery state.
+
 Two stores are bundled:
 
 - `NewMemoryStore()`: in-process maps, suitable for tests and

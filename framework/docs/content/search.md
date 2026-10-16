@@ -84,6 +84,9 @@ used `search.NewMemory()`.
 
 `search.NewMemory()` returns a goroutine-safe in-process store. It is
 appropriate for tests, single-binary demos, and small read-only sites.
+The backend copies the top-level `Document.Fields` map when indexing and
+returning results. Changing that map cannot alter the stored scope fields;
+nested values remain caller-owned. Canceled contexts return an error.
 Documents are stored in a map, so:
 
 - Restarting the process drops the index.

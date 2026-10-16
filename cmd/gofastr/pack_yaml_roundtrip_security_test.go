@@ -31,7 +31,7 @@ var (
 	// least one of the two reachable contexts (a seed row, which is a map
 	// inside a list item, and entity properties, which is a nested map).
 	mustRefuseBreaking = []string{
-		"", "a\nb", "a:b", "a[b", "a]b", "a{b", "a}b", "- a", "a\tb",
+		"", "a\nb", "a\rb", "a[b", "a]b", "a{b", "a}b", "- a", "a\tb",
 		" a", "a ", `"status`, "'status", "it's", `"quoted"`, "'quoted'",
 		// Leading '#' is the load-bearing one: the comment eats the line
 		// and the entry is SILENTLY DROPPED — the row re-parses as {}.
@@ -42,9 +42,8 @@ var (
 		// Quote family: the value is quoted correctly and the key's quote
 		// still desyncs the comment scanner against it.
 		`a"b`, "a'b",
-		// Colon family: parseMap cuts at the first colon regardless of
-		// context, so the key comes back truncated.
-		":", ":a", "a:", "a: b",
+		// A colon followed by a space is still a mapping separator.
+		"a: b",
 		// Comment family, mirroring the #a/a #b pair already listed.
 		"#", "a #", " #a",
 	}
@@ -52,7 +51,7 @@ var (
 	// today, but the guard rejects them anyway because the predicate is
 	// simpler than the parser's real rule. Listed separately so the
 	// comment above stays true of the list above it.
-	mustRefuseConservatively = []string{"a\rb", "a#b"}
+	mustRefuseConservatively = []string{"a#b", "a:b", ":", ":a", "a:"}
 
 	// Must survive untouched. Refusing any of these breaks real packs,
 	// which is the failure mode that matters more than the injection.

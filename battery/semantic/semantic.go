@@ -172,8 +172,8 @@ type Options struct {
 	Path string
 	// SnapshotEvery is the number of mutating ops after which the index
 	// automatically flushes a full snapshot and truncates the WAL. 0
-	// disables auto-snapshot; -1 snapshots after every op (mostly for
-	// tests). The default is 1000.
+	// means the default, 1000; -1 snapshots after every op (mostly for
+	// tests).
 	SnapshotEvery int
 }
 
@@ -217,7 +217,11 @@ func Open(opts Options) (Index, error) {
 		snapshotEvery: opts.SnapshotEvery,
 	}
 	if err := idx.loadAndReplay(); err != nil {
+		if idx.wal != nil {
+			_ = idx.wal.close()
+		}
 		return nil, err
 	}
+	idx.storeDim() // seed the cache at startup, not on a write
 	return idx, nil
 }

@@ -14,6 +14,12 @@ import "time"
 // stops at the largest value whose next doubling could overflow int64,
 // so any attempt count is safe.
 func Exponential(base, max time.Duration, attempts int) time.Duration {
+	if base == 0 {
+		return 0
+	}
+	if attempts < 1 {
+		attempts = 1
+	}
 	exp := attempts - 1
 	if exp < 0 {
 		exp = 0
@@ -23,7 +29,7 @@ func Exponential(base, max time.Duration, attempts int) time.Duration {
 		if max > 0 && d >= max {
 			return max
 		}
-		if d > (1<<62)/2 {
+		if d > (1<<63-1)/2 {
 			// The next doubling would overflow; clamp to max (or this
 			// value when uncapped).
 			if max > 0 {

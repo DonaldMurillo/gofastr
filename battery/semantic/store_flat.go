@@ -3,7 +3,10 @@ package semantic
 import (
 	"context"
 	"errors"
+	"maps"
 	"math"
+	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -34,7 +37,8 @@ func NewFlatStore(dim int, model string) *FlatStore {
 	}
 }
 
-// Add appends chunks. Vectors are L2-normalized in place so query-time
+// Add appends validated chunks, keeping its own vectors and metadata map.
+// Vectors are L2-normalized so query-time
 // scoring is a plain dot product. When the store was constructed with
 // dim=0 (embedder dim unknown at boot time), the first non-empty vec
 // fixes the dimension for the lifetime of the store.
@@ -44,17 +48,25 @@ func (s *FlatStore) Add(_ context.Context, chunks []Chunk) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.dim == 0 && len(chunks) > 0 && len(chunks[0].Vec) > 0 {
-		s.dim = len(chunks[0].Vec)
+	dim := s.dim
+	if dim == 0 && len(chunks[0].Vec) > 0 {
+		dim = len(chunks[0].Vec)
 	}
-	for i := range chunks {
-		if len(chunks[i].Vec) != s.dim {
-			return errVecDim(s.dim, len(chunks[i].Vec))
+	for _, c := range chunks {
+		if len(c.Vec) != dim {
+			return errVecDim(dim, len(c.Vec))
 		}
-		normalize(chunks[i].Vec)
+		if err := finiteVector(c.Vec); err != nil {
+			return err
+		}
+	}
+	s.dim = dim
+	for _, c := range chunks {
+		c = cloneChunk(c)
+		normalize(c.Vec)
 		idx := len(s.chunks)
-		s.chunks = append(s.chunks, chunks[i])
-		s.byDoc[chunks[i].DocID] = append(s.byDoc[chunks[i].DocID], idx)
+		s.chunks = append(s.chunks, c)
+		s.byDoc[c.DocID] = append(s.byDoc[c.DocID], idx)
 	}
 	return nil
 }
@@ -86,6 +98,7 @@ func (s *FlatStore) RemoveDoc(_ context.Context, docID string) error {
 		kept = append(kept, c)
 		newByDoc[c.DocID] = append(newByDoc[c.DocID], newIdx)
 	}
+	clear(s.chunks[len(kept):])
 	s.chunks = kept
 	s.byDoc = newByDoc
 	return nil
@@ -94,6 +107,11 @@ func (s *FlatStore) RemoveDoc(_ context.Context, docID string) error {
 // Candidates returns up to top chunks by cosine similarity to qv,
 // applying filter to the candidate set first.
 func (s *FlatStore) Candidates(_ context.Context, qv []float32, filter Filter, top int) ([]Hit, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if err := finiteVector(qv); err != nil {
+		return nil, err
+	}
 	if s.dim != 0 && len(qv) != s.dim {
 		return nil, errVecDim(s.dim, len(qv))
 	}
@@ -103,9 +121,6 @@ func (s *FlatStore) Candidates(_ context.Context, qv []float32, filter Filter, t
 	q := make([]float32, len(qv))
 	copy(q, qv)
 	normalize(q)
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
 
 	// We can never return more candidates than chunks exist, so bound the
 	// capacity hint by the corpus size. This stops a pathological caller
@@ -132,6 +147,12 @@ func (s *FlatStore) Candidates(_ context.Context, qv []float32, filter Filter, t
 	})
 	if len(hits) > top {
 		hits = hits[:top]
+	}
+	// Copy only the survivors, still under the read lock: the caller
+	// owns them, and copying every filtered chunk first would cost
+	// corpus size times dimension per query.
+	for i := range hits {
+		hits[i].Chunk = cloneChunk(hits[i].Chunk)
 	}
 	// Vectors are intentionally retained here, downstream retrieval
 	// stages (MMR diversity, reranking) need them. The Index strips
@@ -172,7 +193,7 @@ func (s *FlatStore) ChunkByID(id string) (Chunk, bool) {
 	defer s.mu.RUnlock()
 	for i := range s.chunks {
 		if s.chunks[i].ID == id {
-			return s.chunks[i], true
+			return cloneChunk(s.chunks[i]), true
 		}
 	}
 	return Chunk{}, false
@@ -185,7 +206,9 @@ func (s *FlatStore) AllChunks() []Chunk {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]Chunk, len(s.chunks))
-	copy(out, s.chunks)
+	for i, c := range s.chunks {
+		out[i] = cloneChunk(c)
+	}
 	return out
 }
 
@@ -200,7 +223,7 @@ func chunkMatches(c *Chunk, f Filter) bool {
 		}
 	}
 	for k, want := range f.MetaMatch {
-		if c.Metadata[k] != want {
+		if !reflect.DeepEqual(c.Metadata[k], want) {
 			return false
 		}
 	}
@@ -215,9 +238,9 @@ func normalize(v []float32) {
 	if sum == 0 {
 		return
 	}
-	inv := float32(1.0 / math.Sqrt(sum))
+	norm := math.Sqrt(sum)
 	for i := range v {
-		v[i] *= inv
+		v[i] = float32(float64(v[i]) / norm)
 	}
 }
 
@@ -247,3 +270,19 @@ var _ Store = (*FlatStore)(nil)
 var errEmptyStore = errors.New("semantic: store snapshot has no chunks")
 
 var _ = errEmptyStore
+
+// cloneChunk isolates vectors and the top-level metadata map at the store boundary.
+func cloneChunk(c Chunk) Chunk {
+	c.Vec = slices.Clone(c.Vec)
+	c.Metadata = maps.Clone(c.Metadata)
+	return c
+}
+
+func finiteVector(v []float32) error {
+	for _, x := range v {
+		if math.IsNaN(float64(x)) || math.IsInf(float64(x), 0) {
+			return errors.New("semantic: vector coordinates must be finite")
+		}
+	}
+	return nil
+}

@@ -97,13 +97,23 @@ func TestRedisBrowsable_ListJobsAllStatus(t *testing.T) {
 	job, _ := q.Dequeue(ctx)
 	_ = q.Nack(ctx, job)
 
-	// Passing empty status should return same as "failed" for Redis (dead list).
-	jobs, err := q.ListJobs(ctx, "", 10, 0)
-	if err != nil {
-		t.Fatalf("ListJobs all: %v", err)
+	// Empty and "all" read the dead list, as "failed" does, like the
+	// memory backend.
+	for _, status := range []string{"", "all"} {
+		jobs, err := q.ListJobs(ctx, status, 10, 0)
+		if err != nil {
+			t.Fatalf("ListJobs(%q): %v", status, err)
+		}
+		if len(jobs) != 1 {
+			t.Errorf("ListJobs(%q): expected 1 job, got %d", status, len(jobs))
+		}
 	}
-	if len(jobs) != 1 {
-		t.Errorf("expected 1 job with empty status, got %d", len(jobs))
+	// Redis keeps no other state it can list without a scan.
+	for _, status := range []string{"pending", "bogus"} {
+		jobs, err := q.ListJobs(ctx, status, 10, 0)
+		if err != nil || len(jobs) != 0 {
+			t.Errorf("ListJobs(%q) = %d jobs, %v; want none", status, len(jobs), err)
+		}
 	}
 }
 

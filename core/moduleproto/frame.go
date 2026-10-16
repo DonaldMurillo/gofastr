@@ -1,6 +1,7 @@
 package moduleproto
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -96,6 +97,9 @@ func NewNotification(method string, params json.RawMessage) *Frame {
 // NewSuccessResponse constructs a success response paired to the given id.
 func NewSuccessResponse(id uint64, result json.RawMessage) *Frame {
 	idCopy := id
+	if len(result) == 0 {
+		result = json.RawMessage("null")
+	}
 	return &Frame{
 		JSONRPC: "2.0",
 		ID:      &idCopy,
@@ -141,6 +145,15 @@ func (f *Frame) UnmarshalJSON(data []byte) error {
 	if r.JSONRPC != "2.0" {
 		return fmt.Errorf("%w: jsonrpc must be \"2.0\", got %q", ErrInvalidFrame, r.JSONRPC)
 	}
+	var fields struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return fmt.Errorf("%w: %s", ErrInvalidFrame, err)
+	}
+	if bytes.Equal(bytes.TrimSpace(fields.ID), []byte("null")) {
+		return fmt.Errorf("%w: id must be omitted or a positive integer", ErrInvalidFrame)
+	}
 	if r.ID != nil && *r.ID == 0 {
 		return fmt.Errorf("%w: id must be > 0 (id:0 is not a valid sentinel)", ErrInvalidFrame)
 	}
@@ -156,6 +169,9 @@ func (f *Frame) UnmarshalJSON(data []byte) error {
 		// Must be a response.
 		if !hasID {
 			return fmt.Errorf("%w: response missing id", ErrInvalidFrame)
+		}
+		if hasResult && hasError {
+			return fmt.Errorf("%w: response carries both result and error", ErrInvalidFrame)
 		}
 		if !hasResult && !hasError {
 			return fmt.Errorf("%w: response missing result/error", ErrInvalidFrame)
