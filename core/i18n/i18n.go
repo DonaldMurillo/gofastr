@@ -225,6 +225,7 @@ func (c *MapCatalog) Set(locale, key string, m Message) {
 	if c.Entries[tag] == nil {
 		c.Entries[tag] = map[string]Message{}
 	}
+	m.Plural = maps.Clone(m.Plural)
 	c.Entries[tag][key] = m
 }
 
@@ -236,6 +237,7 @@ func (c *MapCatalog) Get(locale, key string) (Message, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if m, ok := c.Entries[normalize(locale)][key]; ok {
+		m.Plural = maps.Clone(m.Plural)
 		return m, true
 	}
 	return Message{}, false
@@ -461,6 +463,9 @@ const maxResolverTagLen = 35
 func sanitizeTag(tag string) string {
 	tag = normalize(tag)
 	if tag == "" || len(tag) > maxResolverTagLen {
+		return ""
+	}
+	if strings.HasPrefix(tag, "-") || strings.HasSuffix(tag, "-") || strings.Contains(tag, "--") {
 		return ""
 	}
 	for _, ch := range tag {

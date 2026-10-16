@@ -1,6 +1,9 @@
 package query
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // CountBuilder builds a SELECT COUNT(*) query with parameterized placeholders.
 type CountBuilder struct {
@@ -68,5 +71,5 @@ func buildFiltered(verb, table string, wheres []whereClause, args []any) (string
 		}
 	}
 
-	return sb.String(), args
+	return sb.String(), slices.Clone(args)
 }

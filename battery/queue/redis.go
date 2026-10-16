@@ -628,7 +628,7 @@ func (q *RedisQueue) Replay(ctx context.Context, jobID string) error {
 // after skipping offset of them. limit <= 0 defaults to 100; a negative
 // offset reads as zero.
 func (q *RedisQueue) ListJobs(ctx context.Context, status string, limit, offset int) ([]Job, error) {
-	if status != "" && status != "failed" {
+	if status != "" && status != "all" && status != "failed" {
 		return nil, nil
 	}
 	if limit <= 0 {

@@ -366,8 +366,49 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   button.
 - The static export's preview banner no longer lists search among the
   features that need the Go server.
+- **BREAKING: `core/config` enforces `validate:` tags.** `min`, `max`
+  and `oneof` run on every tagged field after `Load`, including one left at
+  its default; `time.Duration` bounds read as durations
+  (`min=1s,max=5m`). A rule `Load` cannot apply (an unknown name such as
+  `url`, `min` on a bool, `oneof` on an int) fails `Load` instead of being
+  skipped. An
+  empty value (`KEY=`) still leaves the field as the host set it.
+- `handler.Bind` applies header, then query, then path, then JSON values,
+  as documented, and a present later value wins. A JSON property set to a
+  zero value (`"count": 0`) now beats a query or header value; before, the
+  query or header value overwrote it. An omitted JSON property keeps the
+  value already bound.
+- `semantic.Query.MMRLambda` now raises diversity as it grows, as
+  documented (0 is pure relevance), and a NaN, infinite or out-of-range
+  value is an error.
+- `core/yaml` refuses an unescaped `'` inside a single-quoted scalar and
+  control bytes in mapping keys, and splits a mapping only on an unquoted colon
+  followed by a space, so a quoted key holding a colon (`"a:b": 1`) parses.
+- `core/dotenv` keys must match `[A-Za-z_][A-Za-z0-9_]*`, a value holding
+  a NUL byte is refused, and the invalid-key error no longer echoes the key.
 
 ### Fixed
+- **Regression audit: 95 defects fixed**, each pinned by a regression
+  test that failed before its fix. They cover retry arithmetic, SQL
+  transactions and identifiers, configuration, YAML and dotenv parsing,
+  validation and generated schemas, localization, pagination, module framing,
+  notification routing, queue and webhook storage, cron shutdown, desktop
+  updates, and semantic retrieval and crash recovery. Desktop updates now
+  extract and copy files with group and other write bits cleared whatever
+  the umask, copy read-only directories, and refuse an existing
+  destination inside the rename itself. `query.Insert`, `Update.Returning`
+  and `Select` copy the slices they are handed, so a caller reusing its
+  slice no longer rewrites a built query. A semantic `Add` canceled
+  mid-replace leaves the old document in place, a `PgVectorStore.Add` batch
+  that fails stores none of its chunks, and the watcher skips a file it
+  cannot chunk and keeps scanning instead of stopping the pass.
+- **Queues list and retry what they were given.** `ListJobs("all")` lists
+  every job on the DB and Redis backends, as it did on the memory one.
+  A `MemoryQueue` handler that edits its payload and fails no longer
+  changes what its retry runs.
+- **A canceled local save or delete changes nothing.** `core/upload` and
+  `battery/storage` local backends check the context before the rename
+  that replaces the object, and `core/upload` before a delete.
 - **The request-timeout middleware no longer hides upstream response
   headers from the handler.** It handed the handler an empty header map
   and copied it over the real one afterwards, so a handler could not

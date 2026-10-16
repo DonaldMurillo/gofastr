@@ -152,6 +152,7 @@ func directoryServer(t *testing.T, host, body string) (*directoryResolver, *int3
 	t.Cleanup(srv.Close)
 
 	tr := guardedTransport(true) // tests dial loopback by design
+	tr.Proxy = nil               // custom loopback dialer must send TLS, never proxy CONNECT
 	tr.TLSClientConfig = &tls.Config{RootCAs: pool}
 	srvAddr := srv.Listener.Addr().String()
 	tr.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {

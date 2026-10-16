@@ -62,13 +62,24 @@ The pipeline is composed inside `Index.Query`. Every stage is opt-in via the `Qu
 
 | Event | Behaviour |
 | --- | --- |
-| `Open(Options{Path: dir})` | Load `dir/store.snap` if present; replay `dir/store.wal`. |
+| `Open(Options{Path: dir})` | Load `dir/store.snap` if present; replay `dir/store.wal`, recovering a torn final record; checkpoint replayed state before new writes. |
 | `Add(docs)` / `Remove(ids)` | Append WAL entry (fsync per write); apply to in-memory store. |
-| `Snapshot()` | Atomic write of `dir/store.snap.tmp` + rename; truncate WAL. |
+| `Snapshot()` | Write a unique owner-only temporary file beside `dir/store.snap`, then rename it atomically; truncate WAL. |
 | `Add` / `Remove` every `SnapshotEvery` writes | Auto-triggers `Snapshot()`. |
 | `Close()` | Final `Snapshot()`; close WAL; close store. |
 
 The snapshot's header records the embedder's `Name()` and `Dim()`. Reopening with a different embedder is refused with `*ModelMismatchError` because mixing vectors from different models is silently catastrophic for retrieval quality. To migrate models: drop the snapshot, re-index from source.
+
+`SnapshotEvery` sets how many operations pass between automatic
+snapshots; `0` means the default, 1000, and `-1` snapshots after every
+operation. Explicit snapshots, recovery checkpoints and `Close()` also
+persist state. Snapshot loading validates chunk counts and vector
+dimensions before changing the store.
+
+Replacing a document with empty text removes its previous chunks. Invalid
+embedding dimensions or non-finite coordinates are rejected before removing
+the previous document. Go declaration chunks include their documentation
+comments; structural subchunks keep IDs derived from their global offsets.
 
 Snapshots, the WAL, and the directory that holds them are owner-only
 (0600 / 0700 plus `fileperm.Restrict`): they carry the full indexed
@@ -86,7 +97,7 @@ implementation surfaces as an attributed error from `Add` / `Remove` /
 - **`MemoryKeyword`**: in-process BM25-flavoured backend. Zero deps. Recommended default.
 - **`WrapSearchBackend(b search.Backend)`**: adapter over `battery/search` so an app that already runs Postgres FTS or a Bleve index reuses it.
 
-When `Query.Hybrid=true` and `Options.Keyword != nil`, the index gathers the top-`4K` candidates from vector and keyword separately, fuses them with reciprocal-rank fusion (`k=60`), and feeds the union into MMR/rerank. The keyword leg receives at most the first 64 whitespace-separated terms of the query text, the same cap `battery/search` applies, so a token-stuffed query cannot buy an unbounded scoring sweep. When `Keyword == nil`, `Hybrid=true` silently degrades to vector-only.
+When `Query.Hybrid=true` and `Options.Keyword != nil`, the index gathers the top-`4K` candidates from vector and keyword separately, fuses them with reciprocal-rank fusion (`k=60`), and feeds the union into MMR/rerank. The keyword leg receives at most the first 64 terms of the query text, counted as runs of letters and digits the way the keyword index tokenizes them, the same cap `battery/search` applies, so a token-stuffed query cannot buy an unbounded scoring sweep. When `Keyword == nil`, `Hybrid=true` silently degrades to vector-only.
 
 ## Diversity (MMR)
 
@@ -95,6 +106,8 @@ When `Query.Hybrid=true` and `Options.Keyword != nil`, the index gathers the top
 - `λ = 0`: collapse to pure relevance order (no diversity).
 - `λ = 0.3`: useful default; trims near-duplicates without sacrificing relevance.
 - `λ = 1`: pick the most-diverse-from-already-picked items regardless of query.
+
+`Query` returns an error for a non-finite lambda or one outside `[0, 1]`.
 
 MMR needs the candidate vectors; the store keeps them on the chunks until the very end of the pipeline, then strips them before returning.
 
@@ -125,6 +138,8 @@ w.Run(ctx, "./src", "./docs")     // until ctx cancellation
 // or
 w.ScanOnce(ctx, "./src")          // one-shot
 ```
+
+A file the chunker refuses (bytes that are not UTF-8, a fallback chunker that errors) is logged and left out of the index, along with any version of it indexed before; the scan goes on, and the watcher retries the file once it changes. An embedder or store error still stops `Run`.
 
 `Watcher` is polling-based on purpose: no third-party deps, deterministic behaviour, and the dev-time cost on a tree of a few thousand files is well under the embedding cost of any actual file edit. For very large trees, swap the implementation for fsnotify-backed without changing the public API.
 
@@ -264,6 +279,10 @@ Two are wired:
 
 - **`StubEmbedder`**: deterministic FNV bag-of-words, no deps, low retrieval quality. Fine for tests and offline development. Not a real model.
 - **`OllamaEmbedder`**: HTTP client against a locally running Ollama-compatible server. Default `nomic-embed-text` (768-dim) gives real semantic retrieval. Recommended production default.
+
+`OllamaEmbedder.Embed` rejects empty vectors, inconsistent dimensions,
+changes from the configured or previously detected dimension, and responses
+larger than 10 MiB. A rejected batch does not set the cached dimension.
 
 For anything else (OpenAI Embeddings API, a private microservice, a CGO-bound model), implement the three-method `Embedder` interface and pass it via `Options.Embedder`. The rest of the package is embedder-agnostic.
 

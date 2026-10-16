@@ -40,12 +40,18 @@ func (a *searchAdapter) Delete(ctx context.Context, id string) (err error) {
 	return a.b.Delete(ctx, id)
 }
 
-func (a *searchAdapter) Search(ctx context.Context, text string, top int) ([]KeywordHit, error) {
+func (a *searchAdapter) Search(ctx context.Context, text string, top int) (out []KeywordHit, err error) {
+	defer func() {
+		if v := recover(); v != nil {
+			out = nil
+			err = fmt.Errorf("semantic: keyword backend panicked: %v", v)
+		}
+	}()
 	results, err := a.b.Search(ctx, search.Query{Text: text, Type: "embed.chunk", Limit: top})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]KeywordHit, len(results))
+	out = make([]KeywordHit, len(results))
 	for i, r := range results {
 		out[i] = KeywordHit{ChunkID: r.Document.ID, Score: r.Score}
 	}

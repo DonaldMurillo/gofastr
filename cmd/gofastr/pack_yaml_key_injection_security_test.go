@@ -191,10 +191,10 @@ func TestPackHostileValueRoundTrips(t *testing.T) {
 }
 
 // TestYAMLCannotAuthorNewlineKeys PASSES and pins the refutation: the hostile
-// key cannot be laundered in through a hostile gofastr.yml, because core/yaml
-// stores map keys raw (never unquoting them). generate therefore only ever
-// transcribes YAML-safe keys into stubs.go, and the hostile key must come
-// from Go source pack reads directly.
+// key cannot be laundered in through a hostile gofastr.yml: core/yaml
+// unquotes mapping keys but rejects decoded control bytes. generate therefore
+// never transcribes newline-bearing keys into stubs.go, and the hostile key
+// must come from Go source pack reads directly.
 func TestYAMLCannotAuthorNewlineKeys(t *testing.T) {
 	src := "app:\n  name: Demo\n" +
 		"entities:\n  - name: posts\n    fields:\n      - name: title\n        type: string\n" +

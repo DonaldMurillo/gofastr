@@ -1,6 +1,9 @@
 package openapi
 
 import (
+	"math"
+	"slices"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
@@ -13,7 +16,7 @@ func FieldToSchema(field schema.Field) map[string]any {
 	case schema.String:
 		prop["type"] = "string"
 		if field.Min != nil {
-			prop["minLength"] = int(*field.Min)
+			prop["minLength"] = int(math.Ceil(*field.Min))
 		}
 		if field.Max != nil {
 			prop["maxLength"] = int(*field.Max)
@@ -26,10 +29,14 @@ func FieldToSchema(field schema.Field) map[string]any {
 		prop["type"] = "string"
 		prop["format"] = "textarea"
 		if field.Min != nil {
-			prop["minLength"] = int(*field.Min)
+			prop["minLength"] = int(math.Ceil(*field.Min))
 		}
 		if field.Max != nil {
 			prop["maxLength"] = int(*field.Max)
+		}
+
+		if field.Pattern != "" {
+			prop["pattern"] = field.Pattern
 		}
 
 	case schema.Int:
@@ -60,7 +67,7 @@ func FieldToSchema(field schema.Field) map[string]any {
 	case schema.Enum:
 		prop["type"] = "string"
 		if len(field.Values) > 0 {
-			prop["enum"] = field.Values
+			prop["enum"] = slices.Clone(field.Values)
 		}
 
 	case schema.UUID:
@@ -135,9 +142,13 @@ func FieldsToSchema(fields []schema.Field) map[string]any {
 		if f.Hidden {
 			continue
 		}
-		properties[f.Name] = FieldToSchema(f)
+		name := f.Name
+		if f.WireName != "" {
+			name = f.WireName
+		}
+		properties[name] = FieldToSchema(f)
 		if f.Required {
-			required = append(required, f.Name)
+			required = append(required, name)
 		}
 	}
 

@@ -2,6 +2,7 @@ package query
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -20,19 +21,19 @@ func Insert(table string) *InsertBuilder {
 
 // Columns sets the columns to insert into.
 func (ib *InsertBuilder) Columns(cols ...string) *InsertBuilder {
-	ib.columns = cols
+	ib.columns = slices.Clone(cols)
 	return ib
 }
 
 // Values sets the values to insert.
 func (ib *InsertBuilder) Values(vals ...any) *InsertBuilder {
-	ib.values = vals
+	ib.values = slices.Clone(vals)
 	return ib
 }
 
 // Returning adds a RETURNING clause.
 func (ib *InsertBuilder) Returning(cols ...string) *InsertBuilder {
-	ib.returning = cols
+	ib.returning = slices.Clone(cols)
 	return ib
 }
 
@@ -42,25 +43,29 @@ func (ib *InsertBuilder) Build() (string, []any) {
 
 	sb.WriteString("INSERT INTO ")
 	sb.WriteString(sanitizeFragment(ib.table))
+	if len(ib.columns) == 0 && len(ib.values) == 0 {
+		sb.WriteString(" DEFAULT VALUES")
+	} else {
 
-	// Columns: each column is sanitized so SQL meta-sequences in
-	// a hostile column name cannot escape the parenthesised list.
-	sb.WriteString(" (")
-	sanitized := make([]string, len(ib.columns))
-	for i, c := range ib.columns {
-		sanitized[i] = sanitizeColumn(c)
-	}
-	sb.WriteString(strings.Join(sanitized, ", "))
-	sb.WriteString(")")
+		// Columns: each column is sanitized so SQL meta-sequences in
+		// a hostile column name cannot escape the parenthesised list.
+		sb.WriteString(" (")
+		sanitized := make([]string, len(ib.columns))
+		for i, c := range ib.columns {
+			sanitized[i] = sanitizeColumn(c)
+		}
+		sb.WriteString(strings.Join(sanitized, ", "))
+		sb.WriteString(")")
 
-	// Values
-	sb.WriteString(" VALUES (")
-	placeholders := make([]string, len(ib.values))
-	for i := range ib.values {
-		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		// Values
+		sb.WriteString(" VALUES (")
+		placeholders := make([]string, len(ib.values))
+		for i := range ib.values {
+			placeholders[i] = fmt.Sprintf("$%d", i+1)
+		}
+		sb.WriteString(strings.Join(placeholders, ", "))
+		sb.WriteString(")")
 	}
-	sb.WriteString(strings.Join(placeholders, ", "))
-	sb.WriteString(")")
 
 	// Returning: each column sanitized for the same reason as Columns.
 	if len(ib.returning) > 0 {
@@ -72,5 +77,5 @@ func (ib *InsertBuilder) Build() (string, []any) {
 		sb.WriteString(strings.Join(sanitizedRet, ", "))
 	}
 
-	return sb.String(), ib.values
+	return sb.String(), slices.Clone(ib.values)
 }

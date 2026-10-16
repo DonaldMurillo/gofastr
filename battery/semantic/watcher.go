@@ -88,7 +88,9 @@ func NewWatcher(idx Index, opts WatchOptions) *Watcher {
 // Run walks the provided roots once, indexes every matching file, and
 // (unless PollInterval <= 0) loops re-scanning on every tick until
 // ctx is canceled. Returns ctx.Err() on cancellation, or the first
-// indexing error encountered.
+// indexing error encountered. A file the chunker refuses (invalid UTF-8,
+// a failing fallback) is not an error: it is logged, left out of the
+// index, and retried once it changes.
 // safeMetadata runs the app-supplied metadata callback under a recover
 // guard: it fires on the watcher loop, which has no per-request net, so
 // watcher.
@@ -236,7 +238,18 @@ func (w *Watcher) upsert(ctx context.Context, path string, info os.FileInfo) (er
 		Metadata: w.safeMetadata(path),
 	}
 	if err := w.idx.Add(ctx, doc); err != nil {
-		return fmt.Errorf("semantic: watcher add %q: %w", path, err)
+		var ce *chunkError
+		if !errors.As(err, &ce) {
+			return fmt.Errorf("semantic: watcher add %q: %w", path, err)
+		}
+		// The file's content is the fault (Latin-1 bytes, say): skip it
+		// so the rest of the tree still indexes, drop any version indexed
+		// before, and retry only once the file changes.
+		slog.Default().Warn("semantic: watcher skipped a file it cannot chunk",
+			"path", textsafe.ScrubControlBytes(path), "err", textsafe.ScrubControlBytes(ce.err.Error()))
+		if err := w.idx.Remove(ctx, docID); err != nil {
+			return fmt.Errorf("semantic: watcher remove %q: %w", path, err)
+		}
 	}
 	w.mu.Lock()
 	w.known[path] = fileFingerprint{docID: docID, modTime: info.ModTime(), size: info.Size()}

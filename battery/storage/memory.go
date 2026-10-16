@@ -38,7 +38,10 @@ const maxMemoryFileSize int64 = 50 << 20 // 50 MB
 
 // Save stores the contents of r under the given key.
 // Reads at most maxMemoryFileSize bytes to prevent unbounded memory allocation.
-func (ms *MemoryStorage) Save(_ context.Context, key string, r io.Reader) error {
+func (ms *MemoryStorage) Save(ctx context.Context, key string, r io.Reader) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if key == "" {
 		return fmt.Errorf("storage: empty key")
 	}
@@ -51,6 +54,9 @@ func (ms *MemoryStorage) Save(_ context.Context, key string, r io.Reader) error 
 		return fmt.Errorf("storage: file too large (max %d bytes)", maxMemoryFileSize)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 
@@ -63,7 +69,10 @@ func (ms *MemoryStorage) Save(_ context.Context, key string, r io.Reader) error 
 }
 
 // Delete removes the file identified by key. It is not an error if the key does not exist.
-func (ms *MemoryStorage) Delete(_ context.Context, key string) error {
+func (ms *MemoryStorage) Delete(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 
@@ -73,7 +82,10 @@ func (ms *MemoryStorage) Delete(_ context.Context, key string) error {
 }
 
 // Get returns a ReadCloser for the file identified by key.
-func (ms *MemoryStorage) Get(_ context.Context, key string) (io.ReadCloser, error) {
+func (ms *MemoryStorage) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ms.mu.RLock()
 	data, ok := ms.files[key]
 	ms.mu.RUnlock()
@@ -88,7 +100,10 @@ func (ms *MemoryStorage) Get(_ context.Context, key string) (io.ReadCloser, erro
 // GetRange implements [upload.RangeGetter]. The bytes are already in memory,
 // so a *bytes.Reader satisfies Seek for free, the wrapper only supplies the
 // no-op Close.
-func (ms *MemoryStorage) GetRange(_ context.Context, key string) (io.ReadSeekCloser, error) {
+func (ms *MemoryStorage) GetRange(ctx context.Context, key string) (io.ReadSeekCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	ms.mu.RLock()
 	data, ok := ms.files[key]
 	ms.mu.RUnlock()
@@ -107,7 +122,10 @@ type nopSeekCloser struct{ *bytes.Reader }
 func (nopSeekCloser) Close() error { return nil }
 
 // Exists reports whether a file exists for the given key.
-func (ms *MemoryStorage) Exists(_ context.Context, key string) (bool, error) {
+func (ms *MemoryStorage) Exists(ctx context.Context, key string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	ms.mu.RLock()
 	_, ok := ms.files[key]
 	ms.mu.RUnlock()

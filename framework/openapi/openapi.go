@@ -201,37 +201,16 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 				visibleFields = append(visibleFields, f)
 			}
 		}
-		entitySchema := openapi.FieldsToSchema(visibleFields)
-		// Remap property names via wireKeyOf (the shared wire-key helper:
-		// WireName verbatim when set, else the historical camelCase of the
-		// DB column). The entity schema is built from snake_case field
-		// Names; this step translates them to the wire keys clients see.
-		// Do NOT camelCase a WireName, it is the literal JSON key the
-		// entity chose to expose. wireKeyOf is the SAME resolution used by
-		// the ?fields= description and excludeFieldsByBehavior so every
-		// surface agrees on what a field is called on the wire.
-		if props, ok := entitySchema["properties"].(map[string]any); ok {
-			remapped := make(map[string]any, len(props))
-			for _, f := range visibleFields {
-				if v, ok := props[f.Name]; ok {
-					remapped[wireKeyOf(f)] = v
-				}
-			}
-			entitySchema["properties"] = remapped
+		// The entity layer owns default casing; the core generator also honors
+		// explicit WireName. Resolve each key once before generation so an alias
+		// is never looked up again under its database name or camel-cased twice.
+		wireFields := make([]schema.Field, len(visibleFields))
+		for i, f := range visibleFields {
+			f.Name = wireKeyOf(f)
+			f.WireName = ""
+			wireFields[i] = f
 		}
-		if reqs, ok := entitySchema["required"].([]string); ok {
-			lookup := make(map[string]schema.Field, len(visibleFields))
-			for _, f := range visibleFields {
-				lookup[f.Name] = f
-			}
-			for i, r := range reqs {
-				if f, ok := lookup[r]; ok {
-					reqs[i] = wireKeyOf(f)
-				} else {
-					reqs[i] = casing.ToCamel(r)
-				}
-			}
-		}
+		entitySchema := openapi.FieldsToSchema(wireFields)
 		s.AddSchema(schemaName, entitySchema)
 
 		// The router mounts auto-CRUD only when Exposure.CRUD is unset

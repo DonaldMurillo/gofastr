@@ -292,6 +292,9 @@ func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
 // NewCursorPage builds a CursorPage from data. It fetches limit+1 rows to
 // determine HasMore, and encodes the next cursor from the last row's cursorField.
 func NewCursorPage(data []map[string]any, cursorField string, limit int) CursorPage {
+	if limit < 1 {
+		limit = DefaultPageSize
+	}
 	hasMore := len(data) > limit
 	if hasMore {
 		data = data[:limit]
@@ -316,7 +319,10 @@ func NewCursorPage(data []map[string]any, cursorField string, limit int) CursorP
 func NewOffsetPage(data []map[string]any, page, pageSize, total int) OffsetPage {
 	totalPages := 0
 	if pageSize > 0 {
-		totalPages = int(math.Ceil(float64(total) / float64(pageSize)))
+		totalPages = total / pageSize
+		if total%pageSize > 0 {
+			totalPages++
+		}
 	}
 	return OffsetPage{
 		Data:       data,

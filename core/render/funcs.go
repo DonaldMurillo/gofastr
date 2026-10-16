@@ -19,6 +19,9 @@ var FuncMap = map[string]any{
 	"DateFormat":   func(t time.Time, layout string) string { return t.Format(layout) },
 	"NumberFormat": func(n float64, prec int) string { return strconv.FormatFloat(n, 'f', prec, 64) },
 	"Truncate": func(s string, maxRunes int) string {
+		if maxRunes < 0 {
+			return ""
+		}
 		if utf8.RuneCountInString(s) <= maxRunes {
 			return s
 		}
@@ -30,12 +33,13 @@ var FuncMap = map[string]any{
 var funcMu sync.RWMutex
 
 // RegisterFunc adds a named function to the global FuncMap.
-// It panics if fn is nil or a function is already registered under name.
+// It panics if fn is nil. A later call under the same name replaces the
+// earlier function, built-ins included.
 func RegisterFunc(name string, fn any) {
 	if fn == nil {
 		panic(fmt.Sprintf("render: RegisterFunc(%q, nil)", name))
 	}
 	funcMu.Lock()
+	defer funcMu.Unlock()
 	FuncMap[name] = fn
-	funcMu.Unlock()
 }

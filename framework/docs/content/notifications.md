@@ -55,7 +55,9 @@ The default router selects by Recipient field:
 | `inapp`      | always                            |
 
 Override with `notify.WithRouter(...)` for app-specific logic
-(quiet hours, opt-ins, channel preference per user).
+(quiet hours, opt-ins, channel preference per user). Repeated channel names
+are sent once. Unknown names are skipped; if no registered channel remains,
+`Send` returns `ErrNoChannels`.
 
 ## Templates
 
@@ -92,7 +94,9 @@ data := map[string]any{
 header continuations). A custom `Templater` owns the same obligation:
 `EmailChannel` passes `Rendered.HTMLBody` through verbatim.
 
-`Template.Extra` is passed through to the channel as `Rendered.Extra`:
+`MapTemplater` copies the top-level `Template.Extra` map on `Set` and
+`Render`; nested values remain shared. `Template.Extra` reaches the channel
+as `Rendered.Extra`:
 the bundled `EmailChannel` honours `Extra["headers"]` (custom headers,
 with reserved keys like To/From/Cc/Bcc/Reply-To rejected) so
 per-notification overrides don't need a custom Channel. A templated

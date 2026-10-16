@@ -55,7 +55,7 @@ func lexLines(input string) ([]line, error) {
 	raw := strings.Split(strings.ReplaceAll(input, "\r\n", "\n"), "\n")
 	lines := make([]line, 0, len(raw))
 	for i, rawLine := range raw {
-		if strings.ContainsRune(rawLine, '\t') {
+		if strings.ContainsRune(rawLine[:len(rawLine)-len(strings.TrimLeft(rawLine, " \t"))], '\t') {
 			return nil, fmt.Errorf("yaml:%d:1: tabs are not supported for indentation", i+1)
 		}
 		stripped := stripComment(rawLine)
@@ -176,7 +176,7 @@ func (p *parser) parseMapSeeded(indent int, seed map[string]int) (*Node, error) 
 		if strings.HasPrefix(line.text, "- ") || line.text == "-" {
 			break
 		}
-		key, value, ok := strings.Cut(line.text, ":")
+		key, value, ok := splitMapping(line.text)
 		if !ok || strings.TrimSpace(key) == "" {
 			return nil, fmt.Errorf("yaml:%d:%d: expected key: value", line.line, line.indent+1)
 		}
@@ -243,6 +243,11 @@ func normalizeKey(raw string, line, column int) (string, error) {
 		}
 		key = value
 	}
+	for i := 0; i < len(key); i++ {
+		if key[i] < 0x20 || key[i] == 0x7f {
+			return "", fmt.Errorf("yaml:%d:%d: control bytes are not supported in mapping keys", line, column)
+		}
+	}
 	return key, nil
 }
 
@@ -276,7 +281,7 @@ func (p *parser) parseList(indent int) (*Node, error) {
 			out.List = append(out.List, child)
 			continue
 		}
-		if key, value, ok := strings.Cut(item, ":"); ok && strings.TrimSpace(key) != "" && !strings.HasPrefix(item, "\"") && !strings.HasPrefix(item, "'") && !strings.HasPrefix(item, "[") {
+		if key, value, ok := splitMapping(item); ok && strings.TrimSpace(key) != "" && !strings.HasPrefix(item, "[") {
 			child := &Node{Kind: Map, Line: line.line, Column: line.indent + 1, Map: map[string]*Node{}}
 			// The item's first key is a mapping key like any other:
 			// normalize it so flow characters and anchor/tag
@@ -491,11 +496,51 @@ func parseQuoted(raw string) (string, error) {
 		return "", fmt.Errorf("unterminated quoted scalar")
 	}
 	if quote == '\'' {
-		return strings.ReplaceAll(raw[1:len(raw)-1], "''", "'"), nil
+		body := raw[1 : len(raw)-1]
+		for i := 0; i < len(body); i++ {
+			if body[i] == '\'' {
+				if i+1 >= len(body) || body[i+1] != '\'' {
+					return "", fmt.Errorf("unescaped quote in scalar")
+				}
+				i++
+			}
+		}
+		return strings.ReplaceAll(body, "''", "'"), nil
 	}
 	unquoted, err := strconv.Unquote(raw)
 	if err != nil {
 		return "", err
 	}
 	return unquoted, nil
+}
+
+// A mapping separator is an unquoted colon followed by whitespace or EOF.
+// Colons in URLs and quoted keys are part of the scalar.
+func splitMapping(s string) (string, string, bool) {
+	var quote byte
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if quote != 0 {
+			if quote == '"' && c == '\\' {
+				i++
+				continue
+			}
+			if c == quote {
+				if quote == '\'' && i+1 < len(s) && s[i+1] == quote {
+					i++
+					continue
+				}
+				quote = 0
+			}
+			continue
+		}
+		if (c == '"' || c == '\'') && strings.TrimSpace(s[:i]) == "" {
+			quote = c
+			continue
+		}
+		if c == ':' && (i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '\t') {
+			return s[:i], s[i+1:], true
+		}
+	}
+	return "", "", false
 }

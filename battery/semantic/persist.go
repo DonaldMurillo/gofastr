@@ -56,12 +56,13 @@ func (s *FlatStore) Snapshot(path string) error {
 	copy(chunks, s.chunks)
 	s.mu.RUnlock()
 
-	tmp := path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*.tmp")
 	if err != nil {
 		return fmt.Errorf("semantic: create snapshot tmp: %w", err)
 	}
-	if err := fileperm.Restrict(tmp, false); err != nil {
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if err := f.Chmod(0o600); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
 		return fmt.Errorf("semantic: restrict snapshot tmp: %w", err)
@@ -122,17 +123,16 @@ func (s *FlatStore) LoadSnapshot(path string) error {
 	// In that case adopt the snapshot's dim, it's the source of truth.
 	// A non-zero store dim that disagrees with the snapshot is still a
 	// loud refusal.
-	if header.Model != s.model || (s.dim != 0 && header.Dim != s.dim) {
-		return &ModelMismatchError{
-			SnapshotModel: header.Model, SnapshotDim: header.Dim,
-			StoreModel: s.model, StoreDim: s.dim,
-		}
+	if header.ChunkCount < 0 || header.Dim < 0 {
+		return errors.New("semantic: snapshot count and dimension must be nonnegative")
 	}
-	if s.dim == 0 {
-		s.dim = header.Dim
+	s.mu.RLock()
+	storeDim, storeModel := s.dim, s.model
+	s.mu.RUnlock()
+	if header.Model != storeModel || (storeDim != 0 && header.Dim != storeDim) {
+		return &ModelMismatchError{SnapshotModel: header.Model, SnapshotDim: header.Dim, StoreModel: storeModel, StoreDim: storeDim}
 	}
-
-	chunks := make([]Chunk, 0, header.ChunkCount)
+	chunks := make([]Chunk, 0)
 	byDoc := make(map[string][]int)
 	for {
 		var c Chunk
@@ -143,15 +143,32 @@ func (s *FlatStore) LoadSnapshot(path string) error {
 		if err != nil {
 			return fmt.Errorf("semantic: decode chunk: %w", err)
 		}
+		if len(chunks) >= header.ChunkCount {
+			return errors.New("semantic: snapshot contains more chunks than its header")
+		}
+		if len(c.Vec) != header.Dim {
+			return errVecDim(header.Dim, len(c.Vec))
+		}
+		if err := finiteVector(c.Vec); err != nil {
+			return err
+		}
+		normalize(c.Vec)
 		idx := len(chunks)
 		chunks = append(chunks, c)
 		byDoc[c.DocID] = append(byDoc[c.DocID], idx)
 	}
 
+	if len(chunks) != header.ChunkCount {
+		return errors.New("semantic: snapshot chunk count does not match its header")
+	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.dim != 0 && s.dim != header.Dim {
+		return errVecDim(s.dim, header.Dim)
+	}
+	s.dim = header.Dim
 	s.chunks = chunks
 	s.byDoc = byDoc
-	s.mu.Unlock()
 	return nil
 }
 
@@ -199,6 +216,16 @@ type wal struct {
 	enc  *gob.Encoder
 }
 
+// Supply ReadByte so gob does not read ahead past a completed record;
+// the file offset then identifies the durable prefix of a torn log.
+type walReplayReader struct{ *os.File }
+
+func (r walReplayReader) ReadByte() (byte, error) {
+	var b [1]byte
+	_, err := io.ReadFull(r.File, b[:])
+	return b[0], err
+}
+
 func openWAL(path string) (*wal, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("semantic: mkdir wal dir: %w", err)
@@ -235,11 +262,23 @@ func (w *wal) replay(apply func(walEntry) error) error {
 	if _, err := w.f.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("semantic: wal seek: %w", err)
 	}
-	dec := gob.NewDecoder(w.f)
+	dec := gob.NewDecoder(walReplayReader{w.f})
+	var lastGood int64
 	for {
 		var e walEntry
 		err := dec.Decode(&e)
 		if errors.Is(err, io.EOF) {
+			break
+		}
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			// Use a separate write handle: Windows append handles cannot
+			// call SetEndOfFile, but os.Truncate opens the required handle.
+			if err := os.Truncate(w.path, lastGood); err != nil {
+				return fmt.Errorf("semantic: truncate torn WAL record: %w", err)
+			}
+			if err := w.f.Sync(); err != nil {
+				return err
+			}
 			break
 		}
 		if err != nil {
@@ -247,6 +286,10 @@ func (w *wal) replay(apply func(walEntry) error) error {
 		}
 		if err := apply(e); err != nil {
 			return fmt.Errorf("semantic: wal apply: %w", err)
+		}
+		lastGood, err = w.f.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return err
 		}
 	}
 	// Seek to end so further appends go after the replayed entries.

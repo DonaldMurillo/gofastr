@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"unicode"
 )
 
 // Parse reads .env content from r and returns the parsed key/value
@@ -58,6 +57,9 @@ func Parse(r io.Reader) (map[string]string, error) {
 	for scanner.Scan() {
 		lineNum++
 		raw := scanner.Text()
+		if strings.ContainsRune(raw, '\x00') {
+			return nil, fmt.Errorf("dotenv: line %d: NUL bytes cannot be stored in the process environment", lineNum)
+		}
 		consumed += len(raw) + 1
 		trimmed := strings.TrimSpace(raw)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
@@ -81,7 +83,7 @@ func Parse(r io.Reader) (map[string]string, error) {
 		}
 		key := strings.TrimSpace(trimmed[:eq])
 		if !isValidKey(key) {
-			return nil, fmt.Errorf("dotenv: line %d: invalid key %q", lineNum, key)
+			return nil, fmt.Errorf("dotenv: line %d: invalid key (want [A-Za-z_][A-Za-z0-9_]*)", lineNum)
 		}
 		valRaw := strings.TrimSpace(trimmed[eq+1:])
 		val, err := parseValue(valRaw, out)
@@ -107,12 +109,12 @@ func isValidKey(k string) bool {
 	}
 	for i, r := range k {
 		if i == 0 {
-			if !(unicode.IsLetter(r) || r == '_') {
+			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r == '_') {
 				return false
 			}
 			continue
 		}
-		if !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_') {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_') {
 			return false
 		}
 	}
