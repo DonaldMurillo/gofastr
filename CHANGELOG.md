@@ -7,6 +7,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.88.0] - 2026-10-16
+
+**BREAKING.** v0.88.0 stops first paint waiting on the runtime and
+fits a page's first view into its first response, adds browser-local
+data (`core-ui/localdb`, `framework/localentity`), site search
+(`battery/sitesearch`), static export (`gofastr export`) and the app
+binary as an OS service (`battery/service`, experimental), and fixes
+the defects of the regression audit. Four changes break callers:
+`ui.ContentRowConfig.BelowHeader` and `gallery.ContributeCSS` /
+`BaseCSS` are removed, live pages read the route graph from
+`/__gofastr/manifest.js`, and `core/config` enforces `validate:` tags.
+Run `gofastr upgrade --to v0.88.0` before you bump `go.mod`: it points
+at each line of an app that needs an edit.
+
 ### Added
 - **`battery/service`: the app binary as a per-user OS service
   (experimental).** `service.New(Config{ID, Name, Port})` and
@@ -227,6 +241,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the step shrinks so a deep thread keeps a readable column on a phone.
   Knobs: `--ui-comment-thread-gap`, `--ui-comment-thread-indent`,
   `--ui-comment-thread-indent-compact`.
+- **Browser-local data: `core-ui/localdb` and `framework/localentity`.**
+  `localdb.New(name).Store(name, KeyPath(…) | AutoKey(), Index(…), …)`
+  declares IndexedDB databases in Go. The declarations ride an inert
+  `#gofastr-localdb` manifest, live and in exports, and the `localdb`
+  runtime module gives get, put, add, delete, clear, count, list, an
+  all-or-nothing `tx`, and `watch`, which hears other tabs' writes over
+  BroadcastChannel. Schema changes are additive: a missing store or
+  index bumps the version and nothing is deleted, so tabs on an older
+  deploy keep working. `AutoKey` mints UUIDv7 keys.
+  `localentity.Define(db, name, fields, …)` puts `core/schema` fields
+  over a store: `Form` wraps a `ui.Form`, `List` renders rows from a
+  server-built template (as text), and `Count` shows the total, with
+  `Indexed`, `MaxRecords` and `WithMessages` options. A read-only page
+  loads only the list behaviour. `ui.CardConfig.HeadingContent` puts
+  composed content in a card's heading element. `examples/team-builder`
+  uses it; see `localdb.md` and `local-entities.md`.
 - **`examples/hn`** is a Hacker News reader in the HNPWA shape, for
   comparing first loads with other frameworks: five ranked lists paged
   with `?page=N`, story pages with full comment threads, user pages,

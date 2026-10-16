@@ -1,5 +1,5 @@
 version: v0.88.0
-title: The component gallery ships no CSS
+title: First paint without the runtime, browser-local data, site search, static export, config validate tags
 notes:
   - change: "gallery.ContributeCSS and gallery.BaseCSS are removed: the framework/gallery demos lay out through ui.Cluster, ui.Stack, ui.Box and ui.Container and ship no stylesheet, and the .demo-row / .demo-stack / .demo-stack-lg / .demo-viewport / .demo-measure-* classes are gone"
     breaking: true
