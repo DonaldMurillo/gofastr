@@ -63,3 +63,54 @@ func TestActiveLinkIgnoresScreenQuery(t *testing.T) {
 		}
 	}
 }
+
+// A static export links its pages as /about/ (the form the host serves
+// without a redirect), while a link it did not rewrite (a search result,
+// a widget's chrome) lands on /about. Both name one page, so either URL
+// marks either link; "/" stays the root alone.
+const activelinkSlashPage = `<!doctype html><html><head><title>activelink slash</title>
+  <nav aria-label="Sections">
+    <a id="root" href="/">home</a>
+    <a id="about" href="/about/">about</a>
+    <a id="docs" href="/docs">docs</a>
+  </nav>
+  <main id="main">ready</main>
+  <script src="/__gofastr/runtime.js"></script>
+</body></html>`
+
+func TestActiveLinkIgnoresTrailingSlash(t *testing.T) {
+	srv := activelinkServer(t, activelinkSlashPage)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#main`, chromedp.ByID),
+		chromedp.Poll(`!!(window.__gofastr && window.__gofastr._updateActiveLink)`, nil),
+	); err != nil {
+		t.Fatalf("navigate: %v", err)
+	}
+	var got map[string]string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		const u = window.__gofastr._updateActiveLink;
+		const g = (id) => document.getElementById(id).getAttribute('aria-current') || '-';
+		const out = {};
+		for (const p of ['/about', '/about/', '/docs/', '/', '/about/team']) {
+			u(p, true);
+			out[p] = g('root') + ' ' + g('about') + ' ' + g('docs');
+		}
+		return out;
+	})()`, &got)); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"/about":      "- page -",
+		"/about/":     "- page -",
+		"/docs/":      "- - page",
+		"/":           "page - -",
+		"/about/team": "- - -",
+	}
+	for p, w := range want {
+		if got[p] != w {
+			t.Errorf("at %s: root/about/docs marks = %q, want %q", p, got[p], w)
+		}
+	}
+}

@@ -56,13 +56,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   now carry the trailing slash; on a throttled mobile connection a
   docs-site switch went from about 465 ms to about 315 ms. An installed
   PWA's service worker keys its precached pages the same way, so a
-  client-side switch still finds them offline.
+  client-side switch still finds them offline, and a hidden widget's
+  chrome (a section menu opened from the header) links them the same
+  way too. A link the export does not write, such as a search result,
+  still lands on the page, and the current-page highlight now treats
+  `/about` and `/about/` as one page.
 - **A static export's sitemap names its base path once.** A site whose
   `SitemapConfig.BaseURL` already ends in the export's base path
   (`https://donaldmurillo.github.io/gofastr` with `--export-base
   /gofastr`) listed `/gofastr/gofastr/...` URLs in sitemap.xml and
   robots.txt, and every one of them 404ed. The base path is now added
-  only when the URL does not already end in it.
+  only when the URL does not already end in it, and each page URL
+  carries the trailing slash the export's links do.
 
 ## [0.88.1] - 2026-10-16
 

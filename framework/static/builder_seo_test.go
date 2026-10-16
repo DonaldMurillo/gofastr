@@ -58,9 +58,9 @@ func TestBuildWritesSitemapAndRobots(t *testing.T) {
 	body := string(sm)
 	for _, loc := range []string{
 		"<loc>https://example.com/</loc>",
-		"<loc>https://example.com/about</loc>",
-		"<loc>https://example.com/products/alpha</loc>",
-		"<loc>https://example.com/products/beta</loc>",
+		"<loc>https://example.com/about/</loc>",
+		"<loc>https://example.com/products/alpha/</loc>",
+		"<loc>https://example.com/products/beta/</loc>",
 	} {
 		if !strings.Contains(body, loc) {
 			t.Errorf("sitemap.xml missing %s, got:\n%s", loc, body)
@@ -99,7 +99,8 @@ func TestBuildWritesSitemapAndRobots(t *testing.T) {
 // in every sitemap URL, whether the configured BaseURL is the bare
 // origin or already names the mount (the docs site's
 // "https://donaldmurillo.github.io/gofastr" once listed
-// /gofastr/gofastr/... URLs that 404).
+// /gofastr/gofastr/... URLs that 404). Page URLs carry the slash the
+// export's links do, the form the host serves without a redirect.
 func TestBuildSitemapRobotsBasePath(t *testing.T) {
 	for _, c := range []struct{ baseURL, site string }{
 		{"https://user.github.io", "https://user.github.io/gofastr"},
@@ -125,7 +126,7 @@ func TestBuildSitemapRobotsBasePath(t *testing.T) {
 			if err != nil {
 				t.Fatalf("missing sitemap.xml: %v", err)
 			}
-			for _, loc := range []string{c.site + "/", c.site + "/about"} {
+			for _, loc := range []string{c.site + "/", c.site + "/about/"} {
 				if !strings.Contains(string(sm), "<loc>"+loc+"</loc>") {
 					t.Errorf("sitemap missing <loc>%s</loc>, got:\n%s", loc, sm)
 				}

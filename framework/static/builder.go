@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	stdhtml "html"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -743,7 +744,9 @@ func (b *Builder) slashPageLinks(page string, pages map[string]bool) string {
 		} else if strings.HasSuffix(rel, "/") {
 			return m
 		}
-		if !pages[rel] {
+		// A route registered with its slash (/components/) is linked
+		// without one too.
+		if !pages[rel] && !pages[rel+"/"] {
 			return m
 		}
 		return sub[1] + slashed(p) + sub[3] + `"`
@@ -759,13 +762,19 @@ func slashed(p string) string {
 	return p + "/"
 }
 
-// slashLinks applies slashPageLinks to every written page and to
-// 404.html.
-func (b *Builder) slashLinks(res Result) error {
-	pages := make(map[string]bool, len(res.Pages))
-	for _, p := range res.Pages {
+// pageSet is the exported route paths, as slashPageLinks looks them up.
+func pageSet(paths []string) map[string]bool {
+	pages := make(map[string]bool, len(paths))
+	for _, p := range paths {
 		pages[p] = true
 	}
+	return pages
+}
+
+// slashLinks applies slashPageLinks to every written page and to
+// 404.html. dumpWidgetAssets applies it to each widget's chrome.
+func (b *Builder) slashLinks(res Result) error {
+	pages := pageSet(res.Pages)
 	files := make([]string, 0, len(res.Pages)+1)
 	for _, p := range res.Pages {
 		files = append(files, filepath.Join(b.OutDir, pathToFile(p)))
@@ -849,10 +858,13 @@ func (b *Builder) dumpWidgetAssets(res *Result) error {
 	}
 	res.Assets = append(res.Assets, "/__gofastr/widgets.json")
 	b.log("wrote %s", "/__gofastr/widgets.json")
+	pages := pageSet(res.Pages)
 	for _, d := range defs {
 		// Chrome HTML may carry root-absolute nav links (/docs/…); rewrite
-		// them the same way page HTML is rewritten for a subpath deploy.
-		chrome := b.rewriteBaseURLs(widget.RenderChrome(d))
+		// them the same way page HTML is rewritten for a subpath deploy,
+		// and slash its page links the way slashLinks does a page's (a
+		// section menu's links live here).
+		chrome := b.slashPageLinks(b.rewriteBaseURLs(widget.RenderChrome(d)), pages)
 		if err := b.writeRawAsset("/core-ui/widget/"+d.Name+"/chrome", []byte(chrome)); err != nil {
 			return err
 		}
@@ -877,6 +889,7 @@ func (b *Builder) dumpSEOAssets(res *Result) error {
 		ok   bool
 	}
 	sitemap, sitemapOK := b.Host.SitemapXML(b.BasePath)
+	sitemap = slashSitemapLocs(sitemap, pageSet(res.Pages))
 	robots, robotsOK := b.Host.RobotsTXT(b.BasePath)
 	for _, f := range []seoFile{
 		{"sitemap.xml", sitemap, sitemapOK},
@@ -896,6 +909,30 @@ func (b *Builder) dumpSEOAssets(res *Result) error {
 		b.log("wrote /%s", f.name)
 	}
 	return nil
+}
+
+// sitemapLoc matches one sitemap URL.
+var sitemapLoc = regexp.MustCompile(`<loc>([^<]*)</loc>`)
+
+// slashSitemapLocs gives every sitemap URL that names an exported page
+// the trailing slash its links carry (see slashPageLinks), so a crawler
+// is not sent through the host's 301 for every page. A <loc> is the
+// site URL followed by the page path, so the page is found as a
+// segment-aligned suffix of the URL's path.
+func slashSitemapLocs(doc string, pages map[string]bool) string {
+	return sitemapLoc.ReplaceAllStringFunc(doc, func(m string) string {
+		loc := sitemapLoc.FindStringSubmatch(m)[1]
+		u, err := url.Parse(stdhtml.UnescapeString(loc))
+		if err != nil || u.RawQuery != "" || u.Fragment != "" || strings.HasSuffix(u.Path, "/") {
+			return m
+		}
+		for i := 0; i < len(u.Path); i++ {
+			if u.Path[i] == '/' && (pages[u.Path[i:]] || pages[u.Path[i:]+"/"]) {
+				return "<loc>" + loc + "/</loc>"
+			}
+		}
+		return m
+	})
 }
 
 // dumpAppIcons writes the WithAppIcon-generated PNGs (and the

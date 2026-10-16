@@ -61,9 +61,10 @@ go build -o site ./examples/site/
   answer `/about` with a 301 to `/about/`, so every `href`, `action` and
   `data-cui-push-state` that names an exported page is written as
   `/about/` (query and fragment kept). A click, client navigation
-  included, then costs one request instead of two. Links to anything
-  else (assets, routes the export skipped, absolute URLs) are left as
-  written.
+  included, then costs one request instead of two. The same rewrite
+  covers each hidden widget's dumped chrome and the sitemap's `<loc>`
+  URLs. Links to anything else (assets, routes the export skipped,
+  absolute URLs) are left as written.
 - `/__gofastr/runtime.js`: the runtime core.
 - `404.html` at the export root: the not-found page the live server
   answers with, rendered through the app's root layout (see
