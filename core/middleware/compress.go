@@ -45,7 +45,9 @@ const (
 // 304, and the 304 echoes the gzip tag.
 //
 // A Flush from the handler flushes the gzip stream, so progressive
-// rendering keeps painting.
+// rendering keeps painting. An immutable body that flushes streams
+// instead of using the cached copy below, and its tag turns weak, since
+// the streamed bytes differ from the cached ones.
 //
 // Responses marked Cache-Control: immutable are compressed once at
 // the best level, from the second time the same bytes are served, and
@@ -394,6 +396,13 @@ func (w *compressWriter) Flush() {
 	}
 	if w.immutable {
 		w.immutable = false // a flushing handler is streaming
+		// The stream deflates at the default level, so its bytes differ
+		// from the best-level copy a request that did not flush gets:
+		// the strong tag would name two encodings. The headers are still
+		// unsent here.
+		if et := w.Header().Get("ETag"); et != "" && !strings.HasPrefix(et, "W/") {
+			w.Header().Set("ETag", "W/"+et)
+		}
 		w.startStream()
 	}
 	if w.zw != nil {

@@ -33,11 +33,15 @@ func TestFailedSeedRollsBack(t *testing.T) {
 	if err := st.seed(context.Background()); err == nil {
 		t.Fatal("premise: seed succeeded without a comments table")
 	}
-	var n int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	if n != 0 {
-		t.Fatalf("%d users survived a failed seed", n)
+	// Both batches written before the failing one (the comments table is
+	// gone, so it has nothing to count).
+	for _, table := range []string{"users", "stories"} {
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Errorf("%d %s survived a failed seed", n, table)
+		}
 	}
 }

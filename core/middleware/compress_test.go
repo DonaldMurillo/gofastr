@@ -255,6 +255,39 @@ func TestCompressReusesImmutableBodies(t *testing.T) {
 	}
 }
 
+// An immutable body is cached at the best level; a handler that flushes
+// streams at the default level instead. The two encodings differ, so
+// the streamed one cannot carry the strong tag that names the cached
+// bytes.
+func TestCompressFlushedImmutableTagIsWeak(t *testing.T) {
+	serve := func(flush bool) *httptest.ResponseRecorder {
+		h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/css")
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			w.Header().Set("ETag", `"v1"`)
+			_, _ = io.WriteString(w, bigHTML[:len(bigHTML)/2])
+			if flush {
+				w.(http.Flusher).Flush()
+			}
+			_, _ = io.WriteString(w, bigHTML[len(bigHTML)/2:])
+		})
+		return serveCompress(h, gzipReq("/app.css?v=1"))
+	}
+	buffered, flushed := serve(false), serve(true)
+	if gunzip(t, buffered.Body.Bytes()) != bigHTML || gunzip(t, flushed.Body.Bytes()) != bigHTML {
+		t.Fatal("a body does not decode")
+	}
+	if bytes.Equal(buffered.Body.Bytes(), flushed.Body.Bytes()) {
+		t.Fatal("the encodings match; the test no longer covers two levels")
+	}
+	if got := buffered.Header().Get("ETag"); got != `"v1-gzip"` {
+		t.Errorf("buffered ETag = %q, want the strong gzip tag", got)
+	}
+	if got := flushed.Header().Get("ETag"); got != `W/"v1-gzip"` {
+		t.Errorf("flushed ETag = %q, want it weakened", got)
+	}
+}
+
 type hijackRecorder struct {
 	*httptest.ResponseRecorder
 	hijacked bool

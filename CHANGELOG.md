@@ -203,7 +203,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   CSS, JavaScript, JSON, SVG) of 1 KB or more for clients that accept
   gzip, with `Vary: Accept-Encoding` and a `-gzip` ETag suffix that
   still revalidates to `304`. Immutable assets are compressed once at
-  the best level and cached by content hash, from their second request. It skips `HEAD`, `Range`,
+  the best level and cached by content hash, from their second request;
+  one whose handler flushes streams instead, under a weak ETag. It skips `HEAD`, `Range`,
   event streams and already-encoded bodies. `AppConfig.DisableCompression`
   turns it off for apps behind a compressing proxy.
 - **`middleware.MaskCSRFToken`** renders a CSRF token under a fresh
