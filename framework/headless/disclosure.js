@@ -371,7 +371,8 @@
   // panel and move the control out from under the finger. A scroll
   // gesture ends in pointercancel, never pointerup. A negative tabindex
   // is a focus target, not a control: every page's <main> carries one
-  // for the skip link.
+  // for the skip link. A disabled control sends no click, so its
+  // release dismisses too.
   const dismissOutside = (e) => {
     const t = e.target;
     for (const d of document.querySelectorAll(HOOK + '[data-hui-disclosure-dismiss][open]')) {
@@ -383,7 +384,7 @@
   };
   document.addEventListener('click', dismissOutside, true);
   document.addEventListener('pointerup', (e) => {
-    if (e.pointerType && e.pointerType !== 'mouse' && !e.target.closest?.('a,button,input,select,textarea,label,summary,[tabindex]:not([tabindex^="-"])')) dismissOutside(e);
+    if (e.pointerType && e.pointerType !== 'mouse' && !e.target.closest?.('a,button:enabled,input:enabled,select:enabled,textarea:enabled,label,summary,[tabindex]:not([tabindex^="-"])')) dismissOutside(e);
   }, true);
 
   // A click on an ordinary link inside a disclosure closes it (the

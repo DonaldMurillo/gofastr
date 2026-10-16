@@ -55,11 +55,12 @@ func TestE2E_DisclosureDismissOutside(t *testing.T) {
 // iOS Safari sends none for a tap on content with no click handler of
 // its own, so a page-text tap reaches the module only as pointerup.
 // The text sits in a <main tabindex="-1">, as on every gofastr page: a
-// focus target the skip link moves to is not a control.
+// focus target the skip link moves to is not a control, and neither is
+// a disabled one.
 func TestE2E_DisclosureDismissOnTouchRelease(t *testing.T) {
 	pop := Disclosure(DisclosureProps{Summary: render.Text("Filters"), Dismiss: true, Open: true, ID: "pop",
 		Content: render.Text("panel")}, nil)
-	b := startBehaviorServer(t, string(pop)+`<main tabindex="-1"><p id="outside">outside</p></main>`)
+	b := startBehaviorServer(t, string(pop)+`<main tabindex="-1"><p id="outside">outside</p><button id="off" disabled>off</button></main>`)
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, disclosureLoaded) {
 		t.Fatal("the disclosure marker never loaded headless-disclosure")
@@ -82,6 +83,14 @@ func TestE2E_DisclosureDismissOnTouchRelease(t *testing.T) {
 	}
 	if !pollTrue(ctx, `!document.getElementById('pop').open`) {
 		t.Fatal("a touch release outside the popup left it open")
+	}
+	// A disabled control sends no click, so its release dismisses too.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.getElementById('pop').open = true; true`, nil),
+		chromedp.Evaluate(fmt.Sprintf(release, "off", "touch"), nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `!document.getElementById('pop').open`) {
+		t.Fatal("a touch release on a disabled control left the popup open")
 	}
 }
 

@@ -86,23 +86,32 @@ const activelinkSlashPage = `<!doctype html><html><head><title>activelink slash<
     <a id="about" href="/about/">about</a>
     <a id="docs" href="/docs">docs</a>
   </nav>
+  <nav aria-label="Filters">
+    <a id="all" href="/orders/">all</a>
+    <a id="open" href="/orders/?status=open">open</a>
+  </nav>
   <main id="main">ready</main>
   <script src="/__gofastr/runtime.js"></script>
 </body></html>`
 
 func TestActiveLinkIgnoresTrailingSlash(t *testing.T) {
-	got := activelinkMarks(t, activelinkSlashPage, []string{"root", "about", "docs"},
-		[]string{"/about", "/about/", "/docs/", "/", "/about/team"})
+	got := activelinkMarks(t, activelinkSlashPage, []string{"root", "about", "docs", "all", "open"},
+		[]string{"/about", "/about/", "/docs/", "/", "/about/team", "/orders", "/orders?status=open", "/orders/?status=open"})
 	want := map[string]string{
-		"/about":      "- page -",
-		"/about/":     "- page -",
-		"/docs/":      "- - page",
-		"/":           "page - -",
-		"/about/team": "- - -",
+		"/about":      "- page - - -",
+		"/about/":     "- page - - -",
+		"/docs/":      "- - page - -",
+		"/":           "page - - - -",
+		"/about/team": "- - - - -",
+		// A tab strip keeps its rule across the slash: the query tab is
+		// current, never its query-less sibling.
+		"/orders":              "- - - page -",
+		"/orders?status=open":  "- - - - page",
+		"/orders/?status=open": "- - - - page",
 	}
 	for p, w := range want {
 		if got[p] != w {
-			t.Errorf("at %s: root/about/docs marks = %q, want %q", p, got[p], w)
+			t.Errorf("at %s: root/about/docs/all/open marks = %q, want %q", p, got[p], w)
 		}
 	}
 }
