@@ -54,7 +54,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   with a 301. Every link was written as `<path>`, so each click paid a
   redirect round trip before the page arrived. Links to exported pages
   now carry the trailing slash; on a throttled mobile connection a
-  docs-site switch went from about 465 ms to about 315 ms.
+  docs-site switch went from about 465 ms to about 315 ms. An installed
+  PWA's service worker keys its precached pages the same way, so a
+  client-side switch still finds them offline.
 - **A static export's sitemap names its base path once.** A site whose
   `SitemapConfig.BaseURL` already ends in the export's base path
   (`https://donaldmurillo.github.io/gofastr` with `--export-base

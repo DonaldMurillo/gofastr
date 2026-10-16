@@ -746,8 +746,17 @@ func (b *Builder) slashPageLinks(page string, pages map[string]bool) string {
 		if !pages[rel] {
 			return m
 		}
-		return sub[1] + p + "/" + sub[3] + `"`
+		return sub[1] + slashed(p) + sub[3] + `"`
 	})
+}
+
+// slashed is an exported page's URL path in the form its host serves
+// without a redirect: "/" stays, "/about" becomes "/about/".
+func slashed(p string) string {
+	if strings.HasSuffix(p, "/") {
+		return p
+	}
+	return p + "/"
 }
 
 // slashLinks applies slashPageLinks to every written page and to
@@ -941,8 +950,15 @@ func (b *Builder) dumpPWAAssets(res *Result, frameworkAssetCount int) error {
 	if frameworkAssetCount > len(res.Assets) {
 		frameworkAssetCount = len(res.Assets)
 	}
+	// Pages are precached under the URL their links name (see
+	// slashPageLinks): a client navigation is a plain fetch, which the
+	// worker matches exactly, so /about would never answer /about/.
+	pages := make([]string, len(res.Pages))
+	for i, p := range res.Pages {
+		pages[i] = slashed(p)
+	}
 	sw, err := b.Host.PWAStaticServiceWorkerJS(b.BasePath, uihost.PWAStaticExport{
-		Pages:          res.Pages,
+		Pages:          pages,
 		Assets:         res.Assets[:frameworkAssetCount],
 		OptionalAssets: res.Assets[frameworkAssetCount:],
 		ContentHash:    contentHash,
