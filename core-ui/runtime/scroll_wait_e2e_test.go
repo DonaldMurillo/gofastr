@@ -13,15 +13,13 @@ import (
 )
 
 // TestStalledComponentCSSDoesNotBlockHashScroll pins the bound on the
-// scroll settle's stylesheet wait. loadComponentCSS chains every
-// component stylesheet onto the page-lifetime _stylesReady conjunction,
-// and _settleScroll awaits that conjunction before writing a hash or
-// history scroll position. A <link> whose request stalls — connection
-// accepted, response never arriving — fires neither onload nor onerror
-// and has no network timeout of its own, so without the per-link bound
-// one stalled fetch poisons the conjunction (and every later link
-// chained onto it) and hash scroll stops working for the rest of the
-// session, silently, across every later navigation.
+// stylesheet wait. A navigation waits for the sheets its markup renders
+// before it swaps, and _settleScroll waits for the current page's before
+// writing a hash or history scroll position (kernel _sheetsFor). A
+// <link> whose request stalls — connection accepted, response never
+// arriving — fires neither onload nor onerror and has no network timeout
+// of its own, so without the per-link bound one stalled fetch would hold
+// the navigation and the hash scroll forever.
 //
 // The stall here is the destination page's own component CSS, requested
 // by the post-swap scan, so the hash write on THAT navigation is the one
@@ -96,9 +94,9 @@ func TestStalledComponentCSSDoesNotBlockHashScroll(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/tall-a"),
 		chromedp.WaitVisible(`#screen-a`, chromedp.ByID),
-		// Navigate to the deep target. The post-swap scan requests the
-		// stalled stylesheet, poisoning _stylesReady; the hash write must
-		// still happen once the per-link bound expires.
+		// Navigate to the deep target. Its stylesheet stalls; the swap
+		// and the hash write must still happen once the per-link bound
+		// expires.
 		chromedp.Click(`#to-other`, chromedp.ByID),
 		chromedp.WaitVisible(`#screen-b`, chromedp.ByID),
 		chromedp.Poll(`window.scrollY > 400`, &reached,

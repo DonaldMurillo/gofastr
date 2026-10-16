@@ -69,7 +69,7 @@
   };
 
   const inFlight = new Set();
-  const prefetch = (path) => {
+  const prefetch = (path, warm) => {
     if (!NS._originOK || !NS._originOK(path)) return;
     if (store.has(path) || inFlight.has(path)) return;
     if (path === location.pathname + location.search || path === location.pathname) return;
@@ -120,13 +120,16 @@
           at: Date.now(),
         }));
       })
-      // The entry's component sheets start now too, so the click that
-      // takes it swaps at once instead of waiting on them. An envelope
-      // body holds its page in <template> fills, which the kernel's scan
-      // does not enter, so each one's content is scanned too.
+      // A hover entry's component sheets start now too, so the click
+      // that takes it swaps at once instead of waiting on them; a
+      // visible or eager prefetch is no sign of intent, so its sheets
+      // wait for the click. An envelope body holds its page in
+      // <template> fills, which the kernel's scan does not enter, so
+      // each one's content is scanned too.
       .then((e) => {
         if (!e) return;
         put(path, e);
+        if (!warm) return;
         const t = document.createElement('template');
         t.innerHTML = e.html;
         for (const r of [t, ...t.content.querySelectorAll('template')]) NS.scanAndLoadCSS(r.content);
@@ -149,7 +152,7 @@
     if (!a || seen.has(a)) return;
     seen.add(a);
     const [mode, path] = modeFor(a.getAttribute('href'));
-    if (mode === 'hover') prefetch(path);
+    if (mode === 'hover') prefetch(path, 1);
   };
   document.addEventListener('pointerover', onHover, true);
   document.addEventListener('focusin', onHover, true);

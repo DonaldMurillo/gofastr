@@ -140,6 +140,7 @@ boot-embed	8	r
 boot-embed	8	r
 boot-embed	8	rect
 boot-embed	8	surfacePath
+kernel	10	l
 kernel	10	n
 kernel	10	shown
 kernel	2	M
@@ -178,6 +179,7 @@ kernel	6	html
 kernel	6	isAssertive
 kernel	6	item
 kernel	6	link
+kernel	6	links
 kernel	6	mk
 kernel	6	r
 kernel	6	rIC

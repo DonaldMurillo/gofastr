@@ -17,13 +17,35 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and on a phone with a slow connection every page change flashed
   unstyled before the styles arrived. The navigator now scans the
   incoming markup, links its sheets while the old page is still on
-  screen, and commits once they load, each sheet bounded at 3 s so a
-  stalled fetch delays a navigation and never freezes it. This covers
-  every swap path: fetched partials, whole documents, cross-layout
-  swaps, cached and prefetched screens, and envelope fills. A hover or
-  visible prefetch starts its page's sheets when it lands, so the click
-  usually finds them loaded. The core runtime grows 53 bytes at gzip
-  level 1 (15556 → 15609).
+  screen, and commits once they load. It waits only on the sheets that
+  markup renders, never on an unrelated one still in flight, and each
+  sheet is bounded at 3 s so a stalled fetch delays one navigation and
+  never freezes the next. The page title, the screen-reader route
+  announcement and a loading region's `Min` hold and exit animation
+  all run after the wait. This covers every swap path: fetched
+  partials, whole documents, cross-layout swaps, cached and prefetched
+  screens, envelope fills, intercepted panes, and a page that has not
+  yet linked its full bundle after a first-paint subset. A deferred
+  part lands only once its own sheets have loaded. A hover prefetch
+  starts its page's sheets when it lands, so the click usually finds
+  them loaded; visible and eager prefetches leave them for the click.
+  An envelope module served beside an older cached kernel still
+  navigates, without the wait. The core runtime grows 200 bytes at
+  gzip level 1 (15556 → 15756).
+- **Going back to a page whose load is still in flight works.** Click
+  A, then B, then A again before either answers: the runtime joined
+  the third click to the first A request, which B had already
+  superseded, so B rendered under the URL `/a`. A navigation now joins
+  only an in-flight request that is still the live navigation.
+- **Headless disclosures light-dismiss on a touch.** A disclosure with
+  `Dismiss` also closes on the release of a touch or pen press outside
+  it. iOS Safari sends no click for a tap on content that is not
+  clickable, so a tap on the page left the popup open.
+- **The docs site's phone menu closes on a tap outside it, and its
+  close button stays reachable.** The panel hung from the top of the
+  viewport, so on the static export, where a preview banner sits above
+  the bar, the open panel covered the bar and its toggle. It now hangs
+  from the bar.
 
 ## [0.88.0] - 2026-10-16
 

@@ -34,13 +34,9 @@
     link.href = href;
     link.setAttribute('data-cui-bundle', el.getAttribute('data-cui-bundle') || '');
     // The kernel counts the subset's components as loaded, so a client
-    // navigation that renders more of them waits on this sheet the way
-    // it waits on any component sheet: through _stylesReady, bounded
-    // like loadComponentCSS's so a stalled fetch never freezes it.
-    NS._stylesReady = Promise.all([NS._stylesReady, new Promise(function (resolve) {
-      link.onload = link.onerror = function () { resolve(); };
-      setTimeout(resolve, 3000);
-    })]).then(function () {});
+    // navigation that renders more of them waits on this link (kernel
+    // _sheetsFor finds it by data-cui-bundle), bounded like any
+    // component sheet's wait.
     el.after(link);
   });
 })();

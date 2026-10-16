@@ -39,6 +39,9 @@ func (c navCSSSite) serve(t *testing.T) (*httptest.Server, *atomic.Int32) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
 	})
+	mux.HandleFunc("/css/stall-probe.css", func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done() // never answers
+	})
 	mux.HandleFunc("/css/slow-probe.css", func(w http.ResponseWriter, _ *http.Request) {
 		time.Sleep(700 * time.Millisecond)
 		w.Header().Set("Content-Type", "text/css")
@@ -73,7 +76,7 @@ func (c navCSSSite) serve(t *testing.T) (*httptest.Server, *atomic.Int32) {
 	}
 	page := func(chain bool, inner string) string {
 		return `<!doctype html><html><head><title>t</title>` +
-			`<script>window.__gofastr_catalog={"slow-probe":{stylePath:"/css/slow-probe.css",version:"1"}};</script>` +
+			`<script>window.__gofastr_catalog={"slow-probe":{stylePath:"/css/slow-probe.css",version:"1"},"stall-probe":{stylePath:"/css/stall-probe.css",version:"1"}};</script>` +
 			routes + `</head><body>` + main(chain, inner) +
 			`<script>new MutationObserver(() => { const p = document.getElementById('probe');` +
 			` if (p && window.__probeW === undefined) window.__probeW = p.getBoundingClientRect().width; })` +
@@ -246,4 +249,43 @@ func TestPrefetchedNavWaitsForSheet(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestNavIgnoresUnrelatedSheet: a navigation waits for the sheets its
+// own markup renders and no others. A sheet still in flight for
+// something else (an idle prewarm, a prefetched page the reader never
+// opens) must not hold the click.
+func TestNavIgnoresUnrelatedSheet(t *testing.T) {
+	srv, _ := navCSSSite{aChain: true, bChain: true, partial: true}.serve(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+	var ms float64
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/a"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		// /b's own sheet is already loaded; the stalled one is not /b's.
+		chromedp.Evaluate(`window.__gofastr.loadComponentCSS('slow-probe'); true`, nil),
+		chromedp.Poll(`!!document.querySelector('link[data-cui-style="slow-probe"]').sheet`, nil),
+		chromedp.Evaluate(`window.__gofastr.loadComponentCSS('stall-probe'); window.__t0 = performance.now(); true`, nil),
+		chromedp.Click(`#go`, chromedp.ByID),
+		chromedp.WaitVisible(`#probe`, chromedp.ByID),
+		chromedp.Evaluate(`performance.now() - window.__t0`, &ms),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if ms > 1500 {
+		t.Fatalf("the navigation took %.0fms: it waited on a sheet its page does not render", ms)
+	}
+}
+
+// TestEnvelopeNavOnOlderKernel: a tab opened before a deploy keeps its
+// kernel and demand-loads the new envelope module. That kernel has no
+// _cssReady, and the module must still navigate (unstyled for a moment,
+// as before the wait existed) rather than fail every navigation.
+func TestEnvelopeNavOnOlderKernel(t *testing.T) {
+	srv, _ := navCSSSite{aChain: true, bChain: true, outlet: true, partial: true, envelope: true}.serve(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(30*time.Second))
+	if err := chromedp.Run(ctx, chromedp.Navigate(srv.URL+"/a"), chromedp.WaitVisible(`#ready`, chromedp.ByID)); err != nil {
+		t.Fatal(err)
+	}
+	probeWidth(t, ctx, chromedp.Evaluate(`delete window.__gofastr._cssReady; true`, nil))
 }

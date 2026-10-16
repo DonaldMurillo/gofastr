@@ -22,6 +22,8 @@ type dcRig struct {
 
 	mu    sync.Mutex
 	gates map[string]chan struct{}
+	plain bool
+	hits  map[string]int // navigate requests, by path
 }
 
 func (r *dcRig) release(path string) {
@@ -34,17 +36,23 @@ func (r *dcRig) release(path string) {
 	}
 }
 
-func newDoubleClickRig(t *testing.T, vt bool) *dcRig {
+// plain drops the outlet, so the core navigator runs the navigations
+// instead of the envelope module.
+func newDoubleClickRig(t *testing.T, vt bool, plain ...bool) *dcRig {
 	t.Helper()
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := &dcRig{gates: map[string]chan struct{}{}}
+	r := &dcRig{gates: map[string]chan struct{}{}, plain: len(plain) > 0 && plain[0]}
 	shell := func(main string) string {
 		vtKinds := ""
 		if vt {
 			vtKinds = ` data-cui-vt-kinds="fade"`
+		}
+		outlet := `<div data-cui-outlet="l:site#aside" id="aside">OLD-ASIDE</div>`
+		if r.plain {
+			outlet = ""
 		}
 		return `<!doctype html><html lang="en"` + vtKinds + `><head><title>dc</title>` +
 			`<script type="application/json" id="gofastr-routes">[` +
@@ -52,7 +60,7 @@ func newDoubleClickRig(t *testing.T, vt bool) *dcRig {
 			`]</script></head><body>` +
 			`<div data-cui-layout="site" data-cui-layout-key="l:site">` +
 			`<nav><a id="goA" href="/a">A</a><a id="goB" href="/b">B</a></nav>` +
-			`<div data-cui-outlet="l:site#aside" id="aside">OLD-ASIDE</div>` +
+			outlet +
 			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main">` + main + `</main>` +
 			`</div><script src="/__gofastr/runtime.js"></script></body></html>`
 	}
@@ -83,6 +91,10 @@ func newDoubleClickRig(t *testing.T, vt bool) *dcRig {
 		}
 		if req.Header.Get("X-Gofastr-Navigate") == "1" {
 			r.mu.Lock()
+			if r.hits == nil {
+				r.hits = map[string]int{}
+			}
+			r.hits[req.URL.Path]++
 			g, held := r.gates[req.URL.Path]
 			r.mu.Unlock()
 			if held {
@@ -92,6 +104,10 @@ func newDoubleClickRig(t *testing.T, vt bool) *dcRig {
 			w.Header().Set("X-Gofastr-Partial", "true")
 			w.Header().Set("X-Gofastr-Title", strings.ToUpper(req.URL.Path))
 			w.Header().Set("X-Gofastr-Swap", "l:site")
+			if r.plain {
+				fmt.Fprintf(w, `MAIN-%s`, strings.ToUpper(strings.TrimPrefix(req.URL.Path, "/")))
+				return
+			}
 			w.Header().Set("X-Gofastr-Envelope", "2")
 			fmt.Fprintf(w, `<template data-cui-fill="l:site">MAIN-%s</template>`+
 				`<template data-cui-fill="l:site#aside">ASIDE-%s</template>`,
@@ -307,5 +323,87 @@ func TestHandoffFirstNavNotPoisoned(t *testing.T) {
 	_ = chromedp.Run(ctx, chromedp.Evaluate(`document.getElementById('main').textContent`, &main))
 	if !strings.Contains(main, "MAIN-A") {
 		t.Errorf("main = %q after the first hand-off navigation, want MAIN-A (never the served page's bytes)", main)
+	}
+}
+
+// TestReturnToPendingPathWins: A, then B, then A again while both
+// answers are held. The third click must own the navigation: the
+// in-flight dedup once returned because a request for /a was still
+// pending, so B stayed the live navigation and committed under the
+// URL /a. Waits between response and commit (component sheets) widen
+// that window on every swap path, so both navigators are covered.
+func TestReturnToPendingPathWins(t *testing.T) {
+	for _, plain := range []bool{true, false} {
+		name := map[bool]string{true: "core", false: "envelope"}[plain]
+		t.Run(name, func(t *testing.T) {
+			r := newDoubleClickRig(t, false, plain)
+			ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+			if err := chromedp.Run(ctx,
+				chromedp.Navigate(r.srv.URL+"/"),
+				chromedp.WaitVisible(`#goA`, chromedp.ByID),
+			); err != nil {
+				t.Fatalf("navigate: %v", err)
+			}
+			r.hold("/a")
+			r.hold("/b")
+			if err := chromedp.Run(ctx,
+				chromedp.Click(`#goA`, chromedp.ByID),
+				chromedp.Click(`#goB`, chromedp.ByID),
+				chromedp.Click(`#goA`, chromedp.ByID),
+			); err != nil {
+				t.Fatalf("clicks: %v", err)
+			}
+			r.release("/b")
+			r.release("/a")
+			var main, url string
+			if err := chromedp.Run(ctx,
+				chromedp.Poll(`document.getElementById('main').textContent.includes('MAIN-')`, new(bool), chromedp.WithPollingTimeout(10*time.Second)),
+				chromedp.Sleep(time.Second),
+				chromedp.Evaluate(`document.getElementById('main').textContent`, &main),
+				chromedp.Evaluate(`location.pathname`, &url),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if url != "/a" || !strings.Contains(main, "MAIN-A") {
+				t.Errorf("url = %q, main = %q; want /a showing MAIN-A: the last click lost to the navigation it superseded", url, main)
+			}
+		})
+	}
+}
+
+// TestRepeatNavFetchesOnce: repeated forced navigations to the path
+// already in flight join it: one request, however many calls. (A
+// repeat click on that link never reaches the navigator: the URL
+// already matches, so the click handler stands down.)
+func TestRepeatNavFetchesOnce(t *testing.T) {
+	for _, plain := range []bool{true, false} {
+		name := map[bool]string{true: "core", false: "envelope"}[plain]
+		t.Run(name, func(t *testing.T) {
+			r := newDoubleClickRig(t, false, plain)
+			ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+			if err := chromedp.Run(ctx,
+				chromedp.Navigate(r.srv.URL+"/"),
+				chromedp.WaitVisible(`#goA`, chromedp.ByID),
+			); err != nil {
+				t.Fatalf("navigate: %v", err)
+			}
+			r.hold("/a")
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`for (let i = 0; i < 4; i++) window.__gofastr.navigate('/a', { force: true }); true`, nil)); err != nil {
+				t.Fatalf("navigate: %v", err)
+			}
+			time.Sleep(300 * time.Millisecond)
+			r.release("/a")
+			if err := chromedp.Run(ctx,
+				chromedp.Poll(`document.getElementById('main').textContent.includes('MAIN-A')`, new(bool), chromedp.WithPollingTimeout(10*time.Second)),
+			); err != nil {
+				t.Fatal(err)
+			}
+			r.mu.Lock()
+			n := r.hits["/a"]
+			r.mu.Unlock()
+			if n != 1 {
+				t.Errorf("four navigations sent %d requests for /a, want 1", n)
+			}
+		})
 	}
 }
