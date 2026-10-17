@@ -1224,16 +1224,21 @@ mgr.Use(auth.NewPasskeyPlugin(auth.PasskeyConfig{
 	Store:          passkeys,
 	ChallengeStore: challenges,
 	OnSuccessURL:   "/app",
+	TwoFactorURL:   "/login/2fa", // required when a 2FA plugin is registered
 }))
 ```
 
 `RPID` is the domain the passkeys belong to. Every origin in `Origins`
 must be that host or a subdomain of it, over `https` (or
-`http://localhost` in development); Init refuses anything else. A
+`http://localhost` in development), written the way browsers report it:
+no path, and no default port (`https://example.com`, not
+`https://example.com:443`). Init refuses anything else. A
 passkey registered for `example.com` works on `app.example.com` when
 both origins are listed. Outside `DevMode` and `AllowInMemoryStores`,
 Init also refuses to start without both stores, since a restart would
-forget every passkey and replicas could not share challenges.
+forget every passkey and replicas could not share challenges. When a
+2FA plugin is registered, Init needs `TwoFactorURL` too: the page where
+a pending sign-in posts its code to `/auth/2fa/challenge`.
 
 Other knobs: `RPName` (shown by the browser, default `RPID`),
 `ChallengeTTL` (default 5 minutes), `MaxPerUser` (default 20) and
@@ -1245,11 +1250,15 @@ block).
 | Route | Who | What |
 |---|---|---|
 | `POST /auth/passkey/login/options` | anyone | A sign-in challenge. No account list: the browser offers whatever passkeys it holds for the RP ID. |
-| `POST /auth/passkey/login` | anyone | Verifies the signed challenge, mints the session cookie, answers `{"redirect": …}` plus `"two_factor_required": true` when the account has 2FA. |
+| `POST /auth/passkey/login` | anyone | Verifies the signed challenge, mints the session cookie, answers `{"redirect": "<OnSuccessURL>"}`. When the account has 2FA it answers `{"redirect": "<TwoFactorURL>", "two_factor_required": true}` instead. |
 | `POST /auth/passkey/register/options` | signed in | A registration challenge bound to the session's account. |
-| `POST /auth/passkey/register` | signed in | Stores the new passkey. Body: `name` (optional, at most 64 printable characters), `id`, `clientDataJSON`, `attestationObject`, all binary fields unpadded base64url. |
+| `POST /auth/passkey/register` | signed in | Stores the new passkey, unless the account already holds `MaxPerUser` (409). Body: `name` (optional, at most 64 printable characters), `id`, `clientDataJSON`, `attestationObject`, all binary fields unpadded base64url. |
 | `GET /auth/passkey/list` | signed in | The account's passkeys: `id`, `name`, `createdAt`, `lastUsedAt`, `backedUp`. |
 | `POST /auth/passkey/delete` | signed in | Removes one of the account's own passkeys by `id`. |
+
+Every POST takes `Content-Type: application/json`, the options calls
+included, so a cross-site page cannot reach one without a CORS
+preflight. `RateLimit` covers all six routes.
 
 "Signed in" means a full session. A session waiting on its second
 factor gets 403, and so does a password-only session of an account
@@ -1300,8 +1309,17 @@ whether that use succeeds or not. A registration challenge belongs to
 the account that asked for it. At sign-in the passkey's stored account
 must match the user handle the authenticator returns.
 
-Every failed sign-in gets the same 401 `passkey sign-in failed`. The
-reason goes to the audit trail as `passkey.refused`.
+Once the request parses, every failed check answers the same 401
+`passkey sign-in failed`, and the reason goes to the audit trail as
+`passkey.refused`. A malformed body is a 400 that names the field. If
+two sign-ins with the same passkey race, the loser gets 409 and can
+retry. If the 2FA state cannot be read, the sign-in fails closed with
+a 500 and a `login.failed` event (`reason=twofa_failclosed`), the same
+as a password login.
+
+Backup eligibility is fixed for a credential's life. A sign-in whose
+authenticator data flips the BE bit from what registration recorded
+is refused.
 
 The signature counter catches cloned keys. When either the stored or
 the presented counter is non-zero and the presented one has not moved
@@ -1311,8 +1329,12 @@ Synced passkeys always report zero, so they never trip it.
 ### Accounts and data
 
 A passkey sign-in mints through `MintSession`, so an account with 2FA
-lands on a pending session and finishes at `/auth/2fa/challenge` like
-a password login. Claiming an unverified account (see
+lands on a pending session and the browser goes to `TwoFactorURL` to
+finish at `/auth/2fa/challenge`, like a password login. A completed
+password reset removes every passkey on the account along with its
+sessions and API tokens: a passkey added from a stolen session would
+otherwise sign in again. A password change keeps them, as it keeps API
+tokens. Claiming an unverified account (see
 [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account))
 removes its passkeys, since the squatter may have added one, and the
 `account.claimed` event counts them in `passkeys_removed`.

@@ -79,6 +79,11 @@ func (rp webauthnRP) validate() error {
 			return fmt.Errorf("origin %q must be scheme://host[:port] with nothing after it", o)
 		}
 		host := u.Hostname()
+		// Browsers serialise an origin without its scheme's default
+		// port, so "https://example.com:443" would match no ceremony.
+		if (u.Scheme == "https" && u.Port() == "443") || (u.Scheme == "http" && u.Port() == "80") {
+			return fmt.Errorf("origin %q names its default port; browsers report it as %s://%s", o, u.Scheme, host)
+		}
 		switch {
 		case u.Scheme == "https":
 		case u.Scheme == "http" && host == "localhost":
@@ -197,8 +202,9 @@ func (rp webauthnRP) verifyAttestation(attObj []byte) (registrationResult, error
 
 // assertionResult is what a verified assertion reports back.
 type assertionResult struct {
-	signCount uint32
-	backedUp  bool
+	signCount      uint32
+	backupEligible bool
+	backedUp       bool
 }
 
 // verifyAssertion checks an assertion against the stored COSE key:
@@ -222,7 +228,7 @@ func (rp webauthnRP) verifyAssertion(coseKey, clientDataJSON, authData, sig []by
 	if !key.verify(msg, sig) {
 		return assertionResult{}, errors.New("assertion signature does not verify")
 	}
-	return assertionResult{signCount: ad.signCount, backedUp: ad.flags&flagBS != 0}, nil
+	return assertionResult{signCount: ad.signCount, backupEligible: ad.flags&flagBE != 0, backedUp: ad.flags&flagBS != 0}, nil
 }
 
 func (rp webauthnRP) checkAuthData(ad authData) error {

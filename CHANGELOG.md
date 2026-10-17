@@ -37,11 +37,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   with `auth.PasskeyLoginAttrs`, `PasskeyRegisterAttrs` and
   `PasskeyDeleteAttrs`; the buttons stay hidden until the browser can
   run the ceremony. Accounts with 2FA still finish at the second
-  factor, and a password-only session of such an account cannot add a
-  passkey. Claiming an unverified account removes its passkeys. Account
-  erasure deletes them along with pending registration challenges, and
-  data export includes them. ES256, EdDSA and RS256 keys; no
-  attestation.
+  factor, on the page `TwoFactorURL` names, and a password-only session
+  of such an account cannot add a passkey. A completed password reset
+  and claiming an unverified account both remove the account's
+  passkeys. Account erasure deletes them along with pending
+  registration challenges, and data export includes them. ES256, EdDSA
+  and RS256 keys; no attestation.
 
 ### Fixed
 - **A hidden `ui.Button` stays hidden.** `.fui-button`'s

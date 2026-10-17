@@ -490,6 +490,19 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 			Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
 		})
 	}
+	// So are passkeys: one added from a stolen session signs in again
+	// after the reset otherwise.
+	if n, err := p.mgr.purgeUserPasskeys(r.Context(), userID); err != nil {
+		slog.Warn("password-reset passkey removal failed",
+			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+	} else if n > 0 {
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind:   "passkey.deleted",
+			UserID: userID,
+			Remote: remoteHost(r),
+			Meta:   map[string]string{"reason": "password_reset", "count": strconv.Itoa(n)},
+		})
+	}
 	// The reset link reached the mailbox, so it is the owner's proof. On an
 	// account nobody had proven, someone else may have attached an IdP
 	// identity; the claim evicts it (the password is already the owner's
