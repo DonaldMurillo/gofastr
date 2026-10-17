@@ -95,6 +95,9 @@ func buttonCSS(t style.Theme) string {
   text-transform: var(--ui-button-case, none);
   transition: background-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), border-color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
 }
+/* The display above beats the UA's [hidden] rule; a button a script
+   reveals once it can drive it must stay hidden until then. */
+.fui-button[hidden] { display: none; }
 /* Pointer motion. Knobs: --ui-button-shadow (the resting shadow of a
    primary, danger or secondary button, default --shadow-xs),
    --ui-button-hover-shadow and --ui-button-active-shadow, and
