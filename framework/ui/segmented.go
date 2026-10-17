@@ -194,8 +194,8 @@ func segmentedCSS(_ style.Theme) string {
   padding: var(--spacing-sm, 4px);
   gap: 0;
   border-radius: var(--radii-md, 8px);
-  background: var(--color-surface-soft, #f1f1f3);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #e5e7eb);
+  background: var(--color-surface-soft, #F4F4F5);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   font-size: var(--text-sm, 0.875rem);
   vertical-align: middle;
   isolation: isolate;
@@ -222,7 +222,7 @@ func segmentedCSS(_ style.Theme) string {
   padding: 0 var(--spacing-md, 8px);
   border-radius: calc(var(--radii-md, 8px) - 4px);
   cursor: pointer;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted, #52525B);
   transition: color var(--duration-fast, 150ms) var(--easing-ease-out, ease);
   user-select: none;
   text-align: center;
@@ -230,7 +230,7 @@ func segmentedCSS(_ style.Theme) string {
   margin: 0;
 }
 [data-cui-comp="ui-segmented"] .fui-segmented__option:hover {
-  color: var(--color-text, #111);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-segmented"] .fui-segmented__input {
   position: absolute;
@@ -241,7 +241,7 @@ func segmentedCSS(_ style.Theme) string {
   margin: 0;
 }
 [data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:checked) {
-  color: var(--color-text, #111);
+  color: var(--color-text, #09090B);
   font-weight: var(--font-weight-semibold);
 }
 /* The checked option sets its label in the semibold weight, and every

@@ -135,7 +135,7 @@ func selectCSS(_ style.Theme) string {
      dark schemes is a lighter grey than --color-surface. */
   background-color: var(--color-surface, #FFFFFF);
   border-radius: var(--fui-field-radius);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   appearance: none;
   -webkit-appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%2371717A' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
@@ -151,8 +151,8 @@ func selectCSS(_ style.Theme) string {
   outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-select[aria-invalid="true"] {
-  border-color: var(--color-danger, #DC2626);
-  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
+  border-color: var(--color-danger, #B91C1C);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #B91C1C);
 }
 .fui-select:disabled {
   opacity: var(--opacity-disabled, 0.5);

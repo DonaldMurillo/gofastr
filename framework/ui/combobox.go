@@ -200,10 +200,10 @@ func comboboxCSS(_ style.Theme) string {
   user-select: none;
 }
 [data-cui-comp="ui-combobox"] .fui-combobox__option.is-active {
-  background: var(--color-surface-soft, #f1f1f3);
+  background: var(--color-surface-soft, #F4F4F5);
 }
 [data-cui-comp="ui-combobox"] .fui-combobox__option[aria-disabled="true"] {
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted, #52525B);
   cursor: default;
 }
 @media (pointer: coarse) {

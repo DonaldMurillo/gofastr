@@ -187,7 +187,7 @@ func searchInputCSS(_ style.Theme) string {
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
   padding: var(--ui-control-padding-y, 10px) var(--spacing-xs, 2px);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   /* Remove native search clear button (we provide our own). */
   appearance: none;
   -webkit-appearance: none;
@@ -230,7 +230,7 @@ func searchInputCSS(_ style.Theme) string {
   padding: 0 var(--spacing-sm, 4px);
 }
 .fui-search .fui-search__clear:hover {
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   background: var(--color-surface-soft, #F4F4F5);
 }
 .fui-search .fui-search__clear[hidden] {

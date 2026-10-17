@@ -66,7 +66,7 @@ func pageHeaderCSS(t style.Theme) string {
 			"font-weight", "{font-weight.semibold}",
 			"line-height", "var(--ui-page-header-title-leading, 1.25)",
 			"letter-spacing", "var(--ui-page-header-title-tracking, -0.02em)",
-			"color", "var(--color-text, #18181B)",
+			"color", "var(--color-text, #09090B)",
 		).
 		End().
 		Rule(".fui-page-header__subtitle").

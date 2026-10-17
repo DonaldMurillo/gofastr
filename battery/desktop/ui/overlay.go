@@ -129,7 +129,7 @@ func sheetCSS(_ style.Theme) string {
 [data-cui-comp="desktopui-sheet"] .desktopui-sheet__title {
   font-size: var(--text-lg, 1.125rem);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #000000);
   margin: 0;
 }
 [data-cui-comp="desktopui-sheet"] .desktopui-sheet__footer {

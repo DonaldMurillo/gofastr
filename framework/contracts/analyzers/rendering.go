@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
 func init() {
@@ -947,11 +948,45 @@ func checkInlineScripts(p *contracts.Pass) []contracts.Diagnostic {
 
 // driftCategories are the token categories GOFASTR1808 judges: the ones
 // whose values are lengths or times, where a fallback either restates
-// the token or teaches a scale the theme does not declare. Colour and
-// font fallbacks stay out: `currentColor`, `inherit`, `transparent`, and
-// a dark-surface hex beside a light token are degraded-mode choices an
-// author made on purpose, and the rule cannot tell those from drift.
+// the token or teaches a scale the theme does not declare. Font
+// fallbacks stay out: a family stack is a degraded-mode choice. Colours
+// are judged apart (colourDrift).
 var driftCategories = map[string]bool{"spacing": true, "radii": true, "stroke": true, "leading": true, "tracking": true, "opacity": true, "text": true, "duration": true}
+
+// ownThemePrefixes are design-system trees that ship their own theme, so
+// their colour fallbacks follow that palette rather than the
+// framework's: battery/desktop/ui's macOS colours.
+var ownThemePrefixes = []string{"battery/desktop/"}
+
+// declaredDarkColors is the framework theme's dark palette by token name.
+var declaredDarkColors = sync.OnceValue(func() map[string]string {
+	out := map[string]string{}
+	for k, v := range theme.Default().DarkColors {
+		out["color-"+k] = v
+	}
+	return out
+})
+
+// reHexColour is a #RGB or #RRGGBB literal.
+var reHexColour = regexp.MustCompile(`^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$`)
+
+// colourDrift reports whether a colour token's fallback is a hex the
+// theme declares for neither scheme. A keyword (currentColor,
+// transparent, inherit) is a degraded-mode choice and stays quiet; the
+// dark value is the right fallback inside a dark-scheme block, and a
+// line-based check cannot see the block, so either scheme's value
+// passes.
+func colourDrift(name, fallback string) bool {
+	if !reHexColour.MatchString(fallback) {
+		return false
+	}
+	hex := strings.ToUpper(fallback)
+	if len(hex) == 4 {
+		hex = string([]byte{'#', hex[1], hex[1], hex[2], hex[2], hex[3], hex[3]})
+	}
+	light, ok := declaredTokenValues()[name]
+	return ok && hex != strings.ToUpper(light) && hex != strings.ToUpper(declaredDarkColors()[name])
+}
 
 // declaredTokenValues is the theme's token table by name, light entries
 // only, for the fallback comparison.
@@ -1009,16 +1044,19 @@ func sameScaleValue(a, b string) bool {
 
 // checkFallbackDrift reports one GOFASTR1808 per var() reference on a
 // design-system line whose fallback restates a length- or time-scale
-// token at a value the theme does not declare.
+// token at a value the theme does not declare, or a colour token at a
+// hex neither scheme declares.
 func checkFallbackDrift(rel string, lineNo int, scan, orig string) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
 	for _, m := range reVarFallback.FindAllStringSubmatch(scan, -1) {
 		name, fallback := m[1], strings.TrimSpace(m[2])
-		if !driftCategories[tokenCategory(name)] {
-			continue
-		}
 		declared, ok := declaredTokenValues()[name]
-		if !ok || sameScaleValue(fallback, declared) {
+		switch cat := tokenCategory(name); {
+		case cat == "color":
+			if hasPrefixAny(rel, ownThemePrefixes) || !colourDrift(name, fallback) {
+				continue
+			}
+		case !driftCategories[cat] || !ok || sameScaleValue(fallback, declared):
 			continue
 		}
 		out = append(out, contracts.Diagnostic{

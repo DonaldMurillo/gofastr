@@ -956,7 +956,7 @@ func sidebarCSS(_ style.Theme) string {
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFF);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   cursor: pointer;
   font-size: var(--text-xl, 1.25rem);
   line-height: 1;
@@ -1341,7 +1341,7 @@ func sidebarCSS(_ style.Theme) string {
 .fui-sidebar__drawer-brand {
   font-weight: var(--font-weight-bold);
   font-size: var(--text-base, 1rem);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1357,7 +1357,7 @@ func sidebarCSS(_ style.Theme) string {
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFF);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   cursor: pointer;
   font: inherit;
   font-size: var(--text-xl, 1.25rem);

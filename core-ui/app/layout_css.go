@@ -36,7 +36,7 @@ func InterceptOverlayCSS() string {
 [data-cui-intercept-overlay] > * {
   position: absolute;
   background-color: var(--color-surface, #fff);
-  color: var(--color-text, #18181b);
+  color: var(--color-text, #09090B);
   overflow-y: auto;
   overscroll-behavior: contain;
   /* The layer's inset, named so chrome inside it (ui.DrawerBar) can

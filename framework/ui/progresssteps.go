@@ -273,7 +273,7 @@ func progressStepsCSS(_ style.Theme) string {
   color: var(--color-primary-fg, #FFFFFF);
 }
 .fui-progress-steps__item[data-state="current"] .fui-progress-steps__label {
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 .fui-progress-steps__item[data-state="done"] .fui-progress-steps__marker {
   background: var(--color-primary, #18181B);
@@ -281,7 +281,7 @@ func progressStepsCSS(_ style.Theme) string {
   color: var(--color-primary-fg, #FFFFFF);
 }
 .fui-progress-steps__item[data-state="done"] .fui-progress-steps__label {
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 
 /* Vertical orientation. */

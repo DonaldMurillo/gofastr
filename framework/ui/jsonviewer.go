@@ -78,7 +78,7 @@ func jsonViewerCSS(_ style.Theme) string {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-sm, 0.875rem);
   line-height: var(--leading-normal, 1.5);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__node {
   display: block;
@@ -120,15 +120,15 @@ func jsonViewerCSS(_ style.Theme) string {
   padding-block: var(--spacing-xs, 2px);
 }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__key {
-  color: var(--color-info, #3B82F6);
+  color: var(--color-info, #1D4ED8);
   font-weight: var(--font-weight-semibold);
 }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__colon {
   color: var(--color-text-muted, #52525B);
   margin-inline-end: var(--spacing-sm, 4px);
 }
-[data-cui-comp="ui-json-viewer"] .fui-json-viewer__str { color: var(--color-success, #16A34A); }
-[data-cui-comp="ui-json-viewer"] .fui-json-viewer__num { color: var(--color-warning, #D97706); }
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__str { color: var(--color-success, #166534); }
+[data-cui-comp="ui-json-viewer"] .fui-json-viewer__num { color: var(--color-warning, #854D0E); }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__bool { color: var(--color-primary, #18181B); font-weight: var(--font-weight-semibold); }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__null { color: var(--color-text-muted, #52525B); font-style: italic; }
 [data-cui-comp="ui-json-viewer"] .fui-json-viewer__empty { color: var(--color-text-muted, #52525B); }`

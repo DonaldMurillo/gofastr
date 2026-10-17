@@ -195,7 +195,7 @@ func sourceListCSS(_ style.Theme) string {
   min-height: var(--desktop-sourcelist-row, 28px);
   padding: var(--spacing-xs, 2px) var(--spacing-md, 8px);
   border-radius: var(--radii-md, 8px);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #000000);
   font-size: var(--text-base, 1rem);
   text-decoration: none;
   cursor: pointer;
@@ -213,11 +213,11 @@ func sourceListCSS(_ style.Theme) string {
   color: var(--color-text-subtle, #71717A);
 }
 [data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item:hover {
-  background: color-mix(in srgb, var(--color-text, #18181B) 3%, transparent);
+  background: color-mix(in srgb, var(--color-text, #000000) 3%, transparent);
 }
 [data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item:focus-visible {
   /* Keyboard focus ring in the accent, the Mac focus-ring read. */
-  outline: var(--stroke-focus, 2px) solid var(--color-accent, #7C3AED);
+  outline: var(--stroke-focus, 2px) solid var(--color-accent, #007AFF);
   outline-offset: var(--spacing-xs, 2px);
 }
 [data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__item[aria-current="page"] {
@@ -226,7 +226,7 @@ func sourceListCSS(_ style.Theme) string {
      within a couple of points of a 5% mix of the text color. The text
      and the icon keep their own colors; the accent belongs to the
      focus ring, not the row. */
-  background: color-mix(in srgb, var(--color-text, #18181B) 5%, transparent);
+  background: color-mix(in srgb, var(--color-text, #000000) 5%, transparent);
 }
 [data-cui-comp="desktopui-sourcelist"] .desktopui-sourcelist__icon {
   display: inline-flex;

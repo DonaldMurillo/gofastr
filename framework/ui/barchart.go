@@ -503,10 +503,10 @@ func barChartCSS(_ style.Theme) string {
   opacity: var(--ui-bar-chart-bar-hover-opacity, 0.85);
 }
 .fui-bar-chart__bar--primary { fill: var(--color-primary, #18181B); }
-.fui-bar-chart__bar--info    { fill: var(--color-info, #3B82F6); }
-.fui-bar-chart__bar--success { fill: var(--color-success, #16A34A); }
-.fui-bar-chart__bar--warning { fill: var(--color-warning, #D97706); }
-.fui-bar-chart__bar--danger  { fill: var(--color-danger, #DC2626); }
+.fui-bar-chart__bar--info    { fill: var(--color-info, #1D4ED8); }
+.fui-bar-chart__bar--success { fill: var(--color-success, #166534); }
+.fui-bar-chart__bar--warning { fill: var(--color-warning, #854D0E); }
+.fui-bar-chart__bar--danger  { fill: var(--color-danger, #B91C1C); }
 
 [data-cui-comp="ui-bar-chart"] .fui-bar-chart__baseline {
   stroke: var(--color-border, #E4E4E7);

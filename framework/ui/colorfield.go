@@ -170,7 +170,7 @@ func colorFieldCSS(_ style.Theme) string {
   border: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #fff);
-  color: var(--color-text, #18181b);
+  color: var(--color-text, #09090B);
   font-size: var(--text-base, 1rem);
 }
 .fui-color__text:focus-visible {
@@ -179,8 +179,8 @@ func colorFieldCSS(_ style.Theme) string {
 }
 .fui-color__text[aria-invalid="true"],
 .fui-color[data-invalid] .fui-color__text {
-  border-color: var(--color-danger, #dc2626);
-  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #dc2626);
+  border-color: var(--color-danger, #B91C1C);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #B91C1C);
 }
 .fui-color__swatch:disabled,
 .fui-color__text:disabled {

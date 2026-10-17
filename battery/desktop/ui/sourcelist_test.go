@@ -99,7 +99,7 @@ func TestSourceListCSS(t *testing.T) {
 		"--desktop-sourcelist-row: 28px",
 		"min-height: var(--desktop-sourcelist-row, 28px)",
 		"font-size: var(--text-base, 1rem)",
-		"background: color-mix(in srgb, var(--color-text, #18181B) 5%, transparent)",
+		"background: color-mix(in srgb, var(--color-text, #000000) 5%, transparent)",
 		"font-size: var(--text-xs",
 		"outline:",
 		"var(--color-accent",
