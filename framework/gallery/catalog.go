@@ -361,7 +361,7 @@ var Catalog = []Entry{
 			),
 			Footer: ui.Muted(render.Text("Commander: Mina Chen · Updated 2 min ago")),
 			Actions: ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
-				ui.LinkButton(ui.LinkButtonConfig{Label: "Open incident", Href: "#", Variant: ui.ButtonPrimary}),
+				ui.LinkButton(ui.LinkButtonConfig{Label: "Open incident", Href: "/components/recordsummary", Variant: ui.ButtonPrimary}),
 				ui.Button(ui.ButtonConfig{Label: "Join bridge", Variant: ui.ButtonSecondary}),
 				ui.Button(ui.ButtonConfig{Label: "Acknowledge", Variant: ui.ButtonGhost}),
 			),
@@ -898,18 +898,18 @@ const page = await api.posts.list({ limit: 25 });`},
 	}},
 	{"entrylist", "EntryList", "Data", "A dense, ranked list of links to read: title, source, and a meta line.", func() render.HTML {
 		meta := func(points, author, age, comments string) render.HTML {
-			return render.Join(render.Text(points+" points by "), ui.Link(ui.LinkConfig{Href: "#", Text: author}),
-				render.Text(" "+age+" · "), ui.Link(ui.LinkConfig{Href: "#", Text: comments + " comments"}))
+			return render.Join(render.Text(points+" points by "), ui.Link(ui.LinkConfig{Href: "/components/avatar", Text: author}),
+				render.Text(" "+age+" · "), ui.Link(ui.LinkConfig{Href: "/components/commentthread", Text: comments + " comments"}))
 		}
 		return ui.EntryList(ui.EntryListConfig{Label: "Top stories", Ranked: true, Start: 1, Entries: []ui.Entry{
-			{Title: "A field guide to reading compiler output", Href: "#", Source: "example.com", Meta: meta("214", "ada", "3 hours ago", "87")},
-			{Title: "Show: a tiny static site generator in one file", Href: "#", Source: "example.org", Meta: meta("96", "lin", "5 hours ago", "31")},
-			{Title: "Ask: how do you keep notes for long projects?", Href: "#", Meta: meta("58", "sam", "6 hours ago", "142")},
+			{Title: "A field guide to reading compiler output", Href: "/components/entrylist", Source: "example.com", Meta: meta("214", "ada", "3 hours ago", "87")},
+			{Title: "Show: a tiny static site generator in one file", Href: "/components/entrylist", Source: "example.org", Meta: meta("96", "lin", "5 hours ago", "31")},
+			{Title: "Ask: how do you keep notes for long projects?", Href: "/components/entrylist", Meta: meta("58", "sam", "6 hours ago", "142")},
 		}})
 	}},
 	{"commentthread", "CommentThread", "Data", "A discussion with replies nested under each comment.", func() render.HTML {
 		by := func(author, age string) render.HTML {
-			return render.Join(ui.Link(ui.LinkConfig{Href: "#", Text: author}), render.Text(" "+age))
+			return render.Join(ui.Link(ui.LinkConfig{Href: "/components/avatar", Text: author}), render.Text(" "+age))
 		}
 		p := func(text string) render.HTML { return html.Paragraph(html.TextConfig{}, render.Text(text)) }
 		return ui.CommentThread(ui.CommentThreadConfig{Label: "Comments", Comments: []ui.Comment{
@@ -1587,11 +1587,11 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		return ui.Cluster(ui.ClusterConfig{Align: ui.AlignStretch},
 			ui.PricingCard(ui.PricingCardConfig{
 				Name: "Starter", Price: "$0", Period: "/mo", Description: "For side projects.",
-				Features: []string{"1 project", "Community support"}, CTALabel: "Start free", CTAHref: "#",
+				Features: []string{"1 project", "Community support"}, CTALabel: "Start free", CTAHref: "/get-started",
 			}),
 			ui.PricingCard(ui.PricingCardConfig{
 				Name: "Pro", Price: "$99", Period: "/mo", Description: "For teams shipping fast.",
-				Features: []string{"Unlimited projects", "Priority support", "SSO"}, CTALabel: "Choose Pro", CTAHref: "#", Featured: true,
+				Features: []string{"Unlimited projects", "Priority support", "SSO"}, CTALabel: "Choose Pro", CTAHref: "/get-started", Featured: true,
 			}),
 		)
 	}},
@@ -1609,7 +1609,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 					}}),
 				ui.Button(ui.ButtonConfig{Label: "Sign in", Variant: ui.ButtonPrimary}),
 			),
-			Footer: ui.Link(ui.LinkConfig{Href: "#", Text: "Forgot password?"}),
+			Footer: ui.Link(ui.LinkConfig{Href: "/components/authcard", Text: "Forgot password?"}),
 		})
 	}},
 
@@ -1658,7 +1658,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	// ---------- Forms (additions) ----------
 	{"filtertoolbar", "FilterToolbar", "Forms", "Facet filters + search + sort in one GET form; the generated list-screen toolbar.", func() render.HTML {
 		return ui.FilterToolbar(ui.FilterToolbarConfig{
-			Action: "#",
+			Action: "/components/filtertoolbar",
 			Facets: []ui.Facet{
 				{Name: "status", Label: "Status", Value: "open", Options: []ui.FacetOption{
 					{Label: "Open", Value: "open"}, {Label: "Closed", Value: "closed"},

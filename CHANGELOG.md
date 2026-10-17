@@ -18,6 +18,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   version and nothing else needs installing. A finding that is the shape
   on purpose takes `//gofastr:allow(<analyzer>) <reason>`. The binary
   grows by about 3.5 MB.
+- **`framework/testkit/nojstest` checks pages with JavaScript off.** It
+  loads each page with script execution disabled and reports empty
+  `<main>` content, links that go nowhere without script (`#`,
+  `javascript:`), and forms with no native way to submit. The site and
+  Meridian run it as gates: every page the site's axe gate scans, and
+  Meridian's marketing, auth, app and admin pages after a sign-in
+  through the login form with script off.
 
 ### Fixed
 - **`gofastr verify` keeps `go vet`'s default passes.** Its vet stage ran
@@ -26,6 +33,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   those passes never ran under verify in a tree with `cmd/vettool`.
   Plain `go vet` now runs first and the analyzers run as a second pass;
   both must pass.
+- **Gallery demos link somewhere.** The EntryList, CommentThread,
+  PricingCard, AuthCard, FilterToolbar and RecordSummary demos on
+  `/components` used `href="#"` placeholders, which go nowhere without
+  script. They now point at real pages.
 
 ### Changed
 - **Pages render with about 40% less CPU.** The UI host scanned every

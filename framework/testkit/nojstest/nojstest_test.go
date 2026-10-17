@@ -1,0 +1,103 @@
+package nojstest
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"testing"
+
+	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
+)
+
+const cleanPage = `<!doctype html><html><body>
+<main>
+  <p>Hello without script.</p>
+  <a href="/next">Next</a>
+  <a aria-current="page">Here</a>
+  <form action="/save" method="post"><input name="a"><input name="b"><button>Save</button></form>
+  <form action="/search"><input type="search" name="q"></form>
+  <form method="dialog"><input name="x"><input name="y"></form>
+  <div style="display:none"><a href="#">hidden toggle</a></div>
+</main>
+<script>window.__gofastr = {};</script>
+</body></html>`
+
+const brokenPage = `<!doctype html><html><body>
+<nav>
+  <a href="#">Menu</a>
+  <a href="javascript:void(0)">Open</a>
+  <a role="button">Do it</a>
+  <form action="/save" method="post"><input name="a"><input name="b"><button type="button">Send</button></form>
+</nav>
+<main><div style="height:2em"></div></main>
+</body></html>`
+
+func serve(t *testing.T) string {
+	t.Helper()
+	mux := http.NewServeMux()
+	for path, body := range map[string]string{"/clean": cleanPage, "/broken": brokenPage} {
+		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(body))
+		})
+	}
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv.URL
+}
+
+func kinds(ps []Problem) []string {
+	var out []string
+	for _, p := range ps {
+		out = append(out, p.Kind)
+	}
+	return out
+}
+
+func TestCleanPagePasses(t *testing.T) {
+	base := serve(t)
+	tab, cancel := NewTab(t, chromedptest.Context(t))
+	defer cancel()
+	ps, err := Check(tab, base+"/clean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ps) != 0 {
+		t.Fatalf("clean page reported %v", ps)
+	}
+}
+
+func TestBrokenPageReportsEachKind(t *testing.T) {
+	base := serve(t)
+	tab, cancel := NewTab(t, chromedptest.Context(t))
+	defer cancel()
+	ps, err := Check(tab, base+"/broken")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"empty-main", "dead-link", "dead-link", "dead-link", "form-no-submit"}
+	if got := kinds(ps); !slices.Equal(got, want) {
+		t.Fatalf("got %v, want %v\n%v", got, want, ps)
+	}
+}
+
+// With script left on, the page's own script sets window.__gofastr and
+// Inspect must say so: the guard that keeps a gate from passing while
+// the runtime quietly ran.
+func TestScriptRanIsReported(t *testing.T) {
+	base := serve(t)
+	tab, cancel := chromedp.NewContext(chromedptest.Context(t))
+	defer cancel()
+	if err := chromedp.Run(tab, chromedp.Navigate(base+"/clean")); err != nil {
+		t.Fatal(err)
+	}
+	ps, err := Inspect(tab)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := kinds(ps); !slices.Equal(got, []string{"script-ran"}) {
+		t.Fatalf("got %v, want [script-ran]", ps)
+	}
+}

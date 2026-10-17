@@ -104,6 +104,53 @@ console). Production never scans and never loads the registry. Apps
 that build their own `httptest.Server` instead of the harness get the
 same check: findings log at warn level in the test binary.
 
+## Pages that work without JavaScript
+
+Every GoFastr page is server-rendered, its links are real `href`s and
+its forms post natively; `runtime.js` adds client navigation, islands
+and widgets on top. `framework/testkit/nojstest` pins that as a test.
+It loads each page in a Chrome tab whose script execution is disabled
+through DevTools before the first byte arrives, so neither the runtime
+nor any inline script runs, and reports what a visitor without script
+would hit:
+
+| Kind | Meaning |
+| --- | --- |
+| `empty-main` | `<main>` (or `<body>` without one) shows no text |
+| `dead-link` | a visible link to `#` or a `javascript:` URL, or an `<a>` with no `href` acting as a button |
+| `form-no-submit` | a visible form with no submit control that is not a single-field form Enter submits |
+| `script-ran` | the GoFastr runtime executed, so the tab did not hold and the other results mean nothing |
+
+Hidden elements are skipped (a menu toggle the runtime reveals is not
+a dead link), and `<form method="dialog">` is skipped.
+
+```go
+import "github.com/DonaldMurillo/gofastr/framework/testkit/nojstest"
+
+func TestNoJSPagesWork(t *testing.T) {
+    browser := axetest.NewBrowser(t)
+    tab, done := nojstest.NewTab(t, browser)
+    defer done()
+    for _, p := range pages { // derive from your screen catalog
+        problems, err := nojstest.Check(tab, base+p)
+        if err != nil {
+            t.Errorf("%s: %v", p, err)
+            continue
+        }
+        nojstest.Report(t, p, problems)
+    }
+}
+```
+
+Every navigation in the tab keeps script off, including a followed link
+or a native form submission, so signing in through the real login form
+in that tab proves the form works without the runtime. Call
+`nojstest.Inspect(tab)` to check the page the submission landed on
+without navigating again. `examples/meridian/nojs_test.go` does exactly
+that before checking the app and admin screens, and
+`examples/site/nojs_test.go` checks every page the site's axe gate
+scans.
+
 ## Isolated databases
 
 ```go
