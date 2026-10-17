@@ -224,7 +224,8 @@ func heatLevel(v, lo, hi float64) int {
 	if hi == lo {
 		return 4
 	}
-	return 1 + min(int((v-lo)/(hi-lo)*4), 3)
+	// Halves keep a range past the float limit finite.
+	return 1 + min(int((v/2-lo/2)/(hi/2-lo/2)*4), 3)
 }
 
 var heatmapStyle = registry.RegisterStyle("ui-heatmap", heatmapCSS)
@@ -239,10 +240,10 @@ func heatmapCSS(_ style.Theme) string {
   fill: var(--color-text-muted, #52525B);
 }
 .fui-heatmap--primary .fui-heatmap__cell { fill: var(--color-primary, #18181B); }
-.fui-heatmap--info    .fui-heatmap__cell { fill: var(--color-info, #3B82F6); }
-.fui-heatmap--success .fui-heatmap__cell { fill: var(--color-success, #16A34A); }
-.fui-heatmap--warning .fui-heatmap__cell { fill: var(--color-warning, #D97706); }
-.fui-heatmap--danger  .fui-heatmap__cell { fill: var(--color-danger, #DC2626); }
+.fui-heatmap--info    .fui-heatmap__cell { fill: var(--color-info, #1D4ED8); }
+.fui-heatmap--success .fui-heatmap__cell { fill: var(--color-success, #166534); }
+.fui-heatmap--warning .fui-heatmap__cell { fill: var(--color-warning, #854D0E); }
+.fui-heatmap--danger  .fui-heatmap__cell { fill: var(--color-danger, #B91C1C); }
 [data-cui-comp="ui-heatmap"] .fui-heatmap__cell--1 { fill-opacity: 0.25; }
 [data-cui-comp="ui-heatmap"] .fui-heatmap__cell--2 { fill-opacity: 0.5; }
 [data-cui-comp="ui-heatmap"] .fui-heatmap__cell--3 { fill-opacity: 0.75; }

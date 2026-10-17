@@ -52,12 +52,30 @@ func TestHeatmapLevelsByValue(t *testing.T) {
 	}
 }
 
+// TestHeatmapHugeSpanKeepsLevels: a range past the float limit still
+// places the midpoint mid-scale and the top at the strongest level.
+func TestHeatmapHugeSpanKeepsLevels(t *testing.T) {
+	h := string(ui.Heatmap(ui.HeatmapConfig{
+		Rows: []string{"r"}, Cols: []string{"a", "b", "c"}, Values: [][]float64{{-1e308, 0, 1e308}},
+	}))
+	var got []string
+	for _, c := range heatCells(h) {
+		got = append(got, c[1])
+	}
+	if strings.Join(got, ",") != "1,3,4" {
+		t.Errorf("levels = %v, want 1,3,4", got)
+	}
+}
+
 // TestHeatmapSameValuesAreFull: with no spread every cell is the strong
 // level, and the scale math never divides by zero.
 func TestHeatmapSameValuesAreFull(t *testing.T) {
 	h := string(ui.Heatmap(ui.HeatmapConfig{
 		Rows: []string{"r"}, Cols: []string{"a", "b"}, Values: [][]float64{{7, 7}},
 	}))
+	if n := len(heatCells(h)); n != 2 {
+		t.Fatalf("drew %d cells, want 2: %s", n, h)
+	}
 	for _, c := range heatCells(h) {
 		if c[1] != "4" {
 			t.Errorf("level %s, want 4: %s", c[1], h)

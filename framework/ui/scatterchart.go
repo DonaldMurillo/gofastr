@@ -368,15 +368,15 @@ func scatterChartCSS(_ style.Theme) string {
 [data-cui-comp="ui-scatter-chart"] .fui-scatter-chart__title {
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-medium);
-  fill: var(--color-text, #18181B);
+  fill: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-scatter-chart"] .fui-scatter-chart__point {
   stroke: var(--color-surface, #FFFFFF);
   stroke-width: 1;
 }
 [data-cui-comp="ui-scatter-chart"] .fui-scatter-chart__point--primary { fill: var(--color-primary, #18181B); }
-[data-cui-comp="ui-scatter-chart"] .fui-scatter-chart__point--info    { fill: var(--color-info, #3B82F6); }
-[data-cui-comp="ui-scatter-chart"] .fui-scatter-chart__point--success { fill: var(--color-success, #16A34A); }
-[data-cui-comp="ui-scatter-chart"] .fui-scatter-chart__point--warning { fill: var(--color-warning, #D97706); }
-[data-cui-comp="ui-scatter-chart"] .fui-scatter-chart__point--danger  { fill: var(--color-danger, #DC2626); }`
+[data-cui-comp="ui-scatter-chart"] .fui-scatter-chart__point--info    { fill: var(--color-info, #1D4ED8); }
+[data-cui-comp="ui-scatter-chart"] .fui-scatter-chart__point--success { fill: var(--color-success, #166534); }
+[data-cui-comp="ui-scatter-chart"] .fui-scatter-chart__point--warning { fill: var(--color-warning, #854D0E); }
+[data-cui-comp="ui-scatter-chart"] .fui-scatter-chart__point--danger  { fill: var(--color-danger, #B91C1C); }`
 }
