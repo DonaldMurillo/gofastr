@@ -39,6 +39,11 @@ const (
 	purposeReset     tokenPurpose = "pwreset"
 	purposeVerify    tokenPurpose = "verify"
 	purposeMagicLink tokenPurpose = "magiclink"
+
+	// Passkey ceremony challenges. A registration challenge carries the
+	// user id it was issued to; a sign-in challenge carries nothing.
+	purposePasskeyRegister tokenPurpose = "passkeyreg"
+	purposePasskeyLogin    tokenPurpose = "passkeylogin"
 )
 
 // errTokenPurpose is returned when a token is valid but belongs to another

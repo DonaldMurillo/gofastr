@@ -30,6 +30,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Meridian run it as gates: every page the site's axe gate scans, and
   Meridian's marketing, auth, app and admin pages after a sign-in
   through the login form with script off.
+- **Passkey sign-in (`auth.PasskeyPlugin`).** WebAuthn sign-in with no
+  username, and self-service add, list and remove for signed-in users.
+  `auth.NewSQLPasskeyStore` keeps the public keys on SQLite or
+  Postgres. A runtime module drives the browser side for buttons marked
+  with `auth.PasskeyLoginAttrs`, `PasskeyRegisterAttrs` and
+  `PasskeyDeleteAttrs`; the buttons stay hidden until the browser can
+  run the ceremony. Accounts with 2FA still finish at the second
+  factor, and a password-only session of such an account cannot add a
+  passkey. Claiming an unverified account removes its passkeys. Account
+  erasure deletes them along with pending registration challenges, and
+  data export includes them. ES256, EdDSA and RS256 keys; no
+  attestation.
 
 ### Fixed
 - **A hidden `ui.Button` stays hidden.** `.fui-button`'s
