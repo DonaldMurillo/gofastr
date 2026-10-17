@@ -229,9 +229,11 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    declares each table it owns and how to erase it: hard-delete, or anonymize
    (overwrite named columns with a tombstone and keep the row). `battery/auth`
    registers `auth_sessions` (delete by `user_id`), `auth_users` (delete by
-   `id`), and `magic_link_tokens` (every magic-link, reset and verification
-   token minted for the user; the magic-link one matches by email via the `IdentityEmail`
-   resolver, see [Identity-keyed tables](#identity-keyed-tables-non-user-id-match) below).
+   `id`), `auth_twofa`, `users_oauth_links` and `auth_passkeys` (each delete
+   by `user_id`), and `magic_link_tokens` (every magic-link, reset,
+   verification and passkey-registration token minted for the user; the
+   magic-link one matches by email via the `IdentityEmail` resolver, see
+   [Identity-keyed tables](#identity-keyed-tables-non-user-id-match) below).
    `battery/queue` registers `queue_jobs` (delete by `user_id`), which reaches
    a job only when the producer set `Job.UserID` — see
    [the queue reference](queue.md). A job whose payload is personal data but

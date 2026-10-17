@@ -88,6 +88,10 @@ func (m *AuthManager) claimAccount(ctx context.Context, userID, via, remote stri
 		}
 	}
 
+	passkeys, err := m.purgeUserPasskeys(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("remove passkeys: %w", err)
+	}
 	tokens, _, err := m.revokeUserAPITokens(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("revoke API tokens: %w", err)
@@ -110,6 +114,7 @@ func (m *AuthManager) claimAccount(ctx context.Context, userID, via, remote stri
 			"sessions_revoked":    strconv.Itoa(sessions),
 			"tokens_revoked":      strconv.Itoa(tokens),
 			"oauth_links_removed": strconv.Itoa(unlinked),
+			"passkeys_removed":    strconv.Itoa(passkeys),
 		},
 	})
 	return nil

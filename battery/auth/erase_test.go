@@ -53,6 +53,7 @@ func TestAuthErasersCoverCredentialTables(t *testing.T) {
 		"auth_users":        "id",
 		"auth_twofa":        "user_id",
 		"users_oauth_links": "user_id",
+		"auth_passkeys":     "user_id",
 	}
 	got := map[string]string{}
 	for _, e := range datexport.AllErasers() {
@@ -334,6 +335,19 @@ func TestEraseCoversConfiguredStoreTables(t *testing.T) {
 	mgr.Use(NewCorePlugin())
 	mgr.Use(NewTwoFAPlugin(TwoFAConfig{Store: twofaRows}))
 	mgr.Use(NewMagicLinkPlugin(MagicLinkConfig{TokenStore: magicLinks, DevMode: true}))
+	// Non-canonical names, so only the configured-store wiring reaches them.
+	passkeys, err := NewSQLPasskeyStore(db, "passkeys")
+	if err != nil {
+		t.Fatalf("NewSQLPasskeyStore: %v", err)
+	}
+	challenges, err := NewSQLMagicLinkTokenStore(db, "passkey_challenges")
+	if err != nil {
+		t.Fatalf("challenge store: %v", err)
+	}
+	mgr.Use(NewPasskeyPlugin(PasskeyConfig{
+		RPID: "example.com", Origins: []string{"https://example.com"},
+		Store: passkeys, ChallengeStore: challenges, TwoFactorURL: "/2fa",
+	}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -361,6 +375,14 @@ func TestEraseCoversConfiguredStoreTables(t *testing.T) {
 	if _, err := createPurposeToken(ctx, magicLinks, purposeMagicLink, email, time.Hour); err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
+	if _, err := createPurposeToken(ctx, challenges, purposePasskeyRegister, userID, time.Hour); err != nil {
+		t.Fatalf("passkey challenge: %v", err)
+	}
+	if err := passkeys.AddPasskey(ctx, PasskeyCredential{
+		ID: []byte("cred-1"), UserID: userID, PublicKey: []byte{1}, Algorithm: coseAlgES256, CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatalf("AddPasskey: %v", err)
+	}
 
 	rowsFor := func(table, col, val string) int {
 		t.Helper()
@@ -371,11 +393,13 @@ func TestEraseCoversConfiguredStoreTables(t *testing.T) {
 		return n
 	}
 	tables := map[string]struct{ col, val string }{
-		"users":             {"id", userID},
-		"sessions":          {"user_id", userID},
-		"auth_twofa":        {"user_id", userID},
-		"users_oauth_links": {"user_id", userID},
-		"magic_link_tokens": {"email", "magiclink:" + email},
+		"users":              {"id", userID},
+		"sessions":           {"user_id", userID},
+		"auth_twofa":         {"user_id", userID},
+		"users_oauth_links":  {"user_id", userID},
+		"magic_link_tokens":  {"email", "magiclink:" + email},
+		"passkeys":           {"user_id", userID},
+		"passkey_challenges": {"email", "passkeyreg:" + userID},
 	}
 	for table, m := range tables {
 		if n := rowsFor(table, m.col, m.val); n == 0 {

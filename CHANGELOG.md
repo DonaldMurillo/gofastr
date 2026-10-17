@@ -30,14 +30,44 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Meridian run it as gates: every page the site's axe gate scans, and
   Meridian's marketing, auth, app and admin pages after a sign-in
   through the login form with script off.
+- **Passkey sign-in (`auth.PasskeyPlugin`).** WebAuthn sign-in with no
+  username, and self-service add, list and remove for signed-in users.
+  `auth.NewSQLPasskeyStore` keeps the public keys on SQLite or
+  Postgres. A runtime module drives the browser side for buttons marked
+  with `auth.PasskeyLoginAttrs`, `PasskeyRegisterAttrs` and
+  `PasskeyDeleteAttrs`; the buttons stay hidden until the browser can
+  run the ceremony, and the module forwards the page's `csrf-token`
+  meta so the routes work behind `auth.CSRF`. Accounts with 2FA still
+  finish at the second factor, on the page `TwoFactorURL` names, and a
+  password-only session of such an account cannot add a passkey. A
+  completed password reset and claiming an unverified account both
+  remove the account's passkeys. Account erasure deletes them along
+  with pending registration challenges, and data export includes them.
+  ES256, EdDSA and RS256 keys; no attestation.
 
 ### Fixed
+- **A hidden `ui.Button` stays hidden.** `.fui-button`'s
+  `display: inline-flex` beat the browser's `[hidden]` rule, so a button
+  rendered with `hidden` showed anyway. Links styled as buttons had the
+  same bug.
 - **`gofastr verify` keeps `go vet`'s default passes.** Its vet stage ran
   the repo vettool in place of `go vet`, and `-vettool` replaces vet's
   default analyzers (printf, copylocks, …) instead of adding to them, so
   those passes never ran under verify in a tree with `cmd/vettool`.
   Plain `go vet` now runs first and the analyzers run as a second pass;
   both must pass.
+- **A password reset that leaves API tokens live reports it.** If
+  revoking the user's API tokens failed, the reset still answered
+  `{"updated": true}`. It now answers 500 and asks for another reset
+  link; the password and the sessions are already reset, so the retry
+  is safe.
+- **Untrusted node IR can't arm a behaviour module.**
+  `noderender.RenderNode` and `RenderKind` let through the attributes
+  that registered behaviours bind (`data-passkey-delete`, `data-search`,
+  `data-hui-*` and the rest), so agent-authored IR could place a button
+  that ran a module's action for whoever clicked it. The untrusted path
+  now drops every registered marker attribute; `RenderTrustedNode` keeps
+  them.
 - **Gallery demos link somewhere.** The EntryList, CommentThread,
   PricingCard, AuthCard, FilterToolbar, RecordSummary, Form,
   ConditionalField and Selection demos used `#` placeholders for links

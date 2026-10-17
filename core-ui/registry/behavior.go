@@ -173,6 +173,10 @@ func (b *Behavior) Entry() *BehaviorEntry { return b.e }
 
 var (
 	behaviors = map[string]*BehaviorEntry{}
+	// behaviorMarkerAttrs holds the attribute name of every registered marker,
+	// so a renderer of untrusted markup can refuse the attributes that
+	// arm a module.
+	behaviorMarkerAttrs = map[string]bool{}
 	// reservedBehaviorNames are the embedded kernel modules' names, set
 	// by core-ui/runtime at init so a registration that would shadow
 	// one fails where it is written rather than where it is served.
@@ -356,7 +360,21 @@ func RegisterBehavior(name, js string, opts ...BehaviorOption) *Behavior {
 		return &Behavior{e: existing}
 	}
 	behaviors[name] = e
+	for _, m := range e.Markers {
+		behaviorMarkerAttrs[behaviorMarker.FindStringSubmatch(m)[1]] = true
+	}
 	return &Behavior{e: e}
+}
+
+// IsMarkerAttr reports whether name (lowercase) is the attribute of a
+// registered behaviour marker. A module binds every element carrying
+// its marker, so untrusted markup that names one arms that module's
+// action on the host page; core-ui/noderender drops these attributes
+// from untrusted IR.
+func IsMarkerAttr(name string) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	return behaviorMarkerAttrs[name]
 }
 
 // LookupBehavior returns the behaviour registered under name.

@@ -26,7 +26,8 @@ type SecurityEvent struct {
 	// oauth.linked, oauth.login, oauth.refused, oauth.unlinked,
 	// email.verified, 2fa.enrolled, 2fa.challenge_succeeded,
 	// 2fa.challenge_failed, 2fa.challenge_locked, 2fa.disabled,
-	// 2fa.backup_codes_regenerated,
+	// 2fa.backup_codes_regenerated, passkey.registered, passkey.deleted,
+	// passkey.refused, passkey.clone_suspected,
 	// account.claimed, session.revoked, roles.updated, token.created, token.revoked,
 	// token.auth_failed. Callers MUST use one of the documented kinds so
 	// downstream consumers can match on a closed vocabulary.

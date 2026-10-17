@@ -125,7 +125,8 @@ stay: the user minted them on purpose and revokes them under
 | `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
 | `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
-| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every session (`SessionUserPurger`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). On an account whose address was unverified it also claims the account: OAuth links removed, address marked verified. |
+| `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every session (`SessionUserPurger`) and every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`). If the token or passkey store errors, the reset answers 500 and asks for another link instead of reporting success. On an account whose address was unverified it also claims the account: OAuth links removed, address marked verified. |
+| `PasskeyPlugin` | `POST /auth/passkey/{login/options,login,register/options,register,delete}`, `GET /auth/passkey/list` | Passkey (WebAuthn) sign-in and self-service enrolment. Sign-in needs no username. A passkey sign-in still stops at the second factor when the account has one. See [Passkeys](#passkeys). |
 | `TokensPlugin` | `POST/GET /auth/tokens`, `DELETE /auth/tokens/{id}` | Self-service scoped API tokens (PATs) for logged-in users. Owner forced from the session; plaintext shown once. See [Service accounts & API tokens](#service-accounts--scoped-api-tokens). |
 
 Each plugin's `RegisterRoutes` mounts under `AuthConfig.BasePath`
@@ -1177,7 +1178,7 @@ complete later against a newly enrolled factor.
 
 `AuthManager.MintSession(ctx, userID, ttl)` creates the session **and**
 applies the pending-2FA mark. Every built-in login path, whether password,
-magic link, or OAuth callback, goes
+magic link, OAuth callback, or passkey, goes
 through it, and a host-added plugin that mints its own sessions must
 too. Calling `SessionStore().Create` directly produces a session the
 2FA enforcement never learns about: `PendingTwoFactor` stays false, so
@@ -1200,6 +1201,154 @@ so enrolment does not lock you out of your own settings.
 
 `POST /auth/send-verification` applies the same pending check as those
 four.
+
+## Passkeys
+
+`PasskeyPlugin` adds passkey sign-in. A passkey is a WebAuthn
+credential held by the device or password manager: the server stores a
+public key, and the browser proves possession by signing a one-time
+challenge. Nothing secret lives in the database.
+
+```go
+passkeys, err := auth.NewSQLPasskeyStore(db) // table "auth_passkeys"
+if err != nil {
+	log.Fatal(err)
+}
+challenges, err := auth.NewSQLMagicLinkTokenStore(db)
+if err != nil {
+	log.Fatal(err)
+}
+mgr.Use(auth.NewPasskeyPlugin(auth.PasskeyConfig{
+	RPID:           "example.com",
+	Origins:        []string{"https://example.com"},
+	Store:          passkeys,
+	ChallengeStore: challenges,
+	OnSuccessURL:   "/app",
+	TwoFactorURL:   "/login/2fa", // required when a 2FA plugin is registered
+}))
+```
+
+`RPID` is the domain the passkeys belong to. Every origin in `Origins`
+must be that host or a subdomain of it, over `https` (or
+`http://localhost` in development), written the way browsers report it:
+no path, and no default port (`https://example.com`, not
+`https://example.com:443`). Init refuses anything else. A
+passkey registered for `example.com` works on `app.example.com` when
+both origins are listed. Outside `DevMode` and `AllowInMemoryStores`,
+Init also refuses to start without both stores, since a restart would
+forget every passkey and replicas could not share challenges. When a
+2FA plugin is registered, Init needs `TwoFactorURL` too: the page where
+a pending sign-in posts its code to `/auth/2fa/challenge`.
+
+Other knobs: `RPName` (shown by the browser, default `RPID`),
+`ChallengeTTL` (default 5 minutes), `MaxPerUser` (default 20) and
+`RateLimit` (default 30 requests a minute per client, then a 5-minute
+block).
+
+### Routes
+
+| Route | Who | What |
+|---|---|---|
+| `POST /auth/passkey/login/options` | anyone | A sign-in challenge. No account list: the browser offers whatever passkeys it holds for the RP ID. |
+| `POST /auth/passkey/login` | anyone | Verifies the signed challenge, mints the session cookie, answers `{"redirect": "<OnSuccessURL>"}`. When the account has 2FA it answers `{"redirect": "<TwoFactorURL>", "two_factor_required": true}` instead. |
+| `POST /auth/passkey/register/options` | signed in | A registration challenge bound to the session's account. |
+| `POST /auth/passkey/register` | signed in | Stores the new passkey, unless the account already holds `MaxPerUser` (409). Body: `name` (optional, at most 64 printable characters), `id`, `clientDataJSON`, `attestationObject`, all binary fields unpadded base64url. |
+| `GET /auth/passkey/list` | signed in | The account's passkeys: `id`, `name`, `createdAt`, `lastUsedAt`, `backedUp`. |
+| `POST /auth/passkey/delete` | signed in | Removes one of the account's own passkeys by `id`. |
+
+Every POST takes `Content-Type: application/json`, the options calls
+included, so a cross-site page cannot reach one without a CORS
+preflight. `RateLimit` covers all six routes.
+
+"Signed in" means a full session. A session waiting on its second
+factor gets 403, and so does a password-only session of an account
+with 2FA turned on: adding a passkey adds a way in, so it takes the
+same proof as changing 2FA.
+
+### Buttons
+
+The battery ships the browser half as a runtime module that loads when
+a marked button is on the page. Mark a `ui.Button` with the attribute
+helpers:
+
+```go
+ui.Button(ui.ButtonConfig{
+	Label:      "Sign in with a passkey",
+	Variant:    ui.ButtonSecondary,
+	ExtraAttrs: auth.PasskeyLoginAttrs("/auth"),
+})
+```
+
+| Helper | The button |
+|---|---|
+| `PasskeyLoginAttrs(base)` | Signs in, then navigates where the server says. |
+| `PasskeyRegisterAttrs(base)` | Adds a passkey to the signed-in account. Inside a form, a text field carrying `PasskeyNameAttrs()` names it. |
+| `PasskeyDeleteAttrs(base, id)` | Removes passkey `id` (a `PasskeyCredential.ID`). |
+
+The buttons render `hidden`. The module reveals them when the browser
+supports WebAuthn, so a page without script never shows a button that
+cannot work; keep the password form beside the passkey button. After
+an add or a remove the module re-renders the current page, so a list
+the server drew from `PasskeyStore.ListPasskeys` shows the change.
+Failures show as a toast. A prompt the user cancelled shows nothing.
+The base path must be a same-origin path such as `/auth`; any other
+value leaves the button inert.
+
+Behind `auth.CSRF` or `WithBFFPosture`, render the page's token as
+`<meta name="csrf-token" content="…">` from `auth.CSRFToken(r)`. The
+module sends it as `X-CSRF-Token` on every request, the same way the
+runtime's actions do. Agent-authored node IR can't place these buttons:
+`noderender.RenderNode` drops every registered behaviour marker.
+
+### What a ceremony checks
+
+Registration asks for a discoverable credential with user verification
+and requests no attestation, so the server learns nothing about the
+device and verifies none. The plugin accepts ES256, EdDSA and RS256
+keys (RSA keys of at least 2048 bits).
+
+Both ceremonies check the client data's type, origin and challenge,
+and refuse a cross-origin call. They check that the authenticator data
+names the RP ID and that the user was present and verified. Each
+challenge is spent on its first use, before the signature is checked,
+whether that use succeeds or not. A registration challenge belongs to
+the account that asked for it. At sign-in the passkey's stored account
+must match the user handle the authenticator returns.
+
+Once the request parses, every failed check answers the same 401
+`passkey sign-in failed`, and the reason goes to the audit trail as
+`passkey.refused` with a fixed `reason` code (the request's own text
+goes only to the log). A malformed body is a 400 that names the field. If
+two sign-ins with the same passkey race, the loser gets 409 and can
+retry. If the 2FA state cannot be read, the sign-in fails closed with
+a 500 and a `login.failed` event (`reason=twofa_failclosed`), the same
+as a password login. A user or passkey store that errors answers 500
+on every route; only a missing account reads as signed out.
+
+Backup eligibility is fixed for a credential's life. A sign-in whose
+authenticator data flips the BE bit from what registration recorded
+is refused.
+
+The signature counter catches cloned keys. When either the stored or
+the presented counter is non-zero and the presented one has not moved
+past the stored one, the sign-in fails with `passkey.clone_suspected`.
+Synced passkeys always report zero, so they never trip it.
+
+### Accounts and data
+
+A passkey sign-in mints through `MintSession`, so an account with 2FA
+lands on a pending session and the browser goes to `TwoFactorURL` to
+finish at `/auth/2fa/challenge`, like a password login. A completed
+password reset removes every passkey on the account along with its
+sessions and API tokens: a passkey added from a stolen session would
+otherwise sign in again. A password change keeps them, as it keeps API
+tokens. Claiming an unverified account (see
+[Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account))
+removes its passkeys, since the squatter may have added one, and the
+`account.claimed` event counts them in `passkeys_removed`.
+`App.EraseUserData` deletes the user's passkeys and pending
+registration challenges, and `App.ExportData` includes the
+`auth_passkeys` table.
 
 ## Account linking
 

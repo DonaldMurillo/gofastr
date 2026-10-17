@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -94,5 +95,51 @@ func TestPasswordResetRevokesAPITokens(t *testing.T) {
 	}
 	if !live("u-other", other.ID) {
 		t.Fatal("another user's API token was revoked")
+	}
+}
+
+type failingListTokens struct{ APITokenStore }
+
+func (failingListTokens) List(context.Context, string, string) ([]APIToken, error) {
+	return nil, errors.New("db down")
+}
+
+// A reset that could not revoke the API tokens must not report success.
+func TestPasswordResetFailsIfTokensStay(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	tokens, err := NewSQLAPITokenStore(db)
+	if err != nil {
+		t.Fatalf("token store: %v", err)
+	}
+	store := newUserStoreWithPassword()
+	mgr := New(AuthConfig{SessionTTL: time.Hour, SessionCookie: "session_id", UserStore: store, DevMode: true})
+	mgr.Use(NewCorePlugin())
+	mgr.Use(NewTokensPlugin(failingListTokens{tokens}))
+	sender := &stubEmailSender{}
+	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{BaseURL: "http://localhost", EmailSender: sender}))
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	oldHash, _ := HashPassword("oldpw123")
+	user := &BasicUser{ID: "u-9", Email: "v@example.com", Roles: []string{"user"}}
+	store.users["v@example.com"] = &storeEntry{user: user, hash: oldHash, emailVerified: true}
+	store.byID[user.ID] = store.users["v@example.com"]
+	r := router.New()
+	mgr.RegisterRoutes(r)
+	post := func(path string, body any) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(b))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+	if w := post("/auth/forgot-password", map[string]string{"email": "v@example.com"}); w.Code != http.StatusOK {
+		t.Fatalf("forgot-password: %d", w.Code)
+	}
+	_, emailBody := sender.snapshot()
+	if w := post("/auth/reset-password", map[string]string{"token": extractTokenFromBody(emailBody), "password": "brandnewpw1"}); w.Code != http.StatusInternalServerError {
+		t.Fatalf("reset with failed token revocation: %d %s, want 500", w.Code, w.Body)
 	}
 }
