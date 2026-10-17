@@ -9,6 +9,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 )
 
 // The state file's integrity, the properties the 2026-09-06 red-probe
@@ -64,7 +66,12 @@ func TestPersistIsAtomicReplace(t *testing.T) {
 	if err := s.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.Stat(s.Path())
+	previous, err := atomicfile.Open(s.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer previous.Close()
+	before, err := previous.Stat()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +127,7 @@ func TestRacingWritesNeverPartial(t *testing.T) {
 					return
 				default:
 				}
-				data, err := os.ReadFile(s.Path())
+				data, err := atomicfile.ReadFile(s.Path())
 				if err != nil {
 					continue
 				}

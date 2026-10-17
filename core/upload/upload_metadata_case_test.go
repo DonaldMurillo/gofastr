@@ -12,7 +12,7 @@ import (
 // framework emits camelCase JSON; the upload Metadata struct must not be the
 // one snake_case outlier.
 func TestMetadataJSONUsesCamelCase(t *testing.T) {
-	handler := Handler(Config{Storage: NewLocalStorage(tmpDir(t))})
+	handler := Handler(Config{Storage: newTestLocalStorage(t, tmpDir(t))})
 	body, contentType := newMultipartBody(t, "report.txt", "hello world")
 	req := httptest.NewRequest(http.MethodPost, "/upload", body)
 	req.Header.Set("Content-Type", contentType)

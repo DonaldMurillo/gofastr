@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 // #503: the init scaffold shipped no sign-in surface and no API prefix.
@@ -65,9 +67,7 @@ func TestInitWiresAuthAndAPIPrefix(t *testing.T) {
 	if strings.Contains(env, "APP_ENV") || strings.Contains(env, "GOFASTR_DEV") {
 		t.Errorf(".env must not switch auth into dev mode:\n%s", env)
 	}
-	if fi, err := os.Stat(filepath.Join(root, ".env")); err != nil || fi.Mode().Perm() != 0o600 {
-		t.Errorf(".env mode = %v (%v), want 0600", fi.Mode().Perm(), err)
-	}
+	filepermtest.AssertOwnerOnly(t, filepath.Join(root, ".env"), 0o600)
 	other := jwtSecretLine.FindStringSubmatch(readScaffold(t, scaffoldApp(t, "authapp2"), ".env"))
 	if other == nil || other[1] == m[1] {
 		t.Error("each scaffold must mint its own JWT secret")

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 func TestMoveTreeRenameAndCopy(t *testing.T) {
@@ -48,13 +50,7 @@ func TestMoveTreeCrossVolumeFallback(t *testing.T) {
 	if err := copyTree(filepath.Join(src, "Notes.app"), dst); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(filepath.Join(dst, "Contents", "MacOS", "Notes"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o755 {
-		t.Fatalf("mode = %o, want 755 preserved", info.Mode().Perm())
-	}
+	filepermtest.AssertMode(t, filepath.Join(dst, "Contents", "MacOS", "Notes"), 0o755)
 }
 
 func TestExecRunnerReportsFailureWithoutLeakingPath(t *testing.T) {

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/battery/storage"
 	"golang.org/x/sys/windows"
 )
 
@@ -54,7 +53,7 @@ func assertProtectedOwnerACL(t *testing.T, path string) {
 
 func TestLocalStorageWindowsACLsAreOwnerOnly(t *testing.T) {
 	dir := t.TempDir()
-	if err := storage.NewLocalStorage(dir).Save(context.Background(), "tenant-a/private/report.txt", strings.NewReader("secret")); err != nil {
+	if err := newTestLocalStorage(t, dir).Save(context.Background(), "tenant-a/private/report.txt", strings.NewReader("secret")); err != nil {
 		t.Fatal(err)
 	}
 	assertProtectedOwnerACL(t, filepath.Join(dir, "tenant-a"))

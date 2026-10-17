@@ -17,7 +17,9 @@ import (
 // returns the other writer's bytes. "tenants/caf\u00e9.txt" and its NFD
 // twin fold the same way, in the leaf or in any directory component.
 //
-// Detection walks every path component of the resolved destination: Lstat
+// Detection walks every path component of the requested key under the
+// resolved root. The resolved destination can already have lost the
+// caller's capitalization on Windows. Lstat
 // the component as spelled; when it exists, enumerate the parent's actual
 // directory entries and os.SameFile-match the Lstat result against them.
 // The entry that matches IS the on-disk spelling the filesystem folded
@@ -36,16 +38,17 @@ import (
 // routes its containment through this package ([ResolveUnderRoot],
 // [ScrubPath], [CreateTempInRoot]); a second private copy of the walk is
 // how the two backends drifted in the first place.
-func RefuseFoldedKey(key, dstPath, root string, rt *os.Root) error {
-	var parts []string
-	var parentBase string
+func RefuseFoldedKey(key, _ string, root string, rt *os.Root) error {
+	// Resolution can return the on-disk capitalization on Windows. Walk
+	// the requested key's spelling, or resolution hides the collision.
+	safeKey, err := sanitizeKey(key)
+	if err != nil {
+		return err
+	}
+	parts := strings.Split(safeKey, string(os.PathSeparator))
+	parentBase := root
 	if rt != nil {
-		rel := strings.TrimPrefix(dstPath, root+string(os.PathSeparator))
-		parts = strings.Split(rel, string(os.PathSeparator))
 		parentBase = "."
-	} else {
-		parts = strings.Split(dstPath, string(os.PathSeparator))
-		parentBase = string(os.PathSeparator)
 	}
 
 	for i, part := range parts {

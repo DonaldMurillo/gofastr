@@ -32,6 +32,19 @@ func NewLocalStorage(baseDir string) *LocalStorage {
 	return &LocalStorage{baseDir: baseDir}
 }
 
+// Close releases the pinned storage root. Call it after in-flight storage
+// operations finish and after closing readers returned by Get or GetRange.
+func (s *LocalStorage) Close() error {
+	s.rootMu.Lock()
+	defer s.rootMu.Unlock()
+	if s.root == nil {
+		return nil
+	}
+	err := s.root.Close()
+	s.root, s.rootBase = nil, ""
+	return err
+}
+
 // afterResolve is a test seam: when non-nil it runs after a key's
 // containment has been proven on the resolved chain and before the
 // operation's first filesystem syscall — exactly the window an attacker
@@ -244,10 +257,6 @@ func (s *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error 
 		// now so the staging write and the rename are kernel-contained.
 		root = s.rootFor(rk)
 	}
-	if err := fileperm.RestrictDirectoryTree(dir, rk.root); err != nil {
-		return scrub("restricting directories", dir, err)
-	}
-
 	if root != nil {
 		// Kernel-contained write: every syscall below goes through the
 		// *os.Root, so a symlink planted anywhere on the chain after
@@ -256,6 +265,9 @@ func (s *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error 
 		rel := rk.rel()
 		if err := root.MkdirAll(filepath.Dir(rel), 0o700); err != nil {
 			return scrub("creating directories", dir, err)
+		}
+		if err := fileperm.RestrictDirectoryTree(dir, rk.root); err != nil {
+			return scrub("restricting directories", dir, err)
 		}
 		// The temp file sits beside the target: the O_EXCL create never
 		// follows a symlink at a name of its own choosing, and a
@@ -312,6 +324,9 @@ func (s *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error 
 	// The temp file sits beside the target: CreateTemp never follows a
 	// symlink at a name of its own choosing, and a same-directory rename
 	// is atomic on every supported filesystem.
+	if err := fileperm.RestrictDirectoryTree(dir, rk.root); err != nil {
+		return scrub("restricting directories", dir, err)
+	}
 	tmp, err := os.CreateTemp(dir, ".gofastr-tmp-*")
 	if err != nil {
 		return scrub("creating temp file", dir, err)

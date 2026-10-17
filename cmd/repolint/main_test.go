@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 func TestLintRepoAcceptsCleanTree(t *testing.T) {
@@ -539,10 +541,7 @@ func TestLintCommandBinariesIgnored(t *testing.T) {
 		writeRepoFile(t, root, filepath.Join("cmd", "one", "main.go"), "package main\n")
 		writeRepoFile(t, root, ".gitignore", "/dist\n")
 		cmdDir := filepath.Join(root, "cmd")
-		if err := os.Chmod(cmdDir, 0o000); err != nil {
-			t.Skipf("cannot drop permissions: %v", err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(cmdDir, 0o755) })
+		filepermtest.MakeUnreadable(t, cmdDir)
 		if _, err := lintCommandBinariesIgnored(root); err == nil {
 			t.Error("an unreadable cmd/ reported no findings and no error — the rule passed on a tree it could not read")
 		}
@@ -556,10 +555,7 @@ func TestLintCommandBinariesIgnored(t *testing.T) {
 		writeRepoFile(t, root, filepath.Join("cmd", "one", "main.go"), "package main\n")
 		writeRepoFile(t, root, ".gitignore", "/dist\n")
 		gi := filepath.Join(root, ".gitignore")
-		if err := os.Chmod(gi, 0o000); err != nil {
-			t.Skipf("cannot drop permissions: %v", err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(gi, 0o644) })
+		filepermtest.MakeUnreadable(t, gi)
 		if _, err := lintCommandBinariesIgnored(root); err == nil {
 			t.Error("an unreadable .gitignore reported no error — the rule cannot know what is ignored")
 		}

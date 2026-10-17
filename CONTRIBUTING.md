@@ -55,6 +55,19 @@ SHORT=1 ./scripts/test-all.sh          # -short, skips the slow suites
 Quick iteration: `go test ./path/to/pkg/` on the packages you touched, plus
 `make test` (`-short ./...`) for a fast sweep.
 
+On Windows, run the same package groups through PowerShell:
+
+```powershell
+./scripts/test-windows.ps1                 # all packages; browser suites run alone
+./scripts/test-windows.ps1 -Suite unit     # packages outside the browser group
+./scripts/test-windows.ps1 -Suite browser  # isolated browser group and CLI e2e
+```
+
+The Windows script writes package lists, the commit, and test output under
+`dist/windows-tests/`. It continues after failures and exits with an error
+if any package fails. The Windows CI job also builds every package and runs
+vet with `unsafeptr` disabled for the native COM pointer conversions.
+
 ### Known isolation rules
 
 Some suites are reliable alone but flake when sharing a `go test` run:

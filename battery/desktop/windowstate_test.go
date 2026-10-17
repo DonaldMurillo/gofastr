@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
+
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/desktoptest"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -237,13 +239,7 @@ func TestWindowStateFileIsOwnerOnly(t *testing.T) {
 	if err := h.Quit(); err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	fi, err := os.Stat(filepath.Join(dir, "windowstate.test", "state.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fi.Mode().Perm() != 0o600 {
-		t.Fatalf("state.json mode = %v, want 0600", fi.Mode().Perm())
-	}
+	filepermtest.AssertOwnerOnly(t, filepath.Join(dir, "windowstate.test", "state.json"), 0o600)
 }
 
 // TestCorruptWindowStateFileIgnored: garbage in state.json is a Warn

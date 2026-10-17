@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/DonaldMurillo/gofastr/core/upload"
 )
 
 // Pins fold-refusal at core/upload's LocalStorage, found by the
@@ -29,7 +27,7 @@ import (
 // distinct.
 func TestFoldedKeysDoNotAlias(t *testing.T) {
 	base := t.TempDir()
-	ls := upload.NewLocalStorage(base)
+	ls := newTestLocalStorage(t, base)
 	ctx := context.Background()
 
 	// Probe the filesystem exactly the way the battery/storage twin

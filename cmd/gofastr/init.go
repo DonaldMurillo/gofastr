@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 )
 
@@ -669,7 +670,7 @@ func writeEnvFile(path, content string) error {
 	// Chmod on the handle, not the path: it cannot be redirected by a
 	// symlink swapped in between the open and the mode change, and it
 	// corrects a file that already existed with a looser mode.
-	if err := f.Chmod(0o600); err != nil {
+	if err := fileperm.RestrictOpenFile(f); err != nil {
 		f.Close()
 		return err
 	}

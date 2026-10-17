@@ -1,19 +1,21 @@
-name: Windows init
+name: Windows
 
 on:
   pull_request:
     paths:
-      - 'cmd/gofastr/**'
+      - '**/*.go'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/windows-init.yml'
+      - 'scripts/test-windows.ps1'
   push:
     branches: [main]
     paths:
-      - 'cmd/gofastr/**'
+      - '**/*.go'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/windows-init.yml'
+      - 'scripts/test-windows.ps1'
 
 permissions:
   contents: read
@@ -23,16 +25,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  init:
+  test:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-      - name: Init exit codes, Go requirements, and Windows shells
-        run: go test ./cmd/gofastr -run '^(TestInit(FreshDirectory|GoDirectives|WindowsShells)|TestProjectNameWindowsDevices)$' -count=1 -timeout=10m
+      - name: Build
+        run: go build ./...
+      - name: Vet except native pointer conversions
+        run: go vet -unsafeptr=false ./...
+      - name: All tests, with browser suites isolated
+        run: ./scripts/test-windows.ps1
       - name: Build CLI with the release toolchain
         run: go build -o dist/gofastr.exe ./cmd/gofastr
       - name: Put an older Go on PATH
@@ -61,3 +67,11 @@ jobs:
           $env:GOTOOLCHAIN = 'auto'
           $selected = go env GOVERSION
           if ($LASTEXITCODE -ne 0 -or $selected -ne $preferred) { throw "selected $selected instead of $preferred" }
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-tests
+          path: dist/windows-tests/
+          if-no-files-found: ignore
+          retention-days: 7

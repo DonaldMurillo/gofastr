@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -187,9 +189,7 @@ func TestDevRunEndToEnd(t *testing.T) {
 	if !d.rt.Dev || d.rt.DataDir != d.l.dir || len(d.rt.Secret) < 32 {
 		t.Fatalf("builder got Runtime %+v; want Dev, DataDir %s, a secret", d.rt, d.l.dir)
 	}
-	if fi, err := os.Stat(d.l.dir); err != nil || fi.Mode().Perm() != 0o700 {
-		t.Fatalf("state dir %s: %v %v", d.l.dir, fi.Mode(), err)
-	}
+	filepermtest.AssertOwnerOnly(t, d.l.dir, 0o700)
 	if !strings.HasPrefix(d.addr, "127.0.0.1:") {
 		t.Fatalf("bound %q; want 127.0.0.1", d.addr)
 	}
@@ -275,13 +275,7 @@ func TestOpenWritesSignInPage(t *testing.T) {
 	if !strings.HasPrefix(page, d.l.loginDir()) || !strings.HasSuffix(page, ".html") {
 		t.Fatalf("launched %q; want a page in %s", calls[0], d.l.loginDir())
 	}
-	fi, err := os.Stat(page)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fi.Mode().Perm()&0o077 != 0 {
-		t.Fatalf("sign-in page mode %v; want owner-only", fi.Mode().Perm())
-	}
+	filepermtest.AssertOwnerOnly(t, page, 0o600)
 	raw, err := os.ReadFile(page)
 	if err != nil {
 		t.Fatal(err)

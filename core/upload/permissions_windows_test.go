@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core/upload"
 	"golang.org/x/sys/windows"
 )
 
@@ -19,7 +18,7 @@ func requirePOSIXFileModes(t *testing.T) {
 
 func TestLocalStorageWindowsACLsAreOwnerOnly(t *testing.T) {
 	dir := t.TempDir()
-	if err := upload.NewLocalStorage(dir).Save(context.Background(), "tenant-a/nested/private.txt", strings.NewReader("secret")); err != nil {
+	if err := newTestLocalStorage(t, dir).Save(context.Background(), "tenant-a/nested/private.txt", strings.NewReader("secret")); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{
