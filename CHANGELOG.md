@@ -31,6 +31,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   through the login form with script off.
 
 ### Fixed
+- **A hidden `ui.Button` stays hidden.** `.fui-button`'s
+  `display: inline-flex` beat the browser's `[hidden]` rule, so a button
+  rendered with `hidden` showed anyway. Links styled as buttons had the
+  same bug.
 - **`gofastr verify` keeps `go vet`'s default passes.** Its vet stage ran
   the repo vettool in place of `go vet`, and `-vettool` replaces vet's
   default analyzers (printf, copylocks, …) instead of adding to them, so
