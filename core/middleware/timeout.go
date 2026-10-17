@@ -45,6 +45,7 @@ type timeoutWriter struct {
 	code        int
 	streaming   bool // committed to passthrough (Flush/Hijack used)
 	timedOut    bool
+	returned    bool // the handler returned; every later call is refused
 }
 
 // timeoutBodies recycles the body buffers. A page-sized response grew a
@@ -78,6 +79,7 @@ func (tw *timeoutWriter) release() {
 	tw.mu.Lock()
 	b := tw.body
 	tw.body = nil
+	tw.returned = true
 	tw.mu.Unlock()
 	if b != nil && poolableBody(b) {
 		b.Reset()
@@ -92,7 +94,7 @@ func (tw *timeoutWriter) Header() http.Header { return tw.h }
 func (tw *timeoutWriter) WriteHeader(code int) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
-	if tw.timedOut || tw.wroteHeader {
+	if tw.timedOut || tw.returned || tw.wroteHeader {
 		return
 	}
 	tw.wroteHeader = true
@@ -109,14 +111,14 @@ func (tw *timeoutWriter) Write(p []byte) (int, error) {
 	if tw.timedOut {
 		return 0, http.ErrHandlerTimeout
 	}
+	if tw.returned {
+		return 0, errWriteAfterReturn
+	}
 	if !tw.wroteHeader {
 		tw.wroteHeader = true
 	}
 	if tw.streaming {
 		return tw.w.Write(p)
-	}
-	if tw.body == nil {
-		return 0, errWriteAfterReturn
 	}
 	return tw.body.Write(p)
 }
@@ -128,7 +130,7 @@ func (tw *timeoutWriter) Write(p []byte) (int, error) {
 func (tw *timeoutWriter) Flush() {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
-	if tw.timedOut {
+	if tw.timedOut || tw.returned {
 		return
 	}
 	if !tw.streaming {
@@ -148,6 +150,10 @@ func (tw *timeoutWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if tw.timedOut {
 		tw.mu.Unlock()
 		return nil, nil, fmt.Errorf("timeout middleware: response already timed out")
+	}
+	if tw.returned {
+		tw.mu.Unlock()
+		return nil, nil, errWriteAfterReturn
 	}
 	tw.streaming = true
 	tw.mu.Unlock()
@@ -482,6 +488,7 @@ func Timeout(d time.Duration) Middleware {
 			select {
 			case <-done:
 				if childPanic != nil {
+					tw.release()
 					panic(childPanic)
 				}
 				tw.finish()
@@ -507,6 +514,7 @@ func Timeout(d time.Duration) Middleware {
 				// write to a socket nobody is reading.
 				if handlerBeatTheDeadline(done, &finishedAt, deadline) {
 					if childPanic != nil {
+						tw.release()
 						panic(childPanic)
 					}
 					tw.finish()

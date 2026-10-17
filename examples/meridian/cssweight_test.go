@@ -16,6 +16,11 @@ import (
 // change instead of arriving unnoticed.
 const meridianCSSCap = 17 << 10
 
+// meridianCSSFloor is the least CSS a styled page can ship: the theme
+// alone is several times this. A page under it lost its stylesheets, and
+// a cap-only gate would pass it.
+const meridianCSSFloor = 1 << 10
+
 // TestCSSWeightMeridian weighs the CSS of the signed-out pages the axe
 // gate scans, then of the signed-in app and admin screens, against
 // meridianCSSCap.
@@ -38,14 +43,22 @@ func TestCSSWeightMeridian(t *testing.T) {
 		if w.Gzip() > meridianCSSCap {
 			t.Errorf("%s ships %d B of gzipped CSS, over the %d B cap", p, w.Gzip(), meridianCSSCap)
 		}
+		if w.Gzip() < meridianCSSFloor {
+			t.Errorf("%s ships %s, under the %d B floor: its CSS went missing", p, w, meridianCSSFloor)
+		}
 	}
 	for _, p := range meridianAnonPages {
 		weigh(p)
 	}
-	if _, err := client.PostForm(base+"/auth/login", url.Values{
+	resp, err := client.PostForm(base+"/auth/login", url.Values{
 		"email": {"admin@meridian.dev"}, "password": {os.Getenv("ADMIN_SEED_PASSWORD")},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("login: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || resp.Request.URL.Path == "/auth/login" {
+		t.Fatalf("login failed: status %d at %s", resp.StatusCode, resp.Request.URL)
 	}
 	signedIn := []string{
 		"/app", "/app/customers", "/app/invoices", "/app/subscriptions",

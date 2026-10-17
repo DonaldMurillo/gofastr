@@ -52,14 +52,14 @@ type GaugeConfig struct {
 	Min, Max float64
 	// ValueText is the reading as people read it ("73%", "412 ms"),
 	// drawn in the dial and announced as aria-valuetext. Empty takes
-	// Value as a plain number.
+	// Value as a plain number, to two decimals at most.
 	ValueText string
 	// Bands pick the arc's tone: the band with the highest From at or
 	// below Value wins, in any order. No bands, or a Value under every
 	// From, takes GaugePrimary.
 	Bands []GaugeBand
 	// Size is the dial's width in CSS pixels; the height is a little
-	// over half of it. Default 160.
+	// over half of it, and the reading's text scales with it. Default 160.
 	Size int
 
 	ID    string
@@ -82,7 +82,7 @@ func Gauge(cfg GaugeConfig) render.HTML {
 	if lo == 0 && hi == 0 {
 		hi = 100
 	}
-	if !finite(lo) || !finite(hi) || hi <= lo {
+	if !finite(lo) || !finite(hi) || hi <= lo || !finite(hi-lo) {
 		panic("ui: Gauge needs finite Min < Max")
 	}
 	for _, b := range cfg.Bands {
@@ -91,13 +91,13 @@ func Gauge(cfg GaugeConfig) render.HTML {
 		}
 	}
 	if !finite(cfg.Value) {
-		return chartEmpty(cfg.Size, "", cfg.Class, cfg.Label+": no data yet", cfg.ExtraAttrs)
+		return chartEmpty(cfg.ID, "", cfg.Class, cfg.Label+": no data yet", cfg.ExtraAttrs)
 	}
 
 	v := min(max(cfg.Value, lo), hi)
 	text := cfg.ValueText
 	if text == "" {
-		text = strconv.FormatFloat(cfg.Value, 'f', -1, 64)
+		text = strings.TrimSuffix(strings.TrimRight(strconv.FormatFloat(cfg.Value, 'f', 2, 64), "0"), ".")
 	}
 	tone := GaugePrimary
 	reached := math.Inf(-1)
@@ -155,6 +155,8 @@ func Gauge(cfg GaugeConfig) render.HTML {
 	sb.WriteString(ftoa(cx))
 	sb.WriteString(`" y="`)
 	sb.WriteString(ftoa(cy - stroke/2))
+	sb.WriteString(`" font-size="`)
+	sb.WriteString(ftoa(s / 8))
 	sb.WriteString(`" text-anchor="middle">`)
 	sb.WriteString(escapeXML(text))
 	sb.WriteString(`</text></svg>`)
@@ -208,7 +210,6 @@ func gaugeCSS(_ style.Theme) string {
 [data-cui-comp="ui-gauge"] .fui-gauge__value--warning { stroke: var(--color-warning, #D97706); }
 [data-cui-comp="ui-gauge"] .fui-gauge__value--danger  { stroke: var(--color-danger, #DC2626); }
 [data-cui-comp="ui-gauge"] .fui-gauge__text {
-  font-size: var(--text-xl, 1.25rem);
   font-weight: var(--font-weight-bold);
   font-variant-numeric: tabular-nums;
   fill: var(--color-text, #18181B);

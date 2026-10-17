@@ -66,7 +66,9 @@ func paymentSuccessGauge(ctx context.Context) render.HTML {
 	all, okAll := appUI.CountInt(ctx, "payments", "")
 	failed, okFailed := appUI.CountInt(ctx, "payments", `status = "failed"`)
 	if okAll && okFailed && all > 0 {
-		rate = 100 * float64(all-failed) / float64(all)
+		// Two reads, not one: a payment that fails between them can make
+		// failed outrun all, and the share must not go below zero.
+		rate = 100 * float64(all-min(failed, all)) / float64(all)
 	}
 	return ui.Gauge(ui.GaugeConfig{
 		Label:     "Payments that went through",

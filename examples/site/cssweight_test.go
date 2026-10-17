@@ -13,6 +13,11 @@ import (
 // it in the same change instead of arriving unnoticed.
 const siteCSSCap = 17 << 10
 
+// siteCSSFloor is the least CSS a styled page can ship: the theme alone
+// is several times this. A page under it lost its stylesheets, and a
+// cap-only gate would pass it.
+const siteCSSFloor = 1 << 10
+
 // TestCSSWeightSite weighs the CSS of every page the axe gate scans
 // against siteCSSCap.
 func TestCSSWeightSite(t *testing.T) {
@@ -32,6 +37,9 @@ func TestCSSWeightSite(t *testing.T) {
 		}
 		if w.Gzip() > siteCSSCap {
 			t.Errorf("%s ships %s, over the %d B cap", p, w, siteCSSCap)
+		}
+		if w.Gzip() < siteCSSFloor {
+			t.Errorf("%s ships %s, under the %d B floor: its CSS went missing", p, w, siteCSSFloor)
 		}
 	}
 	t.Logf("heaviest: %s at %d B gzip", at, heaviest)

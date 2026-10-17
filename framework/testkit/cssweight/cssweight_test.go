@@ -83,3 +83,60 @@ func TestMeasureRefusesRedirect(t *testing.T) {
 		t.Fatal("a redirected page measured without error")
 	}
 }
+
+// TestMeasureRefusesSelfRedirect: a redirect back to the same URL (set a
+// cookie, come back) is still a redirect, and Measure must not follow it.
+func TestMeasureRefusesSelfRedirect(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if hits == 1 {
+			http.Redirect(w, r, r.URL.Path, http.StatusFound)
+			return
+		}
+		_, _ = w.Write([]byte(`<style>a{}</style>`))
+	}))
+	t.Cleanup(srv.Close)
+	if _, err := Measure(http.DefaultClient, srv.URL+"/app"); err == nil {
+		t.Fatal("a self-redirect measured without error")
+	}
+	if hits != 1 {
+		t.Fatalf("Measure followed the redirect: %d requests", hits)
+	}
+}
+
+// TestMeasureUsesBaseHref: a relative sheet resolves against <base href>
+// the way the browser resolves it, not against the page URL.
+func TestMeasureUsesBaseHref(t *testing.T) {
+	base := serve(t, map[string]string{
+		"/dashboard":      `<base href="/assets/"><link rel="stylesheet" href="app.css">`,
+		"/assets/app.css": strings.Repeat("z", 100),
+	})
+	w, err := Measure(http.DefaultClient, base+"/dashboard")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Bytes() != 100 {
+		t.Fatalf("Bytes = %d, want the 100-byte /assets/app.css", w.Bytes())
+	}
+}
+
+// TestMeasureRefusesImport: @import loads CSS the gate would not weigh,
+// so a sheet or <style> that uses it is an error, not an undercount.
+func TestMeasureRefusesImport(t *testing.T) {
+	for name, page := range map[string]string{
+		"linked": `<link rel="stylesheet" href="/a.css">`,
+		"inline": `<style>@IMPORT url("/big.css");</style>`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			base := serve(t, map[string]string{
+				"/":        page,
+				"/a.css":   `@import "/big.css"; a{}`,
+				"/big.css": strings.Repeat("q", 1000),
+			})
+			if _, err := Measure(http.DefaultClient, base+"/"); err == nil {
+				t.Fatal("an @import measured without error")
+			}
+		})
+	}
+}

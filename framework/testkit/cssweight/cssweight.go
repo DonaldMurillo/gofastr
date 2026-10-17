@@ -4,8 +4,11 @@
 //
 // [Measure] works over plain HTTP, with no browser, so a gate can weigh
 // every page an app serves in seconds. Sizes are reported raw and
-// gzip-compressed, the gzip size per sheet the way each crosses the wire
-// on its own. A gate compares [Weight.Gzip] against a cap the app picks
+// gzip-compressed, each sheet compressed on its own. For a linked sheet
+// that is its transfer size. Inline sheets travel inside the document's
+// one gzip stream, so their figure runs a little high, but it moves only
+// when the CSS does, which is what a cap needs. A gate compares
+// [Weight.Gzip] against a cap the app picks
 // from today's numbers, so CSS growth has to raise the cap in the same
 // change instead of arriving unnoticed:
 //
@@ -84,27 +87,43 @@ func (w Weight) String() string {
 }
 
 // Measure fetches pageURL with c and weighs its CSS. A linked sheet is
-// fetched from the URL the page names, resolved against the page, and a
-// sheet linked twice counts once. Any answer other than 200, for the page
-// or a sheet, is an error, and so is a redirect: a gate that weighed an
+// fetched from the URL the page names, resolved against the page's
+// <base href> or the page itself, and a sheet linked twice counts once.
+// Any answer other than 200, for the page or a sheet, is an error, and so
+// is a redirect, which Measure does not follow: a gate that weighed an
 // error page, or the login page a lost session lands on, would pass for
-// the wrong reason.
+// the wrong reason. A sheet that uses @import is an error too, since the
+// CSS it pulls in would go unweighed.
 func Measure(c *http.Client, pageURL string) (Weight, error) {
 	page, err := url.Parse(pageURL)
 	if err != nil {
 		return Weight{}, err
 	}
+	nc := *c
+	nc.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	c = &nc
 	doc, err := fetch(c, pageURL)
 	if err != nil {
 		return Weight{}, err
 	}
-	inline, links, err := collect(doc)
+	inline, links, baseHref, err := collect(doc)
 	if err != nil {
 		return Weight{}, fmt.Errorf("parse %s: %w", pageURL, err)
 	}
+	if baseHref != "" {
+		ref, err := url.Parse(baseHref)
+		if err != nil {
+			return Weight{}, fmt.Errorf("base href %q: %w", baseHref, err)
+		}
+		page = page.ResolveReference(ref)
+	}
 	var w Weight
 	for i, css := range inline {
-		w.Sheets = append(w.Sheets, sheet(fmt.Sprintf("inline #%d", i+1), css))
+		src := fmt.Sprintf("inline #%d", i+1)
+		if err := refuseImport(src, css); err != nil {
+			return Weight{}, err
+		}
+		w.Sheets = append(w.Sheets, sheet(src, css))
 	}
 	seen := map[string]bool{}
 	for _, href := range links {
@@ -121,9 +140,22 @@ func Measure(c *http.Client, pageURL string) (Weight, error) {
 		if err != nil {
 			return Weight{}, err
 		}
+		if err := refuseImport(u, css); err != nil {
+			return Weight{}, err
+		}
 		w.Sheets = append(w.Sheets, sheet(u, css))
 	}
 	return w, nil
+}
+
+// refuseImport errors on a sheet that uses @import. It matches the
+// keyword anywhere, comments included, so it can refuse a sheet that only
+// mentions it; that is the safe side for a gate.
+func refuseImport(source string, css []byte) error {
+	if bytes.Contains(bytes.ToLower(css), []byte("@import")) {
+		return fmt.Errorf("%s uses @import, which Measure does not follow", source)
+	}
+	return nil
 }
 
 func sheet(source string, css []byte) Sheet {
@@ -143,9 +175,6 @@ func fetch(c *http.Client, u string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GET %s: status %d", u, resp.StatusCode)
 	}
-	if got := resp.Request.URL.String(); got != u {
-		return nil, fmt.Errorf("GET %s: redirected to %s", u, got)
-	}
 	if len(body) > maxBody {
 		return nil, fmt.Errorf("GET %s: body over %d bytes", u, maxBody)
 	}
@@ -153,23 +182,32 @@ func fetch(c *http.Client, u string) ([]byte, error) {
 }
 
 // collect returns the text of each <style> element and the href of each
-// <link> whose rel includes "stylesheet", in document order.
-func collect(doc []byte) (inline [][]byte, links []string, err error) {
+// <link> whose rel includes "stylesheet", in document order, and the
+// first <base href>, the one the browser uses.
+func collect(doc []byte) (inline [][]byte, links []string, baseHref string, err error) {
 	z := html.NewTokenizer(bytes.NewReader(doc))
 	inStyle := false
 	for {
 		switch z.Next() {
 		case html.ErrorToken:
 			if z.Err() == io.EOF {
-				return inline, links, nil
+				return inline, links, baseHref, nil
 			}
-			return nil, nil, z.Err()
+			return nil, nil, "", z.Err()
 		case html.StartTagToken, html.SelfClosingTagToken:
 			name, hasAttr := z.TagName()
 			switch atom.Lookup(name) {
 			case atom.Style:
 				inStyle = true
 				inline = append(inline, nil)
+			case atom.Base:
+				for hasAttr && baseHref == "" {
+					var k, v []byte
+					k, v, hasAttr = z.TagAttr()
+					if string(k) == "href" {
+						baseHref = string(v)
+					}
+				}
 			case atom.Link:
 				var rel, href string
 				for hasAttr {

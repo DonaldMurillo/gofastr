@@ -124,3 +124,51 @@ func TestGaugeRefusesBadConfig(t *testing.T) {
 		})
 	}
 }
+
+// TestGaugeRefusesOverflowingRange: a finite range whose span overflows
+// to Inf can't place a reading, so it panics like an inverted range.
+func TestGaugeRefusesOverflowingRange(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("no panic for a span past MaxFloat64")
+		}
+	}()
+	ui.Gauge(ui.GaugeConfig{Label: "x", Min: -1e308, Max: 1e308})
+}
+
+// TestGaugeDefaultTextIsRounded: a computed reading with float noise
+// reads as people would write it, in the dial and to a screen reader.
+func TestGaugeDefaultTextIsRounded(t *testing.T) {
+	a, b := 0.1, 0.2 // variables: a constant 0.1 + 0.2 folds to exactly 0.3
+	h := string(ui.Gauge(ui.GaugeConfig{Label: "Load", Value: a + b}))
+	if got := attrOf(t, h, "aria-valuetext"); got != "0.3" {
+		t.Errorf("aria-valuetext = %q, want 0.3", got)
+	}
+}
+
+// TestGaugeTextScalesWithSize: the reading's size follows the dial, so a
+// small gauge's text stays inside the arc.
+func TestGaugeTextScalesWithSize(t *testing.T) {
+	for size, want := range map[int]string{64: "8", 160: "20", 320: "40"} {
+		h := string(ui.Gauge(ui.GaugeConfig{Label: "x", Value: 1, Size: size}))
+		m := regexp.MustCompile(`<text class="fui-gauge__text"[^>]* font-size="([0-9.]+)"`).FindStringSubmatch(h)
+		if m == nil || m[1] != want {
+			t.Errorf("size %d: font-size %v, want %s", size, m, want)
+		}
+	}
+}
+
+// TestChartEmptyKeepsID: every chart's empty state keeps the host's ID,
+// so a link or test selector aimed at it still finds it with no data.
+func TestChartEmptyKeepsID(t *testing.T) {
+	for name, h := range map[string]string{
+		"gauge": string(ui.Gauge(ui.GaugeConfig{Label: "CPU", Value: math.NaN(), ID: "c1"})),
+		"bar":   string(ui.BarChart(ui.BarChartConfig{ID: "c1"})),
+		"line":  string(ui.LineChart(ui.LineChartConfig{ID: "c1"})),
+		"pie":   string(ui.PieChart(ui.PieChartConfig{ID: "c1"})),
+	} {
+		if !strings.Contains(h, `id="c1"`) {
+			t.Errorf("%s empty state dropped the ID: %s", name, h)
+		}
+	}
+}

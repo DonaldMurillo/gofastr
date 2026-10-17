@@ -60,7 +60,7 @@ type LineChartConfig struct {
 // LineChart renders a multi-series line chart.
 func LineChart(cfg LineChartConfig) render.HTML {
 	if len(cfg.Series) == 0 {
-		return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
+		return chartEmpty(cfg.ID, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
 	}
 	for _, s := range cfg.Series {
 		if s.Name == "" {
@@ -69,7 +69,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		// A line needs ≥2 points to draw a trend; with fewer there's simply
 		// not enough data yet. A calm empty state, not a crash.
 		if len(s.Values) < 2 {
-			return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "Not enough data yet", cfg.ExtraAttrs)
+			return chartEmpty(cfg.ID, cfg.LabelledBy, cfg.Class, "Not enough data yet", cfg.ExtraAttrs)
 		}
 	}
 	w := cfg.Width
