@@ -115,9 +115,9 @@ func ratingDisplayCSS(_ style.Theme) string {
 [data-cui-comp="ui-rating-display"].fui-rating-display--small { --ui-rating-glyph: 12px; }
 [data-cui-comp="ui-rating-display"].fui-rating-display--large { --ui-rating-glyph: 24px; }
 [data-cui-comp="ui-rating-display"].fui-rating--heart,
-[data-cui-comp="ui-rating-display"].fui-rating--fire { --_rating-shape-color: var(--color-danger, #DC2626); }
+[data-cui-comp="ui-rating-display"].fui-rating--fire { --_rating-shape-color: var(--color-danger, #B91C1C); }
 [data-cui-comp="ui-rating-display"].fui-rating--thumb { --_rating-shape-color: var(--color-primary, #18181B); }
-[data-cui-comp="ui-rating-display"].fui-rating--diamond { --_rating-shape-color: var(--color-info, #3B82F6); }
+[data-cui-comp="ui-rating-display"].fui-rating--diamond { --_rating-shape-color: var(--color-info, #1D4ED8); }
 [data-cui-comp="ui-rating-display"] .fui-rating-display__glyph {
   display: inline-flex;
   color: var(--color-border, #E4E4E7);

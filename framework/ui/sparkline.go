@@ -239,8 +239,8 @@ func sparklineCSS(_ style.Theme) string {
 }
 
 /* Color presets — recolor via currentColor on the SVG root. */
-.fui-sparkline.fui-sparkline--success { color: var(--color-success, #16A34A); }
-.fui-sparkline.fui-sparkline--warning { color: var(--color-warning, #D97706); }
-.fui-sparkline.fui-sparkline--danger  { color: var(--color-danger, #DC2626); }
-.fui-sparkline.fui-sparkline--info    { color: var(--color-info, #3B82F6); }`
+.fui-sparkline.fui-sparkline--success { color: var(--color-success, #166534); }
+.fui-sparkline.fui-sparkline--warning { color: var(--color-warning, #854D0E); }
+.fui-sparkline.fui-sparkline--danger  { color: var(--color-danger, #B91C1C); }
+.fui-sparkline.fui-sparkline--info    { color: var(--color-info, #1D4ED8); }`
 }

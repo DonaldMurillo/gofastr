@@ -95,7 +95,7 @@ func treeCSS(_ style.Theme) string {
   outline-offset: calc(-1 * var(--stroke-focus-offset, 2px));
 }
 [data-cui-comp="ui-tree"] .fui-tree__item[aria-selected="true"] > .fui-tree__row {
-  background: var(--color-surface-soft, #f1f1f3);
+  background: var(--color-surface-soft, #F4F4F5);
   font-weight: var(--font-weight-semibold);
 }
 [data-cui-comp="ui-tree"] .fui-tree__toggle {
@@ -106,7 +106,7 @@ func treeCSS(_ style.Theme) string {
   block-size: 1.5em;
   border: none;
   background: transparent;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted, #52525B);
   font: inherit;
   font-size: var(--text-xs, 0.75rem);
   cursor: pointer;
@@ -116,7 +116,7 @@ func treeCSS(_ style.Theme) string {
   transform: rotate(90deg);
 }
 [data-cui-comp="ui-tree"] .fui-tree__label {
-  color: var(--color-text, #111);
+  color: var(--color-text, #09090B);
   text-decoration: none;
   flex: 1 1 auto;
   min-inline-size: 0;

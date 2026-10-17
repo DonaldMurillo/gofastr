@@ -287,10 +287,10 @@ func ratingCSS(_ style.Theme) string {
 /* Per-shape color overrides — heart / fire feel red, thumb feels
    primary, diamond feels info. Star (default) and circle / square
    stay on the default amber. */
-.fui-rating--heart   { --_rating-shape-color: var(--color-danger, #DC2626); }
-.fui-rating--fire    { --_rating-shape-color: var(--color-danger, #DC2626); }
+.fui-rating--heart   { --_rating-shape-color: var(--color-danger, #B91C1C); }
+.fui-rating--fire    { --_rating-shape-color: var(--color-danger, #B91C1C); }
 .fui-rating--thumb   { --_rating-shape-color: var(--color-primary, #18181B); }
-.fui-rating--diamond { --_rating-shape-color: var(--color-info, #3B82F6); }
+.fui-rating--diamond { --_rating-shape-color: var(--color-info, #1D4ED8); }
 
 [data-cui-comp="ui-rating"].is-disabled .fui-rating__choice {
   cursor: not-allowed;

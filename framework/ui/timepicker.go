@@ -134,7 +134,7 @@ func timePickerCSS(_ style.Theme) string {
 [data-cui-comp="ui-time-picker"] .fui-time-picker__label {
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-time-picker"] .fui-time-picker__input {
   min-block-size: var(--spacing-touch-target, 44px);
@@ -145,7 +145,7 @@ func timePickerCSS(_ style.Theme) string {
   box-shadow: var(--shadow-xs);
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-time-picker"] .fui-time-picker__input:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
@@ -156,7 +156,7 @@ func timePickerCSS(_ style.Theme) string {
   [data-cui-comp="ui-time-picker"] .fui-time-picker__input { font-size: var(--text-base, 1rem); }
 }
 [data-cui-comp="ui-time-picker"].is-error .fui-time-picker__input {
-  border-color: var(--color-danger, #DC2626);
+  border-color: var(--color-danger, #B91C1C);
 }
 [data-cui-comp="ui-time-picker"] .fui-time-picker__help {
   margin: 0;
@@ -166,6 +166,6 @@ func timePickerCSS(_ style.Theme) string {
 [data-cui-comp="ui-time-picker"] .fui-time-picker__error {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-danger, #DC2626);
+  color: var(--color-danger, #B91C1C);
 }`
 }

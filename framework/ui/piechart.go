@@ -287,15 +287,15 @@ func pieChartCSS(_ style.Theme) string {
   stroke-width: 1;
 }
 .fui-pie-chart__slice--primary { fill: var(--color-primary, #18181B); }
-.fui-pie-chart__slice--info    { fill: var(--color-info, #3B82F6); }
-.fui-pie-chart__slice--success { fill: var(--color-success, #16A34A); }
-.fui-pie-chart__slice--warning { fill: var(--color-warning, #D97706); }
-.fui-pie-chart__slice--danger  { fill: var(--color-danger, #DC2626); }
+.fui-pie-chart__slice--info    { fill: var(--color-info, #1D4ED8); }
+.fui-pie-chart__slice--success { fill: var(--color-success, #166534); }
+.fui-pie-chart__slice--warning { fill: var(--color-warning, #854D0E); }
+.fui-pie-chart__slice--danger  { fill: var(--color-danger, #B91C1C); }
 
 [data-cui-comp="ui-pie-chart"] .fui-pie-chart__center-label {
   font-size: var(--text-xl, 1.25rem);
   font-weight: var(--font-weight-bold);
-  fill: var(--color-text, #18181B);
+  fill: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-pie-chart"] .fui-pie-chart__center-sub {
   font-size: var(--text-xs, 0.75rem);

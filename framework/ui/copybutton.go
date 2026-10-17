@@ -315,9 +315,9 @@ func copyButtonCSS(_ style.Theme) string {
 /* Success tint mixes the theme's own success color over the surface, so it
    adapts to light and dark schemes alike (--color-success-bg was never a real
    token; its light fallback always applied). */
-[data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn { background: color-mix(in srgb, var(--color-success, #16a34a) 14%, transparent); border-color: var(--color-success, #16a34a); }
+[data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn { background: color-mix(in srgb, var(--color-success, #166534) 14%, transparent); border-color: var(--color-success, #166534); }
 [data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__label { display: none; }
-[data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__copied { display: inline; color: var(--color-success, #16a34a); }
+[data-cui-comp="ui-copy-btn"][data-hui-copy-state="done"] .fui-copy-btn .fui-copy-btn__copied { display: inline; color: var(--color-success, #166534); }
 [data-cui-comp="ui-copy-btn"] .fui-copy-btn--icon { padding: calc(var(--spacing-sm, 4px) * 1.5) calc(var(--spacing-sm, 4px) * 2.5); }
 /* Inline: the knobs set on the button itself, so the base rules draw
    it quiet; WCAG 2.5.8's 24px floor stands in for the touch target. */

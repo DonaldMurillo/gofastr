@@ -237,7 +237,7 @@ func diffViewerCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-diff-viewer"] .fui-diff-viewer__file {
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-sm, 0.875rem);
   border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
@@ -261,10 +261,10 @@ func diffViewerCSS(_ style.Theme) string {
   overflow-x: auto;
 }
 [data-cui-comp="ui-diff-viewer"] .fui-diff-viewer__line--add {
-  background: color-mix(in srgb, var(--color-success, #16A34A) 12%, transparent);
+  background: color-mix(in srgb, var(--color-success, #166534) 12%, transparent);
 }
 [data-cui-comp="ui-diff-viewer"] .fui-diff-viewer__line--remove {
-  background: color-mix(in srgb, var(--color-danger, #DC2626) 12%, transparent);
+  background: color-mix(in srgb, var(--color-danger, #B91C1C) 12%, transparent);
 }
 
 /* Split layout */
@@ -290,9 +290,9 @@ func diffViewerCSS(_ style.Theme) string {
   border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 .fui-diff-viewer--split .fui-diff-viewer__cell--add {
-  background: color-mix(in srgb, var(--color-success, #16A34A) 12%, transparent);
+  background: color-mix(in srgb, var(--color-success, #166534) 12%, transparent);
 }
 .fui-diff-viewer--split .fui-diff-viewer__cell--remove {
-  background: color-mix(in srgb, var(--color-danger, #DC2626) 12%, transparent);
+  background: color-mix(in srgb, var(--color-danger, #B91C1C) 12%, transparent);
 }`
 }

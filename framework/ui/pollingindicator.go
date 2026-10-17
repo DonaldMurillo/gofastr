@@ -91,18 +91,18 @@ const pollingIndicatorCSSText = `
   align-items: center;
   gap: var(--spacing-sm, 4px);
   font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-muted, #6B7280);
+  color: var(--color-text-muted, #52525B);
   line-height: 1;
 }
 .fui-polling-indicator__dot {
   inline-size: var(--ui-polling-indicator-dot-size, 0.5rem);
   block-size: var(--ui-polling-indicator-dot-size, 0.5rem);
   border-radius: var(--radii-full, 9999px);
-  background: var(--color-success, #16A34A);
+  background: var(--color-success, #166534);
   animation: ui-polling-pulse 1.6s var(--easing-ease-in-out, ease-in-out) infinite;
 }
 .fui-polling-indicator--paused .fui-polling-indicator__dot {
-  background: var(--color-text-muted, #6B7280);
+  background: var(--color-text-muted, #52525B);
   animation: none;
   opacity: var(--opacity-muted, 0.6);
 }

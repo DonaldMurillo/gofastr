@@ -186,10 +186,10 @@ func bannerCSS(_ style.Theme) string {
   align-items: start;
   padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
   /* The variant tints the hairline; a full-strength ring shouts. */
-  border: var(--stroke-thin, 1px) solid color-mix(in oklab, var(--ui-banner-accent, var(--color-info, #3B82F6)) 35%, var(--color-border, #E4E4E7));
+  border: var(--stroke-thin, 1px) solid color-mix(in oklab, var(--ui-banner-accent, var(--color-info, #1D4ED8)) 35%, var(--color-border, #E4E4E7));
   border-radius: var(--radii-lg, 10px);
   background: var(--color-surface, #FFFFFF);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-banner"] .fui-visually-hidden {
   position: absolute;
@@ -207,7 +207,7 @@ func bannerCSS(_ style.Theme) string {
   grid-column: 1;
   grid-row: 1 / span 2;
   display: inline-flex;
-  color: var(--color-info, #3B82F6);
+  color: var(--color-info, #1D4ED8);
   margin-top: var(--spacing-xs, 2px);
 }
 [data-cui-comp="ui-banner"] .fui-banner__title {
@@ -253,7 +253,7 @@ func bannerCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-banner"] .fui-banner__dismiss:hover {
   background: var(--color-surface-soft, #F4F4F5);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-banner"] .fui-banner__dismiss:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
@@ -277,12 +277,12 @@ func bannerCSS(_ style.Theme) string {
 }
 
 /* Variants — use the full outline + icon, avoiding a decorative side stripe. */
-.fui-banner--success { --ui-banner-accent: var(--color-success, #16A34A); }
-.fui-banner--success .fui-banner__icon { color: var(--color-success, #16A34A); }
-.fui-banner--warn { --ui-banner-accent: var(--color-warning, #D97706); }
-.fui-banner--warn .fui-banner__icon { color: var(--color-warning, #D97706); }
-.fui-banner--danger { --ui-banner-accent: var(--color-danger, #DC2626); }
-.fui-banner--danger .fui-banner__icon { color: var(--color-danger, #DC2626); }
+.fui-banner--success { --ui-banner-accent: var(--color-success, #166534); }
+.fui-banner--success .fui-banner__icon { color: var(--color-success, #166534); }
+.fui-banner--warn { --ui-banner-accent: var(--color-warning, #854D0E); }
+.fui-banner--warn .fui-banner__icon { color: var(--color-warning, #854D0E); }
+.fui-banner--danger { --ui-banner-accent: var(--color-danger, #B91C1C); }
+.fui-banner--danger .fui-banner__icon { color: var(--color-danger, #B91C1C); }
 :where([data-cui-comp="ui-banner"]).fui-banner--strip { display: block; text-align: center; font-size: var(--text-sm); line-height: var(--leading-normal, 1.5); border: 0; border-radius: 0; background: var(--color-surface-soft); padding: var(--spacing-sm) var(--spacing-lg); }
 [data-cui-comp="ui-banner"].fui-banner--strip .fui-banner__icon { display: none; }
 [data-cui-comp="ui-banner"].fui-banner--strip :is(.fui-banner__title, .fui-banner__body, .fui-banner__action) { display: inline; font-size: inherit; margin-inline-end: var(--spacing-sm); }

@@ -185,7 +185,7 @@ body.print-doc {
   font-family: var(--font-sans, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
   font-size: 12pt;
   line-height: var(--leading-normal, 1.5);
-  color: var(--color-text, #111827);
+  color: var(--color-text, #09090B);
   background: var(--color-background, #ffffff);
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
@@ -198,7 +198,7 @@ body.print-doc table { width: 100%; border-collapse: collapse; }
 body.print-doc th, body.print-doc td {
   text-align: left;
   padding: calc(var(--spacing-sm, 4px) * 1.5) var(--spacing-md, 8px);
-  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #e5e7eb);
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 body.print-doc img { max-width: 100%; }
 .page-break { break-after: page; page-break-after: always; }

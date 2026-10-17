@@ -400,7 +400,7 @@ func sectionMenuCSS(_ style.Theme) string {
 [data-cui-comp="cui-section-menu"] .cui-section-menu__lead[aria-current="page"],
 [data-cui-comp="cui-section-menu"] .cui-section-menu__link.is-active,
 [data-cui-comp="cui-section-menu"] .cui-section-menu__link[aria-current="page"] {
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   font-weight: var(--font-weight-semibold, 600);
 }
 /* The current page's dot sits in the gap before its label, on the
