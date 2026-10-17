@@ -7,6 +7,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+- **Pages render with about 40% less CPU.** The UI host scanned every
+  served document for signal references and sheet markers with
+  regexps that opened on a `[\s/]` class, which left Go's matcher no
+  literal to jump to, so each scan stepped through every byte: about
+  1 ms per request on the 74 KB examples/meridian homepage. The scans
+  now jump between `data-cui-` occurrences, take about 30 µs and match
+  exactly what the regexps matched. Meridian's homepage goes from about
+  2,900 to about 4,900 requests a second at 50 concurrent clients on an
+  M4 Pro, median latency from 15 ms to 9 ms.
+
 ## [0.88.2] - 2026-10-16
 
 ### Fixed
