@@ -19,8 +19,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   on purpose takes `//gofastr:allow(<analyzer>) <reason>`. An app that
   passed verify before can fail it now; `--no-vet` skips the stage. A
   module on a newer Go minor than the gofastr binary skips the analyzer
-  pass with a note, since the compiled-in type checker cannot read that
-  toolchain's export data. The binary grows by about 3.5 MB.
+  pass with a note (`vet.suiteSkipped` in `--json`), since the
+  compiled-in type checker cannot read that toolchain's export data. The
+  binary grows by about 3.5 MB.
 - **`framework/testkit/nojstest` checks pages with JavaScript off.** It
   loads each page with script execution disabled and reports empty
   `<main>` content, links that go nowhere without script (`#`,

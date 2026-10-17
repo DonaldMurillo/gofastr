@@ -164,17 +164,26 @@ var probeJS = strings.TrimSpace(`
   for (const f of document.querySelectorAll('form')) {
     if (!shown(f) || (f.getAttribute('method') || '').toLowerCase() === 'dialog') continue;
     const action = urlOf(f.getAttribute('action') || '');
-    if (action === '#' || /^javascript:/i.test(action)) {
+    // "#" resolves to the current page, which a native submission
+    // reaches; only a javascript: action goes nowhere.
+    if (/^javascript:/i.test(action)) {
       out.push({kind: 'form-no-submit', detail: snip(f) + ' submits nowhere without script'});
       continue;
     }
     // el.type is the reflected type the browser submits by: an invalid
     // or oddly spelled type attribute on a button still means submit.
     // :disabled also covers a control inside a disabled fieldset.
-    const submit = controls(f).some((el) => !el.matches(':disabled') &&
-      ((el.tagName === 'BUTTON' && el.type === 'submit') ||
-       (el.tagName === 'INPUT' && (el.type === 'submit' || el.type === 'image'))));
-    if (submit) continue;
+    const isSubmit = (el) => (el.tagName === 'BUTTON' && el.type === 'submit') ||
+      (el.tagName === 'INPUT' && (el.type === 'submit' || el.type === 'image'));
+    const submits = controls(f).filter(isSubmit);
+    if (submits.some((el) => !el.matches(':disabled'))) continue;
+    // Enter submits a single-field form only when it has no submit
+    // button at all: with one, Enter clicks it, and a disabled one
+    // does nothing.
+    if (submits.length > 0) {
+      out.push({kind: 'form-no-submit', detail: snip(f) + ' has no enabled submit button'});
+      continue;
+    }
     const blocking = controls(f).filter((el) => el.tagName === 'INPUT' &&
       ['text', 'search', 'email', 'url', 'tel', 'password', 'number', 'date', 'datetime-local', 'month', 'time', 'week'].includes((el.type || 'text').toLowerCase()));
     if (blocking.length === 1) continue; // Enter submits a single-field form

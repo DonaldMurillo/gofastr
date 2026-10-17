@@ -39,6 +39,9 @@ type VetResult struct {
 	Skipped string `json:"skipped,omitempty"`
 	// Output is vet's diagnostic text when it failed.
 	Output string `json:"output,omitempty"`
+	// SuiteSkipped says why GoFastr's analyzers did not run beside vet
+	// (a module on a newer Go than the CLI) when vet itself ran.
+	SuiteSkipped string `json:"suiteSkipped,omitempty"`
 }
 
 // MarshalJSON omits the verdict when the stage never ran. A skipped
@@ -52,8 +55,9 @@ func (v *VetResult) MarshalJSON() ([]byte, error) {
 		Passed  *bool  `json:"passed,omitempty"`
 		Skipped string `json:"skipped,omitempty"`
 		Output  string `json:"output,omitempty"`
+		Suite   string `json:"suiteSkipped,omitempty"`
 	}
-	w := wire{Ran: v.Ran, Skipped: v.Skipped, Output: v.Output}
+	w := wire{Ran: v.Ran, Skipped: v.Skipped, Output: v.Output, Suite: v.SuiteSkipped}
 	if v.Ran {
 		w.Passed = &v.Passed
 	}
