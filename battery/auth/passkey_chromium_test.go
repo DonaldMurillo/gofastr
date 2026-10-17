@@ -49,7 +49,7 @@ func TestPasskeyBrowserRoundTrip(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		// The runtime's navigate and toast are stubbed: the test reads
 		// what the module asked them for.
-		fmt.Fprintf(w, `<!doctype html><html><meta charset=utf-8>
+		fmt.Fprintf(w, `<!doctype html><html><meta charset=utf-8><meta name="csrf-token" content="%s">
 <script>window.navs = []; window.toasts = [];
 window.__gofastr = {navigate: function (p) { window.navs.push(p); }, invalidate: function () {},
   _toastOrFallback: function (c) { window.toasts.push(c.title); }};</script>
@@ -57,9 +57,11 @@ window.__gofastr = {navigate: function (p) { window.navs.push(p); }, invalidate:
 <button id="add" data-passkey-register="/auth" hidden>Add a passkey</button></form>
 <button id="in" data-passkey-login="/auth" hidden>Sign in with a passkey</button>
 <button id="evil" data-passkey-login="//evil.example" hidden>Elsewhere</button>
-%s<script src="/passkey.js"></script>`, del.String())
+%s<script src="/passkey.js"></script>`, CSRFToken(r), del.String())
 	})
-	srv := &http.Server{Handler: mux}
+	// CSRF is mounted the way WithBFFPosture mounts it, so every
+	// POST the module makes has to carry the page's token.
+	srv := &http.Server{Handler: CSRF()(mux)}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
 

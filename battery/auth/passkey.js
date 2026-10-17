@@ -49,10 +49,15 @@
   }
 
   async function post(url, body) {
+    // Forward the page's CSRF token, so the routes work behind
+    // auth.CSRF and WithBFFPosture.
+    const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+    const token = document.querySelector('meta[name="csrf-token"]')?.content;
+    if (token) headers['X-CSRF-Token'] = token;
     const r = await fetch(url, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     });
     if (r.status === 204) return null;

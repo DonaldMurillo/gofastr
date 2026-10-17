@@ -36,9 +36,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Postgres. A runtime module drives the browser side for buttons marked
   with `auth.PasskeyLoginAttrs`, `PasskeyRegisterAttrs` and
   `PasskeyDeleteAttrs`; the buttons stay hidden until the browser can
-  run the ceremony. Accounts with 2FA still finish at the second
-  factor, on the page `TwoFactorURL` names, and a password-only session
-  of such an account cannot add a passkey. A completed password reset
+  run the ceremony, and the module forwards the page's `csrf-token`
+  meta so the routes work behind `auth.CSRF`. Accounts with 2FA still
+  finish at the second factor, on the page `TwoFactorURL` names, and a
+  password-only session of such an account cannot add a passkey. A completed password reset
   and claiming an unverified account both remove the account's
   passkeys. Account erasure deletes them along with pending
   registration challenges, and data export includes them. ES256, EdDSA

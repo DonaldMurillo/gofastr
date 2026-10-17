@@ -1294,6 +1294,12 @@ Failures show as a toast. A prompt the user cancelled shows nothing.
 The base path must be a same-origin path such as `/auth`; any other
 value leaves the button inert.
 
+Behind `auth.CSRF` or `WithBFFPosture`, render the page's token as
+`<meta name="csrf-token" content="…">` from `auth.CSRFToken(r)`. The
+module sends it as `X-CSRF-Token` on every request, the same way the
+runtime's actions do. Agent-authored node IR can't place these buttons:
+`noderender.RenderNode` drops every registered behaviour marker.
+
 ### What a ceremony checks
 
 Registration asks for a discoverable credential with user verification
