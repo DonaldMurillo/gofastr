@@ -143,6 +143,9 @@ var probeJS = strings.TrimSpace(`
   const elementsOf = Object.getOwnPropertyDescriptor(HTMLFormElement.prototype, 'elements').get;
   const controls = (f) => [...elementsOf.call(f),
     ...[...document.querySelectorAll('input[type="image" i]')].filter((el) => el.form === f)];
+  // The URL parser drops every tab and newline and trims C0 controls
+  // and spaces, so "java\tscript:" is still a javascript: URL.
+  const urlOf = (v) => v.replace(/[\t\n\r]/g, '').replace(/^[\x00-\x20]+|[\x00-\x20]+$/g, '');
   for (const a of document.querySelectorAll('a')) {
     if (!shown(a)) continue;
     const href = a.getAttribute('href');
@@ -153,14 +156,14 @@ var probeJS = strings.TrimSpace(`
       }
       continue;
     }
-    const h = href.trim();
+    const h = urlOf(href);
     if (h === '#' || /^javascript:/i.test(h)) {
       out.push({kind: 'dead-link', detail: snip(a) + ' goes nowhere without script'});
     }
   }
   for (const f of document.querySelectorAll('form')) {
     if (!shown(f) || (f.getAttribute('method') || '').toLowerCase() === 'dialog') continue;
-    const action = (f.getAttribute('action') || '').trim();
+    const action = urlOf(f.getAttribute('action') || '');
     if (action === '#' || /^javascript:/i.test(action)) {
       out.push({kind: 'form-no-submit', detail: snip(f) + ' submits nowhere without script'});
       continue;

@@ -32,6 +32,8 @@ const brokenPage = `<!doctype html><html><body>
   <a href="#">Menu</a>
   <a href="javascript:void(0)">Open</a>
   <a role="button">Do it</a>
+  <a href=" java&#9;script:void(0)">Tab</a>
+  <form action="java&#10;script:x" method="post"><input name="a"><button>Go</button></form>
   <form action="/save" method="post"><input name="a"><input name="b"><button type="button">Send</button></form>
   <form action="/save" method="post"><input name="a"><input name="b"><button disabled>Off</button></form>
   <form action="#" method="post"><input name="a"><button>Go</button></form>
@@ -89,7 +91,7 @@ func TestBrokenPageReportsEachKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"empty-main", "dead-link", "dead-link", "dead-link", "form-no-submit", "form-no-submit", "form-no-submit", "form-no-submit"}
+	want := []string{"empty-main", "dead-link", "dead-link", "dead-link", "dead-link", "form-no-submit", "form-no-submit", "form-no-submit", "form-no-submit", "form-no-submit"}
 	if got := kinds(ps); !slices.Equal(got, want) {
 		t.Fatalf("got %v, want %v\n%v", got, want, ps)
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"strings"
 
 	"golang.org/x/tools/go/analysis/multichecker"
 
@@ -19,9 +20,23 @@ const vettoolEnv = "GOFASTR_VETTOOL"
 // `go vet` started it as a vettool. The driver speaks vet's protocol
 // (-V=full, -flags, a .cfg per package) and exits; it never returns.
 func runAsVettoolIfMarked() {
-	if os.Getenv(vettoolEnv) == "1" {
+	if os.Getenv(vettoolEnv) == "1" && isVetCall(os.Args[1:]) {
 		multichecker.Main(suite.Analyzers()...)
 	}
+}
+
+// isVetCall reports whether args are one of the calls `go vet` makes on
+// a vettool: -V=full for its version, -flags for its flag list, or flags
+// and then a package's .cfg file. A GOFASTR_VETTOOL left set in a shell
+// then leaves `gofastr docs` alone.
+func isVetCall(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	if len(args) == 1 && (args[0] == "-V=full" || args[0] == "-flags") {
+		return true
+	}
+	return strings.HasSuffix(args[len(args)-1], ".cfg")
 }
 
 // selfVettool returns the vet arguments and environment that run the
