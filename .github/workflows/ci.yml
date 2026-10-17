@@ -519,7 +519,7 @@ jobs:
             # surface need a budget well past the local ~2m runtime.
             run: go test -count=1 -timeout=25m ./examples/meridian/
           - suite: chromium-ui
-            pkg: (framework/ui|framework/pluginhost|core/mcp|battery/service|battery/sitesearch|cmd/gofastr/packages(/.*)?)$
+            pkg: (framework/ui|framework/pluginhost|core/mcp|battery/auth|battery/service|battery/sitesearch|cmd/gofastr/packages(/.*)?)$
             # Go build tags for cmd/affected's go list; named apart from a
             # git tag trigger on purpose.
             buildtags: chromium
@@ -549,7 +549,10 @@ jobs:
             # neither package. battery/service's tagged test signs in
             # through the file:// page `service open` writes and checks
             # the browser lands on the app with its session.
-            run: go test -count=1 -timeout=10m -p 1 -tags chromium ./framework/ui/ ./framework/pluginhost/ ./core/mcp/ ./battery/service/ ./battery/sitesearch/ ./cmd/gofastr/packages/...
+            # battery/auth's tagged test runs both passkey ceremonies
+            # through Chrome's virtual authenticator; the package's
+            # untagged suite (~50s) rides along with it.
+            run: go test -count=1 -timeout=10m -p 1 -tags chromium ./framework/ui/ ./framework/pluginhost/ ./core/mcp/ ./battery/auth/ ./battery/service/ ./battery/sitesearch/ ./cmd/gofastr/packages/...
           - suite: ui-quality-evals
             pkg: evals/ui-quality(/|$)
             # Its capture tests drive a real headless Chrome; kept out of
