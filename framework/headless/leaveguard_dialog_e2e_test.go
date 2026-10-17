@@ -325,17 +325,22 @@ func TestLeaveGuardSaveReturnDiscardReturns(t *testing.T) {
 	if err := chromedp.Run(ctx, chromedp.Evaluate(leaveGuardYes, nil), chromedp.Click(`#open`, chromedp.ByID)); err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	if !pollTrue(ctx, `!!document.getElementById('gf-name')`) {
-		t.Fatal("the record layer never mounted")
+	if !pollTrue(ctx, `!!document.getElementById('gf-name') && !!window.__gofastr.loadedModules['headless-leaveguard']`) {
+		t.Fatal("the record layer and its leave guard never became ready")
 	}
 	if err := chromedp.Run(ctx,
 		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
 		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
-		chromedp.Click(`#new`, chromedp.ByID),
 	); err != nil {
 		t.Fatal(err)
 	}
-	if !pollTrue(ctx, `!!document.getElementById('new-save')`) {
+	if !pollTrue(ctx, `document.getElementById('gf').hasAttribute('data-hui-dirty')`) {
+		t.Fatal("the record's edit never armed its leave guard")
+	}
+	if err := chromedp.Run(ctx, chromedp.Click(`#new`, chromedp.ByID)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `!!document.getElementById('new-save') && !!window.__gofastr.loadedModules.rpc`) {
 		t.Fatal("the create layer never stacked over the record")
 	}
 	if err := chromedp.Run(ctx, chromedp.Click(`#new-save`, chromedp.ByID)); err != nil {
