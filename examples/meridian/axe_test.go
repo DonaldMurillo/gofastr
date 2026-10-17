@@ -181,12 +181,13 @@ func meridianAppPages(customerID, invoiceID string) []string {
 }
 
 // meridianAdminPages are the admin back-office screens: the dashboard,
-// queue and audit pages, a list and a create screen per entity the admin
-// sidebar lists, and a seeded customer's record (the other entities'
-// records need a row the test would have to create). Must run signed in.
+// queue, audit and revenue pages, a list and a create screen per entity
+// the admin sidebar lists, and a seeded customer's record (the other
+// entities' records need a row the test would have to create). Must run
+// signed in.
 func meridianAdminPages(t *testing.T, browser context.Context, base string) []string {
 	t.Helper()
-	pages := []string{"/admin", "/admin/queue", "/admin/audit"}
+	pages := []string{"/admin", "/admin/queue", "/admin/audit", "/admin/revenue"}
 	for _, table := range axeAdminEntityTables(t, browser, base) {
 		pages = append(pages, "/admin/entities/"+table, "/admin/entities/"+table+"/create")
 	}

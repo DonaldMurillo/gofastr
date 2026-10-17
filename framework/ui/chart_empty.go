@@ -16,13 +16,11 @@ import (
 //
 // Genuine programmer errors (negative values, missing series names, unknown
 // shapes) still panic. Those are bugs, not states.
-// The height argument is accepted for call-site symmetry with the chart
-// constructors but is intentionally not turned into an inline style: the
-// framework forbids inline styles (everything ships via registered CSS), so the
-// placeholder's min-height is a fixed token in the stylesheet below.
-// The caller's ExtraAttrs ride along so a host's data-* test hook still
-// resolves when the chart happens to render its zero-data branch.
-func chartEmpty(_ int, labelledBy, class, message string, extra html.Attrs) render.HTML {
+// The placeholder's min-height is a fixed token in the stylesheet below,
+// not the chart's height: the framework forbids inline styles. The
+// caller's ID and ExtraAttrs ride along so a host's anchor or data-* test
+// hook still resolves when the chart renders its zero-data branch.
+func chartEmpty(id, labelledBy, class, message string, extra html.Attrs) render.HTML {
 	if message == "" {
 		message = "No data yet"
 	}
@@ -34,6 +32,9 @@ func chartEmpty(_ int, labelledBy, class, message string, extra html.Attrs) rend
 	attrs["role"] = "img"
 	if class != "" {
 		attrs["class"] = class
+	}
+	if id != "" {
+		attrs["id"] = id
 	}
 	if labelledBy != "" {
 		attrs["aria-labelledby"] = labelledBy

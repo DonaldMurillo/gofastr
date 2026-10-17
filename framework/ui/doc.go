@@ -116,6 +116,7 @@
 //	PasswordInput:        password field with show/hide toggle
 //	Pagination:           numeric page pager over a list (typed query props, optional island)
 //	PieChart:             SVG ratio chart (donut variant via InnerRadius)
+//	Gauge:                semicircle dial for one reading against a range (ARIA meter, tone bands)
 //	PipelineImage:        multi-format <picture> consuming framework/image
 //	Picker:               form field picking one record from a server-searched list
 //	FilterRows:           field / operator / value rows inside a list's filter form
