@@ -39,11 +39,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   run the ceremony, and the module forwards the page's `csrf-token`
   meta so the routes work behind `auth.CSRF`. Accounts with 2FA still
   finish at the second factor, on the page `TwoFactorURL` names, and a
-  password-only session of such an account cannot add a passkey. A completed password reset
-  and claiming an unverified account both remove the account's
-  passkeys. Account erasure deletes them along with pending
-  registration challenges, and data export includes them. ES256, EdDSA
-  and RS256 keys; no attestation.
+  password-only session of such an account cannot add a passkey. A
+  completed password reset and claiming an unverified account both
+  remove the account's passkeys. Account erasure deletes them along
+  with pending registration challenges, and data export includes them.
+  ES256, EdDSA and RS256 keys; no attestation.
 
 ### Fixed
 - **A hidden `ui.Button` stays hidden.** `.fui-button`'s
