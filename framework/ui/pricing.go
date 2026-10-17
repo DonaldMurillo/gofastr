@@ -177,7 +177,7 @@ func pricingCardCSS(_ style.Theme) string {
   font-weight: var(--font-weight-semibold);
   margin: 0;
 }
-[data-cui-comp="ui-pricing-card"] .fui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #65657A); font-size: var(--text-sm, 0.875rem); line-height: var(--leading-normal, 1.5); }
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__desc { margin: 0; color: var(--color-text-muted, #52525B); font-size: var(--text-sm, 0.875rem); line-height: var(--leading-normal, 1.5); }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__price { grid-row: 2; display: flex; align-items: baseline; gap: var(--spacing-sm, 0.25rem); }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__amount {
   font-family: var(--font-heading, inherit);
@@ -186,12 +186,12 @@ func pricingCardCSS(_ style.Theme) string {
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--tracking-tight, -0.02em);
 }
-[data-cui-comp="ui-pricing-card"] .fui-pricing-card__period { color: var(--color-text-muted, #65657A); font-size: var(--text-base, 1rem); }
+[data-cui-comp="ui-pricing-card"] .fui-pricing-card__period { color: var(--color-text-muted, #52525B); font-size: var(--text-base, 1rem); }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__features { grid-row: 3; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: calc(var(--spacing-sm, 4px) * 2.4); }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__feature {
   position: relative;
   padding-inline-start: calc(var(--spacing-sm, 4px) * 6.4);
-  color: var(--color-text, #1B1B2A);
+  color: var(--color-text, #09090B);
   font-size: var(--text-sm, 0.875rem);
   line-height: var(--leading-normal, 1.5);
 }
@@ -199,7 +199,7 @@ func pricingCardCSS(_ style.Theme) string {
   content: "✓";
   position: absolute;
   inset-inline-start: 0;
-  color: var(--color-success, #15803D);
+  color: var(--color-success, #166534);
 }
 [data-cui-comp="ui-pricing-card"] .fui-pricing-card__cta { grid-row: 4; align-self: end; width: 100%; text-align: center; }
 `

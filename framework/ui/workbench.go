@@ -138,7 +138,7 @@ func workbenchCSS(_ style.Theme) string {
   min-inline-size: 0;
   block-size: 100%;
   overflow: hidden;
-  background-color: var(--color-background, #fafaf9);
+  background-color: var(--color-background, #FFFFFF);
 }
 
 /* An iframe is the pane's motivating occupant and defaults to a small bordered

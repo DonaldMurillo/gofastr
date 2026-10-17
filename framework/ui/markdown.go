@@ -254,7 +254,7 @@ func markdownCSS(_ style.Theme) string {
 	// and wants extra line-height (the canonical site theme is dark-first).
 	return `[data-cui-comp="ui-markdown"] {
   display: block;
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   font-size: var(--text-base, 1rem);
   line-height: calc(var(--leading-relaxed, 1.6) + 0.1);
   text-wrap: pretty;
@@ -271,7 +271,7 @@ func markdownCSS(_ style.Theme) string {
 [data-cui-comp="ui-markdown"] h2,
 [data-cui-comp="ui-markdown"] h3,
 [data-cui-comp="ui-markdown"] h4 {
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   line-height: var(--leading-tight, 1.2);
   text-wrap: balance;
 }
@@ -290,7 +290,7 @@ func markdownCSS(_ style.Theme) string {
   text-underline-offset: 0.18em;
   text-decoration-thickness: from-font;
 }
-[data-cui-comp="ui-markdown"] strong { font-weight: calc(var(--font-weight-semibold, 600) + 50); color: var(--color-text, #18181B); }
+[data-cui-comp="ui-markdown"] strong { font-weight: calc(var(--font-weight-semibold, 600) + 50); color: var(--color-text, #09090B); }
 
 /* Lists — hang the marker, give items room, tighten nested levels. */
 [data-cui-comp="ui-markdown"] ul,
@@ -305,7 +305,7 @@ func markdownCSS(_ style.Theme) string {
 [data-cui-comp="ui-markdown"] code {
   font-family: var(--font-mono, ui-monospace, monospace);
   background: var(--color-surface-soft, #F4F4F5);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   padding: 0.12em 0.4em;
   border-radius: var(--radii-sm, 6px);
   font-size: 0.875em;
@@ -371,7 +371,7 @@ func markdownCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-markdown"] thead th {
   font-weight: calc(var(--font-weight-semibold, 600) + 50);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   border-block-end-width: var(--stroke-thick, 2px);
 }
 [data-cui-comp="ui-markdown"] tbody tr:last-child td { border-block-end: 0; }

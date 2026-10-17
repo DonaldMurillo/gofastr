@@ -294,11 +294,11 @@ func confirmActionCSS(_ style.Theme) string {
   margin: 0 0 var(--spacing-sm, 4px) 0;
   font-size: var(--text-lg, 1.125rem);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text, #111);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-confirm-action"] .fui-confirm-action__body {
   margin: 0 0 var(--spacing-lg, 16px) 0;
-  color: var(--color-text-muted, #4b5563);
+  color: var(--color-text-muted, #52525B);
   line-height: var(--leading-normal, 1.5);
 }
 [data-cui-comp="ui-confirm-action"] .fui-confirm-action__actions {

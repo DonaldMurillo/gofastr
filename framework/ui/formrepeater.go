@@ -149,17 +149,17 @@ func formRepeaterCSS(_ style.Theme) string {
   justify-content: center;
   min-block-size: var(--ui-form-repeater-action-min-height, 36px);
   padding: 0 var(--spacing-md, 8px);
-  border: var(--stroke-thin, 1px) solid var(--color-danger, #DC2626);
+  border: var(--stroke-thin, 1px) solid var(--color-danger, #B91C1C);
   border-radius: var(--radii-md, 8px);
   background: transparent;
-  color: var(--color-danger, #DC2626);
+  color: var(--color-danger, #B91C1C);
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--color-danger, #DC2626) 10%, transparent);
+  background: color-mix(in srgb, var(--color-danger, #B91C1C) 10%, transparent);
 }
 [data-cui-comp="ui-form-repeater"] .fui-form-repeater__remove:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
@@ -179,7 +179,7 @@ func formRepeaterCSS(_ style.Theme) string {
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);

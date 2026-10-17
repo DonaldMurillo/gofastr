@@ -144,13 +144,13 @@ func tabNavCSS(_ style.Theme) string {
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   border-block-end: var(--stroke-thick, 2px) solid transparent;
   margin-block-end: calc(-1 * var(--stroke-thin, 1px));
-  color: var(--color-text-muted, #6B7280);
+  color: var(--color-text-muted, #52525B);
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium, 500);
   text-decoration: none;
 }
 [data-cui-comp="ui-tab-nav"] .fui-tab-nav__link:hover {
-  color: var(--color-text, #1F2937);
+  color: var(--color-text, #09090B);
   text-decoration: underline;
 }
 [data-cui-comp="ui-tab-nav"] .fui-tab-nav__link:focus-visible {
@@ -158,7 +158,7 @@ func tabNavCSS(_ style.Theme) string {
   outline-offset: calc(-1 * var(--stroke-focus-offset, 2px));
 }
 [data-cui-comp="ui-tab-nav"] .fui-tab-nav__link[aria-current="page"] {
-  color: var(--color-text, #1F2937);
+  color: var(--color-text, #09090B);
   font-weight: var(--font-weight-semibold, 600);
   border-block-end-color: var(--color-primary, #18181B);
 }
@@ -166,7 +166,7 @@ func tabNavCSS(_ style.Theme) string {
   text-decoration: none;
 }
 [data-cui-comp="ui-tab-nav"] .fui-tab-nav__badge {
-  color: var(--color-text-muted, #6B7280);
+  color: var(--color-text-muted, #52525B);
   font-size: var(--text-xs, 0.75rem);
   font-variant-numeric: tabular-nums;
 }

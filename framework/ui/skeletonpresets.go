@@ -275,9 +275,9 @@ const skeletonPresetsCSS = `
   display: block;
   background: linear-gradient(
     90deg,
-    var(--color-border, #E5E7EB) 0%,
-    color-mix(in oklab, var(--color-border, #E5E7EB) 60%, var(--color-surface, #FFFFFF) 40%) 50%,
-    var(--color-border, #E5E7EB) 100%
+    var(--color-border, #E4E4E7) 0%,
+    color-mix(in oklab, var(--color-border, #E4E4E7) 60%, var(--color-surface, #FFFFFF) 40%) 50%,
+    var(--color-border, #E4E4E7) 100%
   );
   background-size: 200% 100%;
   animation: fui-skeleton-shimmer 1.4s var(--easing-ease-in-out, ease-in-out) infinite;
@@ -320,7 +320,7 @@ const skeletonPresetsCSS = `
   inline-size: 35%;
   margin-block-start: var(--spacing-md, 8px);
   padding-block-start: var(--spacing-md, 8px);
-  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #E5E7EB);
+  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 /* A footed card's body keeps its own short last line: the footer is
    a separate rhythm below it, and the mark names the footer, not the
@@ -341,7 +341,7 @@ const skeletonPresetsCSS = `
   align-items: center;
   padding-block: var(--spacing-sm, 4px);
   padding-inline: var(--spacing-md, 8px);
-  border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #E5E7EB);
+  border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 .fui-skeleton-row--chevron { grid-template-columns: 1fr auto auto; }
 .fui-skeleton-row > .fui-skeleton__line:first-child { inline-size: 40%; }
@@ -351,8 +351,8 @@ const skeletonPresetsCSS = `
   display: inline-block;
   inline-size: var(--ui-skeleton-row-chevron-size, 0.5rem);
   block-size: var(--ui-skeleton-row-chevron-size, 0.5rem);
-  border-block-start: var(--stroke-thick, 2px) solid var(--color-border, #E5E7EB);
-  border-inline-end: var(--stroke-thick, 2px) solid var(--color-border, #E5E7EB);
+  border-block-start: var(--stroke-thick, 2px) solid var(--color-border, #E4E4E7);
+  border-inline-end: var(--stroke-thick, 2px) solid var(--color-border, #E4E4E7);
   transform: rotate(45deg);
   opacity: var(--opacity-muted, 0.6);
 }

@@ -307,7 +307,7 @@ func codeBlockCSS(_ style.Theme) string {
   width: var(--ui-code-block-status-size, 7px);
   height: var(--ui-code-block-status-size, 7px);
   border-radius: var(--radii-full, 9999px);
-  background: var(--ui-code-block-status-color, var(--color-success, #16A34A));
+  background: var(--ui-code-block-status-color, var(--color-success, #166534));
 }
 [data-cui-comp="ui-code-block"] .fui-code-block__file { color: var(--color-code-text, #E4E4E7); }
 [data-cui-comp="ui-code-block"] .fui-code-block__meta {
@@ -369,12 +369,12 @@ func codeBlockCSS(_ style.Theme) string {
   padding-inline: var(--spacing-lg, 16px);
 }
 [data-cui-comp="ui-code-block"] .fui-code-block__line--added {
-  background: var(--ui-code-block-added-bg, color-mix(in srgb, var(--color-success, #16A34A) 12%, transparent));
+  background: var(--ui-code-block-added-bg, color-mix(in srgb, var(--color-success, #166534) 12%, transparent));
   margin-inline: calc(-1 * var(--spacing-lg, 16px));
   padding-inline: var(--spacing-lg, 16px);
 }
 [data-cui-comp="ui-code-block"] .fui-code-block__line--removed {
-  background: var(--ui-code-block-removed-bg, color-mix(in srgb, var(--color-danger, #DC2626) 12%, transparent));
+  background: var(--ui-code-block-removed-bg, color-mix(in srgb, var(--color-danger, #B91C1C) 12%, transparent));
   margin-inline: calc(-1 * var(--spacing-lg, 16px));
   padding-inline: var(--spacing-lg, 16px);
 }
@@ -390,7 +390,7 @@ func codeBlockCSS(_ style.Theme) string {
   left: var(--spacing-lg, 16px);
 }
 [data-cui-comp="ui-code-block"] .fui-code-block__mark {
-  background: var(--ui-code-block-mark-bg, color-mix(in srgb, var(--color-warning, #F59E0B) 28%, transparent));
+  background: var(--ui-code-block-mark-bg, color-mix(in srgb, var(--color-warning, #854D0E) 28%, transparent));
   color: inherit;
   border-radius: var(--radii-sm, 6px);
 }
@@ -450,7 +450,7 @@ func sectionCSS(_ style.Theme) string {
   font-size: var(--ui-section-heading-size, var(--text-lg, 1.125rem));
   font-weight: var(--ui-section-heading-weight, 600);
   letter-spacing: var(--ui-section-heading-tracking, -0.01em);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 /* An eyebrow (or SectionConfig.Band) marks a page band (marketing,
    landing), not an in-app group, so its heading steps up to display
@@ -534,7 +534,7 @@ func formFieldCSS(_ style.Theme) string {
   align-self: center;
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   /* A long label wraps rather than widening its track. */
   overflow-wrap: break-word;
 }
@@ -557,7 +557,7 @@ func formFieldCSS(_ style.Theme) string {
    required attribute, not by a spoken "*"). */
 .fui-field__label[data-required]::after {
   content: " *" / "";
-  color: var(--color-danger, #DC2626);
+  color: var(--color-danger, #B91C1C);
 }
 .fui-field__hint,
 .fui-field__error,
@@ -572,7 +572,7 @@ func formFieldCSS(_ style.Theme) string {
    headless hook, never this class, so the class rule alone would leave
    a live error unstyled. */
 .fui-field__error,
-.fui-field > [data-hui-field-error] { color: var(--color-danger, #DC2626); }
+.fui-field > [data-hui-field-error] { color: var(--color-danger, #B91C1C); }
 /* A server's message is a fragment written to follow the field's name
    ("is required"); under the label it starts the line, so its first
    letter is capitalized, by the page's own lang. */
@@ -617,8 +617,8 @@ func formFieldCSS(_ style.Theme) string {
      reads as a thicker border without bumping border-width and
      shifting the input's internal text by 1px on every validation
      toggle (WCAG 1.4.1 — info conveyed by more than color alone). */
-  border-color: var(--color-danger, #DC2626);
-  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
+  border-color: var(--color-danger, #B91C1C);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #B91C1C);
 }
 /* A control an InputGroup wraps fills the field's control track, and
    a whole Field inside a group keeps the group from overflowing: the
@@ -652,7 +652,7 @@ func formSectionCSS(_ style.Theme) string {
   padding: 0;
   font-size: var(--text-base, 1rem);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 .fui-form-section__description {
   margin: 0;
@@ -706,28 +706,28 @@ func statusBadgeCSS(t style.Theme) string {
   background: currentColor;
 }
 [data-cui-comp="ui-badge"].fui-badge--success {
-  background: color-mix(in oklab, var(--color-success, #16A34A) 15%, var(--color-surface, #fff) 85%);
+  background: color-mix(in oklab, var(--color-success, #166534) 15%, var(--color-surface, #fff) 85%);
   /* Text mixes the status hue toward --color-text so it darkens on a
      light scheme and lightens on a dark one — AA contrast on the 15%
      tinted background for any reasonable palette, not just the default
      (raw status hues sit near 2.5–4:1 and fail axe). */
-  color: color-mix(in oklab, var(--color-success, #16A34A) 55%, var(--color-text, #18181B) 45%);
-  border-color: color-mix(in oklab, var(--color-success, #16A34A) 30%, var(--color-surface, #fff) 70%);
+  color: color-mix(in oklab, var(--color-success, #166534) 55%, var(--color-text, #09090B) 45%);
+  border-color: color-mix(in oklab, var(--color-success, #166534) 30%, var(--color-surface, #fff) 70%);
 }
 [data-cui-comp="ui-badge"].fui-badge--warning {
-  background: color-mix(in oklab, var(--color-warning, #CA8A04) 15%, var(--color-surface, #fff) 85%);
-  color: color-mix(in oklab, var(--color-warning, #CA8A04) 55%, var(--color-text, #18181B) 45%);
-  border-color: color-mix(in oklab, var(--color-warning, #CA8A04) 30%, var(--color-surface, #fff) 70%);
+  background: color-mix(in oklab, var(--color-warning, #854D0E) 15%, var(--color-surface, #fff) 85%);
+  color: color-mix(in oklab, var(--color-warning, #854D0E) 55%, var(--color-text, #09090B) 45%);
+  border-color: color-mix(in oklab, var(--color-warning, #854D0E) 30%, var(--color-surface, #fff) 70%);
 }
 [data-cui-comp="ui-badge"].fui-badge--danger {
-  background: color-mix(in oklab, var(--color-danger, #DC2626) 15%, var(--color-surface, #fff) 85%);
-  color: color-mix(in oklab, var(--color-danger, #DC2626) 55%, var(--color-text, #18181B) 45%);
-  border-color: color-mix(in oklab, var(--color-danger, #DC2626) 30%, var(--color-surface, #fff) 70%);
+  background: color-mix(in oklab, var(--color-danger, #B91C1C) 15%, var(--color-surface, #fff) 85%);
+  color: color-mix(in oklab, var(--color-danger, #B91C1C) 55%, var(--color-text, #09090B) 45%);
+  border-color: color-mix(in oklab, var(--color-danger, #B91C1C) 30%, var(--color-surface, #fff) 70%);
 }
 [data-cui-comp="ui-badge"].fui-badge--info {
-  background: color-mix(in oklab, var(--color-info, #2563EB) 15%, var(--color-surface, #fff) 85%);
-  color: color-mix(in oklab, var(--color-info, #2563EB) 55%, var(--color-text, #18181B) 45%);
-  border-color: color-mix(in oklab, var(--color-info, #2563EB) 30%, var(--color-surface, #fff) 70%);
+  background: color-mix(in oklab, var(--color-info, #1D4ED8) 15%, var(--color-surface, #fff) 85%);
+  color: color-mix(in oklab, var(--color-info, #1D4ED8) 55%, var(--color-text, #09090B) 45%);
+  border-color: color-mix(in oklab, var(--color-info, #1D4ED8) 30%, var(--color-surface, #fff) 70%);
 }
 [data-cui-comp="ui-badge"].fui-badge--neutral {
   background: var(--color-surface-soft, #F4F4F5);
@@ -753,7 +753,7 @@ func emptyStateCSS(_ style.Theme) string {
   margin: 0;
   font-size: var(--text-base, 1rem);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-empty-state"] .fui-empty-state__description {
   margin: 0;
@@ -835,7 +835,7 @@ func calloutCSS(t style.Theme) string {
   line-height: inherit;
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-callout"] .fui-callout__body {
   font-size: var(--text-sm, 0.875rem);
@@ -848,10 +848,10 @@ func calloutCSS(t style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text-muted, #52525B);
 }
-[data-cui-comp="ui-callout"].fui-callout--info    { --ui-callout-accent: var(--color-info, #2563EB);    --ui-callout-icon: "i"; }
-[data-cui-comp="ui-callout"].fui-callout--success { --ui-callout-accent: var(--color-success, #16A34A); --ui-callout-icon: "✓"; }
-[data-cui-comp="ui-callout"].fui-callout--warning { --ui-callout-accent: var(--color-warning, #CA8A04); --ui-callout-icon: "!"; }
-[data-cui-comp="ui-callout"].fui-callout--danger  { --ui-callout-accent: var(--color-danger, #DC2626);  --ui-callout-icon: "!"; }
+[data-cui-comp="ui-callout"].fui-callout--info    { --ui-callout-accent: var(--color-info, #1D4ED8);    --ui-callout-icon: "i"; }
+[data-cui-comp="ui-callout"].fui-callout--success { --ui-callout-accent: var(--color-success, #166534); --ui-callout-icon: "✓"; }
+[data-cui-comp="ui-callout"].fui-callout--warning { --ui-callout-accent: var(--color-warning, #854D0E); --ui-callout-icon: "!"; }
+[data-cui-comp="ui-callout"].fui-callout--danger  { --ui-callout-accent: var(--color-danger, #B91C1C);  --ui-callout-icon: "!"; }
 [data-cui-comp="ui-callout"].fui-callout--neutral { --ui-callout-accent: var(--color-text-muted, #52525B); --ui-callout-icon: "·"; }` + customStatusCSS("ui-callout", "fui-callout", t)
 }
 
@@ -954,8 +954,8 @@ func statCardCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
 }
-[data-cui-comp="ui-stat-card"] .fui-stat-card__trend--up   { color: var(--color-success, #16A34A); }
-[data-cui-comp="ui-stat-card"] .fui-stat-card__trend--down { color: var(--color-danger, #DC2626); }
+[data-cui-comp="ui-stat-card"] .fui-stat-card__trend--up   { color: var(--color-success, #166534); }
+[data-cui-comp="ui-stat-card"] .fui-stat-card__trend--down { color: var(--color-danger, #B91C1C); }
 [data-cui-comp="ui-stat-card"] .fui-stat-card__trend--flat { color: var(--color-text-muted, #52525B); }`
 }
 
@@ -1012,10 +1012,10 @@ func avatarCSS(_ style.Theme) string {
   border-radius: var(--radii-full, 9999px);
   box-shadow: 0 0 0 0.14em var(--color-surface, #fff);
 }
-[data-cui-comp="ui-avatar"] .fui-avatar__status--online  { background: var(--color-success, #16A34A); }
-[data-cui-comp="ui-avatar"] .fui-avatar__status--away     { background: var(--color-warning, #D97706); }
-[data-cui-comp="ui-avatar"] .fui-avatar__status--busy     { background: var(--color-danger, #DC2626); }
-[data-cui-comp="ui-avatar"] .fui-avatar__status--offline  { background: var(--color-text-muted, #9CA3AF); }`
+[data-cui-comp="ui-avatar"] .fui-avatar__status--online  { background: var(--color-success, #166534); }
+[data-cui-comp="ui-avatar"] .fui-avatar__status--away     { background: var(--color-warning, #854D0E); }
+[data-cui-comp="ui-avatar"] .fui-avatar__status--busy     { background: var(--color-danger, #B91C1C); }
+[data-cui-comp="ui-avatar"] .fui-avatar__status--offline  { background: var(--color-text-muted, #52525B); }`
 }
 
 func formCSS(_ style.Theme) string {
@@ -1078,7 +1078,7 @@ func notificationCSS(t style.Theme) string {
   block-size: var(--ui-notification-icon-size, 1.25rem);
   /* The tone rides on the glyph's color; a filled disc behind it
      outweighs the title. */
-  color: var(--ui-notification-tone, var(--color-info, #2563EB));
+  color: var(--ui-notification-tone, var(--color-info, #1D4ED8));
   font-weight: var(--font-weight-bold);
   font-size: var(--text-base, 1rem);
   line-height: 1;
@@ -1106,7 +1106,7 @@ func notificationCSS(t style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
   line-height: var(--leading-normal, 1.5);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   cursor: pointer;
 }
 [data-cui-comp="ui-notification"] .fui-notification__action::after {
@@ -1124,7 +1124,7 @@ func notificationCSS(t style.Theme) string {
 [data-cui-comp="ui-notification"] .fui-notification__title {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-notification"] .fui-notification__body {
   margin: 0;
@@ -1165,13 +1165,13 @@ func notificationCSS(t style.Theme) string {
 }
 [data-cui-comp="ui-notification"] .fui-notification__dismiss:hover {
   background: var(--color-surface-soft, #F4F4F5);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   text-decoration: none;
 }
-[data-cui-comp="ui-notification"].fui-notification--success { --ui-notification-tone: var(--color-success, #16A34A); }
-[data-cui-comp="ui-notification"].fui-notification--warning { --ui-notification-tone: var(--color-warning, #CA8A04); }
-[data-cui-comp="ui-notification"].fui-notification--danger  { --ui-notification-tone: var(--color-danger, #DC2626); }
-[data-cui-comp="ui-notification"].fui-notification--info    { --ui-notification-tone: var(--color-info, #2563EB); }
+[data-cui-comp="ui-notification"].fui-notification--success { --ui-notification-tone: var(--color-success, #166534); }
+[data-cui-comp="ui-notification"].fui-notification--warning { --ui-notification-tone: var(--color-warning, #854D0E); }
+[data-cui-comp="ui-notification"].fui-notification--danger  { --ui-notification-tone: var(--color-danger, #B91C1C); }
+[data-cui-comp="ui-notification"].fui-notification--info    { --ui-notification-tone: var(--color-info, #1D4ED8); }
 [data-cui-comp="ui-notification"].fui-notification--neutral { --ui-notification-tone: var(--color-text-muted, #52525B); }
 :where([data-cui-comp="ui-notification"]).fui-notification--floating {
   position: fixed;
@@ -1401,7 +1401,7 @@ func dataTableCSS(_ style.Theme) string {
   cursor: pointer;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__sort:hover {
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   text-decoration: none;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__sort:focus-visible {
@@ -1514,7 +1514,7 @@ func dataTableCSS(_ style.Theme) string {
     block-size: auto;
     padding-block: var(--spacing-sm, 4px);
     padding-inline: 0;
-    border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #F4F4F5);
+    border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
     text-align: end;
   }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table td:last-child {
@@ -1710,7 +1710,7 @@ func paginationCSS(_ style.Theme) string {
   box-shadow: var(--shadow-xs);
 }
 [data-cui-comp="ui-pagination"] .pagination [aria-disabled="true"] {
-  color: var(--color-text-muted, #6B7280);
+  color: var(--color-text-muted, #52525B);
   opacity: var(--opacity-disabled, 0.5);
   cursor: not-allowed;
 }
@@ -1768,7 +1768,7 @@ func themeToggleCSS(_ style.Theme) string {
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #fff);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   padding: var(--spacing-xs, 2px);
   min-block-size: var(--fui-density-control-h, var(--spacing-touch-target, 44px));
   min-inline-size: var(--fui-density-control-h, var(--spacing-touch-target, 44px));
@@ -1809,8 +1809,8 @@ button[data-cui-comp="ui-theme-toggle"]:focus-visible {
   color: var(--color-text-muted, #52525B);
 }
 [data-cui-comp="ui-theme-toggle"].fui-theme-toggle--icon:hover {
-  background: color-mix(in oklab, var(--color-text, #18181B) 7%, transparent);
-  color: var(--color-text, #18181B);
+  background: color-mix(in oklab, var(--color-text, #09090B) 7%, transparent);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-theme-toggle"] svg {
   width: var(--ui-theme-toggle-icon-size, 18px);
@@ -1967,21 +1967,21 @@ func backToTopCSS(_ style.Theme) string {
 /* ── Variants ── */
 .fui-back-to-top--secondary {
   background: var(--color-surface, #fff);
-  color: var(--color-text, #1a1a1a);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #e5e7eb);
+  color: var(--color-text, #09090B);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 .fui-back-to-top--secondary:hover {
-  background: var(--color-surface-soft, #f3f4f6);
+  background: var(--color-surface-soft, #F4F4F5);
   border-color: var(--color-border-strong, #D4D4D8);
 }
 .fui-back-to-top--ghost {
   background: transparent;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted, #52525B);
   box-shadow: none;
 }
 .fui-back-to-top--ghost:hover {
-  background: var(--color-surface-soft, #f3f4f6);
-  color: var(--color-text, #1a1a1a);
+  background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #09090B);
 }
 
 /* ── Offset presets ── */
@@ -2025,23 +2025,6 @@ func backToTopCSS(_ style.Theme) string {
 :where(.fui-back-to-top--offset-sm).fui-back-to-top--tl,
 :where(.fui-back-to-top--offset-lg).fui-back-to-top--tl,
 :where(.fui-back-to-top--offset-xl).fui-back-to-top--tl { left: var(--btt-left, var(--spacing-lg, 16px)); top: var(--btt-top, var(--spacing-lg, 16px)); }
-
-/* ── Dark mode adjustments ── */
-[data-color-scheme="dark"] .fui-back-to-top--secondary {
-  background: var(--color-surface, #1e1e2e);
-  color: var(--color-text, #e5e7eb);
-  border-color: var(--color-border, #374151);
-}
-[data-color-scheme="dark"] .fui-back-to-top--secondary:hover {
-  background: var(--color-surface-soft, #2d2d3f);
-}
-[data-color-scheme="dark"] .fui-back-to-top--ghost {
-  color: var(--color-text-muted, #9ca3af);
-}
-[data-color-scheme="dark"] .fui-back-to-top--ghost:hover {
-  background: var(--color-surface-soft, #2d2d3f);
-  color: var(--color-text, #e5e7eb);
-}
 
 /* Scoped copy of the visually-hidden recipe: the link's accessible
    name must not be seen on a page that loads only this sheet. */

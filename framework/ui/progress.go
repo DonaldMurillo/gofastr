@@ -75,7 +75,7 @@ func progressCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-progress"] .fui-progress__label {
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #1F2937);
+  color: var(--color-text, #09090B);
   font-weight: var(--font-weight-medium);
 }
 [data-cui-comp="ui-progress"] .fui-progress__bar {
@@ -85,11 +85,11 @@ func progressCSS(_ style.Theme) string {
   block-size: var(--ui-progress-bar-height, 0.5rem);
   border: 0;
   border-radius: var(--radii-full, 9999px);
-  background: var(--color-border, #E5E7EB);
+  background: var(--color-border, #E4E4E7);
   overflow: hidden;
 }
 [data-cui-comp="ui-progress"] .fui-progress__bar::-webkit-progress-bar {
-  background: var(--color-border, #E5E7EB);
+  background: var(--color-border, #E4E4E7);
   border-radius: var(--radii-full, 9999px);
 }
 [data-cui-comp="ui-progress"] .fui-progress__bar::-webkit-progress-value {
@@ -103,7 +103,7 @@ func progressCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-progress"] .fui-progress__desc {
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-muted, #6B7280);
+  color: var(--color-text-muted, #52525B);
 }
 
 @media (prefers-reduced-motion: reduce) {

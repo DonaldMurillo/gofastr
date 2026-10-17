@@ -415,7 +415,7 @@ func toggleCSS(_ style.Theme) string {
 .fui-choice__text {
   flex: 1 1 auto;
   font-size: var(--text-sm);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   line-height: var(--leading-snug, 1.4);
   min-inline-size: 0;
 }
@@ -511,7 +511,7 @@ func toggleCSS(_ style.Theme) string {
 .fui-switch__text {
   flex: 1 1 auto;
   font-size: var(--text-sm);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   line-height: var(--leading-snug, 1.4);
 }
 
@@ -523,7 +523,7 @@ func toggleCSS(_ style.Theme) string {
 }
 .fui-choice__input[aria-invalid="true"],
 .fui-switch__input[aria-invalid="true"] {
-  border-color: var(--color-danger, #DC2626);
+  border-color: var(--color-danger, #B91C1C);
 }
 .fui-choice__input:disabled,
 .fui-switch__input:disabled {
@@ -551,7 +551,7 @@ func toggleCSS(_ style.Theme) string {
 /* The hook alias dresses the paragraph the runtime's form-errors module
    places after a bare choice (see the field sheet's twin). */
 .fui-choice-field__error,
-.fui-choice + [data-hui-field-error] { color: var(--color-danger, #DC2626); }
+.fui-choice + [data-hui-field-error] { color: var(--color-danger, #B91C1C); }
 .fui-choice-field__hint { color: var(--color-text-muted, #52525B); }
 
 /* ─── Choice groups: a real fieldset, laid out as a stack of rows. ─── */
@@ -565,7 +565,7 @@ func toggleCSS(_ style.Theme) string {
 .fui-choice-group__legend {
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   padding: 0;
   margin-bottom: var(--spacing-xs, 2px);
 }
@@ -575,7 +575,7 @@ func toggleCSS(_ style.Theme) string {
    leaves' required attributes; this is the cue beside it. */
 .fui-choice-group__legend[data-required]::after {
   content: " *" / "";
-  color: var(--color-danger, #DC2626);
+  color: var(--color-danger, #B91C1C);
 }
 .fui-choice-group__hint,
 .fui-choice-group__error {
@@ -583,7 +583,7 @@ func toggleCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
 }
 .fui-choice-group__hint  { color: var(--color-text-muted, #52525B); }
-.fui-choice-group__error { color: var(--color-danger, #DC2626); }`
+.fui-choice-group__error { color: var(--color-danger, #B91C1C); }`
 }
 
 // ─── Tooltip ────────────────────────────────────────────────────────

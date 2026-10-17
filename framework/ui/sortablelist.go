@@ -170,7 +170,7 @@ func sortablelistCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-sortablelist"] .fui-sortablelist__label {
   font-weight: var(--font-weight-medium);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 /* The live region the module mints carries its own hook: clip it out
    of the view here rather than with an inline style, which the CSP

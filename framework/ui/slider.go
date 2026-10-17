@@ -101,7 +101,7 @@ func sliderCSS(_ style.Theme) string {
 [data-cui-comp="ui-slider"] .fui-slider__label {
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-slider"] .fui-slider__label + .fui-slider__value {
   justify-self: end;

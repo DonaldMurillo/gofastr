@@ -186,7 +186,7 @@ func detailListCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-detail-list"].fui-detail-list--stacked .fui-detail-list__label {
   font-weight: var(--font-weight-medium);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-detail-list"].fui-detail-list--stacked .fui-detail-list__value {
   display: flex;

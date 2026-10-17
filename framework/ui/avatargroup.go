@@ -187,8 +187,8 @@ func avatarGroupCSS(_ style.Theme) string {
   inline-size: var(--ui-avatar-size, 2.5rem);
   block-size: var(--ui-avatar-size, 2.5rem);
   border-radius: var(--radii-full, 9999px);
-  background: var(--color-surface-soft, #e5e5e5);
-  color: var(--color-text, #111);
+  background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #09090B);
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-semibold);
   line-height: 1;
