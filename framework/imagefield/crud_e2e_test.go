@@ -20,11 +20,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
+
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/core/upload"
+
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/file"
@@ -68,7 +70,7 @@ func productsHandler(t *testing.T, deriver file.ImageDeriver) (*crud.CrudHandler
 
 	dir := t.TempDir()
 	ch := crud.NewCrudHandler(ent, db).WithJSONCase(crud.CaseSnake)
-	ch.Storage = upload.NewLocalStorage(dir)
+	ch.Storage = teststorage.New(t, dir)
 	ch.ImageDeriver = deriver
 	return ch, db, dir
 }
@@ -138,7 +140,7 @@ func TestUploadPopulatesSiblingColumns(t *testing.T) {
 	}
 	// Every reference must resolve to bytes actually on disk, a manifest
 	// pointing at missing files would render as broken images.
-	store := upload.NewLocalStorage(dir)
+	store := teststorage.New(t, dir)
 	for _, ref := range refs {
 		ok, err := store.Exists(context.Background(), ref.StorageRef)
 		if err != nil || !ok {
@@ -238,7 +240,7 @@ func TestUploadOnFileFieldSkipsPipeline(t *testing.T) {
 
 	d, _ := imagefield.New(landscapeConfig())
 	ch := crud.NewCrudHandler(ent, db).WithJSONCase(crud.CaseSnake)
-	ch.Storage = upload.NewLocalStorage(t.TempDir())
+	ch.Storage = teststorage.New(t, t.TempDir())
 	ch.ImageDeriver = d
 
 	// A PDF on a File field: accepted and stored, with no derive attempted.

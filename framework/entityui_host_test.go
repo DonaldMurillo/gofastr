@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -79,6 +80,11 @@ func TestEntityUIAuditTrail(t *testing.T) {
 		ctx := handler.SetUser(context.Background(), struct{ ID string }{ID: "u1"})
 		id := createNote(t, app, "notes", ctx, map[string]any{"title": "first"})
 		updateNote(t, app, "notes", id, ctx, map[string]any{"title": "second"})
+		// Coarse wall clocks can stamp both writes identically. Give the
+		// ordering fixture distinct times rather than relying on clock resolution.
+		if _, err := db.Exec("UPDATE audit_log SET created_at = $1 WHERE record_id = $2 AND op = 'create'", time.Now().UTC().Add(-time.Hour), id); err != nil {
+			t.Fatal(err)
+		}
 
 		reader := entityUIHost{a: app}.Audit()
 		if reader == nil {

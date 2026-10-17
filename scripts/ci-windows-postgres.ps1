@@ -29,5 +29,7 @@ Start-Service postgresql-x64-17
 $env:PGPASSWORD = 'root'
 & (Join-Path $pgBin 'createdb.exe') -h 127.0.0.1 -U postgres framework_test
 if ($LASTEXITCODE -ne 0) { throw 'Test database creation failed.' }
-& (Join-Path $pgBin 'psql.exe') -h 127.0.0.1 -U postgres -d framework_test -v ON_ERROR_STOP=1 -c 'CREATE EXTENSION vector; SELECT version();'
-if ($LASTEXITCODE -ne 0) { throw 'PostgreSQL or pgvector is unavailable.' }
+# Semantic tests install vector inside their isolated schema. Installing it
+# in public would hide its types from their schema-only search_path.
+$available = & (Join-Path $pgBin 'psql.exe') -h 127.0.0.1 -U postgres -d framework_test -At -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM pg_available_extensions WHERE name = 'vector'"
+if ($LASTEXITCODE -ne 0 -or $available -ne '1') { throw 'PostgreSQL or pgvector is unavailable.' }

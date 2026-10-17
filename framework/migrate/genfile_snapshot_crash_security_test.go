@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 // Property: GenerateMigrationFile must be safe to re-run after its snapshot
@@ -33,7 +35,6 @@ func TestGenFileRerunAfterSnapshotFail(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	t.Cleanup(func() { _ = os.Chmod(snapDir, 0o755) })
 	opts := MigrationFileOptions{
 		MigrationsDir: migrations,
 		SnapshotPath:  snapPath,
@@ -46,9 +47,7 @@ func TestGenFileRerunAfterSnapshotFail(t *testing.T) {
 	// pre-state (missing file = empty snapshot, not an error) while
 	// SaveSnapshot's os.WriteFile fails — the committed-file /
 	// stale-snapshot crash state.
-	if err := os.Chmod(snapDir, 0o500); err != nil {
-		t.Fatal(err)
-	}
+	restore := filepermtest.MakeUnwritable(t, snapDir)
 	path1, err := GenerateMigrationFile(Plan{Registry: reg}, "initial", opts)
 	if err == nil {
 		t.Fatalf("call 1 unexpectedly succeeded (path %q): the obstructed snapshot write must fail", path1)
@@ -63,9 +62,7 @@ func TestGenFileRerunAfterSnapshotFail(t *testing.T) {
 
 	// The operator clears the obstruction (or the process simply didn't
 	// crash the second time) and re-runs the exact same command.
-	if err := os.Chmod(snapDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	restore()
 	path2, err := GenerateMigrationFile(Plan{Registry: reg}, "initial", opts)
 	if err != nil {
 		t.Fatalf("call 2: %v", err)

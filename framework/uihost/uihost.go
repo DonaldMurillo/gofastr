@@ -32,6 +32,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/rootfs"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -117,7 +119,7 @@ type UIHost struct {
 	staticDir           string                               // directory to serve static files from
 	staticFS            fs.FS                                // embedded filesystem for static files
 	staticRootOnce      sync.Once                            // guards staticRoot init; staticDir reads are kernel-contained
-	staticRoot          *os.Root                             // os.Root over staticDir: static reads refuse symlinked escapes out of the static tree
+	staticRoot          *rootfs.Root                         // os.Root over staticDir: static reads refuse symlinked escapes out of the static tree
 	llmMDPublic         bool                                 // when true, mount per-screen /llm.md + /llm-pages.md; default disabled (schema disclosure)
 	headHTML            string                               // raw HTML to inject into <head> (escape hatch)
 	lang                string                               // WithLang document language for host-built shells; EffectiveLang resolves it
@@ -684,7 +686,7 @@ func reRootDirFS(fsys fs.FS) fs.FS {
 		return fsys
 	}
 	dir := reflect.ValueOf(fsys).String()
-	root, err := os.OpenRoot(dir)
+	root, err := rootfs.Open(dir)
 	if err != nil {
 		return failClosedFS{err: fmt.Errorf("static FS rooted at an unopenable directory: %w", err)}
 	}
@@ -3974,12 +3976,12 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 // red-probe round). A staticDir that fails to open roots nothing and
 // static serving falls through to page rendering, matching the previous
 // behavior of an os.Stat miss on a missing directory.
-func (ds *UIHost) staticRootOf() *os.Root {
+func (ds *UIHost) staticRootOf() *rootfs.Root {
 	ds.staticRootOnce.Do(func() {
 		if ds.staticDir == "" {
 			return
 		}
-		root, err := os.OpenRoot(ds.staticDir)
+		root, err := rootfs.Open(ds.staticDir)
 		if err != nil {
 			return
 		}

@@ -895,6 +895,7 @@ func TestBrowser_AgentConfigModalOpens(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`.kiln-panel-config`, chromedp.ByQuery),
 		chromedp.WaitVisible(`.kiln-modal`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#kiln-agent-list .kiln-adapter-row`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("open modal: %v", err)
 	}
@@ -3042,6 +3043,7 @@ func TestBrowser_QuickstartAdaptsToExistingWorld(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-quickstart-btn`, chromedp.ByQuery),
+		chromedp.Poll(`Array.from(document.querySelectorAll('.kiln-quickstart-btn')).some(e => e.textContent.includes('widgets'))`, nil),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -3115,6 +3117,7 @@ func TestBrowser_PlanCardYNApprovesAndRejects(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-plan-btn-approve[data-hui-shortcut-click="y"]`, chromedp.ByQuery),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.['headless-navigation']`, nil),
 		chromedp.Evaluate(`document.body.focus()`, nil),
 		chromedp.Evaluate(`(function(){
 			document.dispatchEvent(new KeyboardEvent('keydown', {key:'y', bubbles:true, cancelable:true}));
@@ -3258,6 +3261,7 @@ func TestBrowser_CopyTranscriptButtonFlashesCopied(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-panel-copy`, chromedp.ByQuery),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.['headless-feedback']`, nil),
 		chromedp.Evaluate(`(function(){
 			window.__copied = '';
 			Object.defineProperty(navigator, 'clipboard', {
@@ -3318,6 +3322,7 @@ func TestBrowser_FailedToolRowOffersRetry(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-msg-retry`, chromedp.ByQuery),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.widgethelpers`, nil),
 		chromedp.Click(`.kiln-msg-retry`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatal(err)

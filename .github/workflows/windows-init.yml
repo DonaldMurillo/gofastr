@@ -25,7 +25,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: windows-${{ github.ref }}
+  group: windows-matrix-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -46,10 +46,13 @@ jobs:
           - { name: unit-3, suite: unit, shard: 3 }
           - { name: runtime, suite: browser, package: core-ui/runtime }
           - { name: widget, suite: browser, package: core-ui/widget }
+          - { name: ui, suite: browser, package: framework/ui }
           - { name: evalrunner, suite: browser, package: evals/ui-quality/internal/evalrunner }
           - { name: layoutlab, suite: browser, package: examples/layoutlab }
           - { name: meridian, suite: browser, package: examples/meridian }
-          - { name: site, suite: browser, package: examples/site }
+          - { name: site, suite: browser, package: examples/site, site: pages }
+          - { name: site-axe-0, suite: browser, package: examples/site, site: axe, axe: '0/2' }
+          - { name: site-axe-1, suite: browser, package: examples/site, site: axe, axe: '1/2' }
           - { name: tracker, suite: browser, package: examples/tracker }
           - { name: headless, suite: browser, package: framework/headless }
           - { name: kiln, suite: browser, package: kiln/integration }
@@ -73,9 +76,13 @@ jobs:
           WINDOWS_SUITE: ${{ matrix.suite }}
           WINDOWS_SHARD: ${{ matrix.shard }}
           WINDOWS_BROWSER_PACKAGE: ${{ matrix.package }}
+          WINDOWS_SITE_MODE: ${{ matrix.site }}
+          GOFASTR_AXE_SHARD: ${{ matrix.axe }}
         run: |
           if ($env:WINDOWS_SUITE -eq 'unit') {
             ./scripts/test-windows.ps1 -Suite unit -UnitShard ([int]$env:WINDOWS_SHARD) -UnitShardCount 4
+          } elseif ($env:WINDOWS_BROWSER_PACKAGE -eq 'examples/site') {
+            ./scripts/test-windows.ps1 -Suite browser -BrowserPackage examples/site -SiteMode $env:WINDOWS_SITE_MODE
           } else {
             ./scripts/test-windows.ps1 -Suite browser -BrowserPackage $env:WINDOWS_BROWSER_PACKAGE
           }

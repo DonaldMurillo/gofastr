@@ -2,7 +2,9 @@ package session
 
 import (
 	"context"
-	"os"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
+
 	"path/filepath"
 	"testing"
 
@@ -26,14 +28,5 @@ func TestExportZipIsOwnerOnly(t *testing.T) {
 		t.Fatalf("ExportBundle.Write: %v", err)
 	}
 
-	fi, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat bundle: %v", err)
-	}
-	if fi.Mode().Perm()&0o077 != 0 {
-		t.Errorf("SECURITY: session export bundle is mode %o — the session event log carried off-box lands "+
-			"group/world-readable wherever the operator pointed OutPath. The sibling session store writes this "+
-			"data owner-only (0700 dir / 0600 files, session/sqlite); the tmp zip must be created 0600.",
-			fi.Mode().Perm())
-	}
+	filepermtest.AssertOwnerOnly(t, path, 0o600)
 }

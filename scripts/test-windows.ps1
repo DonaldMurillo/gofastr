@@ -6,6 +6,8 @@ param(
     [ValidateRange(1, 64)]
     [int]$UnitShardCount = 1,
     [string]$BrowserPackage = '',
+    [ValidateSet('all', 'pages', 'axe')]
+    [string]$SiteMode = 'all',
     [string]$LogDirectory = 'dist/windows-tests'
 )
 
@@ -19,8 +21,9 @@ $packages = @(go list ./...)
 if ($LASTEXITCODE -ne 0 -or $packages.Count -eq 0) {
     throw 'Could not enumerate Go packages.'
 }
-# Keep these groups aligned with scripts/test-all.sh and the Linux CI gate.
-$heavy = 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$'
+# Linux's isolated groups plus framework/ui, whose native browser checks
+# need their own Windows runner instead of competing with backend tests.
+$heavy = 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless|framework/ui)$'
 $cliBrowser = 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
 $unitPackages = @($packages | Where-Object { $_ -notmatch $heavy })
 $browserPackages = @($packages | Where-Object { $_ -match $heavy })
@@ -70,8 +73,12 @@ if ($Suite -in @('all', 'browser')) {
     foreach ($package in $browserPackages) {
         $name = $package.Replace('github.com/DonaldMurillo/gofastr/', '').Replace('/', '-')
         if ($package -eq 'github.com/DonaldMurillo/gofastr/examples/site') {
-            Invoke-WindowsTests -Name $name -PackageSet @($package) -Parallelism 1 -TestFlags @('-skip', 'TestAxe')
-            Invoke-WindowsTests -Name "$name-axe" -PackageSet @($package) -Parallelism 1 -Timeout '30m' -TestFlags @('-run', 'TestAxe')
+            if ($SiteMode -ne 'axe') {
+                Invoke-WindowsTests -Name $name -PackageSet @($package) -Parallelism 1 -TestFlags @('-skip', 'TestAxe')
+            }
+            if ($SiteMode -ne 'pages') {
+                Invoke-WindowsTests -Name "$name-axe" -PackageSet @($package) -Parallelism 1 -Timeout '30m' -TestFlags @('-run', 'TestAxe')
+            }
         } else {
             Invoke-WindowsTests -Name $name -PackageSet @($package) -Parallelism 1
         }

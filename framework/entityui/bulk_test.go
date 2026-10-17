@@ -396,7 +396,7 @@ func (b *memBulk) Claim(_ context.Context, id, runner string, now, until time.Ti
 	if !ok || j.Status != BulkQueued {
 		return false, nil
 	}
-	if h := b.holder[id]; h != "" && h != runner && !b.until[id].Before(now) {
+	if h := b.holder[id]; h != "" && h != runner && b.until[id].After(now) {
 		return false, nil
 	}
 	b.holder[id], b.until[id] = runner, until

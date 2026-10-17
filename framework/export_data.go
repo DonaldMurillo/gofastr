@@ -139,6 +139,12 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("framework: export mkdir %q: %w", dir, err)
 	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return fmt.Errorf("framework: export chmod %q: %w", dir, err)
+	}
+	if err := fileperm.Restrict(dir, true); err != nil {
+		return fmt.Errorf("framework: export restrict %q: %w", dir, err)
+	}
 
 	dialect := migrate.DetectDialect(a.DB)
 	sources := a.collectSources()

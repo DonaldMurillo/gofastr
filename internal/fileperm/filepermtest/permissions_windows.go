@@ -14,6 +14,17 @@ import (
 // AssertOwnerOnly requires the given Unix mode, or an owner-only Windows DACL.
 func AssertOwnerOnly(t testing.TB, path string, _ os.FileMode) {
 	t.Helper()
+	assertOwnerACL(t, path, true)
+}
+
+// AssertOwnerAccess permits inheritance from an owner-only parent, as SQLite sidecars do.
+func AssertOwnerAccess(t testing.TB, path string, _ os.FileMode) {
+	t.Helper()
+	assertOwnerACL(t, path, false)
+}
+
+func assertOwnerACL(t testing.TB, path string, protected bool) {
+	t.Helper()
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
 		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
@@ -23,7 +34,7 @@ func AssertOwnerOnly(t testing.TB, path string, _ os.FileMode) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if control&windows.SE_DACL_PROTECTED == 0 {
+	if protected && control&windows.SE_DACL_PROTECTED == 0 {
 		t.Fatalf("%s inherits permissions, want protected owner-only DACL", path)
 	}
 	owner, _, err := sd.Owner()
@@ -60,6 +71,17 @@ func AssertOwnerOnly(t testing.TB, path string, _ os.FileMode) {
 // MakeUnreadable removes read access for a test and restores permissions at cleanup.
 func MakeUnreadable(t testing.TB, path string) {
 	t.Helper()
+	denyAccess(t, path, windows.FILE_READ_DATA)
+}
+
+// MakeUnwritable blocks writes and returns a function that restores access.
+func MakeUnwritable(t testing.TB, path string) func() {
+	t.Helper()
+	return denyAccess(t, path, windows.FILE_WRITE_DATA|windows.FILE_APPEND_DATA)
+}
+
+func denyAccess(t testing.TB, path string, denied windows.ACCESS_MASK) func() {
+	t.Helper()
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
 		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
@@ -79,7 +101,7 @@ func MakeUnreadable(t testing.TB, path string) {
 	}
 	const fullControl = windows.STANDARD_RIGHTS_REQUIRED | windows.SYNCHRONIZE | 0x1ff
 	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
-		AccessPermissions: fullControl &^ windows.FILE_READ_DATA,
+		AccessPermissions: fullControl &^ denied,
 		AccessMode:        windows.GRANT_ACCESS,
 		Trustee: windows.TRUSTEE{TrusteeForm: windows.TRUSTEE_IS_SID,
 			TrusteeValue: windows.TrusteeValueFromSID(owner)},
@@ -87,7 +109,7 @@ func MakeUnreadable(t testing.TB, path string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
+	restore := func() {
 		flags := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION | windows.UNPROTECTED_DACL_SECURITY_INFORMATION)
 		if control&windows.SE_DACL_PROTECTED != 0 {
 			flags = windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION
@@ -95,10 +117,12 @@ func MakeUnreadable(t testing.TB, path string) {
 		if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, flags, nil, nil, original, nil); err != nil {
 			t.Errorf("restore DACL: %v", err)
 		}
-	})
+	}
+	t.Cleanup(restore)
 	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
 		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
 		nil, nil, acl, nil); err != nil {
 		t.Fatal(err)
 	}
+	return restore
 }

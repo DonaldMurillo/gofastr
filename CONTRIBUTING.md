@@ -73,6 +73,8 @@ in CI. For local database tests, set `TEST_POSTGRES_DSN` to your test database.
 Text files use LF on every platform so generated asset hashes stay consistent.
 CI partitions unit packages across four jobs and gives each browser package its
 own job. The site accessibility checks run separately from the other site tests.
+The native Windows browser group also isolates `framework/ui`.
+Site accessibility scans use two shards, matching the Linux gate.
 
 ### Known isolation rules
 

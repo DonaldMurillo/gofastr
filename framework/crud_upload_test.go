@@ -12,8 +12,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/core/upload"
+
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -35,7 +37,7 @@ func seedUploadDB(t *testing.T, db *sql.DB) {
 func uploadAppOnDB(t *testing.T, db *sql.DB) (*App, string) {
 	t.Helper()
 	dir := t.TempDir()
-	store := upload.NewLocalStorage(dir)
+	store := teststorage.New(t, dir)
 	app := NewApp(WithDB(db), WithoutDefaultMiddleware(), WithFileStorage(store))
 	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
@@ -245,7 +247,7 @@ func TestUpload_CoercesFormValues(t *testing.T) {
 			t.Fatalf("create: %v", err)
 		}
 		dir := t.TempDir()
-		store := upload.NewLocalStorage(dir)
+		store := teststorage.New(t, dir)
 		app := NewApp(WithDB(db), WithoutDefaultMiddleware(), WithFileStorage(store))
 		app.Entity("posts", entity.EntityConfig{
 			Table: "posts",

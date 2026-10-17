@@ -9,8 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/core/upload"
+
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -113,7 +115,7 @@ func covUploadHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
-	ch.Storage = upload.NewLocalStorage(t.TempDir())
+	ch.Storage = teststorage.New(t, t.TempDir())
 	return ch, db
 }
 

@@ -153,6 +153,9 @@ func OpenCostLedger(path string) (*CostLedger, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
+	if err := fileperm.Restrict(filepath.Dir(path), true); err != nil {
+		return nil, err
+	}
 	// Owner-only, matching the sibling event store: the ledger records
 	// per-session spend (session ids, providers, models, token counts).
 	// The WAL sidecars inherit the main db's mode on creation, and

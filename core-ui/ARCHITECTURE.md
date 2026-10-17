@@ -2,6 +2,11 @@
 
 The CSP source linter accepts comment directives in LF and CRLF files.
 The directive must still occupy its whole comment line.
+Disk-backed UI host static files use operation-scoped `os.Root` handles.
+Each read verifies the original directory identity and retains kernel path
+containment. An idle host does not hold directory handles open on Windows.
+RPC success toasts finish before navigation, including the feedback module's
+first lazy load.
 
 > **Read this before writing any UI, runtime, or `framework/uihost` code.**
 > Misunderstanding the model has caused multiple round-trips of rework.

@@ -67,15 +67,15 @@ func judgeArgs(cfg AgentConfig, workspace, outputPath, schemaPath, model string,
 }
 
 func runCodex(ctx context.Context, inv codexInvocation) error {
+	if inv.Timeout < 0 {
+		return fmt.Errorf("codex: Timeout must be >= 0 (got %v)", inv.Timeout)
+	}
 	if err := os.MkdirAll(filepath.Dir(inv.LogPath), 0o700); err != nil {
 		return err
 	}
 	logFile, err := os.OpenFile(inv.LogPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("create Codex log: %w", err)
-	}
-	if inv.Timeout < 0 {
-		return fmt.Errorf("codex: Timeout must be >= 0 (got %v)", inv.Timeout)
 	}
 	timeout := inv.Timeout
 	if timeout == 0 {

@@ -73,8 +73,9 @@ func TestLeaseRedRecoversAfterOutage(t *testing.T) {
 		return
 	}
 	store := &redLeaseFlakyStore{SQLProcessModuleStore: newTestStore(t)}
-	sup := newTestSupervisor(t, store, childModeEcho)
 	d := descriptorForChild(t, childModeEcho)
+	// Register artifact cleanup before supervisor cleanup, so shutdown runs first.
+	sup := newTestSupervisor(t, store, childModeEcho)
 	if _, err := sup.Register(context.Background(), d, ApprovedGrants{"articles:read"}); err != nil {
 		t.Fatalf("setup broken: register: %v", err)
 	}

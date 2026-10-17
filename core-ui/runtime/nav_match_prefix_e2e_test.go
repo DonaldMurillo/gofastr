@@ -16,7 +16,9 @@ import (
 // "/blog/" is the trailing-slash form; "/docs-old" shares a text prefix
 // with /docs but is a different section and must never light up.
 func navPrefixPage(path, js string) string {
-	return fmt.Sprintf(`<!doctype html><html><head><title>%s</title></head><body>
+	return fmt.Sprintf(`<!doctype html><html><head><title>%s</title>
+  <script type="application/json" id="gofastr-routes">[{"path":"/"},{"path":"/docs/getting-started"}]</script>
+  </head><body>
   <nav aria-label="Primary">
     <a id="home" href="/" data-cui-match-prefix="">Home</a>
     <a id="docs" href="/docs" data-cui-match-prefix="">Documentation</a>
@@ -165,21 +167,27 @@ func TestMatchPrefixAfterClientNav(t *testing.T) {
 	ctx := chromedptest.Context(t)
 
 	var docs, path string
+	var sameDocument bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/"),
 		chromedp.WaitVisible(`#deep`, chromedp.ByID),
-		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Poll(`typeof window.__gofastr?._updateActiveLink === 'function'`, nil),
+		chromedp.Evaluate(`window.__prefixNavSentinel = true`, nil),
 		// #deep points at a descendant of /docs and is NOT itself a nav
 		// item, so only the prefix rule can light #docs up.
 		chromedp.Click(`#deep`, chromedp.ByID),
-		chromedp.Sleep(600*time.Millisecond),
+		chromedp.Poll(`location.pathname === '/docs/getting-started' && document.getElementById('docs')?.getAttribute('aria-current') === 'page'`, nil),
 		chromedp.Evaluate(`location.pathname`, &path),
 		chromedp.Evaluate(`document.getElementById('docs').getAttribute('aria-current')`, &docs),
+		chromedp.Evaluate(`window.__prefixNavSentinel === true`, &sameDocument),
 	); err != nil {
 		t.Fatalf("chromedp: %v", err)
 	}
 	if path != "/docs/getting-started" {
 		t.Fatalf("client nav did not reach the descendant route, at %q", path)
+	}
+	if !sameDocument {
+		t.Fatal("the link performed a full reload instead of client navigation")
 	}
 	if docs != "page" {
 		t.Errorf(`href="/docs" must be active after client nav to /docs/getting-started, got aria-current=%q`, docs)

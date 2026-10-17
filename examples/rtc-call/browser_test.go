@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -243,8 +244,9 @@ func TestCallFlow(t *testing.T) {
 	pollTrue(t, ann, `Object.keys(window.__call.states).length === 0`, 5*time.Second)
 
 	// ── Evidence for the reviewer: both tabs, full page. ─────────
-	saveShot(t, ann, "/tmp/rtc-call-A.png")
-	saveShot(t, bob, "/tmp/rtc-call-B.png")
+	evidence := t.TempDir()
+	saveShot(t, ann, filepath.Join(evidence, "rtc-call-A.png"))
+	saveShot(t, bob, filepath.Join(evidence, "rtc-call-B.png"))
 }
 
 // saveShot captures a full-page screenshot to path.
