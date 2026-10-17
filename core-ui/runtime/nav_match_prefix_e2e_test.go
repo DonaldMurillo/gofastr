@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
@@ -80,7 +79,7 @@ func TestMatchPrefixCanonicalHrefOnDescendant(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/docs/getting-started"),
 		chromedp.WaitVisible(`#docs`, chromedp.ByID),
-		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Poll(`typeof window.__gofastr?._updateActiveLink === 'function'`, nil),
 		chromedp.Evaluate(`document.getElementById('docs').getAttribute('aria-current')`, &docs),
 		chromedp.Evaluate(`document.getElementById('blog').getAttribute('aria-current')`, &blog),
 		chromedp.Evaluate(`document.getElementById('docsold').getAttribute('aria-current')`, &old),
@@ -113,7 +112,7 @@ func TestMatchPrefixMatchesOwnPage(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/docs"),
 		chromedp.WaitVisible(`#docs`, chromedp.ByID),
-		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Poll(`typeof window.__gofastr?._updateActiveLink === 'function'`, nil),
 		chromedp.Evaluate(`document.getElementById('docs').getAttribute('aria-current')`, &docs),
 	); err != nil {
 		t.Fatalf("chromedp /docs: %v", err)
@@ -125,7 +124,7 @@ func TestMatchPrefixMatchesOwnPage(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/blog"),
 		chromedp.WaitVisible(`#blog`, chromedp.ByID),
-		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Poll(`typeof window.__gofastr?._updateActiveLink === 'function'`, nil),
 		chromedp.Evaluate(`document.getElementById('blog').getAttribute('aria-current')`, &blog),
 	); err != nil {
 		t.Fatalf("chromedp /blog: %v", err)
@@ -146,7 +145,7 @@ func TestMatchPrefixTrailingSlashPath(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/docs/"),
 		chromedp.WaitVisible(`#docs`, chromedp.ByID),
-		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Poll(`typeof window.__gofastr?._updateActiveLink === 'function'`, nil),
 		chromedp.Evaluate(`document.getElementById('docs').getAttribute('aria-current')`, &docs),
 		chromedp.Evaluate(`document.getElementById('docsold').getAttribute('aria-current')`, &old),
 	); err != nil {
@@ -206,7 +205,7 @@ func TestMatchPrefixAttributeValueWinsOverHref(t *testing.T) {
 		chromedp.Navigate(srv.URL+"/projects/billing/issues/42"),
 		chromedp.WaitVisible(`#ov`, chromedp.ByID),
 		// The idle-loaded activelink module's initial pass.
-		chromedp.Sleep(600*time.Millisecond),
+		chromedp.Poll(`typeof window.__gofastr?._updateActiveLink === 'function'`, nil),
 		chromedp.Evaluate(`(() => ({
 			ov: document.getElementById('ov').getAttribute('aria-current'),
 			ovActive: document.getElementById('ov').classList.contains('active'),

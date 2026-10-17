@@ -154,6 +154,9 @@ func tileExpr(name, inner string) string {
 // peer to peer, chat over the data channel, mute as a status document,
 // and the leave that removes the tile.
 func TestCallFlow(t *testing.T) {
+	// Both tabs run on this host; public STUN availability is unrelated
+	// to camera, data-channel, and leave behavior under test.
+	t.Setenv("CALL_STUN", "")
 	app := buildApp()
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("init plugins: %v", err)

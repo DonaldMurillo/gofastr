@@ -616,7 +616,7 @@
     // default stack into every shell, so the fallback is for a page
     // that lost it).
     _toastOrFallback(cfg) {
-      this.loadModule('headless-feedback')
+      return this.loadModule('headless-feedback')
         .then(() => {
           let shown = null;
           try { shown = this.toast(cfg); } catch (_) { shown = null; }

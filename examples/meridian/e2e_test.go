@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"net"
 	"net/http"
@@ -127,12 +128,21 @@ func e2eFreeAddr(t *testing.T) string {
 
 func e2eWaitReady(t *testing.T, base string) {
 	t.Helper()
-	for range 100 {
-		if r, err := http.Get(base + "/"); err == nil {
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	for ctx.Err() == nil {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r, err := http.DefaultClient.Do(req); err == nil {
 			r.Body.Close()
 			return
 		}
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 	t.Fatal("server did not become ready")
 }

@@ -30,6 +30,9 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
 ```
 
 - The connection stays open until the client disconnects.
+- The initial `: subscribed <entity>` comment is flushed after the
+  entity's event listeners are installed. A write published after that
+  acknowledgement can enter the stream's bounded delivery buffer.
 - Backpressure: each client has a bounded buffer. The default broker
   keeps emitters non-blocking by dropping the oldest queued event when a
   client cannot keep up, so the subscriber retains the latest events.
