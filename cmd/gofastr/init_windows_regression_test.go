@@ -107,25 +107,44 @@ func TestInitKeepsHigherExistingGoRequirements(t *testing.T) {
 	version = "dev"
 	t.Cleanup(func() { version = oldVersion })
 	t.Setenv("GOTOOLCHAIN", "local")
+	for _, toolchain := range []string{"go1.27.3", "default"} {
+		t.Run(toolchain, func(t *testing.T) {
+			dir := t.TempDir()
+			covT_chdir(t, dir)
+			initial := "module local/existing\n\ngo 1.27.2\n\ntoolchain " + toolchain + "\n\nrequire example.com/existing v1.0.0\n"
+			if err := os.WriteFile("go.mod", []byte(initial), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			covT_capStdout(t, func() { runInit([]string{".", "--module=local/existing", "--no-entity"}) })
+			data, err := os.ReadFile("go.mod")
+			if err != nil {
+				t.Fatal(err)
+			}
+			mod, err := modfile.Parse("go.mod", data, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mod.Go.Version != "1.27.2" || mod.Toolchain == nil || mod.Toolchain.Name != toolchain {
+				t.Fatalf("init . changed existing Go requirements:\n%s", data)
+			}
+			if len(mod.Require) != 1 || mod.Require[0].Mod.Path != "example.com/existing" {
+				t.Fatalf("init . lost an existing dependency:\n%s", data)
+			}
+		})
+	}
+}
+
+func TestScaffoldGoRequirementsToolchainMeetsHigherMinimum(t *testing.T) {
 	dir := t.TempDir()
-	covT_chdir(t, dir)
-	initial := "module local/existing\n\ngo 1.27.2\n\ntoolchain go1.27.3\n\nrequire example.com/existing v1.0.0\n"
-	if err := os.WriteFile("go.mod", []byte(initial), 0o644); err != nil {
+	// Parsing an existing future minimum must not download that toolchain.
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module local/future\n\ngo 1.99.0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	covT_capStdout(t, func() { runInit([]string{".", "--module=local/existing", "--no-entity"}) })
-	data, err := os.ReadFile("go.mod")
+	minimum, preferred, err := scaffoldGoRequirements(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mod, err := modfile.Parse("go.mod", data, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if mod.Go.Version != "1.27.2" || mod.Toolchain == nil || mod.Toolchain.Name != "go1.27.3" {
-		t.Fatalf("init . lowered existing Go requirements:\n%s", data)
-	}
-	if len(mod.Require) != 1 || mod.Require[0].Mod.Path != "example.com/existing" {
-		t.Fatalf("init . lost an existing dependency:\n%s", data)
+	if minimum != "1.99.0" || preferred != "go1.99.0" {
+		t.Fatalf("requirements = %q, %q; want future minimum and matching toolchain", minimum, preferred)
 	}
 }
