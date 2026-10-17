@@ -23,13 +23,16 @@ import "github.com/DonaldMurillo/gofastr/framework/datexport"
 //   - users_oauth_links: EraseDelete by user_id, the canonical name for the
 //     "<user table>_oauth_links" convention. A surviving link re-attaches the
 //     erased account on the next provider sign-in.
+//   - auth_passkeys: EraseDelete by user_id. A surviving passkey would sign
+//     a re-created account with the same id straight back in.
 //
 //   - magic_link_tokens: EraseDelete of every token minted for the user. The
-//     table is shared by magic-link login, password reset and email
-//     verification, and its "email" column holds the payload tagged with
-//     its flow (see token_purpose.go): "magiclink:<email>",
-//     "pwreset:<user id>", "verify:<user id>". Three erasers cover it, each
-//     with the tag as ValuePrefix. The magic-link one declares IdentityEmail,
+//     table is shared by magic-link login, password reset, email
+//     verification and passkey challenges, and its "email" column holds the
+//     payload tagged with its flow (see token_purpose.go):
+//     "magiclink:<email>", "pwreset:<user id>", "verify:<user id>",
+//     "passkeyreg:<user id>". Four erasers cover it, each with the tag as
+//     ValuePrefix. The magic-link one declares IdentityEmail,
 //     so the framework resolves the user's email from the user table at
 //     erase time (see the IdentityEmail registration below). This closes the
 //     gap where a link minted before an erasure and redeemed after it
@@ -61,8 +64,8 @@ func init() { registerCanonicalErasers() }
 
 // registerCanonicalErasers is the init()-time registration under the
 // canonical table spellings (auth_users / auth_sessions / auth_twofa /
-// users_oauth_links / magic_link_tokens), the erase-plane mirror of
-// export.go's registrations. A manager Init'd with the battery's own SQL
+// users_oauth_links / auth_passkeys / magic_link_tokens), the erase-plane
+// mirror of export.go's registrations. A manager Init'd with the battery's own SQL
 // stores under other names re-registers the same Names against the live
 // tables (see resolveEraseTables); tests that assert the registry reset
 // it and call this to pin the canonical shape.
@@ -83,6 +86,10 @@ func registerCanonicalErasers() {
 		Name: "users_oauth_links", Source: "auth", Table: "users_oauth_links",
 		Column: "user_id", Mode: datexport.EraseDelete,
 	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "auth_passkeys", Source: "auth", Table: "auth_passkeys",
+		Column: "user_id", Mode: datexport.EraseDelete,
+	})
 	// IdentityEmail resolves the erased user's email from the user table
 	// (auth_users.id → email) ONCE per erasure, before the tx. The
 	// magic-link token table is keyed by email, so its eraser declares
@@ -94,7 +101,7 @@ func registerCanonicalErasers() {
 	datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
 		Table: "auth_users", IDColumn: "id", ValueColumn: "email",
 	})
-	for _, p := range []tokenPurpose{purposeMagicLink, purposeReset, purposeVerify} {
+	for _, p := range []tokenPurpose{purposeMagicLink, purposeReset, purposeVerify, purposePasskeyRegister} {
 		registerTokenEraser("magic_link_tokens", p)
 	}
 }
@@ -154,6 +161,21 @@ func resolveEraseTables(mgr *AuthManager) {
 			}
 		}
 	}
+	if p, ok := mgr.Plugin("passkey"); ok {
+		if pp, ok := p.(*PasskeyPlugin); ok {
+			if ps, ok := pp.store.(*SQLPasskeyStore); ok {
+				datexport.RegisterEraser(datexport.DataEraser{
+					Name: "auth_passkeys", Source: "auth", Table: ps.table,
+					Column: "user_id", Mode: datexport.EraseDelete,
+				})
+			}
+			// Login challenges carry no user, so only registration ones
+			// are the user's data.
+			if ms, ok := pp.challenges.(*SQLMagicLinkTokenStore); ok {
+				registerTokenEraser(ms.table, purposePasskeyRegister)
+			}
+		}
+	}
 	if p, ok := mgr.Plugin("email-verification"); ok {
 		if vp, ok := p.(*EmailVerificationPlugin); ok {
 			if ms, ok := vp.store.(*SQLMagicLinkTokenStore); ok {
@@ -165,9 +187,10 @@ func resolveEraseTables(mgr *AuthManager) {
 
 // registerTokenEraser registers the eraser for one flow's tokens in table.
 // The payload column holds "<purpose>:<value>", so the purpose tag is the
-// ValuePrefix. Magic-link payloads carry the email (IdentityEmail); reset and
-// verification payloads carry the user id. The magic-link eraser keeps the
-// "magic_link_tokens" name it was first registered under.
+// ValuePrefix. Magic-link payloads carry the email (IdentityEmail); reset,
+// verification and passkey-registration payloads carry the user id. The
+// magic-link eraser keeps the "magic_link_tokens" name it was first
+// registered under.
 func registerTokenEraser(table string, p tokenPurpose) {
 	e := datexport.DataEraser{
 		Name: "magic_link_tokens", Source: "auth", Table: table,

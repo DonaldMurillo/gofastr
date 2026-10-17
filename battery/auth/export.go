@@ -9,13 +9,15 @@ import "github.com/DonaldMurillo/gofastr/framework/datexport"
 // dump/restore is complete. The framework centralizes all raw read/write
 // behind one SafeIdent-guarded path; this registration is purely declarative.
 //
-// Two tables are registered under their canonical names:
+// Three tables are registered under their canonical names:
 //
 //   - auth_users: the user table backing EntityUserStore
 //     (id, email, password_hash, roles, password_set).
 //   - auth_sessions: the session table backing EntitySessionStore
 //     (id, token, user_id, created_at, expires_at,
 //     two_factor_verified, pending_two_factor).
+//   - auth_passkeys: the passkey table backing SQLPasskeyStore. A restore
+//     without it would make every user enrol their passkeys again.
 //
 // The user table name is host-configured (commonly "users" or "auth_users"),
 // and the session table name is host-configured too. These registrations cover
@@ -53,5 +55,12 @@ func init() {
 			"two_factor_verified",
 			"pending_two_factor",
 		},
+	})
+	datexport.Register(datexport.DataExporter{
+		Name:       "auth_passkeys",
+		Source:     "auth",
+		Table:      "auth_passkeys",
+		PrimaryKey: "id",
+		Columns:    []string{"id", "user_id", "public_key", "alg", "sign_count", "name", "backup_eligible", "backed_up", "created_at", "last_used_at"},
 	})
 }
