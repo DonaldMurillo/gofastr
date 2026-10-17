@@ -299,8 +299,13 @@ func sortableConflictPage() string {
 // that answers 409 with the given content type and body, and a
 // /conflict that returns the server's own rows for column B — k2
 // alone, the move rejected server-side.
-func conflict409Server(t *testing.T, contentType, body409 string) *behaviorServer {
+func conflict409Server(t *testing.T, contentType, body409 string, observed ...func(string)) *behaviorServer {
 	t.Helper()
+	record := func(path string) {
+		for _, observe := range observed {
+			observe(path)
+		}
+	}
 	extra := func(mux *http.ServeMux) {
 		mux.HandleFunc("/rpc", func(w http.ResponseWriter, r *http.Request) {
 			io.ReadAll(r.Body)
@@ -311,12 +316,14 @@ func conflict409Server(t *testing.T, contentType, body409 string) *behaviorServe
 			if body409 != "" {
 				fmt.Fprint(w, body409)
 			}
+			record("/rpc")
 		})
 		mux.HandleFunc("/conflict", func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			fmt.Fprint(w, string(SortableItems(SortableListProps{
 				Label: "Column B", Items: []SortableItem{{Key: "k2", Label: "B1"}},
 			}, nil)))
+			record("/conflict")
 		})
 	}
 	return startBehaviorServer(t, sortableConflictPage(), extra)
@@ -436,7 +443,13 @@ func readLive(ctx context.Context, dst *string) {
 // server rejected leaves column B holding exactly the server's own
 // k2 — and the source snapshot puts k1 back in column A.
 func TestE2E_Sortable409FiresConflictPath(t *testing.T) {
-	b := conflict409Server(t, "", "")
+	requests := make(chan string, 8)
+	b := conflict409Server(t, "", "", func(path string) {
+		select {
+		case requests <- path:
+		default:
+		}
+	})
 	ctx := behaviorPage(t, b)
 	if !pollTrue(ctx, sortableLoaded) {
 		t.Fatal("the sortable marker never loaded headless-sortablelist")
@@ -444,6 +457,18 @@ func TestE2E_Sortable409FiresConflictPath(t *testing.T) {
 	var k1InA bool
 	if err := chromedp.Run(ctx, kbCrossMove("k1")); err != nil {
 		t.Fatal(err)
+	}
+	// Establish the server round trip before measuring its browser result.
+	// This also distinguishes a missing commit from a missing reconciliation.
+	for _, want := range []string{"/rpc", "/conflict"} {
+		select {
+		case path := <-requests:
+			if path != want {
+				t.Fatalf("request path = %q, want %q", path, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("the move never completed its %s request", want)
+		}
 	}
 	// The refreshed copy is what tells reconciliation from a plain
 	// rollback: both leave column B holding k2 alone and k1 back in

@@ -58,7 +58,7 @@ func TestLeaveGuardLinkAsksInKitDialog(t *testing.T) {
 	var state, path, dirty string
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(leaveGuardYes, nil),
-		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "typed"),
 		chromedp.Click(`#go`, chromedp.ByID),
 	); err != nil {
 		t.Fatalf("run: %v", err)
@@ -130,7 +130,7 @@ func TestLeaveGuardPageBackDiscardReplays(t *testing.T) {
 	var lenBefore, lenAfter int
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(leaveGuardYes, nil),
-		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "typed"),
 		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
 		chromedp.Evaluate(`history.length`, &lenBefore),
 		chromedp.Evaluate(`history.back()`, nil),
@@ -173,7 +173,7 @@ func TestLeaveGuardLayerCloseDiscardCloses(t *testing.T) {
 		chromedp.Evaluate(leaveGuardYes, nil),
 		chromedp.Click(`#open`, chromedp.ByID),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "edited"),
 		chromedp.Click(`#layer-close`, chromedp.ByID),
 	); err != nil {
 		t.Fatalf("run: %v", err)
@@ -221,7 +221,7 @@ func TestLeaveGuardLayerBackDiscardCloses(t *testing.T) {
 		chromedp.Evaluate(`history.length`, &lenBefore),
 		chromedp.Click(`#open`, chromedp.ByID),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "edited"),
 		chromedp.Evaluate(`history.back()`, nil),
 	); err != nil {
 		t.Fatalf("run: %v", err)
@@ -273,7 +273,7 @@ func TestLeaveGuardLayerForwardDiscardReplays(t *testing.T) {
 		t.Fatal("Back never brought the form back")
 	}
 	if err := chromedp.Run(ctx,
-		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "edited"),
 		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
 		chromedp.Evaluate(`history.forward()`, nil),
 	); err != nil {
@@ -329,7 +329,7 @@ func TestLeaveGuardSaveReturnDiscardReturns(t *testing.T) {
 		t.Fatal("the record layer and its leave guard never became ready")
 	}
 	if err := chromedp.Run(ctx,
-		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "edited"),
 		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
 	); err != nil {
 		t.Fatal(err)
@@ -380,7 +380,7 @@ func TestLeaveGuardUntaggedBackDiscardNavigates(t *testing.T) {
 	}
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(leaveGuardYes, nil),
-		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "typed"),
 		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
 		chromedp.Evaluate(`history.back()`, nil),
 	); err != nil {
