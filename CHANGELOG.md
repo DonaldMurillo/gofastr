@@ -7,6 +7,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.89.0] - 2026-10-17
+
+**BREAKING.** `gofastr verify` now runs GoFastr's type-aware analyzers
+over the app, so an app that passed verify before can fail it, and
+untrusted node IR no longer carries behaviour markers. v0.89.0 also
+adds passkey sign-in and a check that pages work with JavaScript off,
+and pages render with about 40% less CPU.
+
 ### Added
 - **`gofastr verify` runs GoFastr's type-aware analyzers over apps.**
   The analyzers this repo's CI runs over the framework (unbounded body
