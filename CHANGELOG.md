@@ -55,6 +55,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   those passes never ran under verify in a tree with `cmd/vettool`.
   Plain `go vet` now runs first and the analyzers run as a second pass;
   both must pass.
+- **Untrusted node IR can't arm a behaviour module.**
+  `noderender.RenderNode` and `RenderKind` let through the attributes
+  that registered behaviours bind (`data-passkey-delete`, `data-search`,
+  `data-hui-*` and the rest), so agent-authored IR could place a button
+  that ran a module's action for whoever clicked it. The untrusted path
+  now drops every registered marker attribute; `RenderTrustedNode` keeps
+  them.
 - **Gallery demos link somewhere.** The EntryList, CommentThread,
   PricingCard, AuthCard, FilterToolbar, RecordSummary, Form,
   ConditionalField and Selection demos used `#` placeholders for links

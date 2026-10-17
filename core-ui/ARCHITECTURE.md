@@ -143,7 +143,11 @@ The framework primitives live in:
   and `data-param-*`, the attributes `frag/boot.js` resolves into a
   `__gofastr.trigger()` call at hydration and on every `gofastr:navigate`,
   so an untrusted IR naming them picks a compiled server action and its
-  arguments. `data-island` is refused outright: it is the SSE swap target,
+  arguments. The same path strips the attribute of every registered
+  behaviour marker (`registry.IsMarkerAttr`): a module binds whatever
+  carries its marker, so `data-passkey-delete` on an agent-authored
+  button would delete the viewer's passkey on click. `data-island` is
+  refused outright: it is the SSE swap target,
   so naming it lets an element impersonate a registered island.
   `RenderTrustedNode` and `RenderTrustedKind` are the first-party pair.
   They keep the action attributes and are what the blueprint generator

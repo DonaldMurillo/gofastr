@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/noderender"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -546,4 +547,15 @@ func TestPasskeyTwoFADownFailsClosed(t *testing.T) {
 		}
 	}
 	t.Fatalf("no login.failed twofa_failclosed event: %+v", f.sink.snapshot())
+}
+
+// Agent-authored IR must not arm the passkey module: a disguised
+// delete button would remove a passkey with one click.
+func TestPasskeyMarkersLeaveUntrustedIR(t *testing.T) {
+	got := string(noderender.RenderKind("button", map[string]any{
+		"data-passkey-delete": "/auth", "data-passkey-login": "/auth", "data-passkey-register": "/auth", "text": "View invoice",
+	}, nil))
+	if strings.Contains(got, "data-passkey-") {
+		t.Fatalf("untrusted IR kept a passkey marker: %s", got)
+	}
 }

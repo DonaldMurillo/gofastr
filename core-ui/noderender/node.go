@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/node"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -84,6 +85,11 @@ func RenderTrustedKind(kind string, props map[string]any, children []render.HTML
 // hydration and again on every gofastr:navigate, with no user
 // interaction. So an untrusted IR naming these picks a compiled server
 // action AND its arguments, and runs it on the host island's behalf.
+//
+// A registered behaviour's marker attribute (registry.IsMarkerAttr) is
+// stripped for the same reason: the module binds every element that
+// carries it, so a button labelled "View invoice" carrying
+// data-passkey-delete deletes the viewer's passkey on click.
 func withoutActionAttrs(props map[string]any) map[string]any {
 	if len(props) == 0 {
 		return props
@@ -93,7 +99,8 @@ func withoutActionAttrs(props map[string]any) map[string]any {
 		lower := strings.ToLower(k)
 		if lower != "data-action" &&
 			!strings.HasPrefix(lower, "data-action-") &&
-			!strings.HasPrefix(lower, "data-param-") {
+			!strings.HasPrefix(lower, "data-param-") &&
+			!registry.IsMarkerAttr(lower) {
 			continue
 		}
 		// Copy lazily: the overwhelming majority of nodes name none of
