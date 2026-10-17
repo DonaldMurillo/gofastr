@@ -104,7 +104,9 @@ func evalString(t *testing.T, ctx context.Context, expr string) string {
 func pollTrue(t *testing.T, ctx context.Context, expr string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
-	wrapped := "JSON.stringify(" + expr + ")"
+	// A throw is "not yet": the first poll can run before the page
+	// script defines what expr reads.
+	wrapped := "(() => { try { return JSON.stringify(" + expr + "); } catch (e) { return 'throw: ' + e; } })()"
 	var got string
 	for {
 		if err := evalAwait(ctx, wrapped, &got); err != nil {
@@ -348,4 +350,15 @@ func TestKickedSocketCallComesBack(t *testing.T) {
 		}
 	}
 	t.Fatal("chat never reached Ann after Bob's socket was kicked")
+}
+
+// A poll that starts before the page defines what it reads must wait,
+// not fail: under load the first poll can beat the room script.
+func TestPollWaitsOutAThrow(t *testing.T) {
+	tab := newTab(t, callBrowserCtx(t))
+	run(t, tab, chromedp.Navigate("about:blank"))
+	pollTrue(t, tab, `(() => { window.__n = (window.__n || 0) + 1; if (window.__n === 1) throw new Error('not yet'); return true; })()`, 5*time.Second)
+	if n := evalString(t, tab, `String(window.__n)`); n != "2" {
+		t.Fatalf("expression ran %s times, want 2 (one throw, one true)", n)
+	}
 }

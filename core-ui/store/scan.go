@@ -4,25 +4,28 @@ import (
 	"context"
 	"regexp"
 	"sort"
+
+	"github.com/DonaldMurillo/gofastr/internal/attrscan"
 )
 
-// refRe matches a signal-referencing data-cui-* attribute in an opening
-// tag and captures the bare slice name (the part before any ":value").
-// The leading [\s/] boundary restricts matches to attribute positions
-// (preceded by whitespace or a self-closing slash), so a literal mention
-// inside <pre>/<code>/text content never registers a false reference,
-// mirrors registry.markerRe in core-ui/registry/render.go.
-var refRe = regexp.MustCompile(`[\s/]data-cui-(?:signal-set|signal-inc|signal-toggle|signal|computed)="([^":]+)`)
+// refAttrs are the signal-referencing data-cui-* attributes, named
+// after the "data-cui-" prefix. ScanReferenced captures the
+// bare slice name (the part before any ":value"). The scan only counts
+// an attribute position (preceded by whitespace or a self-closing
+// slash), so a literal mention inside <pre>/<code>/text content never
+// registers a false reference, the same rule as registry.Scan.
+var refAttrs = []string{"signal-set", "signal-inc", "signal-toggle", "signal", "computed"}
+
+// refNameByte accepts the bytes of a referenced slice name: anything up
+// to the closing quote or the ":value" separator.
+func refNameByte(c byte) bool { return c != '"' && c != ':' }
 
 // ScanReferenced returns the unique, sorted slice names referenced by
 // signal/computed attributes in the rendered HTML.
 func ScanReferenced(html string) []string {
-	matches := refRe.FindAllStringSubmatch(html, -1)
-	seen := make(map[string]bool, len(matches))
-	for _, m := range matches {
-		if len(m) >= 2 && m[1] != "" {
-			seen[m[1]] = true
-		}
+	seen := map[string]bool{}
+	for n := range attrscan.Values(html, refAttrs, refNameByte, false) {
+		seen[n] = true
 	}
 	out := make([]string, 0, len(seen))
 	for n := range seen {

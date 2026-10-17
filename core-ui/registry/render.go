@@ -2,13 +2,13 @@ package registry
 
 import (
 	"maps"
-	"regexp"
 	"slices"
 	"sort"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/attrscan"
 )
 
 // Render renders the component and injects data-cui-comp="<name>"
@@ -49,15 +49,24 @@ func (s *Style) WrapHTML(html render.HTML) render.HTML {
 	return out
 }
 
-// markerRe matches the two loader markers in rendered HTML:
+// markerAttrs are the two loader markers in rendered HTML:
 // data-cui-comp="<name>" on a kit component root and
-// data-cui-scope="<name>" on an owned style's root. The name is
-// captured. The leading boundary class restricts matches to attribute
-// positions inside an open tag (preceded by whitespace), so stray
-// mentions inside <pre>/<code>/text content don't trigger
-// false-positive SSR links. A name outside the charset never matches,
-// so it never reaches a /__gofastr/comp/<name>.css URL.
-var markerRe = regexp.MustCompile(`[\s/]data-cui-(?:comp|scope)="([a-zA-Z0-9_:.-]+)"`)
+// data-cui-scope="<name>" on an owned style's root. scanNames captures
+// the name. Only attribute positions inside an open tag count (preceded
+// by whitespace or '/'), so stray mentions inside <pre>/<code>/text
+// content don't trigger false-positive SSR links. A name outside
+// markerNameByte's charset, or one with no closing quote, never
+// matches, so it never reaches a /__gofastr/comp/<name>.css URL.
+var markerAttrs = []string{"comp", "scope"}
+
+// markerNameByte accepts [a-zA-Z0-9_:.-].
+func markerNameByte(c byte) bool {
+	switch {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		return true
+	}
+	return c == '_' || c == ':' || c == '.' || c == '-'
+}
 
 // Scan returns the sorted, deduped list of sheet names referenced by
 // data-cui-comp and data-cui-scope attributes in html. Used by the SSR
@@ -90,13 +99,9 @@ func ScanSplit(html string) (live, held []string) {
 
 // scanNames returns the sorted marker names in html, minus skip.
 func scanNames(html string, skip []string) []string {
-	matches := markerRe.FindAllStringSubmatch(html, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-	seen := make(map[string]struct{}, len(matches))
-	for _, m := range matches {
-		seen[m[1]] = struct{}{}
+	seen := map[string]struct{}{}
+	for n := range attrscan.Values(html, markerAttrs, markerNameByte, true) {
+		seen[n] = struct{}{}
 	}
 	for _, n := range skip {
 		delete(seen, n)

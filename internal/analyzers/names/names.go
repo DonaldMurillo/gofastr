@@ -8,7 +8,7 @@ package names
 import "slices"
 
 // Analyzers is every repo analyzer the vettool registers, by the name a
-// marker uses: //gofastr:allow(<name>) <why>. cmd/vettool's
+// marker uses: //gofastr:allow(<name>) <why>. internal/analyzers/suite's
 // TestAllowNamesMatchRegistration fails when this list and the
 // registration drift; framework/contracts consults Known so its
 // unknown-suppression meta-rule accepts these names and its stale-

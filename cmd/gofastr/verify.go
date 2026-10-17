@@ -3,14 +3,18 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	goversion "go/version"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
+	"golang.org/x/mod/modfile"
 )
 
 // runVerify is `gofastr verify`: one pipeline that answers "is this a
@@ -88,8 +92,9 @@ func runVerify(args []string) {
 			info("Running go vet...")
 		}
 		vet.Ran = true
-		out, ok := runGoVet(opts.root, opts.json)
+		out, suiteSkipped, ok := runGoVet(opts.root, opts.json)
 		vet.Passed = ok
+		vet.SuiteSkipped = suiteSkipped
 		if !ok {
 			// Mirror the text path: report the precondition failure and
 			// no diagnostics, rather than a wall of findings the broken
@@ -385,31 +390,107 @@ func printVerifyOutcome(report *contracts.Report, fixed bool) {
 // printed it; in JSON mode it is captured instead, because anything on
 // stdout would corrupt the document.
 //
-// A tree that carries the repo's vettool (./cmd/vettool — this repo;
-// a host app has none) gets it built and used: the repo's type-aware
-// contract analyzers (layoutfunc, rootwrite, …) run in the same lane
-// `make analyze` and CI drive, which plain `go vet` cannot see. The
-// vettool's own stock passes keep the default-vet coverage, matching
-// CI's single `go vet -vettool=… ./...` step. Any build failure falls
-// back to plain `go vet`, which fails on the same broken tree anyway.
-func runGoVet(root string, capture bool) (string, bool) {
-	args := []string{"vet"}
-	tool, dir := buildRepoVettool(root)
-	if tool != "" {
-		defer os.RemoveAll(dir)
-		args = append(args, "-vettool="+tool)
+// Plain `go vet` runs first, then the analyzer suite as a second vet
+// pass: -vettool replaces vet's default passes (printf, copylocks, …)
+// rather than adding to them, so CI runs both, and so does this.
+//
+// The framework's own module gets ./cmd/vettool built and used for the
+// suite pass, in the same lane `make analyze` and CI drive; a vettool
+// that does not build fails the stage rather than skipping the suite.
+//
+// Any other tree (an app) gets the same suite through this binary: vet
+// starts gofastr itself as the vettool (selfVettool), so an app's code
+// meets the checks the framework's own code does. A finding that is the
+// shape on purpose carries //gofastr:allow(<analyzer>) with a reason,
+// the same marker the contracts use.
+func runGoVet(root string, capture bool) (out, suiteSkipped string, ok bool) {
+	var buf strings.Builder
+	run := func(args, env []string) bool {
+		cmd := exec.Command("go", append(append([]string{"vet"}, args...), "./...")...)
+		cmd.Dir = root
+		cmd.Env = env
+		if capture {
+			cmd.Stdout, cmd.Stderr = &buf, &buf
+		} else {
+			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		}
+		return cmd.Run() == nil
 	}
-	args = append(args, "./...")
-	cmd := exec.Command("go", args...)
+	// A tree that fails plain vet usually fails to type-check, and the
+	// suite would print the same errors a second time.
+	if !run(nil, nil) {
+		return strings.TrimSpace(buf.String()), "", false
+	}
+	note := func(msg string) {
+		out := io.Writer(os.Stderr)
+		if capture {
+			out = &buf
+		}
+		fmt.Fprintln(out, msg)
+	}
+	var suiteArgs, suiteEnv []string
+	if isFrameworkTree(root) {
+		tool, dir := buildRepoVettool(root)
+		if dir != "" {
+			defer os.RemoveAll(dir)
+		}
+		if tool == "" {
+			note("gofastr verify: ./cmd/vettool does not build, so the analyzer pass cannot run")
+			return strings.TrimSpace(buf.String()), "", false
+		}
+		suiteArgs = []string{"-vettool=" + tool}
+	} else if suiteSkipped = suiteSkipReason(moduleGoVersion(root), cliGoVersion()); suiteSkipped != "" {
+		note(suiteSkipped)
+	} else if suiteArgs, suiteEnv = selfVettool(); suiteArgs == nil {
+		note("gofastr verify: cannot find this binary's own path, so the analyzer pass cannot run")
+		return strings.TrimSpace(buf.String()), "", false
+	}
+	ok = true
+	if suiteArgs != nil {
+		ok = run(suiteArgs, suiteEnv)
+	}
+	return strings.TrimSpace(buf.String()), suiteSkipped, ok
+}
+
+// cliGoVersion is the toolchain this binary was built with; tests
+// stand in an older one to reach the skip.
+var cliGoVersion = runtime.Version
+
+// isFrameworkTree reports whether root is the GoFastr module itself,
+// the one tree whose ./cmd/vettool is the analyzer suite. An app's
+// directory of that name is the app's own business.
+func isFrameworkTree(root string) bool {
+	body, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return false
+	}
+	return modfile.ModulePath(body) == gofastrModule
+}
+
+// moduleGoVersion is the version of the go command that builds root
+// (GOTOOLCHAIN included), or "" when it cannot be read.
+func moduleGoVersion(root string) string {
+	cmd := exec.Command("go", "env", "GOVERSION")
 	cmd.Dir = root
-	if capture {
-		var buf strings.Builder
-		cmd.Stdout, cmd.Stderr = &buf, &buf
-		err := cmd.Run()
-		return strings.TrimSpace(buf.String()), err == nil
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
 	}
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	return "", cmd.Run() == nil
+	return strings.TrimSpace(string(out))
+}
+
+// suiteSkipReason says why the analyzers compiled into this binary cannot
+// check a module whose toolchain is newer than the one the binary was
+// built with: their type checker reads that toolchain's export data and
+// language version, and refuses both. A patch release apart is fine.
+func suiteSkipReason(moduleGo, builtWith string) string {
+	if !goversion.IsValid(moduleGo) || !goversion.IsValid(builtWith) {
+		return ""
+	}
+	if goversion.Compare(goversion.Lang(moduleGo), goversion.Lang(builtWith)) <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("gofastr verify: skipped the GoFastr analyzers: this module builds with %s and gofastr was built with %s; install a gofastr built with %s or later to run them", moduleGo, builtWith, goversion.Lang(moduleGo))
 }
 
 // buildRepoVettool builds ./cmd/vettool from root into a private temp
@@ -627,7 +708,8 @@ func printVerifyUsage() {
 %s:
   gofastr verify [capability...] [flags]
 
-Runs go vet, then every contract analyzer, and reports what does not hold.
+Runs go vet and GoFastr's type-aware analyzers, then every contract
+analyzer, and reports what does not hold.
 Strict by default: every rule in the catalog is enforced at its declared
 severity unless a gofastr.contracts.yml relaxes it, or a
 %s directive on the line waives one instance.
@@ -659,7 +741,7 @@ severity unless a gofastr.contracts.yml relaxes it, or a
                      slugs. Pair with --fix to apply one rule's fixes at a
                      time, so the edits stay reviewable.
   --root <dir>       Project root (default: .)
-  --no-vet           Skip the go vet stage
+  --no-vet           Skip the vet stage (go vet and the GoFastr analyzers)
   --timings          Show per-analyzer wall time
   --verbose          Show the full explanation under every finding
   --help             This message

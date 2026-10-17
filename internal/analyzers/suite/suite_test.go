@@ -1,4 +1,4 @@
-package main
+package suite
 
 import (
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/allow"
@@ -14,27 +14,27 @@ import (
 
 // TestEveryAnalyzerIsWiredOrExplained closes the hole that let four
 // finished analyzers (reqparamlimit, fmtformat, testgap, discardmutator)
-// sit in internal/analyzers with fixture tests and no line in this file:
+// sit in internal/analyzers with fixture tests and no line in the registry:
 // they passed their own tests forever while `make analyze`, the
 // pre-commit hook, and CI's vet step never ran them over the repo, and
 // nothing said why. A package here is either registered in
-// multichecker.Main or named in this file's prose with the measurement
+// suite.go or named in suite.go's prose with the measurement
 // that justifies holding it back. Silence is the one thing it can't be.
 func TestEveryAnalyzerIsWiredOrExplained(t *testing.T) {
-	const dir = "../../internal/analyzers"
+	const dir = ".."
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("read %s: %v", dir, err)
 	}
 
-	src, err := os.ReadFile("main.go")
+	src, err := os.ReadFile("suite.go")
 	if err != nil {
-		t.Fatalf("read main.go: %v", err)
+		t.Fatalf("read suite.go: %v", err)
 	}
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "main.go", src, parser.ParseComments)
+	file, err := parser.ParseFile(fset, "suite.go", src, parser.ParseComments)
 	if err != nil {
-		t.Fatalf("parse main.go: %v", err)
+		t.Fatalf("parse suite.go: %v", err)
 	}
 
 	imported := map[string]bool{}
@@ -48,14 +48,14 @@ func TestEveryAnalyzerIsWiredOrExplained(t *testing.T) {
 		}
 	}
 
-	// Package qualifiers reaching multichecker.Main's argument list. An
+	// Package qualifiers reaching the registration list. An
 	// import that never lands here would not compile, but reading the
 	// call is what makes the assertion about REGISTRATION rather than
 	// about an import line.
 	registered := map[string]bool{}
 	ast.Inspect(file, func(n ast.Node) bool {
 		// The repoAnalyzers composite literal is the registration list;
-		// main hands it to multichecker.Main.
+		// Analyzers hands it to both vettools.
 		vs, ok := n.(*ast.ValueSpec)
 		if !ok || len(vs.Names) != 1 || vs.Names[0].Name != "repoAnalyzers" || len(vs.Values) != 1 {
 			return true
@@ -109,9 +109,9 @@ func TestEveryAnalyzerIsWiredOrExplained(t *testing.T) {
 				t.Errorf("%s: registered under a qualifier that is not an internal/analyzers import", name)
 			}
 		case strings.Contains(explained, name):
-			// Held back on purpose, with the reason in this file.
+			// Held back on purpose, with the reason in suite.go.
 		default:
-			t.Errorf("internal/analyzers/%s is neither registered in multichecker.Main "+
+			t.Errorf("internal/analyzers/%s is neither registered in suite.go "+
 				"nor explained in a comment here: it never runs over the repo and "+
 				"nothing records why", name)
 		}

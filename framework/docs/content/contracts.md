@@ -617,6 +617,44 @@ vet's own output attached). `--no-vet` records `{"ran": false, "skipped":
 "--no-vet"}` rather than omitting the field, because "we did not check"
 must never read as "it was fine".
 
+### The vet stage runs GoFastr's analyzers too
+
+The vet stage is two passes. Plain `go vet` runs first, then the
+type-aware analyzers the framework's own CI runs over its code: an
+unbounded request or response body read, a credential compared with
+`==`, a secret file written world-readable, an HTTP client with no
+timeout, a recovered panic logged raw, and about thirty more, plus the
+stock `x/tools` passes `go vet` leaves off (nilness, sqlrowserr, …).
+The gofastr binary serves as the vettool (`go vet -vettool=<gofastr>`),
+so the analyzers match the CLI you run and there is nothing else to
+install. Both passes must pass. A tree that fails plain `go vet` stops
+there, so its type errors print once.
+
+The analyzers' type checker is the one compiled into the gofastr binary,
+and it cannot read a newer toolchain's export data. When the module
+builds with a newer Go minor than the binary (say go1.28 against a
+gofastr built with go1.27), verify skips the analyzer pass, says so, and
+keeps plain `go vet`; a gofastr built with that Go runs them again. The
+`--json` report carries the reason in `vet.suiteSkipped`, so a passing
+vet stage that ran no analyzers does not read as a full check.
+Verify on the GoFastr repository itself builds its `cmd/vettool`
+instead, with the repository's toolchain, and fails if that tool does
+not build. An app's own `cmd/vettool` directory changes nothing.
+
+Apps that passed verify before this pass existed can fail it on upgrade:
+an `http.Get` with no timeout, a `0644` secret file. Fix the finding, or
+mark it when it is the shape on purpose. `--no-vet` skips both passes.
+
+A finding that is the shape on purpose takes the same marker the
+contracts use, with a reason, on its line or the line above:
+
+```go
+//gofastr:allow(clienttimeout) health probe against a local port, bounded by ctx
+resp, err := http.Get(probeURL)
+```
+
+The reason is mandatory; a bare marker silences nothing.
+
 A running app built with `framework.WithMCPIntrospection()` also serves
 the catalog over MCP through `contracts_list`, `contracts_explain`,
 and `contracts_capabilities`, so an agent can read what the framework expects

@@ -88,6 +88,9 @@ func themeBrowserCtx(t *testing.T) context.Context {
 }
 
 func TestMain(m *testing.M) {
+	// `go vet` starts this binary as its vettool in the verify tests
+	// (runGoVet names os.Executable): hand off before any setup.
+	runAsVettoolIfMarked()
 	// One temp root for the whole package run. `gofastr dev` mints its
 	// build dir once per process (devServerBinDir) and removes it only on
 	// a clean shutdown, which the in-process tests never reach; under

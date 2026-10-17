@@ -193,6 +193,7 @@ func printHelp() {
 }
 
 func main() {
+	runAsVettoolIfMarked()
 	dispatch(os.Args[1:])
 }
 

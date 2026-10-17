@@ -408,7 +408,8 @@ the registry — the check has no serving cost and no link on
   gate.
 - `gofastr verify --rule <id> --fix`: apply one rule's fixes at a time
   so edits stay reviewable; `--analyzer <name>` scopes to one analyzer,
-  `--config <file>` picks a non-default config, `--no-vet` skips `go vet`.
+  `--config <file>` picks a non-default config, `--no-vet` skips the vet
+  stage (`go vet` and the GoFastr analyzers).
 
 ## Audit
 

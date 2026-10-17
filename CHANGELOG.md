@@ -7,6 +7,55 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+- **`gofastr verify` runs GoFastr's type-aware analyzers over apps.**
+  The analyzers this repo's CI runs over the framework (unbounded body
+  reads, credentials compared with `==`, world-readable secret files,
+  HTTP clients with no timeout, raw recovered panics in logs, and about
+  thirty more) used to reach only the framework's own tree, so an
+  app's verify ran plain `go vet`. The gofastr binary now serves as
+  the vettool for every app, so the analyzers match the CLI
+  version and nothing else needs installing. A finding that is the shape
+  on purpose takes `//gofastr:allow(<analyzer>) <reason>`. An app that
+  passed verify before can fail it now; `--no-vet` skips the stage. A
+  module on a newer Go minor than the gofastr binary skips the analyzer
+  pass with a note (`vet.suiteSkipped` in `--json`), since the
+  compiled-in type checker cannot read that toolchain's export data. The
+  binary grows by about 3.5 MB.
+- **`framework/testkit/nojstest` checks pages with JavaScript off.** It
+  loads each page with script execution disabled and reports empty
+  `<main>` content, links that go nowhere without script (`#`,
+  `javascript:`), forms with no native way to submit, and error
+  statuses. The site and
+  Meridian run it as gates: every page the site's axe gate scans, and
+  Meridian's marketing, auth, app and admin pages after a sign-in
+  through the login form with script off.
+
+### Fixed
+- **`gofastr verify` keeps `go vet`'s default passes.** Its vet stage ran
+  the repo vettool in place of `go vet`, and `-vettool` replaces vet's
+  default analyzers (printf, copylocks, …) instead of adding to them, so
+  those passes never ran under verify in a tree with `cmd/vettool`.
+  Plain `go vet` now runs first and the analyzers run as a second pass;
+  both must pass.
+- **Gallery demos link somewhere.** The EntryList, CommentThread,
+  PricingCard, AuthCard, FilterToolbar, RecordSummary, Form,
+  ConditionalField and Selection demos used `#` placeholders for links
+  and form actions, which go nowhere without script. They now point at
+  the page they render on (`?story=1`, `?plan=pro`), so they work on
+  `/components` and in `gofastr theme edit`'s preview alike.
+
+### Changed
+- **Pages render with about 40% less CPU.** The UI host scanned every
+  served document for signal references and sheet markers with
+  regexps that opened on a `[\s/]` class, which left Go's matcher no
+  literal to jump to, so each scan stepped through every byte: about
+  1 ms per request on the 74 KB examples/meridian homepage. The scans
+  now jump between `data-cui-` occurrences, take about 30 µs and match
+  exactly what the regexps matched. Meridian's homepage goes from about
+  2,900 to about 4,900 requests a second at 50 concurrent clients on an
+  M4 Pro, median latency from 15 ms to 9 ms.
+
 ## [0.88.2] - 2026-10-16
 
 ### Fixed
