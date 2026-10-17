@@ -7,6 +7,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+- **`gofastr verify` runs GoFastr's type-aware analyzers over apps.**
+  The analyzers this repo's CI runs over the framework (unbounded body
+  reads, credentials compared with `==`, world-readable secret files,
+  HTTP clients with no timeout, raw recovered panics in logs, and about
+  thirty more) used to reach only a tree that carried `cmd/vettool`, so
+  an app's verify ran plain `go vet`. The gofastr binary now serves as
+  the vettool for any other tree, so the analyzers match the CLI
+  version and nothing else needs installing. A finding that is the shape
+  on purpose takes `//gofastr:allow(<analyzer>) <reason>`. The binary
+  grows by about 3.5 MB.
+
+### Fixed
+- **`gofastr verify` keeps `go vet`'s default passes.** Its vet stage ran
+  the repo vettool in place of `go vet`, and `-vettool` replaces vet's
+  default analyzers (printf, copylocks, …) instead of adding to them, so
+  those passes never ran under verify in a tree with `cmd/vettool`.
+  Plain `go vet` now runs first and the analyzers run as a second pass;
+  both must pass.
+
 ### Changed
 - **Pages render with about 40% less CPU.** The UI host scanned every
   served document for signal references and sheet markers with

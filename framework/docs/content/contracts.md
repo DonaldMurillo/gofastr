@@ -617,6 +617,28 @@ vet's own output attached). `--no-vet` records `{"ran": false, "skipped":
 "--no-vet"}` rather than omitting the field, because "we did not check"
 must never read as "it was fine".
 
+### The vet stage runs GoFastr's analyzers too
+
+The vet stage is two passes. Plain `go vet` runs first, then the
+type-aware analyzers the framework's own CI runs over its code: an
+unbounded request or response body read, a credential compared with
+`==`, a secret file written world-readable, an HTTP client with no
+timeout, a recovered panic logged raw, and about thirty more, plus the
+stock `x/tools` passes `go vet` leaves off (nilness, sqlrowserr, …).
+The gofastr binary serves as the vettool (`go vet -vettool=<gofastr>`),
+so the analyzers match the CLI you run and there is nothing else to
+install. Both passes must pass.
+
+A finding that is the shape on purpose takes the same marker the
+contracts use, with a reason, on its line or the line above:
+
+```go
+//gofastr:allow(clienttimeout) health probe against a local port, bounded by ctx
+resp, err := http.Get(probeURL)
+```
+
+The reason is mandatory; a bare marker silences nothing.
+
 A running app built with `framework.WithMCPIntrospection()` also serves
 the catalog over MCP through `contracts_list`, `contracts_explain`,
 and `contracts_capabilities`, so an agent can read what the framework expects

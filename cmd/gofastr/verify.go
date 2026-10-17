@@ -385,31 +385,50 @@ func printVerifyOutcome(report *contracts.Report, fixed bool) {
 // printed it; in JSON mode it is captured instead, because anything on
 // stdout would corrupt the document.
 //
-// A tree that carries the repo's vettool (./cmd/vettool — this repo;
-// a host app has none) gets it built and used: the repo's type-aware
-// contract analyzers (layoutfunc, rootwrite, …) run in the same lane
-// `make analyze` and CI drive, which plain `go vet` cannot see. The
-// vettool's own stock passes keep the default-vet coverage, matching
-// CI's single `go vet -vettool=… ./...` step. Any build failure falls
-// back to plain `go vet`, which fails on the same broken tree anyway.
+// Plain `go vet` runs first, then the analyzer suite as a second vet
+// pass: -vettool replaces vet's default passes (printf, copylocks, …)
+// rather than adding to them, so CI runs both, and so does this.
+//
+// A tree that carries the repo's vettool (./cmd/vettool — this repo)
+// gets it built and used for the suite pass, in the same lane
+// `make analyze` and CI drive. If it does not build, the plain pass
+// alone decides, and it fails on the same broken tree anyway.
+//
+// Any other tree (an app) gets the same suite through this binary: vet
+// starts gofastr itself as the vettool (selfVettool), so an app's code
+// meets the checks the framework's own code does. A finding that is the
+// shape on purpose carries //gofastr:allow(<analyzer>) with a reason,
+// the same marker the contracts use.
 func runGoVet(root string, capture bool) (string, bool) {
-	args := []string{"vet"}
-	tool, dir := buildRepoVettool(root)
-	if tool != "" {
-		defer os.RemoveAll(dir)
-		args = append(args, "-vettool="+tool)
+	var buf strings.Builder
+	run := func(args, env []string) bool {
+		cmd := exec.Command("go", append(append([]string{"vet"}, args...), "./...")...)
+		cmd.Dir = root
+		cmd.Env = env
+		if capture {
+			cmd.Stdout, cmd.Stderr = &buf, &buf
+		} else {
+			cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		}
+		return cmd.Run() == nil
 	}
-	args = append(args, "./...")
-	cmd := exec.Command("go", args...)
-	cmd.Dir = root
-	if capture {
-		var buf strings.Builder
-		cmd.Stdout, cmd.Stderr = &buf, &buf
-		err := cmd.Run()
-		return strings.TrimSpace(buf.String()), err == nil
+	ok := run(nil, nil)
+	var suiteArgs, suiteEnv []string
+	if _, err := os.Stat(filepath.Join(root, "cmd", "vettool")); err == nil {
+		tool, dir := buildRepoVettool(root)
+		if dir != "" {
+			defer os.RemoveAll(dir)
+		}
+		if tool != "" {
+			suiteArgs = []string{"-vettool=" + tool}
+		}
+	} else {
+		suiteArgs, suiteEnv = selfVettool()
 	}
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	return "", cmd.Run() == nil
+	if suiteArgs != nil && !run(suiteArgs, suiteEnv) {
+		ok = false
+	}
+	return strings.TrimSpace(buf.String()), ok
 }
 
 // buildRepoVettool builds ./cmd/vettool from root into a private temp
@@ -627,7 +646,8 @@ func printVerifyUsage() {
 %s:
   gofastr verify [capability...] [flags]
 
-Runs go vet, then every contract analyzer, and reports what does not hold.
+Runs go vet and GoFastr's type-aware analyzers, then every contract
+analyzer, and reports what does not hold.
 Strict by default: every rule in the catalog is enforced at its declared
 severity unless a gofastr.contracts.yml relaxes it, or a
 %s directive on the line waives one instance.
@@ -659,7 +679,7 @@ severity unless a gofastr.contracts.yml relaxes it, or a
                      slugs. Pair with --fix to apply one rule's fixes at a
                      time, so the edits stay reviewable.
   --root <dir>       Project root (default: .)
-  --no-vet           Skip the go vet stage
+  --no-vet           Skip the vet stage (go vet and the GoFastr analyzers)
   --timings          Show per-analyzer wall time
   --verbose          Show the full explanation under every finding
   --help             This message

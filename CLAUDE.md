@@ -401,7 +401,7 @@ expose them to agents connected to a live app.**
   only exception mechanism — never add a per-site silent posture to a
   rule for one caller.
   An analyzer package that is written but not registered must say why
-  in `cmd/vettool/main.go` — `TestEveryAnalyzerIsWiredOrExplained`
+  in `internal/analyzers/suite/suite.go` — `TestEveryAnalyzerIsWiredOrExplained`
   fails on one that is neither registered nor explained.
 - **Run the adversarial red probes**: `make red-tests` (or
   `scripts/red-tests.sh Red` to run only the probes). Red probes are
