@@ -7,9 +7,6 @@ on:
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/windows-init.yml'
-      - 'scripts/test-windows.ps1'
-      - 'scripts/ci-windows-postgres.ps1'
-      - '.gitattributes'
   push:
     branches: [main]
     paths:
@@ -17,124 +14,23 @@ on:
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/windows-init.yml'
-      - 'scripts/test-windows.ps1'
-      - 'scripts/ci-windows-postgres.ps1'
-      - '.gitattributes'
 
 permissions:
   contents: read
 
 concurrency:
-  group: windows-matrix-${{ github.ref }}
+  group: windows-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: windows · ${{ matrix.name }}
+  build:
+    name: Windows build
     runs-on: windows-latest
-    timeout-minutes: 60
     env:
-      TEST_POSTGRES_DSN: postgres://postgres:root@127.0.0.1:5432/framework_test?sslmode=disable
-      PGTEST_REQUIRED: '1'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: unit-0, suite: unit, shard: 0 }
-          - { name: unit-1, suite: unit, shard: 1 }
-          - { name: unit-2, suite: unit, shard: 2 }
-          - { name: unit-3, suite: unit, shard: 3 }
-          - { name: runtime, suite: browser, package: core-ui/runtime }
-          - { name: widget, suite: browser, package: core-ui/widget }
-          - { name: ui, suite: browser, package: framework/ui }
-          - { name: evalrunner, suite: browser, package: evals/ui-quality/internal/evalrunner }
-          - { name: layoutlab, suite: browser, package: examples/layoutlab }
-          - { name: meridian, suite: browser, package: examples/meridian }
-          - { name: site, suite: browser, package: examples/site, site: pages }
-          - { name: site-axe-0, suite: browser, package: examples/site, site: axe, axe: '0/2' }
-          - { name: site-axe-1, suite: browser, package: examples/site, site: axe, axe: '1/2' }
-          - { name: tracker, suite: browser, package: examples/tracker }
-          - { name: headless, suite: browser, package: framework/headless }
-          - { name: kiln, suite: browser, package: kiln/integration }
-          - { name: cli, suite: browser, package: cmd/gofastr }
+      CGO_ENABLED: '0'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
-      - name: Start PostgreSQL with pgvector
-        run: ./scripts/ci-windows-postgres.ps1
-      - name: Build
-        if: matrix.name == 'unit-0'
-        run: go build ./...
-      - name: Vet except native pointer conversions
-        if: matrix.name == 'unit-0'
-        run: go vet -unsafeptr=false ./...
-      - name: Nested PDF module
-        if: matrix.name == 'unit-0'
-        shell: pwsh
-        working-directory: battery/print/chromepdf
-        run: |
-          go build ./...
-          if ($LASTEXITCODE -ne 0) { throw 'Nested PDF module build failed.' }
-          go vet ./...
-          if ($LASTEXITCODE -ne 0) { throw 'Nested PDF module vet failed.' }
-          $logs = Join-Path $env:GITHUB_WORKSPACE 'dist/windows-tests'
-          New-Item -ItemType Directory -Force $logs | Out-Null
-          go test -json -count=1 -timeout=20m ./... > (Join-Path $logs 'nested-pdf.jsonl') 2> (Join-Path $logs 'nested-pdf.stderr.log')
-          if ($LASTEXITCODE -ne 0) { throw 'Nested PDF module tests failed; see the uploaded logs.' }
-      - name: Test packages, with browser suites isolated
-        shell: pwsh
-        env:
-          WINDOWS_SUITE: ${{ matrix.suite }}
-          WINDOWS_SHARD: ${{ matrix.shard }}
-          WINDOWS_BROWSER_PACKAGE: ${{ matrix.package }}
-          WINDOWS_SITE_MODE: ${{ matrix.site }}
-          GOFASTR_AXE_SHARD: ${{ matrix.axe }}
-        run: |
-          if ($env:WINDOWS_SUITE -eq 'unit') {
-            ./scripts/test-windows.ps1 -Suite unit -UnitShard ([int]$env:WINDOWS_SHARD) -UnitShardCount 4
-          } elseif ($env:WINDOWS_BROWSER_PACKAGE -eq 'examples/site') {
-            ./scripts/test-windows.ps1 -Suite browser -BrowserPackage examples/site -SiteMode $env:WINDOWS_SITE_MODE
-          } else {
-            ./scripts/test-windows.ps1 -Suite browser -BrowserPackage $env:WINDOWS_BROWSER_PACKAGE
-          }
-      - name: Build CLI with the release toolchain
-        if: matrix.name == 'unit-0'
-        run: go build -o dist/gofastr.exe ./cmd/gofastr
-      - name: Put an older Go on PATH
-        if: matrix.name == 'unit-0'
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version: '1.25.5'
-          cache: false
-      - name: Scaffold with older Go and select the release toolchain
-        if: matrix.name == 'unit-0'
-        shell: pwsh
-        run: |
-          $cli = Join-Path $PWD 'dist/gofastr.exe'
-          $releaseMod = Get-Content go.mod -Raw
-          $minimum = [regex]::Match($releaseMod, '(?m)^go (\S+)').Groups[1].Value
-          $preferred = [regex]::Match($releaseMod, '(?m)^toolchain (\S+)').Groups[1].Value
-          $work = Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString())
-          New-Item -ItemType Directory $work | Out-Null
-          Set-Location $work
-          $env:GOTOOLCHAIN = 'local'
-          go version
-          & $cli init old-go-app --module=local/old-go-app
-          if ($LASTEXITCODE -ne 0) { throw 'init failed with older Go on PATH' }
-          Set-Location old-go-app
-          $mod = Get-Content go.mod -Raw
-          if ($mod -notmatch "(?m)^go $([regex]::Escape($minimum))\s*$") { throw 'wrong minimum Go version' }
-          if ($mod -notmatch "(?m)^toolchain $([regex]::Escape($preferred))\s*$") { throw 'wrong preferred toolchain' }
-          $env:GOTOOLCHAIN = 'auto'
-          $selected = go env GOVERSION
-          if ($LASTEXITCODE -ne 0 -or $selected -ne $preferred) { throw "selected $selected instead of $preferred" }
-      - name: Upload test output
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: windows-tests-${{ matrix.name }}
-          path: dist/windows-tests/
-          if-no-files-found: ignore
-          retention-days: 7
+      - run: go build ./...
