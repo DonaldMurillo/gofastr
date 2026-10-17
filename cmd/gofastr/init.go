@@ -16,6 +16,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 )
 
+// Keep these aligned with go.mod. TestInitGoDirectives checks the generated
+// module against the release requirements, independent of the Go on PATH.
+const (
+	scaffoldGoVersion = "1.27.0"
+	scaffoldToolchain = "go1.27.2"
+)
+
 func runInit(args []string) {
 	if hasHelpFlag(args) {
 		printInitHelp()
@@ -264,17 +271,22 @@ bin/
 		info("You may need to run 'go mod init %s' manually.", modulePath)
 	}
 	pinnedVersion := installedFrameworkVersion()
+	// Set all directives in one edit: after the go line changes, a second
+	// go invocation could switch to the minimum toolchain before seeing the
+	// preferred patch release. Do this for development CLIs too.
+	editArgs := []string{"mod", "edit", "-go=" + scaffoldGoVersion, "-toolchain=" + scaffoldToolchain}
 	if pinnedVersion != "" {
-		edit := exec.Command("go", "mod", "edit", "-require="+gofastrModule+"@"+pinnedVersion)
-		edit.Dir = name
-		if out, err := edit.CombinedOutput(); err != nil {
-			fail("Could not pin GoFastr %s in go.mod: %v", pinnedVersion, err)
-			if msg := strings.TrimSpace(string(out)); msg != "" {
-				info("%s", msg)
-			}
-			osExit(1)
-			return
+		editArgs = append(editArgs, "-require="+gofastrModule+"@"+pinnedVersion)
+	}
+	edit := exec.Command("go", editArgs...)
+	edit.Dir = name
+	if out, err := edit.CombinedOutput(); err != nil {
+		fail("Could not set Go requirements in go.mod: %v", err)
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			info("%s", msg)
 		}
+		osExit(1)
+		return
 	}
 
 	// Run git init so the project starts with a clean repo.
@@ -954,6 +966,15 @@ func validateProjectName(name string) error {
 	}
 	if name == "." {
 		return nil
+	}
+	// Refuse Windows device names on every OS so scaffolded projects stay
+	// portable. Digits outside 1..9 and longer names are ordinary names.
+	switch name {
+	case "con", "prn", "aux", "nul":
+		return fmt.Errorf("name is reserved for a Windows device")
+	}
+	if len(name) == 4 && (strings.HasPrefix(name, "com") || strings.HasPrefix(name, "lpt")) && name[3] >= '1' && name[3] <= '9' {
+		return fmt.Errorf("name is reserved for a Windows device")
 	}
 	for _, r := range name {
 		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_') {

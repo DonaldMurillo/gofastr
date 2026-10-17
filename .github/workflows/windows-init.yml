@@ -1,0 +1,63 @@
+name: Windows init
+
+on:
+  pull_request:
+    paths:
+      - 'cmd/gofastr/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/windows-init.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'cmd/gofastr/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/windows-init.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-init-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  init:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+      - name: Init exit codes, Go requirements, and Windows shells
+        run: go test ./cmd/gofastr -run '^(TestInit(FreshDirectory|GoDirectives|WindowsShells)|TestProjectNameWindowsDevices)$' -count=1 -timeout=10m
+      - name: Build CLI with the release toolchain
+        run: go build -o dist/gofastr.exe ./cmd/gofastr
+      - name: Put an older Go on PATH
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.25.5'
+          cache: false
+      - name: Scaffold with older Go and select the release toolchain
+        shell: pwsh
+        run: |
+          $cli = Join-Path $PWD 'dist/gofastr.exe'
+          $releaseMod = Get-Content go.mod -Raw
+          $minimum = [regex]::Match($releaseMod, '(?m)^go (\S+)').Groups[1].Value
+          $preferred = [regex]::Match($releaseMod, '(?m)^toolchain (\S+)').Groups[1].Value
+          $work = Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString())
+          New-Item -ItemType Directory $work | Out-Null
+          Set-Location $work
+          $env:GOTOOLCHAIN = 'local'
+          go version
+          & $cli init old-go-app --module=local/old-go-app
+          if ($LASTEXITCODE -ne 0) { throw 'init failed with older Go on PATH' }
+          Set-Location old-go-app
+          $mod = Get-Content go.mod -Raw
+          if ($mod -notmatch "(?m)^go $([regex]::Escape($minimum))\s*$") { throw 'wrong minimum Go version' }
+          if ($mod -notmatch "(?m)^toolchain $([regex]::Escape($preferred))\s*$") { throw 'wrong preferred toolchain' }
+          $env:GOTOOLCHAIN = 'auto'
+          $selected = go env GOVERSION
+          if ($LASTEXITCODE -ne 0 -or $selected -ne $preferred) { throw "selected $selected instead of $preferred" }
