@@ -441,8 +441,9 @@ func runGoVet(root string, capture bool) (out, suiteSkipped string, ok bool) {
 		suiteArgs = []string{"-vettool=" + tool}
 	} else if suiteSkipped = suiteSkipReason(moduleGoVersion(root), cliGoVersion()); suiteSkipped != "" {
 		note(suiteSkipped)
-	} else {
-		suiteArgs, suiteEnv = selfVettool()
+	} else if suiteArgs, suiteEnv = selfVettool(); suiteArgs == nil {
+		note("gofastr verify: cannot find this binary's own path, so the analyzer pass cannot run")
+		return strings.TrimSpace(buf.String()), "", false
 	}
 	ok = true
 	if suiteArgs != nil {
