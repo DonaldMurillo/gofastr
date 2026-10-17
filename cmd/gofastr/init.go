@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	goversion "go/version"
 	"io"
 	"os"
 	"os/exec"
@@ -15,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
+	"golang.org/x/mod/modfile"
 )
 
 // Keep these aligned with go.mod. TestInitGoDirectives checks the generated
@@ -263,6 +265,12 @@ bin/
 	}
 
 	// Run go mod init to generate a proper go.mod
+	minimumGo, preferredGo, err := scaffoldGoRequirements(name)
+	if err != nil {
+		fail("Could not read the existing go.mod: %v", err)
+		osExit(1)
+		return
+	}
 	cmd := exec.Command("go", "mod", "init", modulePath)
 	cmd.Dir = name
 	cmd.Stdout = os.Stdout
@@ -275,7 +283,7 @@ bin/
 	// Set all directives in one edit: after the go line changes, a second
 	// go invocation could switch to the minimum toolchain before seeing the
 	// preferred patch release. Do this for development CLIs too.
-	editArgs := []string{"mod", "edit", "-go=" + scaffoldGoVersion, "-toolchain=" + scaffoldToolchain}
+	editArgs := []string{"mod", "edit", "-go=" + minimumGo, "-toolchain=" + preferredGo}
 	if pinnedVersion != "" {
 		editArgs = append(editArgs, "-require="+gofastrModule+"@"+pinnedVersion)
 	}
@@ -335,6 +343,40 @@ bin/
 	}
 	fmt.Println("  Only use a local `replace` directive while hacking on GoFastr itself.")
 	fmt.Println()
+}
+
+// scaffoldGoRequirements reads an existing module before go mod init runs.
+// Fresh modules use the release defaults; init . must not lower a project's
+// existing Go or toolchain requirement.
+func scaffoldGoRequirements(dir string) (minimum, preferred string, err error) {
+	minimum, preferred = scaffoldGoVersion, scaffoldToolchain
+	path := filepath.Join(dir, "go.mod")
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return minimum, preferred, nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	mod, err := modfile.Parse(path, data, nil)
+	if err != nil {
+		return "", "", err
+	}
+	if mod.Go != nil && goversion.Compare("go"+mod.Go.Version, "go"+minimum) > 0 {
+		minimum = mod.Go.Version
+	}
+	if mod.Toolchain != nil {
+		if mod.Toolchain.Name == "default" {
+			return minimum, "default", nil
+		}
+		if goversion.Compare(mod.Toolchain.Name, preferred) > 0 {
+			preferred = mod.Toolchain.Name
+		}
+	}
+	if goversion.Compare("go"+minimum, preferred) > 0 {
+		preferred = "go" + minimum
+	}
+	return minimum, preferred, nil
 }
 
 // printInitNextSteps prints the "Next steps" block at the end of

@@ -32,7 +32,9 @@ each command to the doc that covers it.
   matching GoFastr version. A local development build prints the exact
   `go get …@vX.Y.Z` step because it cannot infer a release safely.
   The generated `go.mod` uses this CLI release's minimum Go version and
-  preferred toolchain, even when the `go` on PATH is older. Project names
+  preferred toolchain, even when the `go` on PATH is older. `init .` preserves
+  higher requirements already set in `go.mod`, including an explicit
+  `toolchain default`. Project names
   must use lowercase letters, digits, hyphens, or underscores and start
   with a letter or digit. Windows device names such as `con`, `nul`,
   `com1` through `com9`, and `lpt1` through `lpt9` are refused on every OS.

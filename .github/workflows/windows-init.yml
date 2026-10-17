@@ -26,8 +26,13 @@ concurrency:
 
 jobs:
   test:
+    name: windows · ${{ matrix.suite }}
     runs-on: windows-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [unit, browser]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -37,16 +42,19 @@ jobs:
         run: go build ./...
       - name: Vet except native pointer conversions
         run: go vet -unsafeptr=false ./...
-      - name: All tests, with browser suites isolated
-        run: ./scripts/test-windows.ps1
+      - name: Test packages, with browser suites isolated
+        run: ./scripts/test-windows.ps1 -Suite ${{ matrix.suite }}
       - name: Build CLI with the release toolchain
+        if: matrix.suite == 'unit'
         run: go build -o dist/gofastr.exe ./cmd/gofastr
       - name: Put an older Go on PATH
+        if: matrix.suite == 'unit'
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: '1.25.5'
           cache: false
       - name: Scaffold with older Go and select the release toolchain
+        if: matrix.suite == 'unit'
         shell: pwsh
         run: |
           $cli = Join-Path $PWD 'dist/gofastr.exe'
@@ -71,7 +79,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: windows-tests
+          name: windows-tests-${{ matrix.suite }}
           path: dist/windows-tests/
           if-no-files-found: ignore
           retention-days: 7
