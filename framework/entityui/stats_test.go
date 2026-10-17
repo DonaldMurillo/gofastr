@@ -114,6 +114,21 @@ func TestCountReportsWhatItCannotRead(t *testing.T) {
 	}
 }
 
+// CountInt is Count as a number, under the same refusals.
+func TestCountIntMatchesCount(t *testing.T) {
+	x := newInvoiceUI(t)
+	seedInvoiceRows(t, x, "n", 1233, "1.00")
+	if n, ok := x.ui.CountInt(x.userCtx("/dash", "", "u1"), "invoices", ""); !ok || n != 1234 {
+		t.Fatalf("count = %d %v, want 1234", n, ok)
+	}
+	if n, ok := x.ui.CountInt(x.userCtx("/dash", "", "u1"), "invoices", `nope = 1`); ok {
+		t.Fatalf("a bad filter counted %d", n)
+	}
+	if n, ok := x.ui.CountInt(x.ctx("/dash", ""), "invoices", ""); ok {
+		t.Fatalf("SECURITY: an anonymous caller read a count: %d", n)
+	}
+}
+
 // AfterList hooks mask rows after the query, so a total the database
 // computed would count what they hide. The stat totals the masked rows
 // instead, and past the row cap draws nothing rather than part of them.

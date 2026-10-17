@@ -703,6 +703,7 @@ var kitComponents = []kitComponent{
 	{name: "FormRepeater", fn: FormRepeater},
 	{name: "FormSection", fn: FormSection},
 	{name: "Gallery", fn: Gallery},
+	{name: "Gauge", fn: Gauge, prep: prepSet("Bands", nil, "Value", 50.0, "Min", 0.0, "Max", 100.0)},
 	{name: "GlobalSearch", fn: GlobalSearch},
 	{name: "Grid", fn: Grid},
 	{name: "Hero", fn: Hero},

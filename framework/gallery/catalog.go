@@ -981,6 +981,14 @@ const page = await api.posts.list({ limit: 25 });`},
 			Slices: []ui.PieSlice{{Label: "Go", Value: 70}, {Label: "JS", Value: 18}, {Label: "SQL", Value: 12}},
 		})
 	}},
+	{"gauge", "Gauge", "Charts", "One reading against a range, with tone bands.", func() render.HTML {
+		bands := []ui.GaugeBand{{From: 0, Tone: ui.GaugeSuccess}, {From: 70, Tone: ui.GaugeWarning}, {From: 90, Tone: ui.GaugeDanger}}
+		return row(
+			ui.Gauge(ui.GaugeConfig{Label: "CPU", Value: 42, ValueText: "42%", Bands: bands}),
+			ui.Gauge(ui.GaugeConfig{Label: "Memory", Value: 78, ValueText: "78%", Bands: bands}),
+			ui.Gauge(ui.GaugeConfig{Label: "Disk", Value: 96, ValueText: "96%", Bands: bands}),
+		)
+	}},
 	{"sparkline", "Sparkline", "Charts", "Tiny inline trend line.", func() render.HTML {
 		return ui.Sparkline(ui.SparklineConfig{Values: []float64{4, 6, 5, 8, 7, 10, 9, 12, 11, 14}})
 	}},

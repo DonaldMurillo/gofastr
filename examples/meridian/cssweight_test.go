@@ -49,7 +49,7 @@ func TestCSSWeightMeridian(t *testing.T) {
 	}
 	signedIn := []string{
 		"/app", "/app/customers", "/app/invoices", "/app/subscriptions",
-		"/app/customers/create", "/admin", "/admin/queue", "/admin/audit",
+		"/app/customers/create", "/admin", "/admin/queue", "/admin/audit", "/admin/revenue",
 		"/admin/entities/customers", "/admin/entities/customers/create",
 	}
 	for _, p := range signedIn {

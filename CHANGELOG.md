@@ -14,6 +14,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   app's test can cap CSS per page. Meridian and the docs site now fail
   their tests when a page ships more than 17 KiB of gzipped CSS; the
   heaviest pages today sit at about 15.5 KiB.
+- **`ui.Gauge` draws one reading against a range.** It's a semicircle
+  SVG dial on an ARIA `meter`, so a screen reader announces the label and
+  `ValueText` ("CPU, 73%"). `Bands` color the arc by where the reading
+  falls, for example green from 0, amber from 70, red from 90. A
+  reading outside `Min`–`Max` pins the arc to the nearer end, and NaN
+  or Inf shows the charts' empty state. Meridian's Revenue page shows
+  the share of payments that went through on one.
+- **`entityui.UI.CountInt`** is `Count` as an `int`, under the same read
+  gate and scope, for figures a host computes with.
 
 ### Changed
 - **The Timeout middleware reuses its response buffers.** It holds each
