@@ -56,19 +56,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   with an error and a late `WriteHeader` or `Flush` does nothing, instead of
   reaching a buffer that may belong to the next request or a response
   net/http has already finished. This holds for streamed responses too.
-- **GOFASTR1808 judges hex colour fallbacks in design-system code.** A
-  `var(--color-*, #hex)` fallback must name the token's light or dark
-  value, in any case or the short form. Keywords such as `currentColor`
-  stay quiet. So do owned styles, whose colours follow the app's theme,
-  and `battery/desktop`, which ships its own.
+- **GOFASTR1808 judges colour fallbacks in design-system code.** A
+  `var(--color-*, …)` or `var(--tk-*, …)` fallback must be the token's
+  hex for its scheme, in any case or the short form: the dark value
+  inside a dark-scheme rule or `@media` block, the light value
+  elsewhere. A keyword such as `currentColor` passes; `rgba()`, a named
+  colour or another hex does not. Owned styles stay unjudged, since
+  their colours follow the app's theme. `battery/desktop/ui` checks
+  its own against its per-platform theme in its tests.
 
 ### Fixed
-- **Colour fallbacks name the current palette.** About 340 across
+- **Colour fallbacks name the current palette.** About 350 across
   `framework/ui`, `framework/uihost`, `core-ui` and the batteries still
   named the colours from before the contrast pass, such as
-  `var(--color-danger, #DC2626)` where the theme declares #B91C1C. They
-  only render on a page with no theme CSS, but a reader took them for
-  the token's value. `battery/desktop`'s now match its macOS theme.
+  `var(--color-danger, #DC2626)` where the theme declares #B91C1C, or
+  a translucent `rgba(0,0,0,0.1)` border. They only render on a page
+  with no theme CSS, where the section menu's #A1A1AA text failed AA on
+  white, but a reader took them for the token's value.
+  `battery/desktop`'s now match its macOS theme.
 - **A hovered secondary `ui.BackToTop` keeps its strong border in dark
   mode.** A dark-scheme block restated the base rules' tokens, and
   because it came later it reset the hover border to `--color-border`.

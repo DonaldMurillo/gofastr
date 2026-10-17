@@ -91,7 +91,7 @@ func statusPillCSS(_ style.Theme) string {
   white-space: nowrap;
   color: var(--color-text-muted, #52525B);
   background: var(--color-surface, transparent);
-  border: var(--stroke-thin, 1px) solid var(--ui-status-pill-border, var(--color-border, rgba(0,0,0,0.1)));
+  border: var(--stroke-thin, 1px) solid var(--ui-status-pill-border, var(--color-border, #E4E4E7));
   border-radius: var(--radii-full, 9999px);
 }
 /* Author-origin display beats the UA's [hidden]{display:none}, so a
@@ -111,7 +111,7 @@ func statusPillCSS(_ style.Theme) string {
   /* Accent is carried by the dot and the full-strength text; the frame
      stays a hairline so a near-black primary never draws a heavy ring. */
   color: var(--color-text, currentColor);
-  border-color: var(--ui-status-pill-accent-border, var(--color-border, rgba(0,0,0,0.1)));
+  border-color: var(--ui-status-pill-accent-border, var(--color-border, #E4E4E7));
   background: var(--ui-status-pill-accent-bg, var(--color-surface-soft, var(--color-surface, transparent)));
 }
 [data-cui-comp="ui-status-pill"].fui-status-pill--accent .fui-status-pill__dot {

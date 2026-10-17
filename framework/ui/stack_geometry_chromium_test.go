@@ -277,7 +277,7 @@ func TestRatingColorFromAncestor(t *testing.T) {
 		{`<div>`, RatingShapeStar, 217, 119, 6},
 		// A shape's own colour is a default under the knob, not over it.
 		{knob, RatingShapeHeart, 1, 2, 3},
-		{`<div>`, RatingShapeHeart, 220, 38, 38},
+		{`<div>`, RatingShapeHeart, 185, 28, 28},
 	} {
 		page := render.HTML(tc.wrap) + Rating(RatingDisplayConfig{Value: 4, Shape: tc.shape}) + "</div>"
 		m := geometryOf(t, css, page, probe)

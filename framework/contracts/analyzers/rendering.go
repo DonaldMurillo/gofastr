@@ -209,6 +209,8 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 		scan := strings.Split(stripComments(string(body)), "\n")
 		ownsStyling := hasPrefixAny(f.Rel, designSystemPrefixes)
 		devSurface := hasPrefixAny(f.Rel, devOnlyPrefixes)
+		ownTheme := hasPrefixAny(f.Rel, ownThemePrefixes)
+		var dark darkScheme
 
 		for i, line := range scan {
 			lineNo := i + 1
@@ -222,8 +224,11 @@ func runRendering(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			}
 			// GOFASTR1808 is the same tree, the other direction: a var()
 			// whose fallback restates the token at the wrong value.
-			if ownsStyling && strings.Contains(line, "var(") {
-				out = append(out, checkFallbackDrift(f.Rel, lineNo, line, lines[i])...)
+			if ownsStyling {
+				inDark := dark.line(line)
+				if strings.Contains(line, "var(") {
+					out = append(out, checkFallbackDrift(f.Rel, lineNo, line, lines[i], ownTheme, inDark)...)
+				}
 			}
 			// GOFASTR1823: the literals GOFASTR1807 cannot see because
 			// they sit inside a shorthand.
@@ -950,61 +955,136 @@ func checkInlineScripts(p *contracts.Pass) []contracts.Diagnostic {
 // whose values are lengths or times, where a fallback either restates
 // the token or teaches a scale the theme does not declare. Font
 // fallbacks stay out: a family stack is a degraded-mode choice. Colours
-// are judged apart (colourDrift).
+// are judged apart (colourCategories).
 var driftCategories = map[string]bool{"spacing": true, "radii": true, "stroke": true, "leading": true, "tracking": true, "opacity": true, "text": true, "duration": true}
+
+// colourCategories are the colour token families GOFASTR1808 judges: the
+// palette and the code-highlight colours.
+var colourCategories = map[string]bool{"color": true, "tk": true}
 
 // ownThemePrefixes are design-system trees that ship their own theme, so
 // their colour fallbacks follow that palette rather than the
-// framework's: battery/desktop/ui's macOS colours.
-var ownThemePrefixes = []string{"battery/desktop/"}
+// framework's. battery/desktop/ui checks its fallbacks against its own
+// per-platform theme in its package tests.
+var ownThemePrefixes = []string{"battery/desktop/ui/"}
 
-// declaredDarkColors is the framework theme's dark palette by token name.
-var declaredDarkColors = sync.OnceValue(func() map[string]string {
-	out := map[string]string{}
-	for k, v := range theme.Default().DarkColors {
-		out["color-"+k] = v
+// colourKeywords are the fallbacks that name no colour of their own: a
+// degraded-mode choice, never a restated token.
+var colourKeywords = map[string]bool{"currentcolor": true, "transparent": true, "inherit": true, "initial": true, "unset": true, "revert": true, "revert-layer": true}
+
+// schemeTokens is the canonical theme's token table, the one pages ship
+// (framework/ui/theme), split by scheme: light holds every token, dark
+// the colours the dark palette redeclares.
+type schemeTokens struct{ light, dark map[string]string }
+
+var themeTokens = sync.OnceValue(func() schemeTokens {
+	t := schemeTokens{light: map[string]string{}, dark: map[string]string{}}
+	for k, v := range style.ThemeToTokens(theme.Default()) {
+		if name, ok := strings.CutPrefix(k, "dark."); ok {
+			t.dark[name] = v
+		} else {
+			t.light[name] = v
+		}
 	}
-	return out
+	return t
 })
 
-// reHexColour is a #RGB or #RRGGBB literal.
-var reHexColour = regexp.MustCompile(`^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$`)
+// declaredTokenValues is the theme's light token table by name.
+func declaredTokenValues() map[string]string { return themeTokens().light }
 
-// colourDrift reports whether a colour token's fallback is a hex the
-// theme declares for neither scheme. A keyword (currentColor,
-// transparent, inherit) is a degraded-mode choice and stays quiet; the
-// dark value is the right fallback inside a dark-scheme block, and a
-// line-based check cannot see the block, so either scheme's value
-// passes.
-func colourDrift(name, fallback string) bool {
-	if !reHexColour.MatchString(fallback) {
-		return false
+// reHex is an opaque CSS hex colour, #RGB or #RRGGBB. The theme declares
+// opaque colours, so an alpha hex is never one of its values.
+var reHex = regexp.MustCompile(`^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$`)
+
+// normHex is a hex colour upper-cased with its short form expanded, so
+// #fff and #FFFFFF compare equal; anything else is "".
+func normHex(v string) string {
+	if !reHex.MatchString(v) {
+		return ""
 	}
-	hex := strings.ToUpper(fallback)
-	if len(hex) == 4 {
-		hex = string([]byte{'#', hex[1], hex[1], hex[2], hex[2], hex[3], hex[3]})
+	v = strings.ToUpper(v)
+	if len(v) == 4 {
+		long := []byte{'#'}
+		for _, c := range []byte(v[1:]) {
+			long = append(long, c, c)
+		}
+		v = string(long)
 	}
-	light, ok := declaredTokenValues()[name]
-	return ok && hex != strings.ToUpper(light) && hex != strings.ToUpper(declaredDarkColors()[name])
+	return v
 }
 
-// declaredTokenValues is the theme's token table by name, light entries
-// only, for the fallback comparison.
-var declaredTokenValues = sync.OnceValue(func() map[string]string {
-	out := map[string]string{}
-	for k, v := range style.ThemeToTokens(style.DefaultTheme()) {
-		if strings.HasPrefix(k, "dark.") {
-			continue
-		}
-		out[k] = v
+// colourFallback returns the fallback a colour token needs (the dark
+// value inside a dark-scheme block, when the dark palette redeclares
+// it, else the light one) and whether the written one restates it. A
+// keyword passes; any other spelling, rgb(), a named colour or a
+// different hex, does not. A token the theme does not declare is
+// GOFASTR1806's business and passes.
+func colourFallback(name, fallback string, dark bool) (want string, fine bool) {
+	t := themeTokens()
+	want, declared := t.light[name]
+	if !declared {
+		return "", true
 	}
-	return out
-})
+	if d, ok := t.dark[name]; dark && ok {
+		want = d
+	}
+	if colourKeywords[strings.ToLower(fallback)] {
+		return want, true
+	}
+	got := normHex(fallback)
+	return want, got != "" && got == normHex(want)
+}
+
+// darkScheme follows a file's lines through dark-scheme CSS: a rule or
+// @media whose prelude names the dark scheme opens a block at its "{",
+// and the block closes when its braces balance. It reads position by
+// position, since one line of CSS in a Go string can hold a light rule
+// and a dark one. A prelude whose "{" is not on its own line opens
+// nothing: that is a mention (a matchMedia query), not CSS.
+type darkScheme struct{ depth int }
+
+var reDarkPrelude = regexp.MustCompile(`prefers-color-scheme:\s*dark|data-color-scheme="?dark|data-theme="?dark`)
+
+// line advances through s and reports, for each byte offset, whether it
+// sits inside a dark-scheme block.
+func (d *darkScheme) line(s string) []bool {
+	if d.depth == 0 && !strings.Contains(s, "dark") {
+		return nil // the common line: nothing dark to open or close
+	}
+	dark := make([]bool, len(s))
+	preludes := reDarkPrelude.FindAllStringIndex(s, -1)
+	pending := false
+	for i := 0; i < len(s); i++ {
+		if d.depth == 0 && len(preludes) > 0 && i == preludes[0][0] {
+			pending = true
+		}
+		for len(preludes) > 0 && i >= preludes[0][1]-1 {
+			preludes = preludes[1:]
+		}
+		switch s[i] {
+		case '{':
+			if d.depth > 0 || pending {
+				d.depth++
+				pending = false
+			}
+		case '}':
+			d.depth = max(d.depth-1, 0)
+		}
+		dark[i] = d.depth > 0
+	}
+	return dark
+}
 
 // reVarFallback matches a var() reference carrying a simple fallback: a
 // literal with no comma or parenthesis. A nested `var(--a, var(--b))` or a
 // calc() fallback is not a restated token value and is left alone.
 var reVarFallback = regexp.MustCompile(`var\(\s*--([A-Za-z0-9_-]+)\s*,\s*([^(),]+?)\s*\)`)
+
+// reColourFallback matches a var() reference to a colour token whose
+// fallback is a literal or one function call: #hex, a keyword, a named
+// colour, rgb(…). A fallback with deeper nesting (a color-mix() of
+// var()s) is not a restated value and is left alone.
+var reColourFallback = regexp.MustCompile(`var\(\s*--((?:color|tk)-[A-Za-z0-9_-]+)\s*,\s*([^()]*?(?:\([^()]*\))?)\s*\)`)
 
 // reLengthOrTime is a bare CSS length or time literal in the four units
 // the theme emits and authors write.
@@ -1044,29 +1124,50 @@ func sameScaleValue(a, b string) bool {
 
 // checkFallbackDrift reports one GOFASTR1808 per var() reference on a
 // design-system line whose fallback restates a length- or time-scale
-// token at a value the theme does not declare, or a colour token at a
-// hex neither scheme declares.
-func checkFallbackDrift(rel string, lineNo int, scan, orig string) []contracts.Diagnostic {
+// token at a value the theme does not declare, or a colour token at
+// anything but its value in its scheme. ownTheme skips the colours of a
+// tree with its own theme; dark marks the line's bytes that sit in a
+// dark-scheme block (darkScheme.line).
+func checkFallbackDrift(rel string, lineNo int, scan, orig string, ownTheme bool, dark []bool) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
-	for _, m := range reVarFallback.FindAllStringSubmatch(scan, -1) {
-		name, fallback := m[1], strings.TrimSpace(m[2])
-		declared, ok := declaredTokenValues()[name]
-		switch cat := tokenCategory(name); {
-		case cat == "color":
-			if hasPrefixAny(rel, ownThemePrefixes) || !colourDrift(name, fallback) {
-				continue
-			}
-		case !driftCategories[cat] || !ok || sameScaleValue(fallback, declared):
-			continue
-		}
+	report := func(name, fallback, declared, scheme string) {
 		out = append(out, contracts.Diagnostic{
 			RuleID: contracts.RuleFallbackDrift,
 			File:   rel,
 			Line:   lineNo,
-			Message: fmt.Sprintf("var(--%s, %s): the theme declares --%s as %s, so a themed page renders %s and the fallback teaches a value that does not exist; write var(--%s, %s)",
-				name, fallback, name, declared, declared, name, declared),
+			Message: fmt.Sprintf("var(--%s, %s): the theme declares --%s as %s%s, so a themed page renders %s and the fallback teaches a value that does not exist; write var(--%s, %s)",
+				name, fallback, name, declared, scheme, declared, name, declared),
 			Snippet: strings.TrimSpace(orig),
 		})
+	}
+	for _, m := range reVarFallback.FindAllStringSubmatch(scan, -1) {
+		name, fallback := m[1], strings.TrimSpace(m[2])
+		declared, ok := declaredTokenValues()[name]
+		if !driftCategories[tokenCategory(name)] || !ok || sameScaleValue(fallback, declared) {
+			continue
+		}
+		report(name, fallback, declared, "")
+	}
+	if ownTheme {
+		return out
+	}
+	for _, ix := range reColourFallback.FindAllStringSubmatchIndex(scan, -1) {
+		name, fallback := scan[ix[2]:ix[3]], strings.TrimSpace(scan[ix[4]:ix[5]])
+		inDark := ix[0] < len(dark) && dark[ix[0]]
+		// A nested var() is a chain, not a value; a quote means Go splices
+		// the fallback in (a theme preset's own ink).
+		if !colourCategories[tokenCategory(name)] || strings.HasPrefix(fallback, "var(") || strings.Contains(fallback, `"`) {
+			continue
+		}
+		want, fine := colourFallback(name, fallback, inDark)
+		if fine {
+			continue
+		}
+		scheme := " in the light scheme"
+		if inDark {
+			scheme = " in this dark-scheme block"
+		}
+		report(name, fallback, want, scheme)
 	}
 	return out
 }

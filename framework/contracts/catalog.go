@@ -1012,13 +1012,16 @@ func renderingRules() []Rule {
 			"declare (it is 2/4/8/16/24), and a review bot read one of them as the token's value and " +
 			"proposed a change that would have shrunk a real gap. The rule covers the length and time " +
 			"scales, spacing, radii, text and duration, where a fallback can only be right or wrong. In " +
-			"design-system Go code it also covers hex colour fallbacks, which drifted the same way: about " +
-			"340 still named the palette from before the contrast pass (`var(--color-danger, #DC2626)` " +
-			"where the theme declares #B91C1C). Either scheme's value passes, since a dark-scheme block " +
-			"falls back to the dark one. Keywords (`currentColor`, `inherit`, `transparent`) and font " +
-			"stacks are deliberate degraded-mode choices and are left alone, as are owned styles' " +
-			"colours, which follow the app's theme, and battery/desktop, which ships its own.",
-		Fix: "Write the declared value as the fallback (`style.TokenNames()` or `gofastr docs theming` lists them); rem and px are compared by size, so `var(--spacing-lg, 1rem)` is fine for a 16px token, and hex by colour, so `#fff` is fine for #FFFFFF. If the value you wanted is not the token's value, you wanted a different token.",
+			"design-system Go code it also covers colour fallbacks (--color-* and the --tk-* code " +
+			"colours), which drifted the same way: about 350 still named the palette from before the " +
+			"contrast pass (`var(--color-danger, #DC2626)` where the theme declares #B91C1C) or a " +
+			"translucent rgba() the theme never declares. A colour fallback is the token's hex for its " +
+			"scheme (the dark value inside a dark-scheme rule or @media block, the light value " +
+			"elsewhere) or a keyword (`currentColor`, `inherit`, `transparent`), a deliberate " +
+			"degraded-mode choice. Font stacks are left alone, as are owned styles' colours, which " +
+			"follow the app's theme, and battery/desktop/ui's, which its own tests check against its " +
+			"per-platform theme.",
+		Fix: "Write the declared value as the fallback (`style.TokenNames()` or `gofastr docs theming` lists them); rem and px are compared by size, so `var(--spacing-lg, 1rem)` is fine for a 16px token, and hex by colour, so `#fff` is fine for #FFFFFF. Inside a dark-scheme block write the dark value the message names. If the value you wanted is not the token's value, you wanted a different token.",
 		Doc: "theming",
 		Examples: []Example{{
 			Bad:  "padding: var(--spacing-md, 12px);",

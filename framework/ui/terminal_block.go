@@ -81,7 +81,7 @@ func terminalBlockCSS(_ style.Theme) string {
 	// Knobs: --ui-terminal-block-dot-size (7px) is the head's status
 	// dot (beside the head-border and ok-color knobs below).
 	return `[data-cui-comp="ui-terminal-block"] {
-  border: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.1));
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-background, #fff);
   overflow: hidden;
@@ -94,7 +94,7 @@ func terminalBlockCSS(_ style.Theme) string {
   align-items: center;
   gap: var(--spacing-md, 8px);
   padding: calc(var(--spacing-sm, 4px) * 1.5) calc(var(--spacing-sm, 4px) * 3);
-  border-bottom: var(--stroke-thin, 1px) solid var(--ui-terminal-block-head-border, var(--color-border, rgba(0,0,0,0.1)));
+  border-bottom: var(--stroke-thin, 1px) solid var(--ui-terminal-block-head-border, var(--color-border, #E4E4E7));
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-text-subtle, #71717A);
 }

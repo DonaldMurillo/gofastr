@@ -449,13 +449,13 @@ func sectionMenuCSS(_ style.Theme) string {
 [data-cui-comp="cui-section-menu"] div.cui-section-menu__group-summary { cursor: default; }
 /* The group holding the current page names itself in the accent. */
 [data-cui-comp="cui-section-menu"] .cui-section-menu__group:has(.cui-section-menu__link[aria-current="page"]) > .cui-section-menu__group-summary { color: var(--color-accent, #2563EB); }
-[data-cui-comp="cui-section-menu"] .cui-section-menu__eyebrow { color: var(--fui-section-menu-eyebrow-color, var(--color-text-subtle, #A1A1AA)); font-family: var(--font-mono, ui-monospace, monospace); letter-spacing: 0; }
+[data-cui-comp="cui-section-menu"] .cui-section-menu__eyebrow { color: var(--fui-section-menu-eyebrow-color, var(--color-text-subtle, #71717A)); font-family: var(--font-mono, ui-monospace, monospace); letter-spacing: 0; }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__group-label { flex: 1; min-width: 0; }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__count {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-weight: var(--font-weight-normal, 400);
   letter-spacing: 0;
-  color: var(--color-text-subtle, #A1A1AA);
+  color: var(--color-text-subtle, #71717A);
   font-variant-numeric: tabular-nums;
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__chevron {
@@ -482,7 +482,7 @@ func sectionMenuCSS(_ style.Theme) string {
   position: relative;
   display: flex;
   margin-inline: calc(var(--cui-section-menu-inset) - 4px);
-  color: var(--color-text-subtle, #A1A1AA);
+  color: var(--color-text-subtle, #71717A);
 }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__filter-icon {
   position: absolute;
@@ -508,7 +508,7 @@ func sectionMenuCSS(_ style.Theme) string {
   border-color: var(--color-accent, #2563EB);
   box-shadow: 0 0 0 calc(var(--stroke-thin, 1px) * 3) var(--cui-section-menu-dot-ring);
 }
-[data-cui-comp="cui-section-menu"] .cui-section-menu__filter-input::placeholder { color: var(--color-text-subtle, #A1A1AA); opacity: 1; }
+[data-cui-comp="cui-section-menu"] .cui-section-menu__filter-input::placeholder { color: var(--color-text-subtle, #71717A); opacity: 1; }
 [data-cui-comp="cui-section-menu"] .cui-section-menu__mark {
   background: color-mix(in srgb, var(--color-accent, #2563EB) 16%, transparent);
   color: inherit;

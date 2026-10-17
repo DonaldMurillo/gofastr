@@ -1,6 +1,9 @@
 package desktopui_test
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -132,5 +135,46 @@ func TestStyleSheetResolvesThemeTokens(t *testing.T) {
 func TestThemeTouchTargetIsPointerSized(t *testing.T) {
 	if got := desktopui.Theme().Layout.TouchTarget.Value; got != 24 {
 		t.Errorf("TouchTarget = %d, want 24", got)
+	}
+}
+
+// GOFASTR1808 skips this package's colour fallbacks, which follow the
+// desktop theme rather than the framework's, so they are judged here: a
+// var(--color-*, #hex) fallback names a value the desktop theme declares
+// for some platform and scheme.
+func TestColourFallbacksFollowTheme(t *testing.T) {
+	declared := map[string]map[string]bool{}
+	for _, goos := range []string{"darwin", "windows", "linux"} {
+		for k, v := range style.ThemeToTokens(desktopui.ThemeFor(goos)) {
+			k = strings.TrimPrefix(k, "dark.")
+			if declared[k] == nil {
+				declared[k] = map[string]bool{}
+			}
+			declared[k][strings.ToUpper(v)] = true
+		}
+	}
+	files, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`var\(--(color-[a-z-]+), (#[0-9A-Fa-f]{6})\)`)
+	seen := 0
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range re.FindAllStringSubmatch(string(src), -1) {
+			seen++
+			if !declared[m[1]][strings.ToUpper(m[2])] {
+				t.Errorf("%s: var(--%s, %s) names no value the desktop theme declares for --%s", f, m[1], m[2], m[1])
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("found no colour fallbacks: the scan is reading the wrong files")
 	}
 }

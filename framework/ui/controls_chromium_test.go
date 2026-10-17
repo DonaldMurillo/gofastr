@@ -208,7 +208,7 @@ func TestRatingInputColorFromAncestor(t *testing.T) {
 		{knob, RatingShapeStar, 1, 2, 3},
 		{`<div>`, RatingShapeStar, 217, 119, 6},
 		{knob, RatingShapeHeart, 1, 2, 3},
-		{`<div>`, RatingShapeHeart, 220, 38, 38},
+		{`<div>`, RatingShapeHeart, 185, 28, 28},
 	} {
 		page := render.HTML(tc.wrap) + RatingInput(RatingConfig{Name: "r", Label: "Rating", Value: 4, Shape: tc.shape}) + "</div>"
 		m := geometryOf(t, css, page, probe)
