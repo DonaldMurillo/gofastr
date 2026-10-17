@@ -118,7 +118,7 @@ func TestSQLBulkStoreLeaseFencesWriters(t *testing.T) {
 		if err := s.Settle(ctx, "j1", "r2", map[string]string{"a": entityui.BulkRowDone}); !errors.Is(err, entityui.ErrBulkLeaseLost) {
 			t.Fatalf("SECURITY: a runner without the lease settled: %v", err)
 		}
-		later := now.Add(3 * time.Minute)
+		later := now.Add(2 * time.Minute) // exactly the renewed lease's expiry
 		if ok, err := s.Claim(ctx, "j1", "r2", later, later.Add(time.Minute)); err != nil || !ok {
 			t.Fatalf("an expired lease was not taken over: %v, %v", ok, err)
 		}

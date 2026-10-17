@@ -19,27 +19,61 @@ func TestConfigureCommandCancellationKillsWindowsProcessTree(t *testing.T) {
 	}
 
 	pidPath := filepath.Join(t.TempDir(), "child.pid")
-	script := fmt.Sprintf(`$child = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 60' -PassThru; [IO.File]::WriteAllText('%s', $child.Id.ToString()); Start-Sleep -Seconds 60`, strings.ReplaceAll(pidPath, "'", "''"))
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	script := fmt.Sprintf(`$child = Start-Process -WindowStyle Hidden -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 60' -PassThru; [IO.File]::WriteAllText('%s', $child.Id.ToString()); Start-Sleep -Seconds 60`, strings.ReplaceAll(pidPath, "'", "''"))
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command", script)
 	configureCommandCancellation(cmd)
-	if err := cmd.Run(); err == nil {
-		t.Fatal("timed process tree unexpectedly exited successfully")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
 	}
-	if ctx.Err() != context.DeadlineExceeded {
-		t.Fatalf("command did not end through its timeout: %v", ctx.Err())
-	}
-
-	b, err := os.ReadFile(pidPath)
-	if err != nil {
-		t.Fatalf("parent did not report its child pid: %v", err)
-	}
-	childPID, err := strconv.Atoi(strings.TrimSpace(string(b)))
-	if err != nil {
-		t.Fatalf("parse child pid %q: %v", b, err)
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	waited := false
+	defer func() {
+		if !waited {
+			cancel()
+			_ = exec.Command("taskkill.exe", "/PID", strconv.Itoa(cmd.Process.Pid), "/T", "/F").Run()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				t.Error("parent did not exit during cleanup")
+			}
+		}
+	}()
+	// Cancellation must happen after a descendant exists. A fixed timeout
+	// could expire during PowerShell startup and never exercise tree cleanup.
+	var childPID int
+	for childPID == 0 {
+		if b, err := os.ReadFile(pidPath); err == nil {
+			childPID, _ = strconv.Atoi(strings.TrimSpace(string(b)))
+		}
+		if childPID > 0 {
+			break
+		}
+		select {
+		case err := <-done:
+			waited = true
+			t.Fatalf("parent exited before reporting its child: %v", err)
+		case <-ctx.Done():
+			t.Fatal("parent did not report its child within the startup deadline")
+		case <-time.After(50 * time.Millisecond):
+		}
 	}
 	defer exec.Command("taskkill.exe", "/PID", strconv.Itoa(childPID), "/T", "/F").Run() // best-effort cleanup on assertion failure
+	if !windowsProcessExists(childPID) {
+		t.Fatal("child was not alive before parent cancellation")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		waited = true
+		if err == nil {
+			t.Fatal("cancelled process tree unexpectedly exited successfully")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("parent did not exit within 5s of cancellation")
+	}
 
 	deadline := time.Now().Add(5 * time.Second)
 	for windowsProcessExists(childPID) && time.Now().Before(deadline) {
@@ -56,7 +90,7 @@ func TestOwnedCommandKillsWindowsDescendantsAfterNormalExit(t *testing.T) {
 	}
 
 	pidPath := filepath.Join(t.TempDir(), "child.pid")
-	script := fmt.Sprintf(`$child = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 60' -PassThru; [IO.File]::WriteAllText('%s', $child.Id.ToString()); Start-Sleep -Milliseconds 750`, strings.ReplaceAll(pidPath, "'", "''"))
+	script := fmt.Sprintf(`$child = Start-Process -WindowStyle Hidden -FilePath 'powershell.exe' -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 60' -PassThru; [IO.File]::WriteAllText('%s', $child.Id.ToString()); Start-Sleep -Milliseconds 750`, strings.ReplaceAll(pidPath, "'", "''"))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command", script)

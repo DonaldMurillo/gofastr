@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 // The cost ledger is owner-only: it records per-session spend (session
@@ -25,28 +27,20 @@ func TestCostLedgerOwnerOnlyModes(t *testing.T) {
 	}
 
 	dir := filepath.Dir(ledgerPath)
-	di, err := os.Stat(dir)
-	if err != nil {
-		t.Fatalf("stat ledger dir: %v", err)
-	}
-	if di.Mode().Perm()&0o077 != 0 {
-		t.Errorf("SECURITY: cost-ledger dir is mode %o — per-session spend data sits group/world-listable. "+
-			"OpenCostLedger must MkdirAll 0700.", di.Mode().Perm())
-	}
+	filepermtest.AssertOwnerOnly(t, dir, 0o700)
 
 	for _, p := range []string{ledgerPath, ledgerPath + "-wal", ledgerPath + "-shm"} {
-		fi, err := os.Stat(p)
+		_, err := os.Stat(p)
 		if os.IsNotExist(err) {
 			continue // WAL sidecars appear lazily; the main db is the pin
 		}
 		if err != nil {
 			t.Fatalf("stat %s: %v", p, err)
 		}
-		if fi.Mode().Perm()&0o077 != 0 {
-			t.Errorf("SECURITY: cost ledger file %s is mode %o — another local user reads the full spend log "+
-				"(sessions, providers, models, token counts). The sibling event store for the same sessions is "+
-				"owner-only; the db file must be created 0600 before sql.Open.",
-				filepath.Base(p), fi.Mode().Perm())
+		if p == ledgerPath {
+			filepermtest.AssertOwnerOnly(t, p, 0o600)
+		} else {
+			filepermtest.AssertOwnerAccess(t, p, 0o600)
 		}
 	}
 }

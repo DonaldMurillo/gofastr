@@ -270,7 +270,8 @@ keys, is refused with `400` rather than resolved last-wins. Every response
 Kiln serves carries the framework's security headers (`nosniff`, frame and
 CSP policy included). And `.kiln.session.jsonl` is created owner-only
 (`0600` in a `0700` directory), because its entries embed the same secrets
-freeze writes owner-only. Built-in agent adapters run each turn in a fresh
+freeze writes owner-only. Windows journal writes protect the open file's ACL
+before writing any entries. Built-in agent adapters run each turn in a fresh
 `0700` working directory under their registered temp path; a directory Kiln
 does not own is refused, not adopted.
 

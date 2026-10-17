@@ -7,8 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/core/upload"
+
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -37,7 +39,7 @@ func dupFormHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 	ent.SetDB(db)
 	installSecurityOwnerExtractor(t)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
-	ch.Storage = upload.NewLocalStorage(t.TempDir())
+	ch.Storage = teststorage.New(t, t.TempDir())
 	return ch, db
 }
 
@@ -74,7 +76,7 @@ func TestMultipartDuplicateKeysRefused(t *testing.T) {
 	}.WithTimestamps(false))
 	entj.SetDB(dbj)
 	chj := NewCrudHandler(entj, dbj).WithJSONCase(CaseSnake)
-	chj.Storage = upload.NewLocalStorage(t.TempDir())
+	chj.Storage = teststorage.New(t, t.TempDir())
 	reqj := withTestUser(httptest.NewRequest(http.MethodPost, "/dupmp_tags", strings.NewReader(
 		"--B\r\n"+
 			"Content-Disposition: form-data; name=\"tags\"\r\n\r\nred\r\n"+

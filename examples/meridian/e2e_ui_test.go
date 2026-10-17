@@ -12,7 +12,6 @@ package main
 
 import (
 	"context"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,7 +50,22 @@ func e2eBootApp(t *testing.T) string {
 	srv := exec.Command(bin)
 	srv.Dir = dir
 	srv.Env = append(os.Environ(), "PORT="+addr, "DATABASE_URL=file:"+filepath.Join(dir, "e2e.db"))
-	srv.Stdout, srv.Stderr = io.Discard, io.Discard
+	serverLog, err := os.CreateTemp(dir, "server-*.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Stdout, srv.Stderr = serverLog, serverLog
+	t.Cleanup(func() {
+		_ = serverLog.Close()
+		if t.Failed() {
+			data, err := os.ReadFile(serverLog.Name())
+			if err != nil {
+				t.Errorf("read server log: %v", err)
+				return
+			}
+			t.Logf("server output:\n%s", data)
+		}
+	})
 	if err := srv.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}

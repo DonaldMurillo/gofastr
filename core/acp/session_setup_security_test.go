@@ -2,6 +2,7 @@ package acp_test
 
 import (
 	"context"
+	"runtime"
 	"sync/atomic"
 	"testing"
 
@@ -33,7 +34,11 @@ func TestSessionSetupCwdParity(t *testing.T) {
 		"relative/dir",
 		"./here",
 		"~/proj",
-		`C:\Users\x`,
+	}
+	if runtime.GOOS == "windows" {
+		cwds = append(cwds, `C:Users\x`, `\Users\x`)
+	} else {
+		cwds = append(cwds, `C:\Users\x`)
 	}
 
 	for _, cwd := range cwds {
@@ -123,6 +128,7 @@ func TestSessionLoadCwdValidatedPerCall(t *testing.T) {
 // would route around the server's validation entirely.
 func TestSessionSetupAcceptsLegitAbsoluteCwds(t *testing.T) {
 	for _, cwd := range []string{"/tmp/proj", "/tmp/proj/", "/a/deeply/nested/path"} {
+		cwd = testAbsoluteCWD(cwd)
 		t.Run(cwd, func(t *testing.T) {
 			var got atomic.Value
 			agent := &fakeAgent{newFn: func(_ context.Context, cwd string) (acp.Session, error) {

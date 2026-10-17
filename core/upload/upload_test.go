@@ -39,7 +39,7 @@ func tmpDir(t *testing.T) string {
 
 func TestUploadValidFileSucceeds(t *testing.T) {
 	dir := tmpDir(t)
-	storage := NewLocalStorage(dir)
+	storage := newTestLocalStorage(t, dir)
 
 	cfg := Config{
 		MaxSize:      1 << 20, // 1 MB
@@ -81,7 +81,7 @@ func TestUploadValidFileSucceeds(t *testing.T) {
 
 func TestRejectFileTooLarge(t *testing.T) {
 	dir := tmpDir(t)
-	storage := NewLocalStorage(dir)
+	storage := newTestLocalStorage(t, dir)
 
 	cfg := Config{
 		MaxSize: 10, // 10 bytes max
@@ -104,7 +104,7 @@ func TestRejectFileTooLarge(t *testing.T) {
 
 func TestRejectDisallowedMIME(t *testing.T) {
 	dir := tmpDir(t)
-	storage := NewLocalStorage(dir)
+	storage := newTestLocalStorage(t, dir)
 
 	cfg := Config{
 		MaxSize:      1 << 20,
@@ -129,7 +129,7 @@ func TestRejectDisallowedMIME(t *testing.T) {
 
 func TestRejectDisallowedExtension(t *testing.T) {
 	dir := tmpDir(t)
-	storage := NewLocalStorage(dir)
+	storage := newTestLocalStorage(t, dir)
 
 	cfg := Config{
 		MaxSize:     1 << 20,
@@ -156,7 +156,7 @@ func TestRejectDisallowedExtension(t *testing.T) {
 
 func TestPathTraversalSanitized(t *testing.T) {
 	dir := tmpDir(t)
-	storage := NewLocalStorage(dir)
+	storage := newTestLocalStorage(t, dir)
 
 	cfg := Config{
 		MaxSize: 1 << 20,
@@ -208,7 +208,7 @@ func TestPathTraversalSanitized(t *testing.T) {
 
 func TestLocalStorageSaveAndGetRoundTrip(t *testing.T) {
 	dir := tmpDir(t)
-	storage := NewLocalStorage(dir)
+	storage := newTestLocalStorage(t, dir)
 	ctx := context.Background()
 
 	content := "round trip test content"
@@ -235,7 +235,7 @@ func TestLocalStorageSaveAndGetRoundTrip(t *testing.T) {
 
 func TestLocalStorageDelete(t *testing.T) {
 	dir := tmpDir(t)
-	storage := NewLocalStorage(dir)
+	storage := newTestLocalStorage(t, dir)
 	ctx := context.Background()
 
 	err := storage.Save(ctx, "deleteme.txt", strings.NewReader("delete me"))
@@ -267,7 +267,7 @@ func TestLocalStorageDelete(t *testing.T) {
 
 func TestLocalStorageRejectsPathTraversal(t *testing.T) {
 	dir := tmpDir(t)
-	storage := NewLocalStorage(dir)
+	storage := newTestLocalStorage(t, dir)
 	ctx := context.Background()
 
 	err := storage.Save(ctx, "../../etc/passwd", strings.NewReader("evil"))
@@ -350,7 +350,7 @@ func TestValidateMIMEReadsAndResets(t *testing.T) {
 
 func TestMethodNotAllowed(t *testing.T) {
 	dir := tmpDir(t)
-	storage := NewLocalStorage(dir)
+	storage := newTestLocalStorage(t, dir)
 
 	cfg := Config{Storage: storage}
 	handler := Handler(cfg)
@@ -366,7 +366,7 @@ func TestMethodNotAllowed(t *testing.T) {
 
 func TestMissingFileField(t *testing.T) {
 	dir := tmpDir(t)
-	storage := NewLocalStorage(dir)
+	storage := newTestLocalStorage(t, dir)
 
 	cfg := Config{Storage: storage}
 	handler := Handler(cfg)
@@ -388,7 +388,7 @@ func TestMissingFileField(t *testing.T) {
 
 func TestLocalStorageSubdirectoryCreation(t *testing.T) {
 	dir := tmpDir(t)
-	storage := NewLocalStorage(dir)
+	storage := newTestLocalStorage(t, dir)
 	ctx := context.Background()
 
 	err := storage.Save(ctx, "sub/dir/file.txt", strings.NewReader("nested"))
@@ -413,7 +413,7 @@ func TestLocalStorageSubdirectoryCreation(t *testing.T) {
 
 func TestLocalStorageSaveAndExists(t *testing.T) {
 	dir := tmpDir(t)
-	storage := NewLocalStorage(dir)
+	storage := newTestLocalStorage(t, dir)
 	ctx := context.Background()
 
 	exists, err := storage.Exists(ctx, "nonexistent.txt")

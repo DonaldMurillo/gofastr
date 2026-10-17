@@ -56,7 +56,14 @@ func TestRPCSuccessToastShowsTitleAndSurvivesNavigate(t *testing.T) {
 <script src="/__gofastr/runtime.js"></script>
 </body></html>`)
 	})
-	srv := httptest.NewServer(mux)
+	// First-use feedback can load after the navigation response. Keep that
+	// race deterministic instead of depending on the host's fetch timing.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/headless-feedback.js") {
+			time.Sleep(500 * time.Millisecond)
+		}
+		mux.ServeHTTP(w, r)
+	}))
 	t.Cleanup(srv.Close)
 
 	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))

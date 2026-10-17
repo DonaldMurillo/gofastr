@@ -95,7 +95,8 @@ func TestMain(m *testing.M) {
 	// build dir once per process (devServerBinDir) and removes it only on
 	// a clean shutdown, which the in-process tests never reach; under
 	// this root it goes when the run ends.
-	tmpRoot, err := os.MkdirTemp("", "gofastr-cmd-test-")
+	// Keep room for service IDs within native Unix socket path limits.
+	tmpRoot, err := os.MkdirTemp("", "gf-")
 	if err == nil {
 		for _, k := range []string{"TMPDIR", "TMP", "TEMP"} {
 			_ = os.Setenv(k, tmpRoot)

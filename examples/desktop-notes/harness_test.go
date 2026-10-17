@@ -9,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/desktoptest"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 // The app as the window runs it: desktoptest.Run drives the battery's
@@ -27,6 +28,7 @@ func newHarness(t *testing.T) *desktoptest.Harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = app.DB.Close() })
 	return desktoptest.Run(t, app, d)
 }
 
@@ -127,9 +129,7 @@ func TestExportAllWritesMarkdownAndEmits(t *testing.T) {
 	if !strings.Contains(md, "# Alpha\n\nfirst body\n") || !strings.Contains(md, "# Beta\n") {
 		t.Fatalf("export = %q", md)
 	}
-	if info, _ := os.Stat(target); info.Mode().Perm() != 0o600 {
-		t.Fatalf("export mode = %o, want 0600", info.Mode().Perm())
-	}
+	filepermtest.AssertOwnerOnly(t, target, 0o600)
 	if got := h.Shell.DialogCalls(); got != 1 {
 		t.Fatalf("dialog calls = %d", got)
 	}

@@ -25,7 +25,7 @@ func TestSaveCanceledMidCopyKeepsObject(t *testing.T) {
 		"outside-tmp": {WithTempDir(t.TempDir())},
 	} {
 		t.Run(name, func(t *testing.T) {
-			s := NewLocalStorage(t.TempDir(), opts...)
+			s := newTestLocalStorage(t, t.TempDir(), opts...)
 			if err := s.Save(context.Background(), "a", strings.NewReader("old")); err != nil {
 				t.Fatal(err)
 			}

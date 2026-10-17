@@ -127,7 +127,7 @@ func bootSeededStorefront(t *testing.T) string {
 	}
 	srv.Env = append(os.Environ(), "PORT="+addr, "DATABASE_URL=file:"+filepath.Join(dir, "guard.db"),
 		"ADMIN_SEED_PASSWORD="+seedPw)
-	srv.Stdout, srv.Stderr = nil, nil
+	e2eCaptureServerLog(t, srv, dir)
 	if err := srv.Start(); err != nil {
 		t.Fatalf("start: %v", err)
 	}

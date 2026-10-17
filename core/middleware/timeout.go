@@ -361,6 +361,7 @@ func Timeout(d time.Duration) Middleware {
 				ctx.cancel(r.Context().Err())
 			})
 			defer stop()
+			deadline := time.Now().Add(effective)
 			timer := time.NewTimer(effective)
 			defer timer.Stop()
 
@@ -381,7 +382,6 @@ func Timeout(d time.Duration) Middleware {
 			// Written before close(done) and read only after it, which
 			// orders the two without a lock.
 			var finishedAt time.Time
-			deadline := time.Now().Add(effective)
 			go func() {
 				defer func() {
 					if v := recover(); v != nil {
@@ -445,6 +445,10 @@ func Timeout(d time.Duration) Middleware {
 			case <-done:
 				if childPanic != nil {
 					panic(childPanic)
+				}
+				if !finishedAt.Before(deadline) {
+					abandon(context.DeadlineExceeded)
+					return
 				}
 				tw.finish()
 			case <-r.Context().Done():

@@ -179,7 +179,7 @@ func TestGeneratePackageSubdirOutWorks(t *testing.T) {
 		dry := covT_capStdout(t, func() {
 			runGeneratePackage([]string{"docpage", "--out=" + tc.out, "--dry-run"})
 		})
-		if !strings.Contains(dry, "Would write:") || !strings.Contains(dry, tc.out+"/docpage.go") {
+		if !strings.Contains(dry, "Would write:") || !strings.Contains(dry, filepath.ToSlash(tc.out)+"/docpage.go") {
 			t.Errorf("%s: dry run did not approve the in-module target:\n%s", tc.name, dry)
 		}
 		var code int

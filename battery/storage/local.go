@@ -69,6 +69,19 @@ func NewLocalStorage(baseDir string, opts ...LocalOption) *LocalStorage {
 	return ls
 }
 
+// Close releases the pinned storage root. Call it after in-flight storage
+// operations finish and after closing readers returned by Get or GetRange.
+func (ls *LocalStorage) Close() error {
+	ls.rootMu.Lock()
+	defer ls.rootMu.Unlock()
+	if ls.root == nil {
+		return nil
+	}
+	err := ls.root.Close()
+	ls.root, ls.rootBase = nil, ""
+	return err
+}
+
 // validateKey ensures the key does not escape the base directory. This is the
 // security check and runs on EVERY operation.
 //
@@ -264,6 +277,11 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 		// now so the staging write and the rename are kernel-contained.
 		rt = ls.rootFor(root)
 	}
+	if rt != nil {
+		if err := rt.MkdirAll(filepath.Dir(rootRel(dstPath, root)), 0o700); err != nil {
+			return fmt.Errorf("storage: create directory for %q: %w", key, scrubPathError(err))
+		}
+	}
 	if err := fileperm.RestrictDirectoryTree(dir, root); err != nil {
 		return fmt.Errorf("storage: restrict directory for %q: %w", key, scrubPathError(err))
 	}
@@ -298,9 +316,6 @@ func (ls *LocalStorage) Save(ctx context.Context, key string, r io.Reader) error
 		// anywhere on the chain after resolvePath is refused by the
 		// openat containment instead of being followed.
 		rel := rootRel(dstPath, root)
-		if err := rt.MkdirAll(filepath.Dir(rel), 0o700); err != nil {
-			return fmt.Errorf("storage: create directory for %q: %w", key, scrubPathError(err))
-		}
 		tmpFile, tmpRel, err := upload.CreateTempInRoot(rt, relTempDir, ".gofastr-tmp-*")
 		if err != nil {
 			return fmt.Errorf("storage: create temp file: %w", scrubPathError(err))

@@ -27,10 +27,12 @@ func TestE2E_PaletteSearchFindsSection(t *testing.T) {
 		pageReady(),
 		chromedp.Evaluate(`document.querySelector('[data-cui-open="site-command-palette"]').click()`, nil),
 		chromedp.WaitVisible(`#site-command-palette-input`, chromedp.ByID),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.['headless-combobox']`, nil),
 		chromedp.SendKeys(`#site-command-palette-input`, "darkcolors", chromedp.ByID),
 		// A query that lands while the index is still building shows a
 		// Loading… row first; results are the rows with a destination.
 		chromedp.WaitVisible(`[data-search-result][data-cui-push-state]`, chromedp.ByQuery),
+		chromedp.Poll(`(() => { const input = document.getElementById('site-command-palette-input'); const first = document.querySelector('[data-search-result][data-cui-push-state]'); return document.activeElement === input && first?.id === input?.getAttribute('aria-activedescendant'); })()`, nil),
 		chromedp.Evaluate(`[...document.querySelectorAll('[data-search-result][data-cui-push-state]')].map(r => r.getAttribute('data-cui-push-state'))`, &rows),
 	); err != nil {
 		t.Fatalf("search: %v", err)

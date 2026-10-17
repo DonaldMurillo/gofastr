@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	goversion "go/version"
 	"io"
 	"os"
 	"os/exec"
@@ -13,7 +14,16 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
+	"golang.org/x/mod/modfile"
+)
+
+// Keep these aligned with go.mod. TestInitGoDirectives checks the generated
+// module against the release requirements, independent of the Go on PATH.
+const (
+	scaffoldGoVersion = "1.27.0"
+	scaffoldToolchain = "go1.27.2"
 )
 
 func runInit(args []string) {
@@ -255,6 +265,12 @@ bin/
 	}
 
 	// Run go mod init to generate a proper go.mod
+	minimumGo, preferredGo, err := scaffoldGoRequirements(name)
+	if err != nil {
+		fail("Could not read the existing go.mod: %v", err)
+		osExit(1)
+		return
+	}
 	cmd := exec.Command("go", "mod", "init", modulePath)
 	cmd.Dir = name
 	cmd.Stdout = os.Stdout
@@ -264,17 +280,22 @@ bin/
 		info("You may need to run 'go mod init %s' manually.", modulePath)
 	}
 	pinnedVersion := installedFrameworkVersion()
+	// Set all directives in one edit: after the go line changes, a second
+	// go invocation could switch to the minimum toolchain before seeing the
+	// preferred patch release. Do this for development CLIs too.
+	editArgs := []string{"mod", "edit", "-go=" + minimumGo, "-toolchain=" + preferredGo}
 	if pinnedVersion != "" {
-		edit := exec.Command("go", "mod", "edit", "-require="+gofastrModule+"@"+pinnedVersion)
-		edit.Dir = name
-		if out, err := edit.CombinedOutput(); err != nil {
-			fail("Could not pin GoFastr %s in go.mod: %v", pinnedVersion, err)
-			if msg := strings.TrimSpace(string(out)); msg != "" {
-				info("%s", msg)
-			}
-			osExit(1)
-			return
+		editArgs = append(editArgs, "-require="+gofastrModule+"@"+pinnedVersion)
+	}
+	edit := exec.Command("go", editArgs...)
+	edit.Dir = name
+	if out, err := edit.CombinedOutput(); err != nil {
+		fail("Could not set Go requirements in go.mod: %v", err)
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			info("%s", msg)
 		}
+		osExit(1)
+		return
 	}
 
 	// Run git init so the project starts with a clean repo.
@@ -322,6 +343,40 @@ bin/
 	}
 	fmt.Println("  Only use a local `replace` directive while hacking on GoFastr itself.")
 	fmt.Println()
+}
+
+// scaffoldGoRequirements reads an existing module before go mod init runs.
+// Fresh modules use the release defaults; init . must not lower a project's
+// existing Go or toolchain requirement.
+func scaffoldGoRequirements(dir string) (minimum, preferred string, err error) {
+	minimum, preferred = scaffoldGoVersion, scaffoldToolchain
+	path := filepath.Join(dir, "go.mod")
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return minimum, preferred, nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	mod, err := modfile.Parse(path, data, nil)
+	if err != nil {
+		return "", "", err
+	}
+	if mod.Go != nil && goversion.Compare("go"+mod.Go.Version, "go"+minimum) > 0 {
+		minimum = mod.Go.Version
+	}
+	if mod.Toolchain != nil {
+		if mod.Toolchain.Name == "default" {
+			return minimum, "default", nil
+		}
+		if goversion.Compare(mod.Toolchain.Name, preferred) > 0 {
+			preferred = mod.Toolchain.Name
+		}
+	}
+	if goversion.Compare("go"+minimum, preferred) > 0 {
+		preferred = "go" + minimum
+	}
+	return minimum, preferred, nil
 }
 
 // printInitNextSteps prints the "Next steps" block at the end of
@@ -657,7 +712,7 @@ func writeEnvFile(path, content string) error {
 	// Chmod on the handle, not the path: it cannot be redirected by a
 	// symlink swapped in between the open and the mode change, and it
 	// corrects a file that already existed with a looser mode.
-	if err := f.Chmod(0o600); err != nil {
+	if err := fileperm.RestrictOpenFile(f); err != nil {
 		f.Close()
 		return err
 	}
@@ -954,6 +1009,15 @@ func validateProjectName(name string) error {
 	}
 	if name == "." {
 		return nil
+	}
+	// Refuse Windows device names on every OS so scaffolded projects stay
+	// portable. Digits outside 1..9 and longer names are ordinary names.
+	switch name {
+	case "con", "prn", "aux", "nul":
+		return fmt.Errorf("name is reserved for a Windows device")
+	}
+	if len(name) == 4 && (strings.HasPrefix(name, "com") || strings.HasPrefix(name, "lpt")) && name[3] >= '1' && name[3] <= '9' {
+		return fmt.Errorf("name is reserved for a Windows device")
 	}
 	for _, r := range name {
 		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_') {

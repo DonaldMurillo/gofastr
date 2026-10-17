@@ -172,6 +172,17 @@ var _ = render.HTML(`+"`<script>alert(1)</script>`"+`)
 	}
 }
 
+func TestCSPIgnoreDirectiveCRLF(t *testing.T) {
+	for _, raw := range []string{"//check-csp:ignore-file\r\npackage x\r\n", "// check-csp:ignore-file\r\npackage x\r\n"} {
+		if !hasCSPIgnoreDirective([]byte(raw)) {
+			t.Fatalf("CRLF directive was not recognized: %q", raw)
+		}
+	}
+	if hasCSPIgnoreDirective([]byte("// check-csp:ignore-file\r trailing text\n")) {
+		t.Fatal("embedded carriage return must not hide trailing text")
+	}
+}
+
 func TestLintNoInlineScripts_ReportsLineNumber(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "bad.go", `package x

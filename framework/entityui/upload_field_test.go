@@ -4,9 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
+
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/core/upload"
+
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
@@ -16,7 +18,7 @@ import (
 func uploadsUI(t *testing.T, store bool, more ...testUIOption) *testUI {
 	opts := append([]testUIOption{withAPI(map[string]string{"products": "/api/products"})}, more...)
 	if store {
-		opts = append(opts, withStorage(upload.NewLocalStorage(t.TempDir())))
+		opts = append(opts, withStorage(teststorage.New(t, t.TempDir())))
 	}
 	return newTestUIExt(t,
 		map[string]entity.EntityConfig{"products": {Fields: fields(

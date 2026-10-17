@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -126,6 +127,7 @@ func (d *dialog) send(v any) {
 	if err != nil {
 		d.t.Fatal(err)
 	}
+	buf = normalizeTestCWDs(buf)
 	d.writeMu.Lock()
 	_, err = d.w.Write(append(buf, '\n'))
 	d.writeMu.Unlock()
@@ -336,7 +338,7 @@ func TestAuthenticateFailureUsesAuthRequiredCode(t *testing.T) {
 
 func TestSessionNewReturnsSessionID(t *testing.T) {
 	d := startDialog(t, &fakeAgent{newFn: func(ctx context.Context, cwd string) (acp.Session, error) {
-		if !strings.HasPrefix(cwd, "/") {
+		if !filepath.IsAbs(cwd) {
 			t.Errorf("cwd = %q, want absolute", cwd)
 		}
 		return &fakeSession{id: "sess_xyz"}, nil

@@ -25,7 +25,7 @@ var unportableButExistingKeys = []string{
 // AND unremovable, with no migration path.
 func TestExistingKeysStayReadableAndDeletable(t *testing.T) {
 	dir := t.TempDir()
-	ls := NewLocalStorage(dir)
+	ls := newTestLocalStorage(t, dir)
 	ctx := context.Background()
 
 	for _, key := range unportableButExistingKeys {
@@ -67,7 +67,7 @@ func TestExistingKeysStayReadableAndDeletable(t *testing.T) {
 // TestSaveStillRejectsUnportableKeys keeps the forward-looking half: new
 // writes stay portable, so a store written on Unix can be served on Windows.
 func TestSaveStillRejectsUnportableKeys(t *testing.T) {
-	ls := NewLocalStorage(t.TempDir())
+	ls := newTestLocalStorage(t, t.TempDir())
 	ctx := context.Background()
 	for _, key := range unportableButExistingKeys {
 		if err := ls.Save(ctx, key, bytes.NewReader([]byte("x"))); err == nil {
@@ -79,7 +79,7 @@ func TestSaveStillRejectsUnportableKeys(t *testing.T) {
 // TestTraversalRejectedOnEveryOperation, the security rules are NOT
 // write-only. They must hold on every code path.
 func TestTraversalRejectedOnEveryOperation(t *testing.T) {
-	ls := NewLocalStorage(t.TempDir())
+	ls := newTestLocalStorage(t, t.TempDir())
 	ctx := context.Background()
 	for _, key := range []string{"../escape", "a/../../escape", "/etc/passwd", `\windows\system32`} {
 		if _, err := ls.Exists(ctx, key); err == nil {

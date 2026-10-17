@@ -60,10 +60,19 @@ through an `os.Root` over the resolved root so a symlink planted *after*
 resolution is refused by the kernel too: a key that reaches through a
 symlinked directory or leaf to a file outside `baseDir` is refused with
 a key error instead of read, written, or deleted; errors never carry
-the absolute storage path. `WithPermissions` sets the saved file mode;
+the absolute storage path. `WithPermissions` sets the saved Unix file mode;
+Windows files use protected owner-only ACLs.
+Directory ACL changes stop at the storage root, including when Windows path
+spellings differ only by letter case.
 `WithTempDir` overrides the temp directory used for the atomic write
 (a temp dir outside `baseDir` keeps the older resolve-then-open staging
 there, because the atomic rename cannot be expressed through the root).
+
+Both `storage.LocalStorage` and `upload.LocalStorage` implement `Close()`.
+Close the backend when its owner shuts down, after storage operations finish
+and readers returned by `Get` or `GetRange` are closed. This releases the
+pinned directory handle, which otherwise prevents Windows from removing the
+storage directory.
 
 On a case-insensitive or Unicode-normalization-insensitive filesystem
 (macOS's default APFS, most CIFS mounts), two spellings of a key resolve

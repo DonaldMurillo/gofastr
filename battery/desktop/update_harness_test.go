@@ -16,6 +16,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
+
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/desktoptest"
 )
@@ -227,10 +229,7 @@ func TestUpdatesCheckAndInstallThroughThePage(t *testing.T) {
 	if err != nil || !bytes.Contains(exe, []byte("v1.2.0")) {
 		t.Fatalf("installed executable = %q, %v", exe, err)
 	}
-	exeInfo, err := os.Stat(filepath.Join(currentApp, "Contents", "MacOS", "Notes"))
-	if err != nil || exeInfo.Mode().Perm() != 0o755 {
-		t.Fatalf("installed executable mode = %v, %v", exeInfo, err)
-	}
+	filepermtest.AssertMode(t, filepath.Join(currentApp, "Contents", "MacOS", "Notes"), 0o755)
 	// The previous bundle moved aside; no staging left in the data dir.
 	if _, err := os.Stat(currentApp + ".old"); err != nil {
 		t.Fatalf("the old bundle was not moved aside: %v", err)

@@ -200,6 +200,10 @@ func loadOrMintSecret(path string) (string, error) {
 		}
 		return "", fmt.Errorf("service: write secret file: %w", err)
 	}
+	if err := fileperm.RestrictOpenFile(f); err != nil {
+		f.Close()
+		return "", fmt.Errorf("service: restrict secret file: %w", err)
+	}
 	if _, err := f.Write([]byte(secret)); err != nil {
 		f.Close()
 		return "", fmt.Errorf("service: write secret file: %w", err)

@@ -276,7 +276,6 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		defer ch.seatRegistry().release(seat)
 
 		sse := stream.NewSSEWriter(w)
-		sse.WriteComment("subscribed " + ch.Entity.GetName())
 
 		entityName := ch.Entity.GetName()
 		tenantScope := ch.Entity.Config.Scope.MultiTenant
@@ -378,6 +377,11 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 				c()
 			}
 		}()
+		// A client can publish as soon as this acknowledgement arrives.
+		// Install the subscriptions first so that write cannot be lost.
+		if err := sse.WriteComment("subscribed " + entityName); err != nil {
+			return
+		}
 
 		for {
 			select {

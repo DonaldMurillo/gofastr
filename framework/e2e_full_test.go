@@ -17,11 +17,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
+
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/core/upload"
+
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -189,7 +191,7 @@ func e2eSetup(t *testing.T, db *sql.DB, uploadDir string) *e2eEnv {
 	)
 
 	app := framework.NewApp(framework.WithDB(db), framework.WithoutDefaultMiddleware(), framework.WithRouter(r),
-		framework.WithFileStorage(upload.NewLocalStorage(uploadDir)))
+		framework.WithFileStorage(teststorage.New(t, uploadDir)))
 	app.Entity("posts", entity.EntityConfig{
 		Table: "posts",
 		Fields: []schema.Field{

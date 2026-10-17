@@ -23,6 +23,15 @@ import (
 const leaveGuardStub = `window.__confirms = window.__confirms || [];
 window.confirm = function (msg) { window.__confirms.push(String(msg)); return !!window.__confirmRet; };`
 
+// These scenarios exercise an armed guard. Layer HTML can arrive before
+// its marker-loaded module, so await both before sending the edit.
+func leaveGuardEdit(selector, value string) chromedp.Action {
+	return chromedp.Tasks{
+		chromedp.Poll(fmt.Sprintf(`!!document.querySelector(%q) && typeof window.__gofastr?._leaveGuard?.ok === 'function'`, selector), nil, chromedp.WithPollingTimeout(4*time.Second)),
+		chromedp.SetValue(selector, value, chromedp.ByID),
+	}
+}
+
 // leaveGuardRoutes lets the router intercept the away link, so
 // gofastr:beforenavigate fires for it; /rec/:id declares an intercept
 // for the layer tests.
@@ -49,7 +58,7 @@ func TestLeaveGuardDirtyLinkAsksAndStays(t *testing.T) {
 	var lenAfterReset int
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
-		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "typed"),
 		chromedp.Click(`#go`, chromedp.ByID),
 		chromedp.Sleep(400*time.Millisecond),
 		chromedp.Evaluate(`location.pathname`, &path),
@@ -105,7 +114,7 @@ func TestLeaveGuardSubmitClearsFailedRPCRedirties(t *testing.T) {
 		// way first — its ask is phase 1's assertion, not phase 2's.)
 		chromedp.Evaluate(`document.getElementById('bf').reset()`, nil),
 		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
-		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "typed"),
 		chromedp.Click(`#gf-save`, chromedp.ByID),
 		chromedp.Sleep(400*time.Millisecond),
 		chromedp.Click(`#go`, chromedp.ByID),
@@ -140,7 +149,7 @@ func TestLeaveGuardReflectsDirty(t *testing.T) {
 	var clean, typed, saved string
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(probe, &clean),
-		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "typed"),
 		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
 		chromedp.Evaluate(probe, &typed),
 		chromedp.Click(`#out-save`, chromedp.ByID),
@@ -173,7 +182,7 @@ func TestLeaveGuardBeforeunloadFollowsDirty(t *testing.T) {
 	var cleanPrevented, dirtyPrevented, recleanedPrevented string
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`(function(){var e=new Event('beforeunload',{cancelable:true});window.dispatchEvent(e);return String(e.defaultPrevented);})()`, &cleanPrevented),
-		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "typed"),
 		chromedp.Evaluate(`(function(){var e=new Event('beforeunload',{cancelable:true});window.dispatchEvent(e);return String(e.defaultPrevented);})()`, &dirtyPrevented),
 		chromedp.Evaluate(`document.getElementById('gf').reset()`, nil),
 		chromedp.Evaluate(`(function(){var e=new Event('beforeunload',{cancelable:true});window.dispatchEvent(e);return String(e.defaultPrevented);})()`, &recleanedPrevented),
@@ -233,7 +242,7 @@ func TestLeaveGuardInterceptCloseAsksFirst(t *testing.T) {
 		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
 		chromedp.Click(`#open`, chromedp.ByID),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "edited"),
 		// Esc, declined: the layer stays.
 		chromedp.Evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: true}))`, nil),
 		chromedp.Sleep(300*time.Millisecond),
@@ -270,7 +279,7 @@ func TestLeaveGuardBackDeclineRepairsHistory(t *testing.T) {
 		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
 		chromedp.Click(`#open`, chromedp.ByID),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "edited"),
 		chromedp.Evaluate(`history.length`, &lenBefore),
 		chromedp.Evaluate(`history.back()`, nil),
 		chromedp.Sleep(700*time.Millisecond),
@@ -319,7 +328,7 @@ func TestLeaveGuardQueryChangeInPaneAsks(t *testing.T) {
 		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
 		chromedp.Click(`#open`, chromedp.ByID),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "edited"),
 		chromedp.Click(`#sort`, chromedp.ByID),
 		chromedp.Sleep(500*time.Millisecond),
 		chromedp.Evaluate(`(document.getElementById('rec-sorted') ? 'sorted' : 'kept')`, &content),
@@ -387,7 +396,7 @@ func TestLeaveGuardStackOpenKeepsEdits(t *testing.T) {
 		t.Fatal("the record layer never mounted")
 	}
 	if err := chromedp.Run(ctx,
-		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "edited"),
 		chromedp.Click(`#rel`, chromedp.ByID),
 	); err != nil {
 		t.Fatalf("stack: %v", err)
@@ -421,7 +430,7 @@ func TestLeaveGuardPaneQueryIgnoresPageDirt(t *testing.T) {
 	}
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
-		chromedp.SetValue(`#pf-name`, "edited", chromedp.ByID),
+		leaveGuardEdit(`#pf-name`, "edited"),
 		chromedp.Click(`#open`, chromedp.ByID),
 	); err != nil {
 		t.Fatalf("open: %v", err)
@@ -467,7 +476,7 @@ func TestLeaveGuardPageBackAsks(t *testing.T) {
 	var asks int
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
-		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "typed"),
 		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
 		chromedp.Evaluate(`history.back()`, nil),
 		chromedp.Sleep(700*time.Millisecond),
@@ -517,7 +526,7 @@ func TestLeaveGuardStackBackPastPageAsks(t *testing.T) {
 	}
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
-		chromedp.SetValue(`#pf-name`, "typed", chromedp.ByID),
+		leaveGuardEdit(`#pf-name`, "typed"),
 		chromedp.Click(`#open`, chromedp.ByID),
 	); err != nil {
 		t.Fatalf("open: %v", err)
@@ -560,7 +569,7 @@ func TestLeaveGuardConfirmCancelKeepsDirty(t *testing.T) {
 	var prevented, confirms string
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
-		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "typed"),
 		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
 		chromedp.Click(`#gf-save`, chromedp.ByID),
 		chromedp.Sleep(400*time.Millisecond),
@@ -596,7 +605,7 @@ func TestLeaveGuardClosedLayerReleasesUnload(t *testing.T) {
 		t.Fatal("the record layer never mounted")
 	}
 	if err := chromedp.Run(ctx,
-		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "edited"),
 		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
 		chromedp.Evaluate(unloadPrevented, &dirty),
 		chromedp.Click(`#layer-close`, chromedp.ByID),
@@ -632,7 +641,7 @@ func TestLeaveGuardBackAfterPushURLAsks(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(leaveGuardStub+`window.__confirmRet = false;`, nil),
 		chromedp.Evaluate(`window.__gofastr._pushURL('/?tab=2')`, nil),
-		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "typed"),
 		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
 		chromedp.Evaluate(`history.back()`, nil),
 		chromedp.Sleep(700*time.Millisecond),
@@ -668,7 +677,7 @@ func TestLeaveGuardDeclinedBackKeepsForward(t *testing.T) {
 		chromedp.Evaluate(`window.__gofastr._pushURL('/?tab=3')`, nil),
 		chromedp.Evaluate(`history.back()`, nil),
 		chromedp.Sleep(500*time.Millisecond),
-		chromedp.SetValue(`#gf-name`, "typed", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "typed"),
 		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
 		chromedp.Evaluate(`history.length`, &lenBefore),
 		chromedp.Evaluate(`history.back()`, nil),
@@ -728,7 +737,7 @@ func TestLeaveGuardDeclinedForwardKeepsHistory(t *testing.T) {
 	var lenBefore, lenAfter, asks int
 	var url, note string
 	if err := chromedp.Run(ctx,
-		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "edited"),
 		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
 		chromedp.Evaluate(`history.length`, &lenBefore),
 		chromedp.Evaluate(`history.forward()`, nil),
@@ -770,7 +779,7 @@ func TestLeaveGuardDeclinedBackTwoKeepsStack(t *testing.T) {
 		t.Fatal("the record layer never mounted")
 	}
 	if err := chromedp.Run(ctx,
-		chromedp.SetValue(`#gf-name`, "edited", chromedp.ByID),
+		leaveGuardEdit(`#gf-name`, "edited"),
 		chromedp.Evaluate(`document.getElementById('gf-name').dispatchEvent(new Event('input', {bubbles: true}))`, nil),
 		chromedp.Click(`#rel`, chromedp.ByID),
 	); err != nil {

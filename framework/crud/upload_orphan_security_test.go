@@ -12,8 +12,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/core/upload"
+
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
@@ -58,7 +60,7 @@ func orphanMediaHandler(t *testing.T) (*CrudHandler, *sql.DB, string) {
 	ent.SetDB(db)
 	installSecurityOwnerExtractor(t)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
-	ch.Storage = upload.NewLocalStorage(dir)
+	ch.Storage = teststorage.New(t, dir)
 	return ch, db, dir
 }
 

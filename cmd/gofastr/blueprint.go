@@ -4498,9 +4498,9 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 	var b strings.Builder
 	b.WriteString("package main\n\n")
 	b.WriteString("import (\n")
-	imports := []string{"io", "net", "net/http", "os", "os/exec", "path/filepath", "runtime", "strings", "testing", "time"}
+	imports := []string{"context", "io", "net", "net/http", "os", "os/exec", "path/filepath", "runtime", "strings", "testing", "time"}
 	if isPostgres {
-		imports = append(imports, "context", "crypto/rand", "database/sql", "encoding/hex", "net/url")
+		imports = append(imports, "crypto/rand", "database/sql", "encoding/hex", "net/url")
 	}
 	if needsAuthClient {
 		imports = append(imports, "net/http/cookiejar", "net/url")
@@ -4680,6 +4680,7 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 	b.WriteString("\t\t_ = serverLog.Close()\n")
 	b.WriteString("\t\tdata, err := os.ReadFile(serverLog.Name())\n")
 	b.WriteString("\t\tif err != nil { t.Errorf(\"read server log: %v\", err); return }\n")
+	b.WriteString("\t\tif t.Failed() { t.Logf(\"server output:\\n%s\", data) }\n")
 	b.WriteString("\t\tfor _, line := range strings.Split(string(data), \"\\n\") {\n")
 	b.WriteString("\t\t\tif strings.Contains(line, \"component render panic:\") { t.Errorf(\"server render failure: %s\", line) }\n")
 	b.WriteString("\t\t}\n")
@@ -4692,7 +4693,7 @@ func renderBlueprintE2ETest(bp Blueprint) string {
 	b.WriteString("// e2eDo call site share it.\n")
 	b.WriteString("var e2eClient = &http.Client{Timeout: 10 * time.Second}\n\n")
 	b.WriteString("func e2eFreeAddr(t *testing.T) string {\n\tt.Helper()\n\tl, err := net.Listen(\"tcp\", \"127.0.0.1:0\")\n\tif err != nil { t.Fatal(err) }\n\tdefer l.Close()\n\treturn l.Addr().String()\n}\n\n")
-	b.WriteString("func e2eWaitReady(t *testing.T, base string) {\n\tt.Helper()\n\tfor i := 0; i < 100; i++ {\n\t\tif r, err := e2eClient.Get(base + \"/\"); err == nil { r.Body.Close(); return }\n\t\ttime.Sleep(100 * time.Millisecond)\n\t}\n\tt.Fatal(\"server did not become ready\")\n}\n\n")
+	b.WriteString("func e2eWaitReady(t *testing.T, base string) {\n\tt.Helper()\n\tctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)\n\tdefer cancel()\n\tfor ctx.Err() == nil {\n\t\treq, err := http.NewRequestWithContext(ctx, http.MethodGet, base+\"/\", nil)\n\t\tif err != nil { t.Fatal(err) }\n\t\tif r, err := e2eClient.Do(req); err == nil { r.Body.Close(); return }\n\t\tselect {\n\t\tcase <-ctx.Done():\n\t\tcase <-time.After(100 * time.Millisecond):\n\t\t}\n\t}\n\tt.Fatal(\"server did not become ready\")\n}\n\n")
 	b.WriteString("// e2eDo runs one request and returns the status code + body. A non-empty\n")
 	b.WriteString("// body is sent as JSON. Network errors fail the test.\n")
 	b.WriteString("func e2eDo(t *testing.T, client *http.Client, method, u, body string) (int, string) {\n")

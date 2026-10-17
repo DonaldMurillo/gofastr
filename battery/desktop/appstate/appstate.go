@@ -21,6 +21,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // MaxValueBytes caps one value, measured on its encoded JSON.
@@ -86,7 +89,7 @@ func Open(path string, logger *slog.Logger) *Store {
 		path:    path,
 		entries: make(map[string]json.RawMessage),
 	}
-	data, err := os.ReadFile(path)
+	data, err := atomicfile.ReadFile(path)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			logger.Warn("appstate: reading the state file failed; starting empty",
@@ -292,6 +295,11 @@ func (s *Store) persist(entries map[string]json.RawMessage) error {
 		return err
 	}
 	name := tmp.Name()
+	if err := fileperm.RestrictOpenFile(tmp); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		os.Remove(name)
@@ -305,7 +313,7 @@ func (s *Store) persist(entries map[string]json.RawMessage) error {
 			"file", filepath.Base(s.path), "error", err.Error())
 		return err
 	}
-	if err := os.Rename(name, s.path); err != nil {
+	if err := atomicfile.Replace(name, s.path); err != nil {
 		os.Remove(name)
 		s.logger.Warn("appstate: replacing the state file failed",
 			"file", filepath.Base(s.path), "error", err.Error())

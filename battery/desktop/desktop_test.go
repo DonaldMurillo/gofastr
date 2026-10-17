@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
+
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -228,8 +230,7 @@ func TestRunEndToEndWithFakeShell(t *testing.T) {
 
 func TestAppOptionsCreatesDirDBAndSecretStable(t *testing.T) {
 	base := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "xdg"))
-	t.Setenv("HOME", filepath.Join(base, "home"))
+	t.Setenv(dataDirEnv, base)
 
 	opts, err := AppOptions("notes.example.app")
 	if err != nil {
@@ -238,30 +239,23 @@ func TestAppOptionsCreatesDirDBAndSecretStable(t *testing.T) {
 	if len(opts) != 2 {
 		t.Fatalf("opts = %d, want 2", len(opts))
 	}
-
-	cfgBase, err := os.UserConfigDir()
-	if err != nil {
-		t.Fatal(err)
+	app := &framework.App{}
+	for _, option := range opts {
+		option(app)
 	}
-	dir := filepath.Join(cfgBase, "notes.example.app")
+	t.Cleanup(func() { app.DB.Close() })
+
+	dir := filepath.Join(base, "notes.example.app")
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
 		t.Fatalf("data dir: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		t.Fatalf("data dir mode = %o", perm)
-	}
+	filepermtest.AssertOwnerOnly(t, dir, 0o700)
 	if _, err := os.Stat(filepath.Join(dir, "app.db")); err != nil {
 		t.Fatalf("app.db: %v", err)
 	}
 	secretPath := filepath.Join(dir, "secret")
-	sinfo, err := os.Stat(secretPath)
-	if err != nil {
-		t.Fatalf("secret: %v", err)
-	}
-	if perm := sinfo.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("secret mode = %o, want 0600", perm)
-	}
+	filepermtest.AssertOwnerOnly(t, secretPath, 0o600)
 	secret1, err := loadOrMintSecret(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -275,7 +269,11 @@ func TestAppOptionsCreatesDirDBAndSecretStable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = opts2
+	app2 := &framework.App{}
+	for _, option := range opts2 {
+		option(app2)
+	}
+	t.Cleanup(func() { app2.DB.Close() })
 	secret2, err := loadOrMintSecret(dir)
 	if err != nil {
 		t.Fatal(err)

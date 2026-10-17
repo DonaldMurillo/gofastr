@@ -134,13 +134,27 @@ func TestEventStreamClosesOnRevocation(t *testing.T) {
 
 			sctx, cancel := context.WithCancel(req.Context())
 			defer cancel()
-			rec := httptest.NewRecorder()
+			rec := &revocationStreamRecorder{
+				ResponseRecorder: httptest.NewRecorder(),
+				flushed:          make(chan struct{}, 4),
+				onSubscribe: func() {
+					ch.EmitEvent(context.Background(), event.EntityCreated, map[string]any{"id": "d-before", "body": "before-revoke"})
+				},
+			}
 			done := make(chan struct{})
 			go func() { streamH.ServeHTTP(rec, req.WithContext(sctx)); close(done) }()
-			time.Sleep(200 * time.Millisecond)
-
-			ch.EmitEvent(context.Background(), event.EntityCreated, map[string]any{"id": "d-before", "body": "before-revoke"})
-			time.Sleep(200 * time.Millisecond)
+			defer func() { cancel(); <-done }()
+			// The first flush acknowledges subscription and emits a write
+			// immediately. The second confirms delivery before revocation.
+			for range 2 {
+				select {
+				case <-rec.flushed:
+				case <-done:
+					t.Fatalf("stream closed before delivering the pre-revocation write: %q", rec.Body.String())
+				case <-time.After(3 * time.Second):
+					t.Fatal("stream did not acknowledge subscription and deliver the pre-revocation write")
+				}
+			}
 			revoke()
 			ch.EmitEvent(context.Background(), event.EntityCreated, map[string]any{"id": "d-after", "body": "after-revoke-secret"})
 
@@ -160,4 +174,19 @@ func TestEventStreamClosesOnRevocation(t *testing.T) {
 			}
 		})
 	}
+}
+
+type revocationStreamRecorder struct {
+	*httptest.ResponseRecorder
+	flushed     chan struct{}
+	onSubscribe func()
+}
+
+func (r *revocationStreamRecorder) Flush() {
+	r.ResponseRecorder.Flush()
+	if f := r.onSubscribe; f != nil {
+		r.onSubscribe = nil
+		f()
+	}
+	r.flushed <- struct{}{}
 }

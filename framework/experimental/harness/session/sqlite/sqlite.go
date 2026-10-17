@@ -56,6 +56,9 @@ func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
+	if err := fileperm.Restrict(filepath.Dir(path), true); err != nil {
+		return nil, err
+	}
 	// Seed the file 0600 BEFORE the driver opens it: the event log
 	// carries full plaintext session transcripts, the SQLite driver
 	// creates a missing database (and its -wal sidecar, which inherits

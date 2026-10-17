@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
+
 	"github.com/DonaldMurillo/gofastr/internal/localuser"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -38,13 +40,7 @@ func TestIdentityFileMinted0600AndStable(t *testing.T) {
 	if u1.GetID() == "" {
 		t.Fatal("minted identity is empty")
 	}
-	info, err := os.Stat(filepath.Join(dir, localuser.FileName))
-	if err != nil {
-		t.Fatalf("identity file: %v", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("identity file mode = %o, want 0600", perm)
-	}
+	filepermtest.AssertOwnerOnly(t, filepath.Join(dir, localuser.FileName), 0o600)
 	// A second load (fresh battery) sees the same id.
 	dirMode, err := os.Stat(dir)
 	if err != nil {

@@ -9,8 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/core/upload"
+
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -32,7 +34,7 @@ func TestMultipartBrowserFormShape(t *testing.T) {
 	}.WithTimestamps(false))
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
-	ch.Storage = upload.NewLocalStorage(t.TempDir())
+	ch.Storage = teststorage.New(t, t.TempDir())
 	if _, err := db.Exec(`INSERT INTO posts (id, title, active, logo) VALUES ('p1', 'a', 0, 'https://cdn.example.com/a.png')`); err != nil {
 		t.Fatal(err)
 	}

@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/datexport"
@@ -48,7 +50,7 @@ func TestEraseKeepsKeysOthersStillUse(t *testing.T) {
 
 func eraseKeepsSharedKeys(t *testing.T, db *sql.DB) {
 	datexport.Reset(t)
-	local := upload.NewLocalStorage(t.TempDir())
+	local := teststorage.New(t, t.TempDir())
 	store := &deleteLog{Storage: local}
 	app := NewApp(WithDB(db), WithFileStorage(store))
 	app.Registry.Register(entity.Define("profiles", entity.EntityConfig{

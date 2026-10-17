@@ -20,7 +20,7 @@ func readKey(t *testing.T, s *LocalStorage, key string) string {
 
 // A canceled Save or Delete leaves the stored object as it was.
 func TestCanceledMutationsKeepObject(t *testing.T) {
-	s := NewLocalStorage(t.TempDir())
+	s := newTestLocalStorage(t, t.TempDir())
 	if err := s.Save(context.Background(), "a", strings.NewReader("old")); err != nil {
 		t.Fatal(err)
 	}

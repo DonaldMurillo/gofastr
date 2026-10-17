@@ -112,8 +112,18 @@ func TestCompactLayoutGeometry(t *testing.T) {
 	ctx := chromedptest.Context(t)
 	check := func(t *testing.T, path string, width int64, js string) {
 		t.Helper()
+		// Each geometry check owns a fresh document. Reusing a tab while
+		// reloading the same route can poll the previous execution context.
+		pageCtx, cancel := chromedp.NewContext(ctx)
+		defer cancel()
 		var result string
-		if err := chromedp.Run(ctx, chromedp.EmulateViewport(width, 800), chromedp.Navigate(srv.URL+path), chromedp.Poll(`!!window.__gofastr`, nil), chromedp.Evaluate(`(()=>{const q=s=>document.querySelector(s), r=e=>e.getBoundingClientRect();`+js+`;return ""})()`, &result)); err != nil {
+		if err := chromedp.Run(pageCtx,
+			chromedp.EmulateViewport(width, 800),
+			chromedp.Navigate(srv.URL+path),
+			chromedp.WaitReady("main", chromedp.ByQuery),
+			chromedp.Poll(`!!window.__gofastr`, nil),
+			chromedp.Evaluate(`(()=>{const q=s=>document.querySelector(s), r=e=>e.getBoundingClientRect();`+js+`;return ""})()`, &result),
+		); err != nil {
 			t.Fatal(err)
 		}
 		if result != "" {
