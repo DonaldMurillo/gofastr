@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -46,14 +47,45 @@ type timeoutWriter struct {
 	timedOut    bool
 }
 
+// timeoutBodies recycles the body buffers. A page-sized response grew a
+// fresh buffer by doubling on every request: about 260 KB allocated to
+// send a 96 KB page.
+var timeoutBodies = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+
+// maxPooledBody is the largest buffer handed back to timeoutBodies. A
+// rare multi-megabyte response would otherwise stay pinned in the pool
+// long after the request that needed it.
+const maxPooledBody = 1 << 20
+
+// errWriteAfterReturn answers a write through a writer whose handler has
+// already returned. Its buffer may belong to another request by then.
+var errWriteAfterReturn = errors.New("timeout middleware: write after the handler returned")
+
 func newTimeoutWriter(w http.ResponseWriter) *timeoutWriter {
 	return &timeoutWriter{
 		w:    w,
 		h:    w.Header().Clone(),
-		body: &bytes.Buffer{},
+		body: timeoutBodies.Get().(*bytes.Buffer),
 		code: http.StatusOK,
 	}
 }
+
+// release returns the body buffer to the pool once the handler has
+// returned and its output is committed or abandoned. Clearing tw.body
+// under the lock is what keeps a write from a goroutine the handler left
+// behind out of the next request's response: Write sees nil and refuses.
+func (tw *timeoutWriter) release() {
+	tw.mu.Lock()
+	b := tw.body
+	tw.body = nil
+	tw.mu.Unlock()
+	if b != nil && poolableBody(b) {
+		b.Reset()
+		timeoutBodies.Put(b)
+	}
+}
+
+func poolableBody(b *bytes.Buffer) bool { return b.Cap() <= maxPooledBody }
 
 func (tw *timeoutWriter) Header() http.Header { return tw.h }
 
@@ -82,6 +114,9 @@ func (tw *timeoutWriter) Write(p []byte) (int, error) {
 	}
 	if tw.streaming {
 		return tw.w.Write(p)
+	}
+	if tw.body == nil {
+		return 0, errWriteAfterReturn
 	}
 	return tw.body.Write(p)
 }
@@ -142,20 +177,21 @@ func (tw *timeoutWriter) commitBufferedLocked() {
 	if tw.wroteHeader {
 		tw.w.WriteHeader(tw.code)
 	}
-	if tw.body.Len() > 0 {
+	if tw.body != nil && tw.body.Len() > 0 {
 		_, _ = tw.body.WriteTo(tw.w)
 	}
 }
 
 // finish commits buffered handler output to the underlying writer when
-// the handler completed normally and the timeout has not fired.
+// the handler completed normally and the timeout has not fired, then
+// releases the buffer. Call it only after the handler has returned.
 func (tw *timeoutWriter) finish() {
 	tw.mu.Lock()
-	defer tw.mu.Unlock()
-	if tw.timedOut || tw.streaming {
-		return
+	if !tw.timedOut && !tw.streaming {
+		tw.commitBufferedLocked()
 	}
-	tw.commitBufferedLocked()
+	tw.mu.Unlock()
+	tw.release()
 }
 
 // expire flags the timeout. Returns false when the response is already
@@ -415,6 +451,7 @@ func Timeout(d time.Duration) Middleware {
 					// lifetime belongs to the handler and its own bound
 					// (#159).
 					<-done
+					tw.release()
 					if childPanic != nil {
 						panic(childPanic)
 					}
@@ -430,6 +467,7 @@ func Timeout(d time.Duration) Middleware {
 				// impossible.
 				go func() {
 					<-done
+					tw.release()
 					if childPanic != nil {
 						slog.Error("panic in timed-out handler",
 							"error", textsafe.Truncate(textsafe.ScrubControlBytes(fmt.Sprint(childPanic)), maxRecoveryPanicLen),

@@ -7,6 +7,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+- **The Timeout middleware reuses its response buffers.** It holds each
+  response until the handler returns, and it used to grow a new buffer
+  for every request: about 260 KB allocated and 36 µs spent to send a
+  96 KB page, against 2 KB and 4 µs now. A write through the response
+  writer after the handler has returned now fails with an error instead
+  of landing in a buffer that may already belong to the next request.
+
 ## [0.89.0] - 2026-10-17
 
 **BREAKING.** `gofastr verify` now runs GoFastr's type-aware analyzers
