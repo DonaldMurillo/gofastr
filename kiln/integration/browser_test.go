@@ -1430,8 +1430,10 @@ func TestBrowser_ResetClearsPanelImmediately(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
+		chromedp.Poll(`typeof window.__gofastr?._widgets?.['kiln-panel']?.pollNow === 'function'`, nil),
 		chromedp.Click(`#kiln-reset`, chromedp.ByQuery),
 		chromedp.WaitVisible(`.kiln-modal-danger`, chromedp.ByQuery),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.rpc`, nil),
 		chromedp.Click(`.kiln-modal-danger`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("reset flow: %v", err)
@@ -2374,6 +2376,7 @@ func TestBrowser_CmdKFocusesChatInput(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.['headless-navigation']`, nil),
 		// Move focus away from the input.
 		chromedp.Evaluate(`document.body.focus()`, nil),
 	); err != nil {
@@ -2566,6 +2569,7 @@ func TestBrowser_QuickstartTrayOnEmptyPanel(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-quickstart`, chromedp.ByQuery),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.widgethelpers`, nil),
 		chromedp.Click(`.kiln-quickstart-btn`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("quickstart tray: %v", err)
