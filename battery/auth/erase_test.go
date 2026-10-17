@@ -346,7 +346,7 @@ func TestEraseCoversConfiguredStoreTables(t *testing.T) {
 	}
 	mgr.Use(NewPasskeyPlugin(PasskeyConfig{
 		RPID: "example.com", Origins: []string{"https://example.com"},
-		Store: passkeys, ChallengeStore: challenges,
+		Store: passkeys, ChallengeStore: challenges, TwoFactorURL: "/2fa",
 	}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,6 +19,7 @@ type passkeyFixture struct {
 	pk    *PasskeyPlugin
 	twofa *TwoFAPlugin
 	sink  *recordingSink
+	mail  *stubEmailSender
 	r     *router.Router
 }
 
@@ -29,21 +31,26 @@ func newPasskeyFixture(t *testing.T) *passkeyFixture {
 // newPasskeyFixtureFor builds the fixture for one relying party.
 func newPasskeyFixtureFor(t *testing.T, rpID, origin string) *passkeyFixture {
 	t.Helper()
-	users := newMemoryUserStore()
+	// Verified accounts: a reset of an unverified one is a claim, which
+	// removes passkeys for its own reason.
+	store := newUserStoreWithPassword()
+	users := store.memoryUserStore
 	sink := &recordingSink{}
 	mgr := New(AuthConfig{
 		JWTSecret:           "test-secret",
 		AllowInMemoryStores: true,
 		SessionTTL:          time.Hour,
 		SessionCookie:       "session_id",
-		UserStore:           users,
+		UserStore:           store,
 		AuditSink:           sink,
 	})
-	pk := NewPasskeyPlugin(PasskeyConfig{RPID: rpID, Origins: []string{origin}, OnSuccessURL: "/app"})
+	pk := NewPasskeyPlugin(PasskeyConfig{RPID: rpID, Origins: []string{origin}, OnSuccessURL: "/app", TwoFactorURL: "/2fa"})
 	twofa := NewTwoFAPlugin(TwoFAConfig{})
+	mail := &stubEmailSender{}
 	mgr.Use(NewCorePlugin())
 	mgr.Use(twofa)
 	mgr.Use(pk)
+	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{BaseURL: "https://example.com", EmailSender: mail}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -51,12 +58,12 @@ func newPasskeyFixtureFor(t *testing.T, rpID, origin string) *passkeyFixture {
 		{ID: "u-alice", Email: "alice@example.com"},
 		{ID: "u-bob", Email: "bob@example.com"},
 	} {
-		e := &storeEntry{user: u, hash: passwordPlaceholderHash}
+		e := &storeEntry{user: u, hash: passwordPlaceholderHash, emailVerified: true}
 		users.users[u.Email], users.byID[u.ID] = e, e
 	}
 	r := router.New()
 	mgr.RegisterRoutes(r)
-	return &passkeyFixture{mgr: mgr, users: users, pk: pk, twofa: twofa, sink: sink, r: r}
+	return &passkeyFixture{mgr: mgr, users: users, pk: pk, twofa: twofa, sink: sink, mail: mail, r: r}
 }
 
 // session mints a full session for userID and returns its cookie value.
@@ -314,7 +321,8 @@ func TestPasskeyLoginKeepsSecondFactor(t *testing.T) {
 	a := f.enrol(t, "u-alice")
 	enableTwoFA(t, f, "u-alice")
 	w := f.login(t, a, "u-alice")
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"two_factor_required":true`) {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"two_factor_required":true`) ||
+		!strings.Contains(w.Body.String(), `"redirect":"/2fa"`) {
 		t.Fatalf("login: %d %s", w.Code, w.Body)
 	}
 	sess, err := f.mgr.SessionStore().Get(context.Background(), passkeySessionCookie(w))
@@ -411,4 +419,131 @@ func TestPasskeyPerUserCap(t *testing.T) {
 	if w := f.do(t, "POST", "/passkey/register/options", f.session(t, "u-alice"), nil); w.Code != http.StatusConflict {
 		t.Fatalf("third passkey options: %d", w.Code)
 	}
+}
+
+// A second factor needs somewhere to finish; without TwoFactorURL a
+// pending passkey sign-in would land on a page that refuses it.
+func TestPasskeyTwoFactorNeedsURL(t *testing.T) {
+	mgr := New(AuthConfig{JWTSecret: "s", AllowInMemoryStores: true, SessionTTL: time.Hour, SessionCookie: "sid", UserStore: newMemoryUserStore()})
+	mgr.Use(NewTwoFAPlugin(TwoFAConfig{}))
+	mgr.Use(NewPasskeyPlugin(PasskeyConfig{RPID: "example.com", Origins: []string{"https://example.com"}}))
+	if err := mgr.Init(nil); err == nil || !strings.Contains(err.Error(), "TwoFactorURL") {
+		t.Fatalf("Init: %v", err)
+	}
+}
+
+// A reset locks out whoever held the account, passkeys included.
+func TestPasskeyResetRemovesPasskeys(t *testing.T) {
+	f := newPasskeyFixture(t)
+	a := f.enrol(t, "u-alice")
+	b := f.enrol(t, "u-bob")
+	if w := f.do(t, "POST", "/forgot-password", "", map[string]string{"email": "alice@example.com"}); w.Code != http.StatusOK {
+		t.Fatalf("forgot-password: %d %s", w.Code, w.Body)
+	}
+	_, mail := f.mail.snapshot()
+	tok := extractTokenFromBody(mail)
+	if w := f.do(t, "POST", "/reset-password", "", map[string]string{"token": tok, "password": "brandnewpw1"}); w.Code != http.StatusOK {
+		t.Fatalf("reset-password: %d %s", w.Code, w.Body)
+	}
+	if w := f.login(t, a, "u-alice"); w.Code != http.StatusUnauthorized {
+		t.Fatalf("a passkey survived the reset: %d", w.Code)
+	}
+
+	if w := f.login(t, b, "u-bob"); w.Code != http.StatusOK {
+		t.Fatalf("another account's passkey went too: %d", w.Code)
+	}
+}
+
+// Challenges minted while under the cap must not register past it.
+func TestPasskeyCapHoldsAtRegister(t *testing.T) {
+	f := newPasskeyFixture(t)
+	f.pk.config.MaxPerUser = 2
+	f.enrol(t, "u-alice")
+	alice := f.session(t, "u-alice")
+	ch1 := challengeOf(t, f.do(t, "POST", "/passkey/register/options", alice, nil))
+	ch2 := challengeOf(t, f.do(t, "POST", "/passkey/register/options", alice, nil))
+	if w := f.do(t, "POST", "/passkey/register", alice, registerBody(newFakeAuthenticator(t, coseAlgES256), ch1)); w.Code != http.StatusCreated {
+		t.Fatalf("second passkey: %d %s", w.Code, w.Body)
+	}
+	if w := f.do(t, "POST", "/passkey/register", alice, registerBody(newFakeAuthenticator(t, coseAlgES256), ch2)); w.Code != http.StatusConflict {
+		t.Fatalf("third passkey: %d %s", w.Code, w.Body)
+	}
+	if creds, _ := f.pk.store.ListPasskeys(context.Background(), "u-alice"); len(creds) != 2 {
+		t.Fatalf("stored %d passkeys, want 2", len(creds))
+	}
+}
+
+// Backup eligibility is fixed for a credential's life; a flip is refused.
+func TestPasskeyBackupEligibleIsFixed(t *testing.T) {
+	f := newPasskeyFixture(t)
+	a := f.enrol(t, "u-alice") // device-bound: BE clear
+	a.flags |= flagBE
+	if w := f.login(t, a, "u-alice"); w.Code != http.StatusUnauthorized {
+		t.Fatalf("BE flipped on: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestPasskeyListIsRateLimited(t *testing.T) {
+	f := newPasskeyFixture(t)
+	f.pk.limit = newScopedRateLimiter(RateLimiterConfig{MaxAttempts: 2, Window: time.Minute, BlockDuration: time.Minute}, "passkey")
+	alice := f.session(t, "u-alice")
+	var last int
+	for range 3 {
+		last = f.do(t, "GET", "/passkey/list", alice, nil).Code
+	}
+	if last != http.StatusTooManyRequests {
+		t.Fatalf("third list: %d, want 429", last)
+	}
+}
+
+// Every passkey POST speaks JSON, so a cross-site simple request
+// cannot reach one without a preflight.
+func TestPasskeyOptionsNeedJSON(t *testing.T) {
+	f := newPasskeyFixture(t)
+	alice := f.session(t, "u-alice")
+	for _, path := range []string{"/passkey/login/options", "/passkey/register/options"} {
+		req := httptest.NewRequest("POST", "https://example.com/auth"+path, strings.NewReader("{}"))
+		req.Header.Set("Content-Type", "text/plain")
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
+		req.AddCookie(&http.Cookie{Name: "session_id", Value: alice})
+		w := httptest.NewRecorder()
+		f.r.ServeHTTP(w, req)
+		if w.Code != http.StatusUnsupportedMediaType {
+			t.Errorf("%s as text/plain: %d", path, w.Code)
+		}
+	}
+}
+
+// Browsers report https://example.com:443 as https://example.com, so an
+// origin spelled with its default port would refuse every ceremony.
+func TestPasskeyDefaultPortFailsInit(t *testing.T) {
+	for id, o := range map[string]string{"example.com": "https://example.com:443", "localhost": "http://localhost:80"} {
+		if err := (webauthnRP{ID: id, Origins: []string{o}}).validate(); err == nil {
+			t.Errorf("validate accepted %s", o)
+		}
+	}
+}
+
+type brokenTwoFAStore struct{ TwoFAStore }
+
+func (brokenTwoFAStore) GetTwoFA(context.Context, string) (*TwoFAState, error) {
+	return nil, errors.New("2fa store down")
+}
+
+// When the 2FA state cannot be read, a passkey sign-in fails closed and
+// the audit trail says why, as a password login does.
+func TestPasskeyTwoFADownFailsClosed(t *testing.T) {
+	f := newPasskeyFixture(t)
+	a := f.enrol(t, "u-alice")
+	f.twofa.store = brokenTwoFAStore{f.twofa.store}
+	w := f.login(t, a, "u-alice")
+	if w.Code != http.StatusInternalServerError || passkeySessionCookie(w) != "" {
+		t.Fatalf("login with 2FA down: %d %s", w.Code, w.Body)
+	}
+	for _, ev := range f.sink.snapshot() {
+		if ev.Kind == "login.failed" && ev.Meta["reason"] == "twofa_failclosed" && ev.Meta["via"] == "passkey" {
+			return
+		}
+	}
+	t.Fatalf("no login.failed twofa_failclosed event: %+v", f.sink.snapshot())
 }

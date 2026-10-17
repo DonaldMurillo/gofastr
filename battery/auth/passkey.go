@@ -17,6 +17,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -55,6 +56,12 @@ type PasskeyConfig struct {
 	// OnSuccessURL is where the browser goes after a passkey sign-in.
 	// Same-origin paths only. Default: "/".
 	OnSuccessURL string
+
+	// TwoFactorURL is where a sign-in goes when the account still owes
+	// its second factor: the app's page that posts the code to
+	// /2fa/challenge. Same-origin paths only. Required when a 2FA plugin
+	// is registered.
+	TwoFactorURL string
 
 	// MaxPerUser caps how many passkeys one account may register.
 	// Default: 20.
@@ -196,16 +203,6 @@ func (m *MemoryPasskeyStore) DeletePasskeysForUser(_ context.Context, userID str
 	return n, nil
 }
 
-func mapKeys[V any](m map[string]V) func(func(string) bool) {
-	return func(yield func(string) bool) {
-		for k := range m {
-			if !yield(k) {
-				return
-			}
-		}
-	}
-}
-
 // PasskeyPlugin adds passkey sign-in and per-account passkey management:
 //
 //	POST {base}/passkey/login/options     anonymous; returns request options
@@ -278,6 +275,15 @@ func (p *PasskeyPlugin) Init(mgr *AuthManager) error {
 			p.challenges = NewMemoryMagicLinkTokenStore()
 		}
 	}
+	// Every plugin is registered before any Init runs, so a 2FA plugin
+	// later in the list is already visible here.
+	if p.config.TwoFactorURL == "" {
+		for _, name := range mgr.order {
+			if _, ok := mgr.plugins[name].(TwoFactorChecker); ok {
+				return fmt.Errorf("auth: passkey plugin: %q handles two-factor sign-in, so set PasskeyConfig.TwoFactorURL to the page that finishes it: a passkey sign-in of a 2FA account is pending until /2fa/challenge, and OnSuccessURL would refuse it", name)
+			}
+		}
+	}
 	if se, ok := p.store.(interface{ EnsureSchema(context.Context) error }); ok {
 		if err := se.EnsureSchema(context.Background()); err != nil {
 			return fmt.Errorf("auth: passkey store EnsureSchema: %w", err)
@@ -316,20 +322,14 @@ func (p *PasskeyPlugin) requireFullSession(w http.ResponseWriter, r *http.Reques
 		return nil, false
 	}
 	if !sess.TwoFactorVerified {
-		for _, name := range p.mgr.order {
-			checker, ok := p.mgr.plugins[name].(TwoFactorChecker)
-			if !ok {
-				continue
-			}
-			on, err := checker.HasTwoFactorEnabled(r.Context(), sess.UserID)
-			if err != nil {
-				writeAuthError(w, http.StatusInternalServerError, "2FA state lookup failed")
-				return nil, false
-			}
-			if on {
-				writeAuthError(w, http.StatusForbidden, "two-factor verification required")
-				return nil, false
-			}
+		on, err := p.mgr.twoFactorEnabled(r.Context(), sess.UserID)
+		if err != nil {
+			writeAuthError(w, http.StatusInternalServerError, "2FA state lookup failed")
+			return nil, false
+		}
+		if on {
+			writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+			return nil, false
 		}
 	}
 	return sess, true
@@ -356,10 +356,21 @@ func decodeB64Fields(fields map[string]string) (map[string][]byte, error) {
 	return out, nil
 }
 
+// requireJSON refuses a POST that is not application/json. The options
+// endpoints read no body, but a JSON content type is what makes a
+// cross-site page send a CORS preflight before reaching them.
+func requireJSON(w http.ResponseWriter, r *http.Request) bool {
+	if !handler.IsJSONContentType(r.Header.Get("Content-Type")) {
+		writeAuthError(w, http.StatusUnsupportedMediaType, "expected application/json")
+		return false
+	}
+	return true
+}
+
 // ─── registration ─────────────────────────────────────────────────────
 
 func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Request) {
-	if !p.limit.guard(w, r) {
+	if !p.limit.guard(w, r) || !requireJSON(w, r) {
 		return
 	}
 	sess, ok := p.requireFullSession(w, r)
@@ -482,6 +493,17 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 		p.refuse(w, r, sess.UserID, "register", errors.New("credential id does not match the attestation"))
 		return
 	}
+	// The options call checked the cap, but challenges collected while
+	// under it would each register past it; count again before storing.
+	existing, err := p.store.ListPasskeys(r.Context(), sess.UserID)
+	if err != nil {
+		writeAuthError(w, http.StatusInternalServerError, "passkey lookup failed")
+		return
+	}
+	if len(existing) >= p.config.MaxPerUser {
+		writeAuthError(w, http.StatusConflict, "passkey limit reached; remove one first")
+		return
+	}
 	now := time.Now().UTC()
 	cred := PasskeyCredential{
 		ID: res.credID, UserID: sess.UserID, PublicKey: res.publicKey, Algorithm: res.alg,
@@ -506,7 +528,7 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 // ─── sign-in ──────────────────────────────────────────────────────────
 
 func (p *PasskeyPlugin) loginOptionsHandler(w http.ResponseWriter, r *http.Request) {
-	if !p.limit.guard(w, r) {
+	if !p.limit.guard(w, r) || !requireJSON(w, r) {
 		return
 	}
 	challenge, err := createPurposeToken(r.Context(), p.challenges, purposePasskeyLogin, "", p.config.ChallengeTTL)
@@ -581,6 +603,12 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 		p.refuse(w, r, cred.UserID, "login", err)
 		return
 	}
+	// Backup eligibility is fixed when the credential is made; a flip
+	// means this is not the authenticator that registered it.
+	if res.backupEligible != cred.BackupEligible {
+		p.refuse(w, r, cred.UserID, "login", errors.New("backup eligibility differs from registration"))
+		return
+	}
 	// A counter that fails to move forward means two copies of the key
 	// exist. Synced passkeys always report zero, which is no signal.
 	if (res.signCount != 0 || cred.SignCount != 0) && res.signCount <= cred.SignCount {
@@ -615,6 +643,16 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess, pending, err := p.mgr.MintSession(r.Context(), user.GetID(), p.mgr.Config().SessionTTL)
+	if errors.Is(err, ErrTwoFactorEnforcement) {
+		// Fail closed like a password login: no session, and the audit
+		// trail says why.
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind: "login.failed", UserID: user.GetID(), Email: user.GetEmail(), Remote: remoteHost(r),
+			Meta: map[string]string{"reason": "twofa_failclosed", "via": "passkey"},
+		})
+		writeAuthError(w, http.StatusInternalServerError, "two-factor enforcement unavailable")
+		return
+	}
 	if err != nil {
 		writeAuthError(w, http.StatusInternalServerError, "session create failed")
 		return
@@ -630,6 +668,7 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 	mintSessionCookie(w, p.mgr.Config(), sess.Token, sess.ExpiresAt)
 	out := map[string]any{"redirect": safeRedirectURL(p.config.OnSuccessURL)}
 	if pending {
+		out["redirect"] = safeRedirectURL(p.config.TwoFactorURL)
 		out["two_factor_required"] = true
 	}
 	writePasskeyJSON(w, http.StatusOK, out)
@@ -665,6 +704,9 @@ func passkeyView(c PasskeyCredential) map[string]any {
 }
 
 func (p *PasskeyPlugin) listHandler(w http.ResponseWriter, r *http.Request) {
+	if !p.limit.guard(w, r) {
+		return
+	}
 	sess, ok := p.requireFullSession(w, r)
 	if !ok {
 		return
@@ -714,7 +756,8 @@ func (p *PasskeyPlugin) deleteHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // purgeUserPasskeys removes every passkey a user has, for an account
-// claim: a passkey the unverified registrant added is a way back in.
+// claim or a password reset: a passkey added by whoever held the
+// account is a way back in.
 func (m *AuthManager) purgeUserPasskeys(ctx context.Context, userID string) (int, error) {
 	plugin, ok := m.Plugin("passkey")
 	if !ok {

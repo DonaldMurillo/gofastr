@@ -200,7 +200,7 @@ deployments.
 |---|---|
 | `login.succeeded` | A password or passkey (`via=passkey`) login completes and the session is fully privileged (no pending 2FA). |
 | `login.pending_2fa` | Login succeeds at the password or passkey step but the user has 2FA, so a `PendingTwoFactor` session is minted. |
-| `login.failed` | Bad credentials (unknown email OR wrong password: same event, `reason=bad_credentials`) or the fail-closed 2FA rejection (`reason=twofa_failclosed`). |
+| `login.failed` | Bad credentials (unknown email OR wrong password: same event, `reason=bad_credentials`) or the fail-closed 2FA rejection (`reason=twofa_failclosed`, with `via=passkey` on a passkey sign-in). |
 | `register.succeeded` | A new user is created. |
 | `session.revoked` | Logout (`reason=logout`) or a password reset purging existing sessions (`reason=password_reset`, with `count`). |
 | `2fa.enrolled` | 2FA enrollment verified (secret enabled + backup codes issued). |
@@ -217,7 +217,7 @@ deployments.
 | `magiclink.requested` | A magic link was sent. |
 | `magiclink.consumed` | A magic link token was redeemed for a session. |
 | `passkey.registered` | A passkey was added (`alg`, `backup_eligible`). |
-| `passkey.deleted` | A passkey was removed by its owner. |
+| `passkey.deleted` | A passkey was removed by its owner, or a completed reset removed all of them (`reason=password_reset`, `count`). |
 | `passkey.refused` | A passkey ceremony failed a check (`ceremony=login` or `register`, `reason`). |
 | `passkey.clone_suspected` | A sign-in presented a signature counter that did not move past the stored one (`stored`, `presented`). |
 | `account.claimed` | A magic link (`via=magic_link`) or a completed reset (`via=password_reset`) proved the mailbox of an account whose address was unverified. The account's OAuth links, API tokens and sessions were removed (counts in `oauth_links_removed`, `tokens_revoked`, `sessions_revoked`), its password too when `password_cleared=true`, its passkeys (`passkeys_removed`), and it is now verified. |
