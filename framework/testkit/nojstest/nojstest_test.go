@@ -23,6 +23,7 @@ const cleanPage = `<!doctype html><html><body>
   <form action="/save" method="post"><input name="a"><input name="b"><input type="image" src="data:," alt="Save"></form>
   <form action="/save" method="post"><input name="elements"><input name="b"><button>Save</button></form>
   <form action="#"><input name="q"><input name="r"><button>Search here</button></form>
+  <form action="javascript:void(0)" method="post"><input name="a"><input name="b"><button formaction="/save">Save</button></form>
   <div style="display:none"><a href="#">hidden toggle</a></div>
 </main>
 <script>window.__gofastr = {};</script>
@@ -38,6 +39,7 @@ const brokenPage = `<!doctype html><html><body>
   <form action="/save" method="post"><input name="a"><input name="b"><button type="button">Send</button></form>
   <form action="/save" method="post"><input name="a"><input name="b"><button disabled>Off</button></form>
   <form action="/find"><input name="q"><button disabled>Go</button></form>
+  <form action="/save" method="post"><input name="a"><input name="b"><button formaction="javascript:void(0)">Save</button></form>
   <form action="/save" method="post"><fieldset disabled><input name="a"><input name="b"><button>Off</button></fieldset></form>
 </nav>
 <main><div style="height:2em"></div></main>
@@ -92,7 +94,7 @@ func TestBrokenPageReportsEachKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"empty-main", "dead-link", "dead-link", "dead-link", "dead-link", "form-no-submit", "form-no-submit", "form-no-submit", "form-no-submit", "form-no-submit"}
+	want := []string{"empty-main", "dead-link", "dead-link", "dead-link", "dead-link", "form-no-submit", "form-no-submit", "form-no-submit", "form-no-submit", "form-no-submit", "form-no-submit"}
 	if got := kinds(ps); !slices.Equal(got, want) {
 		t.Fatalf("got %v, want %v\n%v", got, want, ps)
 	}

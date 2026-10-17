@@ -118,7 +118,7 @@ would hit:
 | --- | --- |
 | `empty-main` | `<main>` (or `<body>` without one) shows no text, or is not rendered at all (`hidden`, `display: none`) |
 | `dead-link` | a visible link to `#` or a `javascript:` URL, or an `<a>` with no `href` acting as a button |
-| `form-no-submit` | a visible form with no enabled submit control (a button in a disabled `<fieldset>` counts as disabled; an image button counts as a submit control) that is not a single-field form Enter submits, or whose `action` is a `javascript:` URL. A single-field form whose only submit buttons are disabled counts: Enter clicks the first one, and a disabled one does nothing. An `action` of `#` submits to the current page and passes |
+| `form-no-submit` | a visible form with no enabled submit control (a button in a disabled `<fieldset>` counts as disabled; an image button counts as a submit control) that is not a single-field form Enter submits, or whose every enabled submit control lands on a `javascript:` URL. A button's `formaction` overrides the form's `action`, so `formaction="/save"` rescues a `javascript:` form and `formaction="javascript:…"` sinks a real one. A single-field form whose only submit buttons are disabled counts: Enter clicks the first one, and a disabled one does nothing. An `action` of `#` submits to the current page and passes |
 | `http-status` | the page answered 4xx or 5xx, so it is an error page, not the page |
 | `script-ran` | the GoFastr runtime executed, so the tab did not hold and the other results mean nothing |
 

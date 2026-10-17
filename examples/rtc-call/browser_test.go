@@ -356,7 +356,9 @@ func TestKickedSocketCallComesBack(t *testing.T) {
 // not fail: under load the first poll can beat the room script.
 func TestPollWaitsOutAThrow(t *testing.T) {
 	tab := newTab(t, callBrowserCtx(t))
-	run(t, tab, chromedp.Navigate("about:blank"),
-		chromedp.Evaluate(`setTimeout(() => { window.__late = {ready: true}; }, 300)`, nil))
-	pollTrue(t, tab, `window.__late.ready === true`, 5*time.Second)
+	run(t, tab, chromedp.Navigate("about:blank"))
+	pollTrue(t, tab, `(() => { window.__n = (window.__n || 0) + 1; if (window.__n === 1) throw new Error('not yet'); return true; })()`, 5*time.Second)
+	if n := evalString(t, tab, `String(window.__n)`); n != "2" {
+		t.Fatalf("expression ran %s times, want 2 (one throw, one true)", n)
+	}
 }

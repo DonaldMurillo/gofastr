@@ -165,18 +165,22 @@ var probeJS = strings.TrimSpace(`
     if (!shown(f) || (f.getAttribute('method') || '').toLowerCase() === 'dialog') continue;
     const action = urlOf(f.getAttribute('action') || '');
     // "#" resolves to the current page, which a native submission
-    // reaches; only a javascript: action goes nowhere.
-    if (/^javascript:/i.test(action)) {
-      out.push({kind: 'form-no-submit', detail: snip(f) + ' submits nowhere without script'});
-      continue;
-    }
+    // reaches; only a javascript: action goes nowhere. A submit
+    // button's formaction overrides the form's action.
+    const dead = (v) => /^javascript:/i.test(v);
+    const actionOf = (el) => el.hasAttribute('formaction') ? urlOf(el.getAttribute('formaction')) : action;
     // el.type is the reflected type the browser submits by: an invalid
     // or oddly spelled type attribute on a button still means submit.
     // :disabled also covers a control inside a disabled fieldset.
     const isSubmit = (el) => (el.tagName === 'BUTTON' && el.type === 'submit') ||
       (el.tagName === 'INPUT' && (el.type === 'submit' || el.type === 'image'));
     const submits = controls(f).filter(isSubmit);
-    if (submits.some((el) => !el.matches(':disabled'))) continue;
+    const enabled = submits.filter((el) => !el.matches(':disabled'));
+    if (enabled.some((el) => !dead(actionOf(el)))) continue;
+    if (enabled.length > 0 || (submits.length === 0 && dead(action))) {
+      out.push({kind: 'form-no-submit', detail: snip(f) + ' submits nowhere without script'});
+      continue;
+    }
     // Enter submits a single-field form only when it has no submit
     // button at all: with one, Enter clicks it, and a disabled one
     // does nothing.

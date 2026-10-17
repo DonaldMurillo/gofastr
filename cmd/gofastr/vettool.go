@@ -42,8 +42,11 @@ func isVetCall(args []string) bool {
 // selfVettool returns the vet arguments and environment that run the
 // suite through this binary, or nothing when the binary cannot name its
 // own path (plain `go vet` then runs instead).
+// osExecutable is the seam a test uses to reach the no-path case.
+var osExecutable = os.Executable
+
 func selfVettool() (args, env []string) {
-	self, err := os.Executable()
+	self, err := osExecutable()
 	if err != nil {
 		return nil, nil
 	}

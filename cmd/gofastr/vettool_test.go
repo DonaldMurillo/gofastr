@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -183,5 +184,25 @@ func TestVerifyJSONSaysSuiteSkipped(t *testing.T) {
 	}
 	if !doc.Vet.Passed || !strings.Contains(doc.Vet.SuiteSkipped, "go1.20.0") {
 		t.Fatalf("vet = %+v, want passed with the skip reason naming go1.20.0", doc.Vet)
+	}
+}
+
+// With no path to itself the CLI cannot be the vettool, and a verify
+// that skipped the analyzer pass for that reason must not pass.
+func TestVerifyFailsWithoutSelfPath(t *testing.T) {
+	old := osExecutable
+	osExecutable = func() (string, error) { return "", errors.New("no /proc") }
+	t.Cleanup(func() { osExecutable = old })
+	out, _ := captureVerify(t, []string{"--root", writeVetApp(t, ""), "--json"})
+	var doc struct {
+		Vet struct {
+			Passed bool `json:"passed"`
+		} `json:"vet"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &doc); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, out)
+	}
+	if doc.Vet.Passed {
+		t.Fatalf("vet passed with the analyzer pass unable to start:\n%s", out)
 	}
 }
