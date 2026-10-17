@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -159,13 +160,11 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		sb.WriteString(`" class="fui-line-chart__grid" data-cui-internal=""/>`)
 	}
 
-	palette := []string{"primary", "info", "success", "warning", "danger"}
 	for i, s := range cfg.Series {
 		color := s.Color
-		isPalette := color == "primary" || color == "info" ||
-			color == "success" || color == "warning" || color == "danger"
+		isPalette := slices.Contains(chartPalette, color)
 		if color == "" {
-			color = palette[i%len(palette)]
+			color = chartPalette[i%len(chartPalette)]
 			isPalette = true
 		}
 
@@ -263,10 +262,9 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		x := 0.0
 		for i, s := range cfg.Series {
 			color := s.Color
-			isPalette := color == "primary" || color == "info" ||
-				color == "success" || color == "warning" || color == "danger"
+			isPalette := slices.Contains(chartPalette, color)
 			if color == "" {
-				color = palette[i%len(palette)]
+				color = chartPalette[i%len(chartPalette)]
 				isPalette = true
 			}
 			swatchCls := "fui-line-chart__legend-swatch"

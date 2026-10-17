@@ -117,3 +117,14 @@ func TestLineChartInsetsLineAndDrawsGrid(t *testing.T) {
 		t.Errorf("line should run from y=96 to y=4 inside a 100px plot:\n%s", h)
 	}
 }
+
+// TestLineChartPaletteColorIsClass: a palette key picks the theme class,
+// never a raw stroke the theme can't restyle.
+func TestLineChartPaletteColorIsClass(t *testing.T) {
+	h := string(LineChart(LineChartConfig{Series: []LineSeries{
+		{Name: "s", Color: "success", Values: []float64{1, 2}},
+	}}))
+	if !strings.Contains(h, "fui-line-chart__line--success") || strings.Contains(h, `stroke="success"`) {
+		t.Errorf("palette color not a class: %s", h)
+	}
+}
