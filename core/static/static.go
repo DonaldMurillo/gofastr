@@ -159,12 +159,20 @@ func Handler(config Config) http.Handler {
 		if config.rootIdentity != nil {
 			root, err := os.OpenRoot(config.resolvedRoot)
 			if err != nil {
-				http.NotFound(w, r)
+				if errors.Is(err, fs.ErrNotExist) {
+					http.NotFound(w, r)
+				} else {
+					http.Error(w, "internal server error", http.StatusInternalServerError)
+				}
 				return
 			}
 			defer root.Close()
 			info, err := openedRootInfo(root)
-			if err != nil || !os.SameFile(config.rootIdentity, info) {
+			if err != nil {
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			if !os.SameFile(config.rootIdentity, info) {
 				http.NotFound(w, r)
 				return
 			}

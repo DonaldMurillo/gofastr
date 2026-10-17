@@ -46,7 +46,7 @@ function Invoke-WindowsTests {
         $stdoutLog = Join-Path $LogDirectory "$tag.jsonl"
         $stderrLog = Join-Path $LogDirectory "$tag.stderr.log"
         Write-Host "Testing $Name packages $offset..$last of $($PackageSet.Count)."
-        go test -json -count=1 -p $Parallelism -timeout=$Timeout @TestFlags @batch > $stdoutLog 2> $stderrLog
+        go test -json -count=1 -p $Parallelism "-timeout=$Timeout" @TestFlags @batch > $stdoutLog 2> $stderrLog
         if ($LASTEXITCODE -ne 0) {
             $script:windowsTestsFailed = $true
             Write-Host "FAILED $tag. Full output: $stdoutLog"

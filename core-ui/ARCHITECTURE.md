@@ -1,5 +1,8 @@
 # GoFastr UI architecture
 
+The CSP source linter accepts comment directives in LF and CRLF files.
+The directive must still occupy its whole comment line.
+
 > **Read this before writing any UI, runtime, or `framework/uihost` code.**
 > Misunderstanding the model has caused multiple round-trips of rework.
 > This document is the contract.

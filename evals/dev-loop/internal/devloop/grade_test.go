@@ -95,7 +95,7 @@ func TestTranscriptLaunchShapes(t *testing.T) {
 		{"go run -race .", 0, 1, 0},
 		{"go run -tags dev ./", 0, 1, 0},
 		{"go run eval.local/devloop", 0, 1, 0},
-		{"go run " + ws, 0, 1, 0},
+		{"go run '" + strings.ReplaceAll(ws, "'", "'\\''") + "'", 0, 1, 0},
 		{"go run ./scripts/seed", 0, 0, 0},
 		{"go run golang.org/x/tools/cmd/goimports@latest -w .", 0, 0, 0},
 		{"go run github.com/DonaldMurillo/gofastr/cmd/gofastr docs ui", 0, 0, 0},
