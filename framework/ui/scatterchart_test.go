@@ -154,6 +154,7 @@ func TestScatterHugeValuesFinish(t *testing.T) {
 		{{X: 1e17, Y: 100}, {X: 1e17 + 32, Y: 200}},
 		{{X: -1e308, Y: 1e308}, {X: 1e308, Y: -1e308}},
 		{{X: 1, Y: 100}, {X: math.Nextafter(1, 2), Y: 200}},
+		{{X: 0, Y: 100}, {X: 1e-323, Y: 200}},
 	} {
 		done := make(chan string, 1)
 		go func() {
@@ -186,12 +187,23 @@ var scatterTick = regexp.MustCompile(`<text x="([-0-9.]+)" y="[-0-9.]+" class="f
 // TestScatterTickLabelsDiffer: small steps keep enough decimals that no
 // two ticks read the same, and titles print the exact coordinates.
 func TestScatterTickLabelsDiffer(t *testing.T) {
-	for _, ys := range [][]float64{{0.01, 0.03}, {0, 0.004}} {
+	for _, ys := range [][]float64{{0.01, 0.03}, {0, 0.004}, {0, 1e-310}, {0, 1e300}, {1e-7, 1.0001e-7}} {
 		h := string(ui.ScatterChart(ui.ScatterChartConfig{Series: []ui.ScatterSeries{
 			{Name: "s", Points: []ui.ScatterPoint{{X: 1, Y: ys[0]}, {X: 2, Y: ys[1]}}},
 		}}))
 		seen := map[string]bool{}
+		var vals []float64
 		for _, m := range scatterTick.FindAllStringSubmatch(h, -1) {
+			v, err := strconv.ParseFloat(m[2], 64)
+			if err != nil {
+				t.Fatalf("tick %q: %v", m[2], err)
+			}
+			if ms := scatterTick.FindStringSubmatch(h); m[1] == ms[1] { // the Y gutter
+				vals = append(vals, v)
+			}
+			if len(m[2]) > 12 || strings.Contains(m[2], "NaN") || strings.Contains(m[2], "Inf") {
+				t.Errorf("ticks for %v print %q", ys, m[2])
+			}
 			if seen[m[2]] {
 				t.Errorf("ticks for %v repeat %q: %s", ys, m[2], h)
 			}
@@ -199,6 +211,13 @@ func TestScatterTickLabelsDiffer(t *testing.T) {
 		}
 		if len(seen) < 3 {
 			t.Errorf("ticks for %v = %v", ys, seen)
+		}
+		// The ticks are evenly spaced, and so must their labels read.
+		for i := 2; i < len(vals); i++ {
+			if gap, first := vals[i]-vals[i-1], vals[1]-vals[0]; math.Abs(gap-first) > 1e-9*math.Abs(first) {
+				t.Errorf("ticks for %v read unevenly: %v", ys, vals)
+				break
+			}
 		}
 	}
 	h := string(ui.ScatterChart(ui.ScatterChartConfig{Series: []ui.ScatterSeries{

@@ -318,8 +318,13 @@ func axisTicks(vs []float64) ([]float64, float64) {
 // two ticks read the same. Very large or fallback ticks use the shortest
 // exact form.
 func tickText(t, step float64) string {
-	if step == 0 || math.Abs(t) >= 1e9 {
+	if step == 0 {
 		return exactText(t)
+	}
+	if math.Abs(t) >= 1e9 || step < 1e-9 {
+		// Past plain decimals: the significant digits that tell this tick
+		// from the next, so 7.5e+299 rather than 7.500000000000005e+299.
+		return strconv.FormatFloat(t, 'g', decExp(t)-decExp(step)+2, 64)
 	}
 	d := 0
 	if s := strconv.FormatFloat(step, 'f', -1, 64); strings.Contains(s, ".") {
@@ -327,6 +332,13 @@ func tickText(t, step float64) string {
 	}
 	p := math.Pow(10, float64(d))
 	return strconv.FormatFloat(math.Round(t*p)/p, 'f', -1, 64)
+}
+
+// decExp is v's power of ten: 2 for 250, -12 for 2.5e-12.
+func decExp(v float64) int {
+	s := strconv.FormatFloat(v, 'e', -1, 64)
+	e, _ := strconv.Atoi(s[strings.IndexByte(s, 'e')+1:])
+	return e
 }
 
 // exactText is v's shortest exact form: 0.0025, 1250, 1e+21.

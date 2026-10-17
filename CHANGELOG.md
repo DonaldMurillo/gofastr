@@ -28,7 +28,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`ui.ScatterChart` plots points on two numeric axes**, one color per
   series. Both axes round out to steps of 1, 2, 2.5 or 5 × 10ⁿ, across
   zero when the data does, and tick labels keep as many decimals as the
-  step needs. The legend wraps at the right edge. A point with a NaN or
+  step needs (past 1e9, or under a step of 1e-9, as many significant
+  digits: 7.5e+299, not 7.500000000000005e+299). The legend wraps at the right edge. A point with a NaN or
   Inf coordinate is skipped. Each point's `<title>` names its series,
   label and coordinates. The gallery shows seats against MRR for two
   plans.
