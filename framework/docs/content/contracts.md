@@ -627,7 +627,20 @@ timeout, a recovered panic logged raw, and about thirty more, plus the
 stock `x/tools` passes `go vet` leaves off (nilness, sqlrowserr, …).
 The gofastr binary serves as the vettool (`go vet -vettool=<gofastr>`),
 so the analyzers match the CLI you run and there is nothing else to
-install. Both passes must pass.
+install. Both passes must pass. A tree that fails plain `go vet` stops
+there, so its type errors print once.
+
+The analyzers' type checker is the one compiled into the gofastr binary,
+and it cannot read a newer toolchain's export data. When the module
+builds with a newer Go minor than the binary (say go1.28 against a
+gofastr built with go1.27), verify skips the analyzer pass, says so, and
+keeps plain `go vet`; a gofastr built with that Go runs them again.
+A repository with its own `cmd/vettool` builds that instead, with its
+own toolchain.
+
+Apps that passed verify before this pass existed can fail it on upgrade:
+an `http.Get` with no timeout, a `0644` secret file. Fix the finding, or
+mark it when it is the shape on purpose. `--no-vet` skips both passes.
 
 A finding that is the shape on purpose takes the same marker the
 contracts use, with a reason, on its line or the line above:

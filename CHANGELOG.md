@@ -16,12 +16,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   an app's verify ran plain `go vet`. The gofastr binary now serves as
   the vettool for any other tree, so the analyzers match the CLI
   version and nothing else needs installing. A finding that is the shape
-  on purpose takes `//gofastr:allow(<analyzer>) <reason>`. The binary
-  grows by about 3.5 MB.
+  on purpose takes `//gofastr:allow(<analyzer>) <reason>`. An app that
+  passed verify before can fail it now; `--no-vet` skips the stage. A
+  module on a newer Go minor than the gofastr binary skips the analyzer
+  pass with a note, since the compiled-in type checker cannot read that
+  toolchain's export data. The binary grows by about 3.5 MB.
 - **`framework/testkit/nojstest` checks pages with JavaScript off.** It
   loads each page with script execution disabled and reports empty
   `<main>` content, links that go nowhere without script (`#`,
-  `javascript:`), and forms with no native way to submit. The site and
+  `javascript:`), forms with no native way to submit, and error
+  statuses. The site and
   Meridian run it as gates: every page the site's axe gate scans, and
   Meridian's marketing, auth, app and admin pages after a sign-in
   through the login form with script off.
@@ -34,9 +38,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Plain `go vet` now runs first and the analyzers run as a second pass;
   both must pass.
 - **Gallery demos link somewhere.** The EntryList, CommentThread,
-  PricingCard, AuthCard, FilterToolbar and RecordSummary demos on
-  `/components` used `href="#"` placeholders, which go nowhere without
-  script. They now point at real pages.
+  PricingCard, AuthCard, FilterToolbar, RecordSummary, Form,
+  ConditionalField and Selection demos used `#` placeholders for links
+  and form actions, which go nowhere without script. They now point at
+  the page they render on (`?story=1`, `?plan=pro`), so they work on
+  `/components` and in `gofastr theme edit`'s preview alike.
 
 ### Changed
 - **Pages render with about 40% less CPU.** The UI host scanned every

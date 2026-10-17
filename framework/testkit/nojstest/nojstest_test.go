@@ -17,6 +17,7 @@ const cleanPage = `<!doctype html><html><body>
   <a href="/next">Next</a>
   <a aria-current="page">Here</a>
   <form action="/save" method="post"><input name="a"><input name="b"><button>Save</button></form>
+  <form action="/save" method="post"><input name="a"><input name="b"><button type="primary">Odd type</button></form>
   <form action="/search"><input type="search" name="q"></form>
   <form method="dialog"><input name="x"><input name="y"></form>
   <div style="display:none"><a href="#">hidden toggle</a></div>
@@ -30,6 +31,8 @@ const brokenPage = `<!doctype html><html><body>
   <a href="javascript:void(0)">Open</a>
   <a role="button">Do it</a>
   <form action="/save" method="post"><input name="a"><input name="b"><button type="button">Send</button></form>
+  <form action="/save" method="post"><input name="a"><input name="b"><button disabled>Off</button></form>
+  <form action="#" method="post"><input name="a"><button>Go</button></form>
 </nav>
 <main><div style="height:2em"></div></main>
 </body></html>`
@@ -37,9 +40,12 @@ const brokenPage = `<!doctype html><html><body>
 func serve(t *testing.T) string {
 	t.Helper()
 	mux := http.NewServeMux()
-	for path, body := range map[string]string{"/clean": cleanPage, "/broken": brokenPage} {
+	for path, body := range map[string]string{"/clean": cleanPage, "/broken": brokenPage, "/missing": cleanPage} {
 		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			if path == "/missing" {
+				w.WriteHeader(http.StatusNotFound)
+			}
 			_, _ = w.Write([]byte(body))
 		})
 	}
@@ -77,9 +83,22 @@ func TestBrokenPageReportsEachKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"empty-main", "dead-link", "dead-link", "dead-link", "form-no-submit"}
+	want := []string{"empty-main", "dead-link", "dead-link", "dead-link", "form-no-submit", "form-no-submit", "form-no-submit"}
 	if got := kinds(ps); !slices.Equal(got, want) {
 		t.Fatalf("got %v, want %v\n%v", got, want, ps)
+	}
+}
+
+func TestErrorStatusIsReported(t *testing.T) {
+	base := serve(t)
+	tab, cancel := NewTab(t, chromedptest.Context(t))
+	defer cancel()
+	ps, err := Check(tab, base+"/missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := kinds(ps); !slices.Equal(got, []string{"http-status"}) {
+		t.Fatalf("got %v, want [http-status]", ps)
 	}
 }
 

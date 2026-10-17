@@ -72,3 +72,35 @@ func greet() { fmt.Printf("%d\n", "not a number") }
 		t.Fatalf("vet's printf pass did not run beside the suite (ok=%v):\n%s", ok, out)
 	}
 }
+
+func TestSuiteSkipsNewerToolchain(t *testing.T) {
+	for _, c := range []struct {
+		module, built string
+		skip          bool
+	}{
+		{"go1.28.0", "go1.27.2", true},
+		{"go1.28rc1", "go1.27.2", true},
+		{"go1.27.5", "go1.27.2", false},
+		{"go1.26.1", "go1.27.2", false},
+		{"", "go1.27.2", false},
+		{"go1.28.0", "devel +abc", false},
+	} {
+		if got := suiteSkipReason(c.module, c.built) != ""; got != c.skip {
+			t.Errorf("module %q built %q: skip=%v, want %v", c.module, c.built, got, c.skip)
+		}
+	}
+}
+
+// A tree that fails plain vet stops there: the suite pass would print
+// the same type errors again.
+func TestVerifyVetStopsAfterPlainVet(t *testing.T) {
+	dir := writeVetApp(t, "")
+	writeTestFile(t, filepath.Join(dir, "broken.go"), "package main\n\nfunc broken() { undefinedName() }\n")
+	out, ok := runGoVet(dir, true)
+	if ok {
+		t.Fatal("vet passed a tree that does not type-check")
+	}
+	if n := strings.Count(out, "undefined: undefinedName"); n != 1 {
+		t.Fatalf("type error printed %d times, want 1:\n%s", n, out)
+	}
+}

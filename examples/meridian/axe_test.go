@@ -160,6 +160,41 @@ func axeReport(t *testing.T, label, path string, vs []axetest.Violation) bool {
 	return true
 }
 
+// meridianAnonPages are the pages a visitor reaches signed out: marketing,
+// the guest-only auth pages, and the public SDK docs (sdkdocs.Mount). The
+// axe and no-JS gates both check them before signing in, since guestPolicy
+// bounces a signed-in visitor from /login and /signup to /app.
+var meridianAnonPages = []string{
+	"/", "/pricing", "/about", "/terms", "/privacy",
+	"/login", "/signup",
+	"/docs/api", "/docs/api/auth", "/docs/api/errors",
+	"/docs/api/entities/customers",
+}
+
+// meridianAppPages are the signed-in app screens, with a real seeded
+// customer and invoice for the detail screens.
+func meridianAppPages(customerID, invoiceID string) []string {
+	return []string{
+		"/app", "/app/customers", "/app/customers/" + customerID,
+		"/app/invoices", "/app/invoices/" + invoiceID, "/app/subscriptions",
+	}
+}
+
+// meridianAdminPages are the admin back-office screens: the dashboard,
+// queue and audit pages, a list and a create screen per entity the admin
+// sidebar lists, and a seeded customer's record (the other entities'
+// records need a row the test would have to create). Must run signed in.
+func meridianAdminPages(t *testing.T, browser context.Context, base string) []string {
+	t.Helper()
+	pages := []string{"/admin", "/admin/queue", "/admin/audit"}
+	for _, table := range axeAdminEntityTables(t, browser, base) {
+		pages = append(pages, "/admin/entities/"+table, "/admin/entities/"+table+"/create")
+	}
+	pages = append(pages, "/admin/entities/customers/"+axeAdminRowID(t, browser, base, "customers"))
+	sort.Strings(pages)
+	return pages
+}
+
 // axeScanPage opens a fresh tab, navigates, settles, forces scheme, and scans.
 // Returns the allowlist-filtered violations.
 func axeScanPage(t *testing.T, browser context.Context, base, path, scheme string) []axetest.Violation {
@@ -201,14 +236,7 @@ func TestAxeMeridianClean(t *testing.T) {
 	// /signup) aren't redirected to /app by guestPolicy. Marketing pages are
 	// public; auth pages are guest-only (an authenticated visitor is bounced
 	// to /app, so scanning them post-login would audit the dashboard instead).
-	anonPages := []string{
-		"/", "/pricing", "/about", "/terms", "/privacy",
-		"/login", "/signup",
-		// Public SDK docs (sdkdocs.Mount).
-		"/docs/api", "/docs/api/auth", "/docs/api/errors",
-		"/docs/api/entities/customers",
-	}
-	for _, p := range anonPages {
+	for _, p := range meridianAnonPages {
 		for _, scheme := range axetest.Schemes {
 			if axeReport(t, "page", p, axeScanPage(t, browser, base, p, scheme)) {
 				failed = true
@@ -228,11 +256,7 @@ func TestAxeMeridianClean(t *testing.T) {
 	invoiceID := axeFirstDetailID(t, browser, base, "/app/invoices", "/app/invoices")
 
 	// App (authenticated) screens.
-	appPages := []string{
-		"/app", "/app/customers", "/app/customers/" + customerID,
-		"/app/invoices", "/app/invoices/" + invoiceID, "/app/subscriptions",
-	}
-	for _, p := range appPages {
+	for _, p := range meridianAppPages(customerID, invoiceID) {
 		for _, scheme := range axetest.Schemes {
 			if axeReport(t, "page", p, axeScanPage(t, browser, base, p, scheme)) {
 				failed = true
@@ -246,17 +270,7 @@ func TestAxeMeridianClean(t *testing.T) {
 	// added entity is covered with no test edit, plus a seeded customer's
 	// record. target-size is enabled in axeScanPage so dense admin table links
 	// and sidebar nav are audited against the WCAG 2.2 24px floor.
-	adminTables := axeAdminEntityTables(t, browser, base)
-	adminCustomerID := axeAdminRowID(t, browser, base, "customers")
-	adminPages := []string{"/admin", "/admin/queue", "/admin/audit"}
-	for _, table := range adminTables {
-		adminPages = append(adminPages, "/admin/entities/"+table, "/admin/entities/"+table+"/create")
-	}
-	// A seeded customer's record screen (the other entities' records need a
-	// row we'd have to create; customers is the canonical seeded one).
-	adminPages = append(adminPages, "/admin/entities/customers/"+adminCustomerID)
-	sort.Strings(adminPages)
-	for _, p := range adminPages {
+	for _, p := range meridianAdminPages(t, browser, base) {
 		for _, scheme := range axetest.Schemes {
 			if axeReport(t, "page", p, axeScanPage(t, browser, base, p, scheme)) {
 				failed = true

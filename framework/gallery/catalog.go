@@ -361,7 +361,7 @@ var Catalog = []Entry{
 			),
 			Footer: ui.Muted(render.Text("Commander: Mina Chen · Updated 2 min ago")),
 			Actions: ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM},
-				ui.LinkButton(ui.LinkButtonConfig{Label: "Open incident", Href: "/components/recordsummary", Variant: ui.ButtonPrimary}),
+				ui.LinkButton(ui.LinkButtonConfig{Label: "Open incident", Href: "?incident=2841", Variant: ui.ButtonPrimary}),
 				ui.Button(ui.ButtonConfig{Label: "Join bridge", Variant: ui.ButtonSecondary}),
 				ui.Button(ui.ButtonConfig{Label: "Acknowledge", Variant: ui.ButtonGhost}),
 			),
@@ -531,7 +531,7 @@ var Catalog = []Entry{
 
 	// ---------- Forms ----------
 	{"form", "Form", "Forms", "Form container with submit + validation.", func() render.HTML {
-		return ui.Form(ui.FormConfig{Action: "#", Method: "POST", SubmitLabel: "Sign in"},
+		return ui.Form(ui.FormConfig{Action: "?", Method: "POST", SubmitLabel: "Sign in"},
 			ui.FormField(ui.FormFieldConfig{Label: "Email", For: "demo-email", Required: true,
 				Input: func(c headless.FieldControl) render.HTML {
 					return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
@@ -744,7 +744,7 @@ var Catalog = []Entry{
 		})
 	}},
 	{"conditionalfield", "ConditionalField", "Forms", "A field shown or hidden by another field's value — one value or any of a list; visible on first paint, hidden by the runtime until the watched field matches.", func() render.HTML {
-		return ui.Form(ui.FormConfig{ID: "demo-conditional", Action: "#"},
+		return ui.Form(ui.FormConfig{ID: "demo-conditional", Action: "?"},
 			ui.RadioGroup(ui.RadioGroupConfig{
 				Legend: "Plan",
 				Name:   "plan",
@@ -817,7 +817,7 @@ var Catalog = []Entry{
 			return ui.Checkbox(ui.ToggleConfig{Name: "ids", ID: "demo-sel-" + id, Value: id, Label: label, ExtraAttrs: html.Attrs{"form": "demo-selection-bar"}})
 		}
 		return ui.Selection(ui.SelectionConfig{
-			Bar: ui.Form(ui.FormConfig{ID: "demo-selection-bar", Action: "#", Method: "POST", HideSubmit: true},
+			Bar: ui.Form(ui.FormConfig{ID: "demo-selection-bar", Action: "?", Method: "POST", HideSubmit: true},
 				ui.Button(ui.ButtonConfig{Label: "Archive selected", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall, Type: "button"})),
 			Body: ui.Stack(ui.StackConfig{}, row("a", "INV-1041"), row("b", "INV-1042"), row("c", "INV-1043")),
 		})
@@ -898,18 +898,18 @@ const page = await api.posts.list({ limit: 25 });`},
 	}},
 	{"entrylist", "EntryList", "Data", "A dense, ranked list of links to read: title, source, and a meta line.", func() render.HTML {
 		meta := func(points, author, age, comments string) render.HTML {
-			return render.Join(render.Text(points+" points by "), ui.Link(ui.LinkConfig{Href: "/components/avatar", Text: author}),
-				render.Text(" "+age+" · "), ui.Link(ui.LinkConfig{Href: "/components/commentthread", Text: comments + " comments"}))
+			return render.Join(render.Text(points+" points by "), ui.Link(ui.LinkConfig{Href: "?user=" + author, Text: author}),
+				render.Text(" "+age+" · "), ui.Link(ui.LinkConfig{Href: "?comments=" + author, Text: comments + " comments"}))
 		}
 		return ui.EntryList(ui.EntryListConfig{Label: "Top stories", Ranked: true, Start: 1, Entries: []ui.Entry{
-			{Title: "A field guide to reading compiler output", Href: "/components/entrylist", Source: "example.com", Meta: meta("214", "ada", "3 hours ago", "87")},
-			{Title: "Show: a tiny static site generator in one file", Href: "/components/entrylist", Source: "example.org", Meta: meta("96", "lin", "5 hours ago", "31")},
-			{Title: "Ask: how do you keep notes for long projects?", Href: "/components/entrylist", Meta: meta("58", "sam", "6 hours ago", "142")},
+			{Title: "A field guide to reading compiler output", Href: "?story=1", Source: "example.com", Meta: meta("214", "ada", "3 hours ago", "87")},
+			{Title: "Show: a tiny static site generator in one file", Href: "?story=2", Source: "example.org", Meta: meta("96", "lin", "5 hours ago", "31")},
+			{Title: "Ask: how do you keep notes for long projects?", Href: "?story=3", Meta: meta("58", "sam", "6 hours ago", "142")},
 		}})
 	}},
 	{"commentthread", "CommentThread", "Data", "A discussion with replies nested under each comment.", func() render.HTML {
 		by := func(author, age string) render.HTML {
-			return render.Join(ui.Link(ui.LinkConfig{Href: "/components/avatar", Text: author}), render.Text(" "+age))
+			return render.Join(ui.Link(ui.LinkConfig{Href: "?user=" + author, Text: author}), render.Text(" "+age))
 		}
 		p := func(text string) render.HTML { return html.Paragraph(html.TextConfig{}, render.Text(text)) }
 		return ui.CommentThread(ui.CommentThreadConfig{Label: "Comments", Comments: []ui.Comment{
@@ -1587,11 +1587,11 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		return ui.Cluster(ui.ClusterConfig{Align: ui.AlignStretch},
 			ui.PricingCard(ui.PricingCardConfig{
 				Name: "Starter", Price: "$0", Period: "/mo", Description: "For side projects.",
-				Features: []string{"1 project", "Community support"}, CTALabel: "Start free", CTAHref: "/get-started",
+				Features: []string{"1 project", "Community support"}, CTALabel: "Start free", CTAHref: "?plan=free",
 			}),
 			ui.PricingCard(ui.PricingCardConfig{
 				Name: "Pro", Price: "$99", Period: "/mo", Description: "For teams shipping fast.",
-				Features: []string{"Unlimited projects", "Priority support", "SSO"}, CTALabel: "Choose Pro", CTAHref: "/get-started", Featured: true,
+				Features: []string{"Unlimited projects", "Priority support", "SSO"}, CTALabel: "Choose Pro", CTAHref: "?plan=pro", Featured: true,
 			}),
 		)
 	}},
@@ -1609,7 +1609,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 					}}),
 				ui.Button(ui.ButtonConfig{Label: "Sign in", Variant: ui.ButtonPrimary}),
 			),
-			Footer: ui.Link(ui.LinkConfig{Href: "/components/authcard", Text: "Forgot password?"}),
+			Footer: ui.Link(ui.LinkConfig{Href: "?forgot=1", Text: "Forgot password?"}),
 		})
 	}},
 
@@ -1658,7 +1658,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 	// ---------- Forms (additions) ----------
 	{"filtertoolbar", "FilterToolbar", "Forms", "Facet filters + search + sort in one GET form; the generated list-screen toolbar.", func() render.HTML {
 		return ui.FilterToolbar(ui.FilterToolbarConfig{
-			Action: "/components/filtertoolbar",
+			Action: "?",
 			Facets: []ui.Facet{
 				{Name: "status", Label: "Status", Value: "open", Options: []ui.FacetOption{
 					{Label: "Open", Value: "open"}, {Label: "Closed", Value: "closed"},

@@ -7,7 +7,7 @@
 // so each scan stepped the matcher over every byte of the document:
 // about 1 ms per request on the 74 KB examples/meridian homepage, a
 // third of the page's serving CPU. Jumping between "data-cui-"
-// occurrences with strings.Index does the same work in about 20 µs.
+// occurrences with strings.Index does the same work in about 30 µs.
 package attrscan
 
 import (

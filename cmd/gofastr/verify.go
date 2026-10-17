@@ -3,9 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	goversion "go/version"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -412,7 +415,11 @@ func runGoVet(root string, capture bool) (string, bool) {
 		}
 		return cmd.Run() == nil
 	}
-	ok := run(nil, nil)
+	// A tree that fails plain vet usually fails to type-check, and the
+	// suite would print the same errors a second time.
+	if !run(nil, nil) {
+		return strings.TrimSpace(buf.String()), false
+	}
 	var suiteArgs, suiteEnv []string
 	if _, err := os.Stat(filepath.Join(root, "cmd", "vettool")); err == nil {
 		tool, dir := buildRepoVettool(root)
@@ -422,13 +429,46 @@ func runGoVet(root string, capture bool) (string, bool) {
 		if tool != "" {
 			suiteArgs = []string{"-vettool=" + tool}
 		}
+	} else if why := suiteSkipReason(moduleGoVersion(root), runtime.Version()); why != "" {
+		out := io.Writer(os.Stderr)
+		if capture {
+			out = &buf
+		}
+		fmt.Fprintln(out, why)
 	} else {
 		suiteArgs, suiteEnv = selfVettool()
 	}
-	if suiteArgs != nil && !run(suiteArgs, suiteEnv) {
-		ok = false
+	ok := true
+	if suiteArgs != nil {
+		ok = run(suiteArgs, suiteEnv)
 	}
 	return strings.TrimSpace(buf.String()), ok
+}
+
+// moduleGoVersion is the version of the go command that builds root
+// (GOTOOLCHAIN included), or "" when it cannot be read.
+func moduleGoVersion(root string) string {
+	cmd := exec.Command("go", "env", "GOVERSION")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// suiteSkipReason says why the analyzers compiled into this binary cannot
+// check a module whose toolchain is newer than the one the binary was
+// built with: their type checker reads that toolchain's export data and
+// language version, and refuses both. A patch release apart is fine.
+func suiteSkipReason(moduleGo, builtWith string) string {
+	if !goversion.IsValid(moduleGo) || !goversion.IsValid(builtWith) {
+		return ""
+	}
+	if goversion.Compare(goversion.Lang(moduleGo), goversion.Lang(builtWith)) <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("gofastr verify: skipped the GoFastr analyzers: this module builds with %s and gofastr was built with %s; install a gofastr built with %s or later to run them", moduleGo, builtWith, goversion.Lang(moduleGo))
 }
 
 // buildRepoVettool builds ./cmd/vettool from root into a private temp

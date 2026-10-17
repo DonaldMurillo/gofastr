@@ -12,7 +12,10 @@
 //     (href="#", a javascript: URL, or an <a> with no href acting as a
 //     button);
 //   - "form-no-submit": a visible form with no native way to submit
-//     (no submit button, and not a single-field form Enter submits);
+//     (no enabled submit button, and not a single-field form Enter
+//     submits), or whose action is "#" or a javascript: URL;
+//   - "http-status": the page answered 4xx or 5xx, so whatever it shows
+//     is an error page, not the page;
 //   - "script-ran": the GoFastr runtime executed, so the check itself
 //     did not hold and every other result is meaningless.
 //
@@ -35,8 +38,8 @@ import (
 
 // Problem is one way a page fails without script.
 type Problem struct {
-	// Kind is "empty-main", "dead-link", "form-no-submit" or
-	// "script-ran".
+	// Kind is "empty-main", "dead-link", "form-no-submit",
+	// "http-status" or "script-ran".
 	Kind string `json:"kind"`
 	// Detail names the element (an opening-tag snippet) or the fact.
 	Detail string `json:"detail"`
@@ -44,39 +47,53 @@ type Problem struct {
 
 func (p Problem) String() string { return p.Kind + ": " + p.Detail }
 
+// checkTimeout bounds one Check or Inspect, not the tab: a gate runs
+// hundreds of pages through one tab.
+const checkTimeout = 30 * time.Second
+
 // NewTab opens a tab on browser with script execution disabled. Every
 // navigation in it, including a native form submission or a followed
 // link, loads with script off. Cancel it when done.
 func NewTab(t *testing.T, browser context.Context) (context.Context, context.CancelFunc) {
 	t.Helper()
 	tab, cancel := chromedp.NewContext(browser)
-	tab, cancelTimeout := context.WithTimeout(tab, 60*time.Second)
-	stop := func() { cancelTimeout(); cancel() }
+	// The first Run opens the target and ties its life to the context it
+	// is given, so it runs on tab itself, never a timeout child.
 	if err := chromedp.Run(tab, emulation.SetScriptExecutionDisabled(true)); err != nil {
-		stop()
+		cancel()
 		t.Fatalf("nojstest: disable script execution: %v", err)
 	}
-	return tab, stop
+	return tab, cancel
 }
 
 // Check navigates tab (from [NewTab]) to url and returns what fails
-// there without script. An error means the page could not be loaded or
-// read, not that it has problems.
+// there without script, including an error status on the response. An
+// error means the page could not be loaded or read, not that it has
+// problems.
 func Check(tab context.Context, url string) ([]Problem, error) {
-	if err := chromedp.Run(tab,
-		chromedp.Navigate(url),
-		chromedp.WaitReady("body", chromedp.ByQuery),
-	); err != nil {
+	ctx, done := context.WithTimeout(tab, checkTimeout)
+	defer done()
+	resp, err := chromedp.RunResponse(ctx, chromedp.Navigate(url))
+	if err == nil {
+		err = chromedp.Run(ctx, chromedp.WaitReady("body", chromedp.ByQuery))
+	}
+	if err != nil {
 		return nil, fmt.Errorf("load %s: %w", url, err)
 	}
-	return Inspect(tab)
+	ps, err := Inspect(tab)
+	if resp != nil && resp.Status >= 400 {
+		ps = append([]Problem{{Kind: "http-status", Detail: fmt.Sprintf("the page answered %d", resp.Status)}}, ps...)
+	}
+	return ps, err
 }
 
 // Inspect reports the problems on the page tab shows now, without
 // navigating: after a native form submission, say, or a followed link.
 func Inspect(tab context.Context) ([]Problem, error) {
+	ctx, done := context.WithTimeout(tab, checkTimeout)
+	defer done()
 	var raw string
-	if err := chromedp.Run(tab, chromedp.Evaluate(probeJS, &raw)); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(probeJS, &raw)); err != nil {
 		return nil, fmt.Errorf("inspect page: %w", err)
 	}
 	var out []Problem
@@ -135,9 +152,16 @@ var probeJS = strings.TrimSpace(`
   }
   for (const f of document.querySelectorAll('form')) {
     if (!shown(f) || (f.getAttribute('method') || '').toLowerCase() === 'dialog') continue;
-    const submit = [...f.elements].some((el) =>
-      (el.tagName === 'BUTTON' && (el.getAttribute('type') || 'submit').toLowerCase() === 'submit') ||
-      (el.tagName === 'INPUT' && ['submit', 'image'].includes((el.type || '').toLowerCase())));
+    const action = (f.getAttribute('action') || '').trim();
+    if (action === '#' || /^javascript:/i.test(action)) {
+      out.push({kind: 'form-no-submit', detail: snip(f) + ' submits nowhere without script'});
+      continue;
+    }
+    // el.type is the reflected type the browser submits by: an invalid
+    // or oddly spelled type attribute on a button still means submit.
+    const submit = [...f.elements].some((el) => !el.disabled &&
+      ((el.tagName === 'BUTTON' && el.type === 'submit') ||
+       (el.tagName === 'INPUT' && (el.type === 'submit' || el.type === 'image'))));
     if (submit) continue;
     const blocking = [...f.elements].filter((el) => el.tagName === 'INPUT' &&
       ['text', 'search', 'email', 'url', 'tel', 'password', 'number', 'date', 'datetime-local', 'month', 'time', 'week'].includes((el.type || 'text').toLowerCase()));

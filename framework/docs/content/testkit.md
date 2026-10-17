@@ -118,7 +118,8 @@ would hit:
 | --- | --- |
 | `empty-main` | `<main>` (or `<body>` without one) shows no text |
 | `dead-link` | a visible link to `#` or a `javascript:` URL, or an `<a>` with no `href` acting as a button |
-| `form-no-submit` | a visible form with no submit control that is not a single-field form Enter submits |
+| `form-no-submit` | a visible form with no enabled submit control that is not a single-field form Enter submits, or whose `action` is `#` or a `javascript:` URL |
+| `http-status` | the page answered 4xx or 5xx, so it is an error page, not the page |
 | `script-ran` | the GoFastr runtime executed, so the tab did not hold and the other results mean nothing |
 
 Hidden elements are skipped (a menu toggle the runtime reveals is not
@@ -142,7 +143,8 @@ func TestNoJSPagesWork(t *testing.T) {
 }
 ```
 
-Every navigation in the tab keeps script off, including a followed link
+Each `Check` and `Inspect` gets its own 30-second budget, so one tab
+can walk hundreds of pages. Every navigation in the tab keeps script off, including a followed link
 or a native form submission, so signing in through the real login form
 in that tab proves the form works without the runtime. Call
 `nojstest.Inspect(tab)` to check the page the submission landed on
