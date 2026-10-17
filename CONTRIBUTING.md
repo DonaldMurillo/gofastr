@@ -75,6 +75,8 @@ CI partitions unit packages across four jobs and gives each browser package its
 own job. The site accessibility checks run separately from the other site tests.
 The native Windows browser group also isolates `framework/ui`.
 Site accessibility scans use two shards, matching the Linux gate.
+The nested `battery/print/chromepdf` module has its own build, vet, and test
+step because the root module's `./...` pattern does not include it.
 
 ### Known isolation rules
 

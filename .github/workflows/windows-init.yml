@@ -70,6 +70,19 @@ jobs:
       - name: Vet except native pointer conversions
         if: matrix.name == 'unit-0'
         run: go vet -unsafeptr=false ./...
+      - name: Nested PDF module
+        if: matrix.name == 'unit-0'
+        shell: pwsh
+        working-directory: battery/print/chromepdf
+        run: |
+          go build ./...
+          if ($LASTEXITCODE -ne 0) { throw 'Nested PDF module build failed.' }
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { throw 'Nested PDF module vet failed.' }
+          $logs = Join-Path $env:GITHUB_WORKSPACE 'dist/windows-tests'
+          New-Item -ItemType Directory -Force $logs | Out-Null
+          go test -json -count=1 -timeout=20m ./... > (Join-Path $logs 'nested-pdf.jsonl') 2> (Join-Path $logs 'nested-pdf.stderr.log')
+          if ($LASTEXITCODE -ne 0) { throw 'Nested PDF module tests failed; see the uploaded logs.' }
       - name: Test packages, with browser suites isolated
         shell: pwsh
         env:
