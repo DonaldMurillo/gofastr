@@ -989,6 +989,29 @@ const page = await api.posts.list({ limit: 25 });`},
 			ui.Gauge(ui.GaugeConfig{Label: "Disk", Value: 96, ValueText: "96%", Bands: bands}),
 		)
 	}},
+	{"scatterchart", "ScatterChart", "Charts", "Points on two numeric axes, one color per series.", func() render.HTML {
+		return ui.ScatterChart(ui.ScatterChartConfig{
+			XLabel: "Seats", YLabel: "MRR ($)", ShowLegend: true,
+			Series: []ui.ScatterSeries{
+				{Name: "Monthly", Points: []ui.ScatterPoint{{X: 3, Y: 90}, {X: 8, Y: 210}, {X: 12, Y: 380}, {X: 20, Y: 520}}},
+				{Name: "Annual", Points: []ui.ScatterPoint{{X: 5, Y: 120}, {X: 15, Y: 340}, {X: 25, Y: 700}, {X: 40, Y: 980}}},
+			},
+		})
+	}},
+	{"heatmap", "Heatmap", "Charts", "A grid of values shaded by size.", func() render.HTML {
+		return ui.Heatmap(ui.HeatmapConfig{
+			Rows: []string{"Mon", "Tue", "Wed", "Thu", "Fri"},
+			Cols: []string{"8am", "10am", "noon", "2pm", "4pm", "6pm"},
+			Values: [][]float64{
+				{2, 8, 12, 9, 6, 1},
+				{3, 11, 15, 13, 7, 2},
+				{1, 9, 14, 12, 8, 3},
+				{4, 12, 18, 14, 9, 2},
+				{2, 6, 10, 7, 4, 1},
+			},
+			ShowLegend: true,
+		})
+	}},
 	{"sparkline", "Sparkline", "Charts", "Tiny inline trend line.", func() render.HTML {
 		return ui.Sparkline(ui.SparklineConfig{Values: []float64{4, 6, 5, 8, 7, 10, 9, 12, 11, 14}})
 	}},

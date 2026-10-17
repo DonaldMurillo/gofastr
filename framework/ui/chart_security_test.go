@@ -84,6 +84,26 @@ func TestChartConfigStringsEscaped(t *testing.T) {
 		assertSafe(t, string(h))
 	})
 
+	t.Run("scatter", func(t *testing.T) {
+		h := ui.ScatterChart(ui.ScatterChartConfig{
+			Series: []ui.ScatterSeries{{Name: idAttack, Color: colorAttack,
+				Points: []ui.ScatterPoint{{X: 1, Y: 2, Label: idAttack}}}},
+			XLabel: idAttack, YLabel: idAttack, ShowLegend: true,
+			ID: idAttack, LabelledBy: idAttack, Class: classAttack,
+		})
+		assertSafe(t, string(h))
+	})
+
+	t.Run("heatmap", func(t *testing.T) {
+		h := ui.Heatmap(ui.HeatmapConfig{
+			Rows: []string{idAttack}, Cols: []string{idAttack}, Values: [][]float64{{1}},
+			Format: func(float64) string { return idAttack },
+			Color:  colorAttack, ShowLegend: true,
+			ID: idAttack, LabelledBy: idAttack, Class: classAttack,
+		})
+		assertSafe(t, string(h))
+	})
+
 	t.Run("happy-path-palette-color", func(t *testing.T) {
 		h := ui.PieChart(ui.PieChartConfig{
 			Slices: []ui.PieSlice{{Value: 1, Color: "primary"}},

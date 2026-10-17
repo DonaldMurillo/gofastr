@@ -25,6 +25,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   or Inf shows the charts' empty state. The reading's text scales with
   `Size`. Meridian's Revenue page shows the share of payments that went
   through on one.
+- **`ui.ScatterChart` plots points on two numeric axes**, one color per
+  series. Both axes round out to steps of 1, 2, 2.5 or 5 × 10ⁿ, across
+  zero when the data does. A point with a NaN or Inf coordinate is
+  skipped. Each point's `<title>` names its series, label and
+  coordinates. The gallery shows seats against MRR for two plans.
+- **`ui.Heatmap` shades a grid of values** in four strengths of one
+  palette color, from the lowest value to the highest. A NaN cell draws
+  empty and its title says "no data". `Values` must match `Rows` ×
+  `Cols`, or it panics. Meridian's Revenue page counts payments by
+  method and status on one.
 - **`entityui.UI.CountInt`** is `Count` as an `int`, under the same read
   gate and scope, for figures a host computes with.
 
