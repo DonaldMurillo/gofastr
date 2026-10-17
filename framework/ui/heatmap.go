@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -22,7 +23,8 @@ import (
 
 // HeatmapConfig configures a Heatmap.
 type HeatmapConfig struct {
-	// Rows and Cols label the grid's sides.
+	// Rows and Cols label the grid's sides. A row label longer than 17
+	// characters is cut with an ellipsis; the cell titles keep it whole.
 	Rows, Cols []string
 	// Values holds one row per Rows entry, each with one value per Cols
 	// entry; a mismatch panics. NaN or Inf is a reading that never
@@ -36,7 +38,8 @@ type HeatmapConfig struct {
 	// Format writes a value in its cell's title. Default: the number,
 	// to two decimals at most.
 	Format func(float64) string
-	// Width in CSS pixels; the height follows from the row count.
+	// Width in CSS pixels; the height follows from the row count. A grid
+	// whose cells would fall under 4px wide widens the chart instead.
 	// Default 360.
 	Width int
 	// ShowLegend renders a "Less … More" strip of the four strengths
@@ -60,6 +63,7 @@ const (
 	heatCellH  = 20.0
 	heatLegend = 24.0
 	heatCharW  = 8.0 // label width per character at --text-xs, wide glyphs
+	heatRowMax = 17  // row label characters before the ellipsis
 )
 
 // Heatmap renders a grid of values shaded by size.
@@ -90,17 +94,25 @@ func Heatmap(cfg HeatmapConfig) render.HTML {
 		tone = cfg.Color
 	}
 
+	rowText := make([]string, len(cfg.Rows))
 	left := 0.0
-	for _, r := range cfg.Rows {
-		left = max(left, float64(len(r))*heatCharW)
+	for i, r := range cfg.Rows {
+		rowText[i] = r
+		if rs := []rune(r); len(rs) > heatRowMax {
+			rowText[i] = string(rs[:heatRowMax-1]) + "…"
+		}
+		left = max(left, float64(utf8.RuneCountInString(rowText[i]))*heatCharW)
 	}
-	left = min(left, 140) + 8
+	left += 8
 	w := cfg.Width
 	if w <= 0 {
 		w = 360
 	}
 	nc, nr := len(cfg.Cols), len(cfg.Rows)
 	cellW := max((float64(w)-left-heatGap*float64(nc-1))/float64(nc), 4)
+	// At the smallest cell the grid can outgrow Width: widen the chart
+	// rather than clip the right-hand columns.
+	w = max(w, int(math.Ceil(left+float64(nc)*cellW+heatGap*float64(nc-1))))
 	gridH := float64(nr)*heatCellH + float64(nr-1)*heatGap
 	h := heatTop + gridH
 	if cfg.ShowLegend {
@@ -110,7 +122,7 @@ func Heatmap(cfg HeatmapConfig) render.HTML {
 	// cells don't overlap.
 	widest := 0.0
 	for _, c := range cfg.Cols {
-		widest = max(widest, float64(len(c))*heatCharW)
+		widest = max(widest, float64(utf8.RuneCountInString(c))*heatCharW)
 	}
 	stride := max(int(math.Ceil(widest/(cellW+heatGap))), 1)
 
@@ -180,7 +192,7 @@ func Heatmap(cfg HeatmapConfig) render.HTML {
 	}
 	for i, r := range cfg.Rows {
 		y := heatTop + float64(i)*(heatCellH+heatGap)
-		label(left-6, y+heatCellH/2+4, "end", r)
+		label(left-6, y+heatCellH/2+4, "end", rowText[i])
 		for j, v := range cfg.Values[i] {
 			level, value := "empty", "no data"
 			if finite(v) {

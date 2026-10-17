@@ -58,8 +58,6 @@ type PieChartConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-var pieDefaultPalette = []string{"primary", "info", "success", "warning", "danger"}
-
 // PieChart renders a pie or donut chart.
 func PieChart(cfg PieChartConfig) render.HTML {
 	if len(cfg.Slices) == 0 {
@@ -147,7 +145,7 @@ func PieChart(cfg PieChartConfig) render.HTML {
 
 		color := s.Color
 		if color == "" {
-			color = pieDefaultPalette[paletteIdx%len(pieDefaultPalette)]
+			color = chartPalette[paletteIdx%len(chartPalette)]
 			paletteIdx++
 		}
 		cls := "fui-pie-chart__slice"

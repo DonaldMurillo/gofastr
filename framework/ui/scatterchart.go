@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -49,7 +50,8 @@ type ScatterChartConfig struct {
 	XLabel, YLabel string
 	// Width / Height in CSS pixels. Default 360×220.
 	Width, Height int
-	// ShowLegend renders the series names under the chart.
+	// ShowLegend renders the series names under the chart, wrapping to
+	// another line at the right edge; the plot gives up the height.
 	ShowLegend bool
 	// LabelledBy is the id of an element naming the chart for AT.
 	// Without it the chart is aria-hidden, like the other charts.
@@ -72,6 +74,10 @@ const (
 	scatterBottom = 20.0
 	scatterTitle  = 16.0
 	scatterLegend = 22.0
+	// scatterLegendLine is each extra legend line.
+	scatterLegendLine = 16.0
+	// scatterCharW is a label's width per character at --text-xs.
+	scatterCharW = 7.0
 )
 
 // ScatterChart renders points on two numeric axes.
@@ -97,15 +103,41 @@ func ScatterChart(cfg ScatterChartConfig) render.HTML {
 	if h <= 0 {
 		h = 220
 	}
-	left, bottom := scatterLeft, scatterBottom
+	xTicks, xStep := axisTicks(xs)
+	yTicks, yStep := axisTicks(ys)
+	yText := make([]string, len(yTicks))
+	widest := 0
+	for i, t := range yTicks {
+		yText[i] = tickText(t, yStep)
+		widest = max(widest, utf8.RuneCountInString(yText[i]))
+	}
+	// The gutter fits the widest Y tick label.
+	left, bottom := max(scatterLeft, float64(widest)*scatterCharW+10), scatterBottom
 	if cfg.YLabel != "" {
 		left += scatterTitle
 	}
 	if cfg.XLabel != "" {
 		bottom += scatterTitle
 	}
+	// Legend entries run left to right and wrap at the right edge.
+	type legendSlot struct {
+		x    float64
+		line int
+	}
+	slots := make([]legendSlot, len(cfg.Series))
+	lines := 0
 	if cfg.ShowLegend {
-		bottom += scatterLegend
+		x := left
+		for i, s := range cfg.Series {
+			ew := 12 + float64(utf8.RuneCountInString(s.Name))*scatterCharW
+			if x > left && x+ew > float64(w)-scatterRight {
+				lines, x = lines+1, left
+			}
+			slots[i] = legendSlot{x, lines}
+			x += ew + 12
+		}
+		lines++
+		bottom += scatterLegend + float64(lines-1)*scatterLegendLine
 	}
 	plotL, plotR := left, float64(w)-scatterRight
 	plotT, plotB := scatterTop, float64(h)-bottom
@@ -115,11 +147,11 @@ func ScatterChart(cfg ScatterChartConfig) render.HTML {
 	if plotB-plotT < 8 {
 		plotB = plotT + 8
 	}
-	xTicks, yTicks := axisTicks(xs), axisTicks(ys)
 	xLo, xHi := xTicks[0], xTicks[len(xTicks)-1]
 	yLo, yHi := yTicks[0], yTicks[len(yTicks)-1]
-	px := func(x float64) float64 { return plotL + (x-xLo)/(xHi-xLo)*(plotR-plotL) }
-	py := func(y float64) float64 { return plotB - (y-yLo)/(yHi-yLo)*(plotB-plotT) }
+	// Halves keep a span near the float limit (-1e308 to 1e308) finite.
+	px := func(x float64) float64 { return plotL + (x/2-xLo/2)/(xHi/2-xLo/2)*(plotR-plotL) }
+	py := func(y float64) float64 { return plotB - (y/2-yLo/2)/(yHi/2-yLo/2)*(plotB-plotT) }
 
 	cls := "fui-scatter-chart"
 	if cfg.Class != "" {
@@ -180,10 +212,10 @@ func ScatterChart(cfg ScatterChartConfig) render.HTML {
 		sb.WriteString(escapeXML(body))
 		sb.WriteString(`</text>`)
 	}
-	for _, t := range yTicks {
+	for i, t := range yTicks {
 		y := py(t)
 		line(plotL, y, plotR, y, "fui-scatter-chart__grid")
-		text(plotL-5, y+3, "end", "fui-scatter-chart__tick", ftoa(t))
+		text(plotL-5, y+3, "end", "fui-scatter-chart__tick", yText[i])
 	}
 	for i, t := range xTicks {
 		x := px(t)
@@ -192,7 +224,7 @@ func ScatterChart(cfg ScatterChartConfig) render.HTML {
 		if i == len(xTicks)-1 {
 			anchor = "end"
 		}
-		text(x, plotB+14, anchor, "fui-scatter-chart__tick", ftoa(t))
+		text(x, plotB+14, anchor, "fui-scatter-chart__tick", tickText(t, xStep))
 	}
 	line(plotL, plotB, plotR, plotB, "fui-scatter-chart__axis")
 	line(plotL, plotT, plotL, plotB, "fui-scatter-chart__axis")
@@ -228,14 +260,14 @@ func ScatterChart(cfg ScatterChartConfig) render.HTML {
 			if p.Label != "" {
 				title += p.Label + " "
 			}
-			sb.WriteString(escapeXML(title + "(" + ftoa(p.X) + ", " + ftoa(p.Y) + ")"))
+			sb.WriteString(escapeXML(title + "(" + exactText(p.X) + ", " + exactText(p.Y) + ")"))
 			sb.WriteString(`</title></circle>`)
 		}
 	}
 	if cfg.ShowLegend {
-		y := float64(h) - 8
-		x := plotL
 		for i, s := range cfg.Series {
+			x := slots[i].x
+			y := float64(h) - 8 - float64(lines-1-slots[i].line)*scatterLegendLine
 			sb.WriteString(`<circle cx="`)
 			sb.WriteString(ftoa(x + 4))
 			sb.WriteString(`" cy="`)
@@ -244,54 +276,19 @@ func ScatterChart(cfg ScatterChartConfig) render.HTML {
 			tones[i].write(&sb, "fui-scatter-chart__point")
 			sb.WriteString(`/>`)
 			text(x+12, y, "start", "fui-scatter-chart__legend", s.Name)
-			x += float64(len(s.Name))*7 + 24
 		}
 	}
 	sb.WriteString(`</svg>`)
 	return scatterChartStyle.WrapHTML(render.HTML(sb.String()))
 }
 
-// chartTone is a mark's resolved color: a palette class or a raw fill.
-type chartTone struct{ palette, fill string }
-
-// seriesTone resolves a series Color the way BarChart resolves a bar's:
-// palette token, registered status variant, plausible CSS color, else
-// the i-th palette color.
-func seriesTone(color string, i int) chartTone {
-	switch {
-	case slices.Contains(chartPalette, color):
-		return chartTone{palette: color}
-	case color == "":
-	default:
-		if c, ok := registeredStatusColor(color); ok {
-			return chartTone{fill: c}
-		}
-		if plausibleCSSColor(color) {
-			return chartTone{fill: color}
-		}
-	}
-	return chartTone{palette: chartPalette[i%len(chartPalette)]}
-}
-
-// write closes the class attribute with the palette modifier, or with a
-// fill attribute after it, and leaves the element open.
-func (t chartTone) write(sb *strings.Builder, base string) {
-	if t.palette != "" {
-		sb.WriteString(` ` + base + `--` + t.palette + `" data-cui-internal=""`)
-		return
-	}
-	sb.WriteString(`" data-cui-internal="" fill="`)
-	sb.WriteString(escapeXML(t.fill))
-	sb.WriteString(`"`)
-}
-
-var chartPalette = []string{"primary", "info", "success", "warning", "danger"}
-
 // axisTicks rounds the values' range out to clean steps (1, 2, 2.5 or 5
 // times a power of ten), about four of them, and returns every tick from
-// the low end to the high end. A range with no width is widened around
-// its value so the axis still has two ends.
-func axisTicks(vs []float64) []float64 {
+// the low end to the high end with the step. A range with no width is
+// widened around its value so the axis still has two ends. When no clean
+// step fits in a float64 (a spread tiny beside the values, or a span past
+// the float limit) the ticks are the data's two ends and the step is 0.
+func axisTicks(vs []float64) ([]float64, float64) {
 	lo, hi := slices.Min(vs), slices.Max(vs)
 	span := hi - lo
 	if span == 0 {
@@ -305,12 +302,35 @@ func axisTicks(vs []float64) []float64 {
 	if kHi == kLo {
 		kLo, kHi = kLo-1, kHi+1
 	}
-	ticks := make([]float64, 0, int(kHi-kLo)+1)
-	for k := kLo; k <= kHi; k++ {
-		ticks = append(ticks, k*step)
+	const exact = 1 << 52 // integers past this are not all representable
+	if math.Abs(kLo) > exact || math.Abs(kHi) > exact || !finite(kLo*step) || !finite(kHi*step) {
+		return []float64{lo, hi}, 0
 	}
-	return ticks
+	n := int(kHi - kLo)
+	ticks := make([]float64, 0, n+1)
+	for i := 0; i <= n; i++ {
+		ticks = append(ticks, (kLo+float64(i))*step)
+	}
+	return ticks, step
 }
+
+// tickText writes a tick with as many decimals as its step needs, so no
+// two ticks read the same. Very large or fallback ticks use the shortest
+// exact form.
+func tickText(t, step float64) string {
+	if step == 0 || math.Abs(t) >= 1e9 {
+		return exactText(t)
+	}
+	d := 0
+	if s := strconv.FormatFloat(step, 'f', -1, 64); strings.Contains(s, ".") {
+		d = len(s) - strings.IndexByte(s, '.') - 1
+	}
+	p := math.Pow(10, float64(d))
+	return strconv.FormatFloat(math.Round(t*p)/p, 'f', -1, 64)
+}
+
+// exactText is v's shortest exact form: 0.0025, 1250, 1e+21.
+func exactText(v float64) string { return strconv.FormatFloat(v+0, 'g', -1, 64) }
 
 // niceStep rounds v up to 1, 2, 2.5 or 5 times a power of ten.
 func niceStep(v float64) float64 {

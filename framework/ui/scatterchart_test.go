@@ -3,8 +3,10 @@ package ui_test
 import (
 	"math"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -102,6 +104,21 @@ func TestScatterColorFallsBack(t *testing.T) {
 	}
 }
 
+// TestScatterTinyChartKeepsPlot: a chart too small for its gutters
+// still gets an 8px plot on each axis rather than a negative one.
+func TestScatterTinyChartKeepsPlot(t *testing.T) {
+	h := string(ui.ScatterChart(ui.ScatterChartConfig{Width: 20, Height: 20, XLabel: "x", YLabel: "y", ShowLegend: true,
+		Series: []ui.ScatterSeries{{Name: "s", Points: []ui.ScatterPoint{{X: 1, Y: 1}, {X: 2, Y: 2}}}}}))
+	m := regexp.MustCompile(`<line x1="([-0-9.]+)" y1="([-0-9.]+)" x2="([-0-9.]+)" y2="([-0-9.]+)" class="fui-scatter-chart__axis"`).FindAllStringSubmatch(h, -1)
+	if len(m) != 2 {
+		t.Fatalf("want 2 axis lines: %s", h)
+	}
+	n := func(s string) float64 { v, _ := strconv.ParseFloat(s, 64); return v }
+	if w, ht := n(m[0][3])-n(m[0][1]), n(m[1][4])-n(m[1][2]); w != 8 || ht != 8 {
+		t.Errorf("plot is %v×%v, want 8×8", w, ht)
+	}
+}
+
 // TestScatterNeedsSeriesName: a series with no name can't be told apart
 // in a title or legend, a programmer error that panics like LineChart.
 func TestScatterNeedsSeriesName(t *testing.T) {
@@ -127,5 +144,139 @@ func TestScatterNamedByLabelledBy(t *testing.T) {
 	h = string(ui.ScatterChart(ui.ScatterChartConfig{Series: pts}))
 	if attrOf(t, h, "aria-hidden") != "true" {
 		t.Errorf("unlabelled chart not hidden: %s", h)
+	}
+}
+
+// TestScatterHugeValuesFinish: values far larger than their spread, or
+// near the float limit, still draw in bounded time with no NaN or Inf.
+func TestScatterHugeValuesFinish(t *testing.T) {
+	for _, pts := range [][]ui.ScatterPoint{
+		{{X: 1e17, Y: 100}, {X: 1e17 + 32, Y: 200}},
+		{{X: -1e308, Y: 1e308}, {X: 1e308, Y: -1e308}},
+		{{X: 1, Y: 100}, {X: math.Nextafter(1, 2), Y: 200}},
+	} {
+		done := make(chan string, 1)
+		go func() {
+			done <- string(ui.ScatterChart(ui.ScatterChartConfig{Series: []ui.ScatterSeries{{Name: "s", Points: pts}}}))
+		}()
+		select {
+		case h := <-done:
+			if strings.Contains(h, "NaN") || strings.Contains(h, "Inf") || strings.Count(h, "<circle") != 2 {
+				t.Errorf("points %v drew badly: %s", pts, h)
+			}
+			if pts[0].X < 1e308 && pts[1].X < 1e308 {
+				seen := map[string]bool{}
+				for _, m := range scatterXTick.FindAllStringSubmatch(h, -1) {
+					if seen[m[1]] {
+						t.Errorf("X ticks for %v repeat %q: %s", pts, m[1], h)
+					}
+					seen[m[1]] = true
+				}
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("points %v never finished", pts)
+		}
+	}
+}
+
+var scatterXTick = regexp.MustCompile(`class="fui-scatter-chart__tick" data-cui-internal="" text-anchor="(?:middle|end)">([^<]*)</text>`)
+
+var scatterTick = regexp.MustCompile(`<text x="([-0-9.]+)" y="[-0-9.]+" class="fui-scatter-chart__tick" data-cui-internal="" text-anchor="end">([^<]*)<`)
+
+// TestScatterTickLabelsDiffer: small steps keep enough decimals that no
+// two ticks read the same, and titles print the exact coordinates.
+func TestScatterTickLabelsDiffer(t *testing.T) {
+	for _, ys := range [][]float64{{0.01, 0.03}, {0, 0.004}} {
+		h := string(ui.ScatterChart(ui.ScatterChartConfig{Series: []ui.ScatterSeries{
+			{Name: "s", Points: []ui.ScatterPoint{{X: 1, Y: ys[0]}, {X: 2, Y: ys[1]}}},
+		}}))
+		seen := map[string]bool{}
+		for _, m := range scatterTick.FindAllStringSubmatch(h, -1) {
+			if seen[m[2]] {
+				t.Errorf("ticks for %v repeat %q: %s", ys, m[2], h)
+			}
+			seen[m[2]] = true
+		}
+		if len(seen) < 3 {
+			t.Errorf("ticks for %v = %v", ys, seen)
+		}
+	}
+	h := string(ui.ScatterChart(ui.ScatterChartConfig{Series: []ui.ScatterSeries{
+		{Name: "s", Points: []ui.ScatterPoint{{X: 0.0025, Y: 1}}},
+	}}))
+	if !strings.Contains(h, "<title>s: (0.0025, 1)</title>") {
+		t.Errorf("title rounded the point: %s", h)
+	}
+	h = string(ui.ScatterChart(ui.ScatterChartConfig{Series: []ui.ScatterSeries{
+		{Name: "s", Points: []ui.ScatterPoint{{X: 1, Y: math.Copysign(0, -1)}, {X: 2, Y: 6e9}}},
+	}}))
+	if !strings.Contains(h, ">0</text>") || strings.Contains(h, "-0") || !strings.Contains(h, ">6e+09</text>") {
+		t.Errorf("want ticks 0 and 6e+09, no -0: %s", h)
+	}
+}
+
+// TestScatterGutterFitsLabels: the left gutter grows with the widest Y
+// tick label, so it starts inside the chart and clear of the Y title.
+func TestScatterGutterFitsLabels(t *testing.T) {
+	h := string(ui.ScatterChart(ui.ScatterChartConfig{YLabel: "MRR", Series: []ui.ScatterSeries{
+		{Name: "s", Points: []ui.ScatterPoint{{X: 1, Y: 100}, {X: 2, Y: 12500}}},
+	}}))
+	for _, m := range scatterTick.FindAllStringSubmatch(h, -1) {
+		x, _ := strconv.ParseFloat(m[1], 64)
+		if start := x - float64(len(m[2]))*7; start < 18 {
+			t.Errorf("tick %q starts at x=%v, inside the Y title", m[2], start)
+		}
+	}
+}
+
+var scatterLegend = regexp.MustCompile(`<text x="([-0-9.]+)" y="([-0-9.]+)" class="fui-scatter-chart__legend"[^>]*>([^<]*)<`)
+
+// TestScatterLegendWraps: legend entries that would run past the right
+// edge start a new line, and the chart grows to hold it.
+func TestScatterLegendWraps(t *testing.T) {
+	var series []ui.ScatterSeries
+	for i, name := range []string{"Enterprise annual", "Enterprise monthly", "Team annual", "Team monthly", "Starter"} {
+		series = append(series, ui.ScatterSeries{Name: name, Points: []ui.ScatterPoint{{X: float64(i), Y: float64(i)}}})
+	}
+	h := string(ui.ScatterChart(ui.ScatterChartConfig{ShowLegend: true, Series: series}))
+	height, _ := strconv.ParseFloat(attrOf(t, h, "height"), 64)
+	rows := map[string]bool{}
+	for _, m := range scatterLegend.FindAllStringSubmatch(h, -1) {
+		x, _ := strconv.ParseFloat(m[1], 64)
+		y, _ := strconv.ParseFloat(m[2], 64)
+		if end := x + float64(len([]rune(m[3])))*7; end > 360 || y > height {
+			t.Errorf("legend %q ends at (%v, %v), outside 360×%v", m[3], end, y, height)
+		}
+		rows[m[2]] = true
+	}
+	if len(rows) < 2 {
+		t.Errorf("legend did not wrap: %s", h)
+	}
+	top := height
+	for _, m := range scatterLegend.FindAllStringSubmatch(h, -1) {
+		y, _ := strconv.ParseFloat(m[2], 64)
+		top = min(top, y-12)
+	}
+	plotted := regexp.MustCompile(`<circle cx="[-0-9.]+" cy="([-0-9.]+)" r="4" class="[^"]*"[^>]*><title>`)
+	for _, m := range plotted.FindAllStringSubmatch(h, -1) {
+		if cy, _ := strconv.ParseFloat(m[1], 64); cy+4 > top {
+			t.Errorf("point at cy=%v runs into the legend at %v", cy, top)
+		}
+	}
+	ticks := regexp.MustCompile(`y="([-0-9.]+)" class="fui-scatter-chart__tick"`)
+	for _, m := range ticks.FindAllStringSubmatch(h, -1) {
+		if y, _ := strconv.ParseFloat(m[1], 64); y > top {
+			t.Errorf("tick label at y=%v runs into the legend at %v", y, top)
+		}
+	}
+	axis := regexp.MustCompile(`<line x1="[-0-9.]+" y1="([-0-9.]+)"[^>]*class="fui-scatter-chart__axis"`)
+	plotBottom := func(name string) string {
+		h := string(ui.ScatterChart(ui.ScatterChartConfig{ShowLegend: true, Series: []ui.ScatterSeries{
+			{Name: name, Points: []ui.ScatterPoint{{X: 1, Y: 1}}},
+		}}))
+		return axis.FindStringSubmatch(h)[1]
+	}
+	if long, short := plotBottom(strings.Repeat("Long series name ", 4)), plotBottom("s"); long != short {
+		t.Errorf("one long entry took a second legend line: plot bottom %s, want %s", long, short)
 	}
 }

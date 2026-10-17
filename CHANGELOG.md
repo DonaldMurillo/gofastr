@@ -27,14 +27,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   through on one.
 - **`ui.ScatterChart` plots points on two numeric axes**, one color per
   series. Both axes round out to steps of 1, 2, 2.5 or 5 × 10ⁿ, across
-  zero when the data does. A point with a NaN or Inf coordinate is
-  skipped. Each point's `<title>` names its series, label and
-  coordinates. The gallery shows seats against MRR for two plans.
+  zero when the data does, and tick labels keep as many decimals as the
+  step needs. The legend wraps at the right edge. A point with a NaN or
+  Inf coordinate is skipped. Each point's `<title>` names its series,
+  label and coordinates. The gallery shows seats against MRR for two
+  plans.
 - **`ui.Heatmap` shades a grid of values** in four strengths of one
   palette color, from the lowest value to the highest. A NaN cell draws
-  empty and its title says "no data". `Values` must match `Rows` ×
-  `Cols`, or it panics. Meridian's Revenue page counts payments by
-  method and status on one.
+  empty and its title says "no data". A row label past 17 characters
+  ends in an ellipsis, and a grid too wide for `Width` widens the chart
+  instead of clipping. `Values` must match `Rows` × `Cols`, or it
+  panics. Meridian's Revenue page counts payments by method and status
+  on one.
+- **A `ui.Card` with an `ID` names its heading `<ID>-title`,** so a
+  chart inside the card can pass that id as `LabelledBy` and read as a
+  named image. Meridian's Revenue charts and the gallery's chart demos
+  are named this way.
 - **`entityui.UI.CountInt`** is `Count` as an `int`, under the same read
   gate and scope, for figures a host computes with.
 

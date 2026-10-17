@@ -57,6 +57,7 @@ type CardProps struct {
 	// inside an anchor is a nested interactive element.
 	Action render.HTML
 
+	// ID is the root's id; with a title, the title is "<ID>-title".
 	ID         string
 	ExtraAttrs html.Attrs
 
@@ -101,7 +102,13 @@ func Card(p CardProps, s Classes, body ...render.HTML) render.HTML {
 			if title == "" {
 				title = render.Text(p.Title)
 			}
-			head = append(head, b.El(tag, PartTitle, internalIf(mark && p.Action != "", nil), title))
+			// A card with an ID names its title "<ID>-title", so content
+			// inside can point aria-labelledby at it.
+			var titleOwn html.Attrs
+			if p.ID != "" {
+				titleOwn = Attrs(map[string]string{"id": p.ID + "-title"})
+			}
+			head = append(head, b.El(tag, PartTitle, internalIf(mark && p.Action != "", titleOwn), title))
 		}
 		if p.Desc != "" {
 			head = append(head, b.El("p", PartDesc, internalIf(mark && p.Action != "", nil), render.Text(p.Desc)))

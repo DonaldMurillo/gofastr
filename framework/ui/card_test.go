@@ -140,3 +140,15 @@ func TestCardTextWrapsLongTokens(t *testing.T) {
 		}
 	}
 }
+
+// TestCardHeadingIDFollowsID: a card with an ID gives its heading
+// "<ID>-title", so a chart inside can name itself with LabelledBy.
+func TestCardHeadingIDFollowsID(t *testing.T) {
+	h := string(Card(CardConfig{ID: "pay", Heading: "Payments", HeadingLevel: 2}))
+	if !strings.Contains(h, `id="pay-title"`) || !strings.Contains(h, ">Payments</h2>") {
+		t.Errorf("heading not named pay-title: %s", h)
+	}
+	if h := string(Card(CardConfig{Heading: "Payments"})); strings.Contains(h, "-title") {
+		t.Errorf("a card with no ID named its heading: %s", h)
+	}
+}
