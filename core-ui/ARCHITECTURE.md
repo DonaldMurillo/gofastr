@@ -2357,6 +2357,8 @@ your need:
 | Multi-series line / area chart | `framework/ui.LineChart` | Pure-SVG time-series, no JS. Multiple series, area fill mode, palette cycling. |
 | Ratio chart (pie / donut) | `framework/ui.PieChart` | Pure-SVG, no JS. Slice colors from theme palette, configurable inner radius for donut. |
 | One reading against a range (CPU, latency budget, disk) | `framework/ui.Gauge` | Pure-SVG semicircle dial on an ARIA `meter`. `Bands` color the arc green / amber / red by the reading. |
+| Two measures against each other (seats vs MRR) | `framework/ui.ScatterChart` | Pure-SVG points on two clean-stepped axes, one palette color per series, a `<title>` per point. |
+| Values over two categories (sign-ups by weekday and hour) | `framework/ui.Heatmap` | Pure-SVG grid shaded in four strengths of one palette color; NaN cells draw empty. |
 | Inline trend sparkline | `framework/ui.Sparkline` | Pure-SVG, no JS. Line or area shape. Pairs with Card for metric-overview surfaces. |
 | Unified diff viewer | `framework/ui.DiffViewer` | Line-by-line, unified or split layout. Parses standard `diff -u` format. |
 | Collapsible JSON tree | `framework/ui.JSONViewer` | Nested `<details>`/`<summary>` collapse. No JS. Configurable open depth. |

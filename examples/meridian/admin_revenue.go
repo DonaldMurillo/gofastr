@@ -54,7 +54,32 @@ func (revenueReport) RenderCtx(ctx context.Context) render.HTML {
 			breakdown("Payments by method", "payments", "method"),
 			breakdown("Subscriptions by status", "subscriptions", "status"),
 		),
+		ui.Card(ui.CardConfig{Heading: "Payments by method and status", HeadingLevel: 2}, paymentsHeatmap(ctx)),
 	)
+}
+
+// paymentsHeatmap counts payments for each method and status: where the
+// failures cluster. A count the caller may not read is an empty cell.
+func paymentsHeatmap(ctx context.Context) render.HTML {
+	methods := []string{"card", "ach", "wire"}
+	statuses := []string{"succeeded", "failed", "refunded"}
+	values := make([][]float64, len(methods))
+	for i, m := range methods {
+		values[i] = make([]float64, len(statuses))
+		for j, s := range statuses {
+			values[i][j] = math.NaN()
+			if n, ok := appUI.CountInt(ctx, "payments", `method = "`+m+`" and status = "`+s+`"`); ok {
+				values[i][j] = float64(n)
+			}
+		}
+	}
+	return ui.Heatmap(ui.HeatmapConfig{
+		Rows:       []string{"Card", "ACH", "Wire"},
+		Cols:       []string{"Succeeded", "Failed", "Refunded"},
+		Values:     values,
+		Width:      320,
+		ShowLegend: true,
+	})
 }
 
 // paymentSuccessGauge draws the share of payments that went through
