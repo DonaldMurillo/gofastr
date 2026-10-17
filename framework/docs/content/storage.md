@@ -62,6 +62,8 @@ symlinked directory or leaf to a file outside `baseDir` is refused with
 a key error instead of read, written, or deleted; errors never carry
 the absolute storage path. `WithPermissions` sets the saved Unix file mode;
 Windows files use protected owner-only ACLs.
+Directory ACL changes stop at the storage root, including when Windows path
+spellings differ only by letter case.
 `WithTempDir` overrides the temp directory used for the atomic write
 (a temp dir outside `baseDir` keeps the older resolve-then-open staging
 there, because the atomic rename cannot be expressed through the root).
