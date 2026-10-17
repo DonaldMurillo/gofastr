@@ -146,3 +146,55 @@ func TestHeatmapRowLabelsFit(t *testing.T) {
 		t.Errorf("Wed label ends at x=%v, want at least 24", x)
 	}
 }
+
+// TestHeatmapWidensForColumns: a grid wider than Width at the smallest
+// cell widens the chart rather than clipping its right-hand columns.
+func TestHeatmapWidensForColumns(t *testing.T) {
+	cols := make([]string, 40)
+	vals := make([]float64, 40)
+	for i := range cols {
+		cols[i], vals[i] = strconv.Itoa(i), float64(i)
+	}
+	h := string(ui.Heatmap(ui.HeatmapConfig{Rows: []string{"r"}, Cols: cols, Values: [][]float64{vals}, Width: 200}))
+	width, _ := strconv.ParseFloat(attrOf(t, h, "width"), 64)
+	m := regexp.MustCompile(`<rect x="([0-9.]+)" y="[0-9.]+" width="([0-9.]+)"`).FindAllStringSubmatch(h, -1)
+	last := m[len(m)-1]
+	x, _ := strconv.ParseFloat(last[1], 64)
+	cw, _ := strconv.ParseFloat(last[2], 64)
+	if x+cw > width || cw != 4 {
+		t.Errorf("last cell is %vpx wide ending at %v; want 4px within the chart's width %v", cw, x+cw, width)
+	}
+}
+
+// TestHeatmapThinsColumnLabels: column labels too wide for their cells
+// are drawn every few columns, starting with the first.
+func TestHeatmapThinsColumnLabels(t *testing.T) {
+	cols := make([]string, 24)
+	vals := make([]float64, 24)
+	for i := range cols {
+		cols[i] = "Hour " + strconv.Itoa(10+i)
+	}
+	h := string(ui.Heatmap(ui.HeatmapConfig{Rows: []string{"r"}, Cols: cols, Values: [][]float64{vals}}))
+	n := strings.Count(h, `text-anchor="middle">Hour `)
+	if !strings.Contains(h, `text-anchor="middle">Hour 10<`) || n == 0 || n >= 24 {
+		t.Errorf("drew %d of 24 column labels, want the first and fewer than all: %s", n, h)
+	}
+}
+
+// TestHeatmapTruncatesLongRows: a row label too long for the gutter is
+// cut with an ellipsis; the cell titles keep the full name.
+func TestHeatmapTruncatesLongRows(t *testing.T) {
+	h := string(ui.Heatmap(ui.HeatmapConfig{
+		Rows: []string{"payments-webhook-worker"}, Cols: []string{"a"}, Values: [][]float64{{1}},
+	}))
+	m := regexp.MustCompile(`<text x="([0-9.]+)"[^>]*text-anchor="end">([^<]*)<`).FindStringSubmatch(h)
+	if m == nil || !strings.HasSuffix(m[2], "…") {
+		t.Fatalf("label not truncated: %s", h)
+	}
+	if x, _ := strconv.ParseFloat(m[1], 64); x-float64(len([]rune(m[2])))*8 < 0 {
+		t.Errorf("label %q at x=%v starts off the chart", m[2], x)
+	}
+	if c := heatCells(h); len(c) != 1 || c[0][2] != "payments-webhook-worker, a: 1" {
+		t.Errorf("title lost the full name: %v", c)
+	}
+}
