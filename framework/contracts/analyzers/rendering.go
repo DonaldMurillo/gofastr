@@ -16,7 +16,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
-	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
 func init() {
@@ -973,13 +972,17 @@ var ownThemePrefixes = []string{"battery/desktop/ui/"}
 var colourKeywords = map[string]bool{"currentcolor": true, "transparent": true, "inherit": true, "initial": true, "unset": true, "revert": true, "revert-layer": true}
 
 // schemeTokens is the canonical theme's token table, the one pages ship
-// (framework/ui/theme), split by scheme: light holds every token, dark
+// (style.DefaultTheme plus style.DefaultDarkColors, which is what
+// framework/ui/theme.Default compiles to; contracts sits below the UI
+// stack and reads the palette from core-ui/style), split by scheme: light holds every token, dark
 // the colours the dark palette redeclares.
 type schemeTokens struct{ light, dark map[string]string }
 
 var themeTokens = sync.OnceValue(func() schemeTokens {
 	t := schemeTokens{light: map[string]string{}, dark: map[string]string{}}
-	for k, v := range style.ThemeToTokens(theme.Default()) {
+	canon := style.DefaultTheme()
+	canon.DarkColors = style.DefaultDarkColors()
+	for k, v := range style.ThemeToTokens(canon) {
 		if name, ok := strings.CutPrefix(k, "dark."); ok {
 			t.dark[name] = v
 		} else {

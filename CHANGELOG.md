@@ -8,6 +8,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **`style.DefaultDarkColors()` returns the canonical dark palette.**
+  `framework/ui/theme.Default` reads it, and so does the contracts
+  checker, which no longer links `framework/ui`.
 - **`framework/testkit/cssweight` weighs the CSS a page ships.**
   `cssweight.Measure` fetches a page over HTTP and reports the raw and
   gzip size of its `<style>` elements and linked stylesheets, so an
