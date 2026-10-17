@@ -7,6 +7,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+- **`framework/testkit/cssweight` weighs the CSS a page ships.**
+  `cssweight.Measure` fetches a page over HTTP and reports the raw and
+  gzip size of its `<style>` elements and linked stylesheets, so an
+  app's test can cap CSS per page. Meridian and the docs site now fail
+  their tests when a page ships more than 17 KiB of gzipped CSS; the
+  heaviest pages today sit at about 15.5 KiB.
+
 ### Changed
 - **The Timeout middleware reuses its response buffers.** It holds each
   response until the handler returns, and it used to grow a new buffer

@@ -153,6 +153,44 @@ that before checking the app and admin screens, and
 `examples/site/nojs_test.go` checks every page the site's axe gate
 scans.
 
+## CSS weight per page
+
+`framework/testkit/cssweight` reports how much CSS a page makes the
+browser fetch or parse: the text of every `<style>` element plus every
+`<link rel="stylesheet">` the document names, each linked sheet fetched
+once. It runs over plain HTTP with no browser, so a gate weighs
+hundreds of pages in a second or two. Pick a cap a little above your
+heaviest page today, and the test then fails when CSS grows unless the
+same change raises the cap.
+
+```go
+import "github.com/DonaldMurillo/gofastr/framework/testkit/cssweight"
+
+func TestCSSWeight(t *testing.T) {
+    const cap = 17 << 10 // gzip bytes
+    for _, p := range pages {
+        w, err := cssweight.Measure(http.DefaultClient, base+p)
+        if err != nil {
+            t.Errorf("%s: %v", p, err)
+            continue
+        }
+        if w.Gzip() > cap {
+            t.Errorf("%s ships %s, over the %d B cap", p, w, cap)
+        }
+    }
+}
+```
+
+`Weight.Gzip()` adds up each sheet's gzip size, compressed one sheet
+at a time the way each crosses the wire. `Weight.Bytes()` is the raw
+total and `Weight.Inline()` the raw `<style>` part, which a return
+visit downloads again inside every document while a linked sheet
+comes from the cache. A page or sheet that answers anything but 200,
+or redirects, is an error, so a signed-in gate whose session lapsed
+fails instead of weighing the login page. Pass a client with a cookie
+jar to weigh signed-in pages. `examples/meridian/cssweight_test.go`
+and `examples/site/cssweight_test.go` are the two gates in this repo.
+
 ## Isolated databases
 
 ```go
