@@ -116,9 +116,9 @@ would hit:
 
 | Kind | Meaning |
 | --- | --- |
-| `empty-main` | `<main>` (or `<body>` without one) shows no text |
+| `empty-main` | `<main>` (or `<body>` without one) shows no text, or is not rendered at all (`hidden`, `display: none`) |
 | `dead-link` | a visible link to `#` or a `javascript:` URL, or an `<a>` with no `href` acting as a button |
-| `form-no-submit` | a visible form with no enabled submit control that is not a single-field form Enter submits, or whose `action` is `#` or a `javascript:` URL |
+| `form-no-submit` | a visible form with no enabled submit control (a button in a disabled `<fieldset>` counts as disabled; an image button counts as a submit control) that is not a single-field form Enter submits, or whose `action` is `#` or a `javascript:` URL |
 | `http-status` | the page answered 4xx or 5xx, so it is an error page, not the page |
 | `script-ran` | the GoFastr runtime executed, so the tab did not hold and the other results mean nothing |
 

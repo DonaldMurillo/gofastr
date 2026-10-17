@@ -12,9 +12,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   The analyzers this repo's CI runs over the framework (unbounded body
   reads, credentials compared with `==`, world-readable secret files,
   HTTP clients with no timeout, raw recovered panics in logs, and about
-  thirty more) used to reach only a tree that carried `cmd/vettool`, so
-  an app's verify ran plain `go vet`. The gofastr binary now serves as
-  the vettool for any other tree, so the analyzers match the CLI
+  thirty more) used to reach only the framework's own tree, so an
+  app's verify ran plain `go vet`. The gofastr binary now serves as
+  the vettool for every app, so the analyzers match the CLI
   version and nothing else needs installing. A finding that is the shape
   on purpose takes `//gofastr:allow(<analyzer>) <reason>`. An app that
   passed verify before can fail it now; `--no-vet` skips the stage. A

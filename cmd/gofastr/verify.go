@@ -14,6 +14,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
+	"golang.org/x/mod/modfile"
 )
 
 // runVerify is `gofastr verify`: one pipeline that answers "is this a
@@ -392,10 +393,9 @@ func printVerifyOutcome(report *contracts.Report, fixed bool) {
 // pass: -vettool replaces vet's default passes (printf, copylocks, …)
 // rather than adding to them, so CI runs both, and so does this.
 //
-// A tree that carries the repo's vettool (./cmd/vettool — this repo)
-// gets it built and used for the suite pass, in the same lane
-// `make analyze` and CI drive. If it does not build, the plain pass
-// alone decides, and it fails on the same broken tree anyway.
+// The framework's own module gets ./cmd/vettool built and used for the
+// suite pass, in the same lane `make analyze` and CI drive; a vettool
+// that does not build fails the stage rather than skipping the suite.
 //
 // Any other tree (an app) gets the same suite through this binary: vet
 // starts gofastr itself as the vettool (selfVettool), so an app's code
@@ -420,21 +420,26 @@ func runGoVet(root string, capture bool) (string, bool) {
 	if !run(nil, nil) {
 		return strings.TrimSpace(buf.String()), false
 	}
-	var suiteArgs, suiteEnv []string
-	if _, err := os.Stat(filepath.Join(root, "cmd", "vettool")); err == nil {
-		tool, dir := buildRepoVettool(root)
-		if dir != "" {
-			defer os.RemoveAll(dir)
-		}
-		if tool != "" {
-			suiteArgs = []string{"-vettool=" + tool}
-		}
-	} else if why := suiteSkipReason(moduleGoVersion(root), runtime.Version()); why != "" {
+	note := func(msg string) {
 		out := io.Writer(os.Stderr)
 		if capture {
 			out = &buf
 		}
-		fmt.Fprintln(out, why)
+		fmt.Fprintln(out, msg)
+	}
+	var suiteArgs, suiteEnv []string
+	if isFrameworkTree(root) {
+		tool, dir := buildRepoVettool(root)
+		if dir != "" {
+			defer os.RemoveAll(dir)
+		}
+		if tool == "" {
+			note("gofastr verify: ./cmd/vettool does not build, so the analyzer pass cannot run")
+			return strings.TrimSpace(buf.String()), false
+		}
+		suiteArgs = []string{"-vettool=" + tool}
+	} else if why := suiteSkipReason(moduleGoVersion(root), runtime.Version()); why != "" {
+		note(why)
 	} else {
 		suiteArgs, suiteEnv = selfVettool()
 	}
@@ -443,6 +448,17 @@ func runGoVet(root string, capture bool) (string, bool) {
 		ok = run(suiteArgs, suiteEnv)
 	}
 	return strings.TrimSpace(buf.String()), ok
+}
+
+// isFrameworkTree reports whether root is the GoFastr module itself,
+// the one tree whose ./cmd/vettool is the analyzer suite. An app's
+// directory of that name is the app's own business.
+func isFrameworkTree(root string) bool {
+	body, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return false
+	}
+	return modfile.ModulePath(body) == gofastrModule
 }
 
 // moduleGoVersion is the version of the go command that builds root

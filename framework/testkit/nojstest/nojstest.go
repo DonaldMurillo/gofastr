@@ -132,9 +132,17 @@ var probeJS = strings.TrimSpace(`
     out.push({kind: 'script-ran', detail: 'the GoFastr runtime executed; script execution was not disabled'});
   }
   const main = document.querySelector('main') || document.body;
-  if (!main || !(main.innerText || '').trim()) {
+  // innerText of an element that is not rendered is its raw text, so
+  // a hidden <main> needs its own check.
+  if (!main || !main.checkVisibility() || !(main.innerText || '').trim()) {
     out.push({kind: 'empty-main', detail: (main ? main.tagName.toLowerCase() : 'body') + ' shows no text'});
   }
+  // A control named "elements" shadows form.elements, so read the
+  // collection through the prototype. Image buttons are left out of
+  // it by the spec and are gathered separately.
+  const elementsOf = Object.getOwnPropertyDescriptor(HTMLFormElement.prototype, 'elements').get;
+  const controls = (f) => [...elementsOf.call(f),
+    ...[...document.querySelectorAll('input[type="image" i]')].filter((el) => el.form === f)];
   for (const a of document.querySelectorAll('a')) {
     if (!shown(a)) continue;
     const href = a.getAttribute('href');
@@ -159,11 +167,12 @@ var probeJS = strings.TrimSpace(`
     }
     // el.type is the reflected type the browser submits by: an invalid
     // or oddly spelled type attribute on a button still means submit.
-    const submit = [...f.elements].some((el) => !el.disabled &&
+    // :disabled also covers a control inside a disabled fieldset.
+    const submit = controls(f).some((el) => !el.matches(':disabled') &&
       ((el.tagName === 'BUTTON' && el.type === 'submit') ||
        (el.tagName === 'INPUT' && (el.type === 'submit' || el.type === 'image'))));
     if (submit) continue;
-    const blocking = [...f.elements].filter((el) => el.tagName === 'INPUT' &&
+    const blocking = controls(f).filter((el) => el.tagName === 'INPUT' &&
       ['text', 'search', 'email', 'url', 'tel', 'password', 'number', 'date', 'datetime-local', 'month', 'time', 'week'].includes((el.type || 'text').toLowerCase()));
     if (blocking.length === 1) continue; // Enter submits a single-field form
     out.push({kind: 'form-no-submit', detail: snip(f) + ' has no submit button'});

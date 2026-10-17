@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -102,5 +103,43 @@ func TestVerifyVetStopsAfterPlainVet(t *testing.T) {
 	}
 	if n := strings.Count(out, "undefined: undefinedName"); n != 1 {
 		t.Fatalf("type error printed %d times, want 1:\n%s", n, out)
+	}
+}
+
+// Only the framework's own tree builds ./cmd/vettool. An app that has
+// a directory of that name (empty here, or a tool of its own) still
+// meets the suite through this binary.
+func TestAppVettoolDirGetsSuite(t *testing.T) {
+	dir := writeVetApp(t, "")
+	if err := os.MkdirAll(filepath.Join(dir, "cmd", "vettool"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out, ok := runGoVet(dir, true)
+	if ok || !strings.Contains(out, "zero-timeout HTTP client: http.Get") {
+		t.Fatalf("an app with a cmd/vettool dir skipped the suite (ok=%v):\n%s", ok, out)
+	}
+}
+
+// In the framework's own tree a vettool that does not build fails the
+// stage: passing on plain vet alone would skip every analyzer.
+func TestBrokenRepoVettoolFails(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	goVersion, err := repoGoVersion(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "go.mod"), "module "+gofastrModule+"\n\ngo "+goVersion+"\n")
+	// Type-checks, so plain vet passes; has no main, so go build fails.
+	if err := os.MkdirAll(filepath.Join(dir, "cmd", "vettool"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(dir, "cmd", "vettool", "tool.go"), "package main\n\nfunc helper() {}\n")
+	out, ok := runGoVet(dir, true)
+	if ok || !strings.Contains(out, "./cmd/vettool does not build") {
+		t.Fatalf("a framework tree with a broken vettool passed verify (ok=%v):\n%s", ok, out)
 	}
 }

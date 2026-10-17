@@ -635,8 +635,9 @@ and it cannot read a newer toolchain's export data. When the module
 builds with a newer Go minor than the binary (say go1.28 against a
 gofastr built with go1.27), verify skips the analyzer pass, says so, and
 keeps plain `go vet`; a gofastr built with that Go runs them again.
-A repository with its own `cmd/vettool` builds that instead, with its
-own toolchain.
+Verify on the GoFastr repository itself builds its `cmd/vettool`
+instead, with the repository's toolchain, and fails if that tool does
+not build. An app's own `cmd/vettool` directory changes nothing.
 
 Apps that passed verify before this pass existed can fail it on upgrade:
 an `http.Get` with no timeout, a `0644` secret file. Fix the finding, or

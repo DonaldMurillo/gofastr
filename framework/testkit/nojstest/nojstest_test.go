@@ -20,6 +20,8 @@ const cleanPage = `<!doctype html><html><body>
   <form action="/save" method="post"><input name="a"><input name="b"><button type="primary">Odd type</button></form>
   <form action="/search"><input type="search" name="q"></form>
   <form method="dialog"><input name="x"><input name="y"></form>
+  <form action="/save" method="post"><input name="a"><input name="b"><input type="image" src="data:," alt="Save"></form>
+  <form action="/save" method="post"><input name="elements"><input name="b"><button>Save</button></form>
   <div style="display:none"><a href="#">hidden toggle</a></div>
 </main>
 <script>window.__gofastr = {};</script>
@@ -33,14 +35,18 @@ const brokenPage = `<!doctype html><html><body>
   <form action="/save" method="post"><input name="a"><input name="b"><button type="button">Send</button></form>
   <form action="/save" method="post"><input name="a"><input name="b"><button disabled>Off</button></form>
   <form action="#" method="post"><input name="a"><button>Go</button></form>
+  <form action="/save" method="post"><fieldset disabled><input name="a"><input name="b"><button>Off</button></fieldset></form>
 </nav>
 <main><div style="height:2em"></div></main>
 </body></html>`
 
+// The text is in the DOM but the visitor sees none of it.
+const hiddenMainPage = `<!doctype html><html><body><main hidden><p>Server-rendered content.</p></main></body></html>`
+
 func serve(t *testing.T) string {
 	t.Helper()
 	mux := http.NewServeMux()
-	for path, body := range map[string]string{"/clean": cleanPage, "/broken": brokenPage, "/missing": cleanPage} {
+	for path, body := range map[string]string{"/clean": cleanPage, "/broken": brokenPage, "/missing": cleanPage, "/hidden": hiddenMainPage} {
 		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			if path == "/missing" {
@@ -83,9 +89,22 @@ func TestBrokenPageReportsEachKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"empty-main", "dead-link", "dead-link", "dead-link", "form-no-submit", "form-no-submit", "form-no-submit"}
+	want := []string{"empty-main", "dead-link", "dead-link", "dead-link", "form-no-submit", "form-no-submit", "form-no-submit", "form-no-submit"}
 	if got := kinds(ps); !slices.Equal(got, want) {
 		t.Fatalf("got %v, want %v\n%v", got, want, ps)
+	}
+}
+
+func TestHiddenMainIsEmpty(t *testing.T) {
+	base := serve(t)
+	tab, cancel := NewTab(t, chromedptest.Context(t))
+	defer cancel()
+	ps, err := Check(tab, base+"/hidden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := kinds(ps); !slices.Equal(got, []string{"empty-main"}) {
+		t.Fatalf("got %v, want [empty-main]", ps)
 	}
 }
 
