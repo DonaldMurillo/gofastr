@@ -1,0 +1,17 @@
+version: v0.89.0
+title: Analyzers in verify, a no-JS page check, passkey sign-in
+notes:
+  - change: "gofastr verify runs GoFastr's type-aware analyzers (the cmd/vettool suite) over the app as a second vet pass, with the gofastr binary as the vettool, after plain go vet"
+    nodetect: "a check, not an API: verify's vet stage finds what the analyzers find in the app's own code, and no spelling in the app changes"
+    guidance: "Run gofastr verify. Fix each finding, or mark a site that is the shape on purpose with //gofastr:allow(<analyzer>) <reason> on its line or the line above; the reason is required. --no-vet skips the stage while you work through them. A module on a newer Go minor than the gofastr binary skips the analyzer pass with a note (vet.suiteSkipped in --json)."
+  - change: "core-ui/noderender's untrusted path (RenderNode, RenderKind) drops the attribute of every registered behaviour marker (data-passkey-*, data-search, data-hui-* and the rest), the way it already dropped data-action-* and data-param-*"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/core-ui/noderender.RenderNode
+        - gofastr/core-ui/noderender.RenderKind
+    guidance: "Agent-authored IR keeps rendering, but a marker in it no longer arms the module, which is the point. First-party IR that needs its markers (a blueprint screen, IR your own code builds) renders through noderender.RenderTrustedNode or RenderTrustedKind."
+  - change: "POST /auth/reset-password answers 500 (\"request another reset link\") when revoking the user's API tokens or removing their passkeys fails, instead of {\"updated\": true}"
+    nodetect: "a response to a store failure; no app spelling changes"
+    guidance: "Nothing to change. A client that treated any non-200 from reset-password as a failed reset already asks the user to try again; the password and sessions are reset by then, so a fresh link finishes the job."
