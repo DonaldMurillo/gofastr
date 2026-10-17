@@ -387,8 +387,12 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	user, err := userStore.FindByID(r.Context(), sess.UserID)
-	if err != nil {
+	if errors.Is(err, ErrUserNotFound) {
 		writeAuthError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	if err != nil {
+		writeAuthError(w, http.StatusInternalServerError, "user lookup failed")
 		return
 	}
 	existing, err := p.store.ListPasskeys(r.Context(), sess.UserID)

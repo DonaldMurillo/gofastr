@@ -484,16 +484,24 @@ func TestPasskeyBackupEligibleIsFixed(t *testing.T) {
 	}
 }
 
-func TestPasskeyListIsRateLimited(t *testing.T) {
-	f := newPasskeyFixture(t)
-	f.pk.limit = newScopedRateLimiter(RateLimiterConfig{MaxAttempts: 2, Window: time.Minute, BlockDuration: time.Minute}, "passkey")
-	alice := f.session(t, "u-alice")
-	var last int
-	for range 3 {
-		last = f.do(t, "GET", "/passkey/list", alice, nil).Code
-	}
-	if last != http.StatusTooManyRequests {
-		t.Fatalf("third list: %d, want 429", last)
+// The unauthenticated routes mint challenges and sessions, so each
+// route's throttle is pinned, not just one.
+func TestPasskeyRoutesAreRateLimited(t *testing.T) {
+	for _, rt := range []struct{ method, path string }{
+		{"POST", "/passkey/login/options"}, {"POST", "/passkey/login"},
+		{"POST", "/passkey/register/options"}, {"POST", "/passkey/register"},
+		{"GET", "/passkey/list"}, {"POST", "/passkey/delete"},
+	} {
+		f := newPasskeyFixture(t)
+		f.pk.limit = newScopedRateLimiter(RateLimiterConfig{MaxAttempts: 2, Window: time.Minute, BlockDuration: time.Minute}, "passkey")
+		alice := f.session(t, "u-alice")
+		var last int
+		for range 3 {
+			last = f.do(t, rt.method, rt.path, alice, nil).Code
+		}
+		if last != http.StatusTooManyRequests {
+			t.Errorf("%s %s third call: %d, want 429", rt.method, rt.path, last)
+		}
 	}
 }
 
@@ -557,5 +565,63 @@ func TestPasskeyMarkersLeaveUntrustedIR(t *testing.T) {
 	}, nil))
 	if strings.Contains(got, "data-passkey-") {
 		t.Fatalf("untrusted IR kept a passkey marker: %s", got)
+	}
+}
+
+func TestPasskeyNameRefusesBadInput(t *testing.T) {
+	for in, want := range map[string]bool{
+		"Laptop": true, "  ": true, strings.Repeat("é", 64): true,
+		strings.Repeat("a", 65): false, "bad\xff": false, "bell\a": false, "rtl\u202eexe": false,
+	} {
+		if _, ok := passkeyName(in); ok != want {
+			t.Errorf("passkeyName(%q) ok = %v, want %v", in, ok, want)
+		}
+	}
+	if got, _ := passkeyName("  "); got != "Passkey" {
+		t.Errorf("blank name = %q, want Passkey", got)
+	}
+}
+
+// A user id WebAuthn cannot carry as user.id is refused before options.
+func TestPasskeyLongUserIDRefused(t *testing.T) {
+	f := newPasskeyFixture(t)
+	long := strings.Repeat("u", maxUserHandleLen+1)
+	e := &storeEntry{user: &BasicUser{ID: long, Email: "long@example.com"}, hash: passwordPlaceholderHash, emailVerified: true}
+	f.users.users["long@example.com"], f.users.byID[long] = e, e
+	if w := f.do(t, "POST", "/passkey/register/options", f.session(t, long), nil); w.Code != http.StatusInternalServerError {
+		t.Fatalf("long user id: %d %s, want 500", w.Code, w.Body)
+	}
+}
+
+type failingFindStore struct{ UserStore }
+
+func (failingFindStore) FindByID(context.Context, string) (User, error) {
+	return nil, errors.New("db down")
+}
+
+// A store outage is a server error, not a signed-out user.
+func TestPasskeyUserLookupFailIs500(t *testing.T) {
+	f := newPasskeyFixture(t)
+	alice := f.session(t, "u-alice")
+	f.mgr.userStore = failingFindStore{f.mgr.userStore}
+	if w := f.do(t, "POST", "/passkey/register/options", alice, nil); w.Code != http.StatusInternalServerError {
+		t.Fatalf("lookup outage: %d %s, want 500", w.Code, w.Body)
+	}
+}
+
+type lostRaceStore struct{ PasskeyStore }
+
+func (lostRaceStore) RecordPasskeyUse(context.Context, []byte, uint32, uint32, bool, time.Time) (bool, error) {
+	return false, nil
+}
+
+// Two sign-ins racing on one counter: the loser gets no session.
+func TestPasskeyLostRaceIs409(t *testing.T) {
+	f := newPasskeyFixture(t)
+	a := f.enrol(t, "u-alice")
+	f.pk.store = lostRaceStore{f.pk.store}
+	w := f.login(t, a, "u-alice")
+	if w.Code != http.StatusConflict || passkeySessionCookie(w) != "" {
+		t.Fatalf("lost race: %d %s, want 409 and no session", w.Code, w.Body)
 	}
 }

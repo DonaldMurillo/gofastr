@@ -1321,7 +1321,8 @@ Once the request parses, every failed check answers the same 401
 two sign-ins with the same passkey race, the loser gets 409 and can
 retry. If the 2FA state cannot be read, the sign-in fails closed with
 a 500 and a `login.failed` event (`reason=twofa_failclosed`), the same
-as a password login.
+as a password login. A user or passkey store that errors answers 500
+on every route; only a missing account reads as signed out.
 
 Backup eligibility is fixed for a credential's life. A sign-in whose
 authenticator data flips the BE bit from what registration recorded
