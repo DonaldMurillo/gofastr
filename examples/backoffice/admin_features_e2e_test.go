@@ -150,6 +150,7 @@ func TestBackofficeE2E_RelationDropdown(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`a[href="/admin/entities/products/create"]`, chromedp.ByQuery),
 		chromedp.WaitVisible(search, chromedp.ByQuery),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.['headless-combobox']`, nil),
 		chromedp.Evaluate(`[...document.querySelectorAll('`+productForm+` [data-hui-combobox-pick] [role="option"]')].map(o=>o.dataset.label).join('|')`, &optionText),
 	); err != nil {
 		t.Fatalf("open product form: %v", err)
@@ -160,10 +161,14 @@ func TestBackofficeE2E_RelationDropdown(t *testing.T) {
 
 	// Search for Acme and pick it: the hidden input takes its id.
 	acme := productForm + ` [data-hui-combobox-pick] [role="option"][data-label="Acme Supply"]`
+	globex := productForm + ` [data-hui-combobox-pick] [role="option"][data-label="Globex Parts"]`
 	var id string
 	if err := chromedp.Run(ctx,
 		chromedp.Click(search, chromedp.ByQuery),
 		chromedp.SendKeys(search, "Acme", chromedp.ByQuery),
+		// Acme is already in the initial rows. Globex disappearing proves
+		// the debounced search replaced those rows before we click one.
+		chromedp.WaitNotPresent(globex, chromedp.ByQuery),
 		chromedp.WaitVisible(acme, chromedp.ByQuery),
 		chromedp.Click(acme, chromedp.ByQuery),
 		chromedp.Value(picked, &id, chromedp.ByQuery),

@@ -515,13 +515,14 @@ func TestE2E_Sortable409ConflictMessageAnnounced(t *testing.T) {
 	if !strings.Contains(live, "ORB-12") || !strings.Contains(live, "ORB-9") {
 		t.Errorf("live region should announce the conflict message %q, got %q", msg, live)
 	}
-	var colBHasK1 bool
-	if err := chromedp.Run(ctx, chromedp.Evaluate(
-		`!!document.querySelector('[data-hui-sortable-container="b"] [data-hui-sort-key="k1"]')`, &colBHasK1)); err != nil {
-		t.Fatal(err)
-	}
-	if colBHasK1 {
-		t.Error("conflict refresh should still run: k1 must not remain in column B")
+	// The message precedes the refresh request. Wait for its DOM result
+	// before asserting the authoritative rows and the restored source.
+	if !pollTrue(ctx, `(function(){
+		var rows = document.querySelectorAll('[data-hui-sortable-container="b"] > [data-hui-sortable-item]');
+		return rows.length === 1 && rows[0].getAttribute('data-hui-sort-key') === 'k2' &&
+			!!document.querySelector('[data-hui-sortable-container="a"] > [data-hui-sort-key="k1"]');
+	})()`) {
+		t.Error("conflict refresh should leave k2 alone in column B and restore k1 to column A")
 	}
 }
 
