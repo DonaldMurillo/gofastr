@@ -1130,6 +1130,9 @@ their own entries, file modes are preserved (the executable bit under
 two builds of the same tree produce identical bytes, and symlinks are
 refused with an error naming the path: a bundle should not contain one,
 and a zipper that follows it can read outside the tree.
+When archiving a macOS bundle on Windows, the zipper assigns executable modes
+under `Contents/MacOS` because Windows does not expose Unix execute bits.
+Failed archive writes close the output before removing the incomplete file.
 
 ### What you need before the first run
 

@@ -12,7 +12,7 @@ Security bugs: see [SECURITY.md](SECURITY.md). Do not open a public issue.
 
 ## Prerequisites (the honest list)
 
-- **Go 1.26+** (`go.mod` says `go 1.26.6`).
+- **Go 1.27.0+** (`go.mod` selects the preferred `go1.27.2` toolchain).
 - **Docker**: the Postgres suites need a server. `make postgres-up` starts
   the `postgres` service from `docker-compose.yml` (pgvector/pgvector:pg16,
   which also covers `battery/semantic`), and `make test-pg` starts it and runs
@@ -67,6 +67,12 @@ The Windows script writes package lists, the commit, and test output under
 `dist/windows-tests/`. It continues after failures and exits with an error
 if any package fails. The Windows CI job also builds every package and runs
 vet with `unsafeptr` disabled for the native COM pointer conversions.
+CI provisions PostgreSQL 17 and builds the pinned pgvector extension with
+Visual C++ through `scripts/ci-windows-postgres.ps1`. Database tests are required
+in CI. For local database tests, set `TEST_POSTGRES_DSN` to your test database.
+Text files use LF on every platform so generated asset hashes stay consistent.
+CI partitions unit packages across four jobs and gives each browser package its
+own job. The site accessibility checks run separately from the other site tests.
 
 ### Known isolation rules
 
