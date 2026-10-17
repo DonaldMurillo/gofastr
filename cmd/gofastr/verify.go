@@ -92,8 +92,9 @@ func runVerify(args []string) {
 			info("Running go vet...")
 		}
 		vet.Ran = true
-		out, ok := runGoVet(opts.root, opts.json)
+		out, suiteSkipped, ok := runGoVet(opts.root, opts.json)
 		vet.Passed = ok
+		vet.SuiteSkipped = suiteSkipped
 		if !ok {
 			// Mirror the text path: report the precondition failure and
 			// no diagnostics, rather than a wall of findings the broken
@@ -402,7 +403,7 @@ func printVerifyOutcome(report *contracts.Report, fixed bool) {
 // meets the checks the framework's own code does. A finding that is the
 // shape on purpose carries //gofastr:allow(<analyzer>) with a reason,
 // the same marker the contracts use.
-func runGoVet(root string, capture bool) (string, bool) {
+func runGoVet(root string, capture bool) (out, suiteSkipped string, ok bool) {
 	var buf strings.Builder
 	run := func(args, env []string) bool {
 		cmd := exec.Command("go", append(append([]string{"vet"}, args...), "./...")...)
@@ -418,7 +419,7 @@ func runGoVet(root string, capture bool) (string, bool) {
 	// A tree that fails plain vet usually fails to type-check, and the
 	// suite would print the same errors a second time.
 	if !run(nil, nil) {
-		return strings.TrimSpace(buf.String()), false
+		return strings.TrimSpace(buf.String()), "", false
 	}
 	note := func(msg string) {
 		out := io.Writer(os.Stderr)
@@ -435,20 +436,24 @@ func runGoVet(root string, capture bool) (string, bool) {
 		}
 		if tool == "" {
 			note("gofastr verify: ./cmd/vettool does not build, so the analyzer pass cannot run")
-			return strings.TrimSpace(buf.String()), false
+			return strings.TrimSpace(buf.String()), "", false
 		}
 		suiteArgs = []string{"-vettool=" + tool}
-	} else if why := suiteSkipReason(moduleGoVersion(root), runtime.Version()); why != "" {
-		note(why)
+	} else if suiteSkipped = suiteSkipReason(moduleGoVersion(root), cliGoVersion()); suiteSkipped != "" {
+		note(suiteSkipped)
 	} else {
 		suiteArgs, suiteEnv = selfVettool()
 	}
-	ok := true
+	ok = true
 	if suiteArgs != nil {
 		ok = run(suiteArgs, suiteEnv)
 	}
-	return strings.TrimSpace(buf.String()), ok
+	return strings.TrimSpace(buf.String()), suiteSkipped, ok
 }
+
+// cliGoVersion is the toolchain this binary was built with; tests
+// stand in an older one to reach the skip.
+var cliGoVersion = runtime.Version
 
 // isFrameworkTree reports whether root is the GoFastr module itself,
 // the one tree whose ./cmd/vettool is the analyzer suite. An app's

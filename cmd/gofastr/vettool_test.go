@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,7 +43,7 @@ func main() {
 }
 
 func TestVerifyVetsAppsWithSuite(t *testing.T) {
-	out, ok := runGoVet(writeVetApp(t, ""), true)
+	out, _, ok := runGoVet(writeVetApp(t, ""), true)
 	if ok {
 		t.Fatalf("go vet passed on an app calling http.Get; the suite did not run:\n%s", out)
 	}
@@ -52,7 +53,7 @@ func TestVerifyVetsAppsWithSuite(t *testing.T) {
 }
 
 func TestVerifyVetHonoursAllowMarker(t *testing.T) {
-	out, ok := runGoVet(writeVetApp(t, "//gofastr:allow(clienttimeout) probes a closed local port"), true)
+	out, _, ok := runGoVet(writeVetApp(t, "//gofastr:allow(clienttimeout) probes a closed local port"), true)
 	if !ok {
 		t.Fatalf("an allow marker with a reason should silence the finding:\n%s", out)
 	}
@@ -68,7 +69,7 @@ import "fmt"
 
 func greet() { fmt.Printf("%d\n", "not a number") }
 `)
-	out, ok := runGoVet(dir, true)
+	out, _, ok := runGoVet(dir, true)
 	if ok || !strings.Contains(out, "Printf format %d has arg") {
 		t.Fatalf("vet's printf pass did not run beside the suite (ok=%v):\n%s", ok, out)
 	}
@@ -97,7 +98,7 @@ func TestSuiteSkipsNewerToolchain(t *testing.T) {
 func TestVerifyVetStopsAfterPlainVet(t *testing.T) {
 	dir := writeVetApp(t, "")
 	writeTestFile(t, filepath.Join(dir, "broken.go"), "package main\n\nfunc broken() { undefinedName() }\n")
-	out, ok := runGoVet(dir, true)
+	out, _, ok := runGoVet(dir, true)
 	if ok {
 		t.Fatal("vet passed a tree that does not type-check")
 	}
@@ -114,7 +115,7 @@ func TestAppVettoolDirGetsSuite(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "cmd", "vettool"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	out, ok := runGoVet(dir, true)
+	out, _, ok := runGoVet(dir, true)
 	if ok || !strings.Contains(out, "zero-timeout HTTP client: http.Get") {
 		t.Fatalf("an app with a cmd/vettool dir skipped the suite (ok=%v):\n%s", ok, out)
 	}
@@ -138,7 +139,7 @@ func TestBrokenRepoVettoolFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTestFile(t, filepath.Join(dir, "cmd", "vettool", "tool.go"), "package main\n\nfunc helper() {}\n")
-	out, ok := runGoVet(dir, true)
+	out, _, ok := runGoVet(dir, true)
 	if ok || !strings.Contains(out, "./cmd/vettool does not build") {
 		t.Fatalf("a framework tree with a broken vettool passed verify (ok=%v):\n%s", ok, out)
 	}
@@ -161,5 +162,26 @@ func TestVettoolEnvNeedsVetArgs(t *testing.T) {
 		if got := isVetCall(c.args); got != c.want {
 			t.Errorf("isVetCall(%q) = %v, want %v", c.args, got, c.want)
 		}
+	}
+}
+
+// An agent reading --json must learn the analyzers did not run, not
+// just that vet passed.
+func TestVerifyJSONSaysSuiteSkipped(t *testing.T) {
+	old := cliGoVersion
+	cliGoVersion = func() string { return "go1.20.0" }
+	t.Cleanup(func() { cliGoVersion = old })
+	out, _ := captureVerify(t, []string{"--root", writeVetApp(t, ""), "--json"})
+	var doc struct {
+		Vet struct {
+			Passed       bool   `json:"passed"`
+			SuiteSkipped string `json:"suiteSkipped"`
+		} `json:"vet"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &doc); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, out)
+	}
+	if !doc.Vet.Passed || !strings.Contains(doc.Vet.SuiteSkipped, "go1.20.0") {
+		t.Fatalf("vet = %+v, want passed with the skip reason naming go1.20.0", doc.Vet)
 	}
 }
