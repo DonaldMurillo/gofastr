@@ -625,3 +625,53 @@ func TestPasskeyLostRaceIs409(t *testing.T) {
 		t.Fatalf("lost race: %d %s, want 409 and no session", w.Code, w.Body)
 	}
 }
+
+// The login route is anonymous, so a refusal's audit reason is a fixed
+// code; request text never reaches SecurityEvent.Meta.
+func TestPasskeyRefusalReasonIsACode(t *testing.T) {
+	f := newPasskeyFixture(t)
+	a := f.enrol(t, "u-alice")
+	ch := challengeOf(t, f.do(t, "POST", "/passkey/login/options", "", nil))
+	body := loginBody(a, ch, "u-alice")
+	body["clientDataJSON"] = b64url.EncodeToString([]byte(`{"type":"INJECTED reason","challenge":"eA","origin":"https://example.com"}`))
+	if w := f.do(t, "POST", "/passkey/login", "", body); w.Code != http.StatusUnauthorized {
+		t.Fatalf("forged client data: %d %s", w.Code, w.Body)
+	}
+	codes := map[string]bool{"client_data": true, "challenge": true, "attestation": true, "credential_mismatch": true,
+		"unknown_credential": true, "user_handle": true, "signature": true, "backup_eligibility": true, "account_gone": true}
+	seen := false
+	for _, ev := range f.sink.snapshot() {
+		if ev.Kind != "passkey.refused" {
+			continue
+		}
+		seen = true
+		if !codes[ev.Meta["reason"]] {
+			t.Errorf("reason %q is not a fixed code", ev.Meta["reason"])
+		}
+	}
+	if !seen {
+		t.Fatal("no passkey.refused event")
+	}
+}
+
+type failingPurgeStore struct{ PasskeyStore }
+
+func (failingPurgeStore) DeletePasskeysForUser(context.Context, string) (int, error) {
+	return 0, errors.New("db down")
+}
+
+// A reset that could not remove the passkeys must not report success:
+// the owner would believe a stolen session's passkey is gone.
+func TestPasskeyResetFailsIfPurgeFails(t *testing.T) {
+	f := newPasskeyFixture(t)
+	f.enrol(t, "u-alice")
+	f.pk.store = failingPurgeStore{f.pk.store}
+	if w := f.do(t, "POST", "/forgot-password", "", map[string]string{"email": "alice@example.com"}); w.Code != http.StatusOK {
+		t.Fatalf("forgot-password: %d %s", w.Code, w.Body)
+	}
+	_, mail := f.mail.snapshot()
+	w := f.do(t, "POST", "/reset-password", "", map[string]string{"token": extractTokenFromBody(mail), "password": "brandnewpw1"})
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("reset with a failed purge: %d %s, want 500", w.Code, w.Body)
+	}
+}

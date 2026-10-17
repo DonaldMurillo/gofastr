@@ -19,6 +19,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // PasskeyConfig configures the PasskeyPlugin: sign-in with WebAuthn
@@ -478,23 +479,23 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	challenge, err := p.rp.checkClientData(f["clientDataJSON"], "webauthn.create")
 	if err != nil {
-		p.refuse(w, r, sess.UserID, "register", err)
+		p.refuse(w, r, sess.UserID, "register", "client_data", err)
 		return
 	}
 	// Spent before the attestation is read: a challenge is good for one
 	// attempt, and it must be one this account asked for.
 	owner, err := redeemPurposeToken(r.Context(), p.challenges, purposePasskeyRegister, challenge)
 	if err != nil || owner != sess.UserID {
-		p.refuse(w, r, sess.UserID, "register", errors.New("challenge unknown, spent, expired or another account's"))
+		p.refuse(w, r, sess.UserID, "register", "challenge", errors.New("challenge unknown, spent, expired or another account's"))
 		return
 	}
 	res, err := p.rp.verifyAttestation(f["attestationObject"])
 	if err != nil {
-		p.refuse(w, r, sess.UserID, "register", err)
+		p.refuse(w, r, sess.UserID, "register", "attestation", err)
 		return
 	}
 	if string(res.credID) != string(f["id"]) {
-		p.refuse(w, r, sess.UserID, "register", errors.New("credential id does not match the attestation"))
+		p.refuse(w, r, sess.UserID, "register", "credential_mismatch", errors.New("credential id does not match the attestation"))
 		return
 	}
 	// The options call checked the cap, but challenges collected while
@@ -580,11 +581,11 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	challenge, err := p.rp.checkClientData(f["clientDataJSON"], "webauthn.get")
 	if err != nil {
-		p.refuse(w, r, "", "login", err)
+		p.refuse(w, r, "", "login", "client_data", err)
 		return
 	}
 	if _, err := redeemPurposeToken(r.Context(), p.challenges, purposePasskeyLogin, challenge); err != nil {
-		p.refuse(w, r, "", "login", errors.New("challenge unknown, spent or expired"))
+		p.refuse(w, r, "", "login", "challenge", errors.New("challenge unknown, spent or expired"))
 		return
 	}
 	cred, err := p.store.GetPasskey(r.Context(), f["id"])
@@ -593,24 +594,24 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 			writeAuthError(w, http.StatusInternalServerError, "passkey lookup failed")
 			return
 		}
-		p.refuse(w, r, "", "login", errors.New("unknown credential id"))
+		p.refuse(w, r, "", "login", "unknown_credential", errors.New("unknown credential id"))
 		return
 	}
 	// The authenticator names the account it holds the passkey for; it
 	// must be the account the passkey was registered to.
 	if string(f["userHandle"]) != cred.UserID {
-		p.refuse(w, r, cred.UserID, "login", errors.New("user handle does not match the passkey's account"))
+		p.refuse(w, r, cred.UserID, "login", "user_handle", errors.New("user handle does not match the passkey's account"))
 		return
 	}
 	res, err := p.rp.verifyAssertion(cred.PublicKey, f["clientDataJSON"], f["authenticatorData"], f["signature"])
 	if err != nil {
-		p.refuse(w, r, cred.UserID, "login", err)
+		p.refuse(w, r, cred.UserID, "login", "signature", err)
 		return
 	}
 	// Backup eligibility is fixed when the credential is made; a flip
 	// means this is not the authenticator that registered it.
 	if res.backupEligible != cred.BackupEligible {
-		p.refuse(w, r, cred.UserID, "login", errors.New("backup eligibility differs from registration"))
+		p.refuse(w, r, cred.UserID, "login", "backup_eligibility", errors.New("backup eligibility differs from registration"))
 		return
 	}
 	// A counter that fails to move forward means two copies of the key
@@ -640,7 +641,7 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 	user, err := userStore.FindByID(r.Context(), cred.UserID)
 	if err != nil {
 		if errors.Is(err, ErrUserNotFound) {
-			p.refuse(w, r, cred.UserID, "login", errors.New("the passkey's account no longer exists"))
+			p.refuse(w, r, cred.UserID, "login", "account_gone", errors.New("the passkey's account no longer exists"))
 			return
 		}
 		writeAuthError(w, http.StatusInternalServerError, "user lookup failed")
@@ -680,13 +681,18 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 
 // refuse answers a failed ceremony with one fixed message and records
 // why in the audit trail and the log.
-func (p *PasskeyPlugin) refuse(w http.ResponseWriter, r *http.Request, userID, ceremony string, why error) {
+// refuse answers a failed ceremony check. reason is a fixed code for
+// the audit trail; why can quote the request (the anonymous login route
+// takes anyone's bytes), so its text goes only to the log, scrubbed and
+// bounded.
+func (p *PasskeyPlugin) refuse(w http.ResponseWriter, r *http.Request, userID, ceremony, reason string, why error) {
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{
 		Kind: "passkey.refused", UserID: userID, Remote: remoteHost(r),
-		Meta: map[string]string{"ceremony": ceremony, "reason": why.Error()},
+		Meta: map[string]string{"ceremony": ceremony, "reason": reason},
 	})
 	slog.Info("passkey ceremony refused", "plugin", "passkey", "ceremony", ceremony,
-		"user_hash", hashedIdentifier(userID), "reason", why.Error())
+		"user_hash", hashedIdentifier(userID), "reason", reason,
+		"detail", textsafe.Truncate(textsafe.ScrubControlBytes(why.Error()), 200))
 	if ceremony == "login" {
 		writeAuthError(w, http.StatusUnauthorized, errPasskeySignIn)
 		return

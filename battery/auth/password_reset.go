@@ -479,9 +479,14 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	p.mgr.revokeUserSessions(r.Context(), userID, "password_reset", remoteHost(r))
 	// API tokens are credentials too: one minted by whoever held the
 	// account before the reset kept working after it.
+	// A failure answers 500 rather than a reset that looks complete; the
+	// sessions are already gone, so a fresh link retries safely.
+	const resetIncomplete = "password updated, but securing the account failed: request another reset link"
 	if n, supported, err := p.mgr.revokeUserAPITokens(r.Context(), userID); err != nil {
 		slog.Warn("password-reset API token revocation failed",
 			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+		writeAuthError(w, http.StatusInternalServerError, resetIncomplete)
+		return
 	} else if supported && n > 0 {
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
 			Kind:   "token.revoked",
@@ -495,6 +500,8 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 	if n, err := p.mgr.purgeUserPasskeys(r.Context(), userID); err != nil {
 		slog.Warn("password-reset passkey removal failed",
 			"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
+		writeAuthError(w, http.StatusInternalServerError, resetIncomplete)
+		return
 	} else if n > 0 {
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
 			Kind:   "passkey.deleted",
@@ -520,7 +527,7 @@ func (p *PasswordResetPlugin) resetHandler(w http.ResponseWriter, r *http.Reques
 		if err != nil {
 			slog.Warn("password-reset account claim failed",
 				"plugin", "password-reset", "user_hash", hashedIdentifier(userID), "err", err)
-			writeAuthError(w, http.StatusInternalServerError, "password updated, but securing the account failed: request another reset link")
+			writeAuthError(w, http.StatusInternalServerError, resetIncomplete)
 			return
 		}
 	}

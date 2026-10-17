@@ -56,6 +56,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   those passes never ran under verify in a tree with `cmd/vettool`.
   Plain `go vet` now runs first and the analyzers run as a second pass;
   both must pass.
+- **A password reset that leaves API tokens live reports it.** If
+  revoking the user's API tokens failed, the reset still answered
+  `{"updated": true}`. It now answers 500 and asks for another reset
+  link; the password and the sessions are already reset, so the retry
+  is safe.
 - **Untrusted node IR can't arm a behaviour module.**
   `noderender.RenderNode` and `RenderKind` let through the attributes
   that registered behaviours bind (`data-passkey-delete`, `data-search`,
