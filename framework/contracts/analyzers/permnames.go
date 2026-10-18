@@ -284,7 +284,7 @@ func collectPermNames(p *contracts.Pass) permNames {
 		}
 		for _, decl := range pf.file.Decls {
 			if fd, isFunc := decl.(*ast.FuncDecl); isFunc {
-				c.markMutated(pkg, fd)
+				c.markMutated(pkg, aliases, fd)
 				continue
 			}
 			gd, isGen := decl.(*ast.GenDecl)
@@ -359,6 +359,11 @@ func collectPermNames(p *contracts.Pass) permNames {
 				}
 				return pkgIdents[pkg][v.Name]
 			case *ast.SelectorExpr:
+				// auth.Policy: a package variable reached through its
+				// import, placed by that package's declarations.
+				if target, found := c.target(aliases, v); found {
+					return pkgIdents[target][v.Sel.Name]
+				}
 				return fieldKinds[pkg][v.Sel.Name]
 			case *ast.CallExpr:
 				if callsNewRolePolicy(v) {
@@ -594,8 +599,9 @@ func (c *permCollector) identKinds(file *ast.File) map[string]recvKind {
 }
 
 // markMutated records the package-level variables fd assigns to,
-// directly or through an index: caps = append(caps, x), caps[0] = x.
-func (c *permCollector) markMutated(pkg string, fd *ast.FuncDecl) {
+// directly or through an index: caps = append(caps, x), caps[0] = x,
+// and another package's through its import: perms.All = append(...).
+func (c *permCollector) markMutated(pkg string, aliases map[string]string, fd *ast.FuncDecl) {
 	locals := localNames(fd)
 	ast.Inspect(fd, func(n ast.Node) bool {
 		as, isAssign := n.(*ast.AssignStmt)
@@ -605,6 +611,15 @@ func (c *permCollector) markMutated(pkg string, fd *ast.FuncDecl) {
 		for _, lhs := range as.Lhs {
 			if ix, isIndex := lhs.(*ast.IndexExpr); isIndex {
 				lhs = ix.X
+			}
+			if sel, isSel := lhs.(*ast.SelectorExpr); isSel {
+				if target, found := c.target(aliases, sel); found {
+					if c.mutated[target] == nil {
+						c.mutated[target] = map[string]bool{}
+					}
+					c.mutated[target][sel.Sel.Name] = true
+				}
+				continue
 			}
 			if id, isIdent := lhs.(*ast.Ident); isIdent && !locals[id.Name] {
 				if c.mutated[pkg] == nil {

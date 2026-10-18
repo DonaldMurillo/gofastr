@@ -535,3 +535,68 @@ func TestUnregisteredPermMutatedVar(t *testing.T) {
 	})
 	assertNot(t, ds, contracts.RuleUnregisteredPermission, "init registers plans:admin")
 }
+
+// A policy held in another package registers through its import alias
+// from a file that imports no framework package.
+func TestRegisteredPermViaImportedPolicy(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"main.go": `package main
+
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/framework/access"
+
+	_ "example.com/app/plugin"
+)
+
+func check(ctx context.Context) { _ = access.Can(ctx, "plans:admin") }
+`,
+		"auth/auth.go": `package auth
+
+import "github.com/DonaldMurillo/gofastr/framework/access"
+
+var Policy = access.NewRolePolicy()
+
+func init() { Policy.Register("plans:write") }
+`,
+		"plugin/plugin.go": `package plugin
+
+import "example.com/app/auth"
+
+func init() { auth.Policy.Register("plans:admin") }
+`,
+	})
+	assertNot(t, ds, contracts.RuleUnregisteredPermission, "plugin registers plans:admin through auth.Policy")
+}
+
+// A package variable another package extends through its import alias
+// is not its initializer any more.
+func TestRegisteredPermImportedVarMutated(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"main.go": `package main
+
+import (
+	"context"
+
+	"example.com/app/perms"
+	"github.com/DonaldMurillo/gofastr/framework/access"
+
+	_ "example.com/app/plugin"
+)
+
+func wire(ctx context.Context, p *access.RolePolicy) {
+	p.Register(perms.All...)
+	_ = access.Can(ctx, "plans:admin")
+}
+`,
+		"perms/perms.go": "package perms\n\nvar All = []string{\"plans:write\"}\n",
+		"plugin/plugin.go": `package plugin
+
+import "example.com/app/perms"
+
+func init() { perms.All = append(perms.All, "plans:admin") }
+`,
+	})
+	assertNot(t, ds, contracts.RuleUnregisteredPermission, "plugin extends perms.All with plans:admin")
+}
