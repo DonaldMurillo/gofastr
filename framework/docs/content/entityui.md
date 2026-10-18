@@ -217,7 +217,9 @@ keeps the UI unchanged; without a callback the default stays
   why. A dashboard block reads an entity without a screen of its own.
   `appUI.Count(ctx, entity, where)` is the count alone, formatted, and
   reports false where `StatValue` would print "—", so a nav row or a
-  badge draws nothing instead. `appUI.CheckStat(entity, agg, field,
+  badge draws nothing instead. `appUI.CountInt` is the same count as an
+  `int`, for a figure the host computes with, like a success rate drawn
+  on a `ui.Gauge`. `appUI.CheckStat(entity, agg, field,
   where, format)` returns why `StatValue` could never compute a spec,
   so a host can refuse a configured stat at boot.
   `appUI.LastUpdated` is when the newest record the caller can read was

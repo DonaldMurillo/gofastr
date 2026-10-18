@@ -37,7 +37,7 @@ each command to the doc that covers it.
   `toolchain default`. Project names
   must use lowercase letters, digits, hyphens, or underscores and start
   with a letter or digit. Windows device names such as `con`, `nul`,
-  `com1` through `com9`, and `lpt1` through `lpt9` are refused on every OS.
+  `com0` through `com9`, and `lpt0` through `lpt9` are refused on every OS.
 - `gofastr new handler <name>` / `gofastr new route <path>`: scaffold
   one handler or route registration into an existing app.
 - `gofastr agents init|sync|skill`: generate or refresh `AGENTS.md`
@@ -136,7 +136,8 @@ each command to the doc that covers it.
 
 ## The daily loop
 
-- `gofastr dev`: rebuild on save, browser livereload, contract findings
+- `gofastr dev`: rebuild on save, browser livereload, a layout layer
+  (Alt+Shift+L outlines the page's layout and flags overflow), contract findings
   for what you changed (after the reload, never blocking it), and the dev
   MCP tools for your coding agent ([dev-livereload](dev-livereload.md)).
   `--dir` sets the watch root, `--pkg` the main package under it,

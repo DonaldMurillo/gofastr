@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -60,7 +61,7 @@ type LineChartConfig struct {
 // LineChart renders a multi-series line chart.
 func LineChart(cfg LineChartConfig) render.HTML {
 	if len(cfg.Series) == 0 {
-		return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
+		return chartEmpty(cfg.ID, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
 	}
 	for _, s := range cfg.Series {
 		if s.Name == "" {
@@ -69,7 +70,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		// A line needs ≥2 points to draw a trend; with fewer there's simply
 		// not enough data yet. A calm empty state, not a crash.
 		if len(s.Values) < 2 {
-			return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "Not enough data yet", cfg.ExtraAttrs)
+			return chartEmpty(cfg.ID, cfg.LabelledBy, cfg.Class, "Not enough data yet", cfg.ExtraAttrs)
 		}
 	}
 	w := cfg.Width
@@ -159,13 +160,11 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		sb.WriteString(`" class="fui-line-chart__grid" data-cui-internal=""/>`)
 	}
 
-	palette := []string{"primary", "info", "success", "warning", "danger"}
 	for i, s := range cfg.Series {
 		color := s.Color
-		isPalette := color == "primary" || color == "info" ||
-			color == "success" || color == "warning" || color == "danger"
+		isPalette := slices.Contains(chartPalette, color)
 		if color == "" {
-			color = palette[i%len(palette)]
+			color = chartPalette[i%len(chartPalette)]
 			isPalette = true
 		}
 
@@ -263,10 +262,9 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		x := 0.0
 		for i, s := range cfg.Series {
 			color := s.Color
-			isPalette := color == "primary" || color == "info" ||
-				color == "success" || color == "warning" || color == "danger"
+			isPalette := slices.Contains(chartPalette, color)
 			if color == "" {
-				color = palette[i%len(palette)]
+				color = chartPalette[i%len(chartPalette)]
 				isPalette = true
 			}
 			swatchCls := "fui-line-chart__legend-swatch"
@@ -315,10 +313,10 @@ func lineChartCSS(_ style.Theme) string {
   stroke-linecap: round;
 }
 .fui-line-chart__line--primary { stroke: var(--color-primary, #18181B); }
-.fui-line-chart__line--info    { stroke: var(--color-info, #3B82F6); }
-.fui-line-chart__line--success { stroke: var(--color-success, #16A34A); }
-.fui-line-chart__line--warning { stroke: var(--color-warning, #D97706); }
-.fui-line-chart__line--danger  { stroke: var(--color-danger, #DC2626); }
+.fui-line-chart__line--info    { stroke: var(--color-info, #1D4ED8); }
+.fui-line-chart__line--success { stroke: var(--color-success, #166534); }
+.fui-line-chart__line--warning { stroke: var(--color-warning, #854D0E); }
+.fui-line-chart__line--danger  { stroke: var(--color-danger, #B91C1C); }
 
 [data-cui-comp="ui-line-chart"] .fui-line-chart__grid {
   stroke: var(--color-border, #E4E4E7);
@@ -327,10 +325,10 @@ func lineChartCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-line-chart"] .fui-line-chart__area { opacity: var(--opacity-faint, 0.2); stroke: none; }
 .fui-line-chart__area--primary { fill: var(--color-primary, #18181B); }
-.fui-line-chart__area--info    { fill: var(--color-info, #3B82F6); }
-.fui-line-chart__area--success { fill: var(--color-success, #16A34A); }
-.fui-line-chart__area--warning { fill: var(--color-warning, #D97706); }
-.fui-line-chart__area--danger  { fill: var(--color-danger, #DC2626); }
+.fui-line-chart__area--info    { fill: var(--color-info, #1D4ED8); }
+.fui-line-chart__area--success { fill: var(--color-success, #166534); }
+.fui-line-chart__area--warning { fill: var(--color-warning, #854D0E); }
+.fui-line-chart__area--danger  { fill: var(--color-danger, #B91C1C); }
 
 [data-cui-comp="ui-line-chart"] .fui-line-chart__label {
   font-size: var(--text-xs, 0.75rem);
@@ -338,12 +336,12 @@ func lineChartCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-line-chart"] .fui-line-chart__legend {
   font-size: var(--text-xs, 0.75rem);
-  fill: var(--color-text, #18181B);
+  fill: var(--color-text, #09090B);
   font-weight: var(--font-weight-medium);
 }
 .fui-line-chart__legend-swatch--primary { fill: var(--color-primary, #18181B); }
-.fui-line-chart__legend-swatch--info    { fill: var(--color-info, #3B82F6); }
-.fui-line-chart__legend-swatch--success { fill: var(--color-success, #16A34A); }
-.fui-line-chart__legend-swatch--warning { fill: var(--color-warning, #D97706); }
-.fui-line-chart__legend-swatch--danger  { fill: var(--color-danger, #DC2626); }`
+.fui-line-chart__legend-swatch--info    { fill: var(--color-info, #1D4ED8); }
+.fui-line-chart__legend-swatch--success { fill: var(--color-success, #166534); }
+.fui-line-chart__legend-swatch--warning { fill: var(--color-warning, #854D0E); }
+.fui-line-chart__legend-swatch--danger  { fill: var(--color-danger, #B91C1C); }`
 }

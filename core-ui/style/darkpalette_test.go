@@ -62,3 +62,19 @@ func TestEmptyDarkValueIsAGap(t *testing.T) {
 		t.Errorf("DarkPaletteGaps = %v, want [surface text]", got)
 	}
 }
+
+func TestDefaultDarkColorsIsComplete(t *testing.T) {
+	th := DefaultTheme()
+	th.DarkColors = DefaultDarkColors()
+	if got := DarkPaletteGaps(th); got != nil {
+		t.Errorf("DefaultDarkColors leaves gaps: %v", got)
+	}
+}
+
+func TestDefaultDarkColorsIsAFreshCopy(t *testing.T) {
+	a := DefaultDarkColors()
+	a["text"] = "#123456"
+	if b := DefaultDarkColors(); b["text"] == "#123456" {
+		t.Error("editing one DefaultDarkColors result changed the next")
+	}
+}

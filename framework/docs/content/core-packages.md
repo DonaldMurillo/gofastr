@@ -46,9 +46,15 @@ middleware chaining after registration, route groups, and sanitized path
 params (`Param` strips CR/LF/NUL, a decoded `/`, and smuggled `..`;
 `handler.Bind` applies the same rule to `path:"..."` tags, and any other
 reader of `r.PathValue` should go through `Param` or the exported
-`SanitizePathParam`). The framework owns
-the root `*Router` and hands it to batteries and authors to mount
-routes. Direct. Start at `core/router/router.go`: `Router`.
+`SanitizePathParam`). `Param` panics when the matched route declares
+no wildcard by that name, so a misspelt `Param(r, "idd")` fails the
+first request that reaches it (a 500 through the recovery middleware)
+instead of returning `""`. A request built by hand with `SetPathValue`
+and no pattern is not checked. `handler.Bind` does not panic: a
+`path:"..."` field the route does not declare stays zero, so one input
+struct can serve both `POST /users` and `PUT /users/{id}`. The
+framework owns the root `*Router` and hands it to batteries and authors
+to mount routes. Direct. Start at `core/router/router.go`: `Router`.
 
 ## Real-time
 

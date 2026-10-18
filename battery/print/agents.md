@@ -25,7 +25,7 @@ pb := print.New(print.Config{
 
 pb.Document(print.Document{
     Name:  "invoice",
-    Path:  "/invoice/{id}",                  // Go 1.22 {param} syntax
+    Path:  "/invoice/{id}",                  // Go 1.22 {param}; router.Param panics on an undeclared name
     Title: "Invoice",
     Access: print.RequireOwner(func(r *http.Request, user any) bool {
         return ownsInvoice(user, router.Param(r, "id"))

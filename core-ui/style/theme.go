@@ -715,6 +715,42 @@ func validateTokens(v reflect.Value, path string) error {
 	return nil
 }
 
+// DefaultDarkColors returns the canonical dark palette, keyed by token
+// name the way Theme.DarkColors is: the one framework/ui/theme's adaptive
+// default carries. DefaultTheme stays light-only; a caller that wants the
+// dark scheme sets t.DarkColors = DefaultDarkColors(). Each call returns a
+// fresh map, so a caller may edit its copy.
+func DefaultDarkColors() map[string]string {
+	return map[string]string{
+		"accent":        "#60A5FA",
+		"background":    "#09090B",
+		"border":        "#27272A",
+		"border-strong": "#3F3F46",
+		// Code-surface tokens: the dark values match the light ones on
+		// purpose — the code surface is already dark in both schemes
+		// (see style.ColorSet.CodeSurface), so dark mode reuses the
+		// inkwell. Declared explicitly so the dark-gap boot check sees
+		// the theme as complete rather than warning about an omission.
+		"code-border":  "#27272A",
+		"code-surface": "#18181B",
+		"code-text":    "#E4E4E7",
+		"danger":       "#F87171",
+		"danger-fg":    "#111827", // 6.41:1 on the dark danger fill; the dark ink mirrors primary-fg's
+		"info":         "#60A5FA",
+		"primary":      "#FAFAFA",
+		"primary-fg":   "#18181B",
+		"secondary":    "#27272A",
+		"secondary-fg": "#FAFAFA",
+		"success":      "#4ADE80",
+		"surface":      "#18181B",
+		"surface-soft": "#27272A",
+		"text":         "#FAFAFA",
+		"text-muted":   "#D4D4D8",
+		"text-subtle":  "#A1A1AA",
+		"warning":      "#FBBF24",
+	}
+}
+
 // DefaultTheme returns a fully-populated baseline theme suitable
 // for every framework/ui component. The scaffold (`gofastr theme
 // init`) writes this as the user's starting theme.go.

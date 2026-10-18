@@ -226,12 +226,12 @@ func fileUploadCSS(_ style.Theme) string {
   background: color-mix(in oklab, var(--color-primary, #18181B) 10%, var(--color-surface, #FFFFFF) 90%);
 }
 .fui-upload-field:has(.fui-upload__input[aria-invalid="true"]) .fui-upload__zone {
-  border-color: var(--color-danger, #DC2626);
+  border-color: var(--color-danger, #B91C1C);
 }
 .fui-upload__label {
   font-weight: var(--font-weight-semibold);
   font-size: var(--text-base, 1rem);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 .fui-upload__cta,
 .fui-upload__hint {
@@ -265,7 +265,7 @@ func fileUploadCSS(_ style.Theme) string {
   gap: 1px;
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   justify-items: start;
 }
 .fui-upload__list:empty { display: none; }
@@ -277,6 +277,6 @@ func fileUploadCSS(_ style.Theme) string {
 .fui-upload__error {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-danger, #DC2626);
+  color: var(--color-danger, #B91C1C);
 }`
 }

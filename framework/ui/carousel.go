@@ -232,7 +232,7 @@ func carouselCSS(_ style.Theme) string {
   border-radius: var(--radii-full, 9999px);
   background: var(--color-surface, #FFFFFF);
   box-shadow: var(--shadow-xs);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   cursor: pointer;
   transition: background var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), box-shadow var(--duration-fast, 150ms) var(--easing-ease-in-out, ease), translate var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);
   text-decoration: none;

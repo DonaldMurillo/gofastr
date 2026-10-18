@@ -6,8 +6,10 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
@@ -35,17 +37,49 @@ import (
 //   - hijacked connections (WebSocket upgrades): Hijack is forwarded and
 //     the wrapper never writes afterwards.
 func LiveReloadHTMLInjector() router.Middleware {
+	return htmlInjector(func() []string { return []string{LiveReloadScriptURL} })
+}
+
+// htmlInjector splices a <script src> for each URL scripts returns. It is
+// asked per response, so a dev script registered after the middleware
+// mounted (the layout layer after livereload) is still spliced.
+func htmlInjector(scripts func() []string) router.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodHead || r.Header.Get("Range") != "" {
 				next.ServeHTTP(w, r)
 				return
 			}
-			iw := &injectWriter{rw: w, status: http.StatusOK}
+			iw := &injectWriter{rw: w, status: http.StatusOK, scripts: scripts()}
 			next.ServeHTTP(iw, r)
 			iw.finish()
 		})
 	}
+}
+
+// devScripts holds, per router, the dev script URLs its one injector
+// splices. RegisterLiveReload and RegisterLayoutLayer each add theirs;
+// the first to run mounts the injector.
+var (
+	devScriptsMu sync.Mutex
+	devScripts   = map[*router.Router][]string{}
+)
+
+func addDevScript(r *router.Router, url string) {
+	devScriptsMu.Lock()
+	urls, mounted := devScripts[r]
+	if !slices.Contains(urls, url) {
+		devScripts[r] = append(urls, url)
+	}
+	devScriptsMu.Unlock()
+	if mounted {
+		return
+	}
+	r.Use(htmlInjector(func() []string {
+		devScriptsMu.Lock()
+		defer devScriptsMu.Unlock()
+		return slices.Clone(devScripts[r])
+	}))
 }
 
 type injectWriter struct {
@@ -55,6 +89,7 @@ type injectWriter struct {
 	buffering  bool
 	sentHeader bool
 	hijacked   bool
+	scripts    []string
 	buf        bytes.Buffer
 }
 
@@ -150,25 +185,30 @@ func (w *injectWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return conn, rw, err
 }
 
-const liveReloadScriptTag = `<script src="` + LiveReloadScriptURL + `" defer></script>`
-
 func (w *injectWriter) finish() {
 	if w.hijacked || !w.buffering {
 		return
 	}
 	body := w.buf.Bytes()
 	// Full documents only: splice before the LAST </body>. Fragments pass
-	// through byte-for-byte. The guard matches the script TAG, not the bare
-	// URL, so a page that merely mentions the URL in prose still gets the
-	// client.
-	if i := bytes.LastIndex(body, []byte("</body>")); i >= 0 &&
-		!bytes.Contains(body, []byte(`src="`+LiveReloadScriptURL+`"`)) {
-		spliced := make([]byte, 0, len(body)+len(liveReloadScriptTag))
-		spliced = append(spliced, body[:i]...)
-		spliced = append(spliced, liveReloadScriptTag...)
-		spliced = append(spliced, body[i:]...)
-		body = spliced
-		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	// through byte-for-byte. The guard matches each script's src attribute,
+	// not the bare URL, so a page that merely mentions the URL in prose
+	// still gets the script, and a page that links it already keeps one.
+	if i := bytes.LastIndex(body, []byte("</body>")); i >= 0 {
+		var tags []byte
+		for _, url := range w.scripts {
+			if !bytes.Contains(body, []byte(`src="`+url+`"`)) {
+				tags = append(tags, `<script src="`+url+`" defer></script>`...)
+			}
+		}
+		if len(tags) > 0 {
+			spliced := make([]byte, 0, len(body)+len(tags))
+			spliced = append(spliced, body[:i]...)
+			spliced = append(spliced, tags...)
+			spliced = append(spliced, body[i:]...)
+			body = spliced
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+		}
 	}
 	if !w.sentHeader {
 		w.rw.WriteHeader(w.status)

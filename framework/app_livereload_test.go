@@ -75,3 +75,22 @@ func TestNewAppLiveReloadOffWithoutDev(t *testing.T) {
 		t.Fatalf("/__livereload.js served without GOFASTR_DEV (status=%d)", rr.Code)
 	}
 }
+
+func TestNewAppWiresLayoutLayerWhenDev(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "1")
+	t.Setenv("GOFASTR_DEV_LAYOUT", "")
+	t.Setenv("GOFASTR_ENV", "")
+
+	rr := httptest.NewRecorder()
+	NewApp(WithoutDefaultMiddleware()).Router().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/__devlayout.js", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("/__devlayout.js status=%d, want 200", rr.Code)
+	}
+
+	t.Setenv("GOFASTR_ENV", "production")
+	rr = httptest.NewRecorder()
+	NewApp(WithoutDefaultMiddleware()).Router().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/__devlayout.js", nil))
+	if rr.Code == http.StatusOK {
+		t.Fatalf("/__devlayout.js served in production")
+	}
+}

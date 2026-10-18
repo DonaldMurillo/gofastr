@@ -159,15 +159,17 @@ func TestBackofficeE2E_RelationDropdown(t *testing.T) {
 		t.Fatalf("supplier picker not populated with related records; options = %q", optionText)
 	}
 
-	// Search for Acme and pick it: the hidden input takes its id.
+	// Search for Acme and pick it: the hidden input takes its id. The
+	// picker searches over RPC and swaps its options when the answer
+	// lands, so wait for Globex to leave first: an Acme option found
+	// before the swap is a node the swap removes, and clicking it fails
+	// with "Could not find node with given id" on a slow runner.
 	acme := productForm + ` [data-hui-combobox-pick] [role="option"][data-label="Acme Supply"]`
 	globex := productForm + ` [data-hui-combobox-pick] [role="option"][data-label="Globex Parts"]`
 	var id string
 	if err := chromedp.Run(ctx,
 		chromedp.Click(search, chromedp.ByQuery),
 		chromedp.SendKeys(search, "Acme", chromedp.ByQuery),
-		// Acme is already in the initial rows. Globex disappearing proves
-		// the debounced search replaced those rows before we click one.
 		chromedp.WaitNotPresent(globex, chromedp.ByQuery),
 		chromedp.WaitVisible(acme, chromedp.ByQuery),
 		chromedp.Click(acme, chromedp.ByQuery),

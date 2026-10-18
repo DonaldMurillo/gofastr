@@ -59,8 +59,18 @@ func Markdown(cfg MarkdownConfig) render.HTML {
 		attrs["id"] = cfg.ID
 	}
 	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs))
-	body := enrichCodeBlocks(string(markdown.RenderHTML(cfg.Source)))
+	body := enrichCodeBlocks(scrollTables(string(markdown.RenderHTML(cfg.Source))))
 	return markdownStyle.WrapHTML(render.Tag("div", attrs, render.HTML(body)))
+}
+
+// scrollTables wraps each table in a box that scrolls sideways, so a
+// table wider than a phone scrolls instead of widening the page or being
+// clipped by a column that hides overflow. The box is a tab stop, like a
+// raw <pre>, so a keyboard can scroll it. core/markdown escapes raw HTML,
+// so every literal <table> in its output is one it built from a pipe table.
+func scrollTables(body string) string {
+	body = strings.ReplaceAll(body, "<table>", `<div class="fui-markdown__table" tabindex="0"><table>`)
+	return strings.ReplaceAll(body, "</table>", "</table></div>")
 }
 
 // enrichCodeBlocks upgrades the plain `<pre><code class="language-X">…</code></pre>`
@@ -254,7 +264,7 @@ func markdownCSS(_ style.Theme) string {
 	// and wants extra line-height (the canonical site theme is dark-first).
 	return `[data-cui-comp="ui-markdown"] {
   display: block;
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   font-size: var(--text-base, 1rem);
   line-height: calc(var(--leading-relaxed, 1.6) + 0.1);
   text-wrap: pretty;
@@ -271,7 +281,7 @@ func markdownCSS(_ style.Theme) string {
 [data-cui-comp="ui-markdown"] h2,
 [data-cui-comp="ui-markdown"] h3,
 [data-cui-comp="ui-markdown"] h4 {
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   line-height: var(--leading-tight, 1.2);
   text-wrap: balance;
 }
@@ -290,7 +300,7 @@ func markdownCSS(_ style.Theme) string {
   text-underline-offset: 0.18em;
   text-decoration-thickness: from-font;
 }
-[data-cui-comp="ui-markdown"] strong { font-weight: calc(var(--font-weight-semibold, 600) + 50); color: var(--color-text, #18181B); }
+[data-cui-comp="ui-markdown"] strong { font-weight: calc(var(--font-weight-semibold, 600) + 50); color: var(--color-text, #09090B); }
 
 /* Lists — hang the marker, give items room, tighten nested levels. */
 [data-cui-comp="ui-markdown"] ul,
@@ -305,7 +315,7 @@ func markdownCSS(_ style.Theme) string {
 [data-cui-comp="ui-markdown"] code {
   font-family: var(--font-mono, ui-monospace, monospace);
   background: var(--color-surface-soft, #F4F4F5);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   padding: 0.12em 0.4em;
   border-radius: var(--radii-sm, 6px);
   font-size: 0.875em;
@@ -355,11 +365,21 @@ func markdownCSS(_ style.Theme) string {
   margin-block: 2.75em;
 }
 
-/* Tables — quiet header, roomy cells, hairline row rules. */
+/* Tables — quiet header, roomy cells, hairline row rules. Each table sits
+   in a scroll box (scrollTables), so a wide one scrolls sideways on a
+   phone instead of running past, or being clipped by, the column. */
+[data-cui-comp="ui-markdown"] .fui-markdown__table {
+  overflow-x: auto;
+  margin-block-start: 1.5em;
+  container-type: inline-size;
+}
+[data-cui-comp="ui-markdown"] .fui-markdown__table:focus-visible {
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle, #71717A);
+  outline-offset: var(--stroke-focus-offset, 2px);
+}
 [data-cui-comp="ui-markdown"] table {
   border-collapse: collapse;
   width: 100%;
-  margin-block-start: 1.5em;
   font-size: 0.95em;
 }
 [data-cui-comp="ui-markdown"] th,
@@ -368,10 +388,17 @@ func markdownCSS(_ style.Theme) string {
   border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   text-align: start;
   vertical-align: top;
+  /* No column grows past 70% of the box the table scrolls in (a size
+     container, so cqi tracks the column at any page width, not the
+     window): past that its text wraps, and a run with no break point
+     (code chips joined by slashes) breaks where it would overflow
+     rather than widening the column. */
+  max-inline-size: 70cqi;
+  overflow-wrap: break-word;
 }
 [data-cui-comp="ui-markdown"] thead th {
   font-weight: calc(var(--font-weight-semibold, 600) + 50);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   border-block-end-width: var(--stroke-thick, 2px);
 }
 [data-cui-comp="ui-markdown"] tbody tr:last-child td { border-block-end: 0; }

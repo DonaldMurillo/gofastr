@@ -811,7 +811,7 @@ body {
   margin: 0;
   min-height: 100vh;
   background-color: var(--color-background, #fff);
-  color: var(--color-text, #18181b);
+  color: var(--color-text, #09090B);
   font-family: var(--font-body, 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif);
   line-height: var(--leading-normal, 1.5);
   -webkit-text-size-adjust: 100%;
@@ -879,8 +879,8 @@ main[tabindex="-1"]:focus:not(:focus-visible),
   clip: auto;
   white-space: normal;
   z-index: calc(var(--z-toast, 500) + 1);
-  background: var(--color-text, #18181B);
-  color: var(--color-background, #FAFAFA);
+  background: var(--color-text, #09090B);
+  color: var(--color-background, #FFFFFF);
   border-radius: var(--radii-sm, 6px);
   font: var(--text-sm, 0.875rem) var(--font-body, system-ui, -apple-system, sans-serif);
   text-decoration: none;
@@ -900,7 +900,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
      exactly what a transient overlay wants — and unlike literal hex, a themed
      app's toast now tracks its palette. */
   background: var(--color-code-surface, #18181B);
-  color: var(--color-code-text, #FAFAFA);
+  color: var(--color-code-text, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   font: var(--text-sm, 0.875rem) var(--font-body, system-ui, -apple-system, sans-serif);
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0,0,0,0.10), 0 4px 6px -4px rgba(0,0,0,0.10));
@@ -1081,6 +1081,9 @@ func New(application *app.App, opts ...Option) *UIHost {
 	// same env predicate, so the host needs zero code change.
 	if dev.LiveReloadEnabled() {
 		ds.extraScripts = append(ds.extraScripts, externalScript{src: dev.LiveReloadScriptURL})
+	}
+	if dev.LayoutLayerEnabled() {
+		ds.extraScripts = append(ds.extraScripts, externalScript{src: dev.LayoutLayerScriptURL})
 	}
 	// #215: a partial DarkColors silently keeps light values in dark mode
 	// (the map is what renders under a dark preference; editing Colors
@@ -3644,6 +3647,12 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// table is complete; a host mounted outside a framework.App never
 	// reaches that point and never gets the link check.
 	ds.coreRouter = r
+	// The page links the dev scripts whenever their gates are on, so the
+	// router it mounts on must serve them. framework.NewApp already
+	// registered them on its router (both calls are idempotent); a
+	// standalone host or a custom bootstrap gets them here.
+	dev.MaybeRegisterLiveReload(r)
+	dev.MaybeRegisterLayoutLayer(r)
 	ds.enforceStrict()
 	ds.AutoCompileActions()
 	// Fill validation (DESIGN "Validation at mount"): a fill naming

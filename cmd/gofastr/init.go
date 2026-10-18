@@ -19,13 +19,6 @@ import (
 	"golang.org/x/mod/modfile"
 )
 
-// Keep these aligned with go.mod. TestInitGoDirectives checks the generated
-// module against the release requirements, independent of the Go on PATH.
-const (
-	scaffoldGoVersion = "1.27.0"
-	scaffoldToolchain = "go1.27.2"
-)
-
 func runInit(args []string) {
 	if hasHelpFlag(args) {
 		printInitHelp()
@@ -275,10 +268,14 @@ bin/
 	cmd.Dir = name
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		info("Could not run 'go mod init': %v", err)
+	modInit := cmd.Run()
+	if modInit != nil {
+		info("Could not run 'go mod init': %v", modInit)
 		info("You may need to run 'go mod init %s' manually.", modulePath)
 	}
+	// go mod init wrote the local toolchain's go line; state the
+	// framework's instead, and pin the release matching this CLI. A
+	// release build still fails loudly when there is no go.mod to pin.
 	pinnedVersion := installedFrameworkVersion()
 	// Set all directives in one edit: after the go line changes, a second
 	// go invocation could switch to the minimum toolchain before seeing the
@@ -349,7 +346,7 @@ bin/
 // Fresh modules use the release defaults; init . must not lower a project's
 // existing Go or toolchain requirement.
 func scaffoldGoRequirements(dir string) (minimum, preferred string, err error) {
-	minimum, preferred = scaffoldGoVersion, scaffoldToolchain
+	minimum, preferred = frameworkGoDirective, frameworkToolchain
 	path := filepath.Join(dir, "go.mod")
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -410,10 +407,20 @@ Flags:
   --reinit         Refresh AI onboarding files in an existing project
   --force          With --reinit, overwrite customized onboarding files
 
-The generated go.mod pins the GoFastr release matching this CLI.
+The generated go.mod pins the GoFastr release matching this CLI and
+carries GoFastr's go and toolchain lines, not the local Go version.
 Local development builds cannot infer a release and print the exact
 go get command that must be run before go mod tidy.`)
 }
+
+// frameworkGoDirective and frameworkToolchain are the go and toolchain
+// lines of GoFastr's own go.mod (TestFrameworkGoMatchesGoMod holds them
+// to it). go mod init writes the local toolchain's version instead, which
+// can be older than the framework needs.
+const (
+	frameworkGoDirective = "1.27.0"
+	frameworkToolchain   = "go1.27.2"
+)
 
 // installedFrameworkVersion returns the exact module version represented by
 // this CLI. Release binaries may inject version via ldflags; `go install
@@ -1010,15 +1017,6 @@ func validateProjectName(name string) error {
 	if name == "." {
 		return nil
 	}
-	// Refuse Windows device names on every OS so scaffolded projects stay
-	// portable. Digits outside 1..9 and longer names are ordinary names.
-	switch name {
-	case "con", "prn", "aux", "nul":
-		return fmt.Errorf("name is reserved for a Windows device")
-	}
-	if len(name) == 4 && (strings.HasPrefix(name, "com") || strings.HasPrefix(name, "lpt")) && name[3] >= '1' && name[3] <= '9' {
-		return fmt.Errorf("name is reserved for a Windows device")
-	}
 	for _, r := range name {
 		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_') {
 			return fmt.Errorf("character %q is not allowed", r)
@@ -1027,7 +1025,21 @@ func validateProjectName(name string) error {
 	if name[0] == '-' || name[0] == '_' {
 		return fmt.Errorf("name must start with a letter or digit")
 	}
+	if windowsDeviceName(name) {
+		return fmt.Errorf("%q is a reserved device name on Windows", name)
+	}
 	return nil
+}
+
+// windowsDeviceName reports whether name is one Windows reserves in every
+// directory (con, prn, aux, nul, com0-9, lpt0-9). The validator has
+// already limited name to lowercase ASCII.
+func windowsDeviceName(name string) bool {
+	switch name {
+	case "con", "prn", "aux", "nul":
+		return true
+	}
+	return len(name) == 4 && (name[:3] == "com" || name[:3] == "lpt") && name[3] >= '0' && name[3] <= '9'
 }
 
 // writeCLAUDEmd writes a thin CLAUDE.md that points Claude Code at the

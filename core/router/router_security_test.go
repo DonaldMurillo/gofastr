@@ -571,10 +571,10 @@ func TestRouterUnregisteredMethodGets405(t *testing.T) {
 }
 
 // TestParamUnknownNameFailsEmpty pins the fail-closed lookup surfaces:
-// asking Param for a name the pattern does not declare yields "" (never a
-// neighboring parameter's value), and Params on a request the router did
-// not match (empty r.Pattern — e.g. inside a NotFound handler) yields nil
-// rather than an empty-but-present map.
+// asking Param for a name the pattern does not declare panics (never a
+// neighboring parameter's value, and no longer a quiet ""), and Params on
+// a request the router did not match (empty r.Pattern — e.g. inside a
+// NotFound handler) yields nil rather than an empty-but-present map.
 func TestParamUnknownNameFailsEmpty(t *testing.T) {
 	r := New()
 	var req *http.Request
@@ -585,9 +585,14 @@ func TestParamUnknownNameFailsEmpty(t *testing.T) {
 	if req == nil {
 		t.Fatal("handler did not run")
 	}
-	if got := Param(req, "other"); got != "" {
-		t.Errorf("Param(undeclared name) = %q, want \"\"", got)
-	}
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("Param(undeclared name) returned, want a panic")
+			}
+		}()
+		_ = Param(req, "other")
+	}()
 
 	miss := httptest.NewRequest(http.MethodGet, "/nowhere", nil)
 	if p := Params(miss); p != nil {

@@ -96,7 +96,7 @@ func breadcrumbsCSS(_ style.Theme) string {
   margin: 0;
   padding: 0;
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-muted, #6B7280);
+  color: var(--color-text-muted, #52525B);
 }
 [data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__item {
   display: flex;
@@ -104,11 +104,11 @@ func breadcrumbsCSS(_ style.Theme) string {
   gap: var(--spacing-sm, 4px);
 }
 [data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__sep {
-  color: var(--color-text-muted, #6B7280);
+  color: var(--color-text-muted, #52525B);
   opacity: var(--opacity-disabled, 0.5);
 }
 [data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link {
-  color: var(--color-text-muted, #6B7280);
+  color: var(--color-text-muted, #52525B);
   text-decoration: none;
 }
 [data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link:hover {
@@ -116,7 +116,7 @@ func breadcrumbsCSS(_ style.Theme) string {
   text-decoration: underline;
 }
 [data-cui-comp="ui-breadcrumbs"] .fui-breadcrumbs__link[aria-current="page"] {
-  color: var(--color-text, #1F2937);
+  color: var(--color-text, #09090B);
   font-weight: var(--font-weight-semibold);
   text-decoration: none;
 }

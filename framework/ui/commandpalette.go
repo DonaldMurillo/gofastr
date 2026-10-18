@@ -513,7 +513,7 @@ func commandPaletteCSS(_ style.Theme) string {
      no-script FORM also wears the combobox class, so :has() picks
      the row): the search field's padding and seam. */
   padding: var(--spacing-md, 8px);
-  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   flex: 0 0 auto;
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__input {
@@ -566,15 +566,15 @@ func commandPaletteCSS(_ style.Theme) string {
   user-select: none;
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__option.is-active {
-  background: var(--color-surface-soft, #f1f1f3);
+  background: var(--color-surface-soft, #F4F4F5);
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__option[aria-disabled="true"] {
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted, #52525B);
   cursor: default;
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__option > span:not(:first-child) {
   /* The Meta text: a kind or a path, quiet beside the label. */
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted, #52525B);
   font-size: var(--text-xs, 0.75rem);
   flex: 0 0 auto;
 }
@@ -608,7 +608,7 @@ func commandPaletteCSS(_ style.Theme) string {
    out of the list, set apart from the results above it. */
 :where([data-cui-comp="ui-cmd-palette"]) .fui-cmd-palette__option--all {
   margin-block-start: var(--spacing-xs, 2px);
-  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
+  border-block-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-start-start-radius: 0;
   border-start-end-radius: 0;
   color: var(--color-primary);
@@ -616,7 +616,7 @@ func commandPaletteCSS(_ style.Theme) string {
 }
 :where([data-cui-comp="ui-cmd-palette"]) .fui-cmd-palette__option--section {
   margin-inline-start: var(--spacing-lg, 16px);
-  border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
+  border-inline-start: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-start-start-radius: 0;
   border-end-start-radius: 0;
 }
@@ -632,8 +632,8 @@ func commandPaletteCSS(_ style.Theme) string {
   justify-content: space-between;
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
-  border-top: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
-  background: var(--color-surface-soft, #f7f7f8);
+  border-top: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+  background: var(--color-surface-soft, #F4F4F5);
   flex: 0 0 auto;
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__close {
@@ -649,13 +649,13 @@ func commandPaletteCSS(_ style.Theme) string {
   margin-block: calc(-1 * var(--spacing-sm, 4px));
   background: transparent;
   border: 0;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted, #52525B);
   cursor: pointer;
   border-radius: var(--radii-sm, 6px);
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__close:hover {
   background: var(--color-surface-soft, #f4f4f5);
-  color: var(--color-text, #18181b);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__close:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
@@ -665,7 +665,7 @@ func commandPaletteCSS(_ style.Theme) string {
   display: inline-flex;
   gap: var(--spacing-md, 8px);
   font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted, #52525B);
 }
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__hint {
   display: inline-flex;
@@ -675,7 +675,7 @@ func commandPaletteCSS(_ style.Theme) string {
 [data-cui-comp="ui-cmd-palette"] .fui-cmd-palette__kbd {
   font-family: var(--font-mono, ui-monospace, monospace);
   padding: 1px calc(var(--spacing-sm, 4px) * 1.5);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-bottom-width: var(--stroke-thick, 2px);
   border-radius: var(--radii-sm, 6px);
   background: var(--color-surface, #fff);
@@ -711,17 +711,17 @@ func commandPaletteTriggerCSS(_ style.Theme) string {
   min-block-size: var(--ui-cmd-trigger-height, 36px);
   padding-inline: calc(var(--spacing-sm, 4px) * 2.5);
   box-sizing: border-box;
-  border: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #fff);
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted, #52525B);
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
   text-decoration: none;
   cursor: pointer;
 }
 [data-cui-comp="ui-cmd-palette-trigger"]:hover {
-  color: var(--color-text, #18181b);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-cmd-palette-trigger"]:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
@@ -744,9 +744,9 @@ func commandPaletteTriggerCSS(_ style.Theme) string {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: var(--text-xs, 0.75rem);
   padding: 1px calc(var(--spacing-sm, 4px) * 1.5);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-sm, 6px);
-  background: var(--color-surface-soft, #f7f7f8);
+  background: var(--color-surface-soft, #F4F4F5);
 }
 @media (max-width: 47.98rem) {
   /* Phones: an icon button with the 44px tap floor. The text stays

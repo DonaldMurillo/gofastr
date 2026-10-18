@@ -279,3 +279,20 @@ func TestDefaultDarkPaletteComplete(t *testing.T) {
 		t.Errorf("Default() dark palette gaps: %v", gaps)
 	}
 }
+
+// The contracts checker can't import this package (it sits below the UI
+// stack), so it rebuilds the canonical palette from core-ui/style. Every
+// token but the component options must match what Default ships.
+func TestDefaultMatchesStylePalette(t *testing.T) {
+	canon := style.DefaultTheme()
+	canon.DarkColors = style.DefaultDarkColors()
+	want := style.ThemeToTokens(canon)
+	for k, v := range style.ThemeToTokens(Default()) {
+		if strings.HasPrefix(k, "component.") {
+			continue
+		}
+		if want[k] != v {
+			t.Errorf("token %s: Default = %q, style palette = %q", k, v, want[k])
+		}
+	}
+}

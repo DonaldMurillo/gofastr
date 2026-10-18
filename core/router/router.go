@@ -250,14 +250,53 @@ func (r *Router) Patch(pattern string, handler http.Handler) {
 // that is safe as a header byte-string is not automatically safe as a
 // filesystem path, an object-store key, or a map lookup; sinks still
 // own their own allow-listing.
+//
+// Param panics when the matched route declares no {name} wildcard: a
+// misspelt name is a programming error, and returning "" let a handler
+// carry on with an empty id. A request with no pattern (built by hand,
+// path values set with SetPathValue) is not checked.
 func Param(r *http.Request, name string) string {
+	if r.Pattern != "" && !declaresWildcard(r.Pattern, name) {
+		panic(fmt.Sprintf("router.Param: route %q has no {%s} wildcard", r.Pattern, name))
+	}
 	return SanitizePathParam(r.PathValue(name), isCatchAll(r.Pattern, name))
+}
+
+// declaresWildcard reports whether pattern has a {name} or {name...}
+// wildcard.
+func declaresWildcard(pattern, name string) bool {
+	_, declared := wildcards(pattern)[name]
+	return declared
 }
 
 // isCatchAll reports whether pattern declares name as a {name...}
 // multi-segment wildcard rather than a single-segment {name}.
 func isCatchAll(pattern, name string) bool {
-	return pattern != "" && strings.Contains(pattern, "{"+name+"...}")
+	return wildcards(pattern)[name]
+}
+
+// wildcards maps each wildcard name a pattern declares to whether it is
+// a {name...} catch-all. Go's ServeMux stores a catch-all under the
+// bare name, and {$} is the end-of-path anchor, not a param, so
+// "rest..." and "$" are never names.
+func wildcards(pattern string) map[string]bool {
+	out := map[string]bool{}
+	for {
+		start := strings.IndexByte(pattern, '{')
+		if start == -1 {
+			return out
+		}
+		end := strings.IndexByte(pattern[start:], '}')
+		if end == -1 {
+			return out
+		}
+		name := pattern[start+1 : start+end]
+		pattern = pattern[start+end+1:]
+		catchAll := strings.HasSuffix(name, "...")
+		if name = strings.TrimSuffix(name, "..."); name != "$" {
+			out[name] = catchAll
+		}
+	}
 }
 
 // Params extracts all path parameters from the request.
@@ -276,30 +315,12 @@ func Params(r *http.Request) map[string]string {
 	if pattern == "" {
 		return nil
 	}
+	// A catch-all is keyed by its bare name, so PathValue resolves it;
+	// keyed as "rest..." its value was silently dropped and callers
+	// driving auth/path logic off Params() failed open.
 	params := make(map[string]string)
-	// Extract param names from the pattern, e.g. "/users/{id}/posts/{postId}"
-	for i := 0; i < len(pattern); i++ {
-		if pattern[i] == '{' {
-			end := strings.IndexByte(pattern[i:], '}')
-			if end == -1 {
-				break
-			}
-			name := pattern[i+1 : i+end]
-			// Go's ServeMux stores a catch-all {name...} under the bare
-			// "name" key, and {$} is the end-of-path anchor, not a param.
-			// Normalise the extracted token so PathValue resolves and the
-			// map exposes the param under its plain name. Otherwise a
-			// catch-all value is silently dropped and callers driving
-			// auth/path logic off Params() fail open.
-			catchAll := strings.HasSuffix(name, "...")
-			name = strings.TrimSuffix(name, "...")
-			if name == "$" {
-				i += end
-				continue
-			}
-			params[name] = SanitizePathParam(r.PathValue(name), catchAll)
-			i += end
-		}
+	for name, catchAll := range wildcards(pattern) {
+		params[name] = SanitizePathParam(r.PathValue(name), catchAll)
 	}
 	return params
 }

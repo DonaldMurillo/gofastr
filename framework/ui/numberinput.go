@@ -137,7 +137,7 @@ func numberInputCSS(_ style.Theme) string {
 [data-cui-comp="ui-number-input"] .fui-number-input__label {
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-number-input"] .fui-number-input__row {
   display: inline-flex;
@@ -164,7 +164,7 @@ func numberInputCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
   font-variant-numeric: tabular-nums;
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   min-block-size: var(--spacing-touch-target, 44px);
   width: 5ch;
   padding: 0;
@@ -203,7 +203,7 @@ func numberInputCSS(_ style.Theme) string {
 [data-cui-comp="ui-number-input"] .fui-number-input__decrement:hover,
 [data-cui-comp="ui-number-input"] .fui-number-input__increment:hover {
   background: var(--color-surface-soft, #F4F4F5);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-number-input"] .fui-number-input__decrement:focus-visible,
 [data-cui-comp="ui-number-input"] .fui-number-input__increment:focus-visible {
@@ -223,10 +223,10 @@ func numberInputCSS(_ style.Theme) string {
 [data-cui-comp="ui-number-input"] .fui-number-input__error {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-danger, #DC2626);
+  color: var(--color-danger, #B91C1C);
 }
 [data-cui-comp="ui-number-input"].is-error .fui-number-input__row {
-  border-color: var(--color-danger, #DC2626);
-  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
+  border-color: var(--color-danger, #B91C1C);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #B91C1C);
 }`
 }

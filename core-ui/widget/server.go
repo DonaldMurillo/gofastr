@@ -798,7 +798,10 @@ func widgetCSS(def Definition) string {
 	// ─── Drag-to-dismiss handle (bottom sheets) ───────────────────
 	// Visible 40×4px rounded bar centered at the top of the panel.
 	// The runtime attaches pointer handlers when it sees
-	// data-cui-drag-dismiss on the widget root.
+	// data-cui-drag-dismiss on the widget root, and a drag starts only
+	// on this bar. touch-action: none lives here and nowhere else: the
+	// sheet root is its own scroller, and none on it leaves a finger no
+	// pan, so a long sheet would never scroll on a phone.
 	ss.Rule(".cui-widget-drag-handle").
 		Set(
 			"display", "block",
@@ -810,12 +813,6 @@ func widgetCSS(def Definition) string {
 			"touch-action", "none",
 			"cursor", "grab",
 		).
-		End()
-	// Wider drag affordance: the entire widget root accepts the
-	// initial pointerdown when DragDismiss is on. touch-action: none
-	// keeps the browser from claiming vertical pans for scrolling.
-	ss.Rule(`[data-cui-widget][data-cui-drag-dismiss]`).
-		Set("touch-action", "none").
 		End()
 	// While dragging the runtime sets data-cui-dragging=true; disable
 	// the entrance animation + transitions so the live transform isn't

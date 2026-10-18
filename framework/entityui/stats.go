@@ -120,16 +120,27 @@ func (u *UI) CheckStat(entityName, agg, field, where, format string) error {
 // filter is bad or the query fails, so a nav count or a badge draws
 // nothing rather than a figure the caller may not see.
 func (u *UI) Count(ctx context.Context, entityName, where string) (string, bool) {
-	m, opts, ok := u.statRead(ctx, entityName, where)
+	n, ok := u.CountInt(ctx, entityName, where)
 	if !ok {
 		return "", false
+	}
+	return formatNumber(float64(n), 0), true
+}
+
+// CountInt is Count as a number, for a figure the caller computes with
+// (a rate drawn on a ui.Gauge): the same read gate, scope, read hooks
+// and false on a refused read, a bad filter or a failed query.
+func (u *UI) CountInt(ctx context.Context, entityName, where string) (int, bool) {
+	m, opts, ok := u.statRead(ctx, entityName, where)
+	if !ok {
+		return 0, false
 	}
 	n, err := m.ch.CountAll(crud.WithReadHooks(ctx), opts)
 	if err != nil {
 		slog.WarnContext(ctx, "entityui: count", "entity", entityName, "error", err)
-		return "", false
+		return 0, false
 	}
-	return formatNumber(float64(n), 0), true
+	return n, true
 }
 
 // CountUpTo counts the records the caller can read that match where, up

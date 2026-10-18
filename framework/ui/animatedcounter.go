@@ -108,7 +108,7 @@ func animatedCounterCSS(_ style.Theme) string {
   font-weight: var(--font-weight-bold);
 }
 [data-cui-comp="ui-animated-counter"] .fui-animated-counter__value {
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-animated-counter"] .fui-animated-counter__prefix,
 [data-cui-comp="ui-animated-counter"] .fui-animated-counter__suffix {

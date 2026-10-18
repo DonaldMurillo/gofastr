@@ -90,12 +90,12 @@ func TestInitGoDirectives(t *testing.T) {
 }
 
 func TestProjectNameWindowsDevices(t *testing.T) {
-	for _, name := range []string{"con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"} {
+	for _, name := range []string{"con", "prn", "aux", "nul", "com0", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9", "lpt0", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9"} {
 		if err := validateProjectName(name); err == nil || !strings.Contains(err.Error(), "reserved") {
 			t.Errorf("validateProjectName(%q) must explain Windows device name refusal, got %v", name, err)
 		}
 	}
-	for _, name := range []string{"console", "null", "auxiliary", "com0", "com10", "lpt0", "lpt10", "con-app", "app_nul", "."} {
+	for _, name := range []string{"console", "null", "auxiliary", "com10", "lpt10", "con-app", "app_nul", "."} {
 		if err := validateProjectName(name); err != nil {
 			t.Errorf("validateProjectName(%q): %v", name, err)
 		}

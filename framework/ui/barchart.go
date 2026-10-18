@@ -91,7 +91,7 @@ type BarChartConfig struct {
 // BarChart renders a categorical bar chart.
 func BarChart(cfg BarChartConfig) render.HTML {
 	if len(cfg.Bars) == 0 {
-		return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
+		return chartEmpty(cfg.ID, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
 	}
 	w := cfg.Width
 	if w == 0 {
@@ -277,28 +277,15 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		}
 		y := baseY - barH
 
-		color := b.Color
-		barCls := "fui-bar-chart__bar"
-		isPalette := color == "primary" || color == "info" ||
-			color == "success" || color == "warning" || color == "danger"
-
-		// Resolve the effective fill. Palette tokens and an empty Color
-		// are class-based (theme-aware). Any other value is a raw SVG
-		// fill attribute, but only when it names a registered status
-		// variant (resolved to its accent) or is a plausible CSS color.
-		// Anything else falls back to the primary class so a typo like
+		// Palette tokens and an empty Color are class-based (theme-aware).
+		// A registered status variant or a plausible CSS color is a raw
+		// fill; anything else falls back to primary, so a typo like
 		// "draft" never renders an invalid (black) fill.
-		var fill string
-		if isPalette {
-			barCls += " fui-bar-chart__bar--" + color
-		} else if color == "" {
-			barCls += " fui-bar-chart__bar--primary"
-		} else if c, ok := registeredStatusColor(color); ok {
-			fill = c
-		} else if plausibleCSSColor(color) {
-			fill = color
-		} else {
-			barCls += " fui-bar-chart__bar--primary"
+		barCls := "fui-bar-chart__bar"
+		tone := seriesTone(b.Color, 0)
+		fill := tone.fill
+		if tone.palette != "" {
+			barCls += " fui-bar-chart__bar--" + tone.palette
 		}
 
 		sb.WriteString(`<rect x="`)
@@ -516,10 +503,10 @@ func barChartCSS(_ style.Theme) string {
   opacity: var(--ui-bar-chart-bar-hover-opacity, 0.85);
 }
 .fui-bar-chart__bar--primary { fill: var(--color-primary, #18181B); }
-.fui-bar-chart__bar--info    { fill: var(--color-info, #3B82F6); }
-.fui-bar-chart__bar--success { fill: var(--color-success, #16A34A); }
-.fui-bar-chart__bar--warning { fill: var(--color-warning, #D97706); }
-.fui-bar-chart__bar--danger  { fill: var(--color-danger, #DC2626); }
+.fui-bar-chart__bar--info    { fill: var(--color-info, #1D4ED8); }
+.fui-bar-chart__bar--success { fill: var(--color-success, #166534); }
+.fui-bar-chart__bar--warning { fill: var(--color-warning, #854D0E); }
+.fui-bar-chart__bar--danger  { fill: var(--color-danger, #B91C1C); }
 
 [data-cui-comp="ui-bar-chart"] .fui-bar-chart__baseline {
   stroke: var(--color-border, #E4E4E7);

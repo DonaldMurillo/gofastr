@@ -172,6 +172,9 @@ const (
 	RuleUnscopedPII       = "GOFASTR1901"
 	RuleUnguardedMutation = "GOFASTR1902"
 	RuleAuthNotWired      = "GOFASTR1903"
+	// RuleUnregisteredPermission is a checked permission name the app's
+	// capability registry does not hold.
+	RuleUnregisteredPermission = "GOFASTR1904"
 )
 
 // AI-guidance rules.
@@ -1011,10 +1014,17 @@ func renderingRules() []Rule {
 			"found about 450 such fallbacks teaching a 4/8/16/24/32 spacing ladder the theme does not " +
 			"declare (it is 2/4/8/16/24), and a review bot read one of them as the token's value and " +
 			"proposed a change that would have shrunk a real gap. The rule covers the length and time " +
-			"scales, spacing, radii, text and duration, where a fallback can only be right or wrong; colour " +
-			"and font fallbacks are left alone because `currentColor`, `inherit`, `transparent` and a " +
-			"dark-surface hex are deliberate degraded-mode choices, not restatements of the token.",
-		Fix: "Write the declared value as the fallback (`style.TokenNames()` or `gofastr docs theming` lists them); rem and px are compared by size, so `var(--spacing-lg, 1rem)` is fine for a 16px token. If the value you wanted is not the token's value, you wanted a different token.",
+			"scales, spacing, radii, text and duration, where a fallback can only be right or wrong. In " +
+			"design-system Go code it also covers colour fallbacks (--color-* and the --tk-* code " +
+			"colours), which drifted the same way: about 350 still named the palette from before the " +
+			"contrast pass (`var(--color-danger, #DC2626)` where the theme declares #B91C1C) or a " +
+			"translucent rgba() the theme never declares. A colour fallback is the token's hex for its " +
+			"scheme (the dark value inside a dark-scheme rule or @media block, the light value " +
+			"elsewhere) or a keyword (`currentColor`, `inherit`, `transparent`), a deliberate " +
+			"degraded-mode choice. Font stacks are left alone, as are owned styles' colours, which " +
+			"follow the app's theme, and battery/desktop/ui's, which its own tests check against its " +
+			"per-platform theme.",
+		Fix: "Write the declared value as the fallback (`style.TokenNames()` or `gofastr docs theming` lists them); rem and px are compared by size, so `var(--spacing-lg, 1rem)` is fine for a 16px token, and hex by colour, so `#fff` is fine for #FFFFFF. Inside a dark-scheme block write the dark value the message names. If the value you wanted is not the token's value, you wanted a different token.",
 		Doc: "theming",
 		Examples: []Example{{
 			Bad:  "padding: var(--spacing-md, 12px);",
@@ -1316,6 +1326,22 @@ func permissionRules() []Rule {
 		Examples: []Example{{
 			Bad:  `app.Delete("/admin/users/:id", deleteUser)`,
 			Good: "admin := app.Group(\"/admin\", access.Require(\"users:delete\"))\nadmin.Delete(\"/users/:id\", deleteUser)",
+		}},
+	}, {
+		ID: RuleUnregisteredPermission, Slug: "permissions/unregistered-permission",
+		Title: "Permission checked but never registered", Capability: CapPermissions, Severity: SeverityError,
+		Summary: "An access block, transition, or permission check names a capability the app's `RolePolicy.Register` list does not hold.",
+		Why: "Permission names are strings, so a typo compiles. A check on a name nobody registered " +
+			"denies every role granted the intended capability, while the wildcard holder, usually the " +
+			"admin testing the screen, still passes, so it looks like it works. The rule runs once an app " +
+			"registers its capabilities, and checks each binary against the names registered in the " +
+			"packages it links.",
+		Fix: "Correct the name to the registered capability, or add it to `RolePolicy.Register`. An untyped package-level " +
+			"`const` gives every check one spelling and fits both `access.Permission` and the `string` fields.",
+		Doc: "access-control",
+		Examples: []Example{{
+			Bad:  "policy := access.NewRolePolicy()\npolicy.Register(\"plans:write\")\n_ = access.RequirePermission(\"plans:wirte\")",
+			Good: "policy := access.NewRolePolicy()\npolicy.Register(\"plans:write\")\n_ = access.RequirePermission(\"plans:write\")",
 		}},
 	}, {
 		ID: RuleAuthNotWired, Slug: "permissions/auth-not-wired",

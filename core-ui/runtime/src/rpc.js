@@ -13,6 +13,14 @@
   // dispatch aborts the prior request targeting the same signal so network
   // response order cannot roll pagination or filtering back.
   const _rpcInFlight = new Map();
+  // The latest dispatch per node and per form. A node with no signal has
+  // no abort controller, so two quick submits of one form race; an answer
+  // to a dispatch its form (or, outside a form, its node) has since
+  // superseded is dropped before it touches the page (a late refusal must
+  // not paint over a newer success, nor a late success clear a newer
+  // refusal). The node's own entry decides only its busy state, so a
+  // button superseded by its form's submit still re-enables.
+  const _rpcLatest = new WeakMap();
   // Input-triggered RPC debounce belongs with dispatch state, not the core
   // bridge. The bridge loads this module on the first input and asks this map
   // to schedule the request.
@@ -170,6 +178,10 @@
     // An explicit data-cui-rpc-body (read above) still wins; a control with
     // no enclosing form and no explicit body keeps the legacy empty body.
     const formSource = node.tagName === 'FORM' ? node : (node.form || null);
+    const tok = {};
+    _rpcLatest.set(node, tok);
+    if (formSource) _rpcLatest.set(formSource, tok);
+    const stale = () => _rpcLatest.get(formSource || node) !== tok;
     // A retry starts clean (the formerrors module placed the previous
     // attempt's messages; nothing to clear until it has loaded).
     if (formSource && NS._formErrors) NS._formErrors.clear(formSource);
@@ -245,8 +257,10 @@
         signal: ctl.signal,
         credentials: 'same-origin',
       });
+      if (stale()) return;
       if (!r.ok) {
         const txt = await r.text();
+        if (stale()) return;
         if (responseSignal) NS.setSignal(responseSignal, { ok: false, status: r.status, text: txt });
         // A refused form submission is never silent: the formerrors
         // module renders the server's validation envelope into the
@@ -254,7 +268,7 @@
         if (formSource) {
           formResult(formSource, false);
           NS.loadModule('formerrors')
-            .then(() => NS._formErrors.report(formSource, r.status, txt))
+            .then(() => { if (!stale()) NS._formErrors.report(formSource, r.status, txt); })
             .catch(() => {});
         } else if (errToast !== null) {
           // An opted-in button: the attribute is the title, the server's
@@ -297,6 +311,10 @@
       const ct = r.headers.get('content-type') || '';
       const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
       if (responseSignal) NS.setSignal(responseSignal, data);
+      // Checked after the body read and the signal broadcast: a newer
+      // dispatch may have started during either, and a signal listener
+      // may have started one itself.
+      if (stale()) return;
       if (closeOnSuccess && wentry && wentry.dismiss) wentry.dismiss();
       if (resetOnSuccess) node.reset();
 
@@ -336,7 +354,7 @@
       const openWidgetName = node.getAttribute('data-cui-rpc-open');
       if (openWidgetName) {
         NS.loadModule('widgets').then(() => {
-          NS.openWidget(openWidgetName);
+          if (!stale()) NS.openWidget(openWidgetName);
         }).catch(() => {});
       }
       // A success toast fires BEFORE the navigate below: the stack lives
@@ -347,15 +365,15 @@
       // Its action (Undo) passes through as the attribute's JSON: the
       // feedback module parses it and puts it on the toast's button.
       if (successToast !== null) await NS._toastOrFallback?.({ variant: 'success', title: successToast || 'Done', ttl: 6000, action: node.getAttribute('data-cui-rpc-success-action') });
-      const navigatePath = node.getAttribute('data-cui-rpc-navigate');
+      const dest = node.getAttribute('data-cui-rpc-navigate');
       // A save inside an intercept layer returns to the layer (or the
       // page under the stack) it names instead of leaving the stack.
-      if (navigatePath && !NS._interceptReturn?.(navigatePath, node)) {
-        try { NS.navigate(navigatePath, { force: true }); }
+      if (dest && !stale() && !NS._interceptReturn?.(dest, node)) {
+        try { NS.navigate(dest, { force: true }); }
         catch (_) {}
       }
     } catch (err) {
-      if (err && err.name === 'AbortError') return;
+      if ((err && err.name === 'AbortError') || stale()) return;
       if (errToast !== null) {
         NS._toastOrFallback?.({ variant: 'error', title: errToast || 'Request failed', body: 'Network error — please try again', ttl: 6000 });
       }
@@ -370,11 +388,14 @@
       if (responseSignal && _rpcInFlight.get(responseSignal) === ctl) {
         _rpcInFlight.delete(responseSignal);
       }
-      const sticky = node.hasAttribute('data-cui-rpc-after-disable') &&
-        node.dataset.cuiRpcAfterDone === '1';
-      if (!sticky && wantDisable) node.disabled = false;
-      node.classList.remove('cui-loading');
-      node.removeAttribute('aria-busy');
+      // A superseded dispatch leaves the busy state to the newer one.
+      if (_rpcLatest.get(node) === tok) {
+        const sticky = node.hasAttribute('data-cui-rpc-after-disable') &&
+          node.dataset.cuiRpcAfterDone === '1';
+        if (!sticky && wantDisable) node.disabled = false;
+        node.classList.remove('cui-loading');
+        node.removeAttribute('aria-busy');
+      }
     }
   }
 

@@ -210,7 +210,7 @@ func timelineCSS(_ style.Theme) string {
   line-height: inherit;
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 /* A Lead is a sentence that carries its own emphasis (a bold actor, a
    linked record): body weight, so the emphasis reads. */
@@ -236,10 +236,10 @@ func timelineCSS(_ style.Theme) string {
 /* Variant dots — colored highlights for state changes. Scoped under
    the marker so they outrank the base dot rule at equal class
    count. */
-[data-cui-comp="ui-timeline"] .fui-timeline__dot--success { background: var(--color-success, #16A34A); }
-[data-cui-comp="ui-timeline"] .fui-timeline__dot--warn    { background: var(--color-warning, #D97706); }
-[data-cui-comp="ui-timeline"] .fui-timeline__dot--danger  { background: var(--color-danger, #DC2626); }
-[data-cui-comp="ui-timeline"] .fui-timeline__dot--info    { background: var(--color-info, #3B82F6); }
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--success { background: var(--color-success, #166534); }
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--warn    { background: var(--color-warning, #854D0E); }
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--danger  { background: var(--color-danger, #B91C1C); }
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--info    { background: var(--color-info, #1D4ED8); }
 
 /* An event with an Icon: the marker is a bordered circle
    (--ui-timeline-icon-size, 28px) on the surface, the icon inside it
@@ -265,8 +265,8 @@ func timelineCSS(_ style.Theme) string {
   inline-size: calc(var(--ui-timeline-icon-size, 28px) / 2);
   block-size: calc(var(--ui-timeline-icon-size, 28px) / 2);
 }
-[data-cui-comp="ui-timeline"] .fui-timeline__dot--success:has(> .fui-icon) { color: var(--color-success, #16A34A); }
-[data-cui-comp="ui-timeline"] .fui-timeline__dot--warn:has(> .fui-icon)    { color: var(--color-warning, #D97706); }
-[data-cui-comp="ui-timeline"] .fui-timeline__dot--danger:has(> .fui-icon)  { color: var(--color-danger, #DC2626); }
-[data-cui-comp="ui-timeline"] .fui-timeline__dot--info:has(> .fui-icon)    { color: var(--color-info, #3B82F6); }`
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--success:has(> .fui-icon) { color: var(--color-success, #166534); }
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--warn:has(> .fui-icon)    { color: var(--color-warning, #854D0E); }
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--danger:has(> .fui-icon)  { color: var(--color-danger, #B91C1C); }
+[data-cui-comp="ui-timeline"] .fui-timeline__dot--info:has(> .fui-icon)    { color: var(--color-info, #1D4ED8); }`
 }

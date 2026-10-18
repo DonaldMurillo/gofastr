@@ -129,6 +129,10 @@ Three entry points produce a `style.Theme` you pass to
 
 - **`style.DefaultTheme()`**: the fully-populated, lower-level light
   baseline. It leaves `DarkColors` empty on purpose, for compatibility.
+  `style.DefaultDarkColors()` returns the canonical dark palette (a
+  fresh map each call) for a caller that wants both schemes at this
+  level: `t.DarkColors = style.DefaultDarkColors()`. It is the palette
+  `theme.Default` ships.
 - **`framework/ui/theme.Default(theme.Overrides{Primary: "#0F766E", Dark: &theme.Overrides{Primary: "#5EEAD4"}})`**:
   the adaptive theme fresh scaffolds start with. It ships complete,
   contrast-safe light and dark palettes, plus a flat override struct for

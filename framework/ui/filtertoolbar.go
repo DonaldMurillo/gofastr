@@ -613,7 +613,7 @@ func filterToolbarCSS(_ style.Theme) string {
   margin-block-end: var(--fui-density-gap, var(--spacing-md, 8px));
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 /* Segmented control: the options sit in one soft track whose outer
    height is the 44px control height, so the group lines up with the

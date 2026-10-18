@@ -7,6 +7,150 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.90.0] - 2026-10-18
+
+**BREAKING.** `router.Param` panics on a wildcard name its route does
+not declare, so a handler that read a misspelled name and carried on
+with `""` now answers 500. v0.90.0 also adds gauge, scatter and
+heatmap charts, a `gofastr verify` rule for permission names nothing
+registers, and a layout overlay under `gofastr dev`.
+
+### Added
+- **`style.DefaultDarkColors()` returns the canonical dark palette.**
+  `framework/ui/theme.Default` reads it, and so does the contracts
+  checker, which no longer links `framework/ui`.
+- **`framework/testkit/cssweight` weighs the CSS a page ships.**
+  `cssweight.Measure` fetches a page over HTTP and reports the raw and
+  gzip size of its `<style>` elements and linked stylesheets, so an
+  app's test can cap CSS per page. It resolves sheets against
+  `<base href>`, and a redirect, a non-200 answer or an `@import` is an
+  error rather than a number. Meridian and the docs site now fail
+  their tests when a page ships more than 17 KiB of gzipped CSS, or
+  less than 1 KiB, which means its stylesheets went missing; the
+  heaviest pages today sit at about 15.5 KiB.
+- **`ui.Gauge` draws one reading against a range.** It's a semicircle
+  SVG dial on an ARIA `meter`, so a screen reader announces the label and
+  `ValueText` ("CPU, 73%"). `Bands` color the arc by where the reading
+  falls, for example green from 0, amber from 70, red from 90. A
+  reading outside `Min`–`Max` pins the arc to the nearer end, and NaN
+  or Inf shows the charts' empty state. The reading's text scales with
+  `Size`. Meridian's Revenue page shows the share of payments that went
+  through on one.
+- **`ui.ScatterChart` plots points on two numeric axes**, one color per
+  series. Both axes round out to steps of 1, 2, 2.5 or 5 × 10ⁿ, across
+  zero when the data does, and tick labels keep as many decimals as the
+  step needs (past 1e9, or under a step of 1e-9, as many significant
+  digits: 7.5e+299, not 7.500000000000005e+299). The legend wraps at the right edge. A point with a NaN or
+  Inf coordinate is skipped. Each point's `<title>` names its series,
+  label and coordinates. The gallery shows seats against MRR for two
+  plans.
+- **`ui.Heatmap` shades a grid of values** in four strengths of one
+  palette color, from the lowest value to the highest. A NaN cell draws
+  empty and its title says "no data". A row label past 17 characters
+  ends in an ellipsis, and a grid too wide for `Width` widens the chart
+  instead of clipping. `Values` must match `Rows` × `Cols`, or it
+  panics. Meridian's Revenue page counts payments by method and status
+  on one.
+- **A `ui.Card` with an `ID` names its heading `<ID>-title`,** so a
+  chart inside the card can pass that id as `LabelledBy` and read as a
+  named image. Meridian's Revenue charts and the gallery's chart demos
+  are named this way.
+- **`entityui.UI.CountInt`** is `Count` as an `int`, under the same read
+  gate and scope, for figures a host computes with.
+- **GOFASTR1904 flags a checked permission the app never registered.**
+  Once an app calls `RolePolicy.Register`, `gofastr verify` checks every
+  permission name in an entity `Access` block, `CrossOwnerRead`,
+  `ReadScopeConfig.Unrestricted`, a transition or action `Permission`,
+  and the arguments of `RequirePermission`, `Can`, `CanResource` and
+  `CanResourceExact` against the names registered in the same binary,
+  and suggests the nearest one. It reads literals and package-level
+  constants, including another package's (`perms.PlansWrite`). A typo
+  there compiled before and denied every role granted the intended name. The
+  contract catalog holds 79 rules.
+- **A layout layer under `gofastr dev`.** Alt+Shift+L draws the page's
+  layout layers, slots, outlets, areas, owned-style scopes, islands
+  and widgets as labelled outlines. It also marks every box that
+  scrolls, and every element that runs past the viewport (skipping
+  ones inside a scroll box, a clip or a fixed drawer), with a legend
+  that says when the page scrolls sideways. It draws over open
+  popovers and modal dialogs, such as a phone sheet or a confirm. The
+  on/off choice survives reloads. Served at `/__devlayout.js` only in dev;
+  `GOFASTR_DEV_LAYOUT=0` turns it off. See
+  [dev-livereload](framework/docs/content/dev-livereload.md#layout-layer).
+
+### Changed
+- **`router.Param` panics on a name its route does not declare.**
+  `Param(r, "idd")` on `/posts/{id}` returned `""`, the same as an empty
+  value, and the handler carried on; now the request fails with a 500
+  through the recovery middleware, naming the route and the wildcard. A
+  request with no pattern, built by hand with `SetPathValue`, is not
+  checked. `handler.Bind` still leaves a `path:` field the route does
+  not declare at zero, so one input struct can serve `POST /users` and
+  `PUT /users/{id}`.
+- **The Timeout middleware reuses its response buffers.** It holds each
+  response until the handler returns, and it used to grow a new buffer
+  for every request: about 260 KB allocated and 36 µs spent to send a
+  96 KB page, against 2 KB and 4 µs now. Once the handler has returned
+  or panicked, a write or `Hijack` through its response writer fails
+  with an error and a late `WriteHeader` or `Flush` does nothing, instead of
+  reaching a buffer that may belong to the next request or a response
+  net/http has already finished. This holds for streamed responses too.
+- **GOFASTR1808 judges colour fallbacks in design-system code.** A
+  `var(--color-*, …)` or `var(--tk-*, …)` fallback must be the token's
+  hex for its scheme, in any case or the short form: the dark value
+  inside a dark-scheme rule or `@media` block, the light value
+  elsewhere. A keyword such as `currentColor` passes; `rgba()`, a named
+  colour or another hex does not. Owned styles stay unjudged, since
+  their colours follow the app's theme. `battery/desktop/ui` checks
+  its own against its per-platform theme in its tests.
+
+### Fixed
+- **A late answer to an older form submit no longer undoes the newer
+  one.** A form with no `data-cui-rpc-signal` has no abort, so two quick
+  submits raced: a slow refusal landing after a newer success painted
+  its errors, and a slow success cleared a newer refusal's errors or
+  reset what the user had typed since. Only a form's newest request now
+  touches the page, whether the form or a button inside it sent it.
+- **`gofastr init` writes GoFastr's `go` and `toolchain` lines.** The
+  scaffolded `go.mod` carried whatever `go mod init` wrote, the local Go
+  version (`go 1.25.5` in one report), below the `go 1.27.0` the
+  framework needs.
+- **`gofastr init` refuses Windows device names.** `con`, `nul`, `aux`,
+  `prn`, `com0`–`com9` and `lpt0`–`lpt9` passed the name check; on
+  Windows `os.Stat("nul")` succeeds, so `init nul` reported "already
+  exists". They are refused on every OS, so a project made on Linux
+  still checks out on Windows.
+- **Colour fallbacks name the current palette.** About 350 across
+  `framework/ui`, `framework/uihost`, `core-ui` and the batteries still
+  named the colours from before the contrast pass, such as
+  `var(--color-danger, #DC2626)` where the theme declares #B91C1C, or
+  a translucent `rgba(0,0,0,0.1)` border. They only render on a page
+  with no theme CSS, where the section menu's #A1A1AA text failed AA on
+  white, but a reader took them for the token's value.
+  `battery/desktop`'s now match its macOS theme.
+- **A hovered secondary `ui.BackToTop` keeps its strong border in dark
+  mode.** A dark-scheme block restated the base rules' tokens, and
+  because it came later it reset the hover border to `--color-border`.
+  The block is gone; the theme's dark palette already flips the tokens.
+- **A chart's empty state keeps its `ID`.** `ui.BarChart`,
+  `ui.LineChart` and `ui.PieChart` dropped the host's `ID` when they had
+  no data to draw, so a link or test selector aimed at the chart found
+  nothing in exactly that state.
+- **A long bottom sheet scrolls on a phone.** `touch-action: none` sat
+  on the sheet root, which is its own scroller, so a finger had no pan to
+  perform and the list never moved. It now sits on the drag handle only,
+  where a drag down still closes the sheet.
+- **A wide Markdown table scrolls sideways in its own box.** `ui.Markdown`
+  wraps each table in a focusable `.fui-markdown__table` scroll box and
+  caps each column at 70% of it, so a table wider than a phone no longer
+  runs past the page or gets clipped by a column that hides overflow.
+- **A `uihost` served on its own answers `/__livereload.js`.** Its pages
+  linked the livereload client under `gofastr dev`, but only
+  `framework.NewApp` registered the route, so a host served directly or
+  mounted on a router built by hand got a 404 and never reloaded.
+  `UIHost.Mount` now registers the dev script routes on the router it
+  mounts on.
+
 ## [0.89.0] - 2026-10-17
 
 **BREAKING.** `gofastr verify` now runs GoFastr's type-aware analyzers
