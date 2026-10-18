@@ -86,7 +86,7 @@ func Select(cfg SelectConfig) render.HTML {
 	control := func(c headless.FieldControl) render.HTML {
 		opts := make([]headless.Option, 0, len(cfg.Options))
 		for _, opt := range cfg.Options {
-			opts = append(opts, headless.Option{Value: opt.Value, Label: opt.Text, ExtraAttrs: opt.ExtraAttrs})
+			opts = append(opts, headless.Option{Value: opt.Value, Label: opt.Text, ExtraAttrs: html.SafeExtraAttrs(opt.ExtraAttrs, "value", "selected", "disabled")})
 		}
 		sel := selectStyle.WrapHTML(headless.Select(headless.SelectProps{
 			Name:        cfg.Name,

@@ -13,6 +13,20 @@ import (
 // second UIHost or duplicating their CSS. It adds no scripts or behaviors;
 // UIHost remains the normal host for interactive framework applications.
 func WithComponentCSS(document render.HTML, theme style.Theme) render.HTML {
+	css := ComponentCSS(document, theme)
+	if css == "" {
+		return document
+	}
+	block := "<style>" + css + "</style>"
+	if strings.Contains(string(document), "</head>") {
+		return render.HTML(strings.Replace(string(document), "</head>", block+"</head>", 1))
+	}
+	return render.Join(render.Raw(block), document)
+}
+
+// ComponentCSS collects only the component styles used in document. Static
+// writers can save it in an external stylesheet under a strict style policy.
+func ComponentCSS(document render.HTML, theme style.Theme) string {
 	var css strings.Builder
 	hash := style.ThemeHash(theme)
 	for _, name := range registry.Scan(string(document)) {
@@ -21,12 +35,5 @@ func WithComponentCSS(document render.HTML, theme style.Theme) render.HTML {
 			css.WriteByte('\n')
 		}
 	}
-	if css.Len() == 0 {
-		return document
-	}
-	block := "<style>" + css.String() + "</style>"
-	if strings.Contains(string(document), "</head>") {
-		return render.HTML(strings.Replace(string(document), "</head>", block+"</head>", 1))
-	}
-	return render.Join(render.Raw(block), document)
+	return css.String()
 }
