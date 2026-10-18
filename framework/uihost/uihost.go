@@ -2146,7 +2146,7 @@ func (ds *UIHost) injectChromeDoc(page, pagePath, sessionID, presenceTopic strin
 	// per-request.
 	var headParts []string
 	if screenHead := ds.screenHeadHTML(pagePath, comp); screenHead != "" {
-		headParts = append(headParts, screenHead)
+		headParts = append(headParts, markScreenHead(screenHead))
 	}
 	// Caller-supplied head HTML (WithHeadHTML) is scrubbed for <script>
 	// tags before injection. The head escape hatch is intended for
@@ -3131,6 +3131,14 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 	// return; see that comment for the threat model — every partial-shaped
 	// body is per-user rendered content, the not-found partial included).
 	w.Header().Set("Cache-Control", "no-store")
+	// Carry page-owned metadata inside the cached primary payload. Attribute
+	// escaping keeps authored head HTML inert until the runtime selects safe
+	// meta/link elements; a script is never replayed on navigation.
+	lang := ds.App.LangForPath(path)
+	if c, ok := res.Component.(app.ScreenLanger); ok && c.ScreenLang() != "" {
+		lang = c.ScreenLang()
+	}
+	res.HTML = render.Join(res.HTML, render.Tag("template", map[string]string{"data-cui-page-head": markScreenHead(ds.screenHeadHTML(path, res.Component)), "data-cui-lang": lang, "data-cui-skip-label": ds.App.SkipLabelForPath(path)}))
 	// Fills envelope a fills-capable client that
 	// kept layout layers with tree-layout outlets gets the partial as an
 	// envelope — the seed island (scanned over the primary payload AND
@@ -5208,4 +5216,10 @@ func (ds *UIHost) documentShell(path, title, body string) string {
 	return fmt.Sprintf(
 		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>%s</title></head><body>%s</body></html>`,
 		stdhtml.EscapeString(ds.LangForPath(path)), stdhtml.EscapeString(title), body)
+}
+
+var screenMetaTagPrefix = regexp.MustCompile(`(?i)<(meta|link)\b`)
+
+func markScreenHead(head string) string {
+	return screenMetaTagPrefix.ReplaceAllString(head, `<$1 data-cui-page-meta=""`)
 }

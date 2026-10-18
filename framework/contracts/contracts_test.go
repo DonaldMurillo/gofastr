@@ -841,6 +841,23 @@ func TestPassClassifiesFiles(t *testing.T) {
 	}
 }
 
+func TestPassSkipsCustomNamedStaticExport(t *testing.T) {
+	dir := t.TempDir()
+	writeTemp(t, dir, "main.go", "package main\n")
+	writeTemp(t, dir, "app.style.css", ":scope { display: block; }")
+	writeTemp(t, dir, "preview-output/__gofastr/runtime.js", "runtime")
+	writeTemp(t, dir, "preview-output/__gofastr/app.css", ".fui-button { display: flex; }")
+	writeTemp(t, dir, "preview-output/404.css", ".recovery { display: block; }")
+	p, err := NewPass(dir, DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := p.StyleFiles()
+	if len(styles) != 1 || styles[0].Rel != "app.style.css" {
+		t.Fatalf("source discovery included generated export styles: %+v", styles)
+	}
+}
+
 func TestPassMemoComputesOnce(t *testing.T) {
 	dir := t.TempDir()
 	writeTemp(t, dir, "a.go", "package a\n")

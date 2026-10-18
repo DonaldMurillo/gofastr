@@ -22,7 +22,7 @@ func TestScreenRobotsEmitsMeta(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, httptest.NewRequest("GET", "/draft", nil))
 	want := `<meta name="robots" content="noindex,nofollow">`
-	if !strings.Contains(w.Body.String(), want) {
+	if !strings.Contains(withoutPageMetadataMarkers(w.Body.String()), want) {
 		t.Errorf("expected %s in head, got:\n%s", want, w.Body.String())
 	}
 }
@@ -39,7 +39,7 @@ func TestSEOBundleRobotsBeatsScreenRobots(t *testing.T) {
 	ds := New(a)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	if !strings.Contains(body, `<meta name="robots" content="noindex">`) {
 		t.Errorf("expected bundle robots to win, got:\n%s", body)
 	}
@@ -55,7 +55,7 @@ func TestWithRobotsMetaGlobal(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
 	want := `<meta name="robots" content="noindex">`
-	if !strings.Contains(w.Body.String(), want) {
+	if !strings.Contains(withoutPageMetadataMarkers(w.Body.String()), want) {
 		t.Errorf("expected sitewide robots meta, got:\n%s", w.Body.String())
 	}
 }

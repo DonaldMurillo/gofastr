@@ -76,7 +76,6 @@
   // since the rpc's finally only touches the node it disabled, by then
   // detached. Pages with nothing in flight pay only the selector.
   function captureHTML(el) {
-    if (!el.querySelector('.cui-loading,[data-state="pending"]')) return el.innerHTML;
     const c = el.cloneNode(true);
     for (const n of c.querySelectorAll('.cui-loading')) {
       n.classList.remove('cui-loading');
@@ -88,7 +87,8 @@
       n.setAttribute('data-state', 'idle');
       n.removeAttribute('aria-busy');
     }
-    return c.innerHTML;
+    c.querySelectorAll('template[data-cui-page-head]').forEach(node => node.remove());
+    return NS._docCarrier(document) + c.innerHTML;
   }
 
   const cacheScreen = (path, html, title, layer, fills, seed, partAddrs, parts, vt) => {
@@ -212,7 +212,9 @@
     return el;
   };
   const applyDocShell = (root) => {
-    const c = root && (root.matches('[data-cui-lang],[data-cui-skip-label]')
+    NS._syncPageHead(root);
+    const fresh = root && root.querySelector('template[data-cui-page-head][data-cui-lang]');
+    const c = fresh || root && (root.matches('[data-cui-lang],[data-cui-skip-label]')
       ? root : root.querySelector('[data-cui-lang],[data-cui-skip-label]'));
     if (c) {
       const lang = c.getAttribute('data-cui-lang');
@@ -440,7 +442,7 @@
     // chain keeps above the boundary travels as a fill.
     const seed = pdoc.querySelector('script#gofastr-signals-partial') || routeSeedIsland(routeSeedFromHead(pdoc));
     return {
-      swapKey, slot, html: docSlot.innerHTML, fills: captureLiveFills(docSlot, pdoc), seed,
+      swapKey, slot, html: NS._docCarrier(pdoc) + docSlot.innerHTML, fills: captureLiveFills(docSlot, pdoc), seed,
       title: pdoc.querySelector('title')?.textContent || document.title,
     };
   };
@@ -912,7 +914,9 @@
         swapCommit(myEpoch, prevPath, dest, () => {
           // The whole-shell swap: cross-chain replaces the outermost
           // shell, falling back to whole-main for a layout-less origin.
-          const el = swapShell(shellEl(pdoc) || nm);
+          const sourceRoot = shellEl(pdoc) || nm;
+          if (sourceRoot) sourceRoot.insertAdjacentHTML("afterbegin", NS._docCarrier(pdoc));
+          const el = swapShell(sourceRoot);
           // The fetched head's route keys fold through the same atomic
           // merge (route-only for the scoping reason on routeFold;
           // non-route page-scoped signals keep their correct SSR
@@ -1056,7 +1060,7 @@
         }
         const nm = pdoc.querySelector('main');
         title = pdoc.querySelector('title')?.textContent || document.title;
-        body = nm?.innerHTML ?? '';
+        body = NS._docCarrier(pdoc) + (nm?.innerHTML ?? '');
         swapKey = nm?.getAttribute('data-cui-layout-slot') || '';
       }
       const slot = swapKey ? findSlot(swapKey) : ((layouts.length === 0) ? _mainEl() : null);

@@ -198,6 +198,7 @@ kernel	8	parsed
 kernel	8	result
 nav	10	el
 nav	10	slot
+nav	10	sourceRoot
 nav	12	m
 nav	2	MAX_CACHE_SIZE
 nav	2	SCROLL_KEY
@@ -225,6 +226,7 @@ nav	2	announceRoute
 nav	2	applyDocShell
 nav	2	cacheScreen
 nav	2	crossesDocBoundary
+nav	2	docCarrier
 nav	2	domChainKeys
 nav	2	findSlot
 nav	2	finishNav
@@ -247,6 +249,7 @@ nav	2	shellEl
 nav	2	sseMeta
 nav	2	swapAtSlot
 nav	2	swapShell
+nav	2	syncPageHead
 nav	4	G
 nav	4	G0
 nav	4	N
@@ -255,6 +258,8 @@ nav	4	anchor
 nav	4	ap
 nav	4	as
 nav	4	c
+nav	4	carrier
+nav	4	carrier
 nav	4	cat
 nav	4	changed
 nav	4	clean
@@ -267,13 +272,16 @@ nav	4	dom
 nav	4	el
 nav	4	el
 nav	4	epoch
+nav	4	fresh
 nav	4	fullPath
 nav	4	glob
 nav	4	href
 nav	4	id
 nav	4	id
 nav	4	ids
+nav	4	incoming
 nav	4	keys
+nav	4	lang
 nav	4	lang
 nav	4	link
 nav	4	m
@@ -293,6 +301,8 @@ nav	4	r
 nav	4	r
 nav	4	set
 nav	4	skip
+nav	4	skip
+nav	4	source
 nav	4	srcs
 nav	4	st
 nav	4	stateful
@@ -304,6 +314,7 @@ nav	4	x
 nav	6	G
 nav	6	cached
 nav	6	cfg
+nav	6	copy
 nav	6	d
 nav	6	fromPath
 nav	6	hdrs

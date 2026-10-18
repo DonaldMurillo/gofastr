@@ -180,6 +180,8 @@ var fragmentAttrs = map[string][]string{
 		// after every swap, they live outside the shell it replaces.
 		"data-cui-lang",
 		"data-cui-skip-label",
+		"data-cui-page-head",
+		"data-cui-page-meta",
 		"data-cui-screen-group",
 		// The fills-envelope, view-transition and loading-content
 		// families moved to their demand modules with the opt-in split

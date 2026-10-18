@@ -145,6 +145,37 @@
     return srcs.join('\n') !== dest.join('\n');
   };
 
+  // Page-owned metadata travels with cached page content, independently of
+  // the layout boundaries the navigator keeps. Scripts are never copied.
+  const syncPageHead = (root) => {
+    const carrier = root && (root.matches && root.matches('template[data-cui-page-head]') ? root : root.querySelector('template[data-cui-page-head]'));
+    const source = carrier ? new DOMParser().parseFromString(carrier.getAttribute('data-cui-page-head') || '', 'text/html') : (root && root.nodeType === 9 ? root : null);
+    if (!source) return;
+    const incoming = [];
+    for (const node of source.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]')) {
+      if (node.tagName === 'META' && (!node.hasAttribute('name') && !node.hasAttribute('property') || node.hasAttribute('http-equiv'))) continue;
+      if (node.tagName === 'LINK') {
+        try { if (!/^https?:$/.test(new URL(node.getAttribute('href'), location.href).protocol)) continue; } catch (_) { continue; }
+      }
+      const copy = node.cloneNode(false);
+      for (const attr of Array.from(copy.attributes)) if (/^on/i.test(attr.name)) copy.removeAttribute(attr.name);
+      incoming.push(copy);
+    }
+    document.head.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]').forEach(node => node.remove());
+    incoming.forEach(node => document.head.appendChild(node));
+  };
+  const docCarrier = (source) => {
+    const carrier = source.createElement('template');
+    carrier.setAttribute('data-cui-page-head', Array.from(source.head.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]')).map(node => node.outerHTML).join(''));
+    const lang = source.documentElement.getAttribute('lang');
+    if (lang) carrier.setAttribute('data-cui-lang', lang);
+    const skip = source.querySelector('[data-skip-link]');
+    if (skip) carrier.setAttribute('data-cui-skip-label', skip.textContent);
+    return carrier.outerHTML;
+  };
+  window.__gofastr._syncPageHead = syncPageHead;
+  window.__gofastr._docCarrier = docCarrier;
+
   // Cache the initial page so back-navigation to it works instantly.
   // Route through cacheScreen() so the LRU cap is enforced uniformly.
   const initialMain = mainEl();
@@ -153,7 +184,7 @@
     // currentPath) is keyed pathname+search, and invalidate()
     // matches against that form. The layer is <main>'s own slot key:
     // the boot html spans everything below layer 0.
-    cacheScreen(location.pathname + location.search, initialMain.innerHTML, document.title, mainSlotKey());
+    cacheScreen(location.pathname + location.search, docCarrier(document) + initialMain.innerHTML, document.title, mainSlotKey());
   }
 
 
@@ -399,7 +430,9 @@
   // root is the swapped element (the new shell, or the slot that received
   // the payload); a payload with no markers changes nothing.
   const applyDocShell = (root) => {
-    const c = root && (root.matches('[data-cui-lang],[data-cui-skip-label]')
+    syncPageHead(root);
+    const fresh = root && root.querySelector('template[data-cui-page-head][data-cui-lang]');
+    const c = fresh || root && (root.matches('[data-cui-lang],[data-cui-skip-label]')
       ? root : root.querySelector('[data-cui-lang],[data-cui-skip-label]'));
     if (!c) return;
     const lang = c.getAttribute('data-cui-lang');
@@ -591,7 +624,9 @@
         if (fm && lm) lm.setAttribute('content', fm.getAttribute('content'));
         const nm = pdoc.querySelector('main');
         await _swapCommit(myEpoch, prevPath, dest, () => {
-          const el = swapShell(shellEl(pdoc) || nm);
+          const sourceRoot = shellEl(pdoc) || nm;
+          if (sourceRoot) sourceRoot.insertAdjacentHTML("afterbegin", docCarrier(pdoc));
+          const el = swapShell(sourceRoot);
           if (!el) {
             // No live shell to replace (layout-less origin), fall back to
             // a whole-main swap; chain markers arrive with the content.
@@ -666,7 +701,7 @@
         const pdoc = new DOMParser().parseFromString(html, 'text/html');
         const nm = pdoc.querySelector('main');
         title = pdoc.querySelector('title')?.textContent || document.title;
-        body = nm?.innerHTML ?? '';
+        body = docCarrier(pdoc) + (nm?.innerHTML ?? '');
         swapKey = nm?.getAttribute('data-cui-layout-slot') || '';
       }
       // The swap boundary must be live in the DOM; a miss means the
