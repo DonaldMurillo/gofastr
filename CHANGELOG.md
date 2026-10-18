@@ -7,6 +7,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Removed
+- **Widget roots no longer carry `data-hydrate`.** Nothing read the
+  attribute. `Widget.Render` emits `data-widget`, plus `data-behavior`
+  when the component has actions.
+
 ## [0.90.0] - 2026-10-18
 
 **BREAKING.** `router.Param` panics on a wildcard name its route does

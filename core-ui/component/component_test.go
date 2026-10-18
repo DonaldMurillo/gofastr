@@ -433,8 +433,10 @@ func TestWidgetRender(t *testing.T) {
 	if !strings.Contains(s, `data-widget="greet"`) {
 		t.Errorf("expected data-widget attribute, got %s", s)
 	}
-	if !strings.Contains(s, `data-hydrate=`) {
-		t.Errorf("expected data-hydrate attribute, got %s", s)
+	// No runtime path reads data-hydrate, so the widget root must not
+	// carry it.
+	if strings.Contains(s, `data-hydrate=`) {
+		t.Errorf("unexpected data-hydrate attribute, got %s", s)
 	}
 	if !strings.Contains(s, "Hello World") {
 		t.Errorf("expected component content, got %s", s)
