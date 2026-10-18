@@ -750,8 +750,10 @@ and so does an entity with no REST write routes.
   fenced on that claim: a second worker handed the same job runs nothing
   while the lease is live (`ErrBulkJobBusy` asks its queue to retry), and
   a worker whose lease lapsed cannot write (`ErrBulkLeaseLost`). A worker
-  that dies holding the lease blocks the job until it expires. Delivery
-  is at least once, so an app `Actions` callback reads
+  that dies holding the lease blocks the job until it expires. A run
+  can resume at the exact expiry timestamp; a released lease does not
+  require another wall-clock tick before a retry.
+  Delivery is at least once, so an app `Actions` callback reads
   `ActionContext.Run`, the job id, to make its own side effects
   idempotent.
 - **A double submit answers the job already queued.** The job is keyed on

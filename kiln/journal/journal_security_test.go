@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
+
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
@@ -319,13 +321,5 @@ func TestJournalRestrictsSecretFile(t *testing.T) {
 		t.Fatalf("journal no longer stores app-config secrets verbatim; revisit this pin (payload=%s)", data)
 	}
 
-	fi, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("stat journal: %v", err)
-	}
-	if fi.Mode().Perm()&0o077 != 0 {
-		t.Errorf("journal holding Auth.JWTSecret / Admin.SeedPassword is mode %o — group/world readable; "+
-			"the journal is the replay source for the exact data freeze writes owner-only, so it must be 0600",
-			fi.Mode().Perm())
-	}
+	filepermtest.AssertOwnerOnly(t, path, 0o600)
 }

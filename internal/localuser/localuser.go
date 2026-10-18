@@ -27,6 +27,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // FileName is the identity file inside the app's data directory.
@@ -132,6 +133,10 @@ func readIfExists(path string) ([]byte, error) {
 func writeExclusive(path string, b []byte) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
+		return err
+	}
+	if err := fileperm.RestrictOpenFile(f); err != nil {
+		f.Close()
 		return err
 	}
 	if _, err := f.Write(b); err != nil {

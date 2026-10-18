@@ -150,6 +150,7 @@ func TestBackofficeE2E_RelationDropdown(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`a[href="/admin/entities/products/create"]`, chromedp.ByQuery),
 		chromedp.WaitVisible(search, chromedp.ByQuery),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.['headless-combobox']`, nil),
 		chromedp.Evaluate(`[...document.querySelectorAll('`+productForm+` [data-hui-combobox-pick] [role="option"]')].map(o=>o.dataset.label).join('|')`, &optionText),
 	); err != nil {
 		t.Fatalf("open product form: %v", err)

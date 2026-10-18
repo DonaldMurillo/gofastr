@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 // The `gofastr desktop` subcommand: usage routing, flag parsing, the
@@ -167,13 +169,13 @@ func TestDesktopBuildProducesBundleLayout(t *testing.T) {
 	var code int
 	covT_capStdout(t, func() {
 		code = covT_capExit(t, func() {
-			runDesktopBuild([]string{
+			runDesktopBuildForOS([]string{
 				"--id", "dev.gofastr.fixture",
 				"--name", "Fixture Notes & Co",
 				"--pkg", ".",
 				"--version", "0.2.0",
 				"-o", out,
-			})
+			}, "darwin")
 		})
 	})
 	if code != -1 {
@@ -190,10 +192,7 @@ func TestDesktopBuildProducesBundleLayout(t *testing.T) {
 			t.Fatalf("bundle missing %s: %v", rel, err)
 		}
 	}
-	exe, err := os.Stat(filepath.Join(appDir, "Contents", "MacOS", "Fixture Notes & Co"))
-	if err != nil || exe.Mode()&0o111 == 0 {
-		t.Fatalf("bundle executable missing or not executable: %v", err)
-	}
+	filepermtest.AssertMode(t, filepath.Join(appDir, "Contents", "MacOS", "Fixture Notes & Co"), 0o755)
 	pkgInfo, err := os.ReadFile(filepath.Join(appDir, "Contents", "PkgInfo"))
 	if err != nil || string(pkgInfo) != "APPL????" {
 		t.Fatalf("PkgInfo = %q (%v)", pkgInfo, err)

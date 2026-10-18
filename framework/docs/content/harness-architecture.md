@@ -1696,6 +1696,10 @@ TUI) all use the same protocol. No engine changes needed.
 
 ### Sessions
 
+Session stores, cost ledgers, and export bundles use owner-only permissions.
+On Windows, their directories and files receive owner-only ACLs; SQLite
+sidecars inherit the protected directory's owner-only access.
+
 SQLite append-only event log at
 `~/.local/share/gofastr/harness/sessions.db`. **User-scoped, not
 worktree-scoped**: each worktree gets its own `EngineRun` but shares

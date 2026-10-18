@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
+
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
@@ -42,9 +44,7 @@ func TestDataDirEnvOverridesBase(t *testing.T) {
 	if err != nil || !info.IsDir() {
 		t.Fatalf("data dir not created: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm&0o077 != 0 {
-		t.Fatalf("data dir mode = %o, want 0700", perm)
-	}
+	filepermtest.AssertOwnerOnly(t, dir, 0o700)
 }
 
 func TestDataDirEnvMustBeAbsolute(t *testing.T) {

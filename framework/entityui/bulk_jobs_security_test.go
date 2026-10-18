@@ -223,6 +223,8 @@ func TestResumeBulkJobsEnqueuesOrphans(t *testing.T) {
 	if _, err := r.mb.Create(context.Background(), orphan, []string{"q000", "q001"}); err != nil {
 		t.Fatal(err)
 	}
+	// Make the orphan older than the cutoff even on a coarse wall clock.
+	r.mb.created[orphan.ID] = time.Now().Add(-time.Second)
 	id := r.queue(t)
 	n, err := r.x.ui.ResumeBulkJobs(context.Background(), 0)
 	if err != nil || n != 1 {

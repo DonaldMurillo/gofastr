@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 func TestValidateConfig(t *testing.T) {
@@ -149,13 +151,7 @@ func TestSecretMintedOnceOwnerOnly(t *testing.T) {
 	if a != b || len(a) < 32 {
 		t.Fatalf("secret not stable: %q then %q", a, b)
 	}
-	fi, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fi.Mode().Perm()&0o077 != 0 {
-		t.Fatalf("secret mode %v; want owner-only", fi.Mode().Perm())
-	}
+	filepermtest.AssertOwnerOnly(t, path, 0o600)
 	if err := rotateSecret(path); err != nil {
 		t.Fatal(err)
 	}
@@ -186,13 +182,7 @@ func TestEnsurePrivateDirTightens(t *testing.T) {
 	if err := ensurePrivateDir(dir); err != nil {
 		t.Fatal(err)
 	}
-	fi, err := os.Stat(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fi.Mode().Perm() != 0o700 {
-		t.Fatalf("mode %v; want 0700", fi.Mode().Perm())
-	}
+	filepermtest.AssertOwnerOnly(t, dir, 0o700)
 }
 
 func TestTrimLogKeepsOneGeneration(t *testing.T) {

@@ -41,7 +41,7 @@ import (
 // (cf. TestServeHandlerNeutralizesHTML).
 func TestServeGuard_XMLNeutralization(t *testing.T) {
 	t.Parallel()
-	storage := NewLocalStorage(t.TempDir())
+	storage := newTestLocalStorage(t, t.TempDir())
 
 	cases := []struct {
 		name string
@@ -126,7 +126,7 @@ func TestServeGuard_ExtCaseFolding(t *testing.T) {
 func TestServeGuardAppliesToHeadRequests(t *testing.T) {
 	t.Parallel()
 
-	local := NewLocalStorage(t.TempDir())
+	local := newTestLocalStorage(t, t.TempDir())
 	saveKey(t, local, "x.svg", "<svg onload=alert(1)>")
 	saveKey(t, local, "y.html", "<html><script>alert(2)</script></html>")
 

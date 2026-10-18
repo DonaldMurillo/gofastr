@@ -9,6 +9,9 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // fsCapability: read/write/stat on paths the dialogs capability (or an
@@ -233,6 +236,11 @@ func writeFileAtomic(path string, data []byte) error {
 		return err
 	}
 	tmp := f.Name()
+	if err := fileperm.RestrictOpenFile(f); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
 	if _, err := f.Write(data); err != nil {
 		f.Close()
 		os.Remove(tmp)
@@ -242,7 +250,7 @@ func writeFileAtomic(path string, data []byte) error {
 		os.Remove(tmp)
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := atomicfile.Replace(tmp, path); err != nil {
 		os.Remove(tmp)
 		return err
 	}

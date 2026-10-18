@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 // The desktop release verbs: keygen mints the signing pair, feed
@@ -83,10 +85,7 @@ func TestDesktopKeygenWritesPair(t *testing.T) {
 	if len(priv) != 128 {
 		t.Fatalf("private key file is %d hex chars, want 128 (seed+pub)", len(priv))
 	}
-	info, err := os.Stat(key)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("private key mode = %v, %v; want 0600", info, err)
-	}
+	filepermtest.AssertOwnerOnly(t, key, 0o600)
 	pub, err := os.ReadFile(key + ".pub")
 	if err != nil {
 		t.Fatal(err)
@@ -94,9 +93,7 @@ func TestDesktopKeygenWritesPair(t *testing.T) {
 	if len(pub) != 64 {
 		t.Fatalf("public key file is %d hex chars, want 64", len(pub))
 	}
-	if info, err := os.Stat(key + ".pub"); err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("public key mode = %v, %v; want 0600", info, err)
-	}
+	filepermtest.AssertOwnerOnly(t, key+".pub", 0o600)
 	// The seed half derives the pub half.
 	seed, err := hex.DecodeString(string(priv)[:64])
 	if err != nil {

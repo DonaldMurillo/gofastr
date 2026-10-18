@@ -50,7 +50,7 @@ func TestLocalStorageRefusesSymlinkEscape(t *testing.T) {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	store := upload.NewLocalStorage(base)
+	store := newTestLocalStorage(t, base)
 	ctx := context.Background()
 
 	// Sweep: every surface, both escape shapes. A surface that follows

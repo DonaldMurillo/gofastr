@@ -377,6 +377,10 @@ func validWindowsArtifactName(name string) bool {
 }
 
 func runDesktopBuild(args []string) {
+	runDesktopBuildForOS(args, runtime.GOOS)
+}
+
+func runDesktopBuildForOS(args []string, targetOS string) {
 	f := parseDesktopBuildFlags(args)
 	if err := validateDesktopID(f.id); err != nil {
 		fail("%v", err)
@@ -411,7 +415,7 @@ func runDesktopBuild(args []string) {
 		osExit(1)
 		return
 	}
-	if runtime.GOOS == "windows" {
+	if targetOS == "windows" {
 		if f.sign != "" || f.noSign || f.notarize {
 			fail("Windows desktop builds support --id, --name, --pkg, --version, --icon, --scheme, and -o. Signing and notarization are macOS-only.")
 			osExit(1)

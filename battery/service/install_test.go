@@ -43,7 +43,7 @@ func TestDaemonRefusesRelativeBaseDir(t *testing.T) {
 // anything is registered, not left as a crash-looping service.
 func TestInstallRefusesLongSocketPathFirst(t *testing.T) {
 	b, ft, _ := testBattery(t, "darwin", Config{})
-	t.Setenv(dataDirEnv, "/"+strings.Repeat("d", maxSocketPath))
+	t.Setenv(dataDirEnv, filepath.Join(t.TempDir(), strings.Repeat("d", maxSocketPath)))
 	err := b.install(b.cfg.Port)
 	if err == nil || !strings.Contains(err.Error(), "byte limit") {
 		t.Fatalf("install error = %v", err)

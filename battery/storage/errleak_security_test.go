@@ -27,7 +27,7 @@ func TestStorageErrorsHideAbsRoot(t *testing.T) {
 	longComponent := strings.Repeat("a", 300)
 
 	base := t.TempDir()
-	ls := storage.NewLocalStorage(base)
+	ls := newTestLocalStorage(t, base)
 	ctx := context.Background()
 
 	// Surface 1: Save — the failure must not quote the absolute root.

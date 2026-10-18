@@ -70,7 +70,7 @@ func TestBlueprintProjectPassesRepoVettool(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skipf("no go toolchain to vet the generated module: %v", err)
 	}
-	vettool := filepath.Join(t.TempDir(), "vettool")
+	vettool := testExecutablePath(filepath.Join(t.TempDir(), "vettool"))
 	build := exec.Command("go", "build", "-o", vettool, "./cmd/vettool")
 	build.Dir = repoRoot
 	if out, err := build.CombinedOutput(); err != nil {

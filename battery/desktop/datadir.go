@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+
 	// AppOptions opens app.db under the "sqlite3" driver name; the blank
 	// import registers it so a main.go needs no import of its own.
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
@@ -41,6 +43,9 @@ func DataDir(id string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("desktop: create data dir %s: %w", dir, err)
 	}
+	if err := fileperm.Restrict(dir, true); err != nil {
+		return "", fmt.Errorf("desktop: restrict data dir: %w", err)
+	}
 	return dir, nil
 }
 
@@ -53,6 +58,9 @@ func appOptionsDataDir(override, id string) (string, error) {
 		}
 		if err := os.MkdirAll(override, 0o700); err != nil {
 			return "", fmt.Errorf("desktop: create data dir %s: %w", override, err)
+		}
+		if err := fileperm.Restrict(override, true); err != nil {
+			return "", fmt.Errorf("desktop: restrict data dir: %w", err)
 		}
 		return override, nil
 	}
@@ -101,6 +109,10 @@ func writeFileExclusive(path string, b []byte) error {
 	if err != nil {
 		return err
 	}
+	if err := fileperm.RestrictOpenFile(f); err != nil {
+		f.Close()
+		return err
+	}
 	if _, err := f.Write(b); err != nil {
 		f.Close()
 		return err
@@ -124,6 +136,9 @@ func randomToken() (string, error) {
 // through the sqlite/stdlib driver this package imports.
 func openAppDB(dir string) (*sql.DB, error) {
 	path := filepath.ToSlash(filepath.Join(dir, "app.db"))
+	if err := fileperm.SeedOwnerOnly(path); err != nil {
+		return nil, fmt.Errorf("desktop: restrict app database: %w", err)
+	}
 	db, err := sql.Open("sqlite3", "file:"+path)
 	if err != nil {
 		return nil, fmt.Errorf("desktop: open app database: %w", err)

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/file"
@@ -398,7 +400,7 @@ func TestVariantRefRejectsControlBytes(t *testing.T) {
 // behavior is asserted.
 func TestDeleteFileField_RemovesVariants(t *testing.T) {
 	t.Parallel()
-	store := upload.NewLocalStorage(t.TempDir())
+	store := teststorage.New(t, t.TempDir())
 	ctx := context.Background()
 
 	primary := "uploads/profiles/avatar/avatar_1_ab.png"

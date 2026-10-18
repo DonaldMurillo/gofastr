@@ -133,7 +133,7 @@ func TestGeneratedStyleBehavior(t *testing.T) {
 	}
 
 	// The vettool leg.
-	vettool := filepath.Join(t.TempDir(), "vettool")
+	vettool := testExecutablePath(filepath.Join(t.TempDir(), "vettool"))
 	build := exec.Command("go", "build", "-o", vettool, "./cmd/vettool")
 	build.Dir = repoRoot
 	if out, err := build.CombinedOutput(); err != nil {

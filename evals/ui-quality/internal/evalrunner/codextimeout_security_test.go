@@ -2,6 +2,7 @@ package evalrunner
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,8 +22,8 @@ import (
 func TestRunCodexNegativeTimeoutRejected(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "codex.log")
 	err := runCodex(context.Background(), codexInvocation{
-		Program: "/bin/sh",
-		Args:    []string{"-c", "exit 0"},
+		Program: os.Args[0],
+		Args:    []string{"-test.run=^$"},
 		LogPath: log,
 		Timeout: -time.Second,
 	})
@@ -34,8 +35,8 @@ func TestRunCodexNegativeTimeoutRejected(t *testing.T) {
 func TestRunCodexZeroTimeoutKeepsDefault(t *testing.T) {
 	log := filepath.Join(t.TempDir(), "codex.log")
 	if err := runCodex(context.Background(), codexInvocation{
-		Program: "/bin/sh",
-		Args:    []string{"-c", "exit 0"},
+		Program: os.Args[0],
+		Args:    []string{"-test.run=^$"},
 		LogPath: log,
 	}); err != nil {
 		t.Fatalf("zero Timeout must keep the 30m default and run: %v", err)

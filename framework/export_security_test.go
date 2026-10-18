@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 // TestExportDataRestrictiveModes: ExportData is a raw dump of every
@@ -21,15 +23,7 @@ func TestExportDataRestrictiveModes(t *testing.T) {
 		t.Fatalf("ExportData: %v", err)
 	}
 
-	di, err := os.Stat(dir)
-	if err != nil {
-		t.Fatalf("stat export dir: %v", err)
-	}
-	if di.Mode().Perm()&0o077 != 0 {
-		t.Errorf("SECURITY: export dir is mode %o — a raw dump of every physical column (password_hash, token hashes, "+
-			"sessions on a real app) sits group/world-listable; the export dir must be 0700.",
-			di.Mode().Perm())
-	}
+	filepermtest.AssertOwnerOnly(t, dir, 0o700)
 
 	ents, err := os.ReadDir(dir)
 	if err != nil {
@@ -39,14 +33,18 @@ func TestExportDataRestrictiveModes(t *testing.T) {
 		t.Fatalf("export produced no files; surface moved, revisit this pin")
 	}
 	for _, ent := range ents {
-		fi, err := os.Stat(filepath.Join(dir, ent.Name()))
-		if err != nil {
-			t.Fatalf("stat %s: %v", ent.Name(), err)
-		}
-		if fi.Mode().Perm()&0o077 != 0 {
-			t.Errorf("SECURITY: exported file %s is mode %o — every local co-user reads the raw credential-bearing dump; "+
-				"ndjson/manifest files must be written 0600.",
-				ent.Name(), fi.Mode().Perm())
-		}
+		filepermtest.AssertOwnerOnly(t, filepath.Join(dir, ent.Name()), 0o600)
 	}
+}
+
+func TestExportRestrictsExistingDirectory(t *testing.T) {
+	app, _ := newExportTestApp(t)
+	dir := filepath.Join(t.TempDir(), "export")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.ExportData(context.Background(), dir); err != nil {
+		t.Fatal(err)
+	}
+	filepermtest.AssertOwnerOnly(t, dir, 0o700)
 }

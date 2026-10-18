@@ -43,7 +43,7 @@ func postNamedFile(t *testing.T, h http.HandlerFunc, name, content string) Metad
 // unique-name generation, not a second scheme.
 func TestSameFilenameDoesNotClobber(t *testing.T) {
 	dir := tmpDir(t)
-	store := NewLocalStorage(dir)
+	store := newTestLocalStorage(t, dir)
 	h := Handler(Config{Storage: store})
 
 	m1 := postNamedFile(t, h, "report.txt", "USER-A-SECRET-CONTENT")

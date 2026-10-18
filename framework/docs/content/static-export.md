@@ -14,6 +14,11 @@ command palette, copy buttons, and widgets.
 
 ## Exporting
 
+Disk-backed `core/static.Handler` instances release their directory handles
+between requests, including on Windows. Each request checks the original
+directory identity; replacing that directory makes the handler return 404.
+Create a new handler to serve the replacement directory.
+
 `framework.App.ExportStatic(ctx, dir, basePath)` drives the app in-process,
 with no port and no crawl: it enumerates every declared route, renders each
 through the SSG-aware render path, and dumps all `/__gofastr` assets with

@@ -364,14 +364,12 @@
       // feedback module cannot load.
       // Its action (Undo) passes through as the attribute's JSON: the
       // feedback module parses it and puts it on the toast's button.
-      if (successToast !== null) {
-        NS._toastOrFallback?.({ variant: 'success', title: successToast || 'Done', ttl: 6000, action: node.getAttribute('data-cui-rpc-success-action') });
-      }
-      const navigatePath = node.getAttribute('data-cui-rpc-navigate');
+      if (successToast !== null) await NS._toastOrFallback?.({ variant: 'success', title: successToast || 'Done', ttl: 6000, action: node.getAttribute('data-cui-rpc-success-action') });
+      const dest = node.getAttribute('data-cui-rpc-navigate');
       // A save inside an intercept layer returns to the layer (or the
       // page under the stack) it names instead of leaving the stack.
-      if (navigatePath && !NS._interceptReturn?.(navigatePath, node)) {
-        try { NS.navigate(navigatePath, { force: true }); }
+      if (dest && !stale() && !NS._interceptReturn?.(dest, node)) {
+        try { NS.navigate(dest, { force: true }); }
         catch (_) {}
       }
     } catch (err) {

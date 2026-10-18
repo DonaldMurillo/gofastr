@@ -25,13 +25,15 @@ func TestReportTextFreeOfControlBytes(t *testing.T) {
 		// finds the directive, so the NUL must not survive to the report.
 		"nul.go": "package a\n\n//gofastr:allow(GOFASTR1403\x00) reviewing\nfunc f() {}\n",
 		// Vertical tab: legal inside a Go comment.
-		"vt.go": "package a\n\n//gofastr:allow(GOFASTR1403\x0b) reviewing\nfunc f() {}\n",
-		// The file's own name carries the ESC; Location renders it raw.
-		"ev\x1bil.go": "//gofastr:allow(GOFASTR7777) typo\npackage a\n",
+		"vt.go":   "package a\n\n//gofastr:allow(GOFASTR1403\x0b) reviewing\nfunc f() {}\n",
+		"evil.go": "//gofastr:allow(GOFASTR7777) typo\npackage a\n",
 	})
 	if len(sup.issues) == 0 {
 		t.Fatal("premise failed: the fixtures produced no suppression meta-diagnostics")
 	}
+	// Inject the diagnostic path directly: Windows refuses control bytes
+	// in filenames, but a report can still receive them from a provider.
+	sup.issues = append(sup.issues, Diagnostic{RuleID: "GOFASTR7777", File: "ev\x1bil.go", Line: 1, Message: "unknown rule"})
 	out := FormatText(&Report{Diagnostics: sup.issues}, TextOptions{})
 	for i, b := range []byte(out) {
 		if (b < 0x20 && b != '\n' && b != '\t') || b == 0x7f {

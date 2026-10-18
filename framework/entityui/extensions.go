@@ -284,6 +284,7 @@ type BulkStore interface {
 	// Claim gives runner the job's lease until until, or renews it when
 	// runner holds it. It answers false when the job is not queued or
 	// another runner's lease is still live at now.
+	// A lease whose expiry equals now has expired.
 	Claim(ctx context.Context, id, runner string, now, until time.Time) (bool, error)
 	// Pending returns up to limit ids not yet settled, in a stable order.
 	Pending(ctx context.Context, id string, limit int) ([]string, error)

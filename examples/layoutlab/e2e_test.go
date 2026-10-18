@@ -29,6 +29,8 @@ func labBrowserCtx(t *testing.T) context.Context {
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
+		// Transition tests need motion even when the host disables animations.
+		chromedp.Flag("force-prefers-no-reduced-motion", true),
 		chromedp.WSURLReadTimeout(90*time.Second),
 		chromedp.WindowSize(1280, 800),
 	)

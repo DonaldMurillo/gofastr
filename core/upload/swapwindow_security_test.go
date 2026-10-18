@@ -60,7 +60,7 @@ func TestLocalStorageRefusesMidResolvePlant(t *testing.T) {
 	// --- Read surfaces: leaf symlink planted at a key that resolved
 	// clean (it did not exist), between resolution and the open. ---
 	t.Run("Get", func(t *testing.T) {
-		store := NewLocalStorage(base)
+		store := newTestLocalStorage(t, base)
 		install(func() {
 			_ = os.Symlink(secret, filepath.Join(base, "victim.txt"))
 		})
@@ -77,7 +77,7 @@ func TestLocalStorageRefusesMidResolvePlant(t *testing.T) {
 	})
 
 	t.Run("GetRange", func(t *testing.T) {
-		store := NewLocalStorage(base)
+		store := newTestLocalStorage(t, base)
 		install(func() {
 			_ = os.Symlink(secret, filepath.Join(base, "victim.txt"))
 		})
@@ -94,7 +94,7 @@ func TestLocalStorageRefusesMidResolvePlant(t *testing.T) {
 	})
 
 	t.Run("Exists", func(t *testing.T) {
-		store := NewLocalStorage(base)
+		store := newTestLocalStorage(t, base)
 		install(func() {
 			_ = os.Symlink(secret, filepath.Join(base, "victim.txt"))
 		})
@@ -115,7 +115,7 @@ func TestLocalStorageRefusesMidResolvePlant(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(inRootSub, "victim.txt"), []byte("IN-ROOT"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		store := NewLocalStorage(base)
+		store := newTestLocalStorage(t, base)
 		install(func() {
 			// Resolution has already proven the chain (it saw the real
 			// directory); the plant may now reshape it freely.
@@ -153,7 +153,7 @@ func TestLocalStorageRefusesMidResolvePlant(t *testing.T) {
 		if err := os.MkdirAll(outsideSub2, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		store := NewLocalStorage(base)
+		store := newTestLocalStorage(t, base)
 		install(func() {
 			if err := os.Remove(inRootSub); err != nil {
 				t.Errorf("swap: remove real sub2: %v", err)

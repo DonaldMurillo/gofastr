@@ -8,8 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/core/upload"
+
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -49,7 +51,7 @@ func TestMultipartSaveErrorNoAbsPathLeak(t *testing.T) {
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	dir := t.TempDir()
-	ch.Storage = upload.NewLocalStorage(dir)
+	ch.Storage = teststorage.New(t, dir)
 
 	// 246 letters + ".png" = 250 bytes: passes the 255-byte sanitizer cap,
 	// then UniqueFilename's +37-byte unique suffix pushes the final path

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/upload"
 	"github.com/DonaldMurillo/gofastr/framework/datexport"
@@ -44,7 +46,7 @@ import (
 func TestEraseUserData_RemovesStoredFiles(t *testing.T) {
 	datexport.Reset(t)
 	db := openSQLiteMem(t)
-	store := upload.NewLocalStorage(t.TempDir())
+	store := teststorage.New(t, t.TempDir())
 	app := NewApp(WithDB(db), WithFileStorage(store))
 
 	app.Registry.Register(entity.Define("profiles", entity.EntityConfig{

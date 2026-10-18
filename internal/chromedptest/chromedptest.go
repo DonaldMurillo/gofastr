@@ -108,6 +108,9 @@ func Context(t testing.TB, opts ...Option) context.Context {
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
+		// Match the suite's normal-motion baseline on every host. Tests
+		// for reduced motion override it explicitly through flags or CDP.
+		chromedp.Flag("force-prefers-no-reduced-motion", true),
 		chromedp.WSURLReadTimeout(cfg.startTimeout),
 		chromedp.WindowSize(cfg.windowW, cfg.windowH),
 	)

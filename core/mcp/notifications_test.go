@@ -635,6 +635,7 @@ func TestLastDisconnectClearsResourceSubscriptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { resp.Body.Close() })
 	waitForSubscribers(t, s, 1)
 
 	for _, uri := range []string{"docs://a", "docs://b"} {

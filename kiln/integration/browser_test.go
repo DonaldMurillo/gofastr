@@ -895,6 +895,7 @@ func TestBrowser_AgentConfigModalOpens(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`.kiln-panel-config`, chromedp.ByQuery),
 		chromedp.WaitVisible(`.kiln-modal`, chromedp.ByQuery),
+		chromedp.WaitVisible(`#kiln-agent-list .kiln-adapter-row`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("open modal: %v", err)
 	}
@@ -1429,8 +1430,10 @@ func TestBrowser_ResetClearsPanelImmediately(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-msg-user`, chromedp.ByQuery),
+		chromedp.Poll(`typeof window.__gofastr?._widgets?.['kiln-panel']?.pollNow === 'function'`, nil),
 		chromedp.Click(`#kiln-reset`, chromedp.ByQuery),
 		chromedp.WaitVisible(`.kiln-modal-danger`, chromedp.ByQuery),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.rpc`, nil),
 		chromedp.Click(`.kiln-modal-danger`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("reset flow: %v", err)
@@ -2373,6 +2376,7 @@ func TestBrowser_CmdKFocusesChatInput(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.['headless-navigation']`, nil),
 		// Move focus away from the input.
 		chromedp.Evaluate(`document.body.focus()`, nil),
 	); err != nil {
@@ -2565,6 +2569,7 @@ func TestBrowser_QuickstartTrayOnEmptyPanel(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-quickstart`, chromedp.ByQuery),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.widgethelpers`, nil),
 		chromedp.Click(`.kiln-quickstart-btn`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatalf("quickstart tray: %v", err)
@@ -3042,6 +3047,7 @@ func TestBrowser_QuickstartAdaptsToExistingWorld(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-quickstart-btn`, chromedp.ByQuery),
+		chromedp.Poll(`Array.from(document.querySelectorAll('.kiln-quickstart-btn')).some(e => e.textContent.includes('widgets'))`, nil),
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -3115,6 +3121,7 @@ func TestBrowser_PlanCardYNApprovesAndRejects(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-plan-btn-approve[data-hui-shortcut-click="y"]`, chromedp.ByQuery),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.['headless-navigation']`, nil),
 		chromedp.Evaluate(`document.body.focus()`, nil),
 		chromedp.Evaluate(`(function(){
 			document.dispatchEvent(new KeyboardEvent('keydown', {key:'y', bubbles:true, cancelable:true}));
@@ -3258,6 +3265,7 @@ func TestBrowser_CopyTranscriptButtonFlashesCopied(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-panel-copy`, chromedp.ByQuery),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.['headless-feedback']`, nil),
 		chromedp.Evaluate(`(function(){
 			window.__copied = '';
 			Object.defineProperty(navigator, 'clipboard', {
@@ -3318,6 +3326,7 @@ func TestBrowser_FailedToolRowOffersRetry(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-msg-retry`, chromedp.ByQuery),
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.widgethelpers`, nil),
 		chromedp.Click(`.kiln-msg-retry`, chromedp.ByQuery),
 	); err != nil {
 		t.Fatal(err)

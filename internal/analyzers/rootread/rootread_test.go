@@ -9,5 +9,8 @@ import (
 )
 
 func TestRootRead(t *testing.T) {
+	// The O_NOFOLLOW fixture targets Unix; run every case on all hosts.
+	t.Setenv("GOOS", "linux")
+	t.Setenv("CGO_ENABLED", "0")
 	analysistest.Run(t, analysistest.TestData(), rootread.Analyzer, "a", "b")
 }

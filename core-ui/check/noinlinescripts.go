@@ -28,7 +28,7 @@ import (
 // whole-file strings.Contains, and any file whose prose quoted the
 // directive (rendering.go's own analyzer comment did) silently opted
 // out of both gates.
-var reCSPIgnoreDirective = regexp.MustCompile(`(?m)^[ \t]*//[ \t]*check-csp:ignore-file[ \t]*$`)
+var reCSPIgnoreDirective = regexp.MustCompile(`(?m)^[ \t]*//[ \t]*check-csp:ignore-file[ \t]*\r?$`)
 
 func hasCSPIgnoreDirective(raw []byte) bool {
 	return reCSPIgnoreDirective.Match(raw)

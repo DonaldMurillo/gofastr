@@ -12,7 +12,7 @@ Security bugs: see [SECURITY.md](SECURITY.md). Do not open a public issue.
 
 ## Prerequisites (the honest list)
 
-- **Go 1.26+** (`go.mod` says `go 1.26.6`).
+- **Go 1.27.0+** (`go.mod` selects the preferred `go1.27.2` toolchain).
 - **Docker**: the Postgres suites need a server. `make postgres-up` starts
   the `postgres` service from `docker-compose.yml` (pgvector/pgvector:pg16,
   which also covers `battery/semantic`), and `make test-pg` starts it and runs
@@ -54,6 +54,8 @@ SHORT=1 ./scripts/test-all.sh          # -short, skips the slow suites
 
 Quick iteration: `go test ./path/to/pkg/` on the packages you touched, plus
 `make test` (`-short ./...`) for a fast sweep.
+
+Windows CI runs one build with `CGO_ENABLED=0`.
 
 ### Known isolation rules
 

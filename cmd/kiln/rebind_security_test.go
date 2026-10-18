@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
+
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
@@ -193,13 +195,7 @@ func TestAgentWorkDirOwnerOnlyUnique(t *testing.T) {
 	}
 	runOneAgentTurn(context.Background(), log.New(io.Discard, "", 0), tools, adapter, "http://127.0.0.1:1", "pinned turn")
 
-	fi, err := os.Stat(fixed)
-	if err != nil {
-		t.Fatalf("agent working dir was not created: %v", err)
-	}
-	if fi.Mode().Perm()&0o077 != 0 {
-		t.Errorf("agent working dir is mode %o — the cwd of a bash-capable coding agent must be owner-only (0700), never group/world-traversable", fi.Mode().Perm())
-	}
+	filepermtest.AssertOwnerOnly(t, fixed, 0o700)
 	// The per-turn cwd is a unique child, removed when the turn ends;
 	// the fixed parent must not accumulate turn directories.
 	entries, err := os.ReadDir(fixed)

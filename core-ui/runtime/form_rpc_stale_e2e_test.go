@@ -127,6 +127,17 @@ func TestDispatchRPC_StaleFormResponseDropped(t *testing.T) {
 			probe: `window.__opened.length === 0`},
 		{name: "busy until newer", first: staleStep{wait: 300 * ms}, second: staleStep{wait: 1200 * ms}, gap: 100 * ms, probeAt: 700 * ms,
 			probe: `document.getElementById('f').getAttribute('aria-busy') === 'true'`},
+		// Toast rendering is awaited before navigation. A newer submit
+		// during that await must also suppress the older navigation.
+		{name: "superseded during toast", second: staleStep{refuse: true}, probeAt: 1500 * ms,
+			formAttrs: ` data-cui-rpc-success-toast="Saved" data-cui-rpc-navigate="/saved"`,
+			script: `window.__navigations = [];
+  window.__toastReleased = false;
+  window.__gofastr.navigate = (path) => window.__navigations.push(path);
+  window.__gofastr._toastOrFallback = () => window.__gofastr.dispatchRPC(f, null, {confirmed: true})
+    .then(() => { window.__toastReleased = true; });
+  f.requestSubmit();`,
+			probe: `window.__toastReleased && window.__results.join() === 'true,false' && window.__navigations.length === 0`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var hits atomic.Int32

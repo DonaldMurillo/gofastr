@@ -33,6 +33,7 @@ func TestReferenceSuite(t *testing.T) {
 				t.Fatal(err)
 			}
 			want = bytes.TrimSuffix(want, []byte("\n"))
+			want = bytes.TrimSuffix(want, []byte("\r"))
 
 			got, err := CanonicalizeJSON(in)
 			if err != nil {
@@ -85,8 +86,9 @@ func runNumberVectors(t *testing.T, path string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	lines := strings.Split(strings.TrimRight(string(raw), "\r\n"), "\n")
 	for i, line := range lines {
+		line = strings.TrimSuffix(line, "\r")
 		hexStr, want, ok := strings.Cut(line, ",")
 		if !ok {
 			t.Fatalf("%s:%d: malformed line %q", path, i+1, line)
@@ -173,7 +175,7 @@ func TestNodeCorpus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := strings.Split(strings.TrimRight(string(rawExpected), "\n"), "\n")
+	expected := strings.Split(strings.TrimRight(string(rawExpected), "\r\n"), "\n")
 
 	// Walk the corpus array with the parser to get per-element slices,
 	// so each value is exercised exactly as standalone JSON input.
@@ -208,7 +210,7 @@ func TestNodeCorpus(t *testing.T) {
 		if err != nil {
 			t.Fatalf("corpus[%d]: %v", i, err)
 		}
-		wantBytes, err := hex.DecodeString(expected[i])
+		wantBytes, err := hex.DecodeString(strings.TrimSuffix(expected[i], "\r"))
 		if err != nil {
 			t.Fatalf("expected[%d]: bad hex: %v", i, err)
 		}
