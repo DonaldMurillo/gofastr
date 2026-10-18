@@ -7,6 +7,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+- **SQL fragments and route gates cost fewer allocations per request.**
+  `core/query` returns a clean identifier or fragment as is instead of
+  building a `strings.Replacer` for it each time, and `core/router`
+  computes a route's gate key once at registration instead of on every
+  request.
+
 ### Removed
 - **Widget roots no longer carry `data-hydrate`.** Nothing read the
   attribute. `Widget.Render` emits `data-widget`, plus `data-behavior`

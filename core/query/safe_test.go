@@ -99,3 +99,36 @@ func TestMustIdent(t *testing.T) {
 	}()
 	MustIdent("users; DROP TABLE users")
 }
+
+// fragmentIsClean is the scrub's fast path, so it must say "clean"
+// exactly when the scrub would return its input unchanged. A sequence
+// added to dangerousSeqs without teaching the fast path fails here.
+func FuzzFragmentFastPathMatchesScrub(f *testing.F) {
+	for _, s := range []string{
+		"", "posts", "posts.title", "a-b", "a/b", "a*b", "a - - b",
+		"users; DROP TABLE x", "a--b", "a/*b", "a*/b", "f(x)", "a\x00b",
+		"-\x00-", "a\x7fb", "x;", "-", "/", "*",
+	} {
+		f.Add(s)
+	}
+	for _, seq := range dangerousSeqs {
+		f.Add("a" + seq + "b")
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		clean := fragmentIsClean(s)
+		unchanged := scrubFragment(s) == s
+		if clean != unchanged {
+			t.Fatalf("fragmentIsClean(%q) = %v, but scrub leaves it unchanged = %v", s, clean, unchanged)
+		}
+	})
+}
+
+func TestSanitizeCleanIdentNoAlloc(t *testing.T) {
+	allocs := testing.AllocsPerRun(100, func() {
+		_ = sanitizeFragment("posts.title")
+		_ = sanitizeColumn("posts.title")
+	})
+	if allocs != 0 {
+		t.Fatalf("clean identifier allocated %v times, want 0", allocs)
+	}
+}

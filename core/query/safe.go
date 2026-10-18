@@ -120,9 +120,15 @@ var dangerousSeqs = []string{";", "--", "/*", "*/"}
 // (the builders do not quote on the caller's behalf), but a hostile
 // or fuzzed input will not produce an exploitable statement.
 func sanitizeFragment(s string) string {
-	if s == "" {
+	if fragmentIsClean(s) {
 		return s
 	}
+	return scrubFragment(s)
+}
+
+// scrubFragment is sanitizeFragment's rewrite for input that is not
+// already clean.
+func scrubFragment(s string) string {
 	// Strip C0 controls + DEL first.
 	var b strings.Builder
 	b.Grow(len(s))
@@ -135,12 +141,35 @@ func sanitizeFragment(s string) string {
 	}
 	out := b.String()
 	// Strip parens: legitimate uses never put them in identifier slots.
-	out = strings.NewReplacer("(", " ", ")", " ").Replace(out)
+	out = parenReplacer.Replace(out)
 	// Strip the dangerous SQL meta-sequences.
 	for _, seq := range dangerousSeqs {
 		out = strings.ReplaceAll(out, seq, " ")
 	}
 	return out
+}
+
+var parenReplacer = strings.NewReplacer("(", " ", ")", " ")
+
+// fragmentIsClean reports whether sanitizeFragment would return s
+// unchanged: no control byte, no paren, and none of dangerousSeqs. Every
+// builder runs each identifier through the scrub on every query, and the
+// identifiers are almost always clean, so this keeps the common case
+// free of allocations.
+func fragmentIsClean(s string) bool {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < 0x20 || c == 0x7f || c == '(' || c == ')' || c == ';' {
+			return false
+		}
+		if i+1 < len(s) {
+			switch next := s[i+1]; {
+			case c == '-' && next == '-', c == '/' && next == '*', c == '*' && next == '/':
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // sanitizeColumn is the column-list variant of sanitizeFragment. In
@@ -153,6 +182,9 @@ func sanitizeFragment(s string) string {
 // `*`), so this is safe to apply globally.
 func sanitizeColumn(s string) string {
 	out := sanitizeFragment(s)
+	if !strings.ContainsAny(out, " \t") {
+		return out
+	}
 	// Remove all whitespace.
 	var b strings.Builder
 	b.Grow(len(out))
