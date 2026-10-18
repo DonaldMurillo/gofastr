@@ -1331,9 +1331,9 @@ func permissionRules() []Rule {
 		ID: RuleUnregisteredPermission, Slug: "permissions/unregistered-permission",
 		Title: "Permission checked but never registered", Capability: CapPermissions, Severity: SeverityError,
 		Summary: "An access block, transition, or permission check names a capability the app's `RolePolicy.Register` list does not hold.",
-		Why: "Permission names are strings, so a typo compiles. A check on a name no role can be " +
-			"granted denies every caller except a wildcard holder, and the wildcard holder is usually " +
-			"the admin testing the screen, so it looks like it works. The rule runs once an app " +
+		Why: "Permission names are strings, so a typo compiles. A check on a name nobody registered " +
+			"denies every role granted the intended capability, while the wildcard holder, usually the " +
+			"admin testing the screen, still passes, so it looks like it works. The rule runs once an app " +
 			"registers its capabilities, and checks each binary against the names registered in the " +
 			"packages it links.",
 		Fix: "Correct the name to the registered capability, or add it to `RolePolicy.Register`. An untyped package-level " +

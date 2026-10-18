@@ -178,8 +178,9 @@ flags every checked name the registry does not hold: entity `Access`
 blocks, `ScopeConfig.CrossOwnerRead`, `ReadScopeConfig.Unrestricted`,
 state-transition and entityui action `Permission` fields, and
 `RequirePermission`, `Can`, `CanResource` and `CanResourceExact`
-arguments. A typo there compiles and then denies everyone but a wildcard
-holder, who is usually the admin testing the screen. The rule reads
+arguments. A typo there compiles and then denies every role granted the
+intended name, while the wildcard holder, usually the admin testing the
+screen, still passes. The rule reads
 string literals, package-level constants (a constants package's
 `perms.PlansWrite` too) and concatenations of them; a function's own
 variable is not read. Each binary is judged against the names registered

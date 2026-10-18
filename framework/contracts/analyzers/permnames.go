@@ -13,8 +13,8 @@ import (
 
 // GOFASTR1904: a checked permission the capability registry does not
 // hold. Permission names are strings, so a typo in an Access block or a
-// RequirePermission call compiles, and the check then denies everyone
-// but a wildcard holder.
+// RequirePermission call compiles, and the check then denies every role
+// granted the intended name while the wildcard holder still passes.
 
 // permUse is one place a permission name is checked.
 type permUse struct {
@@ -81,10 +81,20 @@ const (
 	recvOther                   // declared with another type, or a package
 )
 
-// kindOfType classifies a declared type.
-func kindOfType(e ast.Expr) recvKind {
+// kindOfType classifies a declared type. An interface may hold a
+// policy, and a struct embedding one has its Register.
+func (c *permCollector) kindOfType(e ast.Expr) recvKind {
+	if star, isStar := e.(*ast.StarExpr); isStar {
+		e = star.X
+	}
+	if _, isIface := e.(*ast.InterfaceType); isIface {
+		return recvUnknown
+	}
 	if isPolicyType(e) {
 		return recvPolicy
+	}
+	if k, declared := c.typeKinds[baseTypeName(e)]; declared {
+		return k
 	}
 	return recvOther
 }
@@ -105,6 +115,13 @@ func permissionNames(p *contracts.Pass) permNames {
 type permCollector struct {
 	p     *contracts.Pass
 	decls map[string]map[string]permDecl
+	// mutated are package-level variables some function assigns to:
+	// caps = append(caps, ...) in an init makes the initializer a
+	// partial list.
+	mutated map[string]map[string]bool
+	// typeKinds are the module's named types that are not plain other
+	// types, by name: interfaces, and structs embedding a policy.
+	typeKinds map[string]recvKind
 }
 
 // pkgKey is the import-graph node for a file, collapsed to one node
@@ -175,27 +192,26 @@ func (c *permCollector) target(aliases map[string]string, sel *ast.SelectorExpr)
 // slice with one element the pass cannot read is not a list at all, or
 // its other names would be judged as the whole registry.
 func (c *permCollector) list(pkg string, aliases map[string]string, e ast.Expr, locals map[string]bool) ([]string, bool) {
-	d, where := permDecl{value: e, aliases: aliases}, pkg
+	// An inline literal's elements are read in the caller's scope; a
+	// package variable's in its own.
+	d, where, scope := permDecl{value: e, aliases: aliases}, pkg, locals
 	switch v := e.(type) {
 	case *ast.Ident:
-		if locals[v.Name] {
-			return nil, false
-		}
 		got, found := c.decls[pkg][v.Name]
-		if !found {
+		if locals[v.Name] || !found || c.mutated[pkg][v.Name] {
 			return nil, false
 		}
-		d = got
+		d, scope = got, nil
 	case *ast.SelectorExpr:
 		target, found := c.target(aliases, v)
 		if !found {
 			return nil, false
 		}
 		got, declared := c.decls[target][v.Sel.Name]
-		if !declared {
+		if !declared || c.mutated[target][v.Sel.Name] {
 			return nil, false
 		}
-		d, where = got, target
+		d, where, scope = got, target, nil
 	}
 	cl, isCL := d.value.(*ast.CompositeLit)
 	if !isCL {
@@ -203,7 +219,7 @@ func (c *permCollector) list(pkg string, aliases map[string]string, e ast.Expr, 
 	}
 	out := make([]string, 0, len(cl.Elts))
 	for _, elt := range cl.Elts {
-		s, ok := c.str(where, d.aliases, elt, nil, 0)
+		s, ok := c.str(where, d.aliases, elt, scope, 0)
 		if !ok {
 			return nil, false
 		}
@@ -214,26 +230,62 @@ func (c *permCollector) list(pkg string, aliases map[string]string, e ast.Expr, 
 
 func collectPermNames(p *contracts.Pass) permNames {
 	out := permNames{Registered: map[string]map[string]bool{}, Unknown: map[string]bool{}}
-	c := &permCollector{p: p, decls: map[string]map[string]permDecl{}}
+	c := &permCollector{p: p, decls: map[string]map[string]permDecl{},
+		mutated: map[string]map[string]bool{}, typeKinds: map[string]recvKind{}}
 	type parsed struct {
 		src  contracts.SourceFile
 		file *ast.File
 	}
-	// Package-level initializers from every file, framework import or
-	// not: a constants file often has none. Struct fields are classified
-	// too, so a.policy.Register counts and a.Batteries.Register is
-	// known to be something else.
+	// Named types first, so fields and variables of an interface or a
+	// policy-embedding struct classify correctly.
 	var files []parsed
-	fieldKinds := map[string]map[string]recvKind{}
 	for _, f := range p.AppFiles() {
 		file, ok := p.AST(f.Rel)
 		if !ok {
 			continue
 		}
 		files = append(files, parsed{f, file})
-		pkg := c.pkgKey(f)
-		aliases := importAliases(file)
 		for _, decl := range file.Decls {
+			gd, isGen := decl.(*ast.GenDecl)
+			if !isGen {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				ts, isType := spec.(*ast.TypeSpec)
+				if !isType {
+					continue
+				}
+				switch t := ts.Type.(type) {
+				case *ast.InterfaceType:
+					c.typeKinds[ts.Name.Name] = recvUnknown
+				case *ast.StructType:
+					for _, field := range t.Fields.List {
+						if len(field.Names) == 0 && isPolicyType(field.Type) {
+							c.typeKinds[ts.Name.Name] = recvPolicy
+						}
+					}
+				}
+			}
+		}
+	}
+	// Package-level initializers from every file, framework import or
+	// not: a constants file often has none. Struct fields and package
+	// variables are classified too, so a.policy.Register counts, a
+	// policy declared in one file registers from another, and
+	// a.Batteries.Register is known to be something else.
+	fieldKinds := map[string]map[string]recvKind{}
+	pkgIdents := map[string]map[string]recvKind{}
+	for _, pf := range files {
+		pkg := c.pkgKey(pf.src)
+		aliases := importAliases(pf.file)
+		if pkgIdents[pkg] == nil {
+			pkgIdents[pkg] = map[string]recvKind{}
+		}
+		for _, decl := range pf.file.Decls {
+			if fd, isFunc := decl.(*ast.FuncDecl); isFunc {
+				c.markMutated(pkg, fd)
+				continue
+			}
 			gd, isGen := decl.(*ast.GenDecl)
 			if !isGen {
 				continue
@@ -242,13 +294,25 @@ func collectPermNames(p *contracts.Pass) permNames {
 				switch s := spec.(type) {
 				case *ast.ValueSpec:
 					for i, name := range s.Names {
+						if s.Type != nil {
+							setKind(pkgIdents[pkg], name.Name, c.kindOfType(s.Type))
+						} else if i < len(s.Values) {
+							setKind(pkgIdents[pkg], name.Name, c.kindOfValue(s.Values[i]))
+						}
 						if i >= len(s.Values) {
 							continue
 						}
 						if c.decls[pkg] == nil {
 							c.decls[pkg] = map[string]permDecl{}
 						}
-						c.decls[pkg][name.Name] = permDecl{value: s.Values[i], aliases: aliases}
+						// Two declarations of one name are build-tag twins: the
+						// pass cannot tell which a binary compiles, so neither
+						// value is read.
+						d := permDecl{value: s.Values[i], aliases: aliases}
+						if _, twin := c.decls[pkg][name.Name]; twin {
+							d.value = nil
+						}
+						c.decls[pkg][name.Name] = d
 					}
 				case *ast.TypeSpec:
 					st, isStruct := s.Type.(*ast.StructType)
@@ -260,7 +324,7 @@ func collectPermNames(p *contracts.Pass) permNames {
 							if fieldKinds[pkg] == nil {
 								fieldKinds[pkg] = map[string]recvKind{}
 							}
-							setKind(fieldKinds[pkg], name.Name, kindOfType(field.Type))
+							setKind(fieldKinds[pkg], name.Name, c.kindOfType(field.Type))
 						}
 					}
 				}
@@ -270,12 +334,14 @@ func collectPermNames(p *contracts.Pass) permNames {
 
 	for _, pf := range files {
 		file := pf.file
-		if !importsAny(file, "framework/access", "framework", "framework/entity", "framework/entityui") {
-			continue
-		}
+		// Register and check calls are read in every file: a policy
+		// declared beside its import registers from a file without one.
+		// Struct literals are judged only where a framework package is
+		// imported, since their field names are common.
+		readsLiterals := importsAny(file, "framework/access", "framework", "framework/entity", "framework/entityui")
 		pkg := c.pkgKey(pf.src)
 		aliases := importAliases(file)
-		idents := identKinds(file)
+		idents := c.identKinds(file)
 		importsPolicy := false
 		for _, path := range aliases {
 			importsPolicy = importsPolicy || path == frameworkPkg || path == accessPkg
@@ -287,7 +353,10 @@ func collectPermNames(p *contracts.Pass) permNames {
 				if _, imported := aliases[v.Name]; imported {
 					return recvOther
 				}
-				return idents[v.Name]
+				if k := idents[v.Name]; k != recvUnknown {
+					return k
+				}
+				return pkgIdents[pkg][v.Name]
 			case *ast.SelectorExpr:
 				return fieldKinds[pkg][v.Sel.Name]
 			case *ast.CallExpr:
@@ -364,9 +433,17 @@ func collectPermNames(p *contracts.Pass) permNames {
 			// elided holds the element type of a slice or map literal's
 			// untyped elements: []entity.Transition{{...}}.
 			elided := map[*ast.CompositeLit]string{}
+			called := map[ast.Expr]bool{}
 			ast.Inspect(root, func(n ast.Node) bool {
 				switch v := n.(type) {
+				case *ast.SelectorExpr:
+					// p.Register taken as a value registers through a call
+					// the pass does not follow.
+					if v.Sel.Name == "Register" && !called[v] && kindOf(v.X) == recvPolicy {
+						out.Unknown[pkg] = true
+					}
 				case *ast.CallExpr:
+					called[v.Fun] = true
 					recv, method, call, isCall := selectorCall(v)
 					if !isCall {
 						return true
@@ -379,6 +456,9 @@ func collectPermNames(p *contracts.Pass) permNames {
 						record(call.Args[i], locals, false)
 					}
 				case *ast.CompositeLit:
+					if !readsLiterals {
+						return true
+					}
 					if elem := elementType(v.Type); elem != "" {
 						for _, elt := range v.Elts {
 							if kv, isKV := elt.(*ast.KeyValueExpr); isKV {
@@ -449,41 +529,48 @@ func callsNewRolePolicy(call *ast.CallExpr) bool {
 	}
 }
 
-// identKinds classifies a file's identifiers by their declarations: a
-// parameter or variable with a declared type, one assigned from
-// NewRolePolicy, or one assigned a composite literal. The map ignores
-// scope; a policy reading anywhere wins.
-func identKinds(file *ast.File) map[string]recvKind {
-	out := map[string]recvKind{}
-	fromValue := func(e ast.Expr) recvKind {
-		if u, isAddr := e.(*ast.UnaryExpr); isAddr && u.Op == token.AND {
-			e = u.X
-		}
-		switch v := e.(type) {
-		case *ast.CallExpr:
-			if callsNewRolePolicy(v) {
-				return recvPolicy
-			}
-		case *ast.CompositeLit:
-			return kindOfType(v.Type)
-		}
-		return recvUnknown
+// kindOfValue classifies an initializer: NewRolePolicy, new(T), a
+// composite literal, or unknown.
+func (c *permCollector) kindOfValue(e ast.Expr) recvKind {
+	if u, isAddr := e.(*ast.UnaryExpr); isAddr && u.Op == token.AND {
+		e = u.X
 	}
+	switch v := e.(type) {
+	case *ast.CallExpr:
+		if callsNewRolePolicy(v) {
+			return recvPolicy
+		}
+		if fn, isIdent := v.Fun.(*ast.Ident); isIdent && fn.Name == "new" && len(v.Args) == 1 {
+			return c.kindOfType(v.Args[0])
+		}
+	case *ast.CompositeLit:
+		return c.kindOfType(v.Type)
+	}
+	return recvUnknown
+}
+
+// identKinds classifies a file's identifiers by their declarations: a
+// parameter or variable with a declared type, or one defined from a
+// value kindOfValue reads. Assigning to a declared variable cannot
+// change its type, so = only upgrades a name to a policy. The map
+// ignores scope; a policy reading anywhere wins.
+func (c *permCollector) identKinds(file *ast.File) map[string]recvKind {
+	out := map[string]recvKind{}
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch v := n.(type) {
 		case *ast.Field:
 			if v.Type != nil {
 				for _, name := range v.Names {
-					setKind(out, name.Name, kindOfType(v.Type))
+					setKind(out, name.Name, c.kindOfType(v.Type))
 				}
 			}
 		case *ast.ValueSpec:
 			for i, name := range v.Names {
 				switch {
 				case v.Type != nil:
-					setKind(out, name.Name, kindOfType(v.Type))
+					setKind(out, name.Name, c.kindOfType(v.Type))
 				case i < len(v.Values):
-					setKind(out, name.Name, fromValue(v.Values[i]))
+					setKind(out, name.Name, c.kindOfValue(v.Values[i]))
 				}
 			}
 		case *ast.AssignStmt:
@@ -491,14 +578,42 @@ func identKinds(file *ast.File) map[string]recvKind {
 				return true
 			}
 			for i, rhs := range v.Rhs {
-				if id, isIdent := v.Lhs[i].(*ast.Ident); isIdent {
-					setKind(out, id.Name, fromValue(rhs))
+				id, isIdent := v.Lhs[i].(*ast.Ident)
+				if !isIdent {
+					continue
+				}
+				if k := c.kindOfValue(rhs); v.Tok == token.DEFINE || k == recvPolicy {
+					setKind(out, id.Name, k)
 				}
 			}
 		}
 		return true
 	})
 	return out
+}
+
+// markMutated records the package-level variables fd assigns to,
+// directly or through an index: caps = append(caps, x), caps[0] = x.
+func (c *permCollector) markMutated(pkg string, fd *ast.FuncDecl) {
+	locals := localNames(fd)
+	ast.Inspect(fd, func(n ast.Node) bool {
+		as, isAssign := n.(*ast.AssignStmt)
+		if !isAssign || as.Tok == token.DEFINE {
+			return true
+		}
+		for _, lhs := range as.Lhs {
+			if ix, isIndex := lhs.(*ast.IndexExpr); isIndex {
+				lhs = ix.X
+			}
+			if id, isIdent := lhs.(*ast.Ident); isIdent && !locals[id.Name] {
+				if c.mutated[pkg] == nil {
+					c.mutated[pkg] = map[string]bool{}
+				}
+				c.mutated[pkg][id.Name] = true
+			}
+		}
+		return true
+	})
 }
 
 // localNames are the names a function declares anywhere in it:
@@ -619,7 +734,7 @@ func runUnregisteredPermissions(p *contracts.Pass) []contracts.Diagnostic {
 			if r.unknown || len(r.names) == 0 || r.names[use.Name] {
 				continue
 			}
-			msg := fmt.Sprintf("permission %q is checked here but never registered, so only a wildcard holder passes", use.Name)
+			msg := fmt.Sprintf("permission %q is checked here but never registered, so a role granted the intended capability is denied", use.Name)
 			if near, ok := closestToken(use.Name, r.sorted); ok {
 				msg += fmt.Sprintf("; nearest registered capability is %q", near)
 			}

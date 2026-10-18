@@ -442,3 +442,87 @@ func other(p *strings.Builder) {
 	p.Reset()`)})
 	assertHas(t, ds, contracts.RuleUnregisteredPermission)
 }
+
+// Registrations the pass reads wrongly, or not at all, must not leave a
+// registry that looks complete.
+func TestUnregisteredPermRegistryShapes(t *testing.T) {
+	for name, files := range map[string]map[string]string{
+		"local in spread literal": {"main.go": permApp(`C := access.Permission("plans:admin")
+	p.Register([]access.Permission{"plans:write", C}...)`, `_ = access.Can(ctx, "plans:admin")`),
+			"caps.go": "package main\n\nconst C = \"plans:write\"\n"},
+		"appended in init": {"main.go": permApp(`p.Register(caps...)`, `_ = access.Can(ctx, "plans:admin")`),
+			"caps.go": `package main
+
+import "github.com/DonaldMurillo/gofastr/framework/access"
+
+var caps = []access.Permission{"plans:write"}
+
+func init() { caps = append(caps, "plans:admin") }
+`},
+		"import-free file": {"main.go": `package main
+
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/framework/access"
+)
+
+var p = access.NewRolePolicy()
+
+func wire(ctx context.Context) {
+	p.Register("plans:write")
+	_ = access.Can(ctx, "plans:admin")
+}
+`, "extra.go": "package main\n\nfunc init() { p.Register(\"plans:admin\") }\n"},
+		"method value": {"main.go": permApp(`p.Register("plans:write")
+	register := p.Register
+	register("plans:admin")`, `_ = access.Can(ctx, "plans:admin")`)},
+		"interface receiver": {"main.go": permApp(`p.Register("plans:write")
+	var r interface{ Register(...access.Permission) } = p
+	r.Register("plans:admin")`, `_ = access.Can(ctx, "plans:admin")`)},
+		"embedded policy": {"main.go": permApp(`p.Register("plans:write")
+	w := Wrapped{p}
+	w.Register("plans:admin")`, `_ = access.Can(ctx, "plans:admin")`),
+			"wrap.go": "package main\n\nimport \"github.com/DonaldMurillo/gofastr/framework/access\"\n\ntype Wrapped struct{ *access.RolePolicy }\n"},
+		"build-tag twins": {"main.go": permApp(`p.Register("plans:write", C)`, `_ = access.Can(ctx, "plans:admin")`),
+			"a.go": "//go:build !tools\n\npackage main\n\nconst C = \"plans:admin\"\n",
+			"z.go": "//go:build tools\n\npackage main\n\nconst C = \"tools:read\"\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assertNot(t, fixture(t, files), contracts.RuleUnregisteredPermission, "plans:admin is registered")
+		})
+	}
+}
+
+// Assigning to a variable does not change its declared type, so an
+// unrelated registry stays unrelated and the binary is still judged.
+func TestUnregisteredPermReassignedOther(t *testing.T) {
+	ds := fixture(t, map[string]string{"main.go": permApp(`p.Register("plans:write")
+	var r *events.Bus
+	r = events.New()
+	r.Register("events:ready")`, `_ = access.Can(ctx, "plans:wirte")`)})
+	assertHas(t, ds, contracts.RuleUnregisteredPermission)
+}
+
+// new(T) declares its type as plainly as a var does.
+func TestUnregisteredPermNewOtherRegister(t *testing.T) {
+	ds := fixture(t, map[string]string{"main.go": permApp(`p.Register("plans:write")
+	r := new(events.Bus)
+	r.Register("events:ready")`, `_ = access.Can(ctx, "plans:wirte")`)})
+	assertHas(t, ds, contracts.RuleUnregisteredPermission)
+}
+
+// A file that imports no framework package declares its own
+// AccessControl, not the entity one.
+func TestUnregisteredPermOwnAccessControl(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"main.go": permApp(`p.Register("plans:write")`, ``),
+		"acl.go": `package main
+
+type AccessControl struct{ Read string }
+
+var _ = AccessControl{Read: "doors:open"}
+`,
+	})
+	assertNot(t, ds, contracts.RuleUnregisteredPermission, "acl.go's AccessControl is the app's own")
+}

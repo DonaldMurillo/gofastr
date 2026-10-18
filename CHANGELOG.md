@@ -57,7 +57,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `CanResourceExact` against the names registered in the same binary,
   and suggests the nearest one. It reads literals and package-level
   constants, including another package's (`perms.PlansWrite`). A typo
-  there compiled before and denied everyone but a wildcard holder. The
+  there compiled before and denied every role granted the intended name. The
   contract catalog holds 79 rules.
 
 ### Changed
