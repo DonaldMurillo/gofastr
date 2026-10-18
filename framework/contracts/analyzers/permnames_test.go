@@ -526,3 +526,12 @@ var _ = AccessControl{Read: "doors:open"}
 	})
 	assertNot(t, ds, contracts.RuleUnregisteredPermission, "acl.go's AccessControl is the app's own")
 }
+
+// A package variable some function reassigns is not its initializer.
+func TestUnregisteredPermMutatedVar(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"main.go": permApp(`p.Register("plans:write", extra)`, `_ = access.Can(ctx, "plans:admin")`),
+		"caps.go": "package main\n\nvar extra = \"plans:read\"\n\nfunc init() { extra = \"plans:admin\" }\n",
+	})
+	assertNot(t, ds, contracts.RuleUnregisteredPermission, "init registers plans:admin")
+}

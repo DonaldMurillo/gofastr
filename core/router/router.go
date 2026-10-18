@@ -265,13 +265,38 @@ func Param(r *http.Request, name string) string {
 // declaresWildcard reports whether pattern has a {name} or {name...}
 // wildcard.
 func declaresWildcard(pattern, name string) bool {
-	return strings.Contains(pattern, "{"+name+"}") || strings.Contains(pattern, "{"+name+"...}")
+	_, declared := wildcards(pattern)[name]
+	return declared
 }
 
 // isCatchAll reports whether pattern declares name as a {name...}
 // multi-segment wildcard rather than a single-segment {name}.
 func isCatchAll(pattern, name string) bool {
-	return pattern != "" && strings.Contains(pattern, "{"+name+"...}")
+	return wildcards(pattern)[name]
+}
+
+// wildcards maps each wildcard name a pattern declares to whether it is
+// a {name...} catch-all. Go's ServeMux stores a catch-all under the
+// bare name, and {$} is the end-of-path anchor, not a param, so
+// "rest..." and "$" are never names.
+func wildcards(pattern string) map[string]bool {
+	out := map[string]bool{}
+	for {
+		start := strings.IndexByte(pattern, '{')
+		if start == -1 {
+			return out
+		}
+		end := strings.IndexByte(pattern[start:], '}')
+		if end == -1 {
+			return out
+		}
+		name := pattern[start+1 : start+end]
+		pattern = pattern[start+end+1:]
+		catchAll := strings.HasSuffix(name, "...")
+		if name = strings.TrimSuffix(name, "..."); name != "$" {
+			out[name] = catchAll
+		}
+	}
 }
 
 // Params extracts all path parameters from the request.
@@ -290,30 +315,12 @@ func Params(r *http.Request) map[string]string {
 	if pattern == "" {
 		return nil
 	}
+	// A catch-all is keyed by its bare name, so PathValue resolves it;
+	// keyed as "rest..." its value was silently dropped and callers
+	// driving auth/path logic off Params() failed open.
 	params := make(map[string]string)
-	// Extract param names from the pattern, e.g. "/users/{id}/posts/{postId}"
-	for i := 0; i < len(pattern); i++ {
-		if pattern[i] == '{' {
-			end := strings.IndexByte(pattern[i:], '}')
-			if end == -1 {
-				break
-			}
-			name := pattern[i+1 : i+end]
-			// Go's ServeMux stores a catch-all {name...} under the bare
-			// "name" key, and {$} is the end-of-path anchor, not a param.
-			// Normalise the extracted token so PathValue resolves and the
-			// map exposes the param under its plain name. Otherwise a
-			// catch-all value is silently dropped and callers driving
-			// auth/path logic off Params() fail open.
-			catchAll := strings.HasSuffix(name, "...")
-			name = strings.TrimSuffix(name, "...")
-			if name == "$" {
-				i += end
-				continue
-			}
-			params[name] = SanitizePathParam(r.PathValue(name), catchAll)
-			i += end
-		}
+	for name, catchAll := range wildcards(pattern) {
+		params[name] = SanitizePathParam(r.PathValue(name), catchAll)
 	}
 	return params
 }

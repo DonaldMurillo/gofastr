@@ -136,7 +136,8 @@ func (c *permCollector) pkgKey(f contracts.SourceFile) string {
 // str evaluates a constant string expression: literals, concatenation,
 // package-level constants (local or pkg.Name), and a conversion such as
 // access.Permission("x"). A name in locals is a function's own variable
-// and never the package-level one.
+// and never the package-level one, and a package variable some function
+// reassigns is not its initializer.
 func (c *permCollector) str(pkg string, aliases map[string]string, e ast.Expr, locals map[string]bool, depth int) (string, bool) {
 	if depth > 16 {
 		return "", false
@@ -165,12 +166,12 @@ func (c *permCollector) str(pkg string, aliases map[string]string, e ast.Expr, l
 		if locals[v.Name] {
 			return "", false
 		}
-		if d, found := c.decls[pkg][v.Name]; found {
+		if d, found := c.decls[pkg][v.Name]; found && !c.mutated[pkg][v.Name] {
 			return c.str(pkg, d.aliases, d.value, nil, depth+1)
 		}
 	case *ast.SelectorExpr:
 		if target, found := c.target(aliases, v); found {
-			if d, declared := c.decls[target][v.Sel.Name]; declared {
+			if d, declared := c.decls[target][v.Sel.Name]; declared && !c.mutated[target][v.Sel.Name] {
 				return c.str(target, d.aliases, d.value, nil, depth+1)
 			}
 		}

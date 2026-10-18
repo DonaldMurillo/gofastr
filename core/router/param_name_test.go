@@ -54,3 +54,17 @@ func TestParamWithoutPatternReadsValue(t *testing.T) {
 		t.Fatalf("Param = %q, want 7", got)
 	}
 }
+
+// A name is matched against each wildcard's parsed name, so the
+// catch-all's suffix and the {$} anchor are not names.
+func TestParamRejectsNearMissNames(t *testing.T) {
+	for _, tc := range []struct{ pattern, path, name string }{
+		{"/files/{rest...}", "/files/a/b", "rest..."},
+		{"/posts/{$}", "/posts/", "$"},
+	} {
+		_, p := serveParam(t, tc.pattern, tc.path, func(r *http.Request) string { return Param(r, tc.name) })
+		if p == nil {
+			t.Errorf("%s: Param(%q) returned instead of panicking", tc.pattern, tc.name)
+		}
+	}
+}

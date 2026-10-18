@@ -198,7 +198,9 @@ const (
 )
 
 p.Register(PlansWrite, PlansAdmin)
-entity.EntityConfig{Access: framework.AccessControl{Create: PlansWrite, Delete: PlansAdmin}}
+framework.EntityConfig{Exposure: &framework.ExposureConfig{
+    Access: framework.AccessControl{Create: PlansWrite, Delete: PlansAdmin},
+}}
 ```
 
 Opt into rejection when configuration mistakes must stop startup:
