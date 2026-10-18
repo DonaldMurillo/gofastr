@@ -180,11 +180,13 @@ state-transition and entityui action `Permission` fields, and
 `RequirePermission`, `Can`, `CanResource` and `CanResourceExact`
 arguments. A typo there compiles and then denies everyone but a wildcard
 holder, who is usually the admin testing the screen. The rule reads
-string literals and package-level constants, including a constants
-package (`perms.PlansWrite`), and judges each binary against the names
-registered in the packages it links. An app that never calls `Register`
-is not checked, and neither is a binary with a `Register` call whose
-arguments the pass cannot read, such as `p.Register(loadCaps()...)`.
+string literals, package-level constants (a constants package's
+`perms.PlansWrite` too) and concatenations of them; a function's own
+variable is not read. Each binary is judged against the names registered
+in the packages it links, so a package two binaries share must find the
+name in both. An app that never calls `Register` is not checked, and
+neither is a binary with a `Register` call whose arguments the pass
+cannot read, such as `p.Register(loadCaps()...)`.
 
 ```go
 // caps.go: one spelling per capability. Untyped, so the same constant

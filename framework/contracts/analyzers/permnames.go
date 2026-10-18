@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"maps"
 	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
@@ -26,26 +29,33 @@ type permUse struct {
 // the names each package registers, and every checked name.
 type permNames struct {
 	Registered map[string]map[string]bool
-	// Unknown marks a package with a Register call whose arguments do
-	// not resolve: its registry is incomplete, so checks linked with it
-	// are not judged.
+	// Unknown marks a package with a registration the pass cannot read:
+	// its registry is incomplete, so no binary linking it is judged.
 	Unknown map[string]bool
 	Checks  []permUse
 }
 
-// permCheckCalls take a permission among their arguments.
-var permCheckCalls = map[string]bool{
-	"RequirePermission": true, "Can": true, "CanResource": true, "CanResourceExact": true,
+// permArg is the index of the permission argument of each check call on
+// the access package, the framework facade, or a RolePolicy.
+var permArg = map[string]int{
+	"RequirePermission": 0, "Can": 1, "CanResource": 1, "CanResourceExact": 1,
 }
 
 // accessControlFields are entity.AccessControl's per-operation names.
 var accessControlFields = map[string]bool{"Read": true, "Create": true, "Update": true, "Delete": true}
 
-// permissionFields name a permission on any struct: a state transition's
-// or an entityui action's Permission, ScopeConfig.CrossOwnerRead, and
-// ReadScopeConfig.Unrestricted. The value must still resolve to a
-// permission-shaped string.
-var permissionFields = map[string]bool{"Permission": true, "CrossOwnerRead": true, "Unrestricted": true}
+// shapedFields name a permission on any struct but are common field
+// names, so their value must also look like resource:verb: a state
+// transition's or an entityui action's Permission, and
+// ReadScopeConfig.Unrestricted.
+var shapedFields = map[string]bool{"Permission": true, "Unrestricted": true}
+
+// permDecl is a package-level const or var initializer, with the import
+// aliases of the file it sits in.
+type permDecl struct {
+	value   ast.Expr
+	aliases map[string]string
+}
 
 const permNamesKey = "analyzers.permnames"
 
@@ -53,65 +63,168 @@ func permissionNames(p *contracts.Pass) permNames {
 	return p.Memo(permNamesKey, func() any { return collectPermNames(p) }).(permNames)
 }
 
+// permCollector resolves names across the module's packages.
+type permCollector struct {
+	p     *contracts.Pass
+	decls map[string]map[string]permDecl
+}
+
 // pkgKey is the import-graph node for a file, collapsed to one node
 // without a module path, as AuthWiring does.
-func pkgKey(p *contracts.Pass, f contracts.SourceFile) string {
-	if p.ModulePath == "" {
+func (c *permCollector) pkgKey(f contracts.SourceFile) string {
+	if c.p.ModulePath == "" {
 		return ""
 	}
 	return f.Package
 }
 
+// str evaluates a constant string expression: literals, concatenation,
+// package-level constants (local or pkg.Name), and a conversion such as
+// access.Permission("x"). A name in locals is a function's own variable
+// and never the package-level one.
+func (c *permCollector) str(pkg string, aliases map[string]string, e ast.Expr, locals map[string]bool, depth int) (string, bool) {
+	if depth > 16 {
+		return "", false
+	}
+	switch v := e.(type) {
+	case *ast.BasicLit:
+		if v.Kind != token.STRING {
+			return "", false
+		}
+		s, err := strconv.Unquote(v.Value)
+		return s, err == nil
+	case *ast.ParenExpr:
+		return c.str(pkg, aliases, v.X, locals, depth)
+	case *ast.BinaryExpr:
+		if v.Op != token.ADD {
+			return "", false
+		}
+		l, okL := c.str(pkg, aliases, v.X, locals, depth)
+		r, okR := c.str(pkg, aliases, v.Y, locals, depth)
+		return l + r, okL && okR
+	case *ast.CallExpr:
+		if len(v.Args) == 1 && typeNamed(v.Fun, "Permission") {
+			return c.str(pkg, aliases, v.Args[0], locals, depth)
+		}
+	case *ast.Ident:
+		if locals[v.Name] {
+			return "", false
+		}
+		if d, found := c.decls[pkg][v.Name]; found {
+			return c.str(pkg, d.aliases, d.value, nil, depth+1)
+		}
+	case *ast.SelectorExpr:
+		if target, found := c.target(aliases, v); found {
+			if d, declared := c.decls[target][v.Sel.Name]; declared {
+				return c.str(target, d.aliases, d.value, nil, depth+1)
+			}
+		}
+	}
+	return "", false
+}
+
+// target resolves pkg.Name's pkg to a module package.
+func (c *permCollector) target(aliases map[string]string, sel *ast.SelectorExpr) (string, bool) {
+	x, isIdent := sel.X.(*ast.Ident)
+	if !isIdent {
+		return "", false
+	}
+	return modulePackage(c.p.ModulePath, aliases[x.Name])
+}
+
+// list evaluates a spread argument: a slice literal, or a package-level
+// variable holding one, whose every element is a constant string. A
+// slice with one element the pass cannot read is not a list at all, or
+// its other names would be judged as the whole registry.
+func (c *permCollector) list(pkg string, aliases map[string]string, e ast.Expr, locals map[string]bool) ([]string, bool) {
+	d, where := permDecl{value: e, aliases: aliases}, pkg
+	switch v := e.(type) {
+	case *ast.Ident:
+		if locals[v.Name] {
+			return nil, false
+		}
+		got, found := c.decls[pkg][v.Name]
+		if !found {
+			return nil, false
+		}
+		d = got
+	case *ast.SelectorExpr:
+		target, found := c.target(aliases, v)
+		if !found {
+			return nil, false
+		}
+		got, declared := c.decls[target][v.Sel.Name]
+		if !declared {
+			return nil, false
+		}
+		d, where = got, target
+	}
+	cl, isCL := d.value.(*ast.CompositeLit)
+	if !isCL {
+		return nil, false
+	}
+	out := make([]string, 0, len(cl.Elts))
+	for _, elt := range cl.Elts {
+		s, ok := c.str(where, d.aliases, elt, nil, 0)
+		if !ok {
+			return nil, false
+		}
+		out = append(out, s)
+	}
+	return out, true
+}
+
 func collectPermNames(p *contracts.Pass) permNames {
 	out := permNames{Registered: map[string]map[string]bool{}, Unknown: map[string]bool{}}
+	c := &permCollector{p: p, decls: map[string]map[string]permDecl{}}
 	type parsed struct {
 		src  contracts.SourceFile
 		file *ast.File
 	}
+	// Package-level initializers from every file, framework import or
+	// not: a constants file often has none. Struct fields typed as a
+	// policy are collected too, so a.policy.Register is recognised.
 	var files []parsed
-	// Package-level string constants and string-slice variables, so a
-	// check or a Register call written with a name resolves to its value.
-	consts := map[string]map[string]string{}
-	slicesOf := map[string]map[string][]string{}
+	policyFields := map[string]map[string]bool{}
 	for _, f := range p.AppFiles() {
-		// Every file, framework import or not: a constants file often
-		// has none.
 		file, ok := p.AST(f.Rel)
 		if !ok {
 			continue
 		}
 		files = append(files, parsed{f, file})
-		pkg := pkgKey(p, f)
+		pkg := c.pkgKey(f)
+		aliases := importAliases(file)
 		for _, decl := range file.Decls {
 			gd, isGen := decl.(*ast.GenDecl)
-			if !isGen || (gd.Tok != token.CONST && gd.Tok != token.VAR) {
+			if !isGen {
 				continue
 			}
 			for _, spec := range gd.Specs {
-				vs := spec.(*ast.ValueSpec)
-				for i, name := range vs.Names {
-					if i >= len(vs.Values) {
+				switch s := spec.(type) {
+				case *ast.ValueSpec:
+					for i, name := range s.Names {
+						if i >= len(s.Values) {
+							continue
+						}
+						if c.decls[pkg] == nil {
+							c.decls[pkg] = map[string]permDecl{}
+						}
+						c.decls[pkg][name.Name] = permDecl{value: s.Values[i], aliases: aliases}
+					}
+				case *ast.TypeSpec:
+					st, isStruct := s.Type.(*ast.StructType)
+					if !isStruct {
 						continue
 					}
-					if s, isLit := stringLit(vs.Values[i]); isLit {
-						if consts[pkg] == nil {
-							consts[pkg] = map[string]string{}
+					for _, field := range st.Fields.List {
+						if !isPolicyType(field.Type) {
+							continue
 						}
-						consts[pkg][name.Name] = s
-						continue
-					}
-					if cl, isCL := vs.Values[i].(*ast.CompositeLit); isCL {
-						var vals []string
-						for _, elt := range cl.Elts {
-							if s, isLit := stringLit(elt); isLit {
-								vals = append(vals, s)
+						for _, name := range field.Names {
+							if policyFields[pkg] == nil {
+								policyFields[pkg] = map[string]bool{}
 							}
-						}
-						if len(vals) > 0 {
-							if slicesOf[pkg] == nil {
-								slicesOf[pkg] = map[string][]string{}
-							}
-							slicesOf[pkg][name.Name] = vals
+							policyFields[pkg][name.Name] = true
 						}
 					}
 				}
@@ -124,112 +237,230 @@ func collectPermNames(p *contracts.Pass) permNames {
 		if !importsAny(file, "framework/access", "framework", "framework/entity", "framework/entityui") {
 			continue
 		}
-		pkg := pkgKey(p, pf.src)
+		pkg := c.pkgKey(pf.src)
 		aliases := importAliases(file)
-		// resolve turns an argument into the permission names it spells:
-		// a literal, a package-level constant (local or pkg.Name), or,
-		// spread with ..., a package-level slice.
-		resolve := func(e ast.Expr, spread bool) []string {
-			if s, isLit := stringLit(e); isLit {
-				return []string{s}
-			}
-			switch v := e.(type) {
+		policies := policyIdents(file)
+		// isAccess reports whether a receiver is the access package, the
+		// framework facade, or a RolePolicy.
+		isAccess := func(recv ast.Expr) bool {
+			switch v := recv.(type) {
 			case *ast.Ident:
-				if spread {
-					return slicesOf[pkg][v.Name]
+				if path, imported := aliases[v.Name]; imported {
+					return strings.HasSuffix(path, "/framework/access") || strings.HasSuffix(path, "/framework")
 				}
-				if s, found := consts[pkg][v.Name]; found {
-					return []string{s}
-				}
+				return policies[v.Name]
 			case *ast.SelectorExpr:
-				x, isIdent := v.X.(*ast.Ident)
-				if !isIdent {
-					return nil
-				}
-				target, internal := modulePackage(p.ModulePath, aliases[x.Name])
-				if !internal {
-					return nil
-				}
-				if spread {
-					return slicesOf[target][v.Sel.Name]
-				}
-				if s, found := consts[target][v.Sel.Name]; found {
-					return []string{s}
-				}
-			}
-			return nil
-		}
-		check := func(e ast.Expr, at token.Pos) {
-			for _, name := range resolve(e, false) {
-				if looksLikePermission(name) {
-					out.Checks = append(out.Checks, permUse{Name: name, Package: pkg, File: pf.src.Rel, Pos: at})
-				}
-			}
-		}
-		ast.Inspect(file, func(n ast.Node) bool {
-			switch v := n.(type) {
+				return policyFields[pkg][v.Sel.Name]
 			case *ast.CallExpr:
-				_, method, call, isCall := selectorCall(v)
-				if !isCall {
-					return true
+				return callsNewRolePolicy(v)
+			}
+			return false
+		}
+		record := func(e ast.Expr, locals map[string]bool, shaped bool) {
+			name, ok := c.str(pkg, aliases, e, locals, 0)
+			if !ok || name == "" || (shaped && !looksLikePermission(name)) {
+				return
+			}
+			out.Checks = append(out.Checks, permUse{Name: name, Package: pkg, File: pf.src.Rel, Pos: e.Pos()})
+		}
+		register := func(call *ast.CallExpr, recv ast.Expr, locals map[string]bool) {
+			var names []string
+			readable := true
+			for i, arg := range call.Args {
+				if call.Ellipsis.IsValid() && i == len(call.Args)-1 {
+					got, ok := c.list(pkg, aliases, arg, locals)
+					readable = readable && ok
+					names = append(names, got...)
+					continue
 				}
-				if method == "Register" {
-					// Register is a common method name; it counts only when
-					// every argument resolves to permission-shaped names. One
-					// that does not resolve at all may still be the policy's,
-					// so the package's registry becomes unknown.
-					var names []string
-					for i, arg := range call.Args {
-						got := resolve(arg, call.Ellipsis.IsValid() && i == len(call.Args)-1)
-						if len(got) == 0 {
-							if importsAny(file, "framework/access") {
-								out.Unknown[pkg] = true
-							}
-							return true
-						}
-						for _, g := range got {
-							if !looksLikePermission(g) {
-								return true
-							}
-						}
-						names = append(names, got...)
-					}
-					for _, name := range names {
-						if out.Registered[pkg] == nil {
-							out.Registered[pkg] = map[string]bool{}
-						}
-						out.Registered[pkg][name] = true
-					}
-					return true
-				}
-				if permCheckCalls[method] {
-					for _, arg := range call.Args {
-						check(arg, arg.Pos())
-					}
-				}
-			case *ast.CompositeLit:
-				accessBlock := typeNamed(v.Type, "AccessControl")
-				for _, elt := range v.Elts {
-					kv, isKV := elt.(*ast.KeyValueExpr)
-					if !isKV {
-						continue
-					}
-					key, isIdent := kv.Key.(*ast.Ident)
-					if !isIdent {
-						continue
-					}
-					if permissionFields[key.Name] || (accessBlock && accessControlFields[key.Name]) {
-						check(kv.Value, kv.Value.Pos())
-					}
+				s, ok := c.str(pkg, aliases, arg, locals, 0)
+				readable = readable && ok
+				if ok {
+					names = append(names, s)
 				}
 			}
-			return true
-		})
+			if !isAccess(recv) {
+				// Register is a common method name, so another receiver's
+				// call registers nothing. One that could still be a policy
+				// the pass cannot place, a spread or a permission-shaped
+				// name in a file that imports the policy's package, makes
+				// the registry unknown: the rule goes quiet rather than
+				// wrong.
+				shapedArg := call.Ellipsis.IsValid()
+				for _, n := range names {
+					shapedArg = shapedArg || looksLikePermission(n)
+				}
+				if shapedArg && importsAny(file, "framework/access", "framework") {
+					out.Unknown[pkg] = true
+				}
+				return
+			}
+			if !readable {
+				out.Unknown[pkg] = true
+				return
+			}
+			for _, n := range names {
+				if out.Registered[pkg] == nil {
+					out.Registered[pkg] = map[string]bool{}
+				}
+				out.Registered[pkg][n] = true
+			}
+		}
+		visit := func(root ast.Node, locals map[string]bool) {
+			ast.Inspect(root, func(n ast.Node) bool {
+				switch v := n.(type) {
+				case *ast.CallExpr:
+					recv, method, call, isCall := selectorCall(v)
+					if !isCall {
+						return true
+					}
+					if method == "Register" {
+						register(call, recv, locals)
+						return true
+					}
+					if i, isCheck := permArg[method]; isCheck && i < len(call.Args) && isAccess(recv) {
+						record(call.Args[i], locals, false)
+					}
+				case *ast.CompositeLit:
+					accessBlock := typeNamed(v.Type, "AccessControl")
+					for _, elt := range v.Elts {
+						kv, isKV := elt.(*ast.KeyValueExpr)
+						if !isKV {
+							continue
+						}
+						key, isIdent := kv.Key.(*ast.Ident)
+						if !isIdent {
+							continue
+						}
+						switch {
+						case accessBlock && accessControlFields[key.Name], key.Name == "CrossOwnerRead":
+							record(kv.Value, locals, false)
+						case shapedFields[key.Name]:
+							record(kv.Value, locals, true)
+						}
+					}
+				}
+				return true
+			})
+		}
+		for _, decl := range file.Decls {
+			if fd, isFunc := decl.(*ast.FuncDecl); isFunc {
+				visit(fd, localNames(fd))
+				continue
+			}
+			visit(decl, nil)
+		}
 	}
 	return out
 }
 
-// typeNamed reports whether a composite literal's type is name, bare or
+// isPolicyType reports whether a type expression is RolePolicy or a
+// pointer to it, bare or package-qualified.
+func isPolicyType(e ast.Expr) bool {
+	if star, isStar := e.(*ast.StarExpr); isStar {
+		e = star.X
+	}
+	return typeNamed(e, "RolePolicy")
+}
+
+// callsNewRolePolicy reports whether a call chain starts at
+// NewRolePolicy: framework.NewRolePolicy().StrictCapabilities().
+func callsNewRolePolicy(call *ast.CallExpr) bool {
+	for {
+		switch fn := call.Fun.(type) {
+		case *ast.SelectorExpr:
+			if fn.Sel.Name == "NewRolePolicy" {
+				return true
+			}
+			inner, isCall := fn.X.(*ast.CallExpr)
+			if !isCall {
+				return false
+			}
+			call = inner
+		case *ast.Ident:
+			return fn.Name == "NewRolePolicy"
+		default:
+			return false
+		}
+	}
+}
+
+// policyIdents are a file's identifiers that hold a RolePolicy: a
+// parameter or variable of that type, or one assigned from
+// NewRolePolicy.
+func policyIdents(file *ast.File) map[string]bool {
+	out := map[string]bool{}
+	fromCtor := func(e ast.Expr) bool {
+		call, isCall := e.(*ast.CallExpr)
+		return isCall && callsNewRolePolicy(call)
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.Field:
+			if isPolicyType(v.Type) {
+				for _, name := range v.Names {
+					out[name.Name] = true
+				}
+			}
+		case *ast.ValueSpec:
+			for i, name := range v.Names {
+				if (v.Type != nil && isPolicyType(v.Type)) || (i < len(v.Values) && fromCtor(v.Values[i])) {
+					out[name.Name] = true
+				}
+			}
+		case *ast.AssignStmt:
+			for i, rhs := range v.Rhs {
+				if i >= len(v.Lhs) || !fromCtor(rhs) {
+					continue
+				}
+				if id, isIdent := v.Lhs[i].(*ast.Ident); isIdent {
+					out[id.Name] = true
+				}
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// localNames are the names a function declares anywhere in it:
+// receiver, parameters, results, := and var, and range variables. A use
+// of one never means the package-level constant of that name. The set
+// ignores block structure, so a name declared in one branch also hides
+// the constant in another; that only drops findings.
+func localNames(fd *ast.FuncDecl) map[string]bool {
+	out := map[string]bool{}
+	ast.Inspect(fd, func(n ast.Node) bool {
+		switch v := n.(type) {
+		case *ast.Field:
+			for _, name := range v.Names {
+				out[name.Name] = true
+			}
+		case *ast.AssignStmt:
+			if v.Tok == token.DEFINE {
+				for _, lhs := range v.Lhs {
+					if id, isIdent := lhs.(*ast.Ident); isIdent {
+						out[id.Name] = true
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			for _, name := range v.Names {
+				out[name.Name] = true
+			}
+		case *ast.RangeStmt:
+			for _, e := range []ast.Expr{v.Key, v.Value} {
+				if id, isIdent := e.(*ast.Ident); isIdent {
+					out[id.Name] = true
+				}
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// typeNamed reports whether a type expression is name, bare or
 // package-qualified.
 func typeNamed(e ast.Expr, name string) bool {
 	switch v := e.(type) {
@@ -248,49 +479,53 @@ func runUnregisteredPermissions(p *contracts.Pass) []contracts.Diagnostic {
 	}
 	imports := AuthWiring(p).Imports
 	importers := reverseGraph(imports)
-	// The registry a check sees is every name registered in a package
-	// some binary links together with the checking package.
-	registryFor := map[string][]string{}
-	registry := func(pkg string) []string {
-		if got, done := registryFor[pkg]; done {
-			return got
+	// A binary is a package nothing imports. Every binary linking a check
+	// must register the name: a package two binaries share is judged
+	// against each one's own registry, not their union.
+	type registry struct {
+		names   map[string]bool
+		sorted  []string
+		unknown bool
+	}
+	regs := map[string]*registry{}
+	registryOf := func(root string) *registry {
+		if r, done := regs[root]; done {
+			return r
 		}
-		set := map[string]bool{}
-		for linker := range closure(pkg, importers) {
-			for linked := range closure(linker, imports) {
-				if names.Unknown[linked] {
-					registryFor[pkg] = nil
-					return nil
-				}
-				for name := range names.Registered[linked] {
-					set[name] = true
-				}
+		r := &registry{names: map[string]bool{}}
+		for linked := range closure(root, imports) {
+			r.unknown = r.unknown || names.Unknown[linked]
+			for name := range names.Registered[linked] {
+				r.names[name] = true
 			}
 		}
-		got := make([]string, 0, len(set))
-		for name := range set {
-			got = append(got, name)
-		}
-		slices.Sort(got)
-		registryFor[pkg] = got
-		return got
+		r.sorted = slices.Sorted(maps.Keys(r.names))
+		regs[root] = r
+		return r
 	}
 	var out []contracts.Diagnostic
 	for _, use := range names.Checks {
-		reg := registry(use.Package)
-		if len(reg) == 0 {
-			continue
+		var roots []string
+		for linker := range closure(use.Package, importers) {
+			if len(importers[linker]) == 0 {
+				roots = append(roots, linker)
+			}
 		}
-		if _, found := slices.BinarySearch(reg, use.Name); found {
-			continue
+		slices.Sort(roots)
+		for _, root := range roots {
+			r := registryOf(root)
+			if r.unknown || len(r.names) == 0 || r.names[use.Name] {
+				continue
+			}
+			msg := fmt.Sprintf("permission %q is checked here but never registered, so only a wildcard holder passes", use.Name)
+			if near, ok := closestToken(use.Name, r.sorted); ok {
+				msg += fmt.Sprintf("; nearest registered capability is %q", near)
+			}
+			d := diag(p, contracts.RuleUnregisteredPermission, use.File, use.Pos, msg)
+			d.Evidence = map[string]string{"permission": use.Name, "binary": root}
+			out = append(out, d)
+			break
 		}
-		msg := fmt.Sprintf("permission %q is checked here but never registered, so only a wildcard holder passes", use.Name)
-		if near, ok := closestToken(use.Name, reg); ok {
-			msg += fmt.Sprintf("; nearest registered capability is %q", near)
-		}
-		d := diag(p, contracts.RuleUnregisteredPermission, use.File, use.Pos, msg)
-		d.Evidence = map[string]string{"permission": use.Name}
-		out = append(out, d)
 	}
 	return out
 }

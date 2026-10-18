@@ -191,3 +191,167 @@ var caps = []access.Permission{"plans:write"}
 	})
 	assertHas(t, ds, contracts.RuleUnregisteredPermission)
 }
+
+// A slice with a constant element registers that element too; one with
+// an element the pass cannot read is an unread registry, not a short one.
+func TestRegisteredPermPartialSlice(t *testing.T) {
+	for name, caps := range map[string]string{
+		"const element":  `var caps = []access.Permission{"plans:write", PlansAdmin}`,
+		"unread element": `var caps = []access.Permission{"plans:write", loadOne()}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ds := fixture(t, map[string]string{
+				"main.go": permApp(`p.Register(caps...)`, `_ = access.Can(ctx, "plans:admin")`),
+				"caps.go": `package main
+
+import "github.com/DonaldMurillo/gofastr/framework/access"
+
+const PlansAdmin = "plans:admin"
+
+` + caps + `
+`,
+			})
+			assertNot(t, ds, contracts.RuleUnregisteredPermission, "plans:admin may be registered")
+		})
+	}
+}
+
+// The framework facade's policy is a policy too: an unread Register on
+// it leaves the registry incomplete.
+func TestUnregisteredPermFacadeUnread(t *testing.T) {
+	ds := fixture(t, map[string]string{"main.go": `package main
+
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/framework"
+)
+
+func wire(ctx context.Context) {
+	pol := framework.NewRolePolicy()
+	pol.Register("plans:write")
+	pol.Register(loadCaps()...)
+	_ = framework.Can(ctx, "plans:admin")
+}
+`})
+	assertNot(t, ds, contracts.RuleUnregisteredPermission, "loadCaps may register plans:admin")
+}
+
+// A local of the same name hides the package constant.
+func TestUnregisteredPermLocalShadow(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"main.go": permApp(`p.Register("plans:write")`, `PlansWrite := os.Getenv("CAP")
+	_ = access.Can(ctx, PlansWrite)`),
+		"caps.go": `package main
+
+const PlansWrite = "plans:wirte"
+`,
+	})
+	assertNot(t, ds, contracts.RuleUnregisteredPermission, "the local is not the constant")
+}
+
+// Another type's Register is not a capability registry, even with a
+// colon in its argument.
+func TestUnregisteredPermOtherRegisterShaped(t *testing.T) {
+	ds := fixture(t, map[string]string{"main.go": permApp(`events.Register("jobs:run")`,
+		`_ = access.Can(ctx, "plans:write")`)})
+	assertNot(t, ds, contracts.RuleUnregisteredPermission, "no policy registers anything")
+}
+
+// A package two binaries share is judged against each binary's own
+// registry, not their union.
+func TestUnregisteredPermSharedPackage(t *testing.T) {
+	bin := func(caps string) string {
+		return `package main
+
+import (
+	"github.com/DonaldMurillo/gofastr/framework/access"
+
+	_ "example.com/app/entities"
+)
+
+func wire(p *access.RolePolicy) { p.Register(` + caps + `) }
+`
+	}
+	ds := fixture(t, map[string]string{
+		"cmd/appa/main.go": bin(`"plans:write", "orders:read"`),
+		"cmd/appb/main.go": bin(`"plans:write"`),
+		"entities/orders.go": `package entities
+
+import "github.com/DonaldMurillo/gofastr/framework"
+
+var Orders = framework.AccessControl{Read: "orders:read"}
+`,
+	})
+	d := assertHas(t, ds, contracts.RuleUnregisteredPermission)
+	if !strings.Contains(d.Evidence["binary"], "appb") {
+		t.Errorf("binary = %q, want appb", d.Evidence["binary"])
+	}
+}
+
+// A check call's permission argument needs no colon to be judged.
+func TestUnregisteredPermColonless(t *testing.T) {
+	ds := fixture(t, map[string]string{"main.go": permApp(`p.Register("admin")`,
+		`_ = access.RequirePermission("admn")`)})
+	assertHas(t, ds, contracts.RuleUnregisteredPermission)
+}
+
+// A name built from constants is still a constant.
+func TestUnregisteredPermConstExpr(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"main.go": permApp(`p.Register(plans + ":write")`, `_ = access.Can(ctx, (plans + ":wirte"))`),
+		"caps.go": `package main
+
+const plans = "plans"
+`,
+	})
+	assertHas(t, ds, contracts.RuleUnregisteredPermission)
+}
+
+// A policy is recognised by how it is made or typed, not by its name.
+func TestUnregisteredPermPolicyReceivers(t *testing.T) {
+	for name, src := range map[string]string{
+		"facade ctor": `func wire(ctx context.Context) {
+	pol := framework.NewRolePolicy()
+	pol.Register("plans:write")
+	_ = framework.Can(ctx, "plans:wirte")
+}`,
+		"struct field": `type server struct{ policy *framework.RolePolicy }
+
+func (s *server) wire(ctx context.Context) {
+	s.policy.Register("plans:write")
+	_ = framework.Can(ctx, "plans:wirte")
+}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ds := fixture(t, map[string]string{"main.go": `package main
+
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/framework"
+)
+
+` + src + `
+`})
+			assertHas(t, ds, contracts.RuleUnregisteredPermission)
+		})
+	}
+}
+
+// A permission-shaped Register on a receiver the pass cannot place may
+// be the policy: the registry is then unknown.
+func TestUnregisteredPermUnplacedRegister(t *testing.T) {
+	ds := fixture(t, map[string]string{"main.go": permApp(`p.Register("plans:write")
+	policyFor(ctx).Register("plans:admin")`, `_ = access.Can(ctx, "plans:admin")`)})
+	assertNot(t, ds, contracts.RuleUnregisteredPermission, "policyFor may return the policy")
+}
+
+// Can and a bare Permission field are common names; only the access
+// package's calls, and a permission-shaped value, are checks.
+func TestUnregisteredPermOtherCanAndField(t *testing.T) {
+	ds := fixture(t, map[string]string{"main.go": permApp(`p.Register("plans:write")`,
+		`_ = acl.Can(ctx, "plans:wirte")
+	_ = ui.Button{Permission: "edit"}`)})
+	assertNot(t, ds, contracts.RuleUnregisteredPermission, "neither is a permission check")
+}

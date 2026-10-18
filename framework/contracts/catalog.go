@@ -1340,8 +1340,8 @@ func permissionRules() []Rule {
 			"`const` gives every check one spelling and fits both `access.Permission` and the `string` fields.",
 		Doc: "access-control",
 		Examples: []Example{{
-			Bad:  "policy.Register(\"plans:write\")\n_ = access.RequirePermission(\"plans:wirte\")",
-			Good: "policy.Register(\"plans:write\")\n_ = access.RequirePermission(\"plans:write\")",
+			Bad:  "policy := access.NewRolePolicy()\npolicy.Register(\"plans:write\")\n_ = access.RequirePermission(\"plans:wirte\")",
+			Good: "policy := access.NewRolePolicy()\npolicy.Register(\"plans:write\")\n_ = access.RequirePermission(\"plans:write\")",
 		}},
 	}, {
 		ID: RuleAuthNotWired, Slug: "permissions/auth-not-wired",
