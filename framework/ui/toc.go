@@ -74,6 +74,8 @@ type TOCConfig struct {
 	// it, for a page whose SectionMenu already floats its pill at
 	// the bottom.
 	PhoneSheetTop bool
+	// CloseLabel names the phone sheet's dismiss control. Empty uses Close.
+	CloseLabel string
 	// Breakpoint is the width below which PhoneSheet folds the list:
 	// below md (48rem, the default) or below lg (64rem). Match the
 	// ContentRow's Breakpoint.
@@ -132,7 +134,7 @@ func TableOfContents(cfg TOCConfig) render.HTML {
 	if cfg.Breakpoint == StackBelowLG {
 		swap = interactive.SwapLG
 	}
-	return interactive.PhoneSheet(interactive.PhoneSheetConfig{ID: sheetID, Title: label, SwapAt: swap, Top: cfg.PhoneSheetTop}, nav)
+	return interactive.PhoneSheet(interactive.PhoneSheetConfig{ID: sheetID, Title: label, SwapAt: swap, Top: cfg.PhoneSheetTop, CloseLabel: cfg.CloseLabel}, nav)
 }
 
 var tocStyle = registry.RegisterStyle("ui-toc", tocCSS)

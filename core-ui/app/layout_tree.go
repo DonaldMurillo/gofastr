@@ -13,6 +13,8 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
 )
@@ -142,6 +144,10 @@ type OutletSpec struct {
 // its innerHTML — so the transition rides the cell exactly like a
 // placed outlet's does.
 type AreaSpec struct {
+	// Contents keeps the area addressable for swaps without inserting a
+	// layout box. Use it around a sticky header or grid children whose
+	// containing block must remain the layout, not the area wrapper.
+	Contents bool
 	// Name identifies the area inside its layout (letters, digits,
 	// '-', '_'); RouteArea addresses it "<layer key>~<name>".
 	Name string
@@ -520,6 +526,7 @@ func (t *LayoutTree) RouteArea(name string, fn func(ctx context.Context, m Match
 	attrs := html.Attrs{"data-cui-area": addr}
 	var ld *Loading
 	inline := false
+	contents := false
 	if t.spec != nil {
 		for _, a := range t.spec.Areas {
 			if a.Name != name {
@@ -529,6 +536,7 @@ func (t *LayoutTree) RouteArea(name string, fn func(ctx context.Context, m Match
 				attrs[k] = v
 			}
 			ld, inline = a.Loading, a.Inline
+			contents = a.Contents
 			break
 		}
 	}
@@ -541,8 +549,15 @@ func (t *LayoutTree) RouteArea(name string, fn func(ctx context.Context, m Match
 	if inline {
 		cell = html.Span(html.TextConfig{ExtraAttrs: attrs}, area)
 	}
+	if contents {
+		cell = layoutAreaStyle.WrapHTML(cell)
+	}
 	return render.Join(cell, loadingTemplate(t.ctx, addr, ld))
 }
+
+var layoutAreaStyle = registry.RegisterStyle("cui-layout-area", func(_ style.Theme) string {
+	return `[data-cui-comp="cui-layout-area"] { display: contents; }`
+})
 
 // containedArea runs an area fn under the same panic-to-error
 // containment a component render gets: a panicking area renders empty
