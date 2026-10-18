@@ -28,7 +28,17 @@
 // core can still read them.
 (() => {
   'use strict';
-  const _wEv = (t, d) => document.dispatchEvent(new CustomEvent(t, { detail: d }));
+  const _wEv = (t, d) => {
+    if (d.root && (t === 'fui:widget-open' || t === 'fui:widget-close')) {
+      if (!d.root.id) d.root.id = d.name;
+      for (const trigger of document.querySelectorAll('[data-cui-open]')) {
+        if (trigger.getAttribute('data-cui-open') !== d.name) continue;
+        trigger.setAttribute('aria-controls', d.root.id);
+        trigger.setAttribute('aria-expanded', t === 'fui:widget-open' ? 'true' : 'false');
+      }
+    }
+    document.dispatchEvent(new CustomEvent(t, { detail: d }));
+  };
   // #409: widget lifecycle events are dispatched on document (fui: is
   // the widget-UI family; gofastr: stays reserved for window-level
   // navigation events). One shared dispatch spelling: three inline
