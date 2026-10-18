@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"math"
 	"net/http"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/battery/admin"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -46,10 +48,37 @@ func (revenueReport) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		ui.PageHeader(ui.PageHeaderConfig{Title: "Revenue", Subtitle: "What comes in, what is owed, and what failed."}),
 		figures,
-		ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapMD},
+		ui.Grid(ui.GridConfig{Min: "24rem", Gap: ui.GapMD},
+			ui.Card(ui.CardConfig{Heading: "Payment success", HeadingLevel: 2}, ui.Center(ui.CenterConfig{}, paymentSuccessGauge(ctx))),
 			breakdown("Invoices by status", "invoices", "status"),
 			breakdown("Payments by method", "payments", "method"),
 			breakdown("Subscriptions by status", "subscriptions", "status"),
 		),
 	)
+}
+
+// paymentSuccessGauge draws the share of payments that went through
+// (succeeded, or succeeded and later refunded) out of every attempt. No
+// payments yet, or a count the caller may not read, is no reading, and
+// the gauge shows its empty state.
+func paymentSuccessGauge(ctx context.Context) render.HTML {
+	rate := math.NaN()
+	all, okAll := appUI.CountInt(ctx, "payments", "")
+	failed, okFailed := appUI.CountInt(ctx, "payments", `status = "failed"`)
+	if okAll && okFailed && all > 0 {
+		// Two reads, not one: a payment that fails between them can make
+		// failed outrun all, and the share must not go below zero.
+		rate = 100 * float64(all-min(failed, all)) / float64(all)
+	}
+	return ui.Gauge(ui.GaugeConfig{
+		Label:     "Payments that went through",
+		Size:      200,
+		Value:     rate,
+		ValueText: strconv.FormatFloat(rate, 'f', 1, 64) + "%",
+		Bands: []ui.GaugeBand{
+			{From: 0, Tone: ui.GaugeDanger},
+			{From: 90, Tone: ui.GaugeWarning},
+			{From: 97, Tone: ui.GaugeSuccess},
+		},
+	})
 }

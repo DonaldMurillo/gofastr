@@ -73,6 +73,17 @@ func TestChartConfigStringsEscaped(t *testing.T) {
 		assertSafe(t, string(h))
 	})
 
+	t.Run("gauge", func(t *testing.T) {
+		h := ui.Gauge(ui.GaugeConfig{
+			Label:     idAttack,
+			ValueText: idAttack,
+			ID:        idAttack,
+			Class:     classAttack,
+			Value:     1,
+		})
+		assertSafe(t, string(h))
+	})
+
 	t.Run("happy-path-palette-color", func(t *testing.T) {
 		h := ui.PieChart(ui.PieChartConfig{
 			Slices: []ui.PieSlice{{Value: 1, Color: "primary"}},

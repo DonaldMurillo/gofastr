@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -44,23 +45,56 @@ type timeoutWriter struct {
 	code        int
 	streaming   bool // committed to passthrough (Flush/Hijack used)
 	timedOut    bool
+	returned    bool // the handler returned; every later call is refused
 }
+
+// timeoutBodies recycles the body buffers. A page-sized response grew a
+// fresh buffer by doubling on every request: about 260 KB allocated to
+// send a 96 KB page.
+var timeoutBodies = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+
+// maxPooledBody is the largest buffer handed back to timeoutBodies. A
+// rare multi-megabyte response would otherwise stay pinned in the pool
+// long after the request that needed it.
+const maxPooledBody = 1 << 20
+
+// errWriteAfterReturn answers a write through a writer whose handler has
+// already returned. Its buffer may belong to another request by then.
+var errWriteAfterReturn = errors.New("timeout middleware: write after the handler returned")
 
 func newTimeoutWriter(w http.ResponseWriter) *timeoutWriter {
 	return &timeoutWriter{
 		w:    w,
 		h:    w.Header().Clone(),
-		body: &bytes.Buffer{},
+		body: timeoutBodies.Get().(*bytes.Buffer),
 		code: http.StatusOK,
 	}
 }
+
+// release returns the body buffer to the pool once the handler has
+// returned and its output is committed or abandoned. Clearing tw.body
+// under the lock is what keeps a write from a goroutine the handler left
+// behind out of the next request's response: Write sees nil and refuses.
+func (tw *timeoutWriter) release() {
+	tw.mu.Lock()
+	b := tw.body
+	tw.body = nil
+	tw.returned = true
+	tw.mu.Unlock()
+	if b != nil && poolableBody(b) {
+		b.Reset()
+		timeoutBodies.Put(b)
+	}
+}
+
+func poolableBody(b *bytes.Buffer) bool { return b.Cap() <= maxPooledBody }
 
 func (tw *timeoutWriter) Header() http.Header { return tw.h }
 
 func (tw *timeoutWriter) WriteHeader(code int) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
-	if tw.timedOut || tw.wroteHeader {
+	if tw.timedOut || tw.returned || tw.wroteHeader {
 		return
 	}
 	tw.wroteHeader = true
@@ -76,6 +110,9 @@ func (tw *timeoutWriter) Write(p []byte) (int, error) {
 	defer tw.mu.Unlock()
 	if tw.timedOut {
 		return 0, http.ErrHandlerTimeout
+	}
+	if tw.returned {
+		return 0, errWriteAfterReturn
 	}
 	if !tw.wroteHeader {
 		tw.wroteHeader = true
@@ -93,7 +130,7 @@ func (tw *timeoutWriter) Write(p []byte) (int, error) {
 func (tw *timeoutWriter) Flush() {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
-	if tw.timedOut {
+	if tw.timedOut || tw.returned {
 		return
 	}
 	if !tw.streaming {
@@ -113,6 +150,10 @@ func (tw *timeoutWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if tw.timedOut {
 		tw.mu.Unlock()
 		return nil, nil, fmt.Errorf("timeout middleware: response already timed out")
+	}
+	if tw.returned {
+		tw.mu.Unlock()
+		return nil, nil, errWriteAfterReturn
 	}
 	tw.streaming = true
 	tw.mu.Unlock()
@@ -142,20 +183,21 @@ func (tw *timeoutWriter) commitBufferedLocked() {
 	if tw.wroteHeader {
 		tw.w.WriteHeader(tw.code)
 	}
-	if tw.body.Len() > 0 {
+	if tw.body != nil && tw.body.Len() > 0 {
 		_, _ = tw.body.WriteTo(tw.w)
 	}
 }
 
 // finish commits buffered handler output to the underlying writer when
-// the handler completed normally and the timeout has not fired.
+// the handler completed normally and the timeout has not fired, then
+// releases the buffer. Call it only after the handler has returned.
 func (tw *timeoutWriter) finish() {
 	tw.mu.Lock()
-	defer tw.mu.Unlock()
-	if tw.timedOut || tw.streaming {
-		return
+	if !tw.timedOut && !tw.streaming {
+		tw.commitBufferedLocked()
 	}
-	tw.commitBufferedLocked()
+	tw.mu.Unlock()
+	tw.release()
 }
 
 // expire flags the timeout. Returns false when the response is already
@@ -415,6 +457,7 @@ func Timeout(d time.Duration) Middleware {
 					// lifetime belongs to the handler and its own bound
 					// (#159).
 					<-done
+					tw.release()
 					if childPanic != nil {
 						panic(childPanic)
 					}
@@ -430,6 +473,7 @@ func Timeout(d time.Duration) Middleware {
 				// impossible.
 				go func() {
 					<-done
+					tw.release()
 					if childPanic != nil {
 						slog.Error("panic in timed-out handler",
 							"error", textsafe.Truncate(textsafe.ScrubControlBytes(fmt.Sprint(childPanic)), maxRecoveryPanicLen),
@@ -444,6 +488,7 @@ func Timeout(d time.Duration) Middleware {
 			select {
 			case <-done:
 				if childPanic != nil {
+					tw.release()
 					panic(childPanic)
 				}
 				tw.finish()
@@ -469,6 +514,7 @@ func Timeout(d time.Duration) Middleware {
 				// write to a socket nobody is reading.
 				if handlerBeatTheDeadline(done, &finishedAt, deadline) {
 					if childPanic != nil {
+						tw.release()
 						panic(childPanic)
 					}
 					tw.finish()

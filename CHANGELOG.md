@@ -7,6 +7,43 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+- **`framework/testkit/cssweight` weighs the CSS a page ships.**
+  `cssweight.Measure` fetches a page over HTTP and reports the raw and
+  gzip size of its `<style>` elements and linked stylesheets, so an
+  app's test can cap CSS per page. It resolves sheets against
+  `<base href>`, and a redirect, a non-200 answer or an `@import` is an
+  error rather than a number. Meridian and the docs site now fail
+  their tests when a page ships more than 17 KiB of gzipped CSS, or
+  less than 1 KiB, which means its stylesheets went missing; the
+  heaviest pages today sit at about 15.5 KiB.
+- **`ui.Gauge` draws one reading against a range.** It's a semicircle
+  SVG dial on an ARIA `meter`, so a screen reader announces the label and
+  `ValueText` ("CPU, 73%"). `Bands` color the arc by where the reading
+  falls, for example green from 0, amber from 70, red from 90. A
+  reading outside `Min`–`Max` pins the arc to the nearer end, and NaN
+  or Inf shows the charts' empty state. The reading's text scales with
+  `Size`. Meridian's Revenue page shows the share of payments that went
+  through on one.
+- **`entityui.UI.CountInt`** is `Count` as an `int`, under the same read
+  gate and scope, for figures a host computes with.
+
+### Changed
+- **The Timeout middleware reuses its response buffers.** It holds each
+  response until the handler returns, and it used to grow a new buffer
+  for every request: about 260 KB allocated and 36 µs spent to send a
+  96 KB page, against 2 KB and 4 µs now. Once the handler has returned
+  or panicked, a write or `Hijack` through its response writer fails
+  with an error and a late `WriteHeader` or `Flush` does nothing, instead of
+  reaching a buffer that may belong to the next request or a response
+  net/http has already finished. This holds for streamed responses too.
+
+### Fixed
+- **A chart's empty state keeps its `ID`.** `ui.BarChart`,
+  `ui.LineChart` and `ui.PieChart` dropped the host's `ID` when they had
+  no data to draw, so a link or test selector aimed at the chart found
+  nothing in exactly that state.
+
 ## [0.89.0] - 2026-10-17
 
 **BREAKING.** `gofastr verify` now runs GoFastr's type-aware analyzers

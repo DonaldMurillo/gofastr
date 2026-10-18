@@ -91,7 +91,7 @@ type BarChartConfig struct {
 // BarChart renders a categorical bar chart.
 func BarChart(cfg BarChartConfig) render.HTML {
 	if len(cfg.Bars) == 0 {
-		return chartEmpty(cfg.Height, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
+		return chartEmpty(cfg.ID, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
 	}
 	w := cfg.Width
 	if w == 0 {
