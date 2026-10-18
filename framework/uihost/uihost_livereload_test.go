@@ -47,3 +47,26 @@ func TestUIHostOmitsLiveReloadScriptByDefault(t *testing.T) {
 		t.Fatalf("livereload script injected without GOFASTR_DEV:\n%s", page)
 	}
 }
+
+func TestUIHostAddsLayoutLayerWhenDev(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "1")
+	t.Setenv("GOFASTR_DEV_LAYOUT", "")
+	t.Setenv("GOFASTR_ENV", "")
+
+	application := app.NewApp("Test")
+	application.SetDefaultLayout(bareLayout("main"))
+	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home").WithDescription("h"), nil)
+
+	rec := httptest.NewRecorder()
+	New(application).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if !strings.Contains(rec.Body.String(), `<script defer src="/__devlayout.js"></script>`) {
+		t.Fatalf("layout layer script not added:\n%s", rec.Body.String())
+	}
+
+	t.Setenv("GOFASTR_DEV_LAYOUT", "0")
+	rec = httptest.NewRecorder()
+	New(application).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if strings.Contains(rec.Body.String(), "/__devlayout.js") {
+		t.Fatalf("layout layer added despite GOFASTR_DEV_LAYOUT=0")
+	}
+}

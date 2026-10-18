@@ -22,6 +22,7 @@ always safe:
 | `GOFASTR_DEV` | unset | `gofastr dev` sets this to `1` on the child process. Without it, livereload stays dormant. |
 | `GOFASTR_ENV` | unset | Set to `production` to force livereload off even if `GOFASTR_DEV` slips through. Belt-and-suspenders for accidental dev binaries in prod. |
 | `GOFASTR_DEV_LIVERELOAD` | unset (= on) | Set to `0` to opt out while keeping the rest of dev mode (`gofastr dev`'s rebuild loop) running. |
+| `GOFASTR_DEV_LAYOUT` | unset (= on) | Set to `0` to stop serving the [layout layer](#layout-layer) script. |
 
 Predicate (single source of truth in `framework/dev/livereload.go`):
 
@@ -81,6 +82,50 @@ running binary holds rather than at a stale copy of it.
 
 Production caching is unchanged: when dev mode is off, no header is
 set at all.
+
+## Layout layer
+
+Under the same gate, every page also links `/__devlayout.js`, a
+script that draws the page's structure over it. Press **Alt+Shift+L**
+(Option+Shift+L on a Mac) to show or hide it. The choice is kept in
+`localStorage`, so it stays on across livereload's reloads until you
+press the keys again. Nothing is drawn, and nothing is added to the
+page, while it is off.
+
+It outlines, with a label at each box's top-left corner:
+
+| Outline | What it marks |
+|---|---|
+| layout (purple, solid) | a layout layer, `data-cui-layout`, with its `data-cui-layout-key` |
+| slot (blue, dashed) | a layer's content cell, `data-cui-layout-slot`, the client router's swap target |
+| outlet, area (teal) | `data-cui-outlet` and `data-cui-area` cells |
+| scope (amber, dotted) | an owned style's root, `data-cui-scope` |
+| island (green), widget (pink) | `data-island` regions and `data-cui-widget` surfaces |
+| scrolls (grey, dotted) | a box whose `overflow` is `auto` or `scroll` and whose content is larger than it, labelled `x`, `y` or both |
+| overflows (red, filled) | an element that runs past the viewport's left or right edge, labelled with how far |
+
+An element counts as overflowing only when nothing above it scrolls,
+clips or fixes it in place: a table inside a scroll box, a carousel
+inside `overflow: hidden` and an off-canvas `position: fixed` drawer
+are all deliberate. Only the outermost such element is labelled, not
+each of its children. A legend in the bottom-left corner counts each
+kind and says when the whole page scrolls sideways, and by how many
+pixels. Resize the window to a phone width to find what widens the
+page there.
+
+The layer sits in a shadow root on a fixed element outside `<body>`,
+so app CSS does not reach it and client navigation does not remove it.
+It sets every style through the CSSOM, which the framework's default
+CSP allows. It takes no pointer events, so the page under it works as
+usual. It redraws as you scroll, and walks the page again after DOM
+changes, a resize, or the end of a transition or animation.
+
+`window.__gofastrDevLayout` exposes `show()`, `hide()`, `toggle()`,
+`on`, and `findings` (the overflow labels), for a browser test or an
+agent driving the page.
+
+Pages that uihost does not render get the script through the same
+middleware that adds the livereload client.
 
 ## How `gofastr dev` wires it
 

@@ -59,6 +59,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   constants, including another package's (`perms.PlansWrite`). A typo
   there compiled before and denied every role granted the intended name. The
   contract catalog holds 79 rules.
+- **A layout layer under `gofastr dev`.** Alt+Shift+L draws the page's
+  layout layers, slots, outlets, areas, owned-style scopes, islands
+  and widgets as labelled outlines. It also marks every box that
+  scrolls, and every element that runs past the viewport (skipping
+  ones inside a scroll box, a clip or a fixed drawer), with a legend
+  that says when the page scrolls sideways. The on/off choice
+  survives reloads. Served at `/__devlayout.js` only in dev;
+  `GOFASTR_DEV_LAYOUT=0` turns it off. See
+  [dev-livereload](framework/docs/content/dev-livereload.md#layout-layer).
 
 ### Changed
 - **`router.Param` panics on a name its route does not declare.**

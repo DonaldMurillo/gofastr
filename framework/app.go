@@ -1967,6 +1967,7 @@ func NewApp(opts ...AppOption) *App {
 	// set (typically by `gofastr dev`) and the host isn't in production.
 	// See framework/dev/livereload.go for the env-gate rules.
 	dev.MaybeRegisterLiveReload(a.router)
+	dev.MaybeRegisterLayoutLayer(a.router)
 
 	// Auto-enable the agent-facing MCP surface in the dev loop: /mcp
 	// mount, read-only introspection, and runtime control, the dev

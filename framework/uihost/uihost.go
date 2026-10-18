@@ -1080,6 +1080,9 @@ func New(application *app.App, opts ...Option) *UIHost {
 	if dev.LiveReloadEnabled() {
 		ds.extraScripts = append(ds.extraScripts, externalScript{src: dev.LiveReloadScriptURL})
 	}
+	if dev.LayoutLayerEnabled() {
+		ds.extraScripts = append(ds.extraScripts, externalScript{src: dev.LayoutLayerScriptURL})
+	}
 	// #215: a partial DarkColors silently keeps light values in dark mode
 	// (the map is what renders under a dark preference; editing Colors
 	// alone changes nothing on screen). One warning naming the exact
