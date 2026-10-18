@@ -164,9 +164,9 @@ func RegisterLiveReload(r *router.Router) {
 
 	// HTML responses that don't already carry the client get it injected, so
 	// non-uihost surfaces (static file serving, widget pages, hand-rolled
-	// handlers) refresh in the browser too. Guarded by the same `registered`
-	// map above, so the middleware mounts at most once per router.
-	r.Use(LiveReloadHTMLInjector())
+	// handlers) refresh in the browser too. The injector is shared with the
+	// layout layer and mounts at most once per router.
+	addDevScript(r, LiveReloadScriptURL)
 }
 
 // MaybeRegisterLiveReload calls RegisterLiveReload only if LiveReloadEnabled()

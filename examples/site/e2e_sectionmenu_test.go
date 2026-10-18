@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/emulation"
+	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
 )
 
@@ -266,6 +267,87 @@ func TestE2E_SectionMenu_PillAndSheetFilter(t *testing.T) {
 	}
 	if shown != "DateField" {
 		t.Errorf(`filter "datefield" shows %q, want DateField`, shown)
+	}
+}
+
+// Mobile: a finger swipe on the open sheet scrolls its list, and a drag
+// down on the handle bar still closes it. The sheet root is its own
+// scroller, so a touch-action: none on it leaves the browser no pan to
+// perform and the list never moves; the handle keeps its own none so
+// the drag reaches the runtime instead of becoming a scroll.
+func TestE2E_SectionMenu_SheetTouchScrolls(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	base := siteE2EServer(t)
+	ctx := siteBrowserCtx(t)
+	sheet := `document.querySelector('[data-cui-widget="docs-section-menu"]')`
+
+	var overflow, scrolled, control float64
+	var handle []float64
+	var lockAfterDrag, rootTouch, handleTouch string
+	touch := func(typ input.TouchType, y float64) chromedp.Action {
+		pts := []*input.TouchPoint{}
+		if typ != input.TouchEnd {
+			pts = append(pts, &input.TouchPoint{X: handle[0], Y: y})
+		}
+		return input.DispatchTouchEvent(typ, pts)
+	}
+	if err := chromedp.Run(ctx,
+		emulation.SetDeviceMetricsOverride(390, 844, 1, true),
+		emulation.SetTouchEmulationEnabled(true),
+		chromedp.Navigate(base+"/docs"),
+		chromedp.WaitReady(`.cui-sheet-pill`, chromedp.ByQuery),
+		// Control: the same swipe on the page itself. A browser build that
+		// cannot synthesize a touch scroll (CI's Linux Chrome moved neither
+		// the page nor the sheet) leaves this at 0.
+		input.SynthesizeScrollGesture(195, 500).
+			WithYDistance(-200).
+			WithGestureSourceType(input.GestureTouch),
+		chromedp.Sleep(400*time.Millisecond),
+		chromedp.Evaluate(`(()=>{const y=scrollY;scrollTo(0,0);return y})()`, &control),
+		chromedp.Evaluate(`document.querySelector('.cui-sheet-pill').click()`, nil),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(`(()=>{const s=`+sheet+`;return s.scrollHeight-s.clientHeight})()`, &overflow),
+		chromedp.Evaluate(`getComputedStyle(`+sheet+`).touchAction`, &rootTouch),
+		chromedp.Evaluate(`getComputedStyle(`+sheet+`.querySelector('.cui-widget-drag-handle')).touchAction`, &handleTouch),
+		input.SynthesizeScrollGesture(195, 500).
+			WithYDistance(-200).
+			WithGestureSourceType(input.GestureTouch),
+		chromedp.Sleep(400*time.Millisecond),
+		chromedp.Evaluate(sheet+`.scrollTop`, &scrolled),
+		chromedp.Evaluate(`(()=>{const s=`+sheet+`;s.scrollTop=0;const r=s.querySelector('.cui-widget-drag-handle').getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2]})()`, &handle),
+	); err != nil {
+		t.Fatalf("sheet touch scroll: %v", err)
+	}
+	if overflow < 200 {
+		t.Fatalf("the docs sheet overflows by %.0fpx; the swipe needs a list taller than the sheet", overflow)
+	}
+	if rootTouch == "none" {
+		t.Errorf("sheet root has touch-action: none; a finger cannot pan its list")
+	}
+	if handleTouch != "none" {
+		t.Errorf("drag handle touch-action = %q, want none so a drag reaches the runtime", handleTouch)
+	}
+	switch {
+	case control < 100:
+		t.Logf("this browser does not synthesize touch scrolls (the page moved %.0fpx); the swipe check is skipped", control)
+	case scrolled < 100:
+		t.Errorf("a 200px swipe scrolled the sheet %.0fpx, want it to follow the finger", scrolled)
+	}
+
+	y := handle[1]
+	steps := []chromedp.Action{touch(input.TouchStart, y)}
+	for i := 1; i <= 6; i++ {
+		steps = append(steps, touch(input.TouchMove, y+float64(i)*25), chromedp.Sleep(16*time.Millisecond))
+	}
+	steps = append(steps, touch(input.TouchEnd, 0), chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`getComputedStyle(document.documentElement).overflow`, &lockAfterDrag))
+	if err := chromedp.Run(ctx, steps...); err != nil {
+		t.Fatalf("handle drag: %v", err)
+	}
+	if lockAfterDrag == "hidden" {
+		t.Error("a 150px drag down on the handle left the sheet open (scroll lock still held)")
 	}
 }
 

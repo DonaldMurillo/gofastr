@@ -231,3 +231,23 @@ func TestMarkdownExtraAttrsCannotOverrideOwned(t *testing.T) {
 		t.Errorf("owned attr overridden by ExtraAttrs:\n%s", root)
 	}
 }
+
+// A table wider than a phone scrolls in its own box. Without one, a page
+// that clips its content column (the docs page on phones) cut the
+// table's right edge off.
+func TestMarkdownTableScrollsInItsOwnBox(t *testing.T) {
+	h := string(Markdown(MarkdownConfig{Source: "| A | B |\n|---|---|\n| 1 | 2 |\n\n| C |\n|---|\n| 3 |\n"}))
+	if got := strings.Count(h, `<div class="fui-markdown__table" tabindex="0"><table>`); got != 2 {
+		t.Errorf("want each table wrapped in a focusable scroll box, got %d:\n%s", got, h)
+	}
+	if got := strings.Count(h, "</table></div>"); got != 2 {
+		t.Errorf("want each scroll box closed after its table, got %d:\n%s", got, h)
+	}
+	css := markdownCSS(style.DefaultTheme())
+	if !strings.Contains(css, ".fui-markdown__table {\n  overflow-x: auto;\n  margin-block-start: 1.5em;\n  container-type: inline-size;") {
+		t.Error("sheet should make .fui-markdown__table a size container that scrolls sideways")
+	}
+	if !strings.Contains(css, "max-inline-size: 70cqi;\n  overflow-wrap: break-word;") {
+		t.Error("sheet should cap each table column at 70cqi of its scroll box and wrap past it")
+	}
+}

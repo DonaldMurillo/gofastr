@@ -133,7 +133,8 @@ each command to the doc that covers it.
 
 ## The daily loop
 
-- `gofastr dev`: rebuild on save, browser livereload, contract findings
+- `gofastr dev`: rebuild on save, browser livereload, a layout layer
+  (Alt+Shift+L outlines the page's layout and flags overflow), contract findings
   for what you changed (after the reload, never blocking it), and the dev
   MCP tools for your coding agent ([dev-livereload](dev-livereload.md)).
   `--dir` sets the watch root, `--pkg` the main package under it,

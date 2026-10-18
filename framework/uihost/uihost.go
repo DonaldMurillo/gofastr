@@ -1080,6 +1080,9 @@ func New(application *app.App, opts ...Option) *UIHost {
 	if dev.LiveReloadEnabled() {
 		ds.extraScripts = append(ds.extraScripts, externalScript{src: dev.LiveReloadScriptURL})
 	}
+	if dev.LayoutLayerEnabled() {
+		ds.extraScripts = append(ds.extraScripts, externalScript{src: dev.LayoutLayerScriptURL})
+	}
 	// #215: a partial DarkColors silently keeps light values in dark mode
 	// (the map is what renders under a dark preference; editing Colors
 	// alone changes nothing on screen). One warning naming the exact
@@ -3642,6 +3645,12 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// table is complete; a host mounted outside a framework.App never
 	// reaches that point and never gets the link check.
 	ds.coreRouter = r
+	// The page links the dev scripts whenever their gates are on, so the
+	// router it mounts on must serve them. framework.NewApp already
+	// registered them on its router (both calls are idempotent); a
+	// standalone host or a custom bootstrap gets them here.
+	dev.MaybeRegisterLiveReload(r)
+	dev.MaybeRegisterLayoutLayer(r)
 	ds.enforceStrict()
 	ds.AutoCompileActions()
 	// Fill validation (DESIGN "Validation at mount"): a fill naming
