@@ -267,6 +267,15 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		// route is mounted for every non-system move, Advisory or not.
 		st := ent.Config.States
 		statesGuarded := st != nil && !st.Advisory
+		// An update never sets the owner field or the MultiTenant tenant
+		// column (crud doUpdate skips both), so no update body lists them.
+		var updateSkip []string
+		if owner := ent.Config.Scope.OwnerField; owner != "" {
+			updateSkip = append(updateSkip, owner)
+		}
+		if ent.Config.Scope.MultiTenant {
+			updateSkip = append(updateSkip, ent.Config.TenantColumn())
+		}
 		// apiPrefix first, then any per-entity version group: the router
 		// mounts /api/v2/posts, so the document has to key it that way.
 		// A versioned entity's group prefix is mounted absolutely by the
@@ -401,7 +410,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		// Create request body excludes auto-generated and read-only
 		// fields; enforced states narrow the state field's enum to the
 		// values a create may set and drop the stamps.
-		createSchema := requestSchema(entitySchema, fields, st, false)
+		createSchema := requestSchema(entitySchema, fields, st, nil, false)
 		createOp.SetRequestBody("application/json", createSchema, true)
 		createOp.AddResponse(201, "Created "+entityName, singleRef)
 		createOp.AddResponse(400, "Validation error", errorRef)
@@ -441,7 +450,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		updateOp.Tags = []string{tagName}
 		// An enforced states block removes the state field and the stamps
 		// from the update body: they change only through a move's route.
-		updateOp.SetRequestBody("application/json", requestSchema(entitySchema, fields, st, true), false)
+		updateOp.SetRequestBody("application/json", requestSchema(entitySchema, fields, st, updateSkip, true), false)
 		updateOp.AddResponse(200, "Updated "+entityName, singleRef)
 		updateOp.AddResponse(400, "Validation error", errorRef)
 		if statesGuarded {
@@ -461,7 +470,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		patchOp.Summary = "Patch " + entityName
 		patchOp.OperationID = "patch_" + schemaName
 		patchOp.Tags = []string{tagName}
-		patchSchema := requestSchema(entitySchema, fields, st, true)
+		patchSchema := requestSchema(entitySchema, fields, st, updateSkip, true)
 		delete(patchSchema, "required")
 		patchOp.SetRequestBody("application/json", patchSchema, true)
 		patchOp.AddResponse(200, "Patched "+entityName, singleRef)
@@ -572,7 +581,7 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 		// --- PATCH /{table}/_batch: BatchUpdate ---
 		batchUpdateItem := map[string]any{
 			"allOf": []any{
-				requestSchema(entitySchema, fields, st, true),
+				requestSchema(entitySchema, fields, st, updateSkip, true),
 				map[string]any{"type": "object", "properties": map[string]any{"id": map[string]any{"type": "string"}}, "required": []string{"id"}},
 			},
 		}
@@ -686,36 +695,41 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 }
 
 // requestSchema returns the write-request view of the entity schema:
-// excludeFieldsByBehavior, then the states rules. With enforced states
-// (declared and not Advisory) a create keeps the state field but narrows
-// its enum to the values a create may set, and drops every stamp; an
-// update drops the state field and the stamps entirely — they change
-// only through a move's own route. Without enforced states it is
-// excludeFieldsByBehavior unchanged.
-func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.StatesConfig, update bool) map[string]any {
+// excludeFieldsByBehavior, then the update skips, then the states rules.
+// An update drops the fields named in updateSkip (the owner and tenant
+// columns, which an update never sets). With enforced states (declared
+// and not Advisory) a create keeps the state field but narrows its enum
+// to the values a create may set, and drops every stamp; an update drops
+// the state field and the stamps entirely — they change only through a
+// move's own route.
+func requestSchema(specSchema map[string]any, fields []schema.Field, st *entity.StatesConfig, updateSkip []string, update bool) map[string]any {
 	cp := excludeFieldsByBehavior(specSchema, fields)
-	if st == nil || st.Advisory {
-		return cp
-	}
 	byName := make(map[string]schema.Field, len(fields))
 	for _, f := range fields {
 		byName[f.Name] = f
 	}
 	drop := map[string]bool{} // wire keys no write may carry
-	for _, t := range st.Transitions {
-		if t.Stamp == "" {
-			continue
-		}
-		if f, ok := byName[t.Stamp]; ok {
-			drop[wireKeyOf(f)] = true
+	if update {
+		for _, name := range updateSkip {
+			if f, ok := byName[name]; ok {
+				drop[wireKeyOf(f)] = true
+			}
 		}
 	}
 	stateKey := ""
-	if f, ok := byName[st.Field]; ok {
-		stateKey = wireKeyOf(f)
-	}
-	if update {
-		if stateKey != "" {
+	if st != nil && !st.Advisory {
+		for _, t := range st.Transitions {
+			if t.Stamp == "" {
+				continue
+			}
+			if f, ok := byName[t.Stamp]; ok {
+				drop[wireKeyOf(f)] = true
+			}
+		}
+		if f, ok := byName[st.Field]; ok {
+			stateKey = wireKeyOf(f)
+		}
+		if update && stateKey != "" {
 			drop[stateKey] = true
 		}
 	}
@@ -797,7 +811,11 @@ func fieldToFilterSchema(f schema.Field) map[string]any {
 	}
 }
 
-// excludeFieldsByBehavior returns a copy of an OpenAPI schema excluding auto-generated, read-only, and hidden fields.
+// excludeFieldsByBehavior returns a copy of an OpenAPI schema excluding
+// auto-generated, read-only, and hidden fields. A required field with a
+// default leaves the required list: a write may omit it and take the
+// default (schema.ValidateAll skips it). The response schema keeps it
+// required, since every stored row carries it.
 func excludeFieldsByBehavior(specSchema map[string]any, fields []schema.Field) map[string]any {
 	cp := make(map[string]any, len(specSchema))
 	maps.Copy(cp, specSchema)
@@ -819,10 +837,16 @@ func excludeFieldsByBehavior(specSchema map[string]any, fields []schema.Field) m
 		}
 		cp["properties"] = newProps
 	}
+	defaulted := make(map[string]bool)
+	for _, f := range fields {
+		if f.Default != nil {
+			defaulted[wireKeyOf(f)] = true
+		}
+	}
 	if reqs, ok := cp["required"].([]string); ok {
 		filtered := make([]string, 0, len(reqs))
 		for _, r := range reqs {
-			if !exclude[r] {
+			if !exclude[r] && !defaulted[r] {
 				filtered = append(filtered, r)
 			}
 		}

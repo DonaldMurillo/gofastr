@@ -9,23 +9,76 @@ import (
 )
 
 type Orders struct {
-	ID              string         `json:"id"`
-	UserId          string         `json:"userId,omitempty"`
-	OrderNumber     string         `json:"orderNumber,omitempty"`
-	Status          string         `json:"status,omitempty"`
-	CustomerName    string         `json:"customerName,omitempty"`
-	CustomerEmail   string         `json:"customerEmail,omitempty"`
-	CustomerPhone   string         `json:"customerPhone,omitempty"`
-	ShippingAddress map[string]any `json:"shippingAddress,omitempty"`
-	BillingAddress  map[string]any `json:"billingAddress,omitempty"`
-	Subtotal        string         `json:"subtotal,omitempty"`
-	Tax             string         `json:"tax,omitempty"`
-	ShippingCost    string         `json:"shippingCost,omitempty"`
-	Total           string         `json:"total,omitempty"`
-	Notes           string         `json:"notes,omitempty"`
-	ShippedAt       string         `json:"shippedAt,omitempty"`
-	DeliveredAt     string         `json:"deliveredAt,omitempty"`
-	Items           []*OrderItems  `json:"items,omitempty"`
+	ID              string            `json:"id"`
+	UserId          string            `json:"userId,omitempty"`
+	OrderNumber     string            `json:"orderNumber,omitempty"`
+	Status          OrdersStatusValue `json:"status,omitempty"`
+	CustomerName    string            `json:"customerName,omitempty"`
+	CustomerEmail   string            `json:"customerEmail,omitempty"`
+	CustomerPhone   string            `json:"customerPhone,omitempty"`
+	ShippingAddress map[string]any    `json:"shippingAddress,omitempty"`
+	BillingAddress  map[string]any    `json:"billingAddress,omitempty"`
+	Subtotal        string            `json:"subtotal,omitempty"`
+	Tax             string            `json:"tax,omitempty"`
+	ShippingCost    string            `json:"shippingCost,omitempty"`
+	Total           string            `json:"total,omitempty"`
+	Notes           string            `json:"notes,omitempty"`
+	ShippedAt       string            `json:"shippedAt,omitempty"`
+	DeliveredAt     string            `json:"deliveredAt,omitempty"`
+	Items           []*OrderItems     `json:"items,omitempty"`
+}
+
+// OrdersStatusValue is one value of the orders field status.
+type OrdersStatusValue string
+
+const (
+	OrdersStatusPending    OrdersStatusValue = "pending"
+	OrdersStatusConfirmed  OrdersStatusValue = "confirmed"
+	OrdersStatusProcessing OrdersStatusValue = "processing"
+	OrdersStatusShipped    OrdersStatusValue = "shipped"
+	OrdersStatusDelivered  OrdersStatusValue = "delivered"
+	OrdersStatusCancelled  OrdersStatusValue = "cancelled"
+	OrdersStatusRefunded   OrdersStatusValue = "refunded"
+)
+
+// OrdersInput is the create payload for OrdersRepo. A required field with no
+// default is always sent; a nil field takes its default, and new(false)
+// stores false.
+type OrdersInput struct {
+	UserId          *string            `json:"userId,omitempty"`
+	Status          *OrdersStatusValue `json:"status,omitempty"`
+	CustomerName    string             `json:"customerName"`
+	CustomerEmail   string             `json:"customerEmail"`
+	CustomerPhone   *string            `json:"customerPhone,omitempty"`
+	ShippingAddress *map[string]any    `json:"shippingAddress,omitempty"`
+	BillingAddress  *map[string]any    `json:"billingAddress,omitempty"`
+	Subtotal        string             `json:"subtotal"`
+	Tax             *string            `json:"tax,omitempty"`
+	ShippingCost    *string            `json:"shippingCost,omitempty"`
+	Total           string             `json:"total"`
+	Notes           *string            `json:"notes,omitempty"`
+	ShippedAt       *string            `json:"shippedAt,omitempty"`
+	DeliveredAt     *string            `json:"deliveredAt,omitempty"`
+}
+
+// OrdersPatch is the update payload for OrdersRepo: a nil field is left as
+// stored, and a pointer to false, 0 or "" writes it to a bool, int,
+// float, string or text field. "" for any other type is not a value:
+// absent on an optional field, a validation error on a required one.
+type OrdersPatch struct {
+	Status          *OrdersStatusValue `json:"status,omitempty"`
+	CustomerName    *string            `json:"customerName,omitempty"`
+	CustomerEmail   *string            `json:"customerEmail,omitempty"`
+	CustomerPhone   *string            `json:"customerPhone,omitempty"`
+	ShippingAddress *map[string]any    `json:"shippingAddress,omitempty"`
+	BillingAddress  *map[string]any    `json:"billingAddress,omitempty"`
+	Subtotal        *string            `json:"subtotal,omitempty"`
+	Tax             *string            `json:"tax,omitempty"`
+	ShippingCost    *string            `json:"shippingCost,omitempty"`
+	Total           *string            `json:"total,omitempty"`
+	Notes           *string            `json:"notes,omitempty"`
+	ShippedAt       *string            `json:"shippedAt,omitempty"`
+	DeliveredAt     *string            `json:"deliveredAt,omitempty"`
 }
 
 // ====== Orders column references ======
@@ -34,7 +87,7 @@ var (
 	OrdersID              = framework.NewUUIDColumn("id")
 	OrdersUserId          = framework.NewStringColumn("user_id")
 	OrdersOrderNumber     = framework.NewStringColumn("order_number")
-	OrdersStatus          = framework.NewStringColumn("status")
+	OrdersStatus          = framework.NewEnumColumn[OrdersStatusValue]("status")
 	OrdersCustomerName    = framework.NewStringColumn("customer_name")
 	OrdersCustomerEmail   = framework.NewStringColumn("customer_email")
 	OrdersCustomerPhone   = framework.NewStringColumn("customer_phone")
@@ -89,17 +142,40 @@ func (r *OrdersRepo) WithTx(tx *sql.Tx) *OrdersRepo {
 	return &OrdersRepo{handler: &h}
 }
 
-// Create persists row and back-fills server-generated fields onto it.
-func (r *OrdersRepo) Create(ctx context.Context, row *Orders) error {
-	body, err := framework.MarshalEntity(row)
+// row decodes one CRUD result.
+func (r *OrdersRepo) row(out map[string]any) (*Orders, error) {
+	var row Orders
+	if err := framework.UnmarshalEntity(out, &row); err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// rows decodes a batch result, keeping its order.
+func (r *OrdersRepo) rows(outs []map[string]any) ([]*Orders, error) {
+	rows := make([]*Orders, len(outs))
+	for i, out := range outs {
+		row, err := r.row(out)
+		if err != nil {
+			return nil, err
+		}
+		rows[i] = row
+	}
+	return rows, nil
+}
+
+// Create persists in and returns the stored row, server-generated fields
+// included.
+func (r *OrdersRepo) Create(ctx context.Context, in OrdersInput) (*Orders, error) {
+	body, err := framework.MarshalEntity(in)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	out, err := r.handler.CreateOne(ctx, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return framework.UnmarshalEntity(out, row)
+	return r.row(out)
 }
 
 // Get fetches a row by id with optional eager-loaded includes.
@@ -108,26 +184,21 @@ func (r *OrdersRepo) Get(ctx context.Context, id string, includes ...string) (*O
 	if err != nil {
 		return nil, err
 	}
-	var row Orders
-	if err := framework.UnmarshalEntity(out, &row); err != nil {
-		return nil, err
-	}
-	return &row, nil
+	return r.row(out)
 }
 
-// Update merges fields from row into the persisted record by id and refreshes
-// row with the post-update state.
-func (r *OrdersRepo) Update(ctx context.Context, id string, row *Orders) error {
-	body, err := framework.MarshalEntity(row)
+// Update writes patch's non-nil fields onto the row with this id and
+// returns the row as stored afterwards.
+func (r *OrdersRepo) Update(ctx context.Context, id string, patch OrdersPatch) (*Orders, error) {
+	body, err := framework.MarshalEntity(patch)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	delete(body, "id") // id is taken from the path arg, not the body
 	out, err := r.handler.UpdateOne(ctx, id, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return framework.UnmarshalEntity(out, row)
+	return r.row(out)
 }
 
 // Delete removes the row by id (or soft-deletes if SoftDelete is enabled on
@@ -154,10 +225,9 @@ func (r *OrdersRepo) Count(ctx context.Context) (int, error) {
 	return r.Query().Count(ctx)
 }
 
-// FirstOrCreate looks up a row by the given match condition and returns it
-// if found. Otherwise inserts row (filling in its server-generated fields)
-// and returns it.
-func (r *OrdersRepo) FirstOrCreate(ctx context.Context, row *Orders, match framework.Condition) (*Orders, error) {
+// FirstOrCreate returns the first row matching match, or creates in and
+// returns the stored row when none does.
+func (r *OrdersRepo) FirstOrCreate(ctx context.Context, in OrdersInput, match framework.Condition) (*Orders, error) {
 	existing, err := r.Query().Where(match).First(ctx)
 	if err == nil {
 		return existing, nil
@@ -165,18 +235,15 @@ func (r *OrdersRepo) FirstOrCreate(ctx context.Context, row *Orders, match frame
 	if !framework.IsNotFound(err) {
 		return nil, err
 	}
-	if err := r.Create(ctx, row); err != nil {
-		return nil, err
-	}
-	return row, nil
+	return r.Create(ctx, in)
 }
 
-// BatchCreate inserts every row in one transaction; on any per-item error
-// the entire batch rolls back. Returned slice is in input order.
-func (r *OrdersRepo) BatchCreate(ctx context.Context, rows []*Orders) ([]*Orders, error) {
-	bodies := make([]map[string]any, len(rows))
-	for i, row := range rows {
-		b, err := framework.MarshalEntity(row)
+// BatchCreate inserts every input in one transaction; on any per-item error
+// the entire batch rolls back. Returned rows are in input order.
+func (r *OrdersRepo) BatchCreate(ctx context.Context, ins []OrdersInput) ([]*Orders, error) {
+	bodies := make([]map[string]any, len(ins))
+	for i, in := range ins {
+		b, err := framework.MarshalEntity(in)
 		if err != nil {
 			return nil, err
 		}
@@ -186,35 +253,24 @@ func (r *OrdersRepo) BatchCreate(ctx context.Context, rows []*Orders) ([]*Orders
 	if err != nil {
 		return nil, err
 	}
-	for i, res := range results {
-		if err := framework.UnmarshalEntity(res, rows[i]); err != nil {
-			return nil, err
-		}
-	}
-	return rows, nil
+	return r.rows(results)
 }
 
-// BatchUpdate updates every row by its id in one transaction.
-func (r *OrdersRepo) BatchUpdate(ctx context.Context, ids []string, rows []*Orders) ([]*Orders, error) {
-	bodies := make([]map[string]any, len(rows))
-	for i, row := range rows {
-		b, err := framework.MarshalEntity(row)
+// BatchUpdate writes patches[i] onto the row ids[i], all in one transaction.
+func (r *OrdersRepo) BatchUpdate(ctx context.Context, ids []string, patches []OrdersPatch) ([]*Orders, error) {
+	bodies := make([]map[string]any, len(patches))
+	for i, patch := range patches {
+		b, err := framework.MarshalEntity(patch)
 		if err != nil {
 			return nil, err
 		}
-		delete(b, "id")
 		bodies[i] = b
 	}
 	results, err := r.handler.BatchUpdateMany(ctx, ids, bodies)
 	if err != nil {
 		return nil, err
 	}
-	for i, res := range results {
-		if err := framework.UnmarshalEntity(res, rows[i]); err != nil {
-			return nil, err
-		}
-	}
-	return rows, nil
+	return r.rows(results)
 }
 
 // BatchDelete deletes every id atomically.

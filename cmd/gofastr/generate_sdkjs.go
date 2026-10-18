@@ -127,18 +127,23 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 	}
 	dts.WriteString("}\n\n")
 
-	// Input: create/update payload. Required declaration fields are
-	// non-optional so tsc catches a missing title at compile time.
-	// With enforced States, stamps leave Input and the state field leaves
-	// Patch, matching the Go client and the OpenAPI request schemas.
-	stamps, state := statesWriteDrops(decl.States)
+	// Input: create/update payload. A required field with no default is
+	// non-optional so tsc catches a missing title at compile time. The
+	// fields writeShapeDrops names leave Input and Patch, matching the Go
+	// client: stamps and auto-generated columns from both, the state,
+	// owner and tenant columns from Patch.
+	dropCreate, dropUpdate := writeShapeDrops(decl)
+	var patchOmit []string
 	fmt.Fprintf(dts, "export interface %sInput {\n", ent.Struct)
 	for _, fd := range decl.Fields {
-		if fd.Name == "id" || fd.Hidden || stamps[fd.Name] {
+		if fd.Hidden || dropCreate(fd) {
 			continue
 		}
+		if dropUpdate(fd) {
+			patchOmit = append(patchOmit, fmt.Sprintf("%q", toCamelJSON(fd.Name)))
+		}
 		opt := "?"
-		if fd.Required {
+		if inputTakesValue(fd) {
 			opt = ""
 		}
 		fmt.Fprintf(dts, "  %s%s: %s;\n", toCamelJSON(fd.Name), opt, tsTypeForField(fd.Type, fd.Values))
@@ -148,8 +153,8 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 	// Patch: JS objects are presence-faithful (an omitted key is simply not
 	// sent), so PATCH is just an all-optional Input, no pointer dance like
 	// the Go SDK needs.
-	if state != "" {
-		fmt.Fprintf(dts, "export type %sPatch = Partial<Omit<%sInput, %q>>;\n\n", ent.Struct, ent.Struct, toCamelJSON(state))
+	if len(patchOmit) > 0 {
+		fmt.Fprintf(dts, "export type %sPatch = Partial<Omit<%sInput, %s>>;\n\n", ent.Struct, ent.Struct, strings.Join(patchOmit, " | "))
 	} else {
 		fmt.Fprintf(dts, "export type %sPatch = Partial<%sInput>;\n\n", ent.Struct, ent.Struct)
 	}

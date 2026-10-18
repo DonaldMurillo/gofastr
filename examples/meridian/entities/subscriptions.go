@@ -9,16 +9,60 @@ import (
 )
 
 type Subscriptions struct {
-	ID         string     `json:"id"`
-	CustomerId string     `json:"customerId,omitempty"`
-	PlanId     string     `json:"planId,omitempty"`
-	Status     string     `json:"status,omitempty"`
-	Mrr        string     `json:"mrr,omitempty"`
-	StartedOn  string     `json:"startedOn,omitempty"`
-	RenewsOn   string     `json:"renewsOn,omitempty"`
-	UserId     string     `json:"userId,omitempty"`
-	Customer   *Customers `json:"customer,omitempty"`
-	Plan       *Plans     `json:"plan,omitempty"`
+	ID         string                   `json:"id"`
+	CustomerId string                   `json:"customerId,omitempty"`
+	PlanId     string                   `json:"planId,omitempty"`
+	Status     SubscriptionsStatusValue `json:"status,omitempty"`
+	Mrr        string                   `json:"mrr,omitempty"`
+	StartedOn  string                   `json:"startedOn,omitempty"`
+	RenewsOn   string                   `json:"renewsOn,omitempty"`
+	UserId     string                   `json:"userId,omitempty"`
+	Customer   *Customers               `json:"customer,omitempty"`
+	Plan       *Plans                   `json:"plan,omitempty"`
+}
+
+// SubscriptionsStatusValue is one value of the subscriptions field status.
+type SubscriptionsStatusValue string
+
+const (
+	SubscriptionsStatusTrialing SubscriptionsStatusValue = "trialing"
+	SubscriptionsStatusActive   SubscriptionsStatusValue = "active"
+	SubscriptionsStatusPastDue  SubscriptionsStatusValue = "past_due"
+	SubscriptionsStatusCanceled SubscriptionsStatusValue = "canceled"
+)
+
+// SubscriptionsMove names one of the subscriptions moves; pass it to SubscriptionsRepo.Transition.
+type SubscriptionsMove string
+
+const (
+	SubscriptionsMoveActivate SubscriptionsMove = "activate"
+	SubscriptionsMoveCancel   SubscriptionsMove = "cancel"
+)
+
+// SubscriptionsInput is the create payload for SubscriptionsRepo. A required field with no
+// default is always sent; a nil field takes its default, and new(false)
+// stores false.
+type SubscriptionsInput struct {
+	CustomerId string                    `json:"customerId"`
+	PlanId     string                    `json:"planId"`
+	Status     *SubscriptionsStatusValue `json:"status,omitempty"`
+	Mrr        *string                   `json:"mrr,omitempty"`
+	StartedOn  *string                   `json:"startedOn,omitempty"`
+	RenewsOn   *string                   `json:"renewsOn,omitempty"`
+	UserId     *string                   `json:"userId,omitempty"`
+}
+
+// SubscriptionsPatch is the update payload for SubscriptionsRepo: a nil field is left as
+// stored, and a pointer to false, 0 or "" writes it to a bool, int,
+// float, string or text field. "" for any other type is not a value:
+// absent on an optional field, a validation error on a required one.
+type SubscriptionsPatch struct {
+	CustomerId *string                   `json:"customerId,omitempty"`
+	PlanId     *string                   `json:"planId,omitempty"`
+	Status     *SubscriptionsStatusValue `json:"status,omitempty"`
+	Mrr        *string                   `json:"mrr,omitempty"`
+	StartedOn  *string                   `json:"startedOn,omitempty"`
+	RenewsOn   *string                   `json:"renewsOn,omitempty"`
 }
 
 // ====== Subscriptions column references ======
@@ -27,7 +71,7 @@ var (
 	SubscriptionsID         = framework.NewUUIDColumn("id")
 	SubscriptionsCustomerId = framework.NewUUIDColumn("customer_id")
 	SubscriptionsPlanId     = framework.NewUUIDColumn("plan_id")
-	SubscriptionsStatus     = framework.NewStringColumn("status")
+	SubscriptionsStatus     = framework.NewEnumColumn[SubscriptionsStatusValue]("status")
 	SubscriptionsMrr        = framework.NewFloatColumn("mrr")
 	SubscriptionsStartedOn  = framework.NewTimestampColumn("started_on")
 	SubscriptionsRenewsOn   = framework.NewTimestampColumn("renews_on")
@@ -75,17 +119,40 @@ func (r *SubscriptionsRepo) WithTx(tx *sql.Tx) *SubscriptionsRepo {
 	return &SubscriptionsRepo{handler: &h}
 }
 
-// Create persists row and back-fills server-generated fields onto it.
-func (r *SubscriptionsRepo) Create(ctx context.Context, row *Subscriptions) error {
-	body, err := framework.MarshalEntity(row)
+// row decodes one CRUD result.
+func (r *SubscriptionsRepo) row(out map[string]any) (*Subscriptions, error) {
+	var row Subscriptions
+	if err := framework.UnmarshalEntity(out, &row); err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// rows decodes a batch result, keeping its order.
+func (r *SubscriptionsRepo) rows(outs []map[string]any) ([]*Subscriptions, error) {
+	rows := make([]*Subscriptions, len(outs))
+	for i, out := range outs {
+		row, err := r.row(out)
+		if err != nil {
+			return nil, err
+		}
+		rows[i] = row
+	}
+	return rows, nil
+}
+
+// Create persists in and returns the stored row, server-generated fields
+// included.
+func (r *SubscriptionsRepo) Create(ctx context.Context, in SubscriptionsInput) (*Subscriptions, error) {
+	body, err := framework.MarshalEntity(in)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	out, err := r.handler.CreateOne(ctx, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return framework.UnmarshalEntity(out, row)
+	return r.row(out)
 }
 
 // Get fetches a row by id with optional eager-loaded includes.
@@ -94,26 +161,21 @@ func (r *SubscriptionsRepo) Get(ctx context.Context, id string, includes ...stri
 	if err != nil {
 		return nil, err
 	}
-	var row Subscriptions
-	if err := framework.UnmarshalEntity(out, &row); err != nil {
-		return nil, err
-	}
-	return &row, nil
+	return r.row(out)
 }
 
-// Update merges fields from row into the persisted record by id and refreshes
-// row with the post-update state.
-func (r *SubscriptionsRepo) Update(ctx context.Context, id string, row *Subscriptions) error {
-	body, err := framework.MarshalEntity(row)
+// Update writes patch's non-nil fields onto the row with this id and
+// returns the row as stored afterwards.
+func (r *SubscriptionsRepo) Update(ctx context.Context, id string, patch SubscriptionsPatch) (*Subscriptions, error) {
+	body, err := framework.MarshalEntity(patch)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	delete(body, "id") // id is taken from the path arg, not the body
 	out, err := r.handler.UpdateOne(ctx, id, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return framework.UnmarshalEntity(out, row)
+	return r.row(out)
 }
 
 // Delete removes the row by id (or soft-deletes if SoftDelete is enabled on
@@ -140,10 +202,9 @@ func (r *SubscriptionsRepo) Count(ctx context.Context) (int, error) {
 	return r.Query().Count(ctx)
 }
 
-// FirstOrCreate looks up a row by the given match condition and returns it
-// if found. Otherwise inserts row (filling in its server-generated fields)
-// and returns it.
-func (r *SubscriptionsRepo) FirstOrCreate(ctx context.Context, row *Subscriptions, match framework.Condition) (*Subscriptions, error) {
+// FirstOrCreate returns the first row matching match, or creates in and
+// returns the stored row when none does.
+func (r *SubscriptionsRepo) FirstOrCreate(ctx context.Context, in SubscriptionsInput, match framework.Condition) (*Subscriptions, error) {
 	existing, err := r.Query().Where(match).First(ctx)
 	if err == nil {
 		return existing, nil
@@ -151,18 +212,15 @@ func (r *SubscriptionsRepo) FirstOrCreate(ctx context.Context, row *Subscription
 	if !framework.IsNotFound(err) {
 		return nil, err
 	}
-	if err := r.Create(ctx, row); err != nil {
-		return nil, err
-	}
-	return row, nil
+	return r.Create(ctx, in)
 }
 
-// BatchCreate inserts every row in one transaction; on any per-item error
-// the entire batch rolls back. Returned slice is in input order.
-func (r *SubscriptionsRepo) BatchCreate(ctx context.Context, rows []*Subscriptions) ([]*Subscriptions, error) {
-	bodies := make([]map[string]any, len(rows))
-	for i, row := range rows {
-		b, err := framework.MarshalEntity(row)
+// BatchCreate inserts every input in one transaction; on any per-item error
+// the entire batch rolls back. Returned rows are in input order.
+func (r *SubscriptionsRepo) BatchCreate(ctx context.Context, ins []SubscriptionsInput) ([]*Subscriptions, error) {
+	bodies := make([]map[string]any, len(ins))
+	for i, in := range ins {
+		b, err := framework.MarshalEntity(in)
 		if err != nil {
 			return nil, err
 		}
@@ -172,41 +230,42 @@ func (r *SubscriptionsRepo) BatchCreate(ctx context.Context, rows []*Subscriptio
 	if err != nil {
 		return nil, err
 	}
-	for i, res := range results {
-		if err := framework.UnmarshalEntity(res, rows[i]); err != nil {
-			return nil, err
-		}
-	}
-	return rows, nil
+	return r.rows(results)
 }
 
-// BatchUpdate updates every row by its id in one transaction.
-func (r *SubscriptionsRepo) BatchUpdate(ctx context.Context, ids []string, rows []*Subscriptions) ([]*Subscriptions, error) {
-	bodies := make([]map[string]any, len(rows))
-	for i, row := range rows {
-		b, err := framework.MarshalEntity(row)
+// BatchUpdate writes patches[i] onto the row ids[i], all in one transaction.
+func (r *SubscriptionsRepo) BatchUpdate(ctx context.Context, ids []string, patches []SubscriptionsPatch) ([]*Subscriptions, error) {
+	bodies := make([]map[string]any, len(patches))
+	for i, patch := range patches {
+		b, err := framework.MarshalEntity(patch)
 		if err != nil {
 			return nil, err
 		}
-		delete(b, "id")
 		bodies[i] = b
 	}
 	results, err := r.handler.BatchUpdateMany(ctx, ids, bodies)
 	if err != nil {
 		return nil, err
 	}
-	for i, res := range results {
-		if err := framework.UnmarshalEntity(res, rows[i]); err != nil {
-			return nil, err
-		}
-	}
-	return rows, nil
+	return r.rows(results)
 }
 
 // BatchDelete deletes every id atomically.
 func (r *SubscriptionsRepo) BatchDelete(ctx context.Context, ids []string) error {
 	_, err := r.handler.BatchDeleteMany(ctx, ids)
 	return err
+}
+
+// Transition runs move on the row with this id and returns the row as
+// stored afterwards: the one way an enforced state field changes. It runs
+// as CrudHandler.RunTransition does, so a System move skips the permission
+// check and a row outside the move's From answers a conflict.
+func (r *SubscriptionsRepo) Transition(ctx context.Context, id string, move SubscriptionsMove) (*Subscriptions, error) {
+	out, err := r.handler.RunTransition(ctx, id, string(move))
+	if err != nil {
+		return nil, err
+	}
+	return r.row(out)
 }
 
 // OnSubscriptionsCreated subscribes to entity.created events scoped to "subscriptions".

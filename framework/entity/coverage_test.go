@@ -76,6 +76,31 @@ func TestColumnConditions(t *testing.T) {
 	}
 }
 
+// An enum column takes its codegen value type and binds plain strings, so
+// a driver never sees the named type.
+func TestEnumColumnBindsPlainStrings(t *testing.T) {
+	type status string
+	c := NewEnumColumn[status]("status")
+	checks := map[string]Condition{
+		"status = $1":        c.Eq("live"),
+		"status != $1":       c.Neq("live"),
+		"status IN ($1, $2)": c.In("draft", "live"),
+	}
+	for want, cond := range checks {
+		if cond.SQL() != want {
+			t.Errorf("SQL = %q, want %q", cond.SQL(), want)
+		}
+		for _, a := range cond.Args() {
+			if _, ok := a.(string); !ok {
+				t.Errorf("%q binds %T, want string", want, a)
+			}
+		}
+	}
+	if got := c.In().SQL(); got != "1 = 0" {
+		t.Errorf("empty In = %q, want 1 = 0", got)
+	}
+}
+
 func TestConditionCombinators(t *testing.T) {
 	a := NewIntColumn("a").Eq(1)
 	b := NewIntColumn("b").Eq(2)

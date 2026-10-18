@@ -224,12 +224,12 @@ type Categories struct {
 }
 
 type CategoriesInput struct {
-	Name        string `json:"name,omitempty"`
-	Slug        string `json:"slug,omitempty"`
-	Description string `json:"description,omitempty"`
-	Image       string `json:"image,omitempty"`
-	SortOrder   int    `json:"sortOrder,omitempty"`
-	Active      bool   `json:"active,omitempty"`
+	Name        string  `json:"name"`
+	Slug        string  `json:"slug"`
+	Description *string `json:"description,omitempty"`
+	Image       *string `json:"image,omitempty"`
+	SortOrder   *int    `json:"sortOrder,omitempty"`
+	Active      *bool   `json:"active,omitempty"`
 }
 
 type CategoriesPatch struct {
@@ -360,19 +360,19 @@ type Products struct {
 }
 
 type ProductsInput struct {
-	Name           string         `json:"name,omitempty"`
-	Slug           string         `json:"slug,omitempty"`
-	Sku            string         `json:"sku,omitempty"`
-	Description    string         `json:"description,omitempty"`
-	Price          string         `json:"price,omitempty"`
-	CompareAtPrice string         `json:"compareAtPrice,omitempty"`
-	Stock          int            `json:"stock,omitempty"`
-	CategoryId     string         `json:"categoryId,omitempty"`
-	Status         string         `json:"status,omitempty"`
-	Featured       bool           `json:"featured,omitempty"`
-	Weight         float64        `json:"weight,omitempty"`
-	Image          string         `json:"image,omitempty"`
-	Tags           map[string]any `json:"tags,omitempty"`
+	Name           string          `json:"name"`
+	Slug           string          `json:"slug"`
+	Sku            *string         `json:"sku,omitempty"`
+	Description    *string         `json:"description,omitempty"`
+	Price          string          `json:"price"`
+	CompareAtPrice *string         `json:"compareAtPrice,omitempty"`
+	Stock          *int            `json:"stock,omitempty"`
+	CategoryId     *string         `json:"categoryId,omitempty"`
+	Status         *string         `json:"status,omitempty"`
+	Featured       *bool           `json:"featured,omitempty"`
+	Weight         *float64        `json:"weight,omitempty"`
+	Image          *string         `json:"image,omitempty"`
+	Tags           *map[string]any `json:"tags,omitempty"`
 }
 
 type ProductsPatch struct {
@@ -519,26 +519,23 @@ type Orders struct {
 }
 
 type OrdersInput struct {
-	UserId          string         `json:"userId,omitempty"`
-	OrderNumber     string         `json:"orderNumber,omitempty"`
-	Status          string         `json:"status,omitempty"`
-	CustomerName    string         `json:"customerName,omitempty"`
-	CustomerEmail   string         `json:"customerEmail,omitempty"`
-	CustomerPhone   string         `json:"customerPhone,omitempty"`
-	ShippingAddress map[string]any `json:"shippingAddress,omitempty"`
-	BillingAddress  map[string]any `json:"billingAddress,omitempty"`
-	Subtotal        string         `json:"subtotal,omitempty"`
-	Tax             string         `json:"tax,omitempty"`
-	ShippingCost    string         `json:"shippingCost,omitempty"`
-	Total           string         `json:"total,omitempty"`
-	Notes           string         `json:"notes,omitempty"`
-	ShippedAt       string         `json:"shippedAt,omitempty"`
-	DeliveredAt     string         `json:"deliveredAt,omitempty"`
+	UserId          *string         `json:"userId,omitempty"`
+	Status          *string         `json:"status,omitempty"`
+	CustomerName    string          `json:"customerName"`
+	CustomerEmail   string          `json:"customerEmail"`
+	CustomerPhone   *string         `json:"customerPhone,omitempty"`
+	ShippingAddress *map[string]any `json:"shippingAddress,omitempty"`
+	BillingAddress  *map[string]any `json:"billingAddress,omitempty"`
+	Subtotal        string          `json:"subtotal"`
+	Tax             *string         `json:"tax,omitempty"`
+	ShippingCost    *string         `json:"shippingCost,omitempty"`
+	Total           string          `json:"total"`
+	Notes           *string         `json:"notes,omitempty"`
+	ShippedAt       *string         `json:"shippedAt,omitempty"`
+	DeliveredAt     *string         `json:"deliveredAt,omitempty"`
 }
 
 type OrdersPatch struct {
-	UserId          *string         `json:"userId,omitempty"`
-	OrderNumber     *string         `json:"orderNumber,omitempty"`
 	Status          *string         `json:"status,omitempty"`
 	CustomerName    *string         `json:"customerName,omitempty"`
 	CustomerEmail   *string         `json:"customerEmail,omitempty"`
@@ -621,8 +618,6 @@ func (c *Client) DeleteOrders(ctx context.Context, id string) error {
 
 type OrdersBatchPatch struct {
 	ID              string          `json:"id"`
-	UserId          *string         `json:"userId,omitempty"`
-	OrderNumber     *string         `json:"orderNumber,omitempty"`
 	Status          *string         `json:"status,omitempty"`
 	CustomerName    *string         `json:"customerName,omitempty"`
 	CustomerEmail   *string         `json:"customerEmail,omitempty"`
@@ -676,17 +671,16 @@ type OrderItems struct {
 }
 
 type OrderItemsInput struct {
-	UserId      string `json:"userId,omitempty"`
-	OrderId     string `json:"orderId,omitempty"`
-	ProductId   string `json:"productId,omitempty"`
-	ProductName string `json:"productName,omitempty"`
-	Quantity    int    `json:"quantity,omitempty"`
-	UnitPrice   string `json:"unitPrice,omitempty"`
-	TotalPrice  string `json:"totalPrice,omitempty"`
+	UserId      *string `json:"userId,omitempty"`
+	OrderId     string  `json:"orderId"`
+	ProductId   string  `json:"productId"`
+	ProductName string  `json:"productName"`
+	Quantity    int     `json:"quantity"`
+	UnitPrice   string  `json:"unitPrice"`
+	TotalPrice  string  `json:"totalPrice"`
 }
 
 type OrderItemsPatch struct {
-	UserId      *string `json:"userId,omitempty"`
 	OrderId     *string `json:"orderId,omitempty"`
 	ProductId   *string `json:"productId,omitempty"`
 	ProductName *string `json:"productName,omitempty"`
@@ -762,7 +756,6 @@ func (c *Client) DeleteOrderItems(ctx context.Context, id string) error {
 
 type OrderItemsBatchPatch struct {
 	ID          string  `json:"id"`
-	UserId      *string `json:"userId,omitempty"`
 	OrderId     *string `json:"orderId,omitempty"`
 	ProductId   *string `json:"productId,omitempty"`
 	ProductName *string `json:"productName,omitempty"`
@@ -808,12 +801,12 @@ type Reviews struct {
 }
 
 type ReviewsInput struct {
-	ProductId  string `json:"productId,omitempty"`
-	AuthorName string `json:"authorName,omitempty"`
-	Rating     int    `json:"rating,omitempty"`
-	Title      string `json:"title,omitempty"`
-	Body       string `json:"body,omitempty"`
-	Verified   bool   `json:"verified,omitempty"`
+	ProductId  string  `json:"productId"`
+	AuthorName string  `json:"authorName"`
+	Rating     int     `json:"rating"`
+	Title      *string `json:"title,omitempty"`
+	Body       *string `json:"body,omitempty"`
+	Verified   *bool   `json:"verified,omitempty"`
 }
 
 type ReviewsPatch struct {

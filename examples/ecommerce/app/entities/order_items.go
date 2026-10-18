@@ -21,6 +21,32 @@ type OrderItems struct {
 	Product     *Products `json:"product,omitempty"`
 }
 
+// OrderItemsInput is the create payload for OrderItemsRepo. A required field with no
+// default is always sent; a nil field takes its default, and new(false)
+// stores false.
+type OrderItemsInput struct {
+	UserId      *string `json:"userId,omitempty"`
+	OrderId     string  `json:"orderId"`
+	ProductId   string  `json:"productId"`
+	ProductName string  `json:"productName"`
+	Quantity    int     `json:"quantity"`
+	UnitPrice   string  `json:"unitPrice"`
+	TotalPrice  string  `json:"totalPrice"`
+}
+
+// OrderItemsPatch is the update payload for OrderItemsRepo: a nil field is left as
+// stored, and a pointer to false, 0 or "" writes it to a bool, int,
+// float, string or text field. "" for any other type is not a value:
+// absent on an optional field, a validation error on a required one.
+type OrderItemsPatch struct {
+	OrderId     *string `json:"orderId,omitempty"`
+	ProductId   *string `json:"productId,omitempty"`
+	ProductName *string `json:"productName,omitempty"`
+	Quantity    *int    `json:"quantity,omitempty"`
+	UnitPrice   *string `json:"unitPrice,omitempty"`
+	TotalPrice  *string `json:"totalPrice,omitempty"`
+}
+
 // ====== OrderItems column references ======
 
 var (
@@ -75,17 +101,40 @@ func (r *OrderItemsRepo) WithTx(tx *sql.Tx) *OrderItemsRepo {
 	return &OrderItemsRepo{handler: &h}
 }
 
-// Create persists row and back-fills server-generated fields onto it.
-func (r *OrderItemsRepo) Create(ctx context.Context, row *OrderItems) error {
-	body, err := framework.MarshalEntity(row)
+// row decodes one CRUD result.
+func (r *OrderItemsRepo) row(out map[string]any) (*OrderItems, error) {
+	var row OrderItems
+	if err := framework.UnmarshalEntity(out, &row); err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// rows decodes a batch result, keeping its order.
+func (r *OrderItemsRepo) rows(outs []map[string]any) ([]*OrderItems, error) {
+	rows := make([]*OrderItems, len(outs))
+	for i, out := range outs {
+		row, err := r.row(out)
+		if err != nil {
+			return nil, err
+		}
+		rows[i] = row
+	}
+	return rows, nil
+}
+
+// Create persists in and returns the stored row, server-generated fields
+// included.
+func (r *OrderItemsRepo) Create(ctx context.Context, in OrderItemsInput) (*OrderItems, error) {
+	body, err := framework.MarshalEntity(in)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	out, err := r.handler.CreateOne(ctx, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return framework.UnmarshalEntity(out, row)
+	return r.row(out)
 }
 
 // Get fetches a row by id with optional eager-loaded includes.
@@ -94,26 +143,21 @@ func (r *OrderItemsRepo) Get(ctx context.Context, id string, includes ...string)
 	if err != nil {
 		return nil, err
 	}
-	var row OrderItems
-	if err := framework.UnmarshalEntity(out, &row); err != nil {
-		return nil, err
-	}
-	return &row, nil
+	return r.row(out)
 }
 
-// Update merges fields from row into the persisted record by id and refreshes
-// row with the post-update state.
-func (r *OrderItemsRepo) Update(ctx context.Context, id string, row *OrderItems) error {
-	body, err := framework.MarshalEntity(row)
+// Update writes patch's non-nil fields onto the row with this id and
+// returns the row as stored afterwards.
+func (r *OrderItemsRepo) Update(ctx context.Context, id string, patch OrderItemsPatch) (*OrderItems, error) {
+	body, err := framework.MarshalEntity(patch)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	delete(body, "id") // id is taken from the path arg, not the body
 	out, err := r.handler.UpdateOne(ctx, id, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return framework.UnmarshalEntity(out, row)
+	return r.row(out)
 }
 
 // Delete removes the row by id (or soft-deletes if SoftDelete is enabled on
@@ -140,10 +184,9 @@ func (r *OrderItemsRepo) Count(ctx context.Context) (int, error) {
 	return r.Query().Count(ctx)
 }
 
-// FirstOrCreate looks up a row by the given match condition and returns it
-// if found. Otherwise inserts row (filling in its server-generated fields)
-// and returns it.
-func (r *OrderItemsRepo) FirstOrCreate(ctx context.Context, row *OrderItems, match framework.Condition) (*OrderItems, error) {
+// FirstOrCreate returns the first row matching match, or creates in and
+// returns the stored row when none does.
+func (r *OrderItemsRepo) FirstOrCreate(ctx context.Context, in OrderItemsInput, match framework.Condition) (*OrderItems, error) {
 	existing, err := r.Query().Where(match).First(ctx)
 	if err == nil {
 		return existing, nil
@@ -151,18 +194,15 @@ func (r *OrderItemsRepo) FirstOrCreate(ctx context.Context, row *OrderItems, mat
 	if !framework.IsNotFound(err) {
 		return nil, err
 	}
-	if err := r.Create(ctx, row); err != nil {
-		return nil, err
-	}
-	return row, nil
+	return r.Create(ctx, in)
 }
 
-// BatchCreate inserts every row in one transaction; on any per-item error
-// the entire batch rolls back. Returned slice is in input order.
-func (r *OrderItemsRepo) BatchCreate(ctx context.Context, rows []*OrderItems) ([]*OrderItems, error) {
-	bodies := make([]map[string]any, len(rows))
-	for i, row := range rows {
-		b, err := framework.MarshalEntity(row)
+// BatchCreate inserts every input in one transaction; on any per-item error
+// the entire batch rolls back. Returned rows are in input order.
+func (r *OrderItemsRepo) BatchCreate(ctx context.Context, ins []OrderItemsInput) ([]*OrderItems, error) {
+	bodies := make([]map[string]any, len(ins))
+	for i, in := range ins {
+		b, err := framework.MarshalEntity(in)
 		if err != nil {
 			return nil, err
 		}
@@ -172,35 +212,24 @@ func (r *OrderItemsRepo) BatchCreate(ctx context.Context, rows []*OrderItems) ([
 	if err != nil {
 		return nil, err
 	}
-	for i, res := range results {
-		if err := framework.UnmarshalEntity(res, rows[i]); err != nil {
-			return nil, err
-		}
-	}
-	return rows, nil
+	return r.rows(results)
 }
 
-// BatchUpdate updates every row by its id in one transaction.
-func (r *OrderItemsRepo) BatchUpdate(ctx context.Context, ids []string, rows []*OrderItems) ([]*OrderItems, error) {
-	bodies := make([]map[string]any, len(rows))
-	for i, row := range rows {
-		b, err := framework.MarshalEntity(row)
+// BatchUpdate writes patches[i] onto the row ids[i], all in one transaction.
+func (r *OrderItemsRepo) BatchUpdate(ctx context.Context, ids []string, patches []OrderItemsPatch) ([]*OrderItems, error) {
+	bodies := make([]map[string]any, len(patches))
+	for i, patch := range patches {
+		b, err := framework.MarshalEntity(patch)
 		if err != nil {
 			return nil, err
 		}
-		delete(b, "id")
 		bodies[i] = b
 	}
 	results, err := r.handler.BatchUpdateMany(ctx, ids, bodies)
 	if err != nil {
 		return nil, err
 	}
-	for i, res := range results {
-		if err := framework.UnmarshalEntity(res, rows[i]); err != nil {
-			return nil, err
-		}
-	}
-	return rows, nil
+	return r.rows(results)
 }
 
 // BatchDelete deletes every id atomically.
