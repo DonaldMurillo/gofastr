@@ -14,8 +14,9 @@ than wherever `gofastr dev` was launched.
 
 ## How it turns on
 
-Three env vars decide. All defaults are dev-friendly; production is
-always safe:
+The first three env vars gate livereload, and `GOFASTR_DEV_LAYOUT`
+adds an opt-out for the layout layer on top of the same gate. All
+defaults are dev-friendly; production is always safe:
 
 | Var | Default | Meaning |
 |---|---|---|

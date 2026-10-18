@@ -88,6 +88,47 @@ func TestLayoutLayerNotSplicedTwice(t *testing.T) {
 	}
 }
 
+// addDevScript keeps one entry per URL, so a second registration of the
+// same script does not splice it twice.
+func TestAddDevScriptDedupesURL(t *testing.T) {
+	r := router.New()
+	addDevScript(r, LayoutLayerScriptURL)
+	addDevScript(r, LayoutLayerScriptURL)
+	r.Get("/page", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body></body></html>"))
+	}))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/page", nil))
+	if n := strings.Count(rec.Body.String(), `src="`+LayoutLayerScriptURL+`"`); n != 1 {
+		t.Fatalf("spliced %d times, want 1:\n%s", n, rec.Body.String())
+	}
+}
+
+// A host that serves the URL itself keeps its handler, and the layer
+// stays out of its pages: the host owns that script.
+func TestLayoutLayerYieldsToHostRoute(t *testing.T) {
+	r := router.New()
+	r.Get(LayoutLayerScriptURL, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("host"))
+	}))
+	RegisterLayoutLayer(r)
+	r.Get("/page", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body></body></html>"))
+	}))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, LayoutLayerScriptURL, nil))
+	if rec.Body.String() != "host" {
+		t.Fatalf("host's %s handler replaced: %q", LayoutLayerScriptURL, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/page", nil))
+	if strings.Contains(rec.Body.String(), LayoutLayerScriptURL) {
+		t.Fatalf("layer spliced into a host that serves its own:\n%s", rec.Body.String())
+	}
+}
+
 func TestMaybeRegisterLayoutLayerOff(t *testing.T) {
 	t.Setenv("GOFASTR_DEV", "")
 	r := router.New()
