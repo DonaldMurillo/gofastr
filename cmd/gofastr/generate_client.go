@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"net/url"
 	"strings"
@@ -63,13 +64,14 @@ func clientHasMoves(decls []framework.EntityDeclaration) bool {
 //   - GetPost(ctx, id) (Post, error)
 //   - CreatePost(ctx, body PostInput) (Post, error)
 //   - UpdatePost(ctx, id, body PostInput) (Post, error)
-//   - PatchPost(ctx, id, body PostInput) (Post, error)
+//   - PatchPost(ctx, id, body PostPatch) (Post, error)
 //   - DeletePost(ctx, id) error
 //   - BatchCreatePost / BatchUpdatePost / BatchDeletePost (the _batch routes)
 //   - WatchPost(ctx, fn): blocking SSE loop over GET {path}/_events
 //
-// PostInput is the create/update/patch payload, same shape minus the ID, so
-// callers don't construct a zero-id Post.
+// PostInput is the create/update payload, same shape minus the ID, so
+// callers don't construct a zero-id Post; its optional fields are pointers.
+// PostPatch is the patch payload, every field a pointer.
 func renderClient(decls []framework.EntityDeclaration) string {
 	var sb strings.Builder
 	sb.WriteString(`package client
@@ -329,6 +331,41 @@ func statesWriteDrops(st *framework.StatesConfig) (stamps map[string]bool, state
 	return stamps, st.Field
 }
 
+// writeShapeDrops names the fields each typed write payload leaves out,
+// on top of the id and statesWriteDrops. Both drop an auto-generated
+// column: create overwrites it and update never sets it. The update
+// payloads also drop the state field, the owner field and the MultiTenant
+// tenant column, which update always skips; a patch of only the owner
+// would compile and then fail with "no fields to update".
+func writeShapeDrops(decl framework.EntityDeclaration) (create, update func(framework.FieldDeclaration) bool) {
+	stamps, state := statesWriteDrops(decl.States)
+	var owner, tenant string
+	if sc := decl.Scope; sc != nil {
+		owner = sc.OwnerField
+		if sc.MultiTenant {
+			tenant = cmp.Or(sc.TenantField, "tenant_id")
+		}
+	}
+	create = func(f framework.FieldDeclaration) bool {
+		auto := strings.ToLower(strings.TrimSpace(f.AutoGenerate))
+		return f.Name == "id" || stamps[f.Name] || (auto != "" && auto != "none")
+	}
+	update = func(f framework.FieldDeclaration) bool {
+		return create(f) || f.Name == state ||
+			(owner != "" && f.Name == owner) || (tenant != "" && f.Name == tenant)
+	}
+	return create, update
+}
+
+// inputTakesValue reports whether a create payload carries the field as a
+// value, always sent. Only a required field with no default does: a
+// required field with a default may be left out, and sending its zero
+// value would bypass the default ("" fails an enum, and a BeforeCreate
+// hook that fills an absent field never sees it absent).
+func inputTakesValue(f framework.FieldDeclaration) bool {
+	return f.Required && f.Default == nil
+}
+
 // renderClientEntity emits the struct definitions and the five CRUD methods
 // for one entity. Kept inline (no template) so the output stays readable
 // when debugging generated code.
@@ -338,9 +375,10 @@ func statesWriteDrops(st *framework.StatesConfig) (stamps map[string]bool, state
 // create carrying one is refused), and the state field leaves the patch
 // shapes (it changes only through a move). Input keeps the state field:
 // a create may start at an initial value, and a PUT writing the stored
-// value back passes.
+// value back passes. writeShapeDrops also keeps auto-generated columns out
+// of every shape, and the owner and tenant columns out of the patches.
 func renderClientEntity(decl framework.EntityDeclaration) string {
-	stamps, state := statesWriteDrops(decl.States)
+	dropCreate, dropUpdate := writeShapeDrops(decl)
 	struct_ := toCamelCase(decl.Name)
 	table := decl.Table
 	if table == "" {
@@ -375,15 +413,27 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 	sb.WriteString("}\n\n")
 	// Input struct (PostInput): same shape minus the ID. We intentionally
 	// drop ID even on update: the server uses the URL path parameter for
-	// addressing, and including it in the body invites mismatch bugs.
+	// addressing, and including it in the body invites mismatch bugs. A
+	// required field with no default is a value, always sent; every other
+	// field is a pointer, so nil takes the column default and new(false)
+	// stores false. A value-typed optional field tagged omitempty would marshal
+	// false, 0 and "" away, and a create could never override a non-zero
+	// default.
 	sb.WriteString(fmt.Sprintf("type %sInput struct {\n", struct_))
 	for _, field := range decl.Fields {
-		if field.Name == "id" || field.Hidden || stamps[field.Name] {
+		if field.Hidden || dropCreate(field) {
+			continue
+		}
+		if inputTakesValue(field) {
+			sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s\"`\n",
+				toCamelCase(field.Name),
+				goTypeForField(field.Type),
+				toCamelJSON(field.Name)))
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
 			toCamelCase(field.Name),
-			goTypeForField(field.Type),
+			goPatchPointerTypeForField(field.Type),
 			toCamelJSON(field.Name)))
 	}
 	sb.WriteString("}\n\n")
@@ -395,7 +445,7 @@ func renderClientEntity(decl framework.EntityDeclaration) string {
 	// to fields present in the JSON body, so this is the faithful mapping.
 	sb.WriteString(fmt.Sprintf("type %sPatch struct {\n", struct_))
 	for _, field := range decl.Fields {
-		if field.Name == "id" || field.Hidden || stamps[field.Name] || field.Name == state {
+		if field.Hidden || dropUpdate(field) {
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",
@@ -494,7 +544,7 @@ func (c *Client) Delete%s(ctx context.Context, id string) error {
 	sb.WriteString(fmt.Sprintf("type %sBatchPatch struct {\n", struct_))
 	sb.WriteString("\tID string `json:\"id\"`\n")
 	for _, field := range decl.Fields {
-		if field.Name == "id" || field.Hidden || stamps[field.Name] || field.Name == state {
+		if field.Hidden || dropUpdate(field) {
 			continue
 		}
 		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n",

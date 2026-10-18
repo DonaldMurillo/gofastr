@@ -19,6 +19,31 @@ type Reviews struct {
 	Product    *Products `json:"product,omitempty"`
 }
 
+// ReviewsInput is the create payload for ReviewsRepo. A required field with no
+// default is always sent; a nil field takes its default, and new(false)
+// stores false.
+type ReviewsInput struct {
+	ProductId  string  `json:"productId"`
+	AuthorName string  `json:"authorName"`
+	Rating     int     `json:"rating"`
+	Title      *string `json:"title,omitempty"`
+	Body       *string `json:"body,omitempty"`
+	Verified   *bool   `json:"verified,omitempty"`
+}
+
+// ReviewsPatch is the update payload for ReviewsRepo: a nil field is left as
+// stored, and a pointer to false, 0 or "" writes it to a bool, int,
+// float, string or text field. "" for any other type is not a value:
+// absent on an optional field, a validation error on a required one.
+type ReviewsPatch struct {
+	ProductId  *string `json:"productId,omitempty"`
+	AuthorName *string `json:"authorName,omitempty"`
+	Rating     *int    `json:"rating,omitempty"`
+	Title      *string `json:"title,omitempty"`
+	Body       *string `json:"body,omitempty"`
+	Verified   *bool   `json:"verified,omitempty"`
+}
+
 // ====== Reviews column references ======
 
 var (
@@ -71,17 +96,40 @@ func (r *ReviewsRepo) WithTx(tx *sql.Tx) *ReviewsRepo {
 	return &ReviewsRepo{handler: &h}
 }
 
-// Create persists row and back-fills server-generated fields onto it.
-func (r *ReviewsRepo) Create(ctx context.Context, row *Reviews) error {
-	body, err := framework.MarshalEntity(row)
+// row decodes one CRUD result.
+func (r *ReviewsRepo) row(out map[string]any) (*Reviews, error) {
+	var row Reviews
+	if err := framework.UnmarshalEntity(out, &row); err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// rows decodes a batch result, keeping its order.
+func (r *ReviewsRepo) rows(outs []map[string]any) ([]*Reviews, error) {
+	rows := make([]*Reviews, len(outs))
+	for i, out := range outs {
+		row, err := r.row(out)
+		if err != nil {
+			return nil, err
+		}
+		rows[i] = row
+	}
+	return rows, nil
+}
+
+// Create persists in and returns the stored row, server-generated fields
+// included.
+func (r *ReviewsRepo) Create(ctx context.Context, in ReviewsInput) (*Reviews, error) {
+	body, err := framework.MarshalEntity(in)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	out, err := r.handler.CreateOne(ctx, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return framework.UnmarshalEntity(out, row)
+	return r.row(out)
 }
 
 // Get fetches a row by id with optional eager-loaded includes.
@@ -90,26 +138,21 @@ func (r *ReviewsRepo) Get(ctx context.Context, id string, includes ...string) (*
 	if err != nil {
 		return nil, err
 	}
-	var row Reviews
-	if err := framework.UnmarshalEntity(out, &row); err != nil {
-		return nil, err
-	}
-	return &row, nil
+	return r.row(out)
 }
 
-// Update merges fields from row into the persisted record by id and refreshes
-// row with the post-update state.
-func (r *ReviewsRepo) Update(ctx context.Context, id string, row *Reviews) error {
-	body, err := framework.MarshalEntity(row)
+// Update writes patch's non-nil fields onto the row with this id and
+// returns the row as stored afterwards.
+func (r *ReviewsRepo) Update(ctx context.Context, id string, patch ReviewsPatch) (*Reviews, error) {
+	body, err := framework.MarshalEntity(patch)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	delete(body, "id") // id is taken from the path arg, not the body
 	out, err := r.handler.UpdateOne(ctx, id, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return framework.UnmarshalEntity(out, row)
+	return r.row(out)
 }
 
 // Delete removes the row by id (or soft-deletes if SoftDelete is enabled on
@@ -136,10 +179,9 @@ func (r *ReviewsRepo) Count(ctx context.Context) (int, error) {
 	return r.Query().Count(ctx)
 }
 
-// FirstOrCreate looks up a row by the given match condition and returns it
-// if found. Otherwise inserts row (filling in its server-generated fields)
-// and returns it.
-func (r *ReviewsRepo) FirstOrCreate(ctx context.Context, row *Reviews, match framework.Condition) (*Reviews, error) {
+// FirstOrCreate returns the first row matching match, or creates in and
+// returns the stored row when none does.
+func (r *ReviewsRepo) FirstOrCreate(ctx context.Context, in ReviewsInput, match framework.Condition) (*Reviews, error) {
 	existing, err := r.Query().Where(match).First(ctx)
 	if err == nil {
 		return existing, nil
@@ -147,18 +189,15 @@ func (r *ReviewsRepo) FirstOrCreate(ctx context.Context, row *Reviews, match fra
 	if !framework.IsNotFound(err) {
 		return nil, err
 	}
-	if err := r.Create(ctx, row); err != nil {
-		return nil, err
-	}
-	return row, nil
+	return r.Create(ctx, in)
 }
 
-// BatchCreate inserts every row in one transaction; on any per-item error
-// the entire batch rolls back. Returned slice is in input order.
-func (r *ReviewsRepo) BatchCreate(ctx context.Context, rows []*Reviews) ([]*Reviews, error) {
-	bodies := make([]map[string]any, len(rows))
-	for i, row := range rows {
-		b, err := framework.MarshalEntity(row)
+// BatchCreate inserts every input in one transaction; on any per-item error
+// the entire batch rolls back. Returned rows are in input order.
+func (r *ReviewsRepo) BatchCreate(ctx context.Context, ins []ReviewsInput) ([]*Reviews, error) {
+	bodies := make([]map[string]any, len(ins))
+	for i, in := range ins {
+		b, err := framework.MarshalEntity(in)
 		if err != nil {
 			return nil, err
 		}
@@ -168,35 +207,24 @@ func (r *ReviewsRepo) BatchCreate(ctx context.Context, rows []*Reviews) ([]*Revi
 	if err != nil {
 		return nil, err
 	}
-	for i, res := range results {
-		if err := framework.UnmarshalEntity(res, rows[i]); err != nil {
-			return nil, err
-		}
-	}
-	return rows, nil
+	return r.rows(results)
 }
 
-// BatchUpdate updates every row by its id in one transaction.
-func (r *ReviewsRepo) BatchUpdate(ctx context.Context, ids []string, rows []*Reviews) ([]*Reviews, error) {
-	bodies := make([]map[string]any, len(rows))
-	for i, row := range rows {
-		b, err := framework.MarshalEntity(row)
+// BatchUpdate writes patches[i] onto the row ids[i], all in one transaction.
+func (r *ReviewsRepo) BatchUpdate(ctx context.Context, ids []string, patches []ReviewsPatch) ([]*Reviews, error) {
+	bodies := make([]map[string]any, len(patches))
+	for i, patch := range patches {
+		b, err := framework.MarshalEntity(patch)
 		if err != nil {
 			return nil, err
 		}
-		delete(b, "id")
 		bodies[i] = b
 	}
 	results, err := r.handler.BatchUpdateMany(ctx, ids, bodies)
 	if err != nil {
 		return nil, err
 	}
-	for i, res := range results {
-		if err := framework.UnmarshalEntity(res, rows[i]); err != nil {
-			return nil, err
-		}
-	}
-	return rows, nil
+	return r.rows(results)
 }
 
 // BatchDelete deletes every id atomically.

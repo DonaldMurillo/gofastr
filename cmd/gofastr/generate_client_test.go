@@ -248,7 +248,7 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 		Fields: []schema.Field{
 			{Name: "title", Type: schema.String, Required: true},
 			{Name: "views", Type: schema.Int},
-			{Name: "published", Type: schema.Bool},
+			{Name: "published", Type: schema.Bool, Default: true},
 		},
 	}.WithTimestamps(false))
 	if err := framework.AutoMigrate(db, app.Registry); err != nil {
@@ -261,11 +261,12 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 	c := gen.NewClient(srv.URL, nil)
 
-	created, err := c.CreatePosts(ctx, gen.PostsInput{Title: "hello", Views: 1})
+	// published defaults to true: an Input naming false must store false.
+	created, err := c.CreatePosts(ctx, gen.PostsInput{Title: "hello", Views: new(1), Published: new(false)})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if created.Title != "hello" || created.ID == "" {
+	if created.Title != "hello" || created.ID == "" || created.Published {
 		t.Fatalf("create round-trip lost data: %+v", created)
 	}
 
@@ -277,7 +278,7 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 		t.Fatalf("get returned wrong row: %+v", got)
 	}
 
-	updated, err := c.UpdatePosts(ctx, created.ID, gen.PostsInput{Title: "edited", Views: 99})
+	updated, err := c.UpdatePosts(ctx, created.ID, gen.PostsInput{Title: "edited", Views: new(99)})
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -327,7 +328,7 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 	// _batch round-trip: create two atomically, patch one, verify a
 	// validation failure rolls back (returned as Committed=false, not an
 	// error), delete both.
-	bc, err := c.BatchCreatePosts(ctx, []gen.PostsInput{{Title: "b1"}, {Title: "b2", Views: 5}})
+	bc, err := c.BatchCreatePosts(ctx, []gen.PostsInput{{Title: "b1"}, {Title: "b2", Views: new(5)}})
 	if err != nil {
 		t.Fatalf("batch create: %v", err)
 	}

@@ -9,24 +9,74 @@ import (
 )
 
 type Products struct {
-	ID             string         `json:"id"`
-	Name           string         `json:"name,omitempty"`
-	Slug           string         `json:"slug,omitempty"`
-	Sku            string         `json:"sku,omitempty"`
-	Description    string         `json:"description,omitempty"`
-	Price          string         `json:"price,omitempty"`
-	CompareAtPrice string         `json:"compareAtPrice,omitempty"`
-	Cost           string         `json:"cost,omitempty"`
-	Stock          int            `json:"stock,omitempty"`
-	CategoryId     string         `json:"categoryId,omitempty"`
-	Status         string         `json:"status,omitempty"`
-	Featured       bool           `json:"featured,omitempty"`
-	Weight         float64        `json:"weight,omitempty"`
-	Image          string         `json:"image,omitempty"`
-	Tags           map[string]any `json:"tags,omitempty"`
-	Category       *Categories    `json:"category,omitempty"`
-	Reviews        []*Reviews     `json:"reviews,omitempty"`
-	OrderItems     []*OrderItems  `json:"orderItems,omitempty"`
+	ID             string              `json:"id"`
+	Name           string              `json:"name,omitempty"`
+	Slug           string              `json:"slug,omitempty"`
+	Sku            string              `json:"sku,omitempty"`
+	Description    string              `json:"description,omitempty"`
+	Price          string              `json:"price,omitempty"`
+	CompareAtPrice string              `json:"compareAtPrice,omitempty"`
+	Cost           string              `json:"cost,omitempty"`
+	Stock          int                 `json:"stock,omitempty"`
+	CategoryId     string              `json:"categoryId,omitempty"`
+	Status         ProductsStatusValue `json:"status,omitempty"`
+	Featured       bool                `json:"featured,omitempty"`
+	Weight         float64             `json:"weight,omitempty"`
+	Image          string              `json:"image,omitempty"`
+	Tags           map[string]any      `json:"tags,omitempty"`
+	Category       *Categories         `json:"category,omitempty"`
+	Reviews        []*Reviews          `json:"reviews,omitempty"`
+	OrderItems     []*OrderItems       `json:"orderItems,omitempty"`
+}
+
+// ProductsStatusValue is one value of the products field status.
+type ProductsStatusValue string
+
+const (
+	ProductsStatusDraft    ProductsStatusValue = "draft"
+	ProductsStatusActive   ProductsStatusValue = "active"
+	ProductsStatusArchived ProductsStatusValue = "archived"
+)
+
+// ProductsInput is the create payload for ProductsRepo. A required field with no
+// default is always sent; a nil field takes its default, and new(false)
+// stores false.
+type ProductsInput struct {
+	Name           string               `json:"name"`
+	Slug           string               `json:"slug"`
+	Sku            *string              `json:"sku,omitempty"`
+	Description    *string              `json:"description,omitempty"`
+	Price          string               `json:"price"`
+	CompareAtPrice *string              `json:"compareAtPrice,omitempty"`
+	Cost           *string              `json:"cost,omitempty"`
+	Stock          *int                 `json:"stock,omitempty"`
+	CategoryId     *string              `json:"categoryId,omitempty"`
+	Status         *ProductsStatusValue `json:"status,omitempty"`
+	Featured       *bool                `json:"featured,omitempty"`
+	Weight         *float64             `json:"weight,omitempty"`
+	Image          *string              `json:"image,omitempty"`
+	Tags           *map[string]any      `json:"tags,omitempty"`
+}
+
+// ProductsPatch is the update payload for ProductsRepo: a nil field is left as
+// stored, and a pointer to false, 0 or "" writes it to a bool, int,
+// float, string or text field. "" for any other type is not a value:
+// absent on an optional field, a validation error on a required one.
+type ProductsPatch struct {
+	Name           *string              `json:"name,omitempty"`
+	Slug           *string              `json:"slug,omitempty"`
+	Sku            *string              `json:"sku,omitempty"`
+	Description    *string              `json:"description,omitempty"`
+	Price          *string              `json:"price,omitempty"`
+	CompareAtPrice *string              `json:"compareAtPrice,omitempty"`
+	Cost           *string              `json:"cost,omitempty"`
+	Stock          *int                 `json:"stock,omitempty"`
+	CategoryId     *string              `json:"categoryId,omitempty"`
+	Status         *ProductsStatusValue `json:"status,omitempty"`
+	Featured       *bool                `json:"featured,omitempty"`
+	Weight         *float64             `json:"weight,omitempty"`
+	Image          *string              `json:"image,omitempty"`
+	Tags           *map[string]any      `json:"tags,omitempty"`
 }
 
 // ====== Products column references ======
@@ -42,7 +92,7 @@ var (
 	ProductsCost           = framework.NewFloatColumn("cost")
 	ProductsStock          = framework.NewIntColumn("stock")
 	ProductsCategoryId     = framework.NewUUIDColumn("category_id")
-	ProductsStatus         = framework.NewStringColumn("status")
+	ProductsStatus         = framework.NewEnumColumn[ProductsStatusValue]("status")
 	ProductsFeatured       = framework.NewBoolColumn("featured")
 	ProductsWeight         = framework.NewFloatColumn("weight")
 	ProductsImage          = framework.NewStringColumn("image")
@@ -91,17 +141,40 @@ func (r *ProductsRepo) WithTx(tx *sql.Tx) *ProductsRepo {
 	return &ProductsRepo{handler: &h}
 }
 
-// Create persists row and back-fills server-generated fields onto it.
-func (r *ProductsRepo) Create(ctx context.Context, row *Products) error {
-	body, err := framework.MarshalEntity(row)
+// row decodes one CRUD result.
+func (r *ProductsRepo) row(out map[string]any) (*Products, error) {
+	var row Products
+	if err := framework.UnmarshalEntity(out, &row); err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// rows decodes a batch result, keeping its order.
+func (r *ProductsRepo) rows(outs []map[string]any) ([]*Products, error) {
+	rows := make([]*Products, len(outs))
+	for i, out := range outs {
+		row, err := r.row(out)
+		if err != nil {
+			return nil, err
+		}
+		rows[i] = row
+	}
+	return rows, nil
+}
+
+// Create persists in and returns the stored row, server-generated fields
+// included.
+func (r *ProductsRepo) Create(ctx context.Context, in ProductsInput) (*Products, error) {
+	body, err := framework.MarshalEntity(in)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	out, err := r.handler.CreateOne(ctx, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return framework.UnmarshalEntity(out, row)
+	return r.row(out)
 }
 
 // Get fetches a row by id with optional eager-loaded includes.
@@ -110,26 +183,21 @@ func (r *ProductsRepo) Get(ctx context.Context, id string, includes ...string) (
 	if err != nil {
 		return nil, err
 	}
-	var row Products
-	if err := framework.UnmarshalEntity(out, &row); err != nil {
-		return nil, err
-	}
-	return &row, nil
+	return r.row(out)
 }
 
-// Update merges fields from row into the persisted record by id and refreshes
-// row with the post-update state.
-func (r *ProductsRepo) Update(ctx context.Context, id string, row *Products) error {
-	body, err := framework.MarshalEntity(row)
+// Update writes patch's non-nil fields onto the row with this id and
+// returns the row as stored afterwards.
+func (r *ProductsRepo) Update(ctx context.Context, id string, patch ProductsPatch) (*Products, error) {
+	body, err := framework.MarshalEntity(patch)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	delete(body, "id") // id is taken from the path arg, not the body
 	out, err := r.handler.UpdateOne(ctx, id, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return framework.UnmarshalEntity(out, row)
+	return r.row(out)
 }
 
 // Delete removes the row by id (or soft-deletes if SoftDelete is enabled on
@@ -156,10 +224,9 @@ func (r *ProductsRepo) Count(ctx context.Context) (int, error) {
 	return r.Query().Count(ctx)
 }
 
-// FirstOrCreate looks up a row by the given match condition and returns it
-// if found. Otherwise inserts row (filling in its server-generated fields)
-// and returns it.
-func (r *ProductsRepo) FirstOrCreate(ctx context.Context, row *Products, match framework.Condition) (*Products, error) {
+// FirstOrCreate returns the first row matching match, or creates in and
+// returns the stored row when none does.
+func (r *ProductsRepo) FirstOrCreate(ctx context.Context, in ProductsInput, match framework.Condition) (*Products, error) {
 	existing, err := r.Query().Where(match).First(ctx)
 	if err == nil {
 		return existing, nil
@@ -167,18 +234,15 @@ func (r *ProductsRepo) FirstOrCreate(ctx context.Context, row *Products, match f
 	if !framework.IsNotFound(err) {
 		return nil, err
 	}
-	if err := r.Create(ctx, row); err != nil {
-		return nil, err
-	}
-	return row, nil
+	return r.Create(ctx, in)
 }
 
-// BatchCreate inserts every row in one transaction; on any per-item error
-// the entire batch rolls back. Returned slice is in input order.
-func (r *ProductsRepo) BatchCreate(ctx context.Context, rows []*Products) ([]*Products, error) {
-	bodies := make([]map[string]any, len(rows))
-	for i, row := range rows {
-		b, err := framework.MarshalEntity(row)
+// BatchCreate inserts every input in one transaction; on any per-item error
+// the entire batch rolls back. Returned rows are in input order.
+func (r *ProductsRepo) BatchCreate(ctx context.Context, ins []ProductsInput) ([]*Products, error) {
+	bodies := make([]map[string]any, len(ins))
+	for i, in := range ins {
+		b, err := framework.MarshalEntity(in)
 		if err != nil {
 			return nil, err
 		}
@@ -188,35 +252,24 @@ func (r *ProductsRepo) BatchCreate(ctx context.Context, rows []*Products) ([]*Pr
 	if err != nil {
 		return nil, err
 	}
-	for i, res := range results {
-		if err := framework.UnmarshalEntity(res, rows[i]); err != nil {
-			return nil, err
-		}
-	}
-	return rows, nil
+	return r.rows(results)
 }
 
-// BatchUpdate updates every row by its id in one transaction.
-func (r *ProductsRepo) BatchUpdate(ctx context.Context, ids []string, rows []*Products) ([]*Products, error) {
-	bodies := make([]map[string]any, len(rows))
-	for i, row := range rows {
-		b, err := framework.MarshalEntity(row)
+// BatchUpdate writes patches[i] onto the row ids[i], all in one transaction.
+func (r *ProductsRepo) BatchUpdate(ctx context.Context, ids []string, patches []ProductsPatch) ([]*Products, error) {
+	bodies := make([]map[string]any, len(patches))
+	for i, patch := range patches {
+		b, err := framework.MarshalEntity(patch)
 		if err != nil {
 			return nil, err
 		}
-		delete(b, "id")
 		bodies[i] = b
 	}
 	results, err := r.handler.BatchUpdateMany(ctx, ids, bodies)
 	if err != nil {
 		return nil, err
 	}
-	for i, res := range results {
-		if err := framework.UnmarshalEntity(res, rows[i]); err != nil {
-			return nil, err
-		}
-	}
-	return rows, nil
+	return r.rows(results)
 }
 
 // BatchDelete deletes every id atomically.

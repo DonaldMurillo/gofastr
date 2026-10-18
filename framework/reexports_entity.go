@@ -43,6 +43,7 @@ type (
 	Condition               = entity.Condition
 	Order                   = entity.Order
 	StringColumn            = entity.StringColumn
+	EnumColumn[T ~string]   = entity.EnumColumn[T]
 	IntColumn               = entity.IntColumn
 	FloatColumn             = entity.FloatColumn
 	BoolColumn              = entity.BoolColumn
@@ -91,6 +92,9 @@ func ManyToMany(name string, ent string, throughTable string, sourceFK string, t
 
 // NewStringColumn wraps entity.NewStringColumn.
 func NewStringColumn(name string) entity.StringColumn { return entity.NewStringColumn(name) }
+
+// NewEnumColumn wraps entity.NewEnumColumn.
+func NewEnumColumn[T ~string](name string) entity.EnumColumn[T] { return entity.NewEnumColumn[T](name) }
 
 // NewIntColumn wraps entity.NewIntColumn.
 func NewIntColumn(name string) entity.IntColumn { return entity.NewIntColumn(name) }
