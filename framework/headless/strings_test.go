@@ -134,7 +134,7 @@ func TestSpecGoldenStrings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading words golden: %v (run with GOFASTR_UPDATE_GOLDEN=1 to create)", err)
 	}
-	if string(golden) != got {
+	if strings.ReplaceAll(string(golden), "\r\n", "\n") != got {
 		t.Fatalf("the words of one or more components changed.\n"+
 			"Every difference below is a string that stopped (or started) coming\n"+
 			"through Strings. If it is intended, regenerate with\n"+

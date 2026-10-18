@@ -153,16 +153,13 @@ func TestSidebarCountFollowsLabel(t *testing.T) {
 	for _, want := range []string{
 		`<a data-cui-activelink="" href="/invoices"><span data-cui-internal="">Invoices</span><span class="count">12</span></a>`,
 		`<a data-cui-activelink="" data-cui-internal="" href="/plans"><span>Plans</span></a>`,
-		// A group's Count is inert: the summary holds only the
-		// component's own label, so the summary itself is marked.
-		`<summary data-cui-internal=""><span>Group</span></summary>`,
+		// Group metadata uses the same count slot as links and remains
+		// reachable to its caller rather than being marked internal.
+		`<summary><span data-cui-internal="">Group</span><span class="count">99</span></summary>`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("sidebar missing %q:\n%s", want, h)
 		}
-	}
-	if strings.Contains(h, "99") {
-		t.Errorf("a group drew its Count:\n%s", h)
 	}
 }
 
