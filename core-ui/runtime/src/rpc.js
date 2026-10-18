@@ -13,6 +13,12 @@
   // dispatch aborts the prior request targeting the same signal so network
   // response order cannot roll pagination or filtering back.
   const _rpcInFlight = new Map();
+  // The latest dispatch per node. A node with no signal has no abort
+  // controller, so two quick submits of one form race; a response from a
+  // dispatch the node has since superseded is dropped before it touches
+  // the page (a late refusal must not paint over a newer success, nor a
+  // late success clear a newer refusal).
+  const _rpcLatest = new WeakMap();
   // Input-triggered RPC debounce belongs with dispatch state, not the core
   // bridge. The bridge loads this module on the first input and asks this map
   // to schedule the request.
@@ -161,6 +167,9 @@
     }
     const ctl = new AbortController();
     if (responseSignal) _rpcInFlight.set(responseSignal, ctl);
+    const tok = {};
+    _rpcLatest.set(node, tok);
+    const stale = () => _rpcLatest.get(node) !== tok;
 
     let body = node.getAttribute('data-cui-rpc-body');
     let resolvedPath = path;
@@ -245,8 +254,10 @@
         signal: ctl.signal,
         credentials: 'same-origin',
       });
+      if (stale()) return;
       if (!r.ok) {
         const txt = await r.text();
+        if (stale()) return;
         if (responseSignal) NS.setSignal(responseSignal, { ok: false, status: r.status, text: txt });
         // A refused form submission is never silent: the formerrors
         // module renders the server's validation envelope into the
@@ -254,7 +265,7 @@
         if (formSource) {
           formResult(formSource, false);
           NS.loadModule('formerrors')
-            .then(() => NS._formErrors.report(formSource, r.status, txt))
+            .then(() => { if (!stale()) NS._formErrors.report(formSource, r.status, txt); })
             .catch(() => {});
         } else if (errToast !== null) {
           // An opted-in button: the attribute is the title, the server's
@@ -296,6 +307,7 @@
       if (toastHeader) NS._dispatchToastHeader(toastHeader);
       const ct = r.headers.get('content-type') || '';
       const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
+      if (stale()) return;
       if (responseSignal) NS.setSignal(responseSignal, data);
       if (closeOnSuccess && wentry && wentry.dismiss) wentry.dismiss();
       if (resetOnSuccess) node.reset();
@@ -357,7 +369,7 @@
         catch (_) {}
       }
     } catch (err) {
-      if (err && err.name === 'AbortError') return;
+      if ((err && err.name === 'AbortError') || stale()) return;
       if (errToast !== null) {
         NS._toastOrFallback?.({ variant: 'error', title: errToast || 'Request failed', body: 'Network error — please try again', ttl: 6000 });
       }
@@ -372,11 +384,14 @@
       if (responseSignal && _rpcInFlight.get(responseSignal) === ctl) {
         _rpcInFlight.delete(responseSignal);
       }
-      const sticky = node.hasAttribute('data-cui-rpc-after-disable') &&
-        node.dataset.cuiRpcAfterDone === '1';
-      if (!sticky && wantDisable) node.disabled = false;
-      node.classList.remove('cui-loading');
-      node.removeAttribute('aria-busy');
+      // A superseded dispatch leaves the busy state to the newer one.
+      if (!stale()) {
+        const sticky = node.hasAttribute('data-cui-rpc-after-disable') &&
+          node.dataset.cuiRpcAfterDone === '1';
+        if (!sticky && wantDisable) node.disabled = false;
+        node.classList.remove('cui-loading');
+        node.removeAttribute('aria-busy');
+      }
     }
   }
 
