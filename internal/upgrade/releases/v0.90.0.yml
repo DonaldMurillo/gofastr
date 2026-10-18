@@ -1,0 +1,16 @@
+version: v0.90.0
+title: Gauge, scatter and heatmap charts, permission-name checks, a dev layout layer
+notes:
+  - change: "router.Param panics on a name its route does not declare, so the request answers 500 through the recovery middleware, naming the route and the wildcard, instead of returning \"\""
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/core/router.Param
+    guidance: "A call that names a wildcard its route declares needs nothing. One that names a wildcard the pattern lacks (a typo, or a handler shared by routes with different wildcards) now fails: fix the name, or read r.PathValue(name) where the wildcard exists on only some of the routes. A request built by hand with SetPathValue is not checked, and handler.Bind still leaves an undeclared path: field at zero."
+  - change: "the Timeout middleware's response writer fails a Write or Hijack with an error, and ignores a WriteHeader or Flush, once the handler has returned or panicked"
+    nodetect: "only a goroutine that outlives its handler and keeps writing to the response notices, and it was writing into a buffer that may already have belonged to another request"
+    guidance: "Nothing to change. A goroutine that wrote to the ResponseWriter after its handler returned finishes its work before the handler returns, or reports its result some other way."
+  - change: "gofastr verify gains GOFASTR1904 (a checked permission name no RolePolicy.Register call in the binary registers) and widens GOFASTR1808 to judge var(--color-*, …) and var(--tk-*, …) fallbacks in design-system code against the token's value for its scheme"
+    nodetect: "verify findings, not an API: an app that calls RolePolicy.Register, or registers component styles with colour fallbacks, can fail verify where it passed"
+    guidance: "Run gofastr verify. GOFASTR1904 names the nearest registered capability: fix the typo, or register the name. GOFASTR1808 names the hex the fallback should carry. A site that is the shape on purpose takes //gofastr:allow(<rule>) <reason>."

@@ -7,6 +7,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.90.0] - 2026-10-18
+
+**BREAKING.** `router.Param` panics on a wildcard name its route does
+not declare, so a handler that read a misspelled name and carried on
+with `""` now answers 500. v0.90.0 also adds gauge, scatter and
+heatmap charts, a `gofastr verify` rule for permission names nothing
+registers, and a layout overlay under `gofastr dev`.
+
 ### Added
 - **`style.DefaultDarkColors()` returns the canonical dark palette.**
   `framework/ui/theme.Default` reads it, and so does the contracts
