@@ -7,7 +7,9 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
@@ -49,7 +51,7 @@ func BenchmarkT7_Plaintext_GoFastr(b *testing.B) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("Hello, World!"))
 	})
-	req := httptest.NewRequest(http.MethodGet, "/plaintext", nil)
+	req := benchRequest(b, http.MethodGet, "/plaintext", nil)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -89,7 +91,7 @@ func BenchmarkT7_JSON_GoFastr(b *testing.B) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(msg{Message: "Hello, World!"})
 	})
-	req := httptest.NewRequest(http.MethodGet, "/json", nil)
+	req := benchRequest(b, http.MethodGet, "/json", nil)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -158,14 +160,14 @@ func BenchmarkT7_SingleQuery_GoFastr(b *testing.B) {
 			},
 		}.WithTimestamps(false))
 		app.Registry.Register(worlds)
-		RegisterCrudRoutes(app.Router(), NewCrudHandler(worlds, db), "/worlds")
+		benchMountCrud(b, app, worlds, "/worlds")
 
 		rng := rand.New(rand.NewSource(42))
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			id := fmt.Sprintf("w%d", rng.Intn(N))
-			req := httptest.NewRequest(http.MethodGet, "/worlds/"+id, nil)
+			req := benchAuthed(b, http.MethodGet, "/worlds/"+id, nil)
 			rec := httptest.NewRecorder()
 			app.Router().ServeHTTP(rec, req)
 			if rec.Code != http.StatusOK {
@@ -194,17 +196,30 @@ func BenchmarkT7_FilteredList_NetHTTP(b *testing.B) {
 			if limit == "" {
 				limit = "20"
 			}
+			// The framework's list answers with total and totalPages and
+			// returns the timestamp columns, so the baseline counts and
+			// selects them too; otherwise the pair compares one query
+			// against two and six columns against eight.
+			var total int
+			countSQL, countArgs := "SELECT COUNT(*) FROM posts", []any{}
+			if status != "" {
+				countSQL, countArgs = countSQL+" WHERE status = $1", []any{status}
+			}
+			if err := db.QueryRowContext(r.Context(), countSQL, countArgs...).Scan(&total); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
 			var (
 				rows *sql.Rows
 				err  error
 			)
 			if status != "" {
 				rows, err = db.QueryContext(r.Context(),
-					"SELECT id, title, body, status, author_id, views FROM posts WHERE status = $1 LIMIT "+limit,
+					"SELECT id, title, body, status, author_id, views, created_at, updated_at FROM posts WHERE status = $1 LIMIT "+limit,
 					status)
 			} else {
 				rows, err = db.QueryContext(r.Context(),
-					"SELECT id, title, body, status, author_id, views FROM posts LIMIT "+limit)
+					"SELECT id, title, body, status, author_id, views, created_at, updated_at FROM posts LIMIT "+limit)
 			}
 			if err != nil {
 				http.Error(w, err.Error(), 500)
@@ -216,21 +231,31 @@ func BenchmarkT7_FilteredList_NetHTTP(b *testing.B) {
 			for rows.Next() {
 				var id, title, body, status, authorID string
 				var views int
-				if err := rows.Scan(&id, &title, &body, &status, &authorID, &views); err != nil {
+				var createdAt, updatedAt time.Time
+				if err := rows.Scan(&id, &title, &body, &status, &authorID, &views, &createdAt, &updatedAt); err != nil {
 					http.Error(w, err.Error(), 500)
 					return
 				}
 				out = append(out, map[string]any{
-					"id":       id,
-					"title":    title,
-					"body":     body,
-					"status":   status,
-					"authorId": authorID,
-					"views":    views,
+					"id":        id,
+					"title":     title,
+					"body":      body,
+					"status":    status,
+					"authorId":  authorID,
+					"views":     views,
+					"createdAt": createdAt,
+					"updatedAt": updatedAt,
 				})
 			}
+			perPage, _ := strconv.Atoi(limit)
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": out})
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"data":       out,
+				"total":      total,
+				"page":       1,
+				"perPage":    perPage,
+				"totalPages": (total + perPage - 1) / perPage,
+			})
 		})
 
 		req := httptest.NewRequest(http.MethodGet, "/posts?status=published&limit=50", nil)
@@ -251,7 +276,7 @@ func BenchmarkT7_FilteredList_NetHTTP(b *testing.B) {
 func BenchmarkT7_FilteredList_GoFastr(b *testing.B) {
 	forEachBenchDialect(b, func(b *testing.B, db *sql.DB, _ Dialect) {
 		app := setupBlogDomain(b, db, 500, 0)
-		req := benchAuthedGet("/posts?status=published&limit=50")
+		req := benchAuthed(b, http.MethodGet, "/posts?status=published&limit=50", nil)
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {

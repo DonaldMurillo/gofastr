@@ -26,6 +26,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   for a task it had asked to cancel. The CANCELED write now lands
   before the run is woken, and every write the handler tries after
   that is refused.
+- **56 framework benchmarks ran again.** Their requests had no session,
+  so generated CRUD answered 401 before the handler body ran, and the
+  POST/PUT body helper ended its input with an error other than
+  `io.EOF`. The fixtures now stamp a user, mount CRUD through
+  `App.CrudHandler`, and switch off the test-binary-only markup scan
+  and render diagnostics, so they time what a deployed app runs.
+  `BenchmarkT7_FilteredList_NetHTTP` now runs the same COUNT query and
+  selects the same columns as the generated list it is compared with.
 
 ## [0.90.0] - 2026-10-18
 

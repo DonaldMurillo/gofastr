@@ -66,3 +66,17 @@ func TestReportNamesWhatPanicked(t *testing.T) {
 		}
 	}
 }
+
+// A request built on ProductionContext keeps its writer, and the same
+// request without it gets the test-only wrapper.
+func TestProductionContextKeepsWriter(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w, _ := TestResponse(rec, req.WithContext(ProductionContext(t, context.Background())))
+	if w != http.ResponseWriter(rec) {
+		t.Fatalf("production context wrapped the writer: %T", w)
+	}
+	if w, _ := TestResponse(rec, req); w == http.ResponseWriter(rec) {
+		t.Fatal("a request without the exemption kept its writer")
+	}
+}

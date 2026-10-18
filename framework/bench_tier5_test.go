@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -38,7 +39,7 @@ func BenchmarkT5_Plaintext(b *testing.B) {
 		_, _ = w.Write([]byte("Hello, World!"))
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/plaintext", nil)
+	req := benchRequest(b, http.MethodGet, "/plaintext", nil)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -56,7 +57,7 @@ func BenchmarkT5_Plaintext_WithDefaults(b *testing.B) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("Hello, World!"))
 	})
-	req := httptest.NewRequest(http.MethodGet, "/plaintext", nil)
+	req := benchRequest(b, http.MethodGet, "/plaintext", nil)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -81,7 +82,7 @@ func BenchmarkT5_JSON(b *testing.B) {
 		_ = json.NewEncoder(w).Encode(message{Message: "Hello, World!"})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/json", nil)
+	req := benchRequest(b, http.MethodGet, "/json", nil)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -110,14 +111,14 @@ func BenchmarkT5_SingleQuery(b *testing.B) {
 			},
 		}.WithTimestamps(false))
 		app.Registry.Register(worlds)
-		RegisterCrudRoutes(app.Router(), NewCrudHandler(worlds, db), "/worlds")
+		benchMountCrud(b, app, worlds, "/worlds")
 
 		rng := rand.New(rand.NewSource(42))
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			id := fmt.Sprintf("w%d", rng.Intn(N))
-			req := httptest.NewRequest(http.MethodGet, "/worlds/"+id, nil)
+			req := benchAuthed(b, http.MethodGet, "/worlds/"+id, nil)
 			rec := httptest.NewRecorder()
 			app.Router().ServeHTTP(rec, req)
 			if rec.Code != http.StatusOK {
@@ -147,7 +148,7 @@ func BenchmarkT5_MultiQuery(b *testing.B) {
 			},
 		}.WithTimestamps(false))
 		app.Registry.Register(worlds)
-		RegisterCrudRoutes(app.Router(), NewCrudHandler(worlds, db), "/worlds")
+		benchMountCrud(b, app, worlds, "/worlds")
 
 		for _, queries := range []int{1, 5, 10, 20} {
 			b.Run(fmt.Sprintf("queries=%d", queries), func(b *testing.B) {
@@ -157,7 +158,7 @@ func BenchmarkT5_MultiQuery(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					for range queries {
 						id := fmt.Sprintf("w%d", rng.Intn(N))
-						req := httptest.NewRequest(http.MethodGet, "/worlds/"+id, nil)
+						req := benchAuthed(b, http.MethodGet, "/worlds/"+id, nil)
 						rec := httptest.NewRecorder()
 						app.Router().ServeHTTP(rec, req)
 						if rec.Code != http.StatusOK {
@@ -194,9 +195,9 @@ func BenchmarkT5_FortunesLike(b *testing.B) {
 			},
 		}.WithTimestamps(false))
 		app.Registry.Register(fortunes)
-		RegisterCrudRoutes(app.Router(), NewCrudHandler(fortunes, db), "/fortunes")
+		benchMountCrud(b, app, fortunes, "/fortunes")
 
-		req := httptest.NewRequest(http.MethodGet, "/fortunes?limit=100", nil)
+		req := benchAuthed(b, http.MethodGet, "/fortunes?limit=100", nil)
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
@@ -230,7 +231,7 @@ func BenchmarkT5_Updates(b *testing.B) {
 			},
 		}.WithTimestamps(false))
 		app.Registry.Register(worlds)
-		RegisterCrudRoutes(app.Router(), NewCrudHandler(worlds, db), "/worlds")
+		benchMountCrud(b, app, worlds, "/worlds")
 
 		for _, updates := range []int{1, 5, 10, 20} {
 			b.Run(fmt.Sprintf("updates=%d", updates), func(b *testing.B) {
@@ -241,7 +242,7 @@ func BenchmarkT5_Updates(b *testing.B) {
 					for range updates {
 						id := fmt.Sprintf("w%d", rng.Intn(N))
 						// GET
-						req := httptest.NewRequest(http.MethodGet, "/worlds/"+id, nil)
+						req := benchAuthed(b, http.MethodGet, "/worlds/"+id, nil)
 						rec := httptest.NewRecorder()
 						app.Router().ServeHTTP(rec, req)
 						if rec.Code != http.StatusOK {
@@ -250,7 +251,7 @@ func BenchmarkT5_Updates(b *testing.B) {
 						// PUT with the new value (we don't need to read the response
 						// for TechEmpower's check, just to model the network shape).
 						body, _ := json.Marshal(map[string]any{"random_number": rng.Intn(10000)})
-						req = httptest.NewRequest(http.MethodPut, "/worlds/"+id, bytesReader(body))
+						req = benchAuthed(b, http.MethodPut, "/worlds/"+id, bytes.NewReader(body))
 						req.Header.Set("Content-Type", "application/json")
 						rec = httptest.NewRecorder()
 						app.Router().ServeHTTP(rec, req)

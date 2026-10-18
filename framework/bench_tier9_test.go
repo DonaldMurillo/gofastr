@@ -14,6 +14,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
@@ -61,7 +62,7 @@ func BenchmarkT9_StreamingListRealVolume(b *testing.B) {
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
 					rec := httptest.NewRecorder()
-					req := httptest.NewRequest(http.MethodGet, "/posts", nil)
+					req := benchAuthed(b, http.MethodGet, "/posts", nil)
 					ch.ServeStreamingList(ctx, rec, req, cols, nil, nil, nil, 1, limit, nil)
 					if rec.Code != http.StatusOK && rec.Code != 0 {
 						b.Fatalf("status %d", rec.Code)
@@ -95,7 +96,7 @@ func BenchmarkT9_StreamingVsBuffered_RealVolume(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				totalBytes := 0
 				for page := 1; page <= 50; page++ {
-					req := httptest.NewRequest(http.MethodGet,
+					req := benchAuthed(b, http.MethodGet,
 						fmt.Sprintf("/posts?page=%d&limit=100", page), nil)
 					rec := httptest.NewRecorder()
 					app.Router().ServeHTTP(rec, req)
@@ -113,7 +114,7 @@ func BenchmarkT9_StreamingVsBuffered_RealVolume(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				rec := httptest.NewRecorder()
-				req := httptest.NewRequest(http.MethodGet, "/posts", nil)
+				req := benchAuthed(b, http.MethodGet, "/posts", nil)
 				ch.ServeStreamingList(ctx, rec, req, cols, nil, nil, nil, 1, 5000, nil)
 				b.ReportMetric(float64(rec.Body.Len()), "response_bytes")
 			}
@@ -153,7 +154,7 @@ func BenchmarkT9_SSEEventStream(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			ctx, cancel := context.WithCancel(context.Background())
 			rec := newCountingSSERecorder()
-			req := httptest.NewRequest(http.MethodGet, "/posts/_events", nil).WithContext(ctx)
+			req := httptest.NewRequest(http.MethodGet, "/posts/_events", nil).WithContext(handler.SetUser(ctx, benchUser))
 
 			subWG := sync.WaitGroup{}
 			subWG.Go(func() {
@@ -296,7 +297,7 @@ func BenchmarkT9_IslandRPC(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				for p := 1; p <= pages; p++ {
-					req := httptest.NewRequest(http.MethodGet,
+					req := benchRequest(b, http.MethodGet,
 						fmt.Sprintf("/islands/posts/state?p=%d", p), nil)
 					rec := httptest.NewRecorder()
 					rtr.ServeHTTP(rec, req)
@@ -333,7 +334,7 @@ func BenchmarkT9_IslandRPC_Concurrency(b *testing.B) {
 			b.ResetTimer()
 			for range workers {
 				wg.Add(1)
-				req := httptest.NewRequest(http.MethodGet,
+				req := benchRequest(b, http.MethodGet,
 					"/islands/posts/state?p=1", nil)
 				go func() {
 					defer wg.Done()
@@ -418,7 +419,7 @@ func BenchmarkT9_UIHostPageRender(b *testing.B) {
 
 	for _, path := range []string{"/", "/about"} {
 		b.Run(path, func(b *testing.B) {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req := benchRequest(b, http.MethodGet, path, nil)
 			b.ResetTimer()
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
