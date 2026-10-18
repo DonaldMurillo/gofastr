@@ -44,6 +44,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the 2026-10-18 binary sizes, build and dev RAM, and Tier 7 gaps, and
   drops the cgo note (the SQLite driver is pure Go); `perf-results.md`
   opens with a v0.90.0 snapshot ahead of the v0.26.0 one.
+- **The runtime-size docs state the core's real gzip size**: 13,655 B
+  at level 6 and 15,779 B at level 1, which is 1,443 B past the 14 KiB
+  congestion window. They said 12.3 KB.
 
 ## [0.90.0] - 2026-10-18
 

@@ -1091,8 +1091,8 @@ func TestCoreBudgetRejectsCliffOverflow(t *testing.T) {
 //  1. Catch regressions: if a module grows past its current high-water
 //     mark, fail loudly. Cheaper than waiting for a Lighthouse drop.
 //  2. Pin the runtime-size goals from runtime-minification.md:
-//     core ≤ 12.5 KB at gzip level 6, core ≤ 14 KB at level 1, and every
-//     demand module ≤ 3 KB at level 6.
+//     core ≤ coreGoalGZ at gzip level 6, core ≤ coreCongestionWindowGZ
+//     at level 1, and every demand module ≤ 3 KB at level 6.
 //
 // Never add or raise an override to silence a regression: split or shrink the
 // module instead.

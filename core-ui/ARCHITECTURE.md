@@ -1296,7 +1296,7 @@ completeness test: when it can't, you found the gap.
   generic, not by being tiny in source (the runtime is ~7,400 lines of
   vanilla JS: a core `runtime.js` plus per-feature split modules under
   `core-ui/runtime/src/`), but by being carved and budgeted: a page
-  loads `core.js` (≤12.5 KB gzipped, enforced by
+  loads `core.js` (≤13,695 B gzipped, enforced by
   `core-ui/runtime/budget_test.go`) plus only the demand modules its
   components actually use (≤3 KB gzipped each; `widgets` carries a
   tracked 5 KB override). A second gate pins the *typical-page* payload
@@ -1305,9 +1305,11 @@ completeness test: when it can't, you found the gap.
   the real download while the core number stays pure. None of it
   re-implements server logic.
 
-  The budget policy: 12.5 KB sits under TCP's initial congestion window
-  (~14 KB ≈ 10 packets), so the core arrives in the first round trip on
-  a cold connection. That cliff is what the number protects; smaller
+  The budget policy: the core should sit under TCP's initial congestion
+  window (~14 KB ≈ 10 packets), so it arrives in the first round trip on
+  a cold connection. Since 2026-10 the level-1 size is 15,779 B, 1,443 B
+  past that line, and each byte over it is a measured, named entry in
+  `budget_test.go`. That cliff is what the number protects; smaller
   buys nothing, bigger costs an RTT. When a budget trips, **carve a
   feature into a demand module, never raise the line.** Carving
   candidates are features only some pages use (SSE status chrome,
