@@ -26,6 +26,7 @@ func WithComponentCSS(document render.HTML, theme style.Theme) render.HTML {
 
 // ComponentCSS collects only the component styles used in document. Static
 // writers can save it in an external stylesheet under a strict style policy.
+// The host must also emit theme.CSSCustomProperties() for token values.
 func ComponentCSS(document render.HTML, theme style.Theme) string {
 	var css strings.Builder
 	hash := style.ThemeHash(theme)

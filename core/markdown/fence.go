@@ -21,7 +21,7 @@ import (
 // FenceInfo is a parsed fence info string, the text after a fence's opening run.
 type FenceInfo struct {
 	// Lang is the first whitespace-delimited token, the language name
-	// ("go", "bash"). Empty for a fence with no info string.
+	// ("go", "bash"). Empty when no language is supplied, including option-only fences.
 	Lang string
 	// Meta is everything after Lang, verbatim and trimmed: `title="main.go"`,
 	// `{1,3-5}`, `showLineNumbers`. The renderer decides what those mean; this
@@ -34,10 +34,19 @@ type FenceInfo struct {
 func ParseFenceInfo(info string) FenceInfo {
 	info = strings.TrimSpace(info)
 	i := strings.IndexFunc(info, unicode.IsSpace)
+	first := info
+	if i >= 0 {
+		first = info[:i]
+	}
+	// Options may name an untyped source block. Keep the complete string so
+	// a quoted filename containing spaces remains one metadata value.
+	if strings.Contains(first, "=") || strings.HasPrefix(first, "{") {
+		return FenceInfo{Meta: info}
+	}
 	if i < 0 {
 		return FenceInfo{Lang: info}
 	}
-	return FenceInfo{Lang: info[:i], Meta: strings.TrimSpace(info[i:])}
+	return FenceInfo{Lang: first, Meta: strings.TrimSpace(info[i:])}
 }
 
 // fenceDelim is an opening code fence: the character that runs it, how long
