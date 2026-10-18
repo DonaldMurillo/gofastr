@@ -25,10 +25,11 @@ func init() {
 	})
 	contracts.Register(&contracts.Analyzer{
 		Name: "permissions",
-		Doc:  "Access declarations on mutating routes, and whether configured auth is actually mounted.",
+		Doc:  "Access declarations on mutating routes, checked permission names against the registry, and whether configured auth is actually mounted.",
 		Rules: []string{
 			contracts.RuleUnguardedMutation,
 			contracts.RuleAuthNotWired,
+			contracts.RuleUnregisteredPermission,
 		},
 		Run: runPermissions,
 	})
@@ -665,6 +666,8 @@ func runPermissions(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 	if err != nil {
 		return out, err
 	}
+	// Unregistered names likewise need only the registry, not the routes.
+	out = append(out, runUnregisteredPermissions(p)...)
 
 	table := Routes(p)
 	if !table.Registered {

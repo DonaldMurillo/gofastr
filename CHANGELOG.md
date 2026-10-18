@@ -49,6 +49,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   are named this way.
 - **`entityui.UI.CountInt`** is `Count` as an `int`, under the same read
   gate and scope, for figures a host computes with.
+- **GOFASTR1904 flags a checked permission the app never registered.**
+  Once an app calls `RolePolicy.Register`, `gofastr verify` checks every
+  permission name in an entity `Access` block, `CrossOwnerRead`,
+  `ReadScopeConfig.Unrestricted`, a transition or action `Permission`,
+  and the arguments of `RequirePermission`, `Can`, `CanResource` and
+  `CanResourceExact` against the names registered in the same binary,
+  and suggests the nearest one. It reads literals and package-level
+  constants, including another package's (`perms.PlansWrite`). A typo
+  there compiled before and denied everyone but a wildcard holder. The
+  contract catalog holds 79 rules.
 
 ### Changed
 - **The Timeout middleware reuses its response buffers.** It holds each
