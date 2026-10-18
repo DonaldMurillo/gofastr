@@ -61,6 +61,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   contract catalog holds 79 rules.
 
 ### Changed
+- **`router.Param` panics on a name its route does not declare.**
+  `Param(r, "idd")` on `/posts/{id}` returned `""`, the same as an empty
+  value, and the handler carried on; now the request fails with a 500
+  through the recovery middleware, naming the route and the wildcard. A
+  request with no pattern, built by hand with `SetPathValue`, is not
+  checked. `handler.Bind` still leaves a `path:` field the route does
+  not declare at zero, so one input struct can serve `POST /users` and
+  `PUT /users/{id}`.
 - **The Timeout middleware reuses its response buffers.** It holds each
   response until the handler returns, and it used to grow a new buffer
   for every request: about 260 KB allocated and 36 µs spent to send a

@@ -250,8 +250,22 @@ func (r *Router) Patch(pattern string, handler http.Handler) {
 // that is safe as a header byte-string is not automatically safe as a
 // filesystem path, an object-store key, or a map lookup; sinks still
 // own their own allow-listing.
+//
+// Param panics when the matched route declares no {name} wildcard: a
+// misspelt name is a programming error, and returning "" let a handler
+// carry on with an empty id. A request with no pattern (built by hand,
+// path values set with SetPathValue) is not checked.
 func Param(r *http.Request, name string) string {
+	if r.Pattern != "" && !declaresWildcard(r.Pattern, name) {
+		panic(fmt.Sprintf("router.Param: route %q has no {%s} wildcard", r.Pattern, name))
+	}
 	return SanitizePathParam(r.PathValue(name), isCatchAll(r.Pattern, name))
+}
+
+// declaresWildcard reports whether pattern has a {name} or {name...}
+// wildcard.
+func declaresWildcard(pattern, name string) bool {
+	return strings.Contains(pattern, "{"+name+"}") || strings.Contains(pattern, "{"+name+"...}")
 }
 
 // isCatchAll reports whether pattern declares name as a {name...}
