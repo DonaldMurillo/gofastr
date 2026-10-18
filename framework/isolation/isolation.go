@@ -353,7 +353,7 @@ func discoverConfig(start string) (path, dir string, err error) {
 		}
 		// Stop at the git root: a parent workspace's gofastr.yml must not
 		// silently apply to a nested project.
-		if _, statErr := os.Stat(filepath.Join(dir, ".git")); statErr == nil {
+		if kind, _ := gitMarker(dir); kind != gitNone {
 			return "", start, nil
 		}
 		parent := filepath.Dir(dir)
@@ -522,15 +522,39 @@ func isTemplateValue(val string) bool {
 	return false
 }
 
+// gitKind is what a directory's .git entry says about it.
+type gitKind int
+
+const (
+	gitNone gitKind = iota
+	gitDir          // .git is a repository directory
+	gitFile         // .git is a file pointing elsewhere: a linked worktree or submodule
+)
+
+// gitMarker reports dir's .git entry, returning the file's path for
+// gitFile. A repository directory is recognised by its HEAD, as git
+// itself does, rather than by statting .git: the directory's mtime moves
+// on every index write (any git status), and Go's test cache hashes the
+// mtime of each path a test stats, so every test that booted an App
+// re-ran after a git command.
+func gitMarker(dir string) (gitKind, string) {
+	git := filepath.Join(dir, ".git")
+	if _, err := os.Stat(filepath.Join(git, "HEAD")); err == nil {
+		return gitDir, ""
+	}
+	if info, err := os.Stat(git); err == nil && !info.IsDir() {
+		return gitFile, git
+	}
+	return gitNone, ""
+}
+
 func findGitRoot(start string) (string, bool) {
 	dir := start
 	for {
-		git := filepath.Join(dir, ".git")
-		info, err := os.Stat(git)
-		if err == nil {
-			if info.IsDir() {
-				return dir, false
-			}
+		switch kind, git := gitMarker(dir); kind {
+		case gitDir:
+			return dir, false
+		case gitFile:
 			data, err := os.ReadFile(git)
 			if err != nil {
 				return dir, false
