@@ -59,8 +59,18 @@ func Markdown(cfg MarkdownConfig) render.HTML {
 		attrs["id"] = cfg.ID
 	}
 	maps.Copy(attrs, html.SafeExtraAttrs(cfg.ExtraAttrs))
-	body := enrichCodeBlocks(string(markdown.RenderHTML(cfg.Source)))
+	body := enrichCodeBlocks(scrollTables(string(markdown.RenderHTML(cfg.Source))))
 	return markdownStyle.WrapHTML(render.Tag("div", attrs, render.HTML(body)))
+}
+
+// scrollTables wraps each table in a box that scrolls sideways, so a
+// table wider than a phone scrolls instead of widening the page or being
+// clipped by a column that hides overflow. The box is a tab stop, like a
+// raw <pre>, so a keyboard can scroll it. core/markdown escapes raw HTML,
+// so every literal <table> in its output is one it built from a pipe table.
+func scrollTables(body string) string {
+	body = strings.ReplaceAll(body, "<table>", `<div class="fui-markdown__table" tabindex="0"><table>`)
+	return strings.ReplaceAll(body, "</table>", "</table></div>")
 }
 
 // enrichCodeBlocks upgrades the plain `<pre><code class="language-X">…</code></pre>`
@@ -355,11 +365,21 @@ func markdownCSS(_ style.Theme) string {
   margin-block: 2.75em;
 }
 
-/* Tables — quiet header, roomy cells, hairline row rules. */
+/* Tables — quiet header, roomy cells, hairline row rules. Each table sits
+   in a scroll box (scrollTables), so a wide one scrolls sideways on a
+   phone instead of running past, or being clipped by, the column. */
+[data-cui-comp="ui-markdown"] .fui-markdown__table {
+  overflow-x: auto;
+  margin-block-start: 1.5em;
+  container-type: inline-size;
+}
+[data-cui-comp="ui-markdown"] .fui-markdown__table:focus-visible {
+  outline: var(--stroke-focus, 2px) solid var(--color-text-subtle, #71717A);
+  outline-offset: var(--stroke-focus-offset, 2px);
+}
 [data-cui-comp="ui-markdown"] table {
   border-collapse: collapse;
   width: 100%;
-  margin-block-start: 1.5em;
   font-size: 0.95em;
 }
 [data-cui-comp="ui-markdown"] th,
@@ -368,6 +388,13 @@ func markdownCSS(_ style.Theme) string {
   border-block-end: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   text-align: start;
   vertical-align: top;
+  /* No column grows past 70% of the box the table scrolls in (a size
+     container, so cqi tracks the column at any page width, not the
+     window): past that its text wraps, and a run with no break point
+     (code chips joined by slashes) breaks where it would overflow
+     rather than widening the column. */
+  max-inline-size: 70cqi;
+  overflow-wrap: break-word;
 }
 [data-cui-comp="ui-markdown"] thead th {
   font-weight: calc(var(--font-weight-semibold, 600) + 50);

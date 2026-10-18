@@ -118,6 +118,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ui.LineChart` and `ui.PieChart` dropped the host's `ID` when they had
   no data to draw, so a link or test selector aimed at the chart found
   nothing in exactly that state.
+- **A long bottom sheet scrolls on a phone.** `touch-action: none` sat
+  on the sheet root, which is its own scroller, so a finger had no pan to
+  perform and the list never moved. It now sits on the drag handle only,
+  where a drag down still closes the sheet.
+- **A wide Markdown table scrolls sideways in its own box.** `ui.Markdown`
+  wraps each table in a focusable `.fui-markdown__table` scroll box and
+  caps each column at 70% of it, so a table wider than a phone no longer
+  runs past the page or gets clipped by a column that hides overflow.
 
 ## [0.89.0] - 2026-10-17
 
