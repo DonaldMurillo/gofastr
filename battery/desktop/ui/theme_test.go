@@ -139,9 +139,11 @@ func TestThemeTouchTargetIsPointerSized(t *testing.T) {
 }
 
 // GOFASTR1808 skips this package's colour fallbacks, which follow the
-// desktop theme rather than the framework's, so they are judged here: a
-// var(--color-*, #hex) fallback names a value the desktop theme declares
-// for some platform and scheme.
+// desktop theme rather than the framework's, so they are judged here:
+// every var(--color-*, …) fallback, whatever its spelling, is a keyword,
+// a nested var(), or a hex the desktop theme declares for some platform
+// and scheme. An rgba() or named colour is reported, as GOFASTR1808
+// reports it elsewhere.
 func TestColourFallbacksFollowTheme(t *testing.T) {
 	declared := map[string]map[string]bool{}
 	for _, goos := range []string{"darwin", "windows", "linux"} {
@@ -157,7 +159,8 @@ func TestColourFallbacksFollowTheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	re := regexp.MustCompile(`var\(--(color-[a-z-]+), (#[0-9A-Fa-f]{6})\)`)
+	re := regexp.MustCompile(`var\(\s*--(color-[A-Za-z0-9_-]+)\s*,\s*([^()]*?(?:\([^()]*\))?)\s*\)`)
+	keywords := map[string]bool{"currentcolor": true, "transparent": true, "inherit": true, "initial": true, "unset": true, "revert": true, "revert-layer": true}
 	seen := 0
 	for _, f := range files {
 		if strings.HasSuffix(f, "_test.go") {
@@ -169,7 +172,14 @@ func TestColourFallbacksFollowTheme(t *testing.T) {
 		}
 		for _, m := range re.FindAllStringSubmatch(string(src), -1) {
 			seen++
-			if !declared[m[1]][strings.ToUpper(m[2])] {
+			v := strings.ToUpper(m[2])
+			if keywords[strings.ToLower(v)] || strings.HasPrefix(v, "VAR(") {
+				continue
+			}
+			if len(v) == 4 && v[0] == '#' {
+				v = "#" + strings.Repeat(v[1:2], 2) + strings.Repeat(v[2:3], 2) + strings.Repeat(v[3:4], 2)
+			}
+			if !declared[m[1]][v] {
 				t.Errorf("%s: var(--%s, %s) names no value the desktop theme declares for --%s", f, m[1], m[2], m[1])
 			}
 		}
