@@ -281,6 +281,13 @@ jobs:
             -- go test -timeout=20m -coverprofile="$RUNNER_TEMP/cover.out" \
             -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
 
+      - name: Benchmarks run once (affected packages)
+        # `go test` never runs benchmarks, so a broken one fails nobody's
+        # build; 56 framework benchmarks sat broken until 2026-10. This runs
+        # each benchmark in the affected packages once (-benchtime=1x,
+        # SQLite only) to prove it still works. It measures nothing.
+        run: make bench-smoke
+
       - name: Race detector (concurrency packages)
         # The recurring defect class in this repo's release history is
         # concurrency — queue claim/lease fencing, per-consumer outbox

@@ -1,14 +1,70 @@
-# Performance results: historical snapshot, 2026-07-18 (v0.26.0)
+# Performance results
 
-> **Historical snapshot, kept intact.** These numbers were captured at
-> **v0.26.0** on **2026-07-18** and are preserved here as a reference
-> point. The framework has shipped many releases since; current numbers
-> will differ; re-run the named benchmark before quoting any figure.
-> Treat the data below as a point-in-time witness, not the present state.
-
-Each section names the benchmark that produced the numbers, so a future
-change can re-run exactly the same witness. Methodology + full catalog of
+Each section names the benchmark that produced the numbers, so a later
+change can re-run the same witness. Methodology and the full catalog of
 what each benchmark defends: see [`benchmarks.md`](benchmarks.md).
+
+## Current snapshot: 2026-10-18 (v0.90.0)
+
+Environment: darwin/arm64, Apple M4 Pro, Go 1.27.2, SQLite in memory.
+Postgres was not measured in this round. Medians of five runs:
+
+```
+BENCH_SKIP_PG=1 go test ./framework/ -run='^$' -bench=<pattern> \
+    -benchmem -benchtime=1s -count=5
+```
+
+The fixtures run in the production posture (see
+[benchmarks.md](benchmarks.md#benchmarks-measure-the-production-posture)),
+and the framework and fixtures have changed since the v0.26.0 snapshot
+below, so compare the two only by re-running a benchmark at both
+versions.
+
+### Framework against hand-rolled net/http
+
+| Benchmark | net/http | GoFastr | Allocs (net/http / GoFastr) |
+|---|---:|---:|---:|
+| `T7_Plaintext` | 410 ns | 445 ns | 10 / 10 |
+| `T7_JSON` | 494 ns | 542 ns | 10 / 10 |
+| `T7_SingleQuery` | 5.8 µs | 7.6 µs | 54 / 81 |
+| `T7_FilteredList` (50 rows) | 161 µs | 167 µs | 3,027 / 2,381 |
+
+### Request path
+
+| Benchmark | Result |
+|---|---|
+| `Middleware_DefaultChain` | with the default chain 4.4 µs / 47 allocs; without it 146 ns / 4 allocs; raw router 136 ns / 4 allocs |
+| `T9_IslandRPC/pages=1` | 8.0 µs / 107 allocs |
+| `T9_IslandRPC_Concurrency/workers=64` | p50 11 µs, p90 26 µs, p99 0.42 ms, p999 20 ms |
+| `T9_UIHostPageRender` | `/` 142 µs / 1,133 allocs (15.3 KB); `/about` 156 µs / 1,245 allocs (16.1 KB) |
+| `JSONCasing` | snake→camel and camel→snake 371 ns / 4 allocs per 10-key row; single word 5.9 ns / 0 allocs |
+| `DSLParse` (cache hit) | 19–79 ns, 0–3 allocs |
+
+### Data paths
+
+| Benchmark | Result |
+|---|---|
+| `Tier1_IncludesVsN1`, limit=100 | eager include 1.9 ms / 28.5k allocs; naive N+1 14.3 ms / 47.7k allocs |
+| `Tier1_PaginationDepth` | offset page 1 → 180: 130 → 207 µs; cursor page 1 → 180: 141 → 145 µs |
+| `Tier1_BatchVsN`, 50 items | batch 1.5 ms; 50 single POSTs 2.3 ms |
+| `T9_StreamingVsBuffered_RealVolume`, 5000 rows | buffered-paginated 13.4 ms; streaming-single 12.2 ms |
+
+### Boot and background
+
+| Benchmark | Result |
+|---|---|
+| `AutoMigrate_Idempotent`, N=50 | 469 µs / 7.5k allocs |
+| `SchemaDiff`, N=50 | 414 µs / 7.4k allocs |
+| `CronTick` | N=1 14 ns / 0 allocs; N=1000 185 µs / 1.3k allocs |
+| `T8_ColdStart` | minimal app 0.26 ms; ten entities 0.62 ms (`-benchtime=1x`) |
+
+---
+
+## Historical snapshot: 2026-07-18 (v0.26.0)
+
+> **Kept as a reference point.** These numbers were captured at
+> **v0.26.0** on **2026-07-18**. Re-run the named benchmark before
+> quoting any figure.
 
 Environment: darwin/arm64, Apple M4 Pro, Go (project default), SQLite
 in-memory, and Postgres 16 via testcontainers when noted.
@@ -21,8 +77,6 @@ go test ./framework/ -run=^$ -bench=<pattern> \
 ```
 
 ---
-
-## Results
 
 ### Default middleware chain
 - Benchmark: `BenchmarkMiddleware_DefaultChain`

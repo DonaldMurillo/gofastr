@@ -7,6 +7,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+- **`make bench-smoke` runs every benchmark once.** It covers the
+  packages `cmd/affected` selects, with `-benchtime=1x` and Postgres
+  skipped, and CI runs it after the test step, so a benchmark that
+  stops working now fails the build.
+
 ### Changed
 - **SQL fragments and route gates cost fewer allocations per request.**
   `core/query` returns a clean identifier or fragment as is instead of
@@ -34,6 +40,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and render diagnostics, so they time what a deployed app runs.
   `BenchmarkT7_FilteredList_NetHTTP` now runs the same COUNT query and
   selects the same columns as the generated list it is compared with.
+- **The benchmark docs carry current numbers.** `benchmarks.md` has
+  the 2026-10-18 binary sizes, build and dev RAM, and Tier 7 gaps, and
+  drops the cgo note (the SQLite driver is pure Go); `perf-results.md`
+  opens with a v0.90.0 snapshot ahead of the v0.26.0 one.
 
 ## [0.90.0] - 2026-10-18
 

@@ -1,4 +1,4 @@
-.PHONY: analyze build build-all build-cmd build-examples csp-check embed-check test test-all test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources lint repo-lint dupl mutate postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
+.PHONY: analyze build build-all build-cmd build-examples csp-check embed-check test test-all test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources bench-smoke lint repo-lint dupl mutate postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
 
 # ---- Build ----
 #
@@ -245,6 +245,11 @@ bench-overhead: bench-tier7
 # Resource benchmarks: bundle size, peak RAM during `go build`, idle/loaded
 # RAM of each running app. Builds three bench apps (minimal, crud, full) and
 # the two cmd/* binaries. Output is Markdown to stdout + dist/bench/resources.md.
+# Run every benchmark in the affected packages once (-benchtime=1x), so a
+# benchmark that stops working fails the build. CI runs it on every PR.
+bench-smoke:
+	./scripts/bench-smoke.sh
+
 bench-resources: $(BENCH_OUT)
 	@mkdir -p $(BENCH_OUT)/resources
 	go run ./cmd/bench-resources -load=$${LOAD:-200} -out=$(BENCH_OUT)/resources \
