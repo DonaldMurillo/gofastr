@@ -142,7 +142,8 @@ context so any nested hook participates:
 
 ```go
 err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
-    if _, err := postsRepo.Create(ctx, p); err != nil { return err }
+    p, err := postsRepo.Create(ctx, entities.PostsInput{Title: title})
+    if err != nil { return err }
     if _, err := tagsRepo.Attach(ctx, p.ID, tags); err != nil { return err }
     return nil
 })

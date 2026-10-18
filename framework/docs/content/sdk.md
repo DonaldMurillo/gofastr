@@ -42,8 +42,10 @@ The same typed client the generated app embeds (`entities/client`),
 packaged as its own module (`module local/<app>-sdk` by default,
 `--module` to override). Per entity: `List/Get/Create/Update/Patch/Delete`,
 the three `_batch` verbs, and `Watch` (SSE), plus the `Do` escape hatch,
-bearer-token auth (`c.Token = "gfsk_…"`), presence-aware pointer `Patch`
-structs, and `*APIError` whose body carries the error envelope. Every
+bearer-token auth (`c.Token = "gfsk_…"`), presence-aware write structs
+(an `Input` whose fields are pointers, except a required field with no
+default, so `new(false)` overrides
+a `true` default, and an all-pointer `Patch`), and `*APIError` whose body carries the error envelope. Every
 response body the client buffers — the JSON decode and the `*APIError`
 snapshot — is capped at 1 MiB (`maxBodyBytes`): a bigger body is a
 misbehaving endpoint, and the decode fails on truncation instead of

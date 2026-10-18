@@ -308,6 +308,13 @@ shapes also leave out what only a move may change.
 | JS SDK | `client.<table>.<key>(id)`, or `client.<table>.transition(id, key)` | `<Entity>Input` drops the stamps; `<Entity>Patch` is `Partial<Omit<<Entity>Input, "<state>">>`. |
 | CLI | `<app> <entity> <key> <id>` | Create and update drop the stamp flags. The state flag stays on both, so a create can start at an initial value; an update that changes the state answers 422. |
 
+The typed repository in the generated `entities` package is Go code, not a
+client, so it runs System moves too: `repo.Transition(ctx, id,
+entities.InvoicesMovePay)` takes one `<Entity>Move` constant per move and
+calls `CrudHandler.RunTransition`. Its write shapes drop what the Go
+client's drop: stamps from `<Entity>Input` and `<Entity>Patch`, the state
+field from `<Entity>Patch` ([entity declarations](entity-declarations.md#the-typed-repository)).
+
 A move sends an empty JSON body: the route takes no payload but requires
 the JSON content type, and the OpenAPI operation declares that body as a
 required empty object. The generators read hand-written declarations that

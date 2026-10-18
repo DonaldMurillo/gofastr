@@ -1336,6 +1336,8 @@ import (
 
 `)
 	sb.WriteString(renderEntityModel(decl))
+	sb.WriteString(renderEntityEnums(decl))
+	sb.WriteString(renderEntityWriteShapes(decl))
 	sb.WriteString(renderEntityColumns(decl))
 	sb.WriteString(renderEntityRepo(decl))
 	sb.WriteString(renderEntityEvents(decl))
@@ -2090,7 +2092,7 @@ func renderEntityModel(decl framework.EntityDeclaration) string {
 		if field.Name == "id" {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n", toCamelCase(field.Name), goTypeForField(field.Type), toCamelJSON(field.Name)))
+		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n", toCamelCase(field.Name), entityFieldGoType(structName, field), toCamelJSON(field.Name)))
 	}
 	// Relation fields: populated by TypedQuery.Include() and Repo.Get(...,
 	// includes...). Singular relations (HasOne/BelongsTo) get *Target;

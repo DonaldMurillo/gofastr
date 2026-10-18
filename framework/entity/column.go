@@ -155,6 +155,35 @@ func (c StringColumn) In(values ...string) Condition {
 }
 
 // ----------------------------------------------------------------------------
+// Enum columns
+// ----------------------------------------------------------------------------
+
+// EnumColumn represents an enum column whose values codegen emits as typed
+// constants of T: PostsStatus.Eq(PostsStatusLive). Stored as TEXT, like
+// StringColumn; T keeps a plain string variable out of the comparison.
+type EnumColumn[T ~string] struct{ rawColumn }
+
+// NewEnumColumn constructs an EnumColumn for the given DB column name.
+// Codegen calls this; user code rarely needs to.
+func NewEnumColumn[T ~string](name string) EnumColumn[T] {
+	return EnumColumn[T]{rawColumn: rawColumn(name)}
+}
+
+func (c EnumColumn[T]) Eq(v T) Condition {
+	return Condition{sql: c.name() + " = $1", args: []any{string(v)}}
+}
+func (c EnumColumn[T]) Neq(v T) Condition {
+	return Condition{sql: c.name() + " != $1", args: []any{string(v)}}
+}
+func (c EnumColumn[T]) In(values ...T) Condition {
+	args := make([]any, len(values))
+	for i, v := range values {
+		args[i] = string(v)
+	}
+	return inFragment(c.name(), args)
+}
+
+// ----------------------------------------------------------------------------
 // Integer columns
 // ----------------------------------------------------------------------------
 

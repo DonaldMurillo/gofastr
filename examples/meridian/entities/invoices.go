@@ -9,16 +9,63 @@ import (
 )
 
 type Invoices struct {
-	ID         string     `json:"id"`
-	CustomerId string     `json:"customerId,omitempty"`
-	Number     string     `json:"number,omitempty"`
-	Amount     string     `json:"amount,omitempty"`
-	Status     string     `json:"status,omitempty"`
-	IssuedOn   string     `json:"issuedOn,omitempty"`
-	DueOn      string     `json:"dueOn,omitempty"`
-	PaidOn     string     `json:"paidOn,omitempty"`
-	UserId     string     `json:"userId,omitempty"`
-	Customer   *Customers `json:"customer,omitempty"`
+	ID         string              `json:"id"`
+	CustomerId string              `json:"customerId,omitempty"`
+	Number     string              `json:"number,omitempty"`
+	Amount     string              `json:"amount,omitempty"`
+	Status     InvoicesStatusValue `json:"status,omitempty"`
+	IssuedOn   string              `json:"issuedOn,omitempty"`
+	DueOn      string              `json:"dueOn,omitempty"`
+	PaidOn     string              `json:"paidOn,omitempty"`
+	UserId     string              `json:"userId,omitempty"`
+	Customer   *Customers          `json:"customer,omitempty"`
+}
+
+// InvoicesStatusValue is one value of the invoices field status.
+type InvoicesStatusValue string
+
+const (
+	InvoicesStatusDraft   InvoicesStatusValue = "draft"
+	InvoicesStatusOpen    InvoicesStatusValue = "open"
+	InvoicesStatusPaid    InvoicesStatusValue = "paid"
+	InvoicesStatusPastDue InvoicesStatusValue = "past_due"
+	InvoicesStatusVoid    InvoicesStatusValue = "void"
+)
+
+// InvoicesMove names one of the invoices moves; pass it to InvoicesRepo.Transition.
+type InvoicesMove string
+
+const (
+	InvoicesMoveMarkPaid InvoicesMove = "mark_paid"
+	InvoicesMoveVoid     InvoicesMove = "void"
+)
+
+// InvoicesInput is the create payload for InvoicesRepo. A required field with no
+// default is always sent; a nil field takes its default, and new(false)
+// stores false.
+type InvoicesInput struct {
+	CustomerId string               `json:"customerId"`
+	Number     string               `json:"number"`
+	Amount     string               `json:"amount"`
+	Status     *InvoicesStatusValue `json:"status,omitempty"`
+	IssuedOn   *string              `json:"issuedOn,omitempty"`
+	DueOn      *string              `json:"dueOn,omitempty"`
+	PaidOn     *string              `json:"paidOn,omitempty"`
+	UserId     *string              `json:"userId,omitempty"`
+}
+
+// InvoicesPatch is the update payload for InvoicesRepo: a nil field is left as
+// stored, and a pointer to false, 0 or "" writes it to a bool, int,
+// float, string or text field. "" for any other type counts as absent,
+// so a patch cannot clear a date, uuid or enum.
+type InvoicesPatch struct {
+	CustomerId *string              `json:"customerId,omitempty"`
+	Number     *string              `json:"number,omitempty"`
+	Amount     *string              `json:"amount,omitempty"`
+	Status     *InvoicesStatusValue `json:"status,omitempty"`
+	IssuedOn   *string              `json:"issuedOn,omitempty"`
+	DueOn      *string              `json:"dueOn,omitempty"`
+	PaidOn     *string              `json:"paidOn,omitempty"`
 }
 
 // ====== Invoices column references ======
@@ -28,7 +75,7 @@ var (
 	InvoicesCustomerId = framework.NewUUIDColumn("customer_id")
 	InvoicesNumber     = framework.NewStringColumn("number")
 	InvoicesAmount     = framework.NewFloatColumn("amount")
-	InvoicesStatus     = framework.NewStringColumn("status")
+	InvoicesStatus     = framework.NewEnumColumn[InvoicesStatusValue]("status")
 	InvoicesIssuedOn   = framework.NewTimestampColumn("issued_on")
 	InvoicesDueOn      = framework.NewTimestampColumn("due_on")
 	InvoicesPaidOn     = framework.NewTimestampColumn("paid_on")
@@ -75,17 +122,40 @@ func (r *InvoicesRepo) WithTx(tx *sql.Tx) *InvoicesRepo {
 	return &InvoicesRepo{handler: &h}
 }
 
-// Create persists row and back-fills server-generated fields onto it.
-func (r *InvoicesRepo) Create(ctx context.Context, row *Invoices) error {
-	body, err := framework.MarshalEntity(row)
+// row decodes one CRUD result.
+func (r *InvoicesRepo) row(out map[string]any) (*Invoices, error) {
+	var row Invoices
+	if err := framework.UnmarshalEntity(out, &row); err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+// rows decodes a batch result, keeping its order.
+func (r *InvoicesRepo) rows(outs []map[string]any) ([]*Invoices, error) {
+	rows := make([]*Invoices, len(outs))
+	for i, out := range outs {
+		row, err := r.row(out)
+		if err != nil {
+			return nil, err
+		}
+		rows[i] = row
+	}
+	return rows, nil
+}
+
+// Create persists in and returns the stored row, server-generated fields
+// included.
+func (r *InvoicesRepo) Create(ctx context.Context, in InvoicesInput) (*Invoices, error) {
+	body, err := framework.MarshalEntity(in)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	out, err := r.handler.CreateOne(ctx, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return framework.UnmarshalEntity(out, row)
+	return r.row(out)
 }
 
 // Get fetches a row by id with optional eager-loaded includes.
@@ -94,26 +164,21 @@ func (r *InvoicesRepo) Get(ctx context.Context, id string, includes ...string) (
 	if err != nil {
 		return nil, err
 	}
-	var row Invoices
-	if err := framework.UnmarshalEntity(out, &row); err != nil {
-		return nil, err
-	}
-	return &row, nil
+	return r.row(out)
 }
 
-// Update merges fields from row into the persisted record by id and refreshes
-// row with the post-update state.
-func (r *InvoicesRepo) Update(ctx context.Context, id string, row *Invoices) error {
-	body, err := framework.MarshalEntity(row)
+// Update writes patch's non-nil fields onto the row with this id and
+// returns the row as stored afterwards.
+func (r *InvoicesRepo) Update(ctx context.Context, id string, patch InvoicesPatch) (*Invoices, error) {
+	body, err := framework.MarshalEntity(patch)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	delete(body, "id") // id is taken from the path arg, not the body
 	out, err := r.handler.UpdateOne(ctx, id, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return framework.UnmarshalEntity(out, row)
+	return r.row(out)
 }
 
 // Delete removes the row by id (or soft-deletes if SoftDelete is enabled on
@@ -140,10 +205,9 @@ func (r *InvoicesRepo) Count(ctx context.Context) (int, error) {
 	return r.Query().Count(ctx)
 }
 
-// FirstOrCreate looks up a row by the given match condition and returns it
-// if found. Otherwise inserts row (filling in its server-generated fields)
-// and returns it.
-func (r *InvoicesRepo) FirstOrCreate(ctx context.Context, row *Invoices, match framework.Condition) (*Invoices, error) {
+// FirstOrCreate returns the first row matching match, or creates in and
+// returns the stored row when none does.
+func (r *InvoicesRepo) FirstOrCreate(ctx context.Context, in InvoicesInput, match framework.Condition) (*Invoices, error) {
 	existing, err := r.Query().Where(match).First(ctx)
 	if err == nil {
 		return existing, nil
@@ -151,18 +215,15 @@ func (r *InvoicesRepo) FirstOrCreate(ctx context.Context, row *Invoices, match f
 	if !framework.IsNotFound(err) {
 		return nil, err
 	}
-	if err := r.Create(ctx, row); err != nil {
-		return nil, err
-	}
-	return row, nil
+	return r.Create(ctx, in)
 }
 
-// BatchCreate inserts every row in one transaction; on any per-item error
-// the entire batch rolls back. Returned slice is in input order.
-func (r *InvoicesRepo) BatchCreate(ctx context.Context, rows []*Invoices) ([]*Invoices, error) {
-	bodies := make([]map[string]any, len(rows))
-	for i, row := range rows {
-		b, err := framework.MarshalEntity(row)
+// BatchCreate inserts every input in one transaction; on any per-item error
+// the entire batch rolls back. Returned rows are in input order.
+func (r *InvoicesRepo) BatchCreate(ctx context.Context, ins []InvoicesInput) ([]*Invoices, error) {
+	bodies := make([]map[string]any, len(ins))
+	for i, in := range ins {
+		b, err := framework.MarshalEntity(in)
 		if err != nil {
 			return nil, err
 		}
@@ -172,41 +233,42 @@ func (r *InvoicesRepo) BatchCreate(ctx context.Context, rows []*Invoices) ([]*In
 	if err != nil {
 		return nil, err
 	}
-	for i, res := range results {
-		if err := framework.UnmarshalEntity(res, rows[i]); err != nil {
-			return nil, err
-		}
-	}
-	return rows, nil
+	return r.rows(results)
 }
 
-// BatchUpdate updates every row by its id in one transaction.
-func (r *InvoicesRepo) BatchUpdate(ctx context.Context, ids []string, rows []*Invoices) ([]*Invoices, error) {
-	bodies := make([]map[string]any, len(rows))
-	for i, row := range rows {
-		b, err := framework.MarshalEntity(row)
+// BatchUpdate writes patches[i] onto the row ids[i], all in one transaction.
+func (r *InvoicesRepo) BatchUpdate(ctx context.Context, ids []string, patches []InvoicesPatch) ([]*Invoices, error) {
+	bodies := make([]map[string]any, len(patches))
+	for i, patch := range patches {
+		b, err := framework.MarshalEntity(patch)
 		if err != nil {
 			return nil, err
 		}
-		delete(b, "id")
 		bodies[i] = b
 	}
 	results, err := r.handler.BatchUpdateMany(ctx, ids, bodies)
 	if err != nil {
 		return nil, err
 	}
-	for i, res := range results {
-		if err := framework.UnmarshalEntity(res, rows[i]); err != nil {
-			return nil, err
-		}
-	}
-	return rows, nil
+	return r.rows(results)
 }
 
 // BatchDelete deletes every id atomically.
 func (r *InvoicesRepo) BatchDelete(ctx context.Context, ids []string) error {
 	_, err := r.handler.BatchDeleteMany(ctx, ids)
 	return err
+}
+
+// Transition runs move on the row with this id and returns the row as
+// stored afterwards: the one way an enforced state field changes. It runs
+// as CrudHandler.RunTransition does, so a System move skips the permission
+// check and a row outside the move's From answers a conflict.
+func (r *InvoicesRepo) Transition(ctx context.Context, id string, move InvoicesMove) (*Invoices, error) {
+	out, err := r.handler.RunTransition(ctx, id, string(move))
+	if err != nil {
+		return nil, err
+	}
+	return r.row(out)
 }
 
 // OnInvoicesCreated subscribes to entity.created events scoped to "invoices".

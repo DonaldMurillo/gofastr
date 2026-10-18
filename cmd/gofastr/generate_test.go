@@ -104,7 +104,9 @@ func TestRenderGeneratedProjectFromDeclarations(t *testing.T) {
 		`Event helpers: OnPostsCreated/OnPostsUpdated/OnPostsDeleted in this package.`,
 		`type PostsRepo struct {`,
 		`func NewPostsRepo(app *framework.App) *PostsRepo`,
-		`func (r *PostsRepo) Create(ctx context.Context, row *Posts) error`,
+		`func (r *PostsRepo) Create(ctx context.Context, in PostsInput) (*Posts, error)`,
+		`func (r *PostsRepo) Update(ctx context.Context, id string, patch PostsPatch) (*Posts, error)`,
+		"Published *bool `json:\"published,omitempty\"`",
 		`func (r *PostsRepo) Query() *framework.TypedQuery[Posts]`,
 		`WithTx(tx *sql.Tx) *PostsRepo`,
 		// self-registration: the file appends itself, so register.go never

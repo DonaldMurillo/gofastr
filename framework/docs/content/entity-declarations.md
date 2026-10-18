@@ -1485,6 +1485,57 @@ This scaffolds the owned entity package into `entities/` at the module root:
   ([auth](auth.md#service-accounts--scoped-api-tokens)); leave empty for
   public or cookie-authenticated APIs.
 
+### The typed repository
+
+Each `<entity>.go` carries a repository that runs the pipeline the HTTP
+routes run (transaction, hooks, events, owner and tenant scope) with no
+HTTP round trip. For a `posts` entity:
+
+```go
+posts := entities.NewPostsRepo(app)
+
+p, err := posts.Create(ctx, entities.PostsInput{Title: "Hello", Published: new(false)})
+p, err = posts.Update(ctx, p.ID, entities.PostsPatch{Views: new(0)})
+live, err := posts.Query().Where(entities.PostsStatus.Eq(entities.PostsStatusLive)).Find(ctx)
+```
+
+- `PostsInput` is the create payload, taken by `Create`, `BatchCreate`
+  and `FirstOrCreate`. A required field with no default is a value and
+  is always sent. Every other field is a pointer: nil takes the column
+  default, and `new(false)` stores false over a `true` default.
+- `PostsPatch` is the update payload, taken by `Update` and
+  `BatchUpdate`. Every field is a pointer, and nil leaves the field as
+  stored. A pointer to `false`, `0` or `""` writes it to a bool, int,
+  float, string or text field. For any other type `""` counts as
+  absent, so a patch cannot clear a date, uuid or enum.
+- Every write returns the row as stored, server-generated fields
+  included.
+- An enum field with declared values gets a value type and one constant
+  per value (`PostsStatusValue`, `PostsStatusDraft`, `PostsStatusLive`).
+  The model, both payloads and the column
+  (`framework.NewEnumColumn[PostsStatusValue]`) take that type, so
+  `PostsStatus.Eq` refuses a plain string variable. A value that does not
+  camel-case to a Go identifier, or whose constant name another name in
+  the file already uses (`past_due` next to `past-due`, or `value`, which
+  would repeat `PostsStatusValue`), gets no constant: the file lists it
+  in a comment, and `PostsStatusValue("N/A")` still works.
+- An entity with `States` gets one `<Entity>Move` constant per move and
+  `Transition(ctx, id, move)`, which runs `CrudHandler.RunTransition`.
+  System moves are included, since the repo is the Go caller they exist
+  for. With enforced States, stamps leave both payloads and the state
+  field leaves the patch ([States](states.md)).
+
+Hidden and ReadOnly fields stay in both payloads. The pipeline skips them
+unless ctx carries `crud.WithServerWrites`, the same rule
+`CrudHandler.CreateOne` follows. Fields the pipeline never takes from a
+payload are left out: an `auto_generate` column from both, and the owner
+field and the `multi_tenant` tenant column from the patch.
+
+The payload and move types share the package with the column vars, so a
+field named `input`, `patch` or `move`, or a field `status_value` next
+to the enum `status`, fails `gofastr generate` with the name the two
+meet in. Rename the field.
+
 A blueprint that declares `app.module` also emits a flat `package main` at the
 root (`main.go` plus `app.go`, `screens_register.go`, one `screen_<name>.go`
 per screen, and `stubs.go` for endpoint/seed stubs). These are owned Go you
