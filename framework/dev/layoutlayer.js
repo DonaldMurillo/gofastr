@@ -6,7 +6,9 @@
 // element that runs past the viewport, the phone-width bug class.
 //
 // The layer lives in a shadow root on a fixed host outside <body>, so app
-// CSS cannot reach it and body swaps do not remove it. Every style is a
+// CSS cannot reach it and body swaps do not remove it. The host is a
+// manual popover that re-enters the top layer whenever a popover or modal
+// dialog opens, so it is drawn over them. Every style is a
 // CSSOM write, which the default CSP allows. Nothing is built until the
 // layer is shown; the on/off choice is kept in localStorage so it
 // survives livereload's reloads.
@@ -150,8 +152,26 @@
     root.append(box);
   };
 
+  // Popovers (a phone sheet) and modal dialogs (a confirm) paint in the
+  // top layer, above any z-index, and they are what the layer is most
+  // often opened to inspect. So the host is a manual popover too, and it
+  // goes back on top whenever something else enters the top layer.
+  const raise = () => {
+    if (!host || !host.showPopover) return;
+    try {
+      if (host.matches(':popover-open')) host.hidePopover();
+      host.showPopover();
+    } catch (_) {}
+  };
+  const onToggle = (e) => {
+    if (e.target !== host && e.newState === 'open') raise();
+  };
+
   const onMutate = (records) => {
     if (records.every((r) => r.target === host)) return;
+    // A dialog's showModal() fires no toggle event in older browsers;
+    // its open attribute still changes.
+    if (records.some((r) => r.attributeName === 'open' && r.target !== host)) raise();
     scheduleCollect();
   };
 
@@ -160,10 +180,16 @@
     host = css(document.createElement('fui-dev-layout'), {
       position: 'fixed', inset: '0', 'z-index': '2147483647',
       'pointer-events': 'none', overflow: 'hidden', contain: 'strict',
+      // Undo the popover UA box: it is a full-viewport, transparent sheet.
+      margin: '0', padding: '0', border: '0', background: 'transparent',
+      width: 'auto', height: 'auto', 'max-width': 'none', 'max-height': 'none',
     });
     host.setAttribute('aria-hidden', 'true');
+    host.setAttribute('popover', 'manual');
     root = host.attachShadow({ mode: 'open' });
     document.documentElement.append(host);
+    raise();
+    document.addEventListener('toggle', onToggle, true);
     observer = new MutationObserver(onMutate);
     observer.observe(document.documentElement, {
       subtree: true, childList: true, attributes: true,
@@ -183,6 +209,7 @@
   const hide = () => {
     if (!host) return;
     observer.disconnect();
+    document.removeEventListener('toggle', onToggle, true);
     removeEventListener('scroll', scheduleDraw, { capture: true });
     removeEventListener('resize', scheduleCollect);
     document.removeEventListener('transitionend', scheduleCollect, true);

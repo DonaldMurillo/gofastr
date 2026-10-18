@@ -70,3 +70,25 @@ func TestUIHostAddsLayoutLayerWhenDev(t *testing.T) {
 		t.Fatalf("layout layer added despite GOFASTR_DEV_LAYOUT=0")
 	}
 }
+
+// A host served on its own (no framework.App) links both dev scripts, so
+// it must answer them too, not 404.
+func TestStandaloneHostServesDevScripts(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "1")
+	t.Setenv("GOFASTR_DEV_LIVERELOAD", "")
+	t.Setenv("GOFASTR_DEV_LAYOUT", "")
+	t.Setenv("GOFASTR_ENV", "")
+
+	application := app.NewApp("Test")
+	application.SetDefaultLayout(bareLayout("main"))
+	application.RegisterScreen(app.NewScreen("/", &testHomeComp{}).WithTitle("Home").WithDescription("h"), nil)
+
+	ds := New(application)
+	for _, url := range []string{"/__livereload.js", "/__devlayout.js"} {
+		rec := httptest.NewRecorder()
+		ds.ServeHTTP(rec, httptest.NewRequest("GET", url, nil))
+		if rec.Code != 200 || !strings.Contains(rec.Header().Get("Content-Type"), "javascript") {
+			t.Errorf("GET %s = %d %q, want the script", url, rec.Code, rec.Header().Get("Content-Type"))
+		}
+	}
+}

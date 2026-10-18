@@ -49,6 +49,10 @@ When enabled:
 - `uihost.New()` auto-appends `/__livereload.js` to the `extraScripts`
   list so every rendered page links to the client script before
   `</body>`. CSP-safe: it's a `<script src="...">`, no inline JS.
+  `UIHost.Mount` registers the same routes on the router it mounts on,
+  so a host served on its own, or mounted on a router you built, answers
+  the scripts its pages link. Registration is idempotent: a router
+  `framework.NewApp` already wired is left alone.
 - For every OTHER way an app serves a page, `static.Handler` file
   serving (SPA shells, exported static pages), widget-server pages,
   and hand-rolled handlers, `framework.NewApp` mounts dev-only middleware
@@ -115,6 +119,9 @@ page there.
 
 The layer sits in a shadow root on a fixed element outside `<body>`,
 so app CSS does not reach it and client navigation does not remove it.
+That element is a manual popover, so it paints in the top layer, and
+it moves back on top whenever a popover or modal dialog opens: the
+outlines stay visible over an open phone sheet or confirm.
 It sets every style through the CSSOM, which the framework's default
 CSP allows. It takes no pointer events, so the page under it works as
 usual. It redraws as you scroll, and walks the page again after DOM

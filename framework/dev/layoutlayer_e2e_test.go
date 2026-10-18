@@ -1,12 +1,15 @@
 package dev
 
 import (
+	"bytes"
 	"context"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
@@ -126,4 +129,104 @@ func TestLayoutLayerDrawsAndFlags(t *testing.T) {
 	if afterSecondReload {
 		t.Error("the layer came back after it was hidden")
 	}
+}
+
+const topLayerPage = `<!doctype html><html><head>
+<meta name="viewport" content="width=device-width">
+<link rel="stylesheet" href="/page.css"></head><body>
+<div id="sheet" popover="auto"><div data-island="in-sheet" class="box">sheet</div></div>
+<dialog id="modal"><div data-island="in-modal" class="box">modal</div></dialog>
+</body></html>`
+
+const topLayerCSS = `body { margin: 0 }
+#sheet, #modal { margin: 0; padding: 0; border: 0; inset: 0; width: 100vw; height: 100vh;
+  max-width: none; max-height: none; background: rgb(255, 255, 255) }
+.box { position: absolute; left: 50px; top: 100px; width: 200px; height: 100px }`
+
+// A phone sheet is a popover and a confirm is a modal dialog; both paint
+// in the top layer, above any z-index. The layer has to be read on top of
+// them, since they are what it is most often opened to inspect.
+func TestLayoutLayerPaintsOverTopLayer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser e2e: -short")
+	}
+	path, ok := browserpath.Find()
+	if !ok {
+		t.Skip("needs Chrome, Chromium, or Edge")
+	}
+	r := router.New()
+	RegisterLayoutLayer(r)
+	r.Get("/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Security-Policy", "default-src 'self'")
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(topLayerPage))
+	}))
+	r.Get("/page.css", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/css")
+		_, _ = w.Write([]byte(topLayerCSS))
+	}))
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+
+	ctx := chromedptest.Context(t,
+		chromedptest.WindowSize(400, 800),
+		chromedptest.AllocatorOptions(chromedp.ExecPath(path)))
+	// The island's label is a solid #16a34a tab at the box's top-left
+	// corner (50,100); its left padding holds no glyph.
+	edge := func(name string) {
+		t.Helper()
+		var shot []byte
+		var labelled bool
+		var vw float64
+		if err := chromedp.Run(ctx,
+			chromedp.Poll(`[...document.querySelector('fui-dev-layout').shadowRoot.children].some(e => e.textContent === 'island `+name+`')`, &labelled),
+			chromedp.Sleep(100*time.Millisecond),
+			chromedp.Evaluate(`innerWidth`, &vw),
+			chromedp.CaptureScreenshot(&shot),
+		); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		img, err := png.Decode(bytes.NewReader(shot))
+		if err != nil {
+			t.Fatalf("%s: decode screenshot: %v", name, err)
+		}
+		scale := float64(img.Bounds().Dx()) / vw
+		cr, cg, cb, _ := img.At(int(52*scale), int(103*scale)).RGBA()
+		if got := [3]uint32{cr >> 8, cg >> 8, cb >> 8}; got[1] < 120 || got[0] > 80 || got[2] > 120 {
+			t.Errorf("%s: pixel on the island label is rgb%v, want the layer's green: the layer paints under it", name, got)
+		}
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.Poll(`!!window.__gofastrDevLayout`, nil),
+		chromedp.Evaluate(`window.__gofastrDevLayout.show()`, nil),
+		chromedp.Evaluate(`document.getElementById('sheet').showPopover()`, nil),
+	); err != nil {
+		t.Fatalf("open the sheet: %v", err)
+	}
+	edge("in-sheet")
+	var sheetOpen bool
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.getElementById('sheet').matches(':popover-open')`, &sheetOpen),
+		chromedp.Evaluate(`document.getElementById('sheet').hidePopover()`, nil),
+		chromedp.Evaluate(`document.getElementById('modal').showModal()`, nil),
+	); err != nil {
+		t.Fatalf("open the dialog: %v", err)
+	}
+	if !sheetOpen {
+		t.Error("raising the layer closed the sheet")
+	}
+	edge("in-modal")
+
+	// A browser that fires no toggle event for showModal() still flips the
+	// dialog's open attribute; the layer has to come back on top from that.
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.getElementById('modal').close()`, nil),
+		chromedp.Poll(`![...document.querySelector('fui-dev-layout').shadowRoot.children].some(e => e.textContent === 'island in-modal')`, nil),
+		chromedp.Evaluate(`addEventListener('toggle', (e) => { if (e.target.localName === 'dialog') e.stopImmediatePropagation(); }, true)`, nil),
+		chromedp.Evaluate(`document.getElementById('modal').showModal()`, nil),
+	); err != nil {
+		t.Fatalf("reopen the dialog: %v", err)
+	}
+	edge("in-modal")
 }

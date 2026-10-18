@@ -42,6 +42,24 @@ func TestInjectorAddsScriptBeforeBodyClose(t *testing.T) {
 	}
 }
 
+// static.Handler and http.ServeContent set Content-Length before the body.
+// A splice that left it stale would make the browser cut the page short.
+func TestInjectorRewritesContentLength(t *testing.T) {
+	page := "<html><body><h1>static</h1></body></html>"
+	rec := injected(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Length", strconv.Itoa(len(page)))
+		_, _ = w.Write([]byte(page))
+	})
+	body := rec.Body.String()
+	if len(body) == len(page) {
+		t.Fatalf("script not injected:\n%s", body)
+	}
+	if cl := rec.Header().Get("Content-Length"); cl != strconv.Itoa(len(body)) {
+		t.Fatalf("Content-Length %q, injected body is %d bytes", cl, len(body))
+	}
+}
+
 // Fragments, island RPC responses, SPA-nav partials (X-Gofastr-Partial), any
 // HTML without </body>, are swapped into a live DOM by the runtime; an
 // appended script node would corrupt :last-child styling and the screen
@@ -50,12 +68,14 @@ func TestInjectorLeavesFragmentsAlone(t *testing.T) {
 	rec := injected(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Header().Set("X-Gofastr-Partial", "true")
-		_, _ = w.Write([]byte("<h1>fragment</h1>"))
+		// A partial swaps a whole layout slot, so it may carry </body>;
+		// the header alone has to keep the script out.
+		_, _ = w.Write([]byte("<h1>fragment</h1></body>"))
 	})
 	if strings.Contains(rec.Body.String(), LiveReloadScriptURL) {
 		t.Fatalf("fragment was injected:\n%s", rec.Body.String())
 	}
-	if rec.Body.String() != "<h1>fragment</h1>" {
+	if rec.Body.String() != "<h1>fragment</h1></body>" {
 		t.Fatalf("fragment bytes modified:\n%s", rec.Body.String())
 	}
 }
@@ -101,9 +121,9 @@ func TestInjectorSkipsEncodedBodies(t *testing.T) {
 	rec := injected(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Header().Set("Content-Encoding", "gzip")
-		_, _ = w.Write([]byte("\x1f\x8bfake-gzip-bytes"))
+		_, _ = w.Write([]byte("\x1f\x8bfake-gzip-bytes</body>"))
 	})
-	if rec.Body.String() != "\x1f\x8bfake-gzip-bytes" {
+	if rec.Body.String() != "\x1f\x8bfake-gzip-bytes</body>" {
 		t.Fatalf("encoded body modified:\n%q", rec.Body.String())
 	}
 }
@@ -115,23 +135,26 @@ func TestInjectorLeavesHeadAndRangeAlone(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html")
 		w.Header().Set("Content-Length", "12345")
 		w.WriteHeader(http.StatusOK)
+		// net/http drops a HEAD body on the wire, but a handler may still
+		// write one; it must not be spliced or re-measured.
+		_, _ = w.Write([]byte("<html><body></body></html>"))
 	})
 	if got := head.Header().Get("Content-Length"); got != "12345" {
 		t.Fatalf("HEAD Content-Length clobbered: %q", got)
 	}
-	if head.Body.Len() != 0 {
-		t.Fatalf("HEAD response grew a body: %q", head.Body.String())
+	if strings.Contains(head.Body.String(), LiveReloadScriptURL) {
+		t.Fatalf("HEAD response was spliced: %q", head.Body.String())
 	}
 
 	rangeReq := httptest.NewRequest(http.MethodGet, "/page.html", nil)
-	rangeReq.Header.Set("Range", "bytes=0-3")
+	rangeReq.Header.Set("Range", "bytes=93-99")
 	ranged := injectedReq(t, rangeReq, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		w.Header().Set("Content-Range", "bytes 0-3/100")
+		w.Header().Set("Content-Range", "bytes 93-99/100")
 		w.WriteHeader(http.StatusPartialContent)
-		_, _ = w.Write([]byte("<htm"))
+		_, _ = w.Write([]byte("</body>"))
 	})
-	if ranged.Body.String() != "<htm" || ranged.Code != http.StatusPartialContent {
+	if ranged.Body.String() != "</body>" || ranged.Code != http.StatusPartialContent {
 		t.Fatalf("ranged response modified: code=%d body=%q", ranged.Code, ranged.Body.String())
 	}
 }

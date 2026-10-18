@@ -64,8 +64,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and widgets as labelled outlines. It also marks every box that
   scrolls, and every element that runs past the viewport (skipping
   ones inside a scroll box, a clip or a fixed drawer), with a legend
-  that says when the page scrolls sideways. The on/off choice
-  survives reloads. Served at `/__devlayout.js` only in dev;
+  that says when the page scrolls sideways. It draws over open
+  popovers and modal dialogs, such as a phone sheet or a confirm. The
+  on/off choice survives reloads. Served at `/__devlayout.js` only in dev;
   `GOFASTR_DEV_LAYOUT=0` turns it off. See
   [dev-livereload](framework/docs/content/dev-livereload.md#layout-layer).
 
@@ -135,6 +136,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   wraps each table in a focusable `.fui-markdown__table` scroll box and
   caps each column at 70% of it, so a table wider than a phone no longer
   runs past the page or gets clipped by a column that hides overflow.
+- **A `uihost` served on its own answers `/__livereload.js`.** Its pages
+  linked the livereload client under `gofastr dev`, but only
+  `framework.NewApp` registered the route, so a host served directly or
+  mounted on a router built by hand got a 404 and never reloaded.
+  `UIHost.Mount` now registers the dev script routes on the router it
+  mounts on.
 
 ## [0.89.0] - 2026-10-17
 
