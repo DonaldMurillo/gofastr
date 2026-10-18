@@ -69,4 +69,28 @@ F02, F07-F10, and F13 include backward-compatible API additions. These are not a
 - A wheel test could start at the bottom of the page, where no scroll event occurs. Reset the scroll position before checking that scrolling dismisses the drag handle.
 - An intermediate browser run overlapped the preceding server teardown, producing a port-bind failure and connection failures. That run is invalid for acceptance and is rerun with isolated server lifetimes.
 - The broad contract scan also reports app-owned publication CSS, existing registered SSR styles, isolated plugin-engine assets, and sites whose URL/prefix values are validated before the flagged operation. These are analyzer findings to review, not hundreds of confirmed upgrade regressions. The complete findings are saved as MIGRATION_CONTRACT_FINDINGS.json in each downstream repo. No baseline or blanket suppression was added.
-- Validation results and the upstream PR link follow after the final acceptance runs.
+- Location buttons initially retained only the old active CSS class. Their selected state now uses aria-pressed, including marker selection and clearing. Browser checks prove both the accessible state and the native button color change.
+- One docs run got a 200 document response followed by ERR_EMPTY_RESPONSE for app.css and comp-bundle.css and stalled during asset loading. The next complete run passed all 198 selected checks without an app change. The initial failure remains recorded; it is not claimed as a diagnosed source regression.
+
+## Final validation
+
+All four downstream modules, the generated starter, and the ejection examples pin `v0.90.1-0.20261018220703-879aca7acfd2`. This is the pushed API fix commit `879aca7acfd28f2501ab7389caf826b3fabde3f4`. There is no local framework replacement. Validation used Go 1.27.2 with GOWORK=off and a CLI built from that source. To reproduce with an installed CLI, use `go install github.com/DonaldMurillo/gofastr/cmd/gofastr@v0.90.1-0.20261018220703-879aca7acfd2`.
+
+| Check | Result |
+| --- | --- |
+| Framework | UI, headless, UIHost, layout and sheet packages pass their affected short suites. Markdown passes its full package suite. Contract analyzers, upgrade scan and build-output tests pass. |
+| Runtime | Relevant navigation, metadata/cache, disclosure, widget ARIA, theme/storage, symbol composition and attribute-documentation regression checks pass. The complete runtime browser suite is not claimed as a local result. |
+| Broker | Both Chromium startup regressions pass three repeated runs. |
+| Docs Go | Root, self-hosted site and hand-authored fixture: full package tests and go vet pass. |
+| Plugin Go | Full serial package tests, go vet and independent ejected-consumer builds pass. The final map selection change also passes its package tests and vet. |
+| Docs browser | 198 passed on the final run, including the normal screenshot assertions. Four MCP checks are excluded from this acceptance lane because of the local framing issue; the tests remain enabled. |
+| Plugin browser | Full 326-check matrix completes: 324 pass first attempt, two pass on retry. TypeScript checks pass. |
+| Focused browser repeats | 24 pass with retries disabled: three repetitions in WebKit and Chromium of sandboxed/trusted keyboard list insertion, map selection with visible native pressed styling, and pin deletion/persistence. |
+| Visual review | Gallery, docs, Monaco and map host controls checked at 390px and 1440px, light and dark; no page overflow. Native settings dialog checked on phone widths. |
+| Diff hygiene | git diff --check passes for the isolated framework branch and downstream edits. |
+
+The full plugin run's two retry cases are WebKit sandboxed keyboard list insertion and Chromium pin deletion/persistence. The focused repeats pass; their initial failures remain unresolved flakes rather than claimed source fixes.
+
+The broad static contract gate is **not clean**: docs reports 390 errors, 2 warnings and 3 informational findings; plugins reports 210 errors, 3 warnings and 4 informational findings. These are raw analyzer counts, including deliberate publication/plugin-engine styling, five generated Playwright report stylesheets, registered SSR styles, demo protocol wrappers, and guarded URL/prefix operations. The per-file findings are preserved in `MIGRATION_CONTRACT_FINDINGS.json` in each downstream repo. They require rule-by-rule review; no clean contract result is claimed.
+
+Upstream proposal: [GoFastr PR #536](https://github.com/DonaldMurillo/gofastr/pull/536). Both downstream migrations remain in their existing local working trees alongside earlier user edits. The isolated framework branch contains the upstream fixes, regressions and this audit.
