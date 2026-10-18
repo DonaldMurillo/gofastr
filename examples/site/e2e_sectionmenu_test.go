@@ -283,9 +283,9 @@ func TestE2E_SectionMenu_SheetTouchScrolls(t *testing.T) {
 	ctx := siteBrowserCtx(t)
 	sheet := `document.querySelector('[data-cui-widget="docs-section-menu"]')`
 
-	var overflow, scrolled float64
+	var overflow, scrolled, control float64
 	var handle []float64
-	var lockAfterDrag string
+	var lockAfterDrag, rootTouch, handleTouch string
 	touch := func(typ input.TouchType, y float64) chromedp.Action {
 		pts := []*input.TouchPoint{}
 		if typ != input.TouchEnd {
@@ -298,9 +298,19 @@ func TestE2E_SectionMenu_SheetTouchScrolls(t *testing.T) {
 		emulation.SetTouchEmulationEnabled(true),
 		chromedp.Navigate(base+"/docs"),
 		chromedp.WaitReady(`.cui-sheet-pill`, chromedp.ByQuery),
+		// Control: the same swipe on the page itself. A browser build that
+		// cannot synthesize a touch scroll (CI's Linux Chrome moved neither
+		// the page nor the sheet) leaves this at 0.
+		input.SynthesizeScrollGesture(195, 500).
+			WithYDistance(-200).
+			WithGestureSourceType(input.GestureTouch),
+		chromedp.Sleep(400*time.Millisecond),
+		chromedp.Evaluate(`(()=>{const y=scrollY;scrollTo(0,0);return y})()`, &control),
 		chromedp.Evaluate(`document.querySelector('.cui-sheet-pill').click()`, nil),
 		chromedp.Sleep(700*time.Millisecond),
 		chromedp.Evaluate(`(()=>{const s=`+sheet+`;return s.scrollHeight-s.clientHeight})()`, &overflow),
+		chromedp.Evaluate(`getComputedStyle(`+sheet+`).touchAction`, &rootTouch),
+		chromedp.Evaluate(`getComputedStyle(`+sheet+`.querySelector('.cui-widget-drag-handle')).touchAction`, &handleTouch),
 		input.SynthesizeScrollGesture(195, 500).
 			WithYDistance(-200).
 			WithGestureSourceType(input.GestureTouch),
@@ -313,7 +323,16 @@ func TestE2E_SectionMenu_SheetTouchScrolls(t *testing.T) {
 	if overflow < 200 {
 		t.Fatalf("the docs sheet overflows by %.0fpx; the swipe needs a list taller than the sheet", overflow)
 	}
-	if scrolled < 100 {
+	if rootTouch == "none" {
+		t.Errorf("sheet root has touch-action: none; a finger cannot pan its list")
+	}
+	if handleTouch != "none" {
+		t.Errorf("drag handle touch-action = %q, want none so a drag reaches the runtime", handleTouch)
+	}
+	switch {
+	case control < 100:
+		t.Logf("this browser does not synthesize touch scrolls (the page moved %.0fpx); the swipe check is skipped", control)
+	case scrolled < 100:
 		t.Errorf("a 200px swipe scrolled the sheet %.0fpx, want it to follow the finger", scrolled)
 	}
 
