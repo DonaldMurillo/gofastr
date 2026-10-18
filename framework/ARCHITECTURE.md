@@ -420,7 +420,11 @@ i18nui + ui`, `static → ui + uihost`,
 `gallery → ui + image + agentsinv`, `localentity → agentsinv` (plus core-ui/localdb, html and registry), `sdkdocs → ui + sdk + entity +
 internal/casing`, and `pluginhost → uihost`. `uihost/uinoderender → ui` is a separate
 package on purpose: the host itself never links `framework/ui`. The
-node renderer that needs the component catalog sits above it.)
+node renderer that needs the component catalog sits above it.
+`contracts` judges design-system code without linking it: the palette
+its colour rules compare against comes from `core-ui/style`
+(`DefaultTheme` plus `DefaultDarkColors`), and
+`TestContractsDoesNotLinkUIStack` fails on any `framework/ui` edge.)
 
 One cross-tree edge is deliberate: **`battery/auth` → `framework/access`.**
 The token-scope matcher (`scopeMatches`, backing `auth.HasScope` and the

@@ -163,7 +163,7 @@ func stepRailCSS(_ style.Theme) string {
   flex-direction: column;
   gap: var(--spacing-md, 8px);
   padding: var(--spacing-md, 8px);
-  border: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.1));
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface-soft, transparent);
 }
@@ -192,7 +192,7 @@ func stepRailCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-step-rail"] .fui-step-rail__link:hover,
 [data-cui-comp="ui-step-rail"] .fui-step-rail__link:focus-visible {
-  background: var(--color-surface-soft, rgba(0,0,0,0.04));
+  background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, currentColor);
 }
 [data-cui-comp="ui-step-rail"] .fui-step-rail__link[data-state="current"] {

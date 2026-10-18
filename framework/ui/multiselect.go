@@ -153,7 +153,7 @@ func multiselectCSS(_ style.Theme) string {
   padding: 0 calc(var(--spacing-sm, 4px) * 3);
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-medium);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   cursor: pointer;
   user-select: none;
   list-style: none;

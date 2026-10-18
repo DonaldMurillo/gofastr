@@ -352,7 +352,7 @@ func sheetHeadCSS(_ style.Theme) string {
   cursor: pointer;
 }
 [data-cui-comp="cui-sheet-head"] .cui-sheet-head__close:hover {
-  border-color: var(--color-border, rgba(0,0,0,0.12));
+  border-color: var(--color-border, #E4E4E7);
   color: var(--color-text, currentColor);
 }`
 }

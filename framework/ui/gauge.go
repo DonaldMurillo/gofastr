@@ -205,14 +205,14 @@ func gaugeCSS(_ style.Theme) string {
   stroke-linecap: round;
 }
 [data-cui-comp="ui-gauge"] .fui-gauge__value--primary { stroke: var(--color-primary, #18181B); }
-[data-cui-comp="ui-gauge"] .fui-gauge__value--info    { stroke: var(--color-info, #3B82F6); }
-[data-cui-comp="ui-gauge"] .fui-gauge__value--success { stroke: var(--color-success, #16A34A); }
-[data-cui-comp="ui-gauge"] .fui-gauge__value--warning { stroke: var(--color-warning, #D97706); }
-[data-cui-comp="ui-gauge"] .fui-gauge__value--danger  { stroke: var(--color-danger, #DC2626); }
+[data-cui-comp="ui-gauge"] .fui-gauge__value--info    { stroke: var(--color-info, #1D4ED8); }
+[data-cui-comp="ui-gauge"] .fui-gauge__value--success { stroke: var(--color-success, #166534); }
+[data-cui-comp="ui-gauge"] .fui-gauge__value--warning { stroke: var(--color-warning, #854D0E); }
+[data-cui-comp="ui-gauge"] .fui-gauge__value--danger  { stroke: var(--color-danger, #B91C1C); }
 [data-cui-comp="ui-gauge"] .fui-gauge__text {
   font-weight: var(--font-weight-bold);
   font-variant-numeric: tabular-nums;
-  fill: var(--color-text, #18181B);
+  fill: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-gauge"] .fui-gauge__label {
   font-size: var(--text-sm, 0.875rem);

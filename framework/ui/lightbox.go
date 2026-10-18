@@ -249,7 +249,7 @@ func lightboxCSS(_ style.Theme) string {
   border-radius: var(--radii-full, 9999px);
   border: 0;
   background: var(--color-surface-soft, #F4F4F5);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   cursor: pointer;
   text-decoration: none;
 }

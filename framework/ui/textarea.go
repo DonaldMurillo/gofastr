@@ -158,7 +158,7 @@ func textAreaCSS(_ style.Theme) string {
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--fui-field-radius);
   background: var(--color-surface, #FFFFFF);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   box-shadow: var(--shadow-xs);
   resize: vertical;
   min-block-size: var(--fui-density-control-h);
@@ -175,8 +175,8 @@ func textAreaCSS(_ style.Theme) string {
   outline-offset: var(--stroke-focus-offset, 2px);
 }
 .fui-textarea[aria-invalid="true"] {
-  border-color: var(--color-danger, #DC2626);
-  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #DC2626);
+  border-color: var(--color-danger, #B91C1C);
+  box-shadow: inset 0 0 0 var(--stroke-thin, 1px) var(--color-danger, #B91C1C);
 }
 .fui-textarea--mono .fui-textarea {
   /* JSON and code: the mono token every code-ish component reads.

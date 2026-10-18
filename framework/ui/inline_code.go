@@ -35,15 +35,15 @@ func inlineCodeCSS(_ style.Theme) string {
   font-size: 0.9em;
   padding: 0.05em 0.35em;
   border-radius: var(--radii-sm, 6px);
-  background: var(--color-surface-soft, #f5f5f7);
-  color: var(--color-text, #111);
+  background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #09090B);
   overflow-wrap: anywhere;
 }
 /* The danger tone mixes the hue toward the text colour, as the danger
    badge does, so it keeps AA contrast on either scheme. */
 [data-cui-comp="ui-code"].fui-code--danger {
-  background: color-mix(in oklab, var(--color-danger, #DC2626) 10%, var(--color-surface, #fff) 90%);
-  color: color-mix(in oklab, var(--color-danger, #DC2626) 55%, var(--color-text, #18181B) 45%);
+  background: color-mix(in oklab, var(--color-danger, #B91C1C) 10%, var(--color-surface, #fff) 90%);
+  color: color-mix(in oklab, var(--color-danger, #B91C1C) 55%, var(--color-text, #09090B) 45%);
 }
 `
 }

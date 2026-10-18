@@ -139,3 +139,27 @@ func TestCoreUIDoesNotImportFramework(t *testing.T) {
 		}
 	}
 }
+
+// framework/contracts sits at L3, below the UI stack (L4+): the checker
+// judges design-system code, it does not link it. Palette data the
+// rules compare against lives in core-ui/style, where both can read it.
+func TestContractsDoesNotLinkUIStack(t *testing.T) {
+	const banned = modRoot + "/framework/ui"
+	out, err := exec.Command("go", "list",
+		"-f", "{{.ImportPath}}: {{join .Deps \" \"}}",
+		modRoot+"/framework/contracts/...").CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list framework/contracts/...: %v\n%s", err, out)
+	}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		pkg, deps, ok := strings.Cut(line, ": ")
+		if !ok {
+			continue
+		}
+		for dep := range strings.FieldsSeq(deps) {
+			if dep == banned || strings.HasPrefix(dep, banned+"/") {
+				t.Errorf("%s depends on %s — contracts sits at L3, below the UI stack", pkg, dep)
+			}
+		}
+	}
+}

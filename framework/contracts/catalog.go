@@ -1011,10 +1011,17 @@ func renderingRules() []Rule {
 			"found about 450 such fallbacks teaching a 4/8/16/24/32 spacing ladder the theme does not " +
 			"declare (it is 2/4/8/16/24), and a review bot read one of them as the token's value and " +
 			"proposed a change that would have shrunk a real gap. The rule covers the length and time " +
-			"scales, spacing, radii, text and duration, where a fallback can only be right or wrong; colour " +
-			"and font fallbacks are left alone because `currentColor`, `inherit`, `transparent` and a " +
-			"dark-surface hex are deliberate degraded-mode choices, not restatements of the token.",
-		Fix: "Write the declared value as the fallback (`style.TokenNames()` or `gofastr docs theming` lists them); rem and px are compared by size, so `var(--spacing-lg, 1rem)` is fine for a 16px token. If the value you wanted is not the token's value, you wanted a different token.",
+			"scales, spacing, radii, text and duration, where a fallback can only be right or wrong. In " +
+			"design-system Go code it also covers colour fallbacks (--color-* and the --tk-* code " +
+			"colours), which drifted the same way: about 350 still named the palette from before the " +
+			"contrast pass (`var(--color-danger, #DC2626)` where the theme declares #B91C1C) or a " +
+			"translucent rgba() the theme never declares. A colour fallback is the token's hex for its " +
+			"scheme (the dark value inside a dark-scheme rule or @media block, the light value " +
+			"elsewhere) or a keyword (`currentColor`, `inherit`, `transparent`), a deliberate " +
+			"degraded-mode choice. Font stacks are left alone, as are owned styles' colours, which " +
+			"follow the app's theme, and battery/desktop/ui's, which its own tests check against its " +
+			"per-platform theme.",
+		Fix: "Write the declared value as the fallback (`style.TokenNames()` or `gofastr docs theming` lists them); rem and px are compared by size, so `var(--spacing-lg, 1rem)` is fine for a 16px token, and hex by colour, so `#fff` is fine for #FFFFFF. Inside a dark-scheme block write the dark value the message names. If the value you wanted is not the token's value, you wanted a different token.",
 		Doc: "theming",
 		Examples: []Example{{
 			Bad:  "padding: var(--spacing-md, 12px);",

@@ -108,7 +108,7 @@ func tagInputCSS(_ style.Theme) string {
 [data-cui-comp="ui-tag-input"] .fui-tag-input__label {
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-tag-input"] .fui-tag-input__zone {
   display: flex;
@@ -172,7 +172,7 @@ func tagInputCSS(_ style.Theme) string {
   background: transparent;
   font: inherit;
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   min-block-size: var(--ui-tag-input-field-min-height, 28px);
   padding: 0;
 }

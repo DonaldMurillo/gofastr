@@ -320,7 +320,7 @@ func dropzoneCSS(_ style.Theme) string {
   margin: 0;
   font-size: var(--text-base, 1rem);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 .fui-drop__prompt {
   margin: 0;
@@ -365,10 +365,10 @@ func dropzoneCSS(_ style.Theme) string {
 .fui-drop__error {
   margin: 0;
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-danger, #DC2626);
+  color: var(--color-danger, #B91C1C);
 }
 .fui-drop.is-error .fui-drop__zone {
-  border-color: var(--color-danger, #DC2626);
+  border-color: var(--color-danger, #B91C1C);
 }
 .fui-drop.is-disabled .fui-drop__zone {
   opacity: var(--opacity-muted, 0.6);

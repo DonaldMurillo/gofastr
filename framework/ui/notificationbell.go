@@ -276,7 +276,7 @@ func notificationBellCSS(_ style.Theme) string {
   background: transparent;
   border: 0;
   border-radius: var(--radii-md, 8px);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   cursor: pointer;
 }
 [data-cui-comp="ui-notification-bell"]:hover:not(.is-popover-trigger-active) {
@@ -380,7 +380,7 @@ func notificationBellCSS(_ style.Theme) string {
   display: block;
   padding: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   border-radius: var(--radii-sm, 6px);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   text-decoration: none;
 }
 a.fui-notification-bell__row-link:hover {

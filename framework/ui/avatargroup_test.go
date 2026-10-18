@@ -110,7 +110,7 @@ func TestAvatarGroupCustomLabel(t *testing.T) {
 func TestAvatarGroupOverflowUsesAdaptiveSurfaceToken(t *testing.T) {
 	css := avatarGroupCSS(style.Theme{})
 	for _, want := range []string{
-		`background: var(--color-surface-soft, #e5e5e5)`,
+		`background: var(--color-surface-soft, #F4F4F5)`,
 		// A quarter of each avatar size, read through the avatar's own
 		// knobs so a resized avatar keeps its overlap.
 		`margin-inline-start: calc(var(--ui-avatar-size, 2.5rem) * -0.25)`,

@@ -282,11 +282,11 @@ func shortcutHintCSS(_ style.Theme) string {
   min-inline-size: 1.5em;
   block-size: 1.5em;
   padding: 0 calc(var(--spacing-sm, 4px) * 1.5);
-  border: var(--stroke-thin, 1px) solid var(--color-border, #d0d0d8);
+  border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-bottom-width: var(--stroke-thick, 2px);
   border-radius: var(--radii-sm, 6px);
-  background: var(--color-surface-soft, #f5f5f7);
-  color: var(--color-text, #111);
+  background: var(--color-surface-soft, #F4F4F5);
+  color: var(--color-text, #09090B);
   font-size: var(--text-xs, 0.75rem);
   font-weight: var(--font-weight-semibold);
   line-height: 1;

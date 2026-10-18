@@ -114,7 +114,7 @@ func rangeSliderCSS(_ style.Theme) string {
 [data-cui-comp="ui-range-slider"] .fui-range-slider__label {
   font-weight: var(--font-weight-medium);
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-range-slider"] .fui-range-slider__label + .fui-range-slider__value {
   justify-self: end;

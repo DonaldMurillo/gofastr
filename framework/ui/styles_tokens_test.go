@@ -189,7 +189,7 @@ func TestFontSizeLiteralBudget(t *testing.T) {
 // canonical --color-* theme and exposed --fui-* custom properties as its host
 // override surface. Both surfaces must stay wired: every --fui-* bridge read
 // chains to the matching canonical token before its literal fallback,
-// var(--fui-border, var(--color-border, #e2e8f0)), so the adaptive theme
+// var(--fui-border, var(--color-border, #E4E4E7)), so the adaptive theme
 // reaches these components with no host aliases AND a host's --fui-*
 // overrides keep winning.
 var fuiBridgeRe = regexp.MustCompile(`var\(--fui-(?:border|foreground|muted-bg|muted|primary|surface)\s*,\s*([^)\s,]+)`)

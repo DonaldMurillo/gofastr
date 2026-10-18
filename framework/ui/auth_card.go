@@ -111,17 +111,17 @@ func authCardCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-auth-card"] .fui-auth-card__alert {
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-danger, #DC2626);
-  background: color-mix(in srgb, var(--color-danger, #DC2626) 8%, transparent);
-  border: var(--stroke-thin, 1px) solid color-mix(in srgb, var(--color-danger, #DC2626) 28%, transparent);
+  color: var(--color-danger, #B91C1C);
+  background: color-mix(in srgb, var(--color-danger, #B91C1C) 8%, transparent);
+  border: var(--stroke-thin, 1px) solid color-mix(in srgb, var(--color-danger, #B91C1C) 28%, transparent);
   border-radius: var(--radii-lg, 10px);
   padding: calc(var(--spacing-sm, 4px) * 2.5) calc(var(--spacing-sm, 4px) * 3);
 }
 [data-cui-comp="ui-auth-card"] .fui-auth-card__notice {
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-success, #16A34A);
-  background: color-mix(in srgb, var(--color-success, #16A34A) 8%, transparent);
-  border: var(--stroke-thin, 1px) solid color-mix(in srgb, var(--color-success, #16A34A) 28%, transparent);
+  color: var(--color-success, #166534);
+  background: color-mix(in srgb, var(--color-success, #166534) 8%, transparent);
+  border: var(--stroke-thin, 1px) solid color-mix(in srgb, var(--color-success, #166534) 28%, transparent);
   border-radius: var(--radii-lg, 10px);
   padding: calc(var(--spacing-sm, 4px) * 2.5) calc(var(--spacing-sm, 4px) * 3);
 }

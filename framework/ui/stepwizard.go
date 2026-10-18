@@ -229,7 +229,7 @@ func stepWizardCSS(_ style.Theme) string {
   margin: 0;
   font-size: var(--text-lg, 1.125rem);
   font-weight: var(--font-weight-semibold);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__description {
   margin: 0;
@@ -259,7 +259,7 @@ func stepWizardCSS(_ style.Theme) string {
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__back {
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   background: var(--color-surface, #FFFFFF);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-step-wizard"] .fui-step-wizard__back:hover {
   background: var(--color-surface-soft, #F4F4F5);

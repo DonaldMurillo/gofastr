@@ -127,7 +127,7 @@ func detailListCSS(_ style.Theme) string {
   gap: var(--spacing-lg, 16px);
   align-items: baseline;
   padding: var(--spacing-md, 8px) 0;
-  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, rgba(0,0,0,0.1));
+  border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
 [data-cui-comp="ui-detail-list"] .fui-detail-list__row:last-child { border-bottom: none; }
 [data-cui-comp="ui-detail-list"] .fui-detail-list__label {
@@ -186,7 +186,7 @@ func detailListCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-detail-list"].fui-detail-list--stacked .fui-detail-list__label {
   font-weight: var(--font-weight-medium);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 [data-cui-comp="ui-detail-list"].fui-detail-list--stacked .fui-detail-list__value {
   display: flex;

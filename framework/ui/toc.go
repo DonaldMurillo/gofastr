@@ -187,7 +187,7 @@ func tocCSS(_ style.Theme) string {
   line-height: var(--leading-snug, 1.4);
 }
 [data-cui-comp="ui-toc"] .fui-toc__link:hover {
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
   background: var(--color-surface-soft, #F4F4F5);
 }
 [data-cui-comp="ui-toc"] .fui-toc__link.is-active,

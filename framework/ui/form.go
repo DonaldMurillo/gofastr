@@ -419,7 +419,7 @@ func validationSummaryCSS(_ style.Theme) string {
   padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
   /* The destructive-alert shape Banner uses: the danger hue tints the
      hairline and the title, with no side stripe. */
-  border: var(--stroke-thin, 1px) solid color-mix(in oklab, var(--color-danger, #DC2626) 35%, var(--color-border, #E4E4E7));
+  border: var(--stroke-thin, 1px) solid color-mix(in oklab, var(--color-danger, #B91C1C) 35%, var(--color-border, #E4E4E7));
   border-radius: var(--radii-lg, 10px);
   background: var(--color-surface, #FFFFFF);
 }
@@ -431,23 +431,23 @@ func validationSummaryCSS(_ style.Theme) string {
   font-size: var(--text-sm, 0.875rem);
   font-weight: var(--font-weight-semibold);
   margin: 0;
-  color: var(--color-danger, #DC2626);
+  color: var(--color-danger, #B91C1C);
 }
 .fui-validation-summary__list {
   margin: 0;
   padding-left: var(--spacing-lg, 16px);
   list-style: disc;
   font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }
 .fui-validation-summary__list a {
   display: inline-flex;
   align-items: center;
   min-block-size: var(--ui-validation-summary-link-min-height, 24px);
-  color: var(--color-danger, #DC2626);
+  color: var(--color-danger, #B91C1C);
   text-decoration: underline;
 }
 .fui-validation-summary__list a:hover {
-  color: var(--color-text, #18181B);
+  color: var(--color-text, #09090B);
 }`
 }
