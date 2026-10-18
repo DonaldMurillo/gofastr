@@ -41,9 +41,11 @@ func (revenueReport) RenderCtx(ctx context.Context) render.HTML {
 		ui.StatCard(ui.StatCardConfig{Label: "Outstanding", Value: stat("invoices", "sum", "amount", `status in ["open", "past_due"]`, "money"), Icon: "receipt"}),
 		ui.StatCard(ui.StatCardConfig{Label: "Failed payments", Value: stat("payments", "count", "", `status = "failed"`, ""), Icon: "warning"}),
 	)
+	// Each chart is named by its card's heading, "<card ID>-title".
 	breakdown := func(title, entityName, groupBy string) render.HTML {
-		return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2},
-			ui.BarChart(ui.BarChartConfig{Bars: appUI.GroupBars(ctx, entityName, groupBy), ShowLabels: true, FitHeight: true}))
+		id := entityName + "-by-" + groupBy
+		return ui.Card(ui.CardConfig{ID: id, Heading: title, HeadingLevel: 2},
+			ui.BarChart(ui.BarChartConfig{Bars: appUI.GroupBars(ctx, entityName, groupBy), ShowLabels: true, FitHeight: true, LabelledBy: id + "-title"}))
 	}
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		ui.PageHeader(ui.PageHeaderConfig{Title: "Revenue", Subtitle: "What comes in, what is owed, and what failed."}),
@@ -54,7 +56,33 @@ func (revenueReport) RenderCtx(ctx context.Context) render.HTML {
 			breakdown("Payments by method", "payments", "method"),
 			breakdown("Subscriptions by status", "subscriptions", "status"),
 		),
+		ui.Card(ui.CardConfig{ID: "payments-grid", Heading: "Payments by method and status", HeadingLevel: 2}, paymentsHeatmap(ctx, "payments-grid-title")),
 	)
+}
+
+// paymentsHeatmap counts payments for each method and status: where the
+// failures cluster. A count the caller may not read is an empty cell.
+func paymentsHeatmap(ctx context.Context, labelledBy string) render.HTML {
+	methods := []string{"card", "ach", "wire"}
+	statuses := []string{"succeeded", "failed", "refunded"}
+	values := make([][]float64, len(methods))
+	for i, m := range methods {
+		values[i] = make([]float64, len(statuses))
+		for j, s := range statuses {
+			values[i][j] = math.NaN()
+			if n, ok := appUI.CountInt(ctx, "payments", `method = "`+m+`" and status = "`+s+`"`); ok {
+				values[i][j] = float64(n)
+			}
+		}
+	}
+	return ui.Heatmap(ui.HeatmapConfig{
+		Rows:       []string{"Card", "ACH", "Wire"},
+		Cols:       []string{"Succeeded", "Failed", "Refunded"},
+		Values:     values,
+		Width:      320,
+		ShowLegend: true,
+		LabelledBy: labelledBy,
+	})
 }
 
 // paymentSuccessGauge draws the share of payments that went through

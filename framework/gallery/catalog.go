@@ -958,27 +958,33 @@ const page = await api.posts.list({ limit: 25 });`},
 
 	// ---------- Charts ----------
 	{"barchart", "BarChart", "Charts", "Vertical bar chart.", func() render.HTML {
-		return ui.BarChart(ui.BarChartConfig{
-			Bars: []ui.BarChartBar{
-				{Label: "Jan", Value: 12},
-				{Label: "Feb", Value: 18},
-				{Label: "Mar", Value: 9},
-				{Label: "Apr", Value: 24},
-				{Label: "May", Value: 19},
-			},
-			ShowAxis: true, ShowLabels: true,
+		return namedChart("barchart-demo", "Sign-ups by month", func(by string) render.HTML {
+			return ui.BarChart(ui.BarChartConfig{LabelledBy: by,
+				Bars: []ui.BarChartBar{
+					{Label: "Jan", Value: 12},
+					{Label: "Feb", Value: 18},
+					{Label: "Mar", Value: 9},
+					{Label: "Apr", Value: 24},
+					{Label: "May", Value: 19},
+				},
+				ShowAxis: true, ShowLabels: true,
+			})
 		})
 	}},
 	{"linechart", "LineChart", "Charts", "Line / area chart.", func() render.HTML {
-		return ui.LineChart(ui.LineChartConfig{
-			Series: []ui.LineSeries{
-				{Name: "Requests", Values: []float64{12, 18, 9, 24, 19, 22}},
-			},
+		return namedChart("linechart-demo", "Requests per hour", func(by string) render.HTML {
+			return ui.LineChart(ui.LineChartConfig{LabelledBy: by,
+				Series: []ui.LineSeries{
+					{Name: "Requests", Values: []float64{12, 18, 9, 24, 19, 22}},
+				},
+			})
 		})
 	}},
 	{"piechart", "PieChart", "Charts", "Pie / donut chart.", func() render.HTML {
-		return ui.PieChart(ui.PieChartConfig{
-			Slices: []ui.PieSlice{{Label: "Go", Value: 70}, {Label: "JS", Value: 18}, {Label: "SQL", Value: 12}},
+		return namedChart("piechart-demo", "Code by language", func(by string) render.HTML {
+			return ui.PieChart(ui.PieChartConfig{LabelledBy: by,
+				Slices: []ui.PieSlice{{Label: "Go", Value: 70}, {Label: "JS", Value: 18}, {Label: "SQL", Value: 12}},
+			})
 		})
 	}},
 	{"gauge", "Gauge", "Charts", "One reading against a range, with tone bands.", func() render.HTML {
@@ -988,6 +994,33 @@ const page = await api.posts.list({ limit: 25 });`},
 			ui.Gauge(ui.GaugeConfig{Label: "Memory", Value: 78, ValueText: "78%", Bands: bands}),
 			ui.Gauge(ui.GaugeConfig{Label: "Disk", Value: 96, ValueText: "96%", Bands: bands}),
 		)
+	}},
+	{"scatterchart", "ScatterChart", "Charts", "Points on two numeric axes, one color per series.", func() render.HTML {
+		return namedChart("scatterchart-demo", "Seats against MRR", func(by string) render.HTML {
+			return ui.ScatterChart(ui.ScatterChartConfig{LabelledBy: by,
+				XLabel: "Seats", YLabel: "MRR ($)", ShowLegend: true,
+				Series: []ui.ScatterSeries{
+					{Name: "Monthly", Points: []ui.ScatterPoint{{X: 3, Y: 90}, {X: 8, Y: 210}, {X: 12, Y: 380}, {X: 20, Y: 520}}},
+					{Name: "Annual", Points: []ui.ScatterPoint{{X: 5, Y: 120}, {X: 15, Y: 340}, {X: 25, Y: 700}, {X: 40, Y: 980}}},
+				},
+			})
+		})
+	}},
+	{"heatmap", "Heatmap", "Charts", "A grid of values shaded by size.", func() render.HTML {
+		return namedChart("heatmap-demo", "Sign-ups by weekday and hour", func(by string) render.HTML {
+			return ui.Heatmap(ui.HeatmapConfig{LabelledBy: by,
+				Rows: []string{"Mon", "Tue", "Wed", "Thu", "Fri"},
+				Cols: []string{"8am", "10am", "noon", "2pm", "4pm", "6pm"},
+				Values: [][]float64{
+					{2, 8, 12, 9, 6, 1},
+					{3, 11, 15, 13, 7, 2},
+					{1, 9, 14, 12, 8, 3},
+					{4, 12, 18, 14, 9, 2},
+					{2, 6, 10, 7, 4, 1},
+				},
+				ShowLegend: true,
+			})
+		})
 	}},
 	{"sparkline", "Sparkline", "Charts", "Tiny inline trend line.", func() render.HTML {
 		return ui.Sparkline(ui.SparklineConfig{Values: []float64{4, 6, 5, 8, 7, 10, 9, 12, 11, 14}})
@@ -1910,4 +1943,11 @@ func CategorySlug(name string) string {
 		out = out[:len(out)-1]
 	}
 	return string(out)
+}
+
+// namedChart puts a chart demo in a flat card whose heading names it, so
+// the chart is an image with a name rather than hidden from assistive
+// tech.
+func namedChart(id, heading string, chart func(labelledBy string) render.HTML) render.HTML {
+	return ui.Card(ui.CardConfig{ID: id, Heading: heading, Variant: ui.CardFlat}, chart(id+"-title"))
 }

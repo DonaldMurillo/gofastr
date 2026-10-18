@@ -72,8 +72,11 @@ type CardConfig struct {
 	Href string
 
 	Variant CardVariant
-	ID      string
-	Class   string
+	// ID is the card root's id. A card with an ID and a heading also
+	// names the heading "<ID>-title", so a chart inside can pass it as
+	// LabelledBy.
+	ID    string
+	Class string
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) to the card's root element,

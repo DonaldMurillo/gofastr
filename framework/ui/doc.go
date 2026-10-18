@@ -117,6 +117,8 @@
 //	Pagination:           numeric page pager over a list (typed query props, optional island)
 //	PieChart:             SVG ratio chart (donut variant via InnerRadius)
 //	Gauge:                semicircle dial for one reading against a range (ARIA meter, tone bands)
+//	ScatterChart:         SVG points on two numeric axes, one color per series
+//	Heatmap:              SVG grid of values shaded in four strengths of one color
 //	PipelineImage:        multi-format <picture> consuming framework/image
 //	Picker:               form field picking one record from a server-searched list
 //	FilterRows:           field / operator / value rows inside a list's filter form

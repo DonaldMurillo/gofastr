@@ -277,28 +277,15 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		}
 		y := baseY - barH
 
-		color := b.Color
-		barCls := "fui-bar-chart__bar"
-		isPalette := color == "primary" || color == "info" ||
-			color == "success" || color == "warning" || color == "danger"
-
-		// Resolve the effective fill. Palette tokens and an empty Color
-		// are class-based (theme-aware). Any other value is a raw SVG
-		// fill attribute, but only when it names a registered status
-		// variant (resolved to its accent) or is a plausible CSS color.
-		// Anything else falls back to the primary class so a typo like
+		// Palette tokens and an empty Color are class-based (theme-aware).
+		// A registered status variant or a plausible CSS color is a raw
+		// fill; anything else falls back to primary, so a typo like
 		// "draft" never renders an invalid (black) fill.
-		var fill string
-		if isPalette {
-			barCls += " fui-bar-chart__bar--" + color
-		} else if color == "" {
-			barCls += " fui-bar-chart__bar--primary"
-		} else if c, ok := registeredStatusColor(color); ok {
-			fill = c
-		} else if plausibleCSSColor(color) {
-			fill = color
-		} else {
-			barCls += " fui-bar-chart__bar--primary"
+		barCls := "fui-bar-chart__bar"
+		tone := seriesTone(b.Color, 0)
+		fill := tone.fill
+		if tone.palette != "" {
+			barCls += " fui-bar-chart__bar--" + tone.palette
 		}
 
 		sb.WriteString(`<rect x="`)
