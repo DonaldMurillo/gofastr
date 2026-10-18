@@ -75,6 +75,22 @@ func TestInitGoModNamesFrameworkGo(t *testing.T) {
 	}
 }
 
+// A release build with no go.mod to pin (go mod init refused the
+// module path) exits 1 rather than report a project that cannot build.
+func TestInitReleaseWithoutGoModExits(t *testing.T) {
+	oldVersion := version
+	version = "0.39.1"
+	t.Cleanup(func() { version = oldVersion })
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	code := covT_capExit(t, func() {
+		covT_capStdout(t, func() { runInit([]string{"nomod", "--no-entity", "--module=bad path"}) })
+	})
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1", code)
+	}
+}
+
 // The scaffold's go and toolchain lines are constants; the repo's
 // go.mod is the source they must match.
 func TestFrameworkGoMatchesGoMod(t *testing.T) {

@@ -265,9 +265,10 @@ bin/
 		info("You may need to run 'go mod init %s' manually.", modulePath)
 	}
 	// go mod init wrote the local toolchain's go line; state the
-	// framework's instead, and pin the release matching this CLI.
+	// framework's instead, and pin the release matching this CLI. A
+	// release build still fails loudly when there is no go.mod to pin.
 	pinnedVersion := installedFrameworkVersion()
-	if modInit == nil {
+	if modInit == nil || pinnedVersion != "" {
 		args := []string{"mod", "edit", "-go=" + frameworkGoDirective, "-toolchain=" + frameworkToolchain}
 		if pinnedVersion != "" {
 			args = append(args, "-require="+gofastrModule+"@"+pinnedVersion)
