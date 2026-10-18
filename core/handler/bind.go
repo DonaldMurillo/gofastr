@@ -320,8 +320,17 @@ func bindQuery(r *http.Request, rv reflect.Value) error {
 // percent-encoded newline or NUL, a decoded "/", or a ".." segment reached
 // handler input verbatim, from where it goes on into log lines, response
 // headers, SSE frames, and file or database lookups.
+//
+// A field whose tag the matched route does not declare stays zero: one
+// input struct often serves both POST /users and PUT /users/{id}. So a
+// matched request reads through router.Params, which holds only the
+// declared names, rather than router.Param, which panics on the others.
 func bindPath(r *http.Request, rv reflect.Value) error {
 	rt := rv.Type()
+	var declared map[string]string
+	if r.Pattern != "" {
+		declared = router.Params(r)
+	}
 
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
@@ -330,7 +339,12 @@ func bindPath(r *http.Request, rv reflect.Value) error {
 			continue
 		}
 
-		value := router.Param(r, tag)
+		var value string
+		if declared != nil {
+			value = declared[tag]
+		} else {
+			value = router.Param(r, tag)
+		}
 		if value == "" {
 			continue
 		}

@@ -172,6 +172,9 @@ const (
 	RuleUnscopedPII       = "GOFASTR1901"
 	RuleUnguardedMutation = "GOFASTR1902"
 	RuleAuthNotWired      = "GOFASTR1903"
+	// RuleUnregisteredPermission is a checked permission name the app's
+	// capability registry does not hold.
+	RuleUnregisteredPermission = "GOFASTR1904"
 )
 
 // AI-guidance rules.
@@ -1323,6 +1326,22 @@ func permissionRules() []Rule {
 		Examples: []Example{{
 			Bad:  `app.Delete("/admin/users/:id", deleteUser)`,
 			Good: "admin := app.Group(\"/admin\", access.Require(\"users:delete\"))\nadmin.Delete(\"/users/:id\", deleteUser)",
+		}},
+	}, {
+		ID: RuleUnregisteredPermission, Slug: "permissions/unregistered-permission",
+		Title: "Permission checked but never registered", Capability: CapPermissions, Severity: SeverityError,
+		Summary: "An access block, transition, or permission check names a capability the app's `RolePolicy.Register` list does not hold.",
+		Why: "Permission names are strings, so a typo compiles. A check on a name nobody registered " +
+			"denies every role granted the intended capability, while the wildcard holder, usually the " +
+			"admin testing the screen, still passes, so it looks like it works. The rule runs once an app " +
+			"registers its capabilities, and checks each binary against the names registered in the " +
+			"packages it links.",
+		Fix: "Correct the name to the registered capability, or add it to `RolePolicy.Register`. An untyped package-level " +
+			"`const` gives every check one spelling and fits both `access.Permission` and the `string` fields.",
+		Doc: "access-control",
+		Examples: []Example{{
+			Bad:  "policy := access.NewRolePolicy()\npolicy.Register(\"plans:write\")\n_ = access.RequirePermission(\"plans:wirte\")",
+			Good: "policy := access.NewRolePolicy()\npolicy.Register(\"plans:write\")\n_ = access.RequirePermission(\"plans:write\")",
 		}},
 	}, {
 		ID: RuleAuthNotWired, Slug: "permissions/auth-not-wired",

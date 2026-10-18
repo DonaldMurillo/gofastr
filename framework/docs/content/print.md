@@ -74,7 +74,8 @@ A battery cannot reach the UI app's DI container or render pipeline;
 `framework.App` holds no reference to the `core-ui/app.App`. So the
 document body is produced by your `Build` closure, which already has the
 request and closes over your own services. It reads route params via
-`router.Param`, loads data, and returns a `component.Component`. The
+`router.Param`, which panics on a name `Path` does not declare, loads
+data, and returns a `component.Component`. The
 battery renders it with `component.SafeRenderCtx` (panic-safe). Return
 `print.ErrNotFound` or `print.ErrForbidden` to get clean status pages
 instead of a 500 with a stack trace.

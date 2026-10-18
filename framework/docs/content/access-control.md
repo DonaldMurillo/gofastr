@@ -173,6 +173,36 @@ With a non-empty registry, an unknown grant is accepted for backward
 compatibility but emits a `slog` warning naming the grant, its nearest
 registered capability, and that it will never match a registered gate.
 
+Registering also turns on a check in `gofastr verify`. Rule GOFASTR1904
+flags every checked name the registry does not hold: entity `Access`
+blocks, `ScopeConfig.CrossOwnerRead`, `ReadScopeConfig.Unrestricted`,
+state-transition and entityui action `Permission` fields, and
+`RequirePermission`, `Can`, `CanResource` and `CanResourceExact`
+arguments. A typo there compiles and then denies every role granted the
+intended name, while the wildcard holder, usually the admin testing the
+screen, still passes. The rule reads
+string literals, package-level constants (a constants package's
+`perms.PlansWrite` too) and concatenations of them; a function's own
+variable is not read. Each binary is judged against the names registered
+in the packages it links, so a package two binaries share must find the
+name in both. An app that never calls `Register` is not checked, and
+neither is a binary with a `Register` call whose arguments the pass
+cannot read, such as `p.Register(loadCaps()...)`.
+
+```go
+// caps.go: one spelling per capability. Untyped, so the same constant
+// fits Register's access.Permission and AccessControl's string fields.
+const (
+    PlansWrite = "plans:write"
+    PlansAdmin = "plans:admin"
+)
+
+p.Register(PlansWrite, PlansAdmin)
+framework.EntityConfig{Exposure: &framework.ExposureConfig{
+    Access: framework.AccessControl{Create: PlansWrite, Delete: PlansAdmin},
+}}
+```
+
 Opt into rejection when configuration mistakes must stop startup:
 
 ```go

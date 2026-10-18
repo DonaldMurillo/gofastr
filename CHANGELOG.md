@@ -49,8 +49,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   are named this way.
 - **`entityui.UI.CountInt`** is `Count` as an `int`, under the same read
   gate and scope, for figures a host computes with.
+- **GOFASTR1904 flags a checked permission the app never registered.**
+  Once an app calls `RolePolicy.Register`, `gofastr verify` checks every
+  permission name in an entity `Access` block, `CrossOwnerRead`,
+  `ReadScopeConfig.Unrestricted`, a transition or action `Permission`,
+  and the arguments of `RequirePermission`, `Can`, `CanResource` and
+  `CanResourceExact` against the names registered in the same binary,
+  and suggests the nearest one. It reads literals and package-level
+  constants, including another package's (`perms.PlansWrite`). A typo
+  there compiled before and denied every role granted the intended name. The
+  contract catalog holds 79 rules.
 
 ### Changed
+- **`router.Param` panics on a name its route does not declare.**
+  `Param(r, "idd")` on `/posts/{id}` returned `""`, the same as an empty
+  value, and the handler carried on; now the request fails with a 500
+  through the recovery middleware, naming the route and the wildcard. A
+  request with no pattern, built by hand with `SetPathValue`, is not
+  checked. `handler.Bind` still leaves a `path:` field the route does
+  not declare at zero, so one input struct can serve `POST /users` and
+  `PUT /users/{id}`.
 - **The Timeout middleware reuses its response buffers.** It holds each
   response until the handler returns, and it used to grow a new buffer
   for every request: about 260 KB allocated and 36 µs spent to send a
