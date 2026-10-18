@@ -29,9 +29,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`CancelTask` can no longer lose to the handler it cancels.** It
   canceled the run's context before storing CANCELED, so a handler that
   completed on wake stored COMPLETED first and the client got -32002
-  for a task it had asked to cancel. The CANCELED write now lands
-  before the run is woken, and every write the handler tries after
-  that is refused.
+  for a task it had asked to cancel. The cancel now halts the local
+  run, which refuses the run's writes, then stores CANCELED, then wakes
+  the run, so neither a handler that completes on wake nor one writing
+  in a loop can beat it. A `SendMessage` waiting on the run answers
+  CANCELED rather than its stale WORKING copy, and a subscriber gets
+  the CANCELED event even when the handler returns before the cancel
+  publishes.
 - **56 framework benchmarks ran again.** Their requests had no session,
   so generated CRUD answered 401 before the handler body ran, and the
   POST/PUT body helper ended its input with an error other than

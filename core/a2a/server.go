@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -180,12 +181,20 @@ type Server struct {
 // run tracks one in-process task run: the context CancelTask reaches,
 // the event bus streaming subscribers attach to, and the done channel
 // closed (after the final event is published) when the run settles.
+// halted is set by CancelTask before it stores CANCELED: from then on
+// the run's writes are refused, so neither a handler that completes on
+// wake nor one writing in a loop can beat the cancel to the store. The
+// CancelTask that set it closes cancelDone once it has published, and a
+// halted run's teardown waits for that, so a handler that returns on a
+// refused write cannot close the stream before the CANCELED event.
 type run struct {
-	id     string
-	owner  string
-	cancel context.CancelFunc
-	bus    *taskBus
-	done   chan struct{}
+	id         string
+	owner      string
+	cancel     context.CancelFunc
+	halted     atomic.Bool
+	cancelDone chan struct{}
+	bus        *taskBus
+	done       chan struct{}
 }
 
 // NewServer validates cfg and applies its defaults.
@@ -619,11 +628,12 @@ func (s *Server) claimRun(taskID, owner string) (*run, runClaimResult) {
 		return nil, runClaimOwnerAtLimit
 	}
 	rn := &run{
-		id:     taskID,
-		owner:  owner,
-		cancel: func() {},
-		bus:    newTaskBus(s.log),
-		done:   make(chan struct{}),
+		id:         taskID,
+		owner:      owner,
+		cancel:     func() {},
+		cancelDone: make(chan struct{}),
+		bus:        newTaskBus(s.log),
+		done:       make(chan struct{}),
 	}
 	s.runs[taskID] = rn
 	s.runsByOwner[owner]++
@@ -653,6 +663,9 @@ func (s *Server) releaseRun(rn *run) {
 // so the terminal event is already published when done closes and a
 // draining subscriber still sees it.
 func (s *Server) finishRun(rn *run) {
+	if rn.halted.Load() {
+		<-rn.cancelDone
+	}
 	s.releaseRun(rn)
 	close(rn.done)
 }
@@ -663,6 +676,15 @@ func (s *Server) setRunCancel(rn *run, cancel context.CancelFunc) {
 	rn.cancel = cancel
 }
 
+// wakeRun cancels a run's context. The cancel func is read under the
+// lock setRunCancel writes it under.
+func (s *Server) wakeRun(rn *run) {
+	s.mu.Lock()
+	cancel := rn.cancel
+	s.mu.Unlock()
+	cancel()
+}
+
 // startRun launches the handler goroutine for a claimed run. The run
 // context is cut from the request's CANCELLATION but not from the
 // request itself: returnImmediately and stream disconnects must not
@@ -671,6 +693,7 @@ func (s *Server) startRun(r *http.Request, t *taskRun, rn *run, h Handler) {
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), s.timeout)
 	runCtx = WithRequest(runCtx, r)
 	s.setRunCancel(rn, cancel)
+	t.attach(rn)
 	go func() {
 		defer func() {
 			cancel()
@@ -1302,12 +1325,27 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidParams, "id is required"))
 		return
 	}
-	// The CANCELED write lands before the local run is woken. Waking it
-	// first let the handler's next write land on the unchanged task, so
-	// a handler that completed on wake won the race: the client got
-	// -32002 and the task stayed COMPLETED. Persisting first makes every
-	// write the woken handler tries a version conflict.
+	// The local run is halted, then the CANCELED write lands, then the
+	// run is woken. Waking it first let the handler's next write land on
+	// the unchanged task, so a handler that completed on wake won the
+	// race: the client got -32002 and the task stayed COMPLETED. Halting
+	// refuses the run's writes before they reach the store, so at most
+	// the one write already in flight can beat ours. A run that settles
+	// while halted finalizes as CANCELED; a re-read that finds that is
+	// the cancellation we asked for, not -32002.
 	const attempts = 8
+	var (
+		halted     *run // the local run this call found or left halted
+		haltsOwner bool // this call set the flag, so it closes cancelDone
+	)
+	defer func() {
+		if halted != nil {
+			if haltsOwner {
+				close(halted.cancelDone)
+			}
+			s.wakeRun(halted)
+		}
+	}()
 	for range attempts {
 		rec, err := s.store.GetTask(context.Background(), owner, p.ID)
 		if errors.Is(err, ErrNotFound) {
@@ -1318,9 +1356,22 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 			s.internalErr(w, req.ID, "get task for cancel", err)
 			return
 		}
-		if state := rec.Task.Status.State; state.Terminal() {
+		state := rec.Task.Status.State
+		if state == TaskStateCanceled && halted != nil {
+			task := cloneTask(rec.Task)
+			s.writeResult(w, req.ID, SendMessageResponse{Task: &task}, nil)
+			return
+		}
+		if state.Terminal() {
 			s.writeResult(w, req.ID, nil, ErrTaskNotCancelable(p.ID, state))
 			return
+		}
+		// Owner verified by the scoped read above: halt the local run
+		// so its writes stop before ours goes in. The deferred wake
+		// cancels its context on every exit from here.
+		if rn := s.runFor(p.ID); rn != nil && halted == nil {
+			haltsOwner = rn.halted.CompareAndSwap(false, true)
+			halted = rn
 		}
 		cand := rec.Clone()
 		cand.Task.Status = TaskStatus{State: TaskStateCanceled, Timestamp: s.stamp()}
@@ -1330,11 +1381,6 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 			}
 			s.internalErr(w, req.ID, "cancel task", err)
 			return
-		}
-		// Owner verified by the scoped read above and the task now
-		// stored CANCELED: wake the local run so the handler stops.
-		if rn := s.runFor(p.ID); rn != nil {
-			rn.cancel()
 		}
 		ev := StreamResponse{StatusUpdate: &TaskStatusUpdateEvent{
 			TaskID:    cand.Task.ID,
