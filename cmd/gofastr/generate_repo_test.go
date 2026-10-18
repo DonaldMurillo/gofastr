@@ -86,6 +86,21 @@ func TestFieldNamedPatchFailsGenerate(t *testing.T) {
 	}
 }
 
+// A NoQuery field has no column var, so it reserves no name: the enum
+// value "title" keeps its constant beside a no_query status_title.
+func TestNoQueryFieldReservesNoName(t *testing.T) {
+	out := renderEntityEnums(framework.EntityDeclaration{
+		Name: "posts",
+		Fields: []framework.FieldDeclaration{
+			{Name: "status", Type: "enum", Values: []string{"title"}},
+			{Name: "status_title", Type: "string", NoQuery: true},
+		},
+	})
+	if !strings.Contains(out, `PostsStatusTitle PostsStatusValue = "title"`) {
+		t.Fatalf("constant missing:\n%s", out)
+	}
+}
+
 // The write payloads leave out what the CRUD path never takes from them:
 // an auto-generated column (create overwrites it, update skips it), and
 // on a patch the owner field and the tenant column (update skips both).
@@ -114,7 +129,7 @@ func TestWriteShapesDropServerFields(t *testing.T) {
 		if !strings.Contains(body, "Body string `json:\"body\"`") {
 			t.Errorf("%s: required field without default is not a value:\n%s", name, body)
 		}
-		if !strings.Contains(body, "Kind *") {
+		if !strings.Contains(body, "Kind *") || !strings.Contains(body, `json:"kind,omitempty"`) {
 			t.Errorf("%s: required field with default is not a pointer:\n%s", name, body)
 		}
 		if strings.Contains(body, "Ref ") {
@@ -130,6 +145,25 @@ func TestWriteShapesDropServerFields(t *testing.T) {
 		if !strings.Contains(body, "Body *string") {
 			t.Errorf("%s lost an ordinary field:\n%s", name, body)
 		}
+	}
+
+	// The JS SDK's d.ts follows the same rules.
+	spec, err := buildSDKSpec([]framework.EntityDeclaration{decl}, &sdkOptions{name: "myapp", sdkVersion: "1.0.0"})
+	if err != nil {
+		t.Fatalf("buildSDKSpec: %v", err)
+	}
+	var dts string
+	for _, f := range renderSDKJSFiles(spec) {
+		if f.name == "client.d.ts" {
+			dts = f.content
+		}
+	}
+	tsInput := shapeBody(t, dts, "export interface NotesInput {")
+	if !strings.Contains(tsInput, "body: string") || !strings.Contains(tsInput, "kind?:") || strings.Contains(tsInput, "ref") {
+		t.Errorf("TS NotesInput: want body required, kind optional, no ref:\n%s", tsInput)
+	}
+	if want := `export type NotesPatch = Partial<Omit<NotesInput, "userId" | "tenantId">>;`; !strings.Contains(dts, want) {
+		t.Errorf("client.d.ts is missing %q:\n%s", want, shapeBody(t, dts, "export type NotesPatch"))
 	}
 }
 
@@ -240,6 +274,33 @@ func TestGeneratedRepo(t *testing.T) {
 	if err != nil || again.ID != p.ID {
 		t.Fatalf("first or create = %+v, %v", again, err)
 	}
+	fresh, err := posts.FirstOrCreate(ctx, entities.PostsInput{Title: "new", Published: new(false)}, entities.PostsTitle.Eq("new"))
+	if err != nil || fresh.ID == "" || fresh.ID == p.ID || fresh.Published {
+		t.Fatalf("first or create on a miss = %+v, %v", fresh, err)
+	}
+
+	// Cascade writes: children ride the payloads. A nested child with an
+	// ID updates that child; one without creates it.
+	parent, err := posts.Create(ctx, entities.PostsInput{Title: "parent",
+		Comments: []entities.CommentsInput{{Body: "c1"}, {Body: "c2"}}})
+	if err != nil {
+		t.Fatalf("cascade create: %v", err)
+	}
+	comments := entities.NewCommentsRepo(app)
+	kids, err := comments.Query().Where(entities.CommentsPostId.Eq(parent.ID)).Order(entities.CommentsBody.Asc()).Find(ctx)
+	if err != nil || len(kids) != 2 || kids[0].Body != "c1" {
+		t.Fatalf("cascaded children = %+v, %v", kids, err)
+	}
+	if _, err := posts.Update(ctx, parent.ID, entities.PostsPatch{Comments: []entities.PostsCommentsNested{
+		{ID: kids[0].ID, CommentsPatch: entities.CommentsPatch{Body: new("c1 edited")}},
+		{CommentsPatch: entities.CommentsPatch{Body: new("c3")}},
+	}}); err != nil {
+		t.Fatalf("cascade update: %v", err)
+	}
+	kids, err = comments.Query().Where(entities.CommentsPostId.Eq(parent.ID)).Order(entities.CommentsBody.Asc()).Find(ctx)
+	if err != nil || len(kids) != 3 || kids[0].Body != "c1 edited" || kids[2].Body != "c3" {
+		t.Fatalf("children after cascade update = %+v, %v", kids, err)
+	}
 
 	// Moves: Transition runs every move, the System one included.
 	invoices := entities.NewInvoicesRepo(app)
@@ -313,6 +374,22 @@ entities:
         values: [note, page]
         required: true
         default: note
+    relations:
+      - type: has_many
+        name: comments
+        entity: comments
+        foreign_key: post_id
+        cascade_write: true
+  - name: comments
+    crud: true
+    public: true
+    timestamps: false
+    fields:
+      - name: body
+        type: string
+        required: true
+      - name: post_id
+        type: uuid
   - name: invoices
     crud: true
     public: true

@@ -223,8 +223,8 @@ func entityMoveKeys(decl framework.EntityDeclaration) []string {
 type identConst struct{ name, value string }
 
 // entityFileNames counts the top-level names one entity file declares
-// besides its enum and move constants: the model, the write shapes, the
-// repo and its constructor, the column vars and include constants, the
+// besides its enum and move constants: the model, the write shapes and
+// their nested cascade types, the repo and its constructor, the column vars and include constants, the
 // value and move types, and the event and registration funcs.
 func entityFileNames(decl framework.EntityDeclaration) map[string]int {
 	struct_ := toCamelCase(decl.Name)
@@ -238,7 +238,8 @@ func entityFileNames(decl framework.EntityDeclaration) map[string]int {
 		names[name]++
 	}
 	for _, field := range decl.Fields {
-		if field.Name != "id" {
+		// renderEntityColumns emits no column var for id or a NoQuery field.
+		if field.Name != "id" && !field.NoQuery {
 			names[struct_+toCamelCase(field.Name)]++
 		}
 		if typ := enumValueType(struct_, field); typ != "" {
@@ -247,6 +248,9 @@ func entityFileNames(decl framework.EntityDeclaration) map[string]int {
 	}
 	for _, rel := range decl.Relations {
 		names[struct_+"Incl"+toCamelCase(rel.Name)]++
+	}
+	for _, rel := range cascadeRelations(decl) {
+		names[struct_+toCamelCase(rel.Name)+"Nested"]++
 	}
 	if len(entityMoveKeys(decl)) > 0 {
 		names[struct_+"Move"]++
@@ -373,11 +377,15 @@ func renderEntityWriteShapes(decl framework.EntityDeclaration) string {
 			fmt.Fprintf(&sb, "\t%s *%s `json:\"%s,omitempty\"`\n", toCamelCase(field.Name), typ, tag)
 		}
 	}
+	for _, rel := range cascadeRelations(decl) {
+		fmt.Fprintf(&sb, "\t%s %s%sInput `json:\"%s,omitempty\"`\n", toCamelCase(rel.Name),
+			cascadeArity(rel), toCamelCase(rel.Entity), toCamelJSON(rel.Name))
+	}
 	sb.WriteString("}\n\n")
 	fmt.Fprintf(&sb, "// %sPatch is the update payload for %sRepo: a nil field is left as\n"+
 		"// stored, and a pointer to false, 0 or \"\" writes it to a bool, int,\n"+
-		"// float, string or text field. \"\" for any other type counts as absent,\n"+
-		"// so a patch cannot clear a date, uuid or enum.\n", struct_, struct_)
+		"// float, string or text field. \"\" for any other type is not a value:\n"+
+		"// absent on an optional field, a validation error on a required one.\n", struct_, struct_)
 	fmt.Fprintf(&sb, "type %sPatch struct {\n", struct_)
 	for _, field := range decl.Fields {
 		if dropUpdate(field) {
@@ -386,8 +394,45 @@ func renderEntityWriteShapes(decl framework.EntityDeclaration) string {
 		fmt.Fprintf(&sb, "\t%s *%s `json:\"%s,omitempty\"`\n",
 			toCamelCase(field.Name), entityFieldGoType(struct_, field), toCamelJSON(field.Name))
 	}
+	for _, rel := range cascadeRelations(decl) {
+		fmt.Fprintf(&sb, "\t%s %s%s%sNested `json:\"%s,omitempty\"`\n", toCamelCase(rel.Name),
+			cascadeArity(rel), struct_, toCamelCase(rel.Name), toCamelJSON(rel.Name))
+	}
 	sb.WriteString("}\n\n")
+	for _, rel := range cascadeRelations(decl) {
+		nested := struct_ + toCamelCase(rel.Name) + "Nested"
+		empty := "an empty ID creates one"
+		if rel.Type == framework.RelHasOne {
+			empty = "an empty ID updates the existing child, or creates one"
+		}
+		fmt.Fprintf(&sb, "// %s is the %s child in a %sPatch: a set ID updates that\n"+
+			"// child, and %s.\ntype %s struct {\n\tID string `json:\"id,omitempty\"`\n\t%sPatch\n}\n\n",
+			nested, goCommentSafe(rel.Name), struct_, empty, nested, toCamelCase(rel.Entity))
+	}
 	return sb.String()
+}
+
+// cascadeRelations lists the relations whose children the write payloads
+// carry: cascade_write on a has_one, has_many or belongs_to, the three the
+// CRUD path writes through (crud/cascade_write.go). The model struct
+// carried them before the payloads replaced it as the write shape.
+func cascadeRelations(decl framework.EntityDeclaration) []framework.Relation {
+	var out []framework.Relation
+	for _, rel := range decl.Relations {
+		if rel.CascadeWrite && rel.Type != framework.RelManyToMany {
+			out = append(out, rel)
+		}
+	}
+	return out
+}
+
+// cascadeArity is the Go type prefix for a cascade relation's children:
+// a slice for has_many, a pointer for a single child.
+func cascadeArity(rel framework.Relation) string {
+	if rel.Type == framework.RelHasMany {
+		return "[]"
+	}
+	return "*"
 }
 
 // renderEntityRepo emits one entity's typed repository, wrapping a

@@ -56,8 +56,8 @@ type InvoicesInput struct {
 
 // InvoicesPatch is the update payload for InvoicesRepo: a nil field is left as
 // stored, and a pointer to false, 0 or "" writes it to a bool, int,
-// float, string or text field. "" for any other type counts as absent,
-// so a patch cannot clear a date, uuid or enum.
+// float, string or text field. "" for any other type is not a value:
+// absent on an optional field, a validation error on a required one.
 type InvoicesPatch struct {
 	CustomerId *string              `json:"customerId,omitempty"`
 	Number     *string              `json:"number,omitempty"`

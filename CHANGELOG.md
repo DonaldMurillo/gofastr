@@ -37,13 +37,25 @@ of the new type names.
   one with no default is a pointer) and `<Entity>Patch` (`Update`,
   `BatchUpdate`; every field a pointer), and return the stored row.
   Neither carries an `auto_generate` column, and the patch leaves out
-  the owner and tenant columns, which an update never sets. Entity files
-  generated before this keep the old repo until regenerated.
+  the owner and tenant columns, which an update never sets. A
+  `cascade_write` relation keeps its children: `PostsInput.Comments`
+  takes `[]CommentsInput`, and `PostsPatch.Comments` takes
+  `[]PostsCommentsNested`, a `CommentsPatch` plus the `ID` of the child
+  to update. Entity files generated before this keep the old repo until
+  regenerated.
 - **The generated Go client's create and PUT send zero values.** Its
   `<Entity>Input` had the same `omitempty` value fields, so
   `CreatePosts` could not send `published: false` over a `true` default.
   Fields are now pointers, except a required field with no default.
   Its patches also drop `auto_generate`, owner and tenant columns.
+- **The JS SDK and `/openapi.json` stop requiring defaulted fields.** A
+  required field with a default may be left out of a write, and the
+  server takes the default. The `client.d.ts` `Input` marks it optional,
+  and the create and PUT request schemas leave it out of `required` (the
+  response schema keeps it). Update bodies in both, and the `d.ts`
+  `Patch`, no longer offer the owner field or the `multi_tenant` tenant
+  column, which an update never sets, and `Input` no longer offers an
+  `auto_generate` column.
 
 ## [0.90.0] - 2026-10-18
 

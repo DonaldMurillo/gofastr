@@ -1506,8 +1506,15 @@ live, err := posts.Query().Where(entities.PostsStatus.Eq(entities.PostsStatusLiv
 - `PostsPatch` is the update payload, taken by `Update` and
   `BatchUpdate`. Every field is a pointer, and nil leaves the field as
   stored. A pointer to `false`, `0` or `""` writes it to a bool, int,
-  float, string or text field. For any other type `""` counts as
-  absent, so a patch cannot clear a date, uuid or enum.
+  float, string or text field. For any other type `""` is not a value:
+  an optional field treats it as absent, and a required one fails
+  validation. A patch cannot clear a date, uuid or enum.
+- A `cascade_write` relation (`has_one`, `has_many`, `belongs_to`) puts
+  its children in both payloads. `PostsInput.Comments` takes
+  `[]CommentsInput`; `PostsPatch.Comments` takes
+  `[]PostsCommentsNested`, which embeds `CommentsPatch` beside an `ID`.
+  A set ID updates that child and an empty one creates a child (for a
+  `has_one`, it updates the existing child if there is one).
 - Every write returns the row as stored, server-generated fields
   included.
 - An enum field with declared values gets a value type and one constant
@@ -1630,7 +1637,8 @@ PATCH must distinguish "field absent" from "field set to its zero value"
 struct whose fields are pointers (`*bool`, `*int`, …): a `nil` field is
 omitted from the body (left untouched), while a non-nil pointer sets the
 field even when it points at a zero value. `Update<Entity>` and
-`Create<Entity>` keep the value-typed `<Entity>Input`.
+`Create<Entity>` take `<Entity>Input`, whose fields are pointers too,
+except a required field with no default.
 
 **Integer precision on the wire.** JSON request bodies are decoded with
 exact number handling, so an integer literal sent to an `Int` column

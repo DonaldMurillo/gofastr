@@ -66,7 +66,10 @@ Two plain files, no npm packaging, no build step; publishing to a
 registry is your business, not the generator's (add your own
 package.json if you want it on npm). `client.js` is directly importable
 from disk **or straight from the running app's URL**; `client.d.ts` types
-it for TypeScript when the files sit side by side.
+it for TypeScript when the files sit side by side. Its `<Entity>Input`
+marks a field optional unless it is required with no default, and
+`<Entity>Patch` is a `Partial` of it without the state, owner and
+tenant fields an update never sets.
 
 ```js
 import { Client, ApiError, postsFields } from "./client.js";
