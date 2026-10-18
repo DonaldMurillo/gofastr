@@ -259,16 +259,24 @@ bin/
 	cmd.Dir = name
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		info("Could not run 'go mod init': %v", err)
+	modInit := cmd.Run()
+	if modInit != nil {
+		info("Could not run 'go mod init': %v", modInit)
 		info("You may need to run 'go mod init %s' manually.", modulePath)
 	}
+	// go mod init wrote the local toolchain's go line; state the
+	// framework's instead, and pin the release matching this CLI. A
+	// release build still fails loudly when there is no go.mod to pin.
 	pinnedVersion := installedFrameworkVersion()
-	if pinnedVersion != "" {
-		edit := exec.Command("go", "mod", "edit", "-require="+gofastrModule+"@"+pinnedVersion)
+	if modInit == nil || pinnedVersion != "" {
+		args := []string{"mod", "edit", "-go=" + frameworkGoDirective, "-toolchain=" + frameworkToolchain}
+		if pinnedVersion != "" {
+			args = append(args, "-require="+gofastrModule+"@"+pinnedVersion)
+		}
+		edit := exec.Command("go", args...)
 		edit.Dir = name
 		if out, err := edit.CombinedOutput(); err != nil {
-			fail("Could not pin GoFastr %s in go.mod: %v", pinnedVersion, err)
+			fail("Could not set GoFastr's go version and pin in go.mod: %v", err)
 			if msg := strings.TrimSpace(string(out)); msg != "" {
 				info("%s", msg)
 			}
@@ -355,10 +363,20 @@ Flags:
   --reinit         Refresh AI onboarding files in an existing project
   --force          With --reinit, overwrite customized onboarding files
 
-The generated go.mod pins the GoFastr release matching this CLI.
+The generated go.mod pins the GoFastr release matching this CLI and
+carries GoFastr's go and toolchain lines, not the local Go version.
 Local development builds cannot infer a release and print the exact
 go get command that must be run before go mod tidy.`)
 }
+
+// frameworkGoDirective and frameworkToolchain are the go and toolchain
+// lines of GoFastr's own go.mod (TestFrameworkGoMatchesGoMod holds them
+// to it). go mod init writes the local toolchain's version instead, which
+// can be older than the framework needs.
+const (
+	frameworkGoDirective = "1.27.0"
+	frameworkToolchain   = "go1.27.2"
+)
 
 // installedFrameworkVersion returns the exact module version represented by
 // this CLI. Release binaries may inject version via ldflags; `go install
@@ -963,7 +981,21 @@ func validateProjectName(name string) error {
 	if name[0] == '-' || name[0] == '_' {
 		return fmt.Errorf("name must start with a letter or digit")
 	}
+	if windowsDeviceName(name) {
+		return fmt.Errorf("%q is a reserved device name on Windows", name)
+	}
 	return nil
+}
+
+// windowsDeviceName reports whether name is one Windows reserves in every
+// directory (con, prn, aux, nul, com0-9, lpt0-9). The validator has
+// already limited name to lowercase ASCII.
+func windowsDeviceName(name string) bool {
+	switch name {
+	case "con", "prn", "aux", "nul":
+		return true
+	}
+	return len(name) == 4 && (name[:3] == "com" || name[:3] == "lpt") && name[3] >= '0' && name[3] <= '9'
 }
 
 // writeCLAUDEmd writes a thin CLAUDE.md that points Claude Code at the

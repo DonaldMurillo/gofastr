@@ -69,6 +69,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   its own against its per-platform theme in its tests.
 
 ### Fixed
+- **A late answer to an older form submit no longer undoes the newer
+  one.** A form with no `data-cui-rpc-signal` has no abort, so two quick
+  submits raced: a slow refusal landing after a newer success painted
+  its errors, and a slow success cleared a newer refusal's errors or
+  reset what the user had typed since. Only a form's newest request now
+  touches the page, whether the form or a button inside it sent it.
+- **`gofastr init` writes GoFastr's `go` and `toolchain` lines.** The
+  scaffolded `go.mod` carried whatever `go mod init` wrote, the local Go
+  version (`go 1.25.5` in one report), below the `go 1.27.0` the
+  framework needs.
+- **`gofastr init` refuses Windows device names.** `con`, `nul`, `aux`,
+  `prn`, `com0`–`com9` and `lpt0`–`lpt9` passed the name check; on
+  Windows `os.Stat("nul")` succeeds, so `init nul` reported "already
+  exists". They are refused on every OS, so a project made on Linux
+  still checks out on Windows.
 - **Colour fallbacks name the current palette.** About 350 across
   `framework/ui`, `framework/uihost`, `core-ui` and the batteries still
   named the colours from before the contrast pass, such as

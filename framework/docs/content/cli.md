@@ -31,6 +31,10 @@ each command to the doc that covers it.
   no Go code or git changes. A released CLI pins the generated `go.mod` to its
   matching GoFastr version. A local development build prints the exact
   `go get …@vX.Y.Z` step because it cannot infer a release safely.
+  Either way the `go` and `toolchain` lines are GoFastr's own, not the
+  local Go version that `go mod init` writes. A project name is lowercase
+  letters, digits, `-` and `_`, and never a Windows device name (`con`,
+  `nul`, `aux`, `prn`, `com0`–`com9`, `lpt0`–`lpt9`), on every OS.
 - `gofastr new handler <name>` / `gofastr new route <path>`: scaffold
   one handler or route registration into an existing app.
 - `gofastr agents init|sync|skill`: generate or refresh `AGENTS.md`
