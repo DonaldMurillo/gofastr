@@ -57,6 +57,38 @@ func TestRunInitPinsFrameworkToCLIRelease(t *testing.T) {
 	}
 }
 
+// go mod init writes the local toolchain's version, which can sit below
+// the framework's own go directive (go 1.25.5 against 1.27.0). The
+// scaffold states the framework's minimum and toolchain instead.
+func TestInitGoModNamesFrameworkGo(t *testing.T) {
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	covT_capStdout(t, func() { runInit([]string{"golined", "--no-entity"}) })
+	mod, err := os.ReadFile(filepath.Join(dir, "golined", "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"\ngo " + frameworkGoDirective + "\n", "\ntoolchain " + frameworkToolchain + "\n"} {
+		if !strings.Contains(string(mod), want) {
+			t.Errorf("scaffold go.mod missing %q:\n%s", strings.TrimSpace(want), mod)
+		}
+	}
+}
+
+// The scaffold's go and toolchain lines are constants; the repo's
+// go.mod is the source they must match.
+func TestFrameworkGoMatchesGoMod(t *testing.T) {
+	mod, err := os.ReadFile(filepath.Join("..", "..", "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"\ngo " + frameworkGoDirective + "\n", "\ntoolchain " + frameworkToolchain + "\n"} {
+		if !strings.Contains(string(mod), want) {
+			t.Errorf("go.mod has no %q line; update the init constants", strings.TrimSpace(want))
+		}
+	}
+}
+
 func TestNormalizeFrameworkVersion(t *testing.T) {
 	for _, tc := range []struct {
 		in, want string
@@ -143,6 +175,22 @@ func TestValidateProjectName(t *testing.T) {
 	for _, n := range bad {
 		if err := validateProjectName(n); err == nil {
 			t.Errorf("validateProjectName(%q) = nil, want error", n)
+		}
+	}
+}
+
+// Windows reserves these device names in every directory: os.Stat("nul")
+// succeeds there, so init reported "already exists". Refused on every OS
+// so a project made on Linux still checks out on Windows.
+func TestInitRefusesWindowsDeviceNames(t *testing.T) {
+	for _, n := range []string{"con", "prn", "aux", "nul", "com1", "com9", "lpt1", "lpt9"} {
+		if err := validateProjectName(n); err == nil {
+			t.Errorf("validateProjectName(%q) = nil, want error", n)
+		}
+	}
+	for _, n := range []string{"console", "com10", "coma", "auxapp", "lpt"} {
+		if err := validateProjectName(n); err != nil {
+			t.Errorf("validateProjectName(%q) = %v, want nil", n, err)
 		}
 	}
 }
