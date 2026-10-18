@@ -23,7 +23,7 @@ func TestLocalAndMemoryServeRanges(t *testing.T) {
 	}
 
 	for name, s := range map[string]Storage{
-		"local":  NewLocalStorage(dir),
+		"local":  newTestLocalStorage(t, dir),
 		"memory": mem,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -53,7 +53,7 @@ func TestLocalAndMemoryServeRanges(t *testing.T) {
 // GetRange must run the same key validation as Get. A capability that skipped
 // it would be a path-traversal hole with a performance justification.
 func TestGetRangeRejectsTraversal(t *testing.T) {
-	ls := NewLocalStorage(t.TempDir())
+	ls := newTestLocalStorage(t, t.TempDir())
 	if _, err := ls.GetRange(context.Background(), "../../etc/passwd"); err == nil {
 		t.Fatal("SECURITY: LocalStorage.GetRange accepted a traversal key")
 	}

@@ -272,9 +272,9 @@ func TestP9LoadingFastPaintsNothingE2E(t *testing.T) {
 }
 
 // TestP9LoadingMinHoldE2E: /slow/300 answers at ~300ms; the toolbar's
-// loading content showed at ~150ms with Min=300ms, so the swap must be
-// HELD until ~450ms — at 350ms the spinner is still up even though the
-// response has landed.
+// loading content shows after 150ms and must remain shown for Min=300ms.
+// Measure its lifetime in the browser so module startup and CDP round
+// trips cannot move a wall-clock sample outside the hold interval.
 func TestP9LoadingMinHoldE2E(t *testing.T) {
 	srv := labServe(t)
 	browser := labBrowserCtx(t)
@@ -289,23 +289,37 @@ func TestP9LoadingMinHoldE2E(t *testing.T) {
 	); err != nil {
 		t.Fatalf("navigate: %v", err)
 	}
+	var heldMS float64
 	if err := chromedp.Run(tctx,
 		page.BringToFront(),
-		chromedp.Evaluate(`window.__gofastr.navigate('/slow/300')`, nil),
-		// Response lands ~300ms; sample at 350ms: held (spinner still
-		// shown), not applied.
-		chromedp.Sleep(350*time.Millisecond),
-	); err != nil {
-		t.Fatalf("navigate: %v", err)
-	}
-	text, state, _ := p9ToolbarProbe(t, tctx)
-	if state != "shown" || !strings.Contains(text, "Loading") {
-		t.Errorf("at 350ms (response held by Min) toolbar = (%q, %q), want the spinner still shown", text, state)
-	}
-	if err := chromedp.Run(tctx,
+		chromedp.Evaluate(`(() => {
+			const el = document.querySelector('[data-cui-outlet="l:shell#toolbar"]');
+			window.__minHold = { shown: 0, ended: 0, loading: false };
+			const observer = new MutationObserver(() => {
+				const sample = window.__minHold;
+				if (el.getAttribute('data-cui-loadstate') === 'shown') {
+					if (!sample.shown) sample.shown = performance.now();
+					sample.loading = el.textContent.includes('Loading');
+				} else if (sample.shown && !sample.ended) {
+					sample.ended = performance.now();
+					observer.disconnect();
+				}
+			});
+			observer.observe(el, { attributes: true, attributeFilter: ['data-cui-loadstate'] });
+			window.__gofastr.navigate('/slow/300');
+		})()`, nil),
 		chromedp.WaitVisible(`#lab-SCREEN-SLOW-300`, chromedp.ByQuery),
+		chromedp.Evaluate(`window.__minHold.loading && window.__minHold.ended
+			? window.__minHold.ended - window.__minHold.shown : -1`, &heldMS),
 	); err != nil {
 		t.Fatalf("settle: %v", err)
+	}
+	if heldMS < 0 {
+		t.Fatal("the toolbar spinner never completed its shown state")
+	}
+	// Allow one millisecond for MutationObserver delivery and timer rounding.
+	if heldMS < 299 {
+		t.Errorf("toolbar spinner remained shown for %.1fms, want its 300ms minimum", heldMS)
 	}
 	labState(t, tctx, "SCREEN-SLOW-300", "", "ASIDE-SLOW-300", "crumbs:/slow/300")
 }

@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // loginPageMaxAge is how long a spent sign-in page may sit in the
@@ -45,6 +47,10 @@ func (b *Battery) openWith(l layout, print bool) error {
 	f, err := os.CreateTemp(l.loginDir(), "open-*.html")
 	if err != nil {
 		return fmt.Errorf("service: write sign-in page: %w", err)
+	}
+	if err := fileperm.RestrictOpenFile(f); err != nil {
+		f.Close()
+		return fmt.Errorf("service: restrict sign-in page: %w", err)
 	}
 	if _, err := f.WriteString(signInPage(loginURL, resp.Token)); err != nil {
 		f.Close()

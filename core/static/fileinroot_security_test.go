@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/fstest"
+
+	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 )
 
 // Pins the fallback containment check the 2026-09-04 red-probe round
@@ -70,7 +72,7 @@ func TestFileInRootFallbacks(t *testing.T) {
 	if err := os.WriteFile(gone, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	g, err := os.Open(gone)
+	g, err := atomicfile.Open(gone)
 	if err != nil {
 		t.Fatal(err)
 	}

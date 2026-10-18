@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"net"
 	"net/http"
@@ -78,6 +79,9 @@ func e2eCaptureServerLog(t *testing.T, srv *exec.Cmd, dir string) {
 			t.Errorf("read server log: %v", err)
 			return
 		}
+		if t.Failed() {
+			t.Logf("server output:\n%s", data)
+		}
 		for _, line := range strings.Split(string(data), "\n") {
 			if strings.Contains(line, "component render panic:") {
 				t.Errorf("server render failure: %s", line)
@@ -105,12 +109,21 @@ func e2eFreeAddr(t *testing.T) string {
 
 func e2eWaitReady(t *testing.T, base string) {
 	t.Helper()
-	for i := 0; i < 100; i++ {
-		if r, err := e2eClient.Get(base + "/"); err == nil {
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	for ctx.Err() == nil {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r, err := e2eClient.Do(req); err == nil {
 			r.Body.Close()
 			return
 		}
-		time.Sleep(100 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+		case <-time.After(100 * time.Millisecond):
+		}
 	}
 	t.Fatal("server did not become ready")
 }

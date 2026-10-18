@@ -13,6 +13,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/ids"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // RedactLevel controls how aggressively the export bundle redacts.
@@ -63,7 +64,7 @@ func (e *ExportBundle) Write(ctx context.Context) (string, error) {
 	// 0644 tmp (operator re-export, restored backup, umask drift)
 	// otherwise keeps the bundle world-readable while the zip streams
 	// into it (writeSecretFile's grammar).
-	if err := f.Chmod(0o600); err != nil {
+	if err := fileperm.RestrictOpenFile(f); err != nil {
 		_ = f.Close()
 		return "", err
 	}

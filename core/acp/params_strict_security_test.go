@@ -113,7 +113,7 @@ func TestACPParamsRedRefuseFoldedKeys(t *testing.T) {
 		}
 		select {
 		case cwd := <-invoked:
-			if cwd != "/tmp/safe" {
+			if cwd != testAbsoluteCWD("/tmp/safe") {
 				t.Errorf("SECURITY: [acp-params-lenient] clean params decoded to the wrong cwd %q", cwd)
 			}
 		default:

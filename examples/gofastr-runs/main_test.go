@@ -130,6 +130,7 @@ func newTestApp(t *testing.T) *framework.App {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = app.DB.Close() })
 	return app
 }
 

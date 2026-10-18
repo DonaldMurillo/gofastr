@@ -56,7 +56,7 @@ func TestSanitize_NotHiddenAfterSanitize(t *testing.T) {
 func TestLocalStorage_PartialWriteCleanup(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	s := upload.NewLocalStorage(dir)
+	s := newTestLocalStorage(t, dir)
 
 	// Reader that errors after a chunk to force a torn write.
 	r := io.MultiReader(
@@ -82,7 +82,7 @@ func (e *errReader) Read([]byte) (int, error) { return 0, e.err }
 func TestLocalStorage_GetMissingScrubsPath(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	s := upload.NewLocalStorage(dir)
+	s := newTestLocalStorage(t, dir)
 
 	_, err := s.Get(context.Background(), "does/not/exist.bin")
 	if err == nil {
@@ -116,7 +116,7 @@ func TestDeleteExistsLeakNoAbsPath(t *testing.T) {
 	t.Parallel()
 
 	base := t.TempDir()
-	store := upload.NewLocalStorage(base)
+	store := newTestLocalStorage(t, base)
 	ctx := context.Background()
 
 	sub := filepath.Join(base, "sub")
@@ -161,7 +161,7 @@ func TestLocalStorage_SaveRestrictsFilePermissions(t *testing.T) {
 	requirePOSIXFileModes(t)
 	t.Parallel()
 	dir := t.TempDir()
-	s := upload.NewLocalStorage(dir)
+	s := newTestLocalStorage(t, dir)
 
 	if err := s.Save(context.Background(), "tenant-a/private.txt", strings.NewReader("secret")); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -181,7 +181,7 @@ func TestLocalStorage_SaveRestrictsDirectoryPermissions(t *testing.T) {
 	requirePOSIXFileModes(t)
 	t.Parallel()
 	dir := t.TempDir()
-	s := upload.NewLocalStorage(dir)
+	s := newTestLocalStorage(t, dir)
 
 	if err := s.Save(context.Background(), "tenant-a/nested/private.txt", strings.NewReader("secret")); err != nil {
 		t.Fatalf("Save: %v", err)

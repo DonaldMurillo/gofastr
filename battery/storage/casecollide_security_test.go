@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/battery/storage"
 	"github.com/DonaldMurillo/gofastr/core/upload"
 )
 
@@ -39,7 +38,7 @@ import (
 // distinct files there and the property holds trivially.
 func TestCaseFoldKeysStayDistinct(t *testing.T) {
 	base := t.TempDir()
-	ls := storage.NewLocalStorage(base)
+	ls := newTestLocalStorage(t, base)
 	ctx := context.Background()
 
 	// Probe the filesystem: if "A"/"a" and NFC/NFD name pairs do NOT

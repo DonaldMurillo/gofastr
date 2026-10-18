@@ -13,6 +13,10 @@ import (
 // only the leaf would leave an intermediate tenant/app directory inheriting a
 // broader DACL.
 func RestrictDirectoryTree(path, root string) error {
+	return restrictDirectoryTree(path, root, Restrict)
+}
+
+func restrictDirectoryTree(path, root string, restrict func(string, bool) error) error {
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return err
@@ -26,10 +30,10 @@ func RestrictDirectoryTree(path, root string) error {
 		return fmt.Errorf("path %q is outside root %q", path, root)
 	}
 	for current := absPath; ; current = filepath.Dir(current) {
-		if err := Restrict(current, true); err != nil {
+		if err := restrict(current, true); err != nil {
 			return err
 		}
-		if current == absRoot {
+		if strings.EqualFold(current, absRoot) {
 			return nil
 		}
 		parent := filepath.Dir(current)

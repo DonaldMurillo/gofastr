@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core/upload"
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
 )
 
 // Pins the auto-CRUD wiring for the 2026-09-04 metadata decision:
@@ -27,7 +27,7 @@ func TestMultipartCreateStripsMetadataWhenOptedIn(t *testing.T) {
 	for _, strip := range []bool{false, true} {
 		ch, _ := covUploadHandler(t)
 		dir := t.TempDir()
-		ch.Storage = upload.NewLocalStorage(dir)
+		ch.Storage = teststorage.New(t, dir)
 		ch.StripUploadMetadata = strip
 
 		var buf bytes.Buffer

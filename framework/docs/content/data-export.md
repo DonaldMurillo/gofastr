@@ -91,6 +91,8 @@ The export directory is created `0700` and every file in it is written
 `password_hash`, token hashes, and sessions on a real app — so it gets
 owner-only file permissions like every other secret-bearing artifact the
 framework writes.
+Existing export directories are tightened before writing. On Windows, the
+directory and files receive protected owner-only ACLs instead of Unix modes.
 
 ### Manifest
 

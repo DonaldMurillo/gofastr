@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 // Group 6: the fs allow-list and dialogs interplay. Handlers are
@@ -108,21 +110,12 @@ func TestFSWriteCreates0600AndRoundTrips(t *testing.T) {
 	if _, err := callMethod(t, b, "fs", "writeText", `{"path":`+quoteJSON(target)+`,"text":"hello"}`); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("written file mode = %o, want 0600", perm)
-	}
+	filepermtest.AssertOwnerOnly(t, target, 0o600)
 	// Overwrite keeps 0600.
 	if _, err := callMethod(t, b, "fs", "writeText", `{"path":`+quoteJSON(target)+`,"text":"again"}`); err != nil {
 		t.Fatal(err)
 	}
-	info, _ = os.Stat(target)
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("overwritten file mode = %o, want 0600", perm)
-	}
+	filepermtest.AssertOwnerOnly(t, target, 0o600)
 	res, err := callMethod(t, b, "fs", "readText", `{"path":`+quoteJSON(target)+`}`)
 	if err != nil {
 		t.Fatal(err)

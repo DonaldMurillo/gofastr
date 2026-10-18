@@ -189,7 +189,7 @@ func TestV087ExamplesStaySilent(t *testing.T) {
 	// Zero hits on a tree that did not type-check prove nothing: the
 	// attribute matcher needs the kit's Attrs type to see map keys.
 	if !res.TypeChecked || len(res.Broken) != 0 {
-		t.Fatalf("examples tree did not type-check: broken=%v", res.Broken)
+		t.Fatalf("examples tree did not type-check: broken=%v errors=%+v", res.Broken, res.Unexplained)
 	}
 	for i, n := range notes {
 		for _, h := range scantest.Hits(res, n) {

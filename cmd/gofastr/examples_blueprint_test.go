@@ -716,7 +716,7 @@ func generateAndCompileBlueprint(t *testing.T, blueprintPath, name string) (stri
 	// Compile the main package. The binary goes to a temp dir, never the
 	// worktree. This pulls in the generated entities package transitively;
 	// ./... below covers any package the main package does not import.
-	bin := filepath.Join(t.TempDir(), name+"-from-blueprint")
+	bin := testExecutablePath(filepath.Join(t.TempDir(), name+"-from-blueprint"))
 	build := exec.Command("go", "build", "-o", bin, ".")
 	build.Dir = appDir
 	if out, err := build.CombinedOutput(); err != nil {

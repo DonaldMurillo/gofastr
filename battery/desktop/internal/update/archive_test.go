@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 // buildZip assembles an in-memory zip from name -> (content, mode)
@@ -66,21 +68,9 @@ func TestExtractZipWritesBundle(t *testing.T) {
 		t.Fatalf("app = %q, want %q", app, want)
 	}
 	exe := filepath.Join(app, "Contents", "MacOS", "Notes")
-	info, err := os.Stat(exe)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o755 {
-		t.Fatalf("executable mode = %o, want 755", info.Mode().Perm())
-	}
+	filepermtest.AssertMode(t, exe, 0o755)
 	plist := filepath.Join(app, "Contents", "Info.plist")
-	pinfo, err := os.Stat(plist)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pinfo.Mode().Perm() != 0o644 {
-		t.Fatalf("plist mode = %o, want 644", pinfo.Mode().Perm())
-	}
+	filepermtest.AssertMode(t, plist, 0o644)
 	data, err := os.ReadFile(plist)
 	if err != nil || len(data) == 0 {
 		t.Fatalf("plist = %q, %v", data, err)

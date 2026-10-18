@@ -226,6 +226,10 @@ and points at the affected lines in your code (`--apply` runs the steps).
 Manual steps and the full guide:
 [upgrading](framework/docs/content/upgrading.md), or `gofastr docs upgrading`.
 
+With a released CLI, `gofastr init` pins a new app to the CLI's release and
+writes its minimum Go version and preferred toolchain into `go.mod`. See the
+[CLI reference](framework/docs/content/cli.md#scaffold) for project name rules.
+
 ## The code you don't write
 
 The framework emits routes, validation, migrations, pagination, uploads,

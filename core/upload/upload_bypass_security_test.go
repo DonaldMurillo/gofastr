@@ -133,7 +133,7 @@ func TestUploadBypass_SVGPayloads(t *testing.T) {
 			// Verify that SVG content can be saved via LocalStorage
 			// (it will be saved, the security boundary is serving, not storing)
 			tmpDir := t.TempDir()
-			storage := NewLocalStorage(tmpDir)
+			storage := newTestLocalStorage(t, tmpDir)
 			saveErr := storage.Save(context.Background(), "test.svg", strings.NewReader(tc.svgBody))
 			if saveErr != nil {
 				t.Logf("SVG save failed: %v", saveErr)

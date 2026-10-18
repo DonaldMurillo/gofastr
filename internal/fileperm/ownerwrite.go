@@ -4,6 +4,7 @@ import "os"
 
 // WriteOwnerOnly writes data to path as an owner-only (0600) file, on
 // CREATE and on OVERWRITE alike.
+// Windows uses a protected owner-only DACL; Unix uses mode 0600.
 //
 // os.WriteFile(path, data, 0o600) applies its mode only when it creates
 // the file: a pre-existing 0644 file (an operator chmod, a restored
@@ -25,7 +26,7 @@ func WriteOwnerOnly(path string, data []byte) error {
 // arms are reachable from a test through a handle in the wrong state,
 // without fault injection.
 func fillOwnerOnly(f *os.File, data []byte) error {
-	if err := f.Chmod(0o600); err != nil {
+	if err := RestrictOpenFile(f); err != nil {
 		f.Close()
 		return err
 	}
@@ -52,7 +53,7 @@ func SeedOwnerOnly(path string) error {
 // tightenAndClose is SeedOwnerOnly's handle half, split out for the
 // same reason as fillOwnerOnly.
 func tightenAndClose(f *os.File) error {
-	if err := f.Chmod(0o600); err != nil {
+	if err := RestrictOpenFile(f); err != nil {
 		f.Close()
 		return err
 	}

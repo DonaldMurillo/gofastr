@@ -17,7 +17,7 @@ func TestLocalStorage_DefaultFilesAreNotWorldReadable(t *testing.T) {
 	requirePOSIXPermissions(t)
 	t.Parallel()
 	dir := t.TempDir()
-	ls := storage.NewLocalStorage(dir)
+	ls := newTestLocalStorage(t, dir)
 
 	if err := ls.Save(context.Background(), "private/report.txt", strings.NewReader("secret")); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -37,7 +37,7 @@ func TestLocalStorage_DefaultDirectoriesAreNotWorldTraversable(t *testing.T) {
 	requirePOSIXPermissions(t)
 	t.Parallel()
 	dir := t.TempDir()
-	ls := storage.NewLocalStorage(dir)
+	ls := newTestLocalStorage(t, dir)
 
 	if err := ls.Save(context.Background(), "tenant-a/private/report.txt", strings.NewReader("secret")); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -86,7 +86,7 @@ func TestServeHandlerErrorContractBackends(t *testing.T) {
 		{
 			name: "battery LocalStorage missing key is 404",
 			make: func(t *testing.T) storage.Storage {
-				ls := storage.NewLocalStorage(t.TempDir())
+				ls := newTestLocalStorage(t, t.TempDir())
 				seed(t, ls)
 				return ls
 			},
@@ -106,7 +106,7 @@ func TestServeHandlerErrorContractBackends(t *testing.T) {
 		{
 			name: "battery LocalStorage traversal key is 400",
 			make: func(t *testing.T) storage.Storage {
-				ls := storage.NewLocalStorage(t.TempDir())
+				ls := newTestLocalStorage(t, t.TempDir())
 				seed(t, ls)
 				return ls
 			},
@@ -116,7 +116,7 @@ func TestServeHandlerErrorContractBackends(t *testing.T) {
 		{
 			name: "core/upload LocalStorage missing key is 404 (control)",
 			make: func(t *testing.T) storage.Storage {
-				ls := upload.NewLocalStorage(t.TempDir())
+				ls := newTestUploadStorage(t, t.TempDir())
 				seed(t, ls)
 				return ls
 			},

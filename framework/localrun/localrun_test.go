@@ -152,7 +152,7 @@ func TestTestChildrenDoNotRegister(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a child binary")
 	}
-	exe := filepath.Join(t.TempDir(), "child")
+	exe := filepath.Join(t.TempDir(), "child.exe")
 	if out, err := exec.Command("go", "build", "-o", exe, "./testdata/child").CombinedOutput(); err != nil {
 		t.Fatalf("build child: %v\n%s", err, out)
 	}

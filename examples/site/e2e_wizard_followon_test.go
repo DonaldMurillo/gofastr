@@ -42,12 +42,12 @@ func TestE2E_Wizard_HappyPath(t *testing.T) {
 	err := chromedp.Run(ctx,
 		// Navigate to /forms/wizard (site route).
 		chromedp.Navigate(base+"/forms/wizard"),
-		pageReady(),
+		chromedp.WaitVisible(`#wd-name`, chromedp.ByQuery),
 		// Step 1: fill name + email then Continue.
 		chromedp.SetValue(`#wd-name`, "Ada Lovelace", chromedp.ByQuery),
 		chromedp.SetValue(`#wd-email`, "ada@example.com", chromedp.ByQuery),
 		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
-		pageReady(),
+		chromedp.WaitVisible(`input[name="wd-theme"]`, chromedp.ByQuery),
 		// Step 2 visible: assert the step heading, indicator state.
 		chromedp.Evaluate(`JSON.stringify((() => {
 			var heading = document.querySelector('.fui-step-wizard__heading');
@@ -88,7 +88,7 @@ func TestE2E_Wizard_HappyPath(t *testing.T) {
 			return true;
 		})()`, new(bool)),
 		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
-		pageReady(),
+		chromedp.WaitVisible(`#wd-comments`, chromedp.ByQuery),
 		// Step 3: assert heading + Submit visible (no Continue).
 		chromedp.Evaluate(`JSON.stringify((() => {
 			var heading = document.querySelector('.fui-step-wizard__heading');
@@ -121,7 +121,7 @@ func TestE2E_Wizard_HappyPath(t *testing.T) {
 	err = chromedp.Run(ctx,
 		chromedp.SetValue(`#wd-comments`, "Looks good!", chromedp.ByQuery),
 		chromedp.Click(`button[name="wizard_action"][value="next"]`, chromedp.ByQuery),
-		pageReady(),
+		chromedp.WaitVisible(`body[data-wizard-confirm="true"]`, chromedp.ByQuery),
 	)
 	if err != nil {
 		t.Fatalf("chromedp submit: %v", err)

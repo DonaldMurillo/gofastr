@@ -28,6 +28,7 @@ func newHarness(t *testing.T) (*desktoptest.Harness, *Engine) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = app.DB.Close() })
 	return desktoptest.Run(t, app, d), eng
 }
 

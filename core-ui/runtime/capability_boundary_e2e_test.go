@@ -482,10 +482,13 @@ func TestWebMCPToolsAcrossDocumentBoundary(t *testing.T) {
 	// bar push, as an island link would): same document, tools intact.
 	// Reached through the runtime's own navigate() so no full load is
 	// involved; the scope sets are equal, so this must be a soft nav.
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr.navigate('/support/deep'); true`, nil)); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__boundaryNavDone = false; window.addEventListener('gofastr:navigate', () => { window.__boundaryNavDone = true; }, {once: true}); window.__gofastr.navigate('/support/deep'); true`, nil)); err != nil {
 		t.Fatal(err)
 	}
 	waitForURL(t, ctx, "/support/deep")
+	// The URL changes before the partial replaces its links. Wait for the
+	// swap before querying a node that the completed navigation will replace.
+	waitFor(t, ctx, `window.__boundaryNavDone === true`, 10*time.Second)
 	waitFor(t, ctx, `window.__sameDoc === true`, 10*time.Second)
 	waitForToolNames(t, ctx, "support_ping")
 

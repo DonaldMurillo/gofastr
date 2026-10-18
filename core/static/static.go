@@ -69,8 +69,9 @@ type Config struct {
 	// read-containment check in serveFile — those filesystems cannot
 	// carry symlinks, so there is nothing to contain.
 	resolvedRoot string
+	rootIdentity fs.FileInfo
 
-	// root, when non-nil, is an *os.Root opened once on resolvedRoot.
+	// root, when non-nil, is an *os.Root opened for one request.
 	// Every request-time open then goes through root.Open and is
 	// contained by the KERNEL: a symlink pointing outside the root is
 	// refused by the open itself, so there is no window between an
@@ -105,7 +106,8 @@ func Handler(config Config) http.Handler {
 		// between the resolve and this call — leaves resolvedRoot set,
 		// so serveFile falls back to the post-open containment check.
 		if root, rerr := os.OpenRoot(config.resolvedRoot); rerr == nil {
-			config.root = root
+			config.rootIdentity, _ = openedRootInfo(root)
+			_ = root.Close()
 		}
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -151,6 +153,32 @@ func Handler(config Config) http.Handler {
 			return
 		}
 
+		// Reopen the original directory for this request. No idle handle
+		// pins it on Windows, and identity checking refuses a replacement.
+		config := config
+		if config.rootIdentity != nil {
+			root, err := os.OpenRoot(config.resolvedRoot)
+			if err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					http.NotFound(w, r)
+				} else {
+					http.Error(w, "internal server error", http.StatusInternalServerError)
+				}
+				return
+			}
+			defer root.Close()
+			info, err := openedRootInfo(root)
+			if err != nil {
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			if !os.SameFile(config.rootIdentity, info) {
+				http.NotFound(w, r)
+				return
+			}
+			config.root = root
+		}
+
 		// Try to open and serve the file.
 		served := serveFile(w, r, config, reqPath)
 		if served {
@@ -170,6 +198,15 @@ func Handler(config Config) http.Handler {
 
 		http.NotFound(w, r)
 	})
+}
+
+func openedRootInfo(root *os.Root) (os.FileInfo, error) {
+	f, err := root.Open(".")
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return f.Stat()
 }
 
 // serveNotFoundFile answers a miss with config.NotFoundFile under status

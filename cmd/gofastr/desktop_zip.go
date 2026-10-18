@@ -17,6 +17,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
+	"strings"
 )
 
 // zipAppBundle writes the bundle at appDir to destZip with entry names
@@ -60,6 +62,17 @@ func zipAppBundle(appDir, destZip string) error {
 		// what makes two zips of the same tree byte-identical.
 		hdr := &zip.FileHeader{Name: name}
 		hdr.SetMode(fi.Mode())
+		if runtime.GOOS == "windows" {
+			// NTFS does not expose Unix execute bits. A macOS bundle still
+			// needs executable entries when archived on a Windows host.
+			mode := fs.FileMode(0o644)
+			if d.IsDir() {
+				mode = fs.ModeDir | 0o755
+			} else if strings.HasPrefix(filepath.ToSlash(rel), "Contents/MacOS/") {
+				mode = 0o755
+			}
+			hdr.SetMode(mode)
+		}
 		if !d.IsDir() {
 			// Deflate: the bundle is mostly one 20 MB binary, and a
 			// stored archive is the download the updater ships.
@@ -82,10 +95,12 @@ func zipAppBundle(appDir, destZip string) error {
 	})
 	if err != nil {
 		_ = zw.Close()
+		_ = f.Close()
 		_ = os.Remove(destZip)
 		return err
 	}
 	if err := zw.Close(); err != nil {
+		_ = f.Close()
 		_ = os.Remove(destZip)
 		return err
 	}
