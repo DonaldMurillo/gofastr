@@ -603,6 +603,13 @@ func bootGeneratedAppOn(t *testing.T, name, bin, appDir string, nextAddr func(*t
 	}
 }
 
+// portTaken reports a child that exited because its address was bound:
+// EADDRINUSE on Unix, WSAEADDRINUSE on Windows.
+func portTaken(output string) bool {
+	return strings.Contains(output, "address already in use") ||
+		strings.Contains(output, "Only one usage of each socket address")
+}
+
 // bootGeneratedAppOnce boots the app on addr. lostPort reports that the
 // child exited because addr was already bound.
 func bootGeneratedAppOnce(t *testing.T, name, bin, appDir, addr string) (baseURL string, output *syncBuffer, lostPort bool) {
@@ -643,7 +650,7 @@ func bootGeneratedAppOnce(t *testing.T, name, bin, appDir, addr string) (baseURL
 	for time.Now().Before(deadline) {
 		select {
 		case err := <-exited:
-			if strings.Contains(output.String(), "address already in use") {
+			if portTaken(output.String()) {
 				return "", output, true
 			}
 			t.Fatalf("generated %s app exited before serving (err=%v):\n%s", name, err, output.String())
@@ -662,6 +669,20 @@ func bootGeneratedAppOnce(t *testing.T, name, bin, appDir, addr string) (baseURL
 	}
 	t.Fatalf("generated %s app did not serve at %s within 90s:\n%s", name, baseURL, output.String())
 	return "", nil, false
+}
+
+// TestPortTakenMatchesBothOSes pins the lost-port match on the Unix and
+// the Windows wording, and that another early exit is not one.
+func TestPortTakenMatchesBothOSes(t *testing.T) {
+	for out, want := range map[string]bool{
+		"listen tcp 127.0.0.1:39815: bind: address already in use":                                                                       true,
+		"listen tcp 127.0.0.1:39815: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.": true,
+		"seed: validation failed": false,
+	} {
+		if got := portTaken(out); got != want {
+			t.Errorf("portTaken(%q) = %v, want %v", out, got, want)
+		}
+	}
 }
 
 // TestBootRetriesOnTakenPort pins the retry: the first port handed out

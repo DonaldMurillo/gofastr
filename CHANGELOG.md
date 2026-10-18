@@ -81,7 +81,8 @@ of the new type names.
   in a loop can beat it. A `SendMessage` waiting on the run answers
   CANCELED rather than its stale WORKING copy, and a subscriber gets
   the CANCELED event even when the handler returns before the cancel
-  publishes.
+  publishes. The cancel's store calls are bounded by the store timeout,
+  so a stalled database fails the cancel instead of holding the run.
 - **56 framework benchmarks ran again.** Their requests had no session,
   so generated CRUD answered 401 before the handler body ran, and the
   POST/PUT body helper ended its input with an error other than

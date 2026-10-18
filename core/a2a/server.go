@@ -710,7 +710,9 @@ func (s *Server) publish(owner string, rec *TaskRecord, ev StreamResponse) {
 	if rn := s.runFor(rec.Task.ID); rn != nil {
 		rn.bus.publish(ev)
 	}
-	cfgs, err := s.store.ListPushConfigs(context.Background(), owner, rec.Task.ID)
+	ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
+	cfgs, err := s.store.ListPushConfigs(ctx, owner, rec.Task.ID)
+	cancel()
 	if err != nil {
 		s.log.Error("a2a: list push configs", "taskId", rec.Task.ID, "err", err)
 		return
@@ -1333,6 +1335,10 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 	// the one write already in flight can beat ours. A run that settles
 	// while halted finalizes as CANCELED; a re-read that finds that is
 	// the cancellation we asked for, not -32002.
+	//
+	// A halted run's teardown waits for this call, so every store call
+	// below is bounded by storeOpTimeout: a wedged store fails the
+	// cancel instead of pinning the run.
 	const attempts = 8
 	var (
 		halted     *run // the local run this call found or left halted
@@ -1347,7 +1353,9 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 		}
 	}()
 	for range attempts {
-		rec, err := s.store.GetTask(context.Background(), owner, p.ID)
+		ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
+		rec, err := s.store.GetTask(ctx, owner, p.ID)
+		cancel()
 		if errors.Is(err, ErrNotFound) {
 			s.writeResult(w, req.ID, nil, ErrTaskNotFound(p.ID))
 			return
@@ -1375,7 +1383,10 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 		}
 		cand := rec.Clone()
 		cand.Task.Status = TaskStatus{State: TaskStateCanceled, Timestamp: s.stamp()}
-		if err := s.store.UpdateTask(context.Background(), cand); err != nil {
+		ctx, cancel = context.WithTimeout(context.Background(), storeOpTimeout)
+		err = s.store.UpdateTask(ctx, cand)
+		cancel()
+		if err != nil {
 			if errors.Is(err, ErrConflict) {
 				continue
 			}

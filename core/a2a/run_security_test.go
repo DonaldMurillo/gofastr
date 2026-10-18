@@ -797,3 +797,121 @@ func TestSubscriberSeesCancelOfHaltedRun(t *testing.T) {
 		}
 	}
 }
+
+// wedgedCancelStore blocks every CANCELED write until its context ends:
+// a database that stalls on the cancel. Other writes go through.
+type wedgedCancelStore struct{ Store }
+
+func (s *wedgedCancelStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
+	if rec.Task.Status.State == TaskStateCanceled {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return s.Store.UpdateTask(ctx, rec)
+}
+
+// TestWedgedCancelWriteReleasesRun pins that a cancel against a stalled
+// store gives up after storeOpTimeout. The halted run's teardown waits
+// for the cancel, so an unbounded write pinned the run, and the blocking
+// SendMessage waiting on it, for as long as the store stalled.
+func TestWedgedCancelWriteReleasesRun(t *testing.T) {
+	prev := storeOpTimeout
+	storeOpTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { storeOpTimeout = prev })
+
+	h := newHarness(t, func(c *Config) { c.Store = &wedgedCancelStore{Store: NewMemoryStore()} })
+	h.setHandler(func(ctx context.Context, tc TaskContext) error {
+		if err := tc.Working(TextPart("start")); err != nil {
+			return err
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	task := h.send("alice", map[string]any{"returnImmediately": true})
+	h.waitTask("alice", task.ID, TaskStateWorking, 2*time.Second)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.call("alice", MethodCancelTask, map[string]any{"id": task.ID})
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("CancelTask blocked past storeOpTimeout on a wedged store")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for h.srv.runFor(task.ID) != nil {
+		if time.Now().After(deadline) {
+			t.Fatal("the halted run was never released")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// pairedCancelStore holds the first two CANCELED writes until both have
+// arrived, so two cancels have each claimed the run before either write
+// lands.
+type pairedCancelStore struct {
+	Store
+	n       atomic.Int32
+	arrived chan struct{}
+}
+
+func (s *pairedCancelStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
+	if rec.Task.Status.State == TaskStateCanceled && s.n.Add(1) <= 2 {
+		s.arrived <- struct{}{}
+		for s.n.Load() < 2 {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	return s.Store.UpdateTask(ctx, rec)
+}
+
+// TestOverlappingCancelsCloseOnce pins haltsOwner: of two cancels that
+// both found the same running task, only the one that halted the run
+// closes cancelDone. Closing it from both panics; answering -32002 to
+// the second fails the cancel the client asked for.
+func TestOverlappingCancelsCloseOnce(t *testing.T) {
+	st := &pairedCancelStore{Store: NewMemoryStore(), arrived: make(chan struct{}, 2)}
+	h := newHarness(t, func(c *Config) { c.Store = st })
+	h.setHandler(func(ctx context.Context, tc TaskContext) error {
+		if err := tc.Working(TextPart("start")); err != nil {
+			return err
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	task := h.send("alice", map[string]any{"returnImmediately": true})
+	h.waitTask("alice", task.ID, TaskStateWorking, 2*time.Second)
+
+	errs := make(chan string, 2)
+	for range 2 {
+		go func() {
+			_, e, raw := h.call("alice", MethodCancelTask, map[string]any{"id": task.ID})
+			if e.Error != nil {
+				errs <- fmt.Sprintf("%+v body=%s", e.Error, raw)
+				return
+			}
+			errs <- ""
+		}()
+	}
+	for range 2 {
+		select {
+		case <-st.arrived:
+		case <-time.After(2 * time.Second):
+			t.Fatal("both cancels never reached the store")
+		}
+	}
+	for range 2 {
+		select {
+		case e := <-errs:
+			if e != "" {
+				t.Fatalf("cancel: %s", e)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("a cancel never returned")
+		}
+	}
+	h.waitTask("alice", task.ID, TaskStateCanceled, 2*time.Second)
+}
