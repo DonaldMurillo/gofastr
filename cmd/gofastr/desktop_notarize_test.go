@@ -76,7 +76,7 @@ func buildFixtureBundle(t *testing.T, name string, extra ...string) (string, int
 	args := append([]string{"--id", id, "--name", name, "--pkg", ".", "-o", out}, extra...)
 	var code int
 	captured := covT_capStdout(t, func() {
-		code = covT_capExit(t, func() { runDesktopBuild(args) })
+		code = covT_capExit(t, func() { runDesktopBuildForOS(args, "darwin") })
 	})
 	return captured, code, out
 }

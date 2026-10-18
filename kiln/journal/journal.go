@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 // Journal is an append-only event log. Implementations must be safe for
@@ -352,5 +354,13 @@ func openJournalFile(path string, flag int) (*os.File, error) {
 	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		return nil, fmt.Errorf("journal: %s is a symlink; refusing to write the journal through it", path)
 	}
-	return os.OpenFile(path, flag, 0o600)
+	f, err := os.OpenFile(path, flag, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := fileperm.RestrictOpenFile(f); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return f, nil
 }

@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/core/upload"
+
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -31,7 +33,7 @@ func TestMultipartImageFieldRefusesOtherTypes(t *testing.T) {
 	ent.SetDB(db)
 	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
 	dir := t.TempDir()
-	ch.Storage = upload.NewLocalStorage(dir)
+	ch.Storage = teststorage.New(t, dir)
 	pdf := []byte("%PDF-1.4\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<<>>\nendobj\n")
 
 	post := func(field string) int {

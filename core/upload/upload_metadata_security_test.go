@@ -32,7 +32,7 @@ func multipartBodyWithPartContentType(t *testing.T, filename, partContentType st
 
 func TestUploadHandler_MetadataMimeTypeUsesDetectedContent_NotPartHeaderDangerous(t *testing.T) {
 	dir := tmpDir(t)
-	handler := Handler(Config{Storage: NewLocalStorage(dir)})
+	handler := Handler(Config{Storage: newTestLocalStorage(t, dir)})
 
 	body, contentType := multipartBodyWithPartContentType(t, "note.txt", "image/png", []byte("plain text body"))
 	req := httptest.NewRequest(http.MethodPost, "/upload", body)
@@ -54,7 +54,7 @@ func TestUploadHandler_MetadataMimeTypeUsesDetectedContent_NotPartHeaderDangerou
 
 func TestUploadHandler_MetadataMimeTypeUsesDetectedContent_NotPartHeaderBenign(t *testing.T) {
 	dir := tmpDir(t)
-	handler := Handler(Config{Storage: NewLocalStorage(dir)})
+	handler := Handler(Config{Storage: newTestLocalStorage(t, dir)})
 
 	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0}
 	body, contentType := multipartBodyWithPartContentType(t, "image.png", "text/plain", png)

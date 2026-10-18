@@ -13,7 +13,6 @@ package main
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 )
@@ -31,8 +30,7 @@ func sectionLayerNav(t *testing.T, from, keep, click, probe string) (path string
 		chromedp.WaitReady(keep, chromedp.ByQuery),
 		waitModule("window.__gofastr && window.__gofastr.loadedModules"),
 		chromedp.Evaluate(`document.querySelector(`+jsString(keep)+`).__keepTag = 1`, nil),
-		chromedp.Evaluate(`document.querySelector(`+jsString(click)+`).click()`, nil),
-		chromedp.Sleep(900*time.Millisecond),
+		sectionLayerClick(click),
 		chromedp.Evaluate(`location.pathname`, &path),
 		chromedp.Evaluate(`(document.querySelector(`+jsString(keep)+`) || {}).__keepTag === 1`, &kept),
 		chromedp.Evaluate(`(document.querySelector(`+jsString(probe)+`) || {textContent: ""}).textContent`, &probed),
@@ -40,6 +38,13 @@ func sectionLayerNav(t *testing.T, from, keep, click, probe string) (path string
 		t.Fatalf("section layer nav %s → %s: %v", from, click, err)
 	}
 	return path, kept, probed
+}
+
+func sectionLayerClick(selector string) chromedp.Action {
+	return chromedp.Tasks{
+		chromedp.Evaluate(`window.__sectionNavDone = false; window.addEventListener('gofastr:navigate', () => { window.__sectionNavDone = true; }, {once: true}); document.querySelector(`+jsString(selector)+`).click()`, nil),
+		chromedp.Poll(`window.__sectionNavDone === true`, nil),
+	}
 }
 
 // jsString quotes s as a JS single-quoted string literal (selectors here
@@ -163,8 +168,8 @@ func TestE2E_SectionLayers_DocsNavKeptAcrossDocs(t *testing.T) {
 		chromedp.WaitReady(rail, chromedp.ByQuery),
 		waitModule("window.__gofastr && window.__gofastr.loadedModules"),
 		chromedp.Evaluate(`(()=>{const r=document.querySelector(`+jsString(rail)+`); r.__keepTag=1; const l=document.querySelector(`+jsString(list)+`); l.scrollTop=l.scrollHeight; return l.scrollTop})()`, &scrollBefore),
-		chromedp.Evaluate(`document.querySelector(`+jsString(destLink)+`).click()`, nil),
-		chromedp.Sleep(900*time.Millisecond),
+		sectionLayerClick(destLink),
+		chromedp.Poll(`document.querySelector(`+jsString(rail+` a[aria-current="page"]`)+`)?.getAttribute('href') === `+jsString("/docs/"+dest.Slug), nil),
 		chromedp.Evaluate(`location.pathname`, &path),
 		chromedp.Evaluate(`(document.querySelector(`+jsString(rail)+`) || {}).__keepTag === 1`, &kept),
 		chromedp.Evaluate(`(document.querySelector(`+jsString(list)+`) || {scrollTop: -1}).scrollTop`, &scrollAfter),

@@ -289,7 +289,7 @@ func TestOpenAPICLI_BuildsCleanly(t *testing.T) {
 			t.Fatalf("cmd/oapp/%s not written: %v", f, err)
 		}
 	}
-	cmd := exec.Command("go", "build", "-o", filepath.Join(dir, "oapp-bin"), "./cmd/oapp")
+	cmd := exec.Command("go", "build", "-o", testExecutablePath(filepath.Join(dir, "oapp-bin")), "./cmd/oapp")
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("generated CLI did not build: %v\n%s", err, out)
@@ -299,7 +299,7 @@ func TestOpenAPICLI_BuildsCleanly(t *testing.T) {
 func TestOpenAPICLI_RoundTripLiveServer(t *testing.T) {
 	dir := oaTempModule(t)
 	runGenerateCLI([]string{"--from-openapi=openapi.json", "--binary=oapp"})
-	bin := filepath.Join(dir, "oapp-bin")
+	bin := testExecutablePath(filepath.Join(dir, "oapp-bin"))
 	build := exec.Command("go", "build", "-o", bin, "./cmd/oapp")
 	build.Dir = dir
 	if out, err := build.CombinedOutput(); err != nil {

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -62,7 +63,7 @@ func (s *FlatStore) Snapshot(path string) error {
 	}
 	tmp := f.Name()
 	defer os.Remove(tmp)
-	if err := f.Chmod(0o600); err != nil {
+	if err := fileperm.RestrictOpenFile(f); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
 		return fmt.Errorf("semantic: restrict snapshot tmp: %w", err)
@@ -89,7 +90,7 @@ func (s *FlatStore) Snapshot(path string) error {
 		os.Remove(tmp)
 		return fmt.Errorf("semantic: close snapshot: %w", err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := atomicfile.Replace(tmp, path); err != nil {
 		os.Remove(tmp)
 		return fmt.Errorf("semantic: rename snapshot into place: %w", err)
 	}
@@ -101,7 +102,7 @@ func (s *FlatStore) Snapshot(path string) error {
 // dimension, [ErrModelMismatch] is returned and the store is left
 // untouched.
 func (s *FlatStore) LoadSnapshot(path string) error {
-	f, err := os.Open(path)
+	f, err := atomicfile.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return os.ErrNotExist

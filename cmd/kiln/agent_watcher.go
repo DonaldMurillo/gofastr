@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/kiln/journal"
 	"github.com/DonaldMurillo/gofastr/kiln/live"
@@ -291,6 +293,10 @@ func runOneAgentTurn(ctx context.Context, logger *log.Logger, tools *protocol.To
 			// co-user's pre-created dir (or a symlink to a target we
 			// do not own) is refused, not adopted.
 			logger.Printf("agent: adapter %q work dir %s is not owned by this user (chmod 0700: %v); refusing to run in it", adapter.Name, adapter.Dir, err)
+			return
+		}
+		if err := fileperm.Restrict(adapter.Dir, true); err != nil {
+			logger.Printf("restrict agent working directory: %v", err)
 			return
 		}
 		turnDir, err := os.MkdirTemp(adapter.Dir, "turn-")

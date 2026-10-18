@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 // The store unit level: round trip, the guards, the debounce, the
@@ -252,13 +254,7 @@ func TestFileModeIs0600(t *testing.T) {
 	if err := s.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	fi, err := os.Stat(s.Path())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fi.Mode().Perm() != 0o600 {
-		t.Fatalf("file mode = %v, want 0600", fi.Mode().Perm())
-	}
+	filepermtest.AssertOwnerOnly(t, s.Path(), 0o600)
 }
 
 func TestWatchFiresAndStops(t *testing.T) {

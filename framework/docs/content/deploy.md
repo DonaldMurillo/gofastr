@@ -245,6 +245,10 @@ so a route budget beyond it needs `WithHTTPServerTimeouts` raised too;
 and `DisableRequestTimeout` removes the middleware entirely, taking the
 per-route budgets with it.
 
+A buffered handler that finishes at or after its budget returns 504 even
+when the middleware observes its completion before the timer notification.
+A handler that finishes before the deadline keeps its successful response.
+
 ### SSE and streaming
 
 `WriteTimeout` bounds the whole response, and a Server-Sent Events stream is a

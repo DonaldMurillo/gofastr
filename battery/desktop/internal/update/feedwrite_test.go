@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 // writeKeyFile writes a keygen-format key pair and returns the paths.
@@ -74,13 +76,7 @@ func TestWriteFeedProducesVerifiablePair(t *testing.T) {
 	}
 	// The output files are owner-only.
 	for _, p := range []string{filepath.Join(out, "manifest.json"), filepath.Join(out, "manifest.json.sig")} {
-		info, err := os.Stat(p)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if info.Mode().Perm() != 0o600 {
-			t.Fatalf("%s mode = %o, want 600", p, info.Mode().Perm())
-		}
+		filepermtest.AssertOwnerOnly(t, p, 0o600)
 	}
 }
 

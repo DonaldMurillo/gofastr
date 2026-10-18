@@ -37,6 +37,7 @@ func newEngineApp(t *testing.T) (*framework.App, *desktop.Battery, *desktoptest.
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = app.DB.Close() })
 	// InitPlugins is what Start (and a harness) run; without it the
 	// desktop battery's Init never fires and no owner extractor
 	// exists for direct engine calls.

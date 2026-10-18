@@ -11,8 +11,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/teststorage"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
-	"github.com/DonaldMurillo/gofastr/core/upload"
+
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
@@ -44,7 +46,7 @@ func provWorld(t *testing.T) (*CrudHandler, *sql.DB) {
 		{Name: "photo", Type: schema.Image},
 		{Name: "photo_variants", Type: schema.JSON},
 	}), ddl)
-	ch.Storage = upload.NewLocalStorage(t.TempDir())
+	ch.Storage = teststorage.New(t, t.TempDir())
 	seedRows(t, db, "prov_media", []map[string]any{
 		{"id": "v1", "owner_id": "u2", "photo": provForeignKey,
 			"photo_variants": `[{"storage_ref":"` + provForeignVariant + `"}]`},

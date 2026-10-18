@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
+
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 )
@@ -62,13 +64,7 @@ func TestLoadOrMintStableOwnerOnly(t *testing.T) {
 	if a.GetID() != b.GetID() || !Valid(a.GetID()) {
 		t.Fatalf("minted %q then read %q", a.GetID(), b.GetID())
 	}
-	fi, err := os.Stat(filepath.Join(dir, FileName))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fi.Mode().Perm()&0o077 != 0 {
-		t.Fatalf("identity file mode %v; want owner-only", fi.Mode().Perm())
-	}
+	filepermtest.AssertOwnerOnly(t, filepath.Join(dir, FileName), 0o600)
 }
 
 func TestLoadOrMintRefusesCorruptFile(t *testing.T) {

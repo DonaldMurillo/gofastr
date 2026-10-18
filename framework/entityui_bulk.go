@@ -206,14 +206,14 @@ func (s *sqlBulkStore) Job(ctx context.Context, id string) (entityui.BulkJob, er
 
 // Claim gives runner the lease until until, or renews it, in one
 // conditional UPDATE: the job must be queued and either unclaimed,
-// already runner's, or held under a lease that ran out before now.
+// already runner's, or held under a lease that expired at or before now.
 func (s *sqlBulkStore) Claim(ctx context.Context, id, runner string, now, until time.Time) (bool, error) {
 	if runner == "" {
 		return false, errors.New("bulk store: claim needs a runner token")
 	}
 	res, err := s.db.ExecContext(ctx, fmt.Sprintf(
 		`UPDATE %s SET claim_token = $1, lease_until = $2
-		 WHERE id = $3 AND status = $4 AND (claim_token = $1 OR claim_token = '' OR lease_until < $5)`,
+		 WHERE id = $3 AND status = $4 AND (claim_token = $1 OR claim_token = '' OR lease_until <= $5)`,
 		query.QuoteIdent(bulkJobsTable)),
 		runner, until.UTC(), id, entityui.BulkQueued, now.UTC())
 	if err != nil {

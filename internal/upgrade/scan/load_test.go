@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
@@ -105,15 +106,21 @@ func main() {
 }
 `
 	nixSrc := "//go:build !windows\n\npackage main\n\nfunc unixHelper() {}\n"
+	extraSrc := winOnly
+	// Keep the error in an extra configuration, not the host's main load.
+	if runtime.GOOS == "windows" {
+		nixSrc = strings.Replace(nixSrc, "!windows", "windows", 1)
+		extraSrc = strings.Replace(winOnly, "//go:build windows", "//go:build linux", 1)
+	}
 	n := &upgrade.Note{Find: upgrade.Find{Uses: []upgrade.Symbol{siteHeaderSym}}}
 	res := mustRun(t, newWorkspace(t, defaultKit, map[string]string{
 		"main.go": mainSrc,
 		"nix.go":  nixSrc,
-		"win.go":  winOnly,
+		"win.go":  extraSrc,
 	}), n)
 	wantHits(t, res, n,
 		hitAt(mainSrc, "SiteHeader", "main.go", siteHeaderSym.String()),
-		hitAt(winOnly, "SiteHeader", "win.go", siteHeaderSym.String()))
+		hitAt(extraSrc, "SiteHeader", "win.go", siteHeaderSym.String()))
 	if unexplained := hitStrs(res.Unexplained); len(unexplained) > 0 {
 		t.Errorf("already-scanned file's windows-only error reported:\n%v", unexplained)
 	}

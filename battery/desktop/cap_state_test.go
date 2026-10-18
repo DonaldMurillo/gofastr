@@ -3,10 +3,11 @@ package desktop_test
 import (
 	"encoding/json"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/desktoptest"
@@ -156,13 +157,7 @@ func TestStateSurvivesSecondBattery(t *testing.T) {
 		t.Fatalf("first run: %v", err)
 	}
 
-	fi, err := os.Stat(filepath.Join(dir, "windowstate.test", "state.json"))
-	if err != nil {
-		t.Fatalf("state.json after quit: %v", err)
-	}
-	if fi.Mode().Perm() != 0o600 {
-		t.Fatalf("state.json mode = %v, want 0600", fi.Mode().Perm())
-	}
+	filepermtest.AssertOwnerOnly(t, filepath.Join(dir, "windowstate.test", "state.json"), 0o600)
 
 	app2, d2 := wsApp(t, desktop.Config{Title: "S"}, dir, nil)
 	h2 := desktoptest.Run(t, app2, d2)

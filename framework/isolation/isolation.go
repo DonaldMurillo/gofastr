@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 const (
@@ -826,6 +827,9 @@ func (r *Runtime) sqliteDSN(dsn string) (string, error) {
 	// default; the parent dir is the part this package owns, and it
 	// gets the repo's owner-only discipline (MkdirTemp's 0700 shape).
 	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if err := fileperm.Restrict(dir, true); err != nil {
 		return "", err
 	}
 	return prefix + filepath.Join(dir, name) + query, nil

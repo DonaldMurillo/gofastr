@@ -31,6 +31,7 @@ func newTestApp(t *testing.T) (*framework.App, *desktop.Battery, *desktoptest.Sh
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = app.DB.Close() })
 	// app.Start runs migrations; the harness never Starts, so create
 	// the tables the way examples/blog does before seeding.
 	if err := framework.AutoMigrate(app.DB, app.Registry); err != nil {

@@ -20,7 +20,7 @@ import (
 
 func TestLocalStorageSaveGetDeleteRoundTrip(t *testing.T) {
 	dir := t.TempDir()
-	ls := NewLocalStorage(dir)
+	ls := newTestLocalStorage(t, dir)
 
 	ctx := context.Background()
 	key := "test/file.txt"
@@ -74,7 +74,7 @@ func TestLocalStorageSaveGetDeleteRoundTrip(t *testing.T) {
 
 func TestLocalStorageNestedDirectories(t *testing.T) {
 	dir := t.TempDir()
-	ls := NewLocalStorage(dir)
+	ls := newTestLocalStorage(t, dir)
 
 	ctx := context.Background()
 	key := "deep/nested/path/file.dat"
@@ -107,7 +107,7 @@ func TestLocalStorageNestedDirectories(t *testing.T) {
 
 func TestLocalStoragePathTraversalBlocked(t *testing.T) {
 	dir := t.TempDir()
-	ls := NewLocalStorage(dir)
+	ls := newTestLocalStorage(t, dir)
 
 	// Create a sentinel file outside the base dir to detect escape
 	sentinelDir := filepath.Dir(dir)
@@ -152,7 +152,7 @@ func TestLocalStoragePathTraversalBlocked(t *testing.T) {
 
 func TestLocalStorageAtomicWrite(t *testing.T) {
 	dir := t.TempDir()
-	ls := NewLocalStorage(dir)
+	ls := newTestLocalStorage(t, dir)
 
 	ctx := context.Background()
 	key := "atomic-test.txt"
@@ -198,7 +198,7 @@ func TestLocalStorageAtomicWrite(t *testing.T) {
 
 func TestLocalStorageGetNotFound(t *testing.T) {
 	dir := t.TempDir()
-	ls := NewLocalStorage(dir)
+	ls := newTestLocalStorage(t, dir)
 
 	ctx := context.Background()
 	_, err := ls.Get(ctx, "nonexistent.txt")
@@ -209,7 +209,7 @@ func TestLocalStorageGetNotFound(t *testing.T) {
 
 func TestLocalStorageDeleteNotFound(t *testing.T) {
 	dir := t.TempDir()
-	ls := NewLocalStorage(dir)
+	ls := newTestLocalStorage(t, dir)
 
 	ctx := context.Background()
 	err := ls.Delete(ctx, "nonexistent.txt")
@@ -223,7 +223,7 @@ func TestLocalStorageCustomPermissions(t *testing.T) {
 		t.Skip("POSIX permission bits are not portable on Windows")
 	}
 	dir := t.TempDir()
-	ls := NewLocalStorage(dir, WithPermissions(0600))
+	ls := newTestLocalStorage(t, dir, WithPermissions(0600))
 
 	ctx := context.Background()
 	key := "secret.txt"
@@ -247,7 +247,7 @@ func TestLocalStorageCustomPermissions(t *testing.T) {
 func TestLocalStorageCustomTempDir(t *testing.T) {
 	dir := t.TempDir()
 	tempDir := t.TempDir()
-	ls := NewLocalStorage(dir, WithTempDir(tempDir))
+	ls := newTestLocalStorage(t, dir, WithTempDir(tempDir))
 
 	ctx := context.Background()
 	key := "with-temp-dir.txt"
@@ -266,7 +266,7 @@ func TestLocalStorageCustomTempDir(t *testing.T) {
 
 func TestLocalStorageCancelledContext(t *testing.T) {
 	dir := t.TempDir()
-	ls := NewLocalStorage(dir)
+	ls := newTestLocalStorage(t, dir)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

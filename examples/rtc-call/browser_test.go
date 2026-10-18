@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -153,6 +154,9 @@ func tileExpr(name, inner string) string {
 // peer to peer, chat over the data channel, mute as a status document,
 // and the leave that removes the tile.
 func TestCallFlow(t *testing.T) {
+	// Both tabs run on this host; public STUN availability is unrelated
+	// to camera, data-channel, and leave behavior under test.
+	t.Setenv("CALL_STUN", "")
 	app := buildApp()
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("init plugins: %v", err)
@@ -243,8 +247,9 @@ func TestCallFlow(t *testing.T) {
 	pollTrue(t, ann, `Object.keys(window.__call.states).length === 0`, 5*time.Second)
 
 	// ── Evidence for the reviewer: both tabs, full page. ─────────
-	saveShot(t, ann, "/tmp/rtc-call-A.png")
-	saveShot(t, bob, "/tmp/rtc-call-B.png")
+	evidence := t.TempDir()
+	saveShot(t, ann, filepath.Join(evidence, "rtc-call-A.png"))
+	saveShot(t, bob, filepath.Join(evidence, "rtc-call-B.png"))
 }
 
 // saveShot captures a full-page screenshot to path.

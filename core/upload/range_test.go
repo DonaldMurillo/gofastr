@@ -55,7 +55,7 @@ func TestRangeServingKeepsScriptableGuard(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "x.svg"), []byte("<svg onload=alert(1)>"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	h := ServeHandler(NewLocalStorage(dir))
+	h := ServeHandler(newTestLocalStorage(t, dir))
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/x.svg", nil))
 
@@ -92,7 +92,7 @@ func TestLocalStorageImplementsRangeGetter(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "f.bin"), []byte("0123456789"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	var s Storage = NewLocalStorage(dir)
+	var s Storage = newTestLocalStorage(t, dir)
 	rg, ok := s.(RangeGetter)
 	if !ok {
 		t.Fatal("LocalStorage does not implement RangeGetter")
@@ -116,7 +116,7 @@ func TestLocalStorageImplementsRangeGetter(t *testing.T) {
 // performance hat.
 func TestGetRangeRejectsTraversal(t *testing.T) {
 	dir := t.TempDir()
-	rg := NewLocalStorage(dir)
+	rg := newTestLocalStorage(t, dir)
 	if _, err := rg.GetRange(context.Background(), "../../etc/passwd"); err == nil {
 		t.Fatal("SECURITY: GetRange accepted a traversal key")
 	}
@@ -129,7 +129,7 @@ func localServeHandler(t *testing.T) (http.Handler, string) {
 	if err := os.WriteFile(filepath.Join(dir, "big.bin"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return ServeHandler(NewLocalStorage(dir)), body
+	return ServeHandler(newTestLocalStorage(t, dir)), body
 }
 
 type nonSeekableStorage struct{ data string }

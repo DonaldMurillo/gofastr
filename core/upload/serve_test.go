@@ -52,7 +52,7 @@ func TestServeHandlerBlocksTraversal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	storage := NewLocalStorage(baseDir)
+	storage := newTestLocalStorage(t, baseDir)
 	saveKey(t, storage, "users/avatar/a.png", "png-body")
 
 	for _, key := range []string{
@@ -79,7 +79,7 @@ func TestServeHandlerBlocksTraversal(t *testing.T) {
 // ErrNotFound and never echoes a filesystem path.
 func TestServeHandlerMissingKey404(t *testing.T) {
 	t.Parallel()
-	storage := NewLocalStorage(t.TempDir())
+	storage := newTestLocalStorage(t, t.TempDir())
 	h := mountServe(t, storage)
 
 	req := httptest.NewRequest(http.MethodGet, "/uploads/does-not-exist.png", nil)
@@ -99,7 +99,7 @@ func TestServeHandlerMissingKey404(t *testing.T) {
 // nosniff is always set.
 func TestServeHandlerSniffsContentType(t *testing.T) {
 	t.Parallel()
-	storage := NewLocalStorage(t.TempDir())
+	storage := newTestLocalStorage(t, t.TempDir())
 	// PNG signature so http.DetectContentType returns image/png even
 	// though the extension is irrelevant to the handler.
 	png := "\x89PNG\r\n\x1a\n" + strings.Repeat("\x00", 64)
@@ -129,7 +129,7 @@ func TestServeHandlerSniffsContentType(t *testing.T) {
 // type. It is forced to application/octet-stream + attachment.
 func TestServeHandlerNeutralizesHTML(t *testing.T) {
 	t.Parallel()
-	storage := NewLocalStorage(t.TempDir())
+	storage := newTestLocalStorage(t, t.TempDir())
 	htmlBody := "<html><body><script>alert('xss')</script></body></html>"
 	saveKey(t, storage, "evil.html", htmlBody)
 	svgBody := `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`
@@ -160,7 +160,7 @@ func TestServeHandlerNeutralizesHTML(t *testing.T) {
 // 405 with an Allow header.
 func TestServeHandlerMethodNotAllowed(t *testing.T) {
 	t.Parallel()
-	h := ServeHandler(NewLocalStorage(t.TempDir()))
+	h := ServeHandler(newTestLocalStorage(t, t.TempDir()))
 
 	for _, method := range []string{
 		http.MethodPost,

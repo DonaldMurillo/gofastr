@@ -56,6 +56,7 @@ func siteBrowserCtx(t *testing.T) context.Context {
 			chromedp.Flag("headless", true),
 			chromedp.Flag("disable-gpu", true),
 			chromedp.Flag("no-sandbox", true),
+			chromedp.Flag("force-prefers-no-reduced-motion", true),
 			// CI runners intermittently take >20s (the chromedp default)
 			// to cold-start Chrome; a generous websocket-URL deadline turns
 			// that from a flaky suite failure into a few slow seconds.
@@ -336,8 +337,9 @@ func TestE2EInteractive_RPCOpenWidget(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-open-widget"),
 		chromedp.WaitVisible(`button[data-cui-rpc-open="demo-result-modal"]`),
+		chromedp.Poll(`document.__fuiGlobalDispatch === true`, nil),
 		chromedp.Evaluate(`document.querySelector('button[data-cui-rpc-open="demo-result-modal"]').click()`, nil),
-		chromedp.Sleep(1*time.Second),
+		chromedp.WaitVisible(`[data-cui-widget="demo-result-modal"]`, chromedp.ByQuery),
 		chromedp.Evaluate(`document.querySelector('[data-cui-widget="demo-result-modal"]') !== null`, &exists),
 	); err != nil {
 		t.Fatal(err)
@@ -361,12 +363,13 @@ func TestE2EInteractive_ModalAriaLabelledBy(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-open-widget"),
 		chromedp.WaitVisible(`button[data-cui-rpc-open="demo-result-modal"]`),
+		chromedp.Poll(`document.__fuiGlobalDispatch === true`, nil),
 		// Open the modal
 		chromedp.Evaluate(`document.querySelector('button[data-cui-rpc-open="demo-result-modal"]').click()`, nil),
-		chromedp.Sleep(1*time.Second),
+		chromedp.WaitVisible(`[data-cui-widget="demo-result-modal"]`, chromedp.ByQuery),
 		// Read aria-labelledby from the widget root
 		chromedp.Evaluate(`(function(){var w=document.querySelector('[data-cui-widget="demo-result-modal"]');return w?(w.getAttribute('aria-labelledby')||''):''})()`, &labelledBy),
-		chromedp.Evaluate(`(function(){var w=document.querySelector('[data-cui-widget="demo-result-modal"]');var lb=w?w.getAttribute('aria-labelledby'):'';return lb&&document.getElementById(lb)!==null})()`, &headingExists),
+		chromedp.Evaluate(`(function(){var w=document.querySelector('[data-cui-widget="demo-result-modal"]');var lb=w?w.getAttribute('aria-labelledby'):'';var heading=lb&&document.getElementById(lb);return !!heading&&w.contains(heading)&&heading.getClientRects().length>0})()`, &headingExists),
 	); err != nil {
 		t.Fatal(err)
 	}

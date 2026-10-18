@@ -5,11 +5,18 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
+	"strings"
 )
 
 func configureTestProcessGroup(_ *exec.Cmd) {}
 
-func testExecutablePath(path string) string { return path + ".exe" }
+func testExecutablePath(path string) string {
+	if strings.EqualFold(filepath.Ext(path), ".exe") {
+		return path
+	}
+	return path + ".exe"
+}
 
 func killTestProcessTree(cmd *exec.Cmd) error {
 	if cmd == nil || cmd.Process == nil {

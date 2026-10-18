@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -48,6 +49,9 @@ func startShopfront(t *testing.T) string {
 
 	// Build the generated app (proves the blueprint → buildable Go path).
 	bin := filepath.Join(t.TempDir(), "shopfront")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
 	build := exec.Command("go", "build", "-o", bin, ".")
 	build.Dir = dir
 	build.Stderr = os.Stderr

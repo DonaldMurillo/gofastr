@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf16"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 func TestManagerForEachOS(t *testing.T) {
@@ -51,6 +53,7 @@ func setHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
 	return home
 }
@@ -74,13 +77,7 @@ func TestLaunchdInstallArgv(t *testing.T) {
 	if got := ft.got(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("argv\n got %q\nwant %q", got, want)
 	}
-	fi, err := os.Stat(plist)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fi.Mode().Perm() != 0o600 {
-		t.Errorf("plist mode %v; want 0600", fi.Mode().Perm())
-	}
+	filepermtest.AssertOwnerOnly(t, plist, 0o600)
 }
 
 func TestLaunchdStartFallsBackToBootstrap(t *testing.T) {
@@ -189,7 +186,7 @@ func TestSystemdInstallArgv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	exec := `ExecStart="/opt/hello" "service" "daemon" "--port" "47811" "--base-dir" "` + base + `"`
+	exec := `ExecStart="/opt/hello" "service" "daemon" "--port" "47811" "--base-dir" "` + strings.ReplaceAll(base, `\`, `\\`) + `"`
 	for _, s := range []string{"Type=notify", "NotifyAccess=main", exec, "Restart=on-failure", "WantedBy=default.target"} {
 		if !strings.Contains(string(unit), s) {
 			t.Errorf("unit lacks %q:\n%s", s, unit)
