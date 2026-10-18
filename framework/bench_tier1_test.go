@@ -237,15 +237,15 @@ func BenchmarkTier1_PaginationDepth(b *testing.B) {
 
 		const pageSize = 50
 
-		// Pre-compute a cursor positioned near the deep page so the cursor
-		// benchmark doesn't pay for "page 1 → page 200" navigation per iter.
-		// Use offset to find the row at index 9000, then request cursor mode
-		// from there.
+		// Walk the cursor chain once, outside the timer, to the cursor that
+		// opens deepPage, so cursor/page=180 times the same depth as
+		// offset/page=180. Fetching page k yields the cursor for page k+1.
+		const deepPage = 180
 		var deepCursor string
 		{
 			path := fmt.Sprintf("/posts?cursor=&limit=%d", pageSize)
 			req := benchAuthed(b, http.MethodGet, path, nil)
-			for range N/pageSize - 2 {
+			for range deepPage - 1 {
 				rec := httptest.NewRecorder()
 				app.Router().ServeHTTP(rec, req)
 				var page struct {

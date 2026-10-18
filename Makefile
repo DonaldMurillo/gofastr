@@ -242,14 +242,14 @@ bench-tier9: $(BENCH_OUT)
 bench-techempower: bench-tier5
 bench-overhead: bench-tier7
 
-# Resource benchmarks: bundle size, peak RAM during `go build`, idle/loaded
-# RAM of each running app. Builds three bench apps (minimal, crud, full) and
-# the two cmd/* binaries. Output is Markdown to stdout + dist/bench/resources.md.
 # Run every benchmark in the affected packages once (-benchtime=1x), so a
 # benchmark that stops working fails the build. CI runs it on every PR.
 bench-smoke:
 	./scripts/bench-smoke.sh
 
+# Resource benchmarks: bundle size, peak RAM during `go build`, idle/loaded
+# RAM of each running app. Builds three bench apps (minimal, crud, full) and
+# the two cmd/* binaries. Output is Markdown to stdout + dist/bench/resources.md.
 bench-resources: $(BENCH_OUT)
 	@mkdir -p $(BENCH_OUT)/resources
 	go run ./cmd/bench-resources -load=$${LOAD:-200} -out=$(BENCH_OUT)/resources \

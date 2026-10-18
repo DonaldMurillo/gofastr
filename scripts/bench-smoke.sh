@@ -16,8 +16,13 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 mod=$(go list -m)
-match=$(git grep -l '^func Benchmark' -- '*_test.go' |
-	xargs -n1 dirname | sort -u |
+# Tracked files plus untracked ones, so a new benchmark package counts
+# before it is staged. --untracked alone drops a tracked file that a
+# local exclude rule matches, hence the union.
+match=$({
+	git grep -l '^func Benchmark' -- '*_test.go' || true
+	git grep --untracked -l '^func Benchmark' -- '*_test.go' || true
+} | xargs -n1 dirname | sort -u |
 	awk -v m="$mod" '{ print ($0 == "." ? m : m "/" $0) }' |
 	sed 's/[.]/\\./g' |
 	paste -sd'|' -)

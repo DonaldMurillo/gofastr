@@ -45,7 +45,7 @@ versions.
 | Benchmark | Result |
 |---|---|
 | `Tier1_IncludesVsN1`, limit=100 | eager include 1.9 ms / 28.5k allocs; naive N+1 14.3 ms / 47.7k allocs |
-| `Tier1_PaginationDepth` | offset page 1 → 180: 130 → 207 µs; cursor page 1 → 180: 141 → 145 µs |
+| `Tier1_PaginationDepth` | offset page 1 → 180: 142 → 218 µs; cursor page 1 → 180: 148 → 153 µs |
 | `Tier1_BatchVsN`, 50 items | batch 1.5 ms; 50 single POSTs 2.3 ms |
 | `T9_StreamingVsBuffered_RealVolume`, 5000 rows | buffered-paginated 13.4 ms; streaming-single 12.2 ms |
 
