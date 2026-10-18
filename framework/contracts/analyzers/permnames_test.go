@@ -355,3 +355,37 @@ func TestUnregisteredPermOtherCanAndField(t *testing.T) {
 	_ = ui.Button{Permission: "edit"}`)})
 	assertNot(t, ds, contracts.RuleUnregisteredPermission, "neither is a permission check")
 }
+
+// Permission is a common field name: an app's own struct holding one is
+// not a check, however the value is spelt.
+func TestUnregisteredPermAppStructField(t *testing.T) {
+	ds := fixture(t, map[string]string{"main.go": permApp(`p.Register("plans:write")`,
+		`_ = cron.Job{Permission: "cron:run"}
+	_ = []cron.Job{{Permission: "cron:run"}}`)})
+	assertNot(t, ds, contracts.RuleUnregisteredPermission, "cron.Job is not a transition")
+}
+
+// A slice or map literal elides its element type, so a transition or
+// action written there is judged by the container's element type.
+func TestUnregisteredPermElidedElement(t *testing.T) {
+	for _, check := range []string{
+		`_ = []entity.Transition{{Key: "go", Permission: "plans:wirte"}}`,
+		`_ = []*entity.Transition{{Permission: "plans:wirte"}}`,
+		`_ = map[string]entityui.Action{"go": {Permission: "plans:wirte"}}`,
+	} {
+		t.Run(check, func(t *testing.T) {
+			ds := fixture(t, map[string]string{"main.go": permApp(`p.Register("plans:write")`, check)})
+			assertHas(t, ds, contracts.RuleUnregisteredPermission)
+		})
+	}
+}
+
+// Without a module path every package is one node: literal names are
+// still judged against the one registry.
+func TestUnregisteredPermWithoutAGoModule(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"go.mod":  "",
+		"main.go": permApp(`p.Register("plans:write")`, `_ = access.Can(ctx, "plans:wirte")`),
+	})
+	assertHas(t, ds, contracts.RuleUnregisteredPermission)
+}

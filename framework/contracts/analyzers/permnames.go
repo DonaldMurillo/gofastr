@@ -41,14 +41,20 @@ var permArg = map[string]int{
 	"RequirePermission": 0, "Can": 1, "CanResource": 1, "CanResourceExact": 1,
 }
 
-// accessControlFields are entity.AccessControl's per-operation names.
-var accessControlFields = map[string]bool{"Read": true, "Create": true, "Update": true, "Delete": true}
+// permFields are the fields that name a permission, by the struct that
+// holds them: entity.AccessControl's per-operation names, the scope
+// configs' grants, a state transition's and an entityui action's
+// Permission. Transition and Action are common type names, so their
+// value must also look like resource:verb.
+var permFields = map[string]map[string]bool{
+	"AccessControl":   {"Read": true, "Create": true, "Update": true, "Delete": true},
+	"ScopeConfig":     {"CrossOwnerRead": true},
+	"ReadScopeConfig": {"Unrestricted": true},
+	"Transition":      {"Permission": true},
+	"Action":          {"Permission": true},
+}
 
-// shapedFields name a permission on any struct but are common field
-// names, so their value must also look like resource:verb: a state
-// transition's or an entityui action's Permission, and
-// ReadScopeConfig.Unrestricted.
-var shapedFields = map[string]bool{"Permission": true, "Unrestricted": true}
+var shapedPermTypes = map[string]bool{"Transition": true, "Action": true}
 
 // permDecl is a package-level const or var initializer, with the import
 // aliases of the file it sits in.
@@ -307,6 +313,9 @@ func collectPermNames(p *contracts.Pass) permNames {
 			}
 		}
 		visit := func(root ast.Node, locals map[string]bool) {
+			// elided holds the element type of a slice or map literal's
+			// untyped elements: []entity.Transition{{...}}.
+			elided := map[*ast.CompositeLit]string{}
 			ast.Inspect(root, func(n ast.Node) bool {
 				switch v := n.(type) {
 				case *ast.CallExpr:
@@ -322,21 +331,28 @@ func collectPermNames(p *contracts.Pass) permNames {
 						record(call.Args[i], locals, false)
 					}
 				case *ast.CompositeLit:
-					accessBlock := typeNamed(v.Type, "AccessControl")
+					if elem := elementType(v.Type); elem != "" {
+						for _, elt := range v.Elts {
+							if kv, isKV := elt.(*ast.KeyValueExpr); isKV {
+								elt = kv.Value
+							}
+							if inner, isCL := elt.(*ast.CompositeLit); isCL && inner.Type == nil {
+								elided[inner] = elem
+							}
+						}
+					}
+					typeName := elided[v]
+					if typeName == "" {
+						typeName = baseTypeName(v.Type)
+					}
+					fields := permFields[typeName]
 					for _, elt := range v.Elts {
 						kv, isKV := elt.(*ast.KeyValueExpr)
 						if !isKV {
 							continue
 						}
-						key, isIdent := kv.Key.(*ast.Ident)
-						if !isIdent {
-							continue
-						}
-						switch {
-						case accessBlock && accessControlFields[key.Name], key.Name == "CrossOwnerRead":
-							record(kv.Value, locals, false)
-						case shapedFields[key.Name]:
-							record(kv.Value, locals, true)
+						if key, isIdent := kv.Key.(*ast.Ident); isIdent && fields[key.Name] {
+							record(kv.Value, locals, shapedPermTypes[typeName])
 						}
 					}
 				}
@@ -463,13 +479,37 @@ func localNames(fd *ast.FuncDecl) map[string]bool {
 // typeNamed reports whether a type expression is name, bare or
 // package-qualified.
 func typeNamed(e ast.Expr, name string) bool {
+	return e != nil && baseTypeName(e) == name
+}
+
+// baseTypeName is a type expression's name without its package, or ""
+// for anything but a bare or qualified name.
+func baseTypeName(e ast.Expr) string {
 	switch v := e.(type) {
 	case *ast.Ident:
-		return v.Name == name
+		return v.Name
 	case *ast.SelectorExpr:
-		return v.Sel.Name == name
+		return v.Sel.Name
 	}
-	return false
+	return ""
+}
+
+// elementType names the element type of a slice, array or map literal
+// type, through one pointer: []*entity.Transition is "Transition".
+func elementType(e ast.Expr) string {
+	var elem ast.Expr
+	switch v := e.(type) {
+	case *ast.ArrayType:
+		elem = v.Elt
+	case *ast.MapType:
+		elem = v.Value
+	default:
+		return ""
+	}
+	if star, isStar := elem.(*ast.StarExpr); isStar {
+		elem = star.X
+	}
+	return baseTypeName(elem)
 }
 
 func runUnregisteredPermissions(p *contracts.Pass) []contracts.Diagnostic {
