@@ -502,3 +502,60 @@ func TestPollStorePanicEndsStreamCleanly(t *testing.T) {
 		t.Fatalf("post-panic subscribe = %+v, want task t1 back", sr2.Task)
 	}
 }
+
+// lateWriteStore holds the CANCELED write until the woken handler has
+// tried its late write (or a short bound passes), so a cancel that
+// wakes the run before persisting loses to that write every time.
+type lateWriteStore struct {
+	Store
+	tried chan struct{}
+}
+
+func (s *lateWriteStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
+	if rec.Task.Status.State == TaskStateCanceled {
+		select {
+		case <-s.tried:
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	return s.Store.UpdateTask(ctx, rec)
+}
+
+// TestCancelPersistsBeforeWakingRun pins the CancelTask order: the
+// CANCELED write lands before the run's context is canceled. Waking the
+// handler first let its next write land on the unchanged task, so a
+// handler that completed on wake turned the cancel into -32002 and the
+// task into COMPLETED.
+func TestCancelPersistsBeforeWakingRun(t *testing.T) {
+	st := &lateWriteStore{Store: NewMemoryStore(), tried: make(chan struct{})}
+	h := newHarness(t, func(c *Config) { c.Store = st })
+	late := make(chan error, 1)
+	h.setHandler(func(ctx context.Context, tc TaskContext) error {
+		if err := tc.Working(TextPart("start")); err != nil {
+			return err
+		}
+		<-ctx.Done()
+		err := tc.Complete(TextPart("late"))
+		late <- err
+		close(st.tried)
+		return nil
+	})
+	task := h.send("alice", map[string]any{"returnImmediately": true})
+	h.waitTask("alice", task.ID, TaskStateWorking, 2*time.Second)
+
+	if _, e, raw := h.call("alice", MethodCancelTask, map[string]any{"id": task.ID}); e.Error != nil {
+		t.Fatalf("cancel: %+v body=%s", e.Error, raw)
+	}
+	select {
+	case err := <-late:
+		if err == nil {
+			t.Fatal("late Complete after cancel was accepted")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler never woke after cancel")
+	}
+	got := h.waitTask("alice", task.ID, TaskStateCanceled, 2*time.Second)
+	if len(got.History) != 2 {
+		t.Fatalf("history = %d messages, want 2 (the late write must not land)", len(got.History))
+	}
+}

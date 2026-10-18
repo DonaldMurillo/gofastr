@@ -1302,11 +1302,12 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidParams, "id is required"))
 		return
 	}
-	// re-read that finds CANCELED after WE canceled the run means the
-	// cancellation happened — answer it, do not report -32002 for the
-	// state we asked for.
+	// The CANCELED write lands before the local run is woken. Waking it
+	// first let the handler's next write land on the unchanged task, so
+	// a handler that completed on wake won the race: the client got
+	// -32002 and the task stayed COMPLETED. Persisting first makes every
+	// write the woken handler tries a version conflict.
 	const attempts = 8
-	canceledRun := false
 	for range attempts {
 		rec, err := s.store.GetTask(context.Background(), owner, p.ID)
 		if errors.Is(err, ErrNotFound) {
@@ -1317,21 +1318,9 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 			s.internalErr(w, req.ID, "get task for cancel", err)
 			return
 		}
-		state := rec.Task.Status.State
-		if state == TaskStateCanceled && canceledRun {
-			task := cloneTask(rec.Task)
-			s.writeResult(w, req.ID, SendMessageResponse{Task: &task}, nil)
-			return
-		}
-		if state.Terminal() {
+		if state := rec.Task.Status.State; state.Terminal() {
 			s.writeResult(w, req.ID, nil, ErrTaskNotCancelable(p.ID, state))
 			return
-		}
-		// Owner verified by the scoped read above; now the local run
-		// may be canceled too, so the handler wakes promptly.
-		if rn := s.runFor(p.ID); rn != nil {
-			rn.cancel()
-			canceledRun = true
 		}
 		cand := rec.Clone()
 		cand.Task.Status = TaskStatus{State: TaskStateCanceled, Timestamp: s.stamp()}
@@ -1341,6 +1330,11 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, req *rpcRequest, owner 
 			}
 			s.internalErr(w, req.ID, "cancel task", err)
 			return
+		}
+		// Owner verified by the scoped read above and the task now
+		// stored CANCELED: wake the local run so the handler stops.
+		if rn := s.runFor(p.ID); rn != nil {
+			rn.cancel()
 		}
 		ev := StreamResponse{StatusUpdate: &TaskStatusUpdateEvent{
 			TaskID:    cand.Task.ID,

@@ -12,6 +12,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   attribute. `Widget.Render` emits `data-widget`, plus `data-behavior`
   when the component has actions.
 
+### Fixed
+- **`CancelTask` can no longer lose to the handler it cancels.** It
+  canceled the run's context before storing CANCELED, so a handler that
+  completed on wake stored COMPLETED first and the client got -32002
+  for a task it had asked to cancel. The CANCELED write now lands
+  before the run is woken, and every write the handler tries after
+  that is refused.
+
 ## [0.90.0] - 2026-10-18
 
 **BREAKING.** `router.Param` panics on a wildcard name its route does
