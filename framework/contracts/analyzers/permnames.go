@@ -7,7 +7,6 @@ import (
 	"maps"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
@@ -64,6 +63,39 @@ type permDecl struct {
 }
 
 const permNamesKey = "analyzers.permnames"
+
+// The packages whose RolePolicy, Can and RequirePermission the rule
+// reads. Exact paths: an app's own package named framework is not the
+// facade.
+const (
+	frameworkPkg = "github.com/DonaldMurillo/gofastr/framework"
+	accessPkg    = frameworkPkg + "/access"
+)
+
+// recvKind is what the pass knows about a Register receiver.
+type recvKind int
+
+const (
+	recvUnknown recvKind = iota // a call result, or a name with no declared type
+	recvPolicy                  // a RolePolicy
+	recvOther                   // declared with another type, or a package
+)
+
+// kindOfType classifies a declared type.
+func kindOfType(e ast.Expr) recvKind {
+	if isPolicyType(e) {
+		return recvPolicy
+	}
+	return recvOther
+}
+
+// setKind records k for name; a policy reading wins, so a name that is
+// a policy anywhere in scope is never ignored.
+func setKind(m map[string]recvKind, name string, k recvKind) {
+	if m[name] != recvPolicy {
+		m[name] = k
+	}
+}
 
 func permissionNames(p *contracts.Pass) permNames {
 	return p.Memo(permNamesKey, func() any { return collectPermNames(p) }).(permNames)
@@ -188,10 +220,11 @@ func collectPermNames(p *contracts.Pass) permNames {
 		file *ast.File
 	}
 	// Package-level initializers from every file, framework import or
-	// not: a constants file often has none. Struct fields typed as a
-	// policy are collected too, so a.policy.Register is recognised.
+	// not: a constants file often has none. Struct fields are classified
+	// too, so a.policy.Register counts and a.Batteries.Register is
+	// known to be something else.
 	var files []parsed
-	policyFields := map[string]map[string]bool{}
+	fieldKinds := map[string]map[string]recvKind{}
 	for _, f := range p.AppFiles() {
 		file, ok := p.AST(f.Rel)
 		if !ok {
@@ -223,14 +256,11 @@ func collectPermNames(p *contracts.Pass) permNames {
 						continue
 					}
 					for _, field := range st.Fields.List {
-						if !isPolicyType(field.Type) {
-							continue
-						}
 						for _, name := range field.Names {
-							if policyFields[pkg] == nil {
-								policyFields[pkg] = map[string]bool{}
+							if fieldKinds[pkg] == nil {
+								fieldKinds[pkg] = map[string]recvKind{}
 							}
-							policyFields[pkg][name.Name] = true
+							setKind(fieldKinds[pkg], name.Name, kindOfType(field.Type))
 						}
 					}
 				}
@@ -245,22 +275,37 @@ func collectPermNames(p *contracts.Pass) permNames {
 		}
 		pkg := c.pkgKey(pf.src)
 		aliases := importAliases(file)
-		policies := policyIdents(file)
-		// isAccess reports whether a receiver is the access package, the
-		// framework facade, or a RolePolicy.
-		isAccess := func(recv ast.Expr) bool {
+		idents := identKinds(file)
+		importsPolicy := false
+		for _, path := range aliases {
+			importsPolicy = importsPolicy || path == frameworkPkg || path == accessPkg
+		}
+		// kindOf classifies a Register receiver.
+		kindOf := func(recv ast.Expr) recvKind {
 			switch v := recv.(type) {
 			case *ast.Ident:
-				if path, imported := aliases[v.Name]; imported {
-					return strings.HasSuffix(path, "/framework/access") || strings.HasSuffix(path, "/framework")
+				if _, imported := aliases[v.Name]; imported {
+					return recvOther
 				}
-				return policies[v.Name]
+				return idents[v.Name]
 			case *ast.SelectorExpr:
-				return policyFields[pkg][v.Sel.Name]
+				return fieldKinds[pkg][v.Sel.Name]
 			case *ast.CallExpr:
-				return callsNewRolePolicy(v)
+				if callsNewRolePolicy(v) {
+					return recvPolicy
+				}
 			}
-			return false
+			return recvUnknown
+		}
+		// isAccess reports whether a check call's receiver is the access
+		// package, the framework facade, or a RolePolicy.
+		isAccess := func(recv ast.Expr) bool {
+			if id, isIdent := recv.(*ast.Ident); isIdent {
+				if path, imported := aliases[id.Name]; imported {
+					return path == frameworkPkg || path == accessPkg
+				}
+			}
+			return kindOf(recv) == recvPolicy
 		}
 		record := func(e ast.Expr, locals map[string]bool, shaped bool) {
 			name, ok := c.str(pkg, aliases, e, locals, 0)
@@ -285,18 +330,21 @@ func collectPermNames(p *contracts.Pass) permNames {
 					names = append(names, s)
 				}
 			}
-			if !isAccess(recv) {
-				// Register is a common method name, so another receiver's
-				// call registers nothing. One that could still be a policy
-				// the pass cannot place, a spread or a permission-shaped
-				// name in a file that imports the policy's package, makes
-				// the registry unknown: the rule goes quiet rather than
-				// wrong.
+			switch kindOf(recv) {
+			case recvOther:
+				// Register is a common method name: a receiver declared
+				// with another type registers nothing.
+				return
+			case recvUnknown:
+				// A receiver the pass cannot place may still be a policy.
+				// With a spread or a permission-shaped name, in a file that
+				// imports the policy's package, the registry is unknown:
+				// the rule goes quiet rather than wrong.
 				shapedArg := call.Ellipsis.IsValid()
 				for _, n := range names {
 					shapedArg = shapedArg || looksLikePermission(n)
 				}
-				if shapedArg && importsAny(file, "framework/access", "framework") {
+				if shapedArg && importsPolicy {
 					out.Unknown[pkg] = true
 				}
 				return
@@ -401,36 +449,50 @@ func callsNewRolePolicy(call *ast.CallExpr) bool {
 	}
 }
 
-// policyIdents are a file's identifiers that hold a RolePolicy: a
-// parameter or variable of that type, or one assigned from
-// NewRolePolicy.
-func policyIdents(file *ast.File) map[string]bool {
-	out := map[string]bool{}
-	fromCtor := func(e ast.Expr) bool {
-		call, isCall := e.(*ast.CallExpr)
-		return isCall && callsNewRolePolicy(call)
+// identKinds classifies a file's identifiers by their declarations: a
+// parameter or variable with a declared type, one assigned from
+// NewRolePolicy, or one assigned a composite literal. The map ignores
+// scope; a policy reading anywhere wins.
+func identKinds(file *ast.File) map[string]recvKind {
+	out := map[string]recvKind{}
+	fromValue := func(e ast.Expr) recvKind {
+		if u, isAddr := e.(*ast.UnaryExpr); isAddr && u.Op == token.AND {
+			e = u.X
+		}
+		switch v := e.(type) {
+		case *ast.CallExpr:
+			if callsNewRolePolicy(v) {
+				return recvPolicy
+			}
+		case *ast.CompositeLit:
+			return kindOfType(v.Type)
+		}
+		return recvUnknown
 	}
 	ast.Inspect(file, func(n ast.Node) bool {
 		switch v := n.(type) {
 		case *ast.Field:
-			if isPolicyType(v.Type) {
+			if v.Type != nil {
 				for _, name := range v.Names {
-					out[name.Name] = true
+					setKind(out, name.Name, kindOfType(v.Type))
 				}
 			}
 		case *ast.ValueSpec:
 			for i, name := range v.Names {
-				if (v.Type != nil && isPolicyType(v.Type)) || (i < len(v.Values) && fromCtor(v.Values[i])) {
-					out[name.Name] = true
+				switch {
+				case v.Type != nil:
+					setKind(out, name.Name, kindOfType(v.Type))
+				case i < len(v.Values):
+					setKind(out, name.Name, fromValue(v.Values[i]))
 				}
 			}
 		case *ast.AssignStmt:
+			if len(v.Lhs) != len(v.Rhs) {
+				return true
+			}
 			for i, rhs := range v.Rhs {
-				if i >= len(v.Lhs) || !fromCtor(rhs) {
-					continue
-				}
 				if id, isIdent := v.Lhs[i].(*ast.Ident); isIdent {
-					out[id.Name] = true
+					setKind(out, id.Name, fromValue(rhs))
 				}
 			}
 		}

@@ -389,3 +389,56 @@ func TestUnregisteredPermWithoutAGoModule(t *testing.T) {
 	})
 	assertHas(t, ds, contracts.RuleUnregisteredPermission)
 }
+
+// A receiver whose declared type is not a policy registers nothing and
+// leaves the registry known: the framework's own a.Batteries.Register(b,
+// deps...) once silenced the rule for every binary that links it.
+func TestUnregisteredPermTypedOtherRegister(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"main.go": permApp(`p.Register("plans:write")
+	var reg *battery.Registry
+	reg.Register(b, deps...)`, `_ = access.Can(ctx, "plans:wirte")`),
+		"app.go": `package main
+
+import "github.com/DonaldMurillo/gofastr/framework/access"
+
+var _ access.Permission
+
+type App struct{ Batteries *battery.Registry }
+
+func (a *App) mount(b any, deps []string) { a.Batteries.Register(b, deps...) }
+`,
+	})
+	assertHas(t, ds, contracts.RuleUnregisteredPermission)
+}
+
+// An app package that happens to be named framework is not the facade.
+func TestUnregisteredPermOwnFrameworkPkg(t *testing.T) {
+	ds := fixture(t, map[string]string{"main.go": `package main
+
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/framework/access"
+	framework "example.com/app/framework"
+)
+
+func wire(ctx context.Context, p *access.RolePolicy) {
+	p.Register("plans:write")
+	_ = framework.Can(ctx, "billing:run")
+}
+`})
+	assertNot(t, ds, contracts.RuleUnregisteredPermission, "example.com/app/framework is the app's own")
+}
+
+// The same name declared as a policy in one function and as something
+// else in another is still a policy where it is one.
+func TestUnregisteredPermNameReusedLater(t *testing.T) {
+	ds := fixture(t, map[string]string{"main.go": permApp(`p.Register("plans:write")`,
+		`_ = access.Can(ctx, "plans:wirte")
+}
+
+func other(p *strings.Builder) {
+	p.Reset()`)})
+	assertHas(t, ds, contracts.RuleUnregisteredPermission)
+}
