@@ -73,8 +73,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   one.** A form with no `data-cui-rpc-signal` has no abort, so two quick
   submits raced: a slow refusal landing after a newer success painted
   its errors, and a slow success cleared a newer refusal's errors or
-  reset what the user had typed since. Only a node's newest request now
-  touches the page.
+  reset what the user had typed since. Only a form's newest request now
+  touches the page, whether the form or a button inside it sent it.
 - **`gofastr init` writes GoFastr's `go` and `toolchain` lines.** The
   scaffolded `go.mod` carried whatever `go mod init` wrote, the local Go
   version (`go 1.25.5` in one report), below the `go 1.27.0` the

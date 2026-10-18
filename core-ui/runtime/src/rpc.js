@@ -13,11 +13,13 @@
   // dispatch aborts the prior request targeting the same signal so network
   // response order cannot roll pagination or filtering back.
   const _rpcInFlight = new Map();
-  // The latest dispatch per node. A node with no signal has no abort
-  // controller, so two quick submits of one form race; a response from a
-  // dispatch the node has since superseded is dropped before it touches
-  // the page (a late refusal must not paint over a newer success, nor a
-  // late success clear a newer refusal).
+  // The latest dispatch per node and per form. A node with no signal has
+  // no abort controller, so two quick submits of one form race; an answer
+  // to a dispatch its form (or, outside a form, its node) has since
+  // superseded is dropped before it touches the page (a late refusal must
+  // not paint over a newer success, nor a late success clear a newer
+  // refusal). The node's own entry decides only its busy state, so a
+  // button superseded by its form's submit still re-enables.
   const _rpcLatest = new WeakMap();
   // Input-triggered RPC debounce belongs with dispatch state, not the core
   // bridge. The bridge loads this module on the first input and asks this map
@@ -167,9 +169,6 @@
     }
     const ctl = new AbortController();
     if (responseSignal) _rpcInFlight.set(responseSignal, ctl);
-    const tok = {};
-    _rpcLatest.set(node, tok);
-    const stale = () => _rpcLatest.get(node) !== tok;
 
     let body = node.getAttribute('data-cui-rpc-body');
     let resolvedPath = path;
@@ -179,6 +178,10 @@
     // An explicit data-cui-rpc-body (read above) still wins; a control with
     // no enclosing form and no explicit body keeps the legacy empty body.
     const formSource = node.tagName === 'FORM' ? node : (node.form || null);
+    const tok = {};
+    _rpcLatest.set(node, tok);
+    if (formSource) _rpcLatest.set(formSource, tok);
+    const stale = () => _rpcLatest.get(formSource || node) !== tok;
     // A retry starts clean (the formerrors module placed the previous
     // attempt's messages; nothing to clear until it has loaded).
     if (formSource && NS._formErrors) NS._formErrors.clear(formSource);
@@ -307,8 +310,11 @@
       if (toastHeader) NS._dispatchToastHeader(toastHeader);
       const ct = r.headers.get('content-type') || '';
       const data = ct.indexOf('application/json') >= 0 ? await r.json() : await r.text();
-      if (stale()) return;
       if (responseSignal) NS.setSignal(responseSignal, data);
+      // Checked after the body read and the signal broadcast: a newer
+      // dispatch may have started during either, and a signal listener
+      // may have started one itself.
+      if (stale()) return;
       if (closeOnSuccess && wentry && wentry.dismiss) wentry.dismiss();
       if (resetOnSuccess) node.reset();
 
@@ -348,7 +354,7 @@
       const openWidgetName = node.getAttribute('data-cui-rpc-open');
       if (openWidgetName) {
         NS.loadModule('widgets').then(() => {
-          NS.openWidget(openWidgetName);
+          if (!stale()) NS.openWidget(openWidgetName);
         }).catch(() => {});
       }
       // A success toast fires BEFORE the navigate below: the stack lives
@@ -385,7 +391,7 @@
         _rpcInFlight.delete(responseSignal);
       }
       // A superseded dispatch leaves the busy state to the newer one.
-      if (!stale()) {
+      if (_rpcLatest.get(node) === tok) {
         const sticky = node.hasAttribute('data-cui-rpc-after-disable') &&
           node.dataset.cuiRpcAfterDone === '1';
         if (!sticky && wantDisable) node.disabled = false;

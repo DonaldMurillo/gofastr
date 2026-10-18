@@ -65,12 +65,14 @@ func TestDispatchRPC_StaleFormResponseDropped(t *testing.T) {
 	ms := time.Millisecond
 	for _, tc := range []struct {
 		name string
-		// first and second answer the two submits; gap is how long after
-		// the first the second is sent.
+		// first and second answer the two requests; gap is how long after
+		// the first the default script sends the second.
 		first, second staleStep
 		gap           time.Duration
 		formAttrs     string
-		slowErrors    bool          // serve formerrors after slowModule
+		inner         string        // extra markup inside the form
+		script        string        // replaces the two-submit sequence
+		slow          string        // runtime module served after slowModule
 		probeAt       time.Duration // when to read the page
 		probe         string        // JS expression that must be true
 	}{
@@ -85,11 +87,44 @@ func TestDispatchRPC_StaleFormResponseDropped(t *testing.T) {
 		{name: "late success body", first: staleStep{wait: 700 * ms, headFirst: true}, second: staleStep{refuse: true}, gap: 300 * ms,
 			formAttrs: ` data-cui-rpc-reset`, probeAt: 1500 * ms,
 			probe: `document.getElementById('title').value === 'kept'`},
-		{name: "slow errors module", first: staleStep{wait: 200 * ms, refuse: true}, gap: 400 * ms, slowErrors: true, probeAt: 1500 * ms,
+		{name: "slow errors module", first: staleStep{wait: 200 * ms, refuse: true}, gap: 400 * ms, slow: "formerrors", probeAt: 1500 * ms,
 			probe: `document.getElementById('title').getAttribute('aria-invalid') !== 'true'`},
 		{name: "late network error", first: staleStep{wait: 700 * ms, drop: true}, gap: 100 * ms,
 			formAttrs: ` data-cui-rpc-error-toast="Failed"`, probeAt: 1500 * ms,
 			probe: `window.__toasts.length === 0`},
+		// A button inside the form sends the slow request; the form's own
+		// submit supersedes it. The form's errors follow the newer answer,
+		// and the button still clears its own busy state.
+		{name: "button then form", first: staleStep{wait: 700 * ms, refuse: true}, probeAt: 1500 * ms,
+			inner:  `<button type="button" id="chk" data-cui-rpc="/rpc/check">Check</button>`,
+			script: `document.getElementById('chk').click(); setTimeout(() => f.requestSubmit(), 100);`,
+			probe:  `document.getElementById('title').getAttribute('aria-invalid') !== 'true' && !document.getElementById('chk').disabled && !document.getElementById('chk').hasAttribute('aria-busy')`},
+		// A signal listener dispatches the form again, synchronously, as
+		// the first answer lands (a submit through the bridge would wait a
+		// microtask for the module); the first dispatch must not then
+		// reset the form under it.
+		{name: "listener resubmits", second: staleStep{wait: 1000 * ms}, probeAt: 500 * ms,
+			formAttrs: ` data-cui-rpc-signal="saved" data-cui-rpc-reset`,
+			script: `let again = true;
+  window.__gofastr._signals.saved = {value: undefined, listeners: [() => {
+    if (!again) return;
+    again = false;
+    document.getElementById('title').value = 'kept';
+    window.__gofastr.dispatchRPC(f, null, {confirmed: true});
+  }]};
+  f.requestSubmit();`,
+			probe: `document.getElementById('title').value === 'kept'`},
+		// The first save succeeds and queues its result dialog behind a
+		// slow widgets module; a newer refusal lands before it loads.
+		{name: "slow widgets module", first: staleStep{wait: 200 * ms}, second: staleStep{refuse: true}, slow: "widgets",
+			formAttrs: ` data-cui-rpc-open="result"`, probeAt: 1500 * ms,
+			script: `window.__opened = [];
+  let ow;
+  Object.defineProperty(window.__gofastr, 'openWidget', {configurable: true,
+    get: () => ow, set: (fn) => { ow = (n, o) => { window.__opened.push(n); return fn(n, o); }; }});
+  f.requestSubmit();
+  setTimeout(() => f.requestSubmit(), 400);`,
+			probe: `window.__opened.length === 0`},
 		{name: "busy until newer", first: staleStep{wait: 300 * ms}, second: staleStep{wait: 1200 * ms}, gap: 100 * ms, probeAt: 700 * ms,
 			probe: `document.getElementById('f').getAttribute('aria-busy') === 'true'`},
 	} {
@@ -107,7 +142,7 @@ func TestDispatchRPC_StaleFormResponseDropped(t *testing.T) {
 					http.NotFound(w, r)
 					return
 				}
-				if name == "formerrors" && tc.slowErrors {
+				if name == tc.slow {
 					time.Sleep(slowModule)
 				}
 				w.Header().Set("Content-Type", "application/javascript")
@@ -115,7 +150,7 @@ func TestDispatchRPC_StaleFormResponseDropped(t *testing.T) {
 			})
 			other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
 			t.Cleanup(other.Close)
-			mux.HandleFunc("/rpc/save", func(w http.ResponseWriter, r *http.Request) {
+			mux.HandleFunc("/rpc/", func(w http.ResponseWriter, r *http.Request) {
 				if hits.Add(1) == 1 {
 					tc.first.serve(w, r, other.URL)
 					return
@@ -129,7 +164,7 @@ func TestDispatchRPC_StaleFormResponseDropped(t *testing.T) {
   <div class="fui-field" data-hui-field="" data-cui-comp="ui-form-field">
     <label class="fui-field__label" for="title">Title</label>
     <input class="fui-input" id="title" name="title" value="">
-  </div>
+  </div>`+tc.inner+`
   <button type="submit">Save</button>
 </form>
 <script src="/__gofastr/runtime.js"></script>
@@ -139,15 +174,19 @@ func TestDispatchRPC_StaleFormResponseDropped(t *testing.T) {
 			t.Cleanup(srv.Close)
 
 			ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+			script := tc.script
+			if script == "" {
+				script = fmt.Sprintf(`f.requestSubmit();
+  setTimeout(() => { document.getElementById('title').value = 'kept'; f.requestSubmit(); }, %d);`, tc.gap.Milliseconds())
+			}
 			submit := fmt.Sprintf(`(() => {
   window.__toasts = [];
   window.__results = [];
   document.addEventListener('gofastr:formresult', (e) => window.__results.push(e.detail.ok));
   window.__gofastr._toastOrFallback = (o) => window.__toasts.push(o);
   const f = document.getElementById('f');
-  f.requestSubmit();
-  setTimeout(() => { document.getElementById('title').value = 'kept'; f.requestSubmit(); }, %d);
-})()`, tc.gap.Milliseconds())
+  %s
+})()`, script)
 			var ok bool
 			if err := chromedp.Run(ctx,
 				chromedp.Navigate(srv.URL+"/"),

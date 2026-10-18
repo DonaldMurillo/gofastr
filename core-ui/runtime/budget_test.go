@@ -1237,13 +1237,14 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// delete toast's Undo): the 13 bytes are the attribute read; the
 		// parse, the button and the longer stay live in headless-feedback,
 		// which made room by moving the bell into headless-bell.
-		// 3288 measured (3286 + 2) after a superseded dispatch stops
-		// touching the page (2026-10-17): the 61 bytes are the per-node
-		// latest-dispatch WeakMap and its six checks (after the fetch, each
-		// body read, the deferred error report, the network-error catch
-		// and the busy-state cleanup), each pinned by a case in
-		// TestDispatchRPC_StaleFormResponseDropped.
-		"rpc": 3288,
+		// 3303 measured (3301 + 2) after a superseded dispatch stops
+		// touching the page (2026-10-17): the 76 bytes are the latest-
+		// dispatch WeakMap, keyed per form and per node, and its checks
+		// (after the fetch, the refusal body, the success body and signal
+		// broadcast, the deferred error report and widget open, the
+		// network-error catch, and the node-keyed busy-state cleanup),
+		// each pinned by a case in TestDispatchRPC_StaleFormResponseDropped.
+		"rpc": 3303,
 	}
 	const coreOverride = 0
 
