@@ -297,3 +297,23 @@ func TestUnreadableManifestFailsTheRun(t *testing.T) {
 	assertHas(t, missing, contracts.RuleNoCoverageManifest)
 	assertNot(t, missing, contracts.RuleCoverageManifestBroken, "a missing manifest is not a corrupt one")
 }
+
+// Tests and servers write the manifest under the GOFASTR_*_COVERAGE_DIR
+// override when one is set, so verify reads it from there too. Reading the
+// project root instead found nothing and skipped every coverage check.
+func TestManifestFollowsTheCoverageDirOverride(t *testing.T) {
+	src := "package main\n\nimport \"github.com/DonaldMurillo/gofastr/core/router\"\n\n" +
+		"func a(r *router.Router) { r.Handle(\"GET\", \"/a\", nil) }\n"
+	cov := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cov, ".gofastr"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// Broken on purpose: only a read of this file reports it.
+	if err := os.WriteFile(filepath.Join(cov, ".gofastr", "semantic-coverage.json"), []byte("{ not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", cov)
+	ds := testingRun(t, contracts.DefaultConfig(), map[string]string{"main.go": src})
+	assertHas(t, ds, contracts.RuleCoverageManifestBroken)
+	assertNot(t, ds, contracts.RuleNoCoverageManifest, "the override holds a manifest")
+}

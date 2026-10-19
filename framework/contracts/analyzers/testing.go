@@ -67,7 +67,7 @@ func semanticCoverage(p *contracts.Pass) []contracts.Diagnostic {
 		return nil
 	}
 
-	manifest, err := semcov.Read(p.Root)
+	manifest, err := semcov.Read(semcov.DirFor(p.Root))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			// Absence and drift are different failures, treated

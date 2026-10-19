@@ -407,6 +407,12 @@ router. `framework/semcov` records what a test run genuinely exercised
 into `.gofastr/semantic-coverage.json`, and the `testing` rules diff that
 against the discovered surface.
 
+The manifest sits under the project root unless
+`GOFASTR_SEMANTIC_COVERAGE_DIR` or `GOFASTR_AXE_COVERAGE_DIR` is set, in
+which case the tests, the server and `gofastr verify` all use that
+directory. Set it the same way for all three, or verify reads a manifest
+the tests never wrote.
+
 Six dimensions are recorded, each through a hook the runtime packages
 expose rather than by importing the recorder (the router's
 `SetServeHook` method,

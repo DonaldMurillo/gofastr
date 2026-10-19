@@ -393,3 +393,19 @@ func TestMergeKeepsEveryDimension(t *testing.T) {
 		}
 	}
 }
+
+func TestDirForPrefersTheOverrides(t *testing.T) {
+	t.Setenv("GOFASTR_SEMANTIC_COVERAGE_DIR", "")
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "")
+	if got := DirFor("/app"); got != "/app" {
+		t.Errorf("no override: DirFor = %q, want the project root", got)
+	}
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "/axe")
+	if got := DirFor("/app"); got != "/axe" {
+		t.Errorf("axe override: DirFor = %q, want /axe", got)
+	}
+	t.Setenv("GOFASTR_SEMANTIC_COVERAGE_DIR", "/sem")
+	if got := DirFor("/app"); got != "/sem" {
+		t.Errorf("both overrides: DirFor = %q, want the semantic one", got)
+	}
+}

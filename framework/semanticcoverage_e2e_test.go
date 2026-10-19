@@ -23,6 +23,9 @@ import (
 // This drives the whole loop, exercise one of two routes, flush the
 // manifest the real code writes, and let the real analyzer read it.
 func TestSemanticCoverageLoopFromRecordingToRule(t *testing.T) {
+	// cmd/affected sets it; this test records into and verifies dir.
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "")
+	t.Setenv("GOFASTR_SEMANTIC_COVERAGE_DIR", "")
 	dir := t.TempDir()
 	const source = `package main
 
