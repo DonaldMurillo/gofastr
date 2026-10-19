@@ -338,10 +338,11 @@ Headers in the raw bytes (`\]`, `\|`) render as the plain characters.
 `framework.WithMCP()` exposes `app.MCP` at `/mcp` over Streamable HTTP (POST
 JSON-RPC + GET Server-Sent Events), replacing the manual
 `fwApp.Router().Handle("POST", "/mcp", fwApp.MCP)`. Combined with
-`WithMCPIntrospection()`, the eight tools that read the running app's state
+`WithMCPIntrospection()`, the nine tools that read the running app's state
 are reachable at the canonical endpoint the agent card advertises:
 `app_routes`, `app_plugins`, `app_batteries`, `app_modules`, `app_config`,
-`app_readiness`, `app_goroutine_leaks`, `app_routines`. The embedded
+`app_readiness`, `app_goroutine_leaks`, `app_routines`, `app_unmounted`
+(the [unmounted](unmount.md) copies the binary was built with). The embedded
 framework docs are a separate option, `framework.WithMCPTools(mcptools.Register)` from
 `framework/docs/mcptools`, which adds `framework_docs_list`,
 `framework_docs_get` and `framework_docs_search`; package framework does not

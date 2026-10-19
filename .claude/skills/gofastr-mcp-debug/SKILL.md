@@ -10,9 +10,10 @@ running GoFastr app via MCP. For deep recipes, jump to:
 
 - `.claude/skills/log-debug/SKILL.md` covers the four `log_*` tools
   (recent entries, structured filter, metrics, level mutation).
-- `.claude/skills/app-introspect/SKILL.md` covers the eight introspection
+- `.claude/skills/app-introspect/SKILL.md` covers the nine introspection
   tools (`app_routes`, `app_plugins`, `app_batteries`, `app_modules`,
-  `app_config`, `app_readiness`, `app_goroutine_leaks`, `app_routines`),
+  `app_config`, `app_readiness`, `app_goroutine_leaks`, `app_routines`,
+  `app_unmounted`),
   the `framework_docs_list` / `framework_docs_get` /
   `framework_docs_search` tools an app adds with
   `framework.WithMCPTools(mcptools.Register)` for the embedded
@@ -33,6 +34,7 @@ running GoFastr app via MCP. For deep recipes, jump to:
 | "What plugins / batteries are loaded?"      | `app_plugins`, `app_batteries` (app-introspect)          |
 | "What modules are enabled?"                 | `app_modules` (app-introspect)                           |
 | "Did my routine body change propagate?"     | `app_routines` (app-introspect); ledger_state=drifted flags it |
+| "Which framework packages did we unmount?"  | `app_unmounted` (app-introspect)                         |
 | "Is anything leaking goroutines?"           | `app_goroutine_leaks` (app-introspect)                   |
 | "Turn module X off / back on"               | `app_module_disable`, `app_module_enable` (mutating)     |
 | "How does framework feature X work?"        | `framework_docs_search` → `framework_docs_get`           |

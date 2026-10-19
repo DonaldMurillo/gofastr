@@ -264,6 +264,16 @@ func runAudit(args []string) {
 			osExit(1)
 		}
 		fmt.Print(formatAuditReport(findings))
+		if _, entries, err := unmountedSettings(root); err != nil {
+			fmt.Fprintf(os.Stderr, "audit deps: %v\n", err)
+			osExit(1)
+		} else if len(entries) > 0 {
+			fmt.Println()
+			fmt.Println("Unmounted gofastr packages (copies this app owns; framework fixes no longer reach them):")
+			for _, e := range entries {
+				fmt.Printf("  %s\n", describeUnmounted(e))
+			}
+		}
 	case "lint":
 		root := "."
 		if len(args) > 1 {

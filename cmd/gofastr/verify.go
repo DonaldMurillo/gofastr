@@ -157,7 +157,7 @@ func runVerify(args []string) {
 			warn("%s", msg)
 		}
 	}
-	reportProvenance(opts.root, note, noteWarn)
+	reportUnmounted(opts.root, reportProvenance(opts.root, note, noteWarn), note, noteWarn)
 
 	// The changed-file set is resolved before the fix stage rather than
 	// only before reporting. --changed --fix in a pre-commit hook used to

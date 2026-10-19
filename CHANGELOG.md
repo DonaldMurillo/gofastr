@@ -31,6 +31,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   gives (edited since generated, untouched but still different, no
   marker) and the part of the spec the file carries. The notes go to
   stderr when the spec goes to stdout.
+- **`gofastr unmount <package>` copies a gofastr package into the app;
+  `gofastr remount <package>` goes back.** Unmount copies the package
+  and the packages under it from the gofastr version go.mod requires
+  into `unmounted/<package>` (or `--out`), rewires the module's imports
+  to the copy and records it in a new `unmounted:` section of
+  `gofastr.settings.yml`. It refuses a package that imports gofastr
+  internals, or that a package outside the module imports (another
+  gofastr package, a plugin), and names the importers. Each Go file of the copy carries the
+  provenance marker with a new `source=` field, and each package gets an
+  `unmounted.gen.go` whose `init()` registers the copy with the new
+  `core/unmounted` package: `App.Unmounted()` and the `app_unmounted`
+  MCP tool report the copies a binary was built with. Remount rewires
+  the imports back, deletes the copy and its entry, and refuses a copy
+  edited, added to or trimmed since unmount unless `--force`. `gofastr
+  verify` warns when a copy is older than the gofastr release go.mod
+  requires (with the upstream diff link), when an entry has no files and
+  when a marked copy is not listed; `gofastr upgrade` and `gofastr audit
+  deps` list the copies, and upgrade never changes them. GOFASTR2002
+  (hand-rolled battery) stays quiet on a copy of that battery. See
+  `gofastr docs unmount`.
 
 ### Changed
 - **The blueprint is now the app spec.** GoFastr has one concept for
@@ -69,6 +89,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `gofastr verify --config` take a settings file, and `gofastr init`
   writes `gofastr.settings.yml`. `gofastr upgrade` reports each old file.
   See `gofastr docs settings`.
+- **`gofastr generate package <name>` records its copy as unmounted.** The
+  chrome package copy carries the unmount marker and an
+  `unmounted.gen.go`, and lands in the `unmounted:` section of
+  `gofastr.settings.yml`, so verify, upgrade and `gofastr remount` handle
+  it like any other copy. Each copy is its own entry, so two binaries
+  can still carry their own copy of one package.
 
 ### Fixed
 - **`gofastr validate` no longer fetches webfonts.** It rendered the app

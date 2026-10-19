@@ -162,6 +162,9 @@ func printHelp() {
                         migration note between go.mod's version and the target,
                         points at affected lines; --apply runs the go get/tidy/
                         build/test steps. See "gofastr docs upgrading"
+  unmount [<package>]   Copy a gofastr package into the app and rewire its imports
+                        to the copy; no package lists the copies. See "gofastr docs unmount"
+  remount <package>     Go back to the framework's package and delete the copy
   version               Print version info
 
 %s:
@@ -206,6 +209,8 @@ var ownsHelp = map[string]bool{
 	"audit":    true,
 	"verify":   true,
 	"upgrade":  true,
+	"unmount":  true,
+	"remount":  true,
 	"docs":     true,
 	"doc":      true,
 	"init":     true,
@@ -312,6 +317,10 @@ func dispatch(args []string) {
 		runVerify(cmdArgs)
 	case "upgrade":
 		runUpgrade(cmdArgs)
+	case "unmount":
+		runUnmount(cmdArgs)
+	case "remount":
+		runRemount(cmdArgs)
 	case "desktop":
 		runDesktop(cmdArgs)
 	case "version":
@@ -319,7 +328,7 @@ func dispatch(args []string) {
 	default:
 		fmt.Printf("%s Unknown command: %s\n\n", red("✗"), cmd)
 		// Fuzzy suggestion: check if it's close to a known command
-		suggestions := []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "audit", "verify", "upgrade", "theme", "version"}
+		suggestions := []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "audit", "verify", "upgrade", "unmount", "remount", "theme", "version"}
 		for _, s := range suggestions {
 			if strings.HasPrefix(s, cmd) || fuzzy.Levenshtein(cmd, s) <= 2 {
 				fmt.Printf("  Did you mean: %s?\n", bold("gofastr "+s))

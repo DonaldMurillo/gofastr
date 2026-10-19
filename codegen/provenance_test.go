@@ -47,6 +47,22 @@ func TestStampRoundTrips(t *testing.T) {
 	}
 }
 
+// A copy's marker names its upstream package and reads back intact.
+func TestStampCarriesSource(t *testing.T) {
+	m := Marker{Generator: "unmount", Kind: KindScaffold, Version: "v0.91.0", Source: "github.com/DonaldMurillo/gofastr/battery/auth"}
+	stamped, err := Stamp("auth.go", "package auth\n", m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stamped, " source=github.com/DonaldMurillo/gofastr/battery/auth sum=") {
+		t.Fatalf("stamped:\n%s", stamped)
+	}
+	got, _, ok := ReadMarker("auth.go", stamped)
+	if !ok || got.Source != m.Source || got.Version != m.Version {
+		t.Fatalf("marker = %#v ok=%v", got, ok)
+	}
+}
+
 // Lines that must stay first keep their place: a shebang, a Dockerfile
 // parser directive, an HTML doctype.
 func TestStampKeepsLeadingLines(t *testing.T) {
@@ -122,6 +138,7 @@ func TestStampRefusesUnsafeValues(t *testing.T) {
 		{Generator: "a*/", Kind: KindScaffold},
 		{Generator: "app", Kind: KindScaffold, Version: "v1\npackage evil"},
 		{Generator: "app", Kind: KindScaffold, Version: "-->"},
+		{Generator: "unmount", Kind: KindScaffold, Source: "a/b */ evil"},
 	} {
 		if _, err := Stamp("a.css", "x\n", m); err == nil {
 			t.Errorf("%#v: accepted", m)

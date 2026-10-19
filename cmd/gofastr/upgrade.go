@@ -413,6 +413,7 @@ func runUpgrade(args []string) {
 		fmt.Printf("    go install %s/cmd/gofastr@%s\n\n", gofastrModule, hi)
 	}
 	fmt.Print(upgradeReport(opts.root, upgrade.ReleasesInRange(reg, lo, hi), reg.MarkerSinks))
+	printUnmountedForUpgrade(opts.root, target)
 	fmt.Println("Consult the release notes for the full story:")
 	fmt.Printf("    https://github.com/DonaldMurillo/gofastr/releases\n\n")
 
