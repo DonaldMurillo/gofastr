@@ -3,6 +3,9 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -75,6 +78,31 @@ func TestRenderSDKFiles_Layout(t *testing.T) {
 		if _, ok := got[want]; !ok {
 			t.Errorf("missing generated file %s (have %d files)", want, len(got))
 		}
+	}
+}
+
+// The manifest describes the dist/ bytes the app serves: sdkdocs sends
+// each artifact's SHA256 as its ETag and shows its size.
+func TestSDKManifestMatchesDistFiles(t *testing.T) {
+	got := renderedSDK(t)
+	var m sdk.Manifest
+	if err := json.Unmarshal([]byte(got["dist/"+sdk.ManifestFile]), &m); err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Artifacts) != 3 {
+		t.Fatalf("manifest lists %d artifacts, want 3", len(m.Artifacts))
+	}
+	for key, a := range m.Artifacts {
+		data, ok := got["dist/"+a.File]
+		if !ok {
+			t.Fatalf("%s: no dist/%s", key, a.File)
+		}
+		if sum := fmt.Sprintf("%x", sha256.Sum256([]byte(data))); sum != a.SHA256 || int64(len(data)) != a.Bytes {
+			t.Errorf("%s: manifest says %s (%d bytes), dist/%s is %s (%d bytes)", key, a.SHA256, a.Bytes, a.File, sum, len(data))
+		}
+	}
+	if !strings.Contains(got["dist/"+sdk.JSArtifact], "gofastr:generated generator=sdk") {
+		t.Errorf("dist/%s carries no marker", sdk.JSArtifact)
 	}
 }
 

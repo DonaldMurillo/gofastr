@@ -200,9 +200,6 @@ func runGenerateSDK(args []string) {
 	}
 
 	files, err := renderSDKFiles(spec, opts.targets, !opts.noArchive)
-	if err == nil {
-		files, err = stampGeneratedFiles("sdk", files)
-	}
 	if err != nil {
 		fail("SDK generation failed: %v", err)
 		osExit(1)
@@ -539,7 +536,9 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *sdkOptions) (sdkSpe
 
 // renderSDKFiles produces every generated file, out-dir-relative: the go/
 // and js/ source trees for the requested targets, plus dist/ (archives +
-// manifest) unless archives are disabled.
+// manifest) unless archives are disabled. It stamps the provenance marker
+// on the sources before it zips or hashes them, so the manifest describes
+// the bytes the app serves.
 func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]generatedFile, error) {
 	want := map[string]bool{}
 	for _, t := range targets {
@@ -558,6 +557,9 @@ func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]generatedFile,
 
 	if want["go"] {
 		goFiles, err := renderSDKGoFiles(spec)
+		if err == nil {
+			goFiles, err = stampGeneratedFiles("sdk", goFiles)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -578,7 +580,10 @@ func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]generatedFile,
 	}
 
 	if want["js"] {
-		jsFiles := renderSDKJSFiles(spec)
+		jsFiles, err := stampGeneratedFiles("sdk", renderSDKJSFiles(spec))
+		if err != nil {
+			return nil, err
+		}
 		for _, f := range jsFiles {
 			files = append(files, generatedFile{name: "js/" + f.name, content: f.content})
 			if !dist {
@@ -795,10 +800,6 @@ func (sdkGenerator) Generate(_ context.Context, genCtx *codegen.Context, cfg cod
 		return nil, err
 	}
 	files, err := renderSDKFiles(spec, opts.targets, true)
-	if err != nil {
-		return nil, err
-	}
-	files, err = stampGeneratedFiles("sdk", files)
 	if err != nil {
 		return nil, err
 	}
