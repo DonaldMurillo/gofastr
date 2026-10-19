@@ -133,7 +133,7 @@ func New() *Router {
 func (r *Router) Handle(method, pattern string, handler http.Handler) {
 	fullPath := r.prefix + pattern
 	fullPattern := method + " " + fullPath
-	route := &cachedRoute{raw: handler, router: r, method: method, pattern: fullPath}
+	route := newCachedRoute(handler, r, method, fullPath)
 	// net/http's ServeMux panics with a terse "conflicts with pattern" message
 	// when two registrations want the same path. That's a common, confusing
 	// failure, e.g. an auto-generated CRUD route and a page/screen both want
@@ -419,12 +419,18 @@ type cachedRoute struct {
 	router *Router
 	method string // HTTP method (combined with pattern to form the gate key)
 	// pattern is the full path pattern (prefix-joined, no method).
-	// The gate key is method + " " + pattern so two modules can own
-	// different methods on the same path independently.
-	pattern   string
+	pattern string
+	// gateKey is method + " " + pattern, so two modules can own
+	// different methods on the same path independently. Built once at
+	// registration; the gate check runs on every request.
+	gateKey   string
 	cached    atomic.Pointer[http.Handler]
 	cachedV   atomic.Uint64
 	composeMu sync.Mutex
+}
+
+func newCachedRoute(h http.Handler, r *Router, method, pattern string) *cachedRoute {
+	return &cachedRoute{raw: h, router: r, method: method, pattern: pattern, gateKey: method + " " + pattern}
 }
 
 func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -438,8 +444,7 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	served := c.router.root.serveHook
 	c.router.root.mu.RUnlock()
 	if gate != nil {
-		key := c.method + " " + c.pattern
-		if !gate(key) {
+		if !gate(c.gateKey) {
 			http.NotFound(w, req)
 			return
 		}
@@ -597,7 +602,7 @@ func (r *Router) effectiveNotFound() http.Handler {
 // Internally wrapped in a cachedRoute so the chain composition is
 // memoised between Use bumps.
 func (r *Router) NotFound(handler http.Handler) {
-	route := &cachedRoute{raw: handler, router: r}
+	route := newCachedRoute(handler, r, "", "")
 	r.mu.Lock()
 	replaced := r.notFound != nil
 	r.notFound = route
@@ -636,7 +641,7 @@ func (r *Router) WrapNotFound(mw func(next http.Handler) http.Handler) {
 	} else if r.notFound != nil {
 		next = r.notFound
 	}
-	r.notFound = &cachedRoute{raw: mw(next), router: r}
+	r.notFound = newCachedRoute(mw(next), r, "", "")
 }
 
 // effectiveMethodNotAllowed returns the nearest non-nil
@@ -667,7 +672,7 @@ func (r *Router) effectiveMethodNotAllowed() http.Handler {
 // MethodNotAllowed still applies. Mirrors [NotFound] exactly, including
 // the cachedRoute memoisation.
 func (r *Router) MethodNotAllowed(handler http.Handler) {
-	route := &cachedRoute{raw: handler, router: r}
+	route := newCachedRoute(handler, r, "", "")
 	r.mu.Lock()
 	r.methodNotAllowed = route
 	r.mu.Unlock()

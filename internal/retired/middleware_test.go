@@ -230,3 +230,23 @@ func teeOf(w http.ResponseWriter) *teeWriter {
 	}
 	return nil
 }
+
+// A request built on ProductionContext gets the writer it was given, and
+// the same request without it is teed: the exemption is what disarms.
+func TestProductionContextDisarms(t *testing.T) {
+	ResetForTest(t)
+	var seen http.ResponseWriter
+	h := Middleware(func() bool { return false })(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = w
+	}))
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	h.ServeHTTP(rec, req.WithContext(ProductionContext(t, req.Context())))
+	if seen != http.ResponseWriter(rec) {
+		t.Fatalf("production context wrapped the writer: %T", seen)
+	}
+	h.ServeHTTP(rec, req)
+	if seen == http.ResponseWriter(rec) {
+		t.Fatal("a request without the exemption was not teed")
+	}
+}

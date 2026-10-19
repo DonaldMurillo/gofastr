@@ -252,3 +252,22 @@ func TestRouteGateConcurrentSafe(t *testing.T) {
 	}
 	<-done
 }
+
+// The gate runs on every request, so asking it must cost no allocation:
+// a gated route serves with the same allocations as an ungated one.
+func TestRouteGateAddsNoAlloc(t *testing.T) {
+	serveAllocs := func(gated bool) float64 {
+		r := New()
+		if gated {
+			r.SetRouteGate(func(string) bool { return true })
+		}
+		r.Get("/ping", http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+		req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req) // compose the chain outside the measurement
+		return testing.AllocsPerRun(100, func() { r.ServeHTTP(w, req) })
+	}
+	if plain, gated := serveAllocs(false), serveAllocs(true); gated != plain {
+		t.Fatalf("gated route allocates %v per request, ungated %v", gated, plain)
+	}
+}

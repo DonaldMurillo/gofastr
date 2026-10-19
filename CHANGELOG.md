@@ -7,6 +7,98 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+**BREAKING** for generated code. The generated Go HTTP client and Go SDK
+make optional `<Entity>Input` fields pointers, and the generated typed
+repository writes through `<Entity>Input` and `<Entity>Patch` instead of
+the model struct. Regenerating changes call sites; the compiler names
+each one. A field named `input`, `patch` or `move`, or `<enum>_value`
+next to an enum, now fails `gofastr generate`: its column var meets one
+of the new type names.
+
+### Added
+- **The typed repository runs moves.** An entity with `States` gets one
+  `<Entity>Move` constant per move and `Repo.Transition(ctx, id, move)`,
+  which calls `CrudHandler.RunTransition`. System moves are included,
+  since Go code is the caller they exist for.
+- **Generated enum fields carry typed values.** An enum field with
+  declared values gets `<Entity><Field>Value` and one constant per value
+  (`PostsStatusDraft`). The model, the write shapes and the column take
+  that type: the new `framework.NewEnumColumn[T]` builds a column whose
+  `Eq`, `Neq` and `In` accept only `T`. A value that has no identifier
+  form, or whose constant name another name in the file already uses,
+  gets no constant and is listed in a comment.
+- **`make bench-smoke` runs every benchmark once.** It covers the
+  packages `cmd/affected` selects, with `-benchtime=1x` and Postgres
+  skipped, and CI runs it after the test step, so a benchmark that
+  stops working now fails the build.
+
+### Changed
+- **SQL fragments and route gates cost fewer allocations per request.**
+  `core/query` returns a clean identifier or fragment as is instead of
+  building a `strings.Replacer` for it each time, and `core/router`
+  computes a route's gate key once at registration instead of on every
+  request.
+
+### Removed
+- **Widget roots no longer carry `data-hydrate`.** Nothing read the
+  attribute. `Widget.Render` emits `data-widget`, plus `data-behavior`
+  when the component has actions.
+
+### Fixed
+- **The typed repository stores false, 0 and "".** `Create` and `Update`
+  marshalled the model struct, whose `omitempty` value fields dropped
+  zero values: an update could never clear a field, and a create could
+  not override a non-zero default. Writes now take `<Entity>Input`
+  (`Create`, `BatchCreate`, `FirstOrCreate`; every field but a required
+  one with no default is a pointer) and `<Entity>Patch` (`Update`,
+  `BatchUpdate`; every field a pointer), and return the stored row.
+  Neither carries an `auto_generate` column, and the patch leaves out
+  the owner and tenant columns, which an update never sets. A
+  `cascade_write` relation keeps its children: `PostsInput.Comments`
+  takes `[]CommentsInput`, and `PostsPatch.Comments` takes
+  `[]PostsCommentsNested`, a `CommentsPatch` plus the `ID` of the child
+  to update. Entity files generated before this keep the old repo until
+  regenerated.
+- **The generated Go client's create and PUT send zero values.** Its
+  `<Entity>Input` had the same `omitempty` value fields, so
+  `CreatePosts` could not send `published: false` over a `true` default.
+  Fields are now pointers, except a required field with no default.
+  Its patches also drop `auto_generate`, owner and tenant columns.
+- **The JS SDK and `/openapi.json` stop requiring defaulted fields.** A
+  required field with a default may be left out of a write, and the
+  server takes the default. The `client.d.ts` `Input` marks it optional,
+  and the create and PUT request schemas leave it out of `required` (the
+  response schema keeps it). Update bodies in both, and the `d.ts`
+  `Patch`, no longer offer the owner field or the `multi_tenant` tenant
+  column, which an update never sets, and `Input` no longer offers an
+  `auto_generate` column.
+- **`CancelTask` can no longer lose to the handler it cancels.** It
+  canceled the run's context before storing CANCELED, so a handler that
+  completed on wake stored COMPLETED first and the client got -32002
+  for a task it had asked to cancel. The cancel now halts the local
+  run, which refuses the run's writes, then stores CANCELED, then wakes
+  the run, so neither a handler that completes on wake nor one writing
+  in a loop can beat it. A `SendMessage` waiting on the run answers
+  CANCELED rather than its stale WORKING copy, and a subscriber gets
+  the CANCELED event even when the handler returns before the cancel
+  publishes. The cancel's store calls are bounded by the store timeout,
+  so a stalled database fails the cancel instead of holding the run.
+- **56 framework benchmarks ran again.** Their requests had no session,
+  so generated CRUD answered 401 before the handler body ran, and the
+  POST/PUT body helper ended its input with an error other than
+  `io.EOF`. The fixtures now stamp a user, mount CRUD through
+  `App.CrudHandler`, and switch off the test-binary-only markup scan
+  and render diagnostics, so they time what a deployed app runs.
+  `BenchmarkT7_FilteredList_NetHTTP` now runs the same COUNT query and
+  selects the same columns as the generated list it is compared with.
+- **The benchmark docs carry current numbers.** `benchmarks.md` has
+  the 2026-10-18 binary sizes, build and dev RAM, and Tier 7 gaps, and
+  drops the cgo note (the SQLite driver is pure Go); `perf-results.md`
+  opens with a v0.90.0 snapshot ahead of the v0.26.0 one.
+- **The runtime-size docs state the core's real gzip size**: 13,655 B
+  at level 6 and 15,779 B at level 1, which is 1,443 B past the 14 KiB
+  congestion window. They said 12.3 KB.
+
 ## [0.90.0] - 2026-10-18
 
 **BREAKING.** `router.Param` panics on a wildcard name its route does

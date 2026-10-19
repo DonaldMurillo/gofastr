@@ -1,0 +1,14 @@
+version: v0.91.0
+title: Typed repository write shapes, moves and enum values
+notes:
+  - change: "gofastr generate emits typed repositories whose writes take <Entity>Input (Create, BatchCreate, FirstOrCreate) and <Entity>Patch (Update, BatchUpdate) and return the stored row, instead of marshalling the model struct, whose omitempty value fields dropped false, 0 and \"\"; it also emits <Entity>Move constants with Repo.Transition, and typed enum values with framework.NewEnumColumn"
+    breaking: true
+    nodetect: "the repo is generated code the app owns, and the regenerated repo calls the same framework functions as the old one; the old Create(ctx, row *<Entity>) error signature is the tell"
+    guidance: "Entity files the generator wrote earlier keep the old repo, which cannot store false, 0 or \"\" through Create or Update. Regenerate the entity package and move callers to the payloads: repo.Create(ctx, entities.PostsInput{Title: t, Published: new(false)}), repo.Update(ctx, id, entities.PostsPatch{Views: new(0)}). The compiler names each call site. A declaration with a field whose column var meets a new type name (a field named input, patch or move, or <enum>_value next to an enum) now fails generate with the colliding name; rename the field."
+  - change: "the generated Go HTTP client and Go SDK make every <Entity>Input field a pointer except a required field with no default, so a create or PUT can send false, 0 or \"\" over a non-zero default"
+    breaking: true
+    nodetect: "the client is generated code in the app or in an SDK consumer's module; the old struct literal fails to compile once the client is regenerated, and the compiler names each site"
+    guidance: "Wrap optional values in new(): client.PostsInput{Title: t, Views: new(1)}. A required field with no default stays a value."
+  - change: "the JS SDK's client.d.ts and the /openapi.json request schemas leave a required field with a default out of the required set, and their update bodies drop the owner field and the multi_tenant tenant column"
+    nodetect: "a schema and a generated d.ts, not an API: a client generated from /openapi.json or the d.ts sees optional fields where it saw required ones, and loses update fields the server already ignored"
+    guidance: "Nothing to change in the app. Regenerate an external client built from /openapi.json if its types should match; code that sent the owner or tenant field in an update was already sending a field the server skipped."

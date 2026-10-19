@@ -487,7 +487,7 @@ make gofastr depend on a repo that depends on gofastr.
   grant-set ∩ caller-authority) on the plugin's server routes; a hostile
   frame can claim any grants it likes.
 - **Putting the broker into `runtime.js`.** It belongs on its own
-  route: plugin pages are rare, the core payload budget (12.5 KB gz) is
+  route: plugin pages are rare, the core payload budget (~13.4 KB gz) is
   load-bearing, and `RegisterBrokerRoute` is already idempotent.
 - **Inventing plugin-only permission names.** Use the `resource:verb`
   scope grammar so token scoping, wildcards, and admin tooling keep

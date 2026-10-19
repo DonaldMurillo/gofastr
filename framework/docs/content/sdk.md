@@ -42,8 +42,10 @@ The same typed client the generated app embeds (`entities/client`),
 packaged as its own module (`module local/<app>-sdk` by default,
 `--module` to override). Per entity: `List/Get/Create/Update/Patch/Delete`,
 the three `_batch` verbs, and `Watch` (SSE), plus the `Do` escape hatch,
-bearer-token auth (`c.Token = "gfsk_…"`), presence-aware pointer `Patch`
-structs, and `*APIError` whose body carries the error envelope. Every
+bearer-token auth (`c.Token = "gfsk_…"`), presence-aware write structs
+(an `Input` whose fields are pointers, except a required field with no
+default, so `new(false)` overrides
+a `true` default, and an all-pointer `Patch`), and `*APIError` whose body carries the error envelope. Every
 response body the client buffers — the JSON decode and the `*APIError`
 snapshot — is capped at 1 MiB (`maxBodyBytes`): a bigger body is a
 misbehaving endpoint, and the decode fails on truncation instead of
@@ -64,7 +66,10 @@ Two plain files, no npm packaging, no build step; publishing to a
 registry is your business, not the generator's (add your own
 package.json if you want it on npm). `client.js` is directly importable
 from disk **or straight from the running app's URL**; `client.d.ts` types
-it for TypeScript when the files sit side by side.
+it for TypeScript when the files sit side by side. Its `<Entity>Input`
+marks a field optional unless it is required with no default, and
+`<Entity>Patch` is a `Partial` of it without the state, owner and
+tenant fields an update never sets.
 
 ```js
 import { Client, ApiError, postsFields } from "./client.js";

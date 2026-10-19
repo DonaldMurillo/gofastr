@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-// refuseDuplicateDecls fails generation when two entities' names meet in
+// refuseDuplicateDecls fails generation when two declared names meet in
 // one generated Go identifier. Method and wrapper names join an entity
 // name to a verb or move key (Client.<Key><Entity>, run<Entity><Key>), so
 // entity orders with move mark_paid and entity paid_orders with move mark
@@ -35,7 +35,7 @@ func refuseDuplicateDecls(files []generatedFile) error {
 		for _, name := range topLevelNames(parsed) {
 			key := declKey{dir, name}
 			if prev, dup := seen[key]; dup {
-				return fmt.Errorf("generated code declares %s twice (%s and %s): two entities' names meet in one identifier; rename an entity or a move key", name, prev, f.name)
+				return fmt.Errorf("generated code declares %s twice (%s and %s): two declared names (entities, fields, enum values or move keys) meet in one identifier; rename one of them", name, prev, f.name)
 			}
 			seen[key] = f.name
 		}

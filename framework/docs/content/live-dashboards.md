@@ -433,12 +433,12 @@ most common isolation bug. `SetAuthorizeTopic` alone does not fix it.
 The numbers below are measured by the existing framework benchmarks,
 not new claims. Re-run with `go test -run=^$ -bench='BenchmarkSSE|BenchmarkEventBus' -benchmem ./framework/`.
 
-| Benchmark | What it measures | Result (v0.26.0) |
+| Benchmark | What it measures | Result |
 |---|---|---|
-| `BenchmarkSSE_BackpressureDropRate` | Drop rate under a slow subscriber paired with a fast emitter through the production `core/stream.SSEBroker` (`?buffer=128`) | 5000 fast-published events → 130 delivered, 4870 dropped (drop rate 0.974). The intended contract: bounded, non-blocking, latest-state retention. |
+| `BenchmarkSSE_BackpressureDropRate` | Drop rate under a slow subscriber paired with a fast emitter through the production `core/stream.SSEBroker` (`?buffer=128`) | 5000 fast-published events → 133 delivered, 4867 dropped (drop rate 0.973). The intended contract: bounded, non-blocking, latest-state retention. |
 | `BenchmarkSSEWriter_Write` | Per-frame encode + write cost through the production SSE writer | The per-event cost the EventStream handler pays on every outgoing frame. |
-| `BenchmarkT9_IslandRPC_Concurrency` | Island RPC tail latency at worker=64 concurrency | p50 12µs, p90 37µs, p99 **5.2ms**, p999 14ms, with p99 below the 10ms target. |
-| `BenchmarkT9_UIHostPageRender` | UI-host full-page SSR cost | `/` at 3.7ms / 59k allocs (14.8KB response), the per-render ceiling for a complex page. |
+| `BenchmarkT9_IslandRPC_Concurrency` | Island RPC tail latency at worker=64 concurrency | p50 11µs, p90 26µs, p99 0.42ms, p999 20ms (v0.90.0, SQLite). The p99 sits below the 10ms target. |
+| `BenchmarkT9_UIHostPageRender` | UI-host full-page SSR cost | `/` at 142µs / 1.1k allocs for a 15.3KB response (v0.90.0). |
 
 What this tells you about a dashboard:
 

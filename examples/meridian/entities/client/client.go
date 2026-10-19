@@ -228,11 +228,11 @@ type Plans struct {
 }
 
 type PlansInput struct {
-	Name     string `json:"name,omitempty"`
-	Slug     string `json:"slug,omitempty"`
-	Price    string `json:"price,omitempty"`
-	Interval string `json:"interval,omitempty"`
-	Active   bool   `json:"active,omitempty"`
+	Name     string  `json:"name"`
+	Slug     string  `json:"slug"`
+	Price    string  `json:"price"`
+	Interval *string `json:"interval,omitempty"`
+	Active   *bool   `json:"active,omitempty"`
 }
 
 type PlansPatch struct {
@@ -354,12 +354,12 @@ type Customers struct {
 }
 
 type CustomersInput struct {
-	Name    string `json:"name,omitempty"`
-	Email   string `json:"email,omitempty"`
-	Company string `json:"company,omitempty"`
-	Status  string `json:"status,omitempty"`
-	Mrr     string `json:"mrr,omitempty"`
-	Logo    string `json:"logo,omitempty"`
+	Name    string  `json:"name"`
+	Email   string  `json:"email"`
+	Company *string `json:"company,omitempty"`
+	Status  *string `json:"status,omitempty"`
+	Mrr     *string `json:"mrr,omitempty"`
+	Logo    *string `json:"logo,omitempty"`
 }
 
 type CustomersPatch struct {
@@ -483,12 +483,12 @@ type Subscriptions struct {
 }
 
 type SubscriptionsInput struct {
-	CustomerId string `json:"customerId,omitempty"`
-	PlanId     string `json:"planId,omitempty"`
-	Status     string `json:"status,omitempty"`
-	Mrr        string `json:"mrr,omitempty"`
-	StartedOn  string `json:"startedOn,omitempty"`
-	RenewsOn   string `json:"renewsOn,omitempty"`
+	CustomerId string  `json:"customerId"`
+	PlanId     string  `json:"planId"`
+	Status     *string `json:"status,omitempty"`
+	Mrr        *string `json:"mrr,omitempty"`
+	StartedOn  *string `json:"startedOn,omitempty"`
+	RenewsOn   *string `json:"renewsOn,omitempty"`
 }
 
 type SubscriptionsPatch struct {
@@ -637,13 +637,13 @@ type Invoices struct {
 }
 
 type InvoicesInput struct {
-	CustomerId string `json:"customerId,omitempty"`
-	Number     string `json:"number,omitempty"`
-	Amount     string `json:"amount,omitempty"`
-	Status     string `json:"status,omitempty"`
-	IssuedOn   string `json:"issuedOn,omitempty"`
-	DueOn      string `json:"dueOn,omitempty"`
-	PaidOn     string `json:"paidOn,omitempty"`
+	CustomerId string  `json:"customerId"`
+	Number     string  `json:"number"`
+	Amount     string  `json:"amount"`
+	Status     *string `json:"status,omitempty"`
+	IssuedOn   *string `json:"issuedOn,omitempty"`
+	DueOn      *string `json:"dueOn,omitempty"`
+	PaidOn     *string `json:"paidOn,omitempty"`
 }
 
 type InvoicesPatch struct {
@@ -792,11 +792,11 @@ type Payments struct {
 }
 
 type PaymentsInput struct {
-	InvoiceId  string `json:"invoiceId,omitempty"`
-	CustomerId string `json:"customerId,omitempty"`
-	Amount     string `json:"amount,omitempty"`
-	Method     string `json:"method,omitempty"`
-	Status     string `json:"status,omitempty"`
+	InvoiceId  string  `json:"invoiceId"`
+	CustomerId string  `json:"customerId"`
+	Amount     string  `json:"amount"`
+	Method     *string `json:"method,omitempty"`
+	Status     *string `json:"status,omitempty"`
 }
 
 type PaymentsPatch struct {
