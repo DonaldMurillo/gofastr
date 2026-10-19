@@ -1,3 +1,5 @@
+// want package:"strict\\(xrawok.envelope\\)"
+
 // Package xrawok pins the arm-b credit: the package walks the
 // envelope field's keys at the chokepoint (core/mcp protocol.go
 // pattern), so every downstream lax decode of the same field in the

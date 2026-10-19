@@ -192,16 +192,13 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 
 	// Export our own strict decodes for importers, this package's own
-	// exported types included: core/mcp declares the *Request it
-	// decodes strictly, and an importer decoding mcp.Request lax learns
-	// that only from this fact. An unexported type is one no importer
-	// can name.
+	// types included: core/mcp declares the *Request it decodes
+	// strictly, and an importer decoding mcp.Request lax learns that
+	// only from this fact. Unexported types stay in: an importer reaches
+	// one through an exported constructor (json.Unmarshal(raw, pkg.New())).
 	if len(strict) > 0 {
 		var qs []string
 		for t := range strict {
-			if named, ok := t.(*types.Named); !ok || !named.Obj().Exported() {
-				continue
-			}
 			if q, ok := qualifiedName(t, nil); ok {
 				qs = append(qs, q)
 			}

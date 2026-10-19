@@ -16,8 +16,18 @@ func UnmarshalStrict(data []byte, dst any) error {
 	return json.Unmarshal(data, dst)
 }
 
+type request struct {
+	Method string `json:"method"`
+}
+
+// New hands importers the unexported envelope.
+func New() *request { return &request{} }
+
 // Serve is the strict transport.
 func Serve(raw []byte) error {
 	var r Request
-	return UnmarshalStrict(raw, &r)
+	if err := UnmarshalStrict(raw, &r); err != nil {
+		return err
+	}
+	return UnmarshalStrict(raw, New())
 }

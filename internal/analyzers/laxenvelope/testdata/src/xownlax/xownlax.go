@@ -13,3 +13,9 @@ func bridge(raw []byte) error {
 	var r xown.Request
 	return json.Unmarshal(raw, &r) // want `lax decode of xown.Request, which xown also decodes strictly`
 }
+
+// viaConstructor reaches xown's unexported envelope through New: the
+// importer cannot name the type, but it decodes it all the same.
+func viaConstructor(raw []byte) error {
+	return json.Unmarshal(raw, xown.New()) // want `lax decode of xown.request, which xown also decodes strictly`
+}

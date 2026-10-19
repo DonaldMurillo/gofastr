@@ -1,3 +1,5 @@
+// want package:"strict\\(xraw.envelope\\)"
+
 // Package xraw pins the RawMessage arm: an envelope strict-decoded in
 // this package whose Params bytes are then decoded lax — the strict
 // walk stopped at the envelope (core/acp shape).

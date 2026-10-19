@@ -1,3 +1,5 @@
+// want package:"strict\\(lx.frame\\)"
+
 // Package lx holds the laxenvelope fixtures: one envelope type decoded
 // strictly on one transport and laxly on another, plus the silent
 // postures. Identifiers are unrelated to core/mcp's transports on
