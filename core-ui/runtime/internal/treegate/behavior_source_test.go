@@ -1,4 +1,4 @@
-package runtime
+package treegate
 
 import (
 	"os"
@@ -75,7 +75,7 @@ func TestFlagBeforeInstallReadsTheWriteNotTheInit(t *testing.T) {
 //
 //gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/core-ui/registry
 func TestRegisteredBehaviorsSetLoadedFlagBeforeInstalling(t *testing.T) {
-	files, err := check.RegisteredBehaviorSources(filepath.Join("..", ".."))
+	files, err := check.RegisteredBehaviorSources(repoRoot)
 	if err != nil {
 		t.Fatalf("registered behaviours: %v", err)
 	}
@@ -83,16 +83,16 @@ func TestRegisteredBehaviorsSetLoadedFlagBeforeInstalling(t *testing.T) {
 		t.Fatal("no registered behaviour sources found under the repo root: the walk is broken, not the tree empty")
 	}
 	for _, f := range files {
-		// The walk returns paths relative to this package's directory
-		// (../../examples/...); strip the walk root so the report reads
-		// as a tree-shaped path.
-		rel := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(f)), "../../")
+		// The walk returns paths under repoRoot; report them from the
+		// root so they read as tree-shaped paths.
+		rel, _ := filepath.Rel(repoRoot, f)
+		rel = filepath.ToSlash(rel)
 		raw, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatalf("read %s: %v", f, err)
 		}
 		src := string(raw)
-		if !nominify() {
+		if minify.Enabled() {
 			src = minify.Minify(src)
 		}
 		if why := flagBeforeInstall(src); why != "" {

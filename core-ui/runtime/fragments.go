@@ -6,7 +6,7 @@ package runtime
 // runtime, so the classification can be validated before any code moves.
 //
 // Nothing in this file changes runtime.js or src/*.js. It is pure
-// declaration; the gate that enforces it lives in attrdoc_test.go.
+// declaration; the gate that enforces it lives in fragment_map_test.go.
 //
 // Hard rule 5 (CLAUDE.md) already forbids shipping a new data-cui-*
 // attribute without updating ARCHITECTURE.md and the runtime test suite.
@@ -130,7 +130,7 @@ var fragments = map[string]fragmentDef{
 //
 // Attributes whose behavior lives in an on-demand src/*.js module are NOT
 // here. See moduleAttrs. Together the two tables assign every data-cui-*
-// attribute in the runtime sources to exactly one owner; attrdoc_test.go
+// attribute in the runtime sources to exactly one owner; fragment_map_test.go
 // asserts the assignment is complete and drift-free.
 var fragmentAttrs = map[string][]string{
 	"kernel": {

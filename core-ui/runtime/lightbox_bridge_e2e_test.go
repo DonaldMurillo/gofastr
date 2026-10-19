@@ -2,19 +2,16 @@ package runtime
 
 import (
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime/internal/treegate"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
 )
@@ -40,59 +37,6 @@ func lightboxModuleSource(t *testing.T) string {
 	return string(raw)
 }
 
-// requiresInSource lists the string literals a file's registry.Requires
-// call names, and every argument that is not one.
-func requiresInSource(src string) (names, nonLiteral []string) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "", src, 0)
-	if err != nil {
-		return nil, []string{"unparseable source: " + err.Error()}
-	}
-	local := ""
-	for _, imp := range f.Imports {
-		if path, err := strconv.Unquote(imp.Path.Value); err == nil && path == registryImportPath {
-			local = "registry"
-			if imp.Name != nil {
-				local = imp.Name.Name
-			}
-		}
-	}
-	if local == "" || local == "_" {
-		return nil, nil
-	}
-	ast.Inspect(f, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		match := false
-		switch fn := call.Fun.(type) {
-		case *ast.SelectorExpr:
-			if id, ok := fn.X.(*ast.Ident); ok && id.Name == local && fn.Sel.Name == "Requires" {
-				match = true
-			}
-		case *ast.Ident:
-			if local == "." && fn.Name == "Requires" {
-				match = true
-			}
-		}
-		if !match {
-			return true
-		}
-		for _, a := range call.Args {
-			if lit, ok := a.(*ast.BasicLit); ok && lit.Kind == token.STRING {
-				if s, err := strconv.Unquote(lit.Value); err == nil {
-					names = append(names, s)
-					continue
-				}
-			}
-			nonLiteral = append(nonLiteral, "requirement is not a string literal")
-		}
-		return true
-	})
-	return names, nonLiteral
-}
-
 // registerFrameworkLightbox isolates the registry and registers the
 // lightbox behaviour exactly as framework/ui/lightbox.go declares it:
 // source, markers, requirements and interactions all read from the
@@ -104,15 +48,15 @@ func registerFrameworkLightbox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read framework/ui/lightbox.go: %v", err)
 	}
-	markers, non := markerSelectorsInSource(string(goSrc))
+	markers, non := treegate.MarkerSelectors(string(goSrc))
 	if len(markers) == 0 || len(non) != 0 {
 		t.Fatalf("could not read the lightbox registration's markers from framework/ui/lightbox.go: %v / unreadable %v", markers, non)
 	}
-	interactions, non := interactionsInSource(string(goSrc))
+	interactions, non := treegate.Interactions(string(goSrc))
 	if len(interactions) == 0 || len(non) != 0 {
 		t.Fatalf("could not read the lightbox registration's interactions from framework/ui/lightbox.go: unreadable %v", non)
 	}
-	requires, non := requiresInSource(string(goSrc))
+	requires, non := treegate.Requires(string(goSrc))
 	if len(non) != 0 {
 		t.Fatalf("could not read the lightbox registration's requirements: %v", non)
 	}

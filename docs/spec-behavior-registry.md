@@ -242,7 +242,7 @@ failed fetch the browser console reports nothing on its own, so the
 number is written here and in the catch's comment for whoever next
 finds bytes to spend.
 
-### Ownership gate (`fragments.go`, `attrdoc_test.go`)
+### Ownership gate (`fragments.go`, `fragment_map_test.go`, `internal/treegate/attrdoc_test.go`)
 
 Every `data-cui-*` attribute in the runtime sources has one owner today.
 The gate gains one clause: a registered behaviour's markers must be
