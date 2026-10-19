@@ -240,15 +240,17 @@ func commandEnv(root string) []string {
 
 // coverageDir is the coverage root commandEnv hands the wrapped command:
 // the explicit setting, else a per-checkout directory in the user cache,
-// else "" (the module root) when there is no user cache. -coverage-dir
-// prints it, so `gofastr verify` in the hooks reads the manifests the
-// sweep wrote.
+// else "" (the module root) when there is no user cache, which it says on
+// stderr because every test that records coverage then misses the cache.
+// -coverage-dir prints it, so `gofastr verify` in the hooks reads the
+// manifests the sweep wrote.
 func coverageDir(root string) string {
 	if v := os.Getenv(coverageDirEnv); v != "" {
 		return v
 	}
 	base, err := os.UserCacheDir()
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "affected: no user cache directory (%v); coverage manifests stay in the module and tests that record them will not replay from the cache\n", err)
 		return ""
 	}
 	sum := sha256.Sum256([]byte(root))

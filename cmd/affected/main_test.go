@@ -348,3 +348,25 @@ func TestCoverageDirFlagPrintsTheWrappedValue(t *testing.T) {
 		t.Fatalf("-coverage-dir printed %q, want the wrapped value %q", got, want)
 	}
 }
+
+// Without a user cache the manifests fall back into the module, where they
+// break the test cache, so the fallback has to be visible.
+func TestCoverageDirWarnsWithoutAUserCache(t *testing.T) {
+	t.Setenv(coverageDirEnv, "")
+	bin := buildAffected(t)
+	cmd := exec.Command(bin, "-coverage-dir")
+	cmd.Dir = newRepo(t)
+	cmd.Env = append(os.Environ(), "HOME=", "XDG_CACHE_HOME=", "LocalAppData=")
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("affected -coverage-dir: %v\n%s", err, stderr.String())
+	}
+	if got := strings.TrimSpace(string(out)); got != "" {
+		t.Fatalf("-coverage-dir printed %q, want the module-root fallback \"\"", got)
+	}
+	if !strings.Contains(stderr.String(), "no user cache directory") {
+		t.Fatalf("no warning on stderr: %q", stderr.String())
+	}
+}
