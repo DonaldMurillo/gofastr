@@ -357,7 +357,9 @@ func handlerAlreadyFinished(done <-chan struct{}) bool {
 func handlerBeatTheDeadline(done <-chan struct{}, finishedAt *time.Time, deadline time.Time) bool {
 	select {
 	case <-done:
-		return !finishedAt.After(deadline)
+		// Strictly before, as the completion branch decides: a context
+		// is past its deadline at the deadline itself.
+		return finishedAt.Before(deadline)
 	default:
 		return false
 	}

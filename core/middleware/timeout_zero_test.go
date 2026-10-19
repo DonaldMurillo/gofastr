@@ -196,12 +196,12 @@ func TestHandlerBeatTheDeadlineComparesFinishTime(t *testing.T) {
 		}
 	})
 
-	t.Run("exactly on the deadline is delivered", func(t *testing.T) {
+	t.Run("exactly on the deadline is a 504", func(t *testing.T) {
 		done := make(chan struct{})
 		close(done)
 		fin := deadline
-		if !handlerBeatTheDeadline(done, &fin, deadline) {
-			t.Error("finishing exactly at the deadline is not overrunning it")
+		if handlerBeatTheDeadline(done, &fin, deadline) {
+			t.Error("finishing at the deadline delivered; the completion branch answers 504 for the same finish, so the status depended on which channel the select picked")
 		}
 	})
 
