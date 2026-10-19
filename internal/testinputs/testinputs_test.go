@@ -3,6 +3,7 @@ package testinputs
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -22,9 +23,19 @@ func TestCommandReadsGeneratorSources(t *testing.T) {
 			t.Errorf("did not read %s", want)
 		}
 	}
+	// runtime.GOROOT is empty in a -trimpath binary, and every path has
+	// "" as a prefix; go env always knows.
+	out, err := exec.Command("go", "env", "GOROOT").Output()
+	if err != nil {
+		t.Fatalf("go env GOROOT: %v", err)
+	}
+	goroot := strings.TrimSpace(string(out))
+	if goroot == "" {
+		t.Fatal("go env GOROOT is empty")
+	}
 	embedded := false
 	for _, p := range read {
-		if strings.HasPrefix(p, runtime.GOROOT()) {
+		if strings.HasPrefix(p, goroot+string(filepath.Separator)) {
 			t.Errorf("read a standard-library path %s", p)
 		}
 		if strings.HasPrefix(p, filepath.Join(root, "framework", "docs", "content")+string(filepath.Separator)) {
