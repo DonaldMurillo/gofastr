@@ -70,6 +70,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   setting never drops away unnoticed. `gofastr generate --config` and
   `gofastr verify --config` take a settings file, and `gofastr init`
   writes `gofastr.settings.yml`. `gofastr upgrade` reports each old file.
+  `codegen.HasCodegenSection` and `contracts.ConfigFileNames` are gone;
+  `core/settings` (`settings.Find`, `File.Section`) reads the file.
   See `gofastr docs settings`.
 
 ### Fixed

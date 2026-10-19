@@ -81,6 +81,7 @@ var docIntents = []docIntent{
 			{"migrations", "Migrations", "Versioned, ordered, reversible, versus the auto-migrate dev mode."},
 			{"multi-tenant", "Multi-tenant scope", "tenant_id column + automatic filter from request context."},
 			{"codegen", "Code generation", "What lands on disk under gen/, and how to read it."},
+			{"settings", "Project settings", "gofastr.settings.yml: the one committed file that configures generate, verify and isolation for a project."},
 			{"app-cli", "Ship your API as a CLI", "gofastr generate cli: a branded terminal client for your customers, with scoped API-token auth."},
 			{"sdk", "Ship your API as SDKs", "gofastr generate sdk: a downloadable Go module + JS/TS client, hosted by the app behind a live docs site."},
 		},
