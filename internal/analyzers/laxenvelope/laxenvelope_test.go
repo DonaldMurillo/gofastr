@@ -16,5 +16,6 @@ func TestLaxEnvelope(t *testing.T) {
 		"xrawok",  // round-5 arm b: chokepoint credit, quiet
 		"xtop",    // round-5 arm c: CheckTopLevelKeys one level short
 		"xownlax", // fact names a type the strict package declares itself
+		"xownvia", // fact reaches a package that never imports xown
 	)
 }

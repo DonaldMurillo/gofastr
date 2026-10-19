@@ -177,16 +177,23 @@ func run(pass *analysis.Pass) (any, error) {
 		})
 	}
 
-	// Cross-package strict knowledge from facts first (import edges are
-	// free); the module index below is the expensive fallback.
+	// Cross-package strict knowledge from facts first (dependency edges
+	// are free); the module index below is the expensive fallback. Every
+	// dependency counts, not just direct imports: a package can hold
+	// a.T through b.Get() without importing a.
 	cross := map[string]string{} // qualified name → strict package path
-	for _, imp := range pass.Pkg.Imports() {
-		var fact strictTypesFact
-		if pass.ImportPackageFact(imp, &fact) {
-			for _, q := range fact.Types {
-				if _, ok := cross[q]; !ok {
-					cross[q] = imp.Path()
-				}
+	pkgFacts := pass.AllPackageFacts()
+	slices.SortFunc(pkgFacts, func(x, y analysis.PackageFact) int {
+		return strings.Compare(x.Package.Path(), y.Package.Path())
+	})
+	for _, pf := range pkgFacts {
+		fact, ok := pf.Fact.(*strictTypesFact)
+		if !ok || pf.Package == pass.Pkg {
+			continue
+		}
+		for _, q := range fact.Types {
+			if _, ok := cross[q]; !ok {
+				cross[q] = pf.Package.Path()
 			}
 		}
 	}
@@ -1032,8 +1039,9 @@ func dirImportPath(root, modPath, dir string) string {
 // destination resolves, through file-local declarations, to an
 // import-qualified type name: var x pkg.T (or pkgalias.T), a pkg.T
 // parameter or result, or a pkg.T{} composite-literal initializer. A
-// bare T (the file's own package) is not indexed: a package that names
-// T imports T's package, and the package fact already carries it.
+// bare T (the file's own package) is not indexed: a package can only
+// hold a value of T by depending on T's package, and the package fact
+// reaches every dependent, unexported T included.
 func collectStrictCalls(f *ast.File, ownPath string, idx *strictIndex) {
 	// import alias/name → import path.
 	imports := map[string]string{}

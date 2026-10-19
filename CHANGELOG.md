@@ -30,7 +30,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   decodes its `Request`, now exports that type in its strictness fact, so
   an importer decoding the same type through `json.Unmarshal` is
   reported. Unexported types count too: an importer reaches one through
-  an exported constructor. The fact left all of them out before.
+  an exported constructor. The fact left all of them out before, and it
+  reached only direct importers, so a package holding the type through
+  a third package's accessor went unchecked.
 
 ## [0.91.0] - 2026-10-19
 
