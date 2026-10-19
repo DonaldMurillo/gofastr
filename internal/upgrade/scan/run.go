@@ -400,13 +400,14 @@ func (e *engine) fileRel(file string) (string, bool) {
 }
 
 // skipDir names the directories the non-Go file walk (CSS, text) skips:
-// vendored and generated trees, and build output.
+// vendored and generated trees, build output, and the hidden and "_"
+// directories Go's own tooling ignores.
 func skipDir(name string) bool {
 	switch name {
 	case "vendor", "node_modules", "dist", "bin", "build", "tmp", "testdata":
 		return true
 	}
-	return strings.HasPrefix(name, ".")
+	return strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")
 }
 
 // walkApp visits every file under root outside the skipped directories,

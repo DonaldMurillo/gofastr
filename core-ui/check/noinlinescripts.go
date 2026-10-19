@@ -186,7 +186,7 @@ func lintRecursive(root string, lint func(string) (*Result, error), skip ...stri
 			return nil
 		}
 		base := filepath.Base(path)
-		if path != root && (strings.HasPrefix(base, ".") ||
+		if path != root && (strings.HasPrefix(base, ".") || strings.HasPrefix(base, "_") ||
 			base == "vendor" || base == "node_modules" || base == "testdata" ||
 			slices.Contains(skip, base)) {
 			return filepath.SkipDir

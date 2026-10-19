@@ -116,3 +116,22 @@ func TestStyleFilesHonourExemptPath(t *testing.T) {
 		t.Errorf("StyleFiles() = %v, want [app.css] — the exempt path was not honoured", rels)
 	}
 }
+
+// go build ./... never compiles a "_" directory, so the pass skips it too.
+func TestUnderscoreDirsAreSkipped(t *testing.T) {
+	dir := t.TempDir()
+	writeTemp(t, dir, "go.mod", "module example.com/app\n\ngo 1.26\n")
+	writeTemp(t, dir, "main.go", "package main\n")
+	writeTemp(t, dir, "_scratch/gen/gen.go", "package gen\n")
+	writeTemp(t, dir, "_scratch/gen/site.css", "body { margin: 0 }\n")
+
+	p, err := NewPass(dir, DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range append(p.Files(), p.StyleFiles()...) {
+		if strings.HasPrefix(f.Rel, "_scratch/") {
+			t.Errorf("pass read %s inside a \"_\" directory", f.Rel)
+		}
+	}
+}

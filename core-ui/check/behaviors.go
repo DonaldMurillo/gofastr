@@ -46,7 +46,7 @@ func RegisteredBehaviorSources(root string) ([]string, error) {
 		name := d.Name()
 		if d.IsDir() {
 			if path != root && (name == "vendor" || name == "node_modules" || name == "testdata" ||
-				strings.HasPrefix(name, ".")) {
+				strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")) {
 				return filepath.SkipDir
 			}
 			return nil
