@@ -84,8 +84,8 @@ makes affected tests replay from Go's test cache.
   middleware sees first. A handler that finished exactly at the deadline
   got a 200 or a 504 depending on that order. One that finishes before
   the deadline keeps its response.
-- **Files GoFastr keeps owner-only get protected owner-only ACLs on
-  Windows**, where Unix modes mean nothing: `battery/storage`,
+- **Owner-only files get a protected owner-only ACL on Windows**, where
+  Unix modes mean nothing: `battery/storage`,
   `core/upload`, data export directories, harness session stores and
   bundles, the isolation data directory, desktop app state, and the
   kiln journal. ACL changes stop at the storage root, even when two
