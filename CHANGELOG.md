@@ -19,6 +19,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `cmd/gofastr` and `examples/site` declare their inputs; before this, a
   hand-booted Chrome added in another package never selected the
   launch-allowance gate, and one reached main that way.
+- **`laxenvelope` names a strict package's own types to its importers.**
+  A package that strict-decodes an exported type it declares, the way
+  core/mcp decodes its `Request`, now exports that type in its
+  strictness fact, so an importer decoding the same type through
+  `json.Unmarshal` is reported. The fact left those types out before.
 
 ## [0.91.0] - 2026-10-19
 

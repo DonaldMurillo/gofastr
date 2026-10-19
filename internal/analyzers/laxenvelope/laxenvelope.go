@@ -93,6 +93,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -129,6 +130,8 @@ const topMsg = "json.Unmarshal of %s after only handler.CheckTopLevelKeys in %s:
 type strictTypesFact struct{ Types []string }
 
 func (strictTypesFact) AFact() {}
+
+func (f *strictTypesFact) String() string { return "strict(" + strings.Join(f.Types, ", ") + ")" }
 
 // moduleStrictIndex is the process-wide, per-module-root index of
 // qualified type names strict-decoded somewhere in the module. Built
@@ -188,15 +191,23 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 	}
 
-	// Export our own strict decodes for importers.
+	// Export our own strict decodes for importers, this package's own
+	// exported types included: core/mcp declares the *Request it
+	// decodes strictly, and an importer decoding mcp.Request lax learns
+	// that only from this fact. An unexported type is one no importer
+	// can name.
 	if len(strict) > 0 {
 		var qs []string
 		for t := range strict {
-			if q, ok := qualifiedName(t, pass.Pkg); ok {
+			if named, ok := t.(*types.Named); !ok || !named.Obj().Exported() {
+				continue
+			}
+			if q, ok := qualifiedName(t, nil); ok {
 				qs = append(qs, q)
 			}
 		}
 		if len(qs) > 0 {
+			slices.Sort(qs)
 			pass.ExportPackageFact(&strictTypesFact{Types: qs})
 		}
 	}
@@ -1021,9 +1032,11 @@ func dirImportPath(root, modPath, dir string) string {
 }
 
 // collectStrictCalls indexes UnmarshalStrict/DecodeStrict calls whose
-// destination resolves, through file-local declarations, to a
-// qualified type name: var x pkg.T (or pkgalias.T), the file's own
-// package for bare T, or a composite-literal initializer.
+// destination resolves, through file-local declarations, to an
+// import-qualified type name: var x pkg.T (or pkgalias.T), a pkg.T
+// parameter or result, or a pkg.T{} composite-literal initializer. A
+// bare T (the file's own package) is not indexed: a package that names
+// T imports T's package, and the package fact already carries it.
 func collectStrictCalls(f *ast.File, ownPath string, idx *strictIndex) {
 	// import alias/name → import path.
 	imports := map[string]string{}
@@ -1052,7 +1065,7 @@ func collectStrictCalls(f *ast.File, ownPath string, idx *strictIndex) {
 		if typ == nil {
 			return
 		}
-		if q := qualifyTypeExpr(typ, imports, ownPath); q != "" {
+		if q := qualifyTypeExpr(typ, imports); q != "" {
 			for _, name := range names {
 				types_[name.Name] = q
 			}
@@ -1135,10 +1148,9 @@ func collectStrictCalls(f *ast.File, ownPath string, idx *strictIndex) {
 	})
 }
 
-// qualifyTypeExpr renders `pkgalias.T` / `T` as an import-qualified
-// name, or "" when the expression is not a plain (optionally pointer)
-// named type.
-func qualifyTypeExpr(e ast.Expr, imports map[string]string, ownPath string) string {
+// qualifyTypeExpr renders `pkgalias.T` (optionally behind a pointer) as
+// an import-qualified name, or "" for anything else, a bare T included.
+func qualifyTypeExpr(e ast.Expr, imports map[string]string) string {
 	if s, ok := e.(*ast.StarExpr); ok {
 		e = s.X
 	}
