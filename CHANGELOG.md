@@ -10,13 +10,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ### Added
 - **Generated files say who made them and whether you edited them.**
   The built-in generators stamp a provenance marker at the top of each
-  file, in the file's own comment syntax:
+  file with a comment syntax (not JSON or binary files), in that syntax:
   `//gofastr:generated generator=app kind=scaffold version=v0.92.0 sum=…`.
   The sum covers the rest of the file, so an edit shows. A scaffold
   generator that finds files in its way says which generator and version
   wrote them and how many were edited before it refuses. `--force` lists
-  only the files edited since they were generated, so an untouched file
-  from an older template no longer counts as an edit. A derived generator
+  only the marked files edited since they were generated, so an untouched
+  file from an older template no longer counts as an edit; a file with no
+  marker is still listed when it differs from its replacement. A derived generator
   (`sdk`, `styles`, the codegen config) warns before it rebuilds an
   edited file and names the source to change instead; the codegen
   manifest records a sum per file for this. `gofastr verify` counts
