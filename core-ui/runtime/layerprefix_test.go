@@ -13,8 +13,10 @@ import (
 // vocabulary is data-cui-*/cui-*, and the hooks it binds in headless
 // markup are data-hui-* (formerrors.js). The rule lives in
 // core-ui/check.LintLayerPrefix*; this is the live-tree gate for the
-// runtime package's frag/ and src/ and the core-ui Go tree, with a
-// vacuity control so a quiet result means clean, not blind.
+// runtime package's frag/ and src/, with a vacuity control so a quiet
+// result means clean, not blind. core-ui/check's
+// TestLintLayerPrefix_RepoIsClean holds the core-ui and headless Go
+// trees to the same rule.
 func TestKernelNamesNoKitVocabulary(t *testing.T) {
 	js, err := check.LintLayerPrefixJS(".")
 	if err != nil {
@@ -22,13 +24,6 @@ func TestKernelNamesNoKitVocabulary(t *testing.T) {
 	}
 	if js.HasErrors() {
 		t.Errorf("the runtime names the kit's vocabulary:\n%s", strings.TrimSpace(js.Error()))
-	}
-	gores, err := check.LintLayerPrefixGo("..")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if gores.HasErrors() {
-		t.Errorf("core-ui Go names the kit's vocabulary:\n%s", strings.TrimSpace(gores.Error()))
 	}
 
 	vdir := t.TempDir()

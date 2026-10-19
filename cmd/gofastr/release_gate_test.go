@@ -13,6 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+//gofastr:test-reads /.github/workflows/
 func workflowSource(t *testing.T, name string) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", name))
@@ -22,6 +23,7 @@ func workflowSource(t *testing.T, name string) string {
 	return string(b)
 }
 
+//gofastr:test-reads scripts/release-required-checks.txt
 func manifestSource(t *testing.T) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("..", "..", "scripts", "release-required-checks.txt"))

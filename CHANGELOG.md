@@ -7,6 +7,41 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+- **Affected selection sees tests that read other packages' files.** A
+  test file declares what it reads with `//gofastr:test-reads <pattern>`:
+  a `dir/` prefix, a base name such as `*_test.go` or `package.json`, a
+  root-anchored path such as `/README.md`, a repo-relative glob where
+  `**` spans directories, or `importers:<import path>`. The last matches
+  a change in any package that imports the path directly, and any changed
+  `.go` file that names it now or named it at the base (a nested module,
+  a deleted file, a dropped import) or names it in a build-excluded file
+  of a changed package. `cmd/affected` selects the package when a changed
+  file matches. Only a `//` comment declares; a raw-string fixture line
+  does not. A pattern that can never match, such as `./README.md`, is an
+  error, as is a directive with no space before its patterns. A file a
+  package's `//go:embed` patterns cover now selects that package, even
+  inside a nested package and even once deleted:
+  a blueprint template edit under `cmd/gofastr/packages/` used to select
+  neither the generator nor the gates that run it. The tests that read
+  outside their package now declare those inputs, found with the new
+  `scripts/test-reads-audit.sh`. The script records each file a test
+  binary opens through Go's test log and fails on one whose change would
+  not select its reader; reads by a subprocess or a build-tagged test
+  stay outside what it sees. CI runs it weekly. Before this, a hand-booted Chrome
+  added in another package never selected the launch-allowance gate, and
+  one reached main that way. `core-ui/runtime`'s repo-tree gates moved to
+  `core-ui/runtime/internal/treegate`, so a change to a registry caller
+  selects that small package instead of the runtime's browser suite.
+- **`laxenvelope` names a strict package's own types to its importers.**
+  A package that strict-decodes a type it declares, the way core/mcp
+  decodes its `Request`, now exports that type in its strictness fact, so
+  an importer decoding the same type through `json.Unmarshal` is
+  reported. Unexported types count too: an importer reaches one through
+  an exported constructor. The fact left all of them out before, and it
+  reached only direct importers, so a package holding the type through
+  a third package's accessor went unchecked.
+
 ## [0.91.0] - 2026-10-19
 
 **BREAKING** for generated code. The generated Go HTTP client and Go SDK

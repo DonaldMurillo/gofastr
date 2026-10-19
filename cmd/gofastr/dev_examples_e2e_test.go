@@ -49,6 +49,7 @@ var devExamples = []devExample{
 	{"gofastr-runs", "/", http.StatusUnauthorized}, // the loopback gate answers: sign in with `gofastr-runs service open --dev`
 }
 
+//gofastr:test-reads examples/
 func TestE2E_DevLoop_Examples(t *testing.T) {
 	if testing.Short() {
 		t.Skip("dev-loop e2e: builds and serves every example")

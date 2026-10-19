@@ -61,6 +61,8 @@ func TestModuleCollisionIgnoresNonSubpaths(t *testing.T) {
 // keeps the lint honest about which case it warns on: a shipped example that
 // stops colliding is a reader copying it out of the repo into a build error the
 // warning no longer covers.
+//
+//gofastr:test-reads examples/*/gofastr.yml
 func TestShippedExampleBlueprintsAreTheCollidingCase(t *testing.T) {
 	// Globbed here rather than through exampleBlueprints, which SKIPS on an
 	// empty match. A skip reads as a pass, so a broken glob would have retired

@@ -186,6 +186,8 @@ func TestContractsExplainRequiresARule(t *testing.T) {
 //
 // The fix when this fails is one number per document, not deleting the
 // test: the count is worth stating, and stating it is worth checking.
+//
+//gofastr:test-reads /README.md /CHANGELOG.md
 func TestAdvertisedRuleCountMatchesTheCatalog(t *testing.T) {
 	want := fmt.Sprintf("%d rules", len(contracts.AllRules()))
 	wantAlt := fmt.Sprintf("%d contract rules", len(contracts.AllRules()))

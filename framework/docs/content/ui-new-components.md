@@ -567,7 +567,7 @@ helpful pre-flight read for human reviewers.
    runtime reads must land in the table here OR in the drift-test
    whitelist (with a justification comment). The
    `TestRuntimeAttrsAreDocumented` gate in
-   `core-ui/runtime/attrdoc_test.go` enforces it.
+   `core-ui/runtime/internal/treegate/attrdoc_test.go` enforces it.
 7. **Axe**: `TestAxe_AllPagesAreClean` runs axe-core against
    every catalog page and fails on any violation. The most common authoring
    mistakes it catches: missing tap target floor (44×44),

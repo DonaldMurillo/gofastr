@@ -1,33 +1,48 @@
-package runtime
+package treegate
 
 import (
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"go/types"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/check"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 )
 
-// attrPattern matches a full data-cui-* attribute token. It is greedy on
-// the name body, so a comment that wraps mid-name (`data-cui-foo-` at the
-// end of a line) yields a trailing-dash token; such artifacts are dropped
-// below. Real attributes never end in a dash.
-var attrPattern = regexp.MustCompile(`data-cui-[a-z0-9-]+`)
+// repoRoot and coreUI are the walk roots, relative to this package.
+var (
+	repoRoot = filepath.Join("..", "..", "..", "..")
+	coreUI   = filepath.Join("..", "..", "..")
+)
+
+// runtimeJSAttrs is every data-cui-* attribute the runtime's own
+// sources reference.
+func runtimeJSAttrs(t *testing.T) []string {
+	t.Helper()
+	attrs, err := RuntimeJSAttrs(filepath.Join(coreUI, "runtime"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return attrs
+}
+
+// The gates below read the attribute table, the trees that emit
+// data-cui-* markup, and every package that registers a behaviour; none
+// of them is an import of this package.
+//
+//gofastr:test-reads core-ui/ARCHITECTURE.md core-ui/interactive/ core-ui/html/ core-ui/widget/ core-ui/app/
+//gofastr:test-reads framework/ui/ framework/headless/ framework/pluginhost/ framework/uihost/
+//gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/core-ui/registry
 
 // privilegedAttrs are runtime-read attributes that do NOT carry the
-// data-cui- prefix, so attrPattern cannot see them. Every one of them
+// data-cui- prefix, so AttrPattern cannot see them. Every one of them
 // changes what code runs, data-behavior is a <script src> sink,
 // data-widget/data-component select hydration behaviour, data-bind
 // writes into the state store, which makes them exactly the set Hard
@@ -62,7 +77,7 @@ var privilegedAttrs = []string{
 // rules as one under src/.
 func registeredBehaviorAttrs(t *testing.T) []string {
 	t.Helper()
-	files, err := check.RegisteredBehaviorSources(filepath.Join("..", ".."))
+	files, err := check.RegisteredBehaviorSources(repoRoot)
 	if err != nil {
 		t.Fatalf("registered behaviours: %v", err)
 	}
@@ -72,46 +87,8 @@ func registeredBehaviorAttrs(t *testing.T) []string {
 		if err != nil {
 			t.Fatalf("read %s: %v", f, err)
 		}
-		for _, m := range attrPattern.FindAllString(string(raw), -1) {
+		for _, m := range AttrPattern.FindAllString(string(raw), -1) {
 			m = strings.TrimRight(m, "-")
-			if m == "data-cui" {
-				continue
-			}
-			set[m] = struct{}{}
-		}
-	}
-	out := make([]string, 0, len(set))
-	for a := range set {
-		out = append(out, a)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func runtimeJSAttrs(t *testing.T) []string {
-	t.Helper()
-	files := []string{"runtime.js"}
-	for _, dir := range []string{"src", "frag"} {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatalf("read %s dir: %v", dir, err)
-		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".js") {
-				continue
-			}
-			files = append(files, filepath.Join(dir, e.Name()))
-		}
-	}
-
-	set := map[string]struct{}{}
-	for _, f := range files {
-		raw, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatalf("read %s: %v", f, err)
-		}
-		for _, m := range attrPattern.FindAllString(string(raw), -1) {
-			m = strings.TrimRight(m, "-") // drop comment line-wrap artifacts
 			if m == "data-cui" {
 				continue
 			}
@@ -130,12 +107,12 @@ func runtimeJSAttrs(t *testing.T) []string {
 // core-ui/ARCHITECTURE.md (the attribute table is the source of truth).
 func documentedAttrs(t *testing.T) map[string]struct{} {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "ARCHITECTURE.md"))
+	raw, err := os.ReadFile(filepath.Join(coreUI, "ARCHITECTURE.md"))
 	if err != nil {
 		t.Fatalf("read ARCHITECTURE.md: %v", err)
 	}
 	set := map[string]struct{}{}
-	for _, m := range attrPattern.FindAllString(string(raw), -1) {
+	for _, m := range AttrPattern.FindAllString(string(raw), -1) {
 		set[strings.TrimRight(m, "-")] = struct{}{}
 	}
 	return set
@@ -151,7 +128,7 @@ func documentedAttrs(t *testing.T) map[string]struct{} {
 // hypothetical future attributes don't pollute the set.
 func goInteractiveAttrs(t *testing.T) []string {
 	t.Helper()
-	interactiveDir := filepath.Join("..", "interactive")
+	interactiveDir := filepath.Join(coreUI, "interactive")
 	entries, err := os.ReadDir(interactiveDir)
 	if err != nil {
 		t.Fatalf("read interactive dir: %v", err)
@@ -333,7 +310,7 @@ func TestRuntimeAttrsAreDocumented(t *testing.T) {
 // noticed. Same for data-widget / data-component / data-bind. The rule
 // was satisfied in letter and defeated in spirit.
 func TestPrivilegedAttrsAreDocumented(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "ARCHITECTURE.md"))
+	raw, err := os.ReadFile(filepath.Join(coreUI, "ARCHITECTURE.md"))
 	if err != nil {
 		t.Fatalf("read ARCHITECTURE.md: %v", err)
 	}
@@ -349,7 +326,7 @@ func TestPrivilegedAttrsAreDocumented(t *testing.T) {
 // these is renamed or dropped, the doc row and this list must follow.
 // A stale entry here would keep documenting an attribute nothing reads.
 func TestPrivilegedAttrsStillRead(t *testing.T) {
-	js, err := RuntimeJS()
+	js, err := runtime.RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,184 +334,6 @@ func TestPrivilegedAttrsStillRead(t *testing.T) {
 		if !strings.Contains(js, a) {
 			t.Errorf("privileged attribute %q is documented + listed but no longer read by runtime.js — drop it from both", a)
 		}
-	}
-}
-
-// --- Runtime composition gate (spec: scratchpad/SPEC-runtime-composer.md) ---
-//
-// The four tests below extend this file's parity mechanism to the
-// attribute→fragment map declared in fragments.go. Together they enforce
-// that every data-cui-* attribute in the runtime sources has exactly one
-// declared owner (a core fragment or an on-demand module), that the
-// declared set never drifts ahead of the source, and that the fragment
-// dependency graph is well-formed. This is the build-time half of Hard
-// rule 5: a new attribute without an owning fragment fails the build
-// before it can ship, and a removed attribute leaves a stale entry that
-// also fails.
-//
-// They reuse runtimeJSAttrs (the same source-of-truth scanner the
-// doc-parity tests above use) so there is one definition of "what
-// attributes exist", not two.
-
-// TestFragmentMapComplete is gate item 1: every data-cui-* attribute the
-// runtime JS references must have a declared owning fragment or module in
-// fragments.go. A new attribute that ships without an entry here fails the
-// build, which is the point: composition cannot serve an attribute whose
-// owner it does not know, and the map is how it knows.
-func TestFragmentMapComplete(t *testing.T) {
-	var unowned []string
-	for _, a := range runtimeJSAttrs(t) {
-		kind, _ := attrOwner(a)
-		if kind == "" {
-			unowned = append(unowned, a)
-		}
-	}
-	if len(unowned) > 0 {
-		t.Errorf("%d data-cui-* attribute(s) referenced by the runtime sources have "+
-			"no owning fragment or module in fragments.go (runtime-composer gate):\n  %s\n"+
-			"Assign each to the fragment (fragmentAttrs) or src/*.js module (moduleAttrs) "+
-			"that implements its handler — see the ownership rule in fragments.go.",
-			len(unowned), strings.Join(unowned, "\n  "))
-	}
-}
-
-// TestFragmentMapNoStale is gate item 2: every attribute declared in
-// fragments.go must still exist in the runtime sources. A stale entry is
-// usually a rename or removal that forgot to update the map; left in place
-// it would make the composition serve a fragment for a marker nobody emits.
-func TestFragmentMapNoStale(t *testing.T) {
-	src := map[string]struct{}{}
-	for _, a := range runtimeJSAttrs(t) {
-		src[a] = struct{}{}
-	}
-	check := func(owner, attr string) {
-		if _, ok := src[attr]; !ok {
-			t.Errorf("attribute %q declared under %q in fragments.go is NOT present in any "+
-				"runtime source (runtime.js or src/*.js) — it was likely renamed or removed; "+
-				"drop the entry or reassign the new name.", attr, owner)
-		}
-	}
-	for frag, attrs := range fragmentAttrs {
-		for _, a := range attrs {
-			check("fragment "+frag, a)
-		}
-	}
-	for mod, attrs := range moduleAttrs {
-		for _, a := range attrs {
-			check("module "+mod, a)
-		}
-	}
-}
-
-// TestFragmentMapNoDuplicate asserts the two tables never assign the same
-// attribute twice. A double-assignment would make the completeness gate
-// ambiguous about which owner serves the marker, and is almost always a
-// transcription error introduced while splitting the map.
-func TestFragmentMapNoDuplicate(t *testing.T) {
-	seen := make(map[string]string) // attr -> first owner
-	record := func(owner, attr string) {
-		if prev, ok := seen[attr]; ok {
-			t.Errorf("attribute %q is assigned to BOTH %q and %q — each data-cui-* attribute "+
-				"has exactly one owner; pick the fragment/module that implements its handler.",
-				attr, prev, owner)
-		}
-		seen[attr] = owner
-	}
-	for frag, attrs := range fragmentAttrs {
-		for _, a := range attrs {
-			record("fragment "+frag, a)
-		}
-	}
-	for mod, attrs := range moduleAttrs {
-		for _, a := range attrs {
-			record("module "+mod, a)
-		}
-	}
-}
-
-// TestFragmentNamesValid is gate item 3: every key in fragmentAttrs must be
-// one of the declared fragment names in `fragments`. A typo here
-// (e.g. "widget-boot" vs "widgets-boot") would otherwise silently produce a
-// fragment that no composition can name.
-func TestFragmentNamesValid(t *testing.T) {
-	for frag := range fragmentAttrs {
-		if _, ok := fragments[frag]; !ok {
-			t.Errorf("fragmentAttrs key %q is not in the declared fragment set `fragments` "+
-				"(valid names: kernel, signals, nav, widgets-boot, sse, compute, boot-embed) "+
-				"— fix the typo or add the fragment to `fragments`.", frag)
-		}
-	}
-}
-
-// TestFragmentDepsAcyclic is gate item 4: the declared dependency edges
-// must form a DAG and every named dependency must resolve to a declared
-// fragment. Without this the composer's closure could recurse infinitely or
-// reference a fragment that does not exist, which is the failure mode that
-// turns the map from a gate into mere documentation.
-func TestFragmentDepsAcyclic(t *testing.T) {
-	const (
-		white = 0 // unvisited
-		gray  = 1 // on the current DFS path (back-edge ⇒ cycle)
-		black = 2 // fully explored
-	)
-	color := make(map[string]int, len(fragments))
-	var visit func(name string, path []string) bool
-	visit = func(name string, path []string) bool {
-		switch color[name] {
-		case gray:
-			t.Errorf("fragment dependency cycle: %s -> %s",
-				strings.Join(append(path, name), " -> "), name)
-			return false
-		case black:
-			return true
-		}
-		def, ok := fragments[name]
-		if !ok {
-			t.Errorf("dependency %q is referenced in a fragment's deps but is not a declared "+
-				"fragment — add it to `fragments` or fix the name.", name)
-			return false
-		}
-		color[name] = gray
-		for _, d := range def.deps {
-			if !visit(d, append(path, name)) {
-				return false
-			}
-		}
-		color[name] = black
-		return true
-	}
-	// Visit in sorted order so any failure report is stable across runs.
-	names := make([]string, 0, len(fragments))
-	for n := range fragments {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	for _, n := range names {
-		visit(n, nil)
-	}
-}
-
-// TestFragmentModulesValid extends gate item 3 to module-owned attributes:
-// every key in moduleAttrs must be a real embedded runtime module (a file
-// under src/*.js served at /__gofastr/runtime/<name>.js). A module name that
-// no .js file backs would direct a marker's demand-load at a 404. Named
-// TestFragment* so every gate test runs under a single -run filter.
-func TestFragmentModulesValid(t *testing.T) {
-	real := map[string]struct{}{}
-	for _, n := range ModuleNames() {
-		real[n] = struct{}{}
-	}
-	var stale []string
-	for mod := range moduleAttrs {
-		if _, ok := real[mod]; !ok {
-			stale = append(stale, mod)
-		}
-	}
-	if len(stale) > 0 {
-		sort.Strings(stale)
-		t.Errorf("%d moduleAttrs key(s) are not embedded src/*.js modules:\n  %s\n"+
-			"Every moduleAttrs key must match a src/<name>.js file. Drop the entry or "+
-			"add the module file.", len(stale), strings.Join(stale, "\n  "))
 	}
 }
 
@@ -606,25 +405,25 @@ func TestDocumentedAttrsHaveAnOwner(t *testing.T) {
 func goEmittedAttrs(t *testing.T) []string {
 	t.Helper()
 	roots := []string{
-		filepath.Join("..", "interactive"),
-		filepath.Join("..", "html"),
-		filepath.Join("..", "widget"),
-		filepath.Join("..", "app"),
-		filepath.Join("..", "..", "framework", "ui"),
+		filepath.Join(coreUI, "interactive"),
+		filepath.Join(coreUI, "html"),
+		filepath.Join(coreUI, "widget"),
+		filepath.Join(coreUI, "app"),
+		filepath.Join(repoRoot, "framework", "ui"),
 		// framework/headless renders the host framework's runtime
 		// vocabulary too: the lightbox viewer's LightboxWiring emits the
 		// data-fui-lightbox* family, and a Bind renders the signal
 		// triple. A component below framework/ui is still a component.
-		filepath.Join("..", "..", "framework", "headless"),
+		filepath.Join(repoRoot, "framework", "headless"),
 		// pluginhost emits the data-fui-plugin* mount markers via string
 		// concat (mount.go); it owns its own parity gate too, but the
 		// doc→owner gate must still see them as emitted.
-		filepath.Join("..", "..", "framework", "pluginhost"),
+		filepath.Join(repoRoot, "framework", "pluginhost"),
 		// uihost emits attributes of its own beside the component trees:
 		// the data-cui-doc markers on registered document scripts and,
 		// since spike/layout-loading, the data-fui-page-loading wrapper
 		// div (WithPageLoading).
-		filepath.Join("..", "..", "framework", "uihost"),
+		filepath.Join(repoRoot, "framework", "uihost"),
 	}
 	set := map[string]struct{}{}
 	for _, root := range roots {
@@ -643,10 +442,10 @@ func goEmittedAttrs(t *testing.T) []string {
 				return rerr
 			}
 			stripped := stripGoLineComments(string(raw))
-			// attrPattern over stripped whole source catches valueless boolean
+			// AttrPattern over stripped whole source catches valueless boolean
 			// attributes (data-cui-menu-panel) and concat-built markers
 			// (data-fui-plugin-docid) that the quote-requiring form misses.
-			for _, m := range attrPattern.FindAllString(stripped, -1) {
+			for _, m := range AttrPattern.FindAllString(stripped, -1) {
 				name := strings.TrimRight(m, "-")
 				if name == "data-cui" {
 					continue
@@ -712,177 +511,6 @@ func TestRegisteredBehaviorDataFuiMarkersAreDocumented(t *testing.T) {
 	}
 }
 
-// markerSelectorsInSource returns every selector literal passed to
-// core-ui/registry's Markers in one Go file, and every argument that
-// is not a string literal. It parses the file (go/parser, no type
-// information) and binds the call through the file's own import of
-// the registry package, so an alias or a dot import is seen and a
-// same-named function from another package is not.
-//
-// A non-literal argument (a constant, a variable, a call) cannot be
-// read here, and the gate refuses it: markers are declared as
-// literals so the tree scan can read them, the same reason the
-// attribute table is prose and not code.
-const registryImportPath = "github.com/DonaldMurillo/gofastr/core-ui/registry"
-
-func markerSelectorsInSource(src string) (selectors, nonLiteral []string) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "", src, 0)
-	if err != nil {
-		return nil, []string{"unparseable source: " + err.Error()}
-	}
-	local := ""
-	for _, imp := range f.Imports {
-		if path, err := strconv.Unquote(imp.Path.Value); err == nil && path == registryImportPath {
-			local = "registry"
-			if imp.Name != nil {
-				local = imp.Name.Name
-			}
-		}
-	}
-	if local == "" || local == "_" {
-		return nil, nil
-	}
-	ast.Inspect(f, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		isMarkers := false
-		switch fn := call.Fun.(type) {
-		case *ast.SelectorExpr:
-			if id, ok := fn.X.(*ast.Ident); ok && id.Name == local && fn.Sel.Name == "Markers" {
-				isMarkers = true
-			}
-		case *ast.Ident:
-			if local == "." && fn.Name == "Markers" {
-				isMarkers = true
-			}
-		}
-		if !isMarkers {
-			return true
-		}
-		for _, a := range call.Args {
-			lit, ok := a.(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
-				nonLiteral = append(nonLiteral, types.ExprString(a))
-				continue
-			}
-			if s, err := strconv.Unquote(lit.Value); err == nil {
-				selectors = append(selectors, s)
-			}
-		}
-		return true
-	})
-	return selectors, nonLiteral
-}
-
-// interactionsInSource parses every registry.Interactions(...) call in
-// one Go source file, returning each spec's fields and every argument
-// it could not read. It binds the call through the file's own import
-// of the registry package, the same binding markerSelectorsInSource
-// uses; the composite literals it reads carry the bridge's own spec
-// shape (registry.Interaction), so a field added there is a field this
-// walk must be taught to refuse rather than silently skip.
-func interactionsInSource(src string) (specs []registry.Interaction, nonLiteral []string) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "", src, 0)
-	if err != nil {
-		return nil, []string{"unparseable source: " + err.Error()}
-	}
-	local := ""
-	for _, imp := range f.Imports {
-		if path, err := strconv.Unquote(imp.Path.Value); err == nil && path == registryImportPath {
-			local = "registry"
-			if imp.Name != nil {
-				local = imp.Name.Name
-			}
-		}
-	}
-	if local == "" || local == "_" {
-		return nil, nil
-	}
-	lit := func(e ast.Expr) (string, bool) {
-		b, ok := e.(*ast.BasicLit)
-		if !ok || b.Kind != token.STRING {
-			return types.ExprString(e), false
-		}
-		s, err := strconv.Unquote(b.Value)
-		return s, err == nil
-	}
-	ast.Inspect(f, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		isInteractions := false
-		switch fn := call.Fun.(type) {
-		case *ast.SelectorExpr:
-			if id, ok := fn.X.(*ast.Ident); ok && id.Name == local && fn.Sel.Name == "Interactions" {
-				isInteractions = true
-			}
-		case *ast.Ident:
-			if local == "." && fn.Name == "Interactions" {
-				isInteractions = true
-			}
-		}
-		if !isInteractions {
-			return true
-		}
-		for _, a := range call.Args {
-			cl, ok := a.(*ast.CompositeLit)
-			if !ok {
-				nonLiteral = append(nonLiteral, types.ExprString(a))
-				continue
-			}
-			spec := registry.Interaction{}
-			for _, elt := range cl.Elts {
-				kv, ok := elt.(*ast.KeyValueExpr)
-				if !ok {
-					nonLiteral = append(nonLiteral, types.ExprString(elt))
-					continue
-				}
-				key, _ := kv.Key.(*ast.Ident)
-				if key == nil {
-					continue
-				}
-				switch key.Name {
-				case "Event", "Selector", "Scope":
-					if s, ok := lit(kv.Value); ok {
-						switch key.Name {
-						case "Event":
-							spec.Event = s
-						case "Selector":
-							spec.Selector = s
-						case "Scope":
-							spec.Scope = s
-						}
-					} else {
-						nonLiteral = append(nonLiteral, key.Name+": "+types.ExprString(kv.Value))
-					}
-				case "Keys":
-					if kl, ok := kv.Value.(*ast.CompositeLit); ok {
-						for _, k := range kl.Elts {
-							if s, ok := lit(k); ok {
-								spec.Keys = append(spec.Keys, s)
-							} else {
-								nonLiteral = append(nonLiteral, "Keys: "+types.ExprString(k))
-							}
-						}
-					} else {
-						nonLiteral = append(nonLiteral, "Keys: "+types.ExprString(kv.Value))
-					}
-				default:
-					nonLiteral = append(nonLiteral, key.Name)
-				}
-			}
-			specs = append(specs, spec)
-		}
-		return true
-	})
-	return specs, nonLiteral
-}
-
 // interactionAttrNames lists the data-cui-* attributes an interaction
 // selector names. The grammar accepts more than a marker's (combinators,
 // :not([attr]), comma lists), so the walk is a token scan of the
@@ -934,7 +562,7 @@ func registrySources(t *testing.T, root string, visit func(path, src string)) {
 		if rerr != nil {
 			return rerr
 		}
-		if strings.Contains(string(raw), registryImportPath) {
+		if strings.Contains(string(raw), RegistryImportPath) {
 			visit(path, string(raw))
 		}
 		return nil
@@ -946,7 +574,7 @@ func registrySources(t *testing.T, root string, visit func(path, src string)) {
 
 func TestRegistrySourcesSkipsGoIgnoredDirs(t *testing.T) {
 	root := t.TempDir()
-	src := "package p\nimport \"" + registryImportPath + "\"\n"
+	src := "package p\nimport \"" + RegistryImportPath + "\"\n"
 	for _, name := range []string{"pub/a.go", "_scratch/b.go", ".cache/c.go", "pub/a_test.go"} {
 		path := filepath.Join(root, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -979,11 +607,11 @@ func TestRegistrySourcesSkipsGoIgnoredDirs(t *testing.T) {
 // move brought the first in-tree selector, and with it this gate.
 func TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 	doc := documentedAttrs(t)
-	root := filepath.Join("..", "..")
+	root := repoRoot
 	var specs []registry.Interaction
 	var nonLiteral []string
 	registrySources(t, root, func(path, src string) {
-		got, non := interactionsInSource(src)
+		got, non := Interactions(src)
 		specs = append(specs, got...)
 		for _, n := range non {
 			nonLiteral = append(nonLiteral, path+": "+n)
@@ -1008,12 +636,12 @@ func TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 	// by field, a non-literal field and an unknown field are refused
 	// as unreadable, and the documented-versus-undocumented split is
 	// the same one the markers gate checks.
-	const head = "package p\nimport \"" + registryImportPath + "\"\n"
+	const head = "package p\nimport \"" + RegistryImportPath + "\"\n"
 	src := head + `var b = registry.RegisterBehavior("x", js, registry.Markers("[data-hui-p]"), registry.Interactions(
 		registry.Interaction{Event: "click", Selector: "[data-cui-rpc],[data-cui-not-in-the-table-probe]"},
 		registry.Interaction{Event: "keydown", Scope: "[data-cui-widget]:not([hidden]) [data-hui-p]", Keys: []string{"ArrowLeft"}},
 	))`
-	got, non := interactionsInSource(src)
+	got, non := Interactions(src)
 	if len(non) != 0 || len(got) != 2 {
 		t.Fatalf("fixture walk: specs %v nonLiteral %v, want 2 specs and none unreadable", got, non)
 	}
@@ -1032,7 +660,7 @@ func TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 		t.Fatalf("the check missed the undocumented attribute or flagged a documented one: %v", undoc)
 	}
 	// A field the bridge grows is refused rather than skipped.
-	_, non = interactionsInSource(head + `var b = registry.RegisterBehavior("x", js, registry.Interactions(registry.Interaction{Event: "click", Selector: k, Pointer: "x"}))`)
+	_, non = Interactions(head + `var b = registry.RegisterBehavior("x", js, registry.Interactions(registry.Interaction{Event: "click", Selector: k, Pointer: "x"}))`)
 	if len(non) != 2 {
 		t.Fatalf("unreadable fields were not both refused: %v", non)
 	}
@@ -1066,10 +694,10 @@ func undocumentedDataFuiMarkers(selectors []string, doc map[string]struct{}) []s
 // A behaviour's own prefix is never in question.
 func TestMarkersInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 	doc := documentedAttrs(t)
-	root := filepath.Join("..", "..")
+	root := repoRoot
 	var selectors, nonLiteral []string
 	registrySources(t, root, func(path, src string) {
-		sel, non := markerSelectorsInSource(src)
+		sel, non := MarkerSelectors(src)
 		selectors = append(selectors, sel...)
 		for _, n := range non {
 			nonLiteral = append(nonLiteral, path+": "+n)
@@ -1088,7 +716,7 @@ func TestMarkersInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 	// import, a same-named function from another package (ignored), a
 	// constant argument (refused as unreadable), and the documented
 	// versus undocumented data-cui-* markers.
-	const head = "package p\nimport (\n\t%s \"" + registryImportPath + "\"\n\tother \"example.com/other\"\n)\nconst k = \"[data-cui-k]\"\n"
+	const head = "package p\nimport (\n\t%s \"" + RegistryImportPath + "\"\n\tother \"example.com/other\"\n)\nconst k = \"[data-cui-k]\"\n"
 	cases := []struct {
 		name, src           string
 		wantSel, wantNonLit int
@@ -1100,12 +728,12 @@ func TestMarkersInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 		{"constant", fmt.Sprintf(head, "registry") + "var b = registry.RegisterBehavior(\"x\", js, registry.Markers(k, \"[data-hui-probe]\"))", 1, 1},
 	}
 	for _, c := range cases {
-		sel, non := markerSelectorsInSource(c.src)
+		sel, non := MarkerSelectors(c.src)
 		if len(sel) != c.wantSel || len(non) != c.wantNonLit {
 			t.Errorf("%s: selectors %v nonLiteral %v, want %d and %d", c.name, sel, non, c.wantSel, c.wantNonLit)
 		}
 	}
-	sel, _ := markerSelectorsInSource(cases[0].src)
+	sel, _ := MarkerSelectors(cases[0].src)
 	got := undocumentedDataFuiMarkers(sel, doc)
 	if len(got) != 1 || got[0] != "[data-cui-not-in-the-table-probe]" {
 		t.Fatalf("the check missed the undocumented marker or flagged a documented one: %v", got)

@@ -9,10 +9,17 @@
 //
 //   - a changed file sits in the package's directory or anywhere below it
 //     that is not itself a package (testdata, embedded assets, fixtures);
+//   - one of the package's //go:embed patterns covers a changed file,
+//     deleted ones included, which can sit inside a nested package: cmd/gofastr
+//     embeds the blueprint's packages/ trees, each its own package, so
+//     editing a template never selected the generator or the gates that
+//     run it;
 //   - the package imports an affected package, transitively (go list's
 //     Deps);
 //   - the package's test files import an affected package (TestImports
-//     and XTestImports, whose own transitive deps the first rule covers).
+//     and XTestImports, whose own transitive deps the first rule covers);
+//   - a changed file matches a pattern one of the package's test files
+//     declares it reads (see "Files a test reads" below).
 //
 // Some changes make the graph meaningless and widen the set to every
 // package: go.mod, go.sum, go.work, and this tool's own source. A base ref
@@ -28,6 +35,32 @@
 // ref is diffed directly instead; CI uses that with the pull request's
 // base SHA, where the checkout is the PR's merge commit and no history is
 // fetched.
+//
+// Files a test reads: a gate that walks the repo (every _test.go, every
+// package.json, every exported symbol) depends on files no import edge
+// reaches. internal/chromedptest's launch-allowance gate reads every test
+// file in the module, so a new hand-booted Chrome in another package
+// never selected it, and #536's missing allowance reached main. Such a
+// test names its inputs with a directive at the start of a comment line
+// in the test file:
+//
+//	//gofastr:test-reads *_test.go
+//	//gofastr:test-reads framework/ui/ /README.md core-ui/**/*.js
+//
+// A pattern ending in "/" is a directory prefix; one with no "/" matches
+// the base name anywhere ("*_test.go", "package.json"); one starting with
+// "/" is anchored at the repo root ("/README.md" is the root README
+// only); any other is a repo-relative glob where "**" spans directories.
+// "importers:<import path>" matches a change in any package that imports
+// that path directly, and any changed .go file whose text, now or at the
+// base, names it in quotes: a nested module's file, a deleted file, or
+// one that dropped the import still changes what a gate reading "every
+// caller of this API" sees (core-ui/runtime/internal/treegate's registry
+// gates). Patterns are space-separated and a file may carry several
+// directive lines. A match selects the declaring package only: nothing
+// imports a test. scripts/test-reads-audit.sh finds the tests that need
+// a directive: it records the files each test opens and fails on one
+// whose change would not select its reader.
 //
 // Usage:
 //
@@ -73,13 +106,17 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/scanner"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -102,14 +139,28 @@ type options struct {
 }
 
 type pkg struct {
-	ImportPath   string
-	Name         string
-	Dir          string
-	Deps         []string
-	TestImports  []string
-	XTestImports []string
-	TestGoFiles  []string
-	XTestGoFiles []string
+	ImportPath         string
+	Name               string
+	Dir                string
+	Imports            []string
+	IgnoredGoFiles     []string // build-excluded; a registry gate reads them anyway
+	EmbedPatterns      []string
+	TestEmbedPatterns  []string
+	XTestEmbedPatterns []string
+	Deps               []string
+	TestImports        []string
+	XTestImports       []string
+	TestGoFiles        []string
+	XTestGoFiles       []string
+
+	reads testReadSet // from //gofastr:test-reads in the test files
+}
+
+// testReadSet is what a package's tests declare they read: repo-relative
+// path patterns, and import paths whose direct importers they read.
+type testReadSet struct {
+	paths       []*regexp.Regexp
+	importersOf []string
 }
 
 type stringList []string
@@ -292,9 +343,9 @@ func compute(o options) ([]string, error) {
 		return format(o, all, nil), nil
 	}
 
-	files := o.files
+	files, base := o.files, ""
 	if files == nil {
-		files, err = changedFiles(o)
+		files, base, err = changedFiles(o)
 		if err != nil {
 			fmt.Fprintf(o.stderr, "affected: %v; testing everything\n", err)
 			return format(o, all, nil), nil
@@ -305,7 +356,14 @@ func compute(o options) ([]string, error) {
 		return format(o, all, nil), nil
 	}
 
-	affected := closure(all, ownerDirs(o.root, files, all))
+	owners := ownerDirs(o.root, files, all)
+	affected := closure(all, owners)
+	named := namedImports(o.root, base, files, owners, all)
+	for _, p := range all {
+		if p.reads.matches(files, owners, all, named) {
+			affected[p.ImportPath] = true
+		}
+	}
 	return format(o, all, affected), nil
 }
 
@@ -324,7 +382,11 @@ func widensToAll(files []string, extra []string) string {
 }
 
 // ownerDirs maps every changed file to the nearest enclosing package
-// directory. A file under no package (README.md, scripts/) owns nothing.
+// directory, and to every package whose //go:embed patterns cover it. A
+// file under no package (README.md, scripts/) owns nothing. The patterns
+// are matched rather than go list's EmbedFiles, which lists only what
+// exists now: a deleted template, or the old name of a renamed one, still
+// changes what the embedding package ships.
 func ownerDirs(root string, files []string, all []pkg) map[string]bool {
 	isPkg := make(map[string]bool, len(all))
 	for _, p := range all {
@@ -335,7 +397,13 @@ func ownerDirs(root string, files []string, all []pkg) map[string]bool {
 		if f == "" {
 			continue
 		}
-		d := filepath.Dir(filepath.Join(root, filepath.FromSlash(f)))
+		abs := filepath.Join(root, filepath.FromSlash(f))
+		for _, p := range all {
+			if embeds(p, abs) {
+				owners[p.Dir] = true
+			}
+		}
+		d := filepath.Dir(abs)
 		for {
 			if isPkg[d] {
 				owners[d] = true
@@ -348,6 +416,30 @@ func ownerDirs(root string, files []string, all []pkg) map[string]bool {
 		}
 	}
 	return owners
+}
+
+// embeds reports whether one of p's //go:embed patterns, test patterns
+// included, names file or a directory above it. Go leaves out a matched
+// directory's dot and underscore files unless the pattern says "all:";
+// counting them anyway only selects more.
+func embeds(p pkg, file string) bool {
+	rel, err := filepath.Rel(p.Dir, file)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+		return false
+	}
+	for _, pat := range slices.Concat(p.EmbedPatterns, p.TestEmbedPatterns, p.XTestEmbedPatterns) {
+		pat = strings.TrimPrefix(pat, "all:")
+		for at := rel; at != "."; at = path.Dir(at) {
+			if ok, _ := path.Match(pat, at); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // closure returns the import paths affected by the packages in dirs: the
@@ -419,7 +511,7 @@ func format(o options, all []pkg, set map[string]bool) []string {
 }
 
 func listPackages(root, tags string) ([]pkg, error) {
-	args := []string{"list", "-e", "-json=ImportPath,Name,Dir,Deps,TestImports,XTestImports,TestGoFiles,XTestGoFiles"}
+	args := []string{"list", "-e", "-json=ImportPath,Name,Dir,Imports,IgnoredGoFiles,EmbedPatterns,TestEmbedPatterns,XTestEmbedPatterns,Deps,TestImports,XTestImports,TestGoFiles,XTestGoFiles"}
 	if tags != "" {
 		args = append(args, "-tags", tags)
 	}
@@ -443,10 +535,37 @@ func listPackages(root, tags string) ([]pkg, error) {
 		}
 		pkgs = append(pkgs, p)
 	}
-	if err := addCommandRuns(pkgs); err != nil {
+	if err := scanTestFiles(pkgs); err != nil {
 		return nil, err
 	}
 	return pkgs, nil
+}
+
+// scanTestFiles reads every package's test files once for the edges go
+// list cannot report: commands the tests run, and files they declare
+// they read.
+func scanTestFiles(pkgs []pkg) error {
+	var mains []string
+	for _, p := range pkgs {
+		if p.Name == "main" {
+			mains = append(mains, p.ImportPath)
+		}
+	}
+	for i := range pkgs {
+		p := &pkgs[i]
+		for _, name := range append(slices.Clone(p.TestGoFiles), p.XTestGoFiles...) {
+			path := filepath.Join(p.Dir, name)
+			src, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("read %s: %w", path, err)
+			}
+			addCommandRuns(p, src, mains)
+			if err := p.reads.parse(src); err != nil {
+				return fmt.Errorf("%s: %w", path, err)
+			}
+		}
+	}
+	return nil
 }
 
 // addCommandRuns records a test that runs one of the module's commands
@@ -457,53 +576,212 @@ func listPackages(root, tags string) ([]pkg, error) {
 // generator changed, and the stale tree surfaced only in CI. The edge is
 // read from the full import path spelled as a Go string literal in the
 // package's test files.
-func addCommandRuns(pkgs []pkg) error {
-	var mains []string
-	for _, p := range pkgs {
-		if p.Name == "main" {
-			mains = append(mains, p.ImportPath)
+func addCommandRuns(p *pkg, src []byte, mains []string) {
+	for _, m := range mains {
+		if m != p.ImportPath && bytes.Contains(src, []byte(`"`+m+`"`)) && !slices.Contains(p.TestImports, m) {
+			p.TestImports = append(p.TestImports, m)
 		}
 	}
-	if len(mains) == 0 {
-		return nil
-	}
-	for i := range pkgs {
-		p := &pkgs[i]
-		for _, name := range append(slices.Clone(p.TestGoFiles), p.XTestGoFiles...) {
-			src, err := os.ReadFile(filepath.Join(p.Dir, name))
-			if err != nil {
-				return fmt.Errorf("read %s: %w", filepath.Join(p.Dir, name), err)
-			}
-			for _, m := range mains {
-				if m != p.ImportPath && bytes.Contains(src, []byte(`"`+m+`"`)) && !slices.Contains(p.TestImports, m) {
-					p.TestImports = append(p.TestImports, m)
+}
+
+const testReadsDirective = "//gofastr:test-reads"
+
+// parse adds the patterns of every //gofastr:test-reads comment in src.
+// The directive must open a // comment; go/scanner finds the comments, so
+// a fixture line inside a raw string declares nothing. A directive with
+// no pattern is an error: it would read as coverage while selecting
+// nothing.
+func (r *testReadSet) parse(src []byte) error {
+	var sc scanner.Scanner
+	fset := token.NewFileSet()
+	sc.Init(fset.AddFile("", fset.Base(), len(src)), src, nil, scanner.ScanComments)
+	for {
+		_, tok, lit := sc.Scan()
+		if tok == token.EOF {
+			break
+		}
+		if tok != token.COMMENT {
+			continue
+		}
+		rest, ok := strings.CutPrefix(lit, testReadsDirective)
+		if !ok {
+			continue
+		}
+		if rest != "" && rest[0] != ' ' && rest[0] != '\t' {
+			return fmt.Errorf("%s needs a space before its patterns: %q", testReadsDirective, lit)
+		}
+		fields := strings.Fields(rest)
+		if len(fields) == 0 {
+			return fmt.Errorf("%s names no pattern", testReadsDirective)
+		}
+		for _, f := range fields {
+			if imp, ok := strings.CutPrefix(f, "importers:"); ok {
+				if imp == "" {
+					return fmt.Errorf("%s: importers: names no import path", testReadsDirective)
 				}
+				r.importersOf = append(r.importersOf, imp)
+				continue
 			}
+			re, err := readPattern(f)
+			if err != nil {
+				return fmt.Errorf("%s: %w", testReadsDirective, err)
+			}
+			r.paths = append(r.paths, re)
 		}
 	}
 	return nil
 }
 
+// readPattern turns one test-reads pattern into a regexp over
+// repo-relative slash paths: "dir/" is everything below dir, a leading
+// "/" anchors at the repo root, a pattern with no "/" matches the base
+// name in any directory, and otherwise "**/" spans zero or more
+// directories, "*" and "?" stay within one. A pattern that could never
+// match a repo-relative path ("./x", "../x", "/") is an error, not a
+// declaration that selects nothing.
+func readPattern(pat string) (*regexp.Regexp, error) {
+	for _, bad := range []string{"./", "../"} {
+		if strings.HasPrefix(pat, bad) || strings.Contains(pat, "/"+bad) {
+			return nil, fmt.Errorf("pattern %q: paths are repo-relative, without %q", pat, bad)
+		}
+	}
+	switch {
+	case strings.HasPrefix(pat, "/"):
+		pat = strings.TrimPrefix(pat, "/")
+		if pat == "" || strings.HasPrefix(pat, "/") {
+			return nil, fmt.Errorf("pattern %q names no path", "/"+pat)
+		}
+	case !strings.Contains(pat, "/"):
+		pat = "**/" + pat
+	}
+	if strings.HasSuffix(pat, "/") {
+		pat += "**"
+	}
+	var b strings.Builder
+	b.WriteString("^")
+	for i := 0; i < len(pat); i++ {
+		switch {
+		case strings.HasPrefix(pat[i:], "**/"):
+			b.WriteString("(?:[^/]+/)*")
+			i += 2
+		case strings.HasPrefix(pat[i:], "**"):
+			b.WriteString(".*")
+			i++
+		case pat[i] == '*':
+			b.WriteString("[^/]*")
+		case pat[i] == '?':
+			b.WriteString("[^/]")
+		default:
+			b.WriteString(regexp.QuoteMeta(pat[i : i+1]))
+		}
+	}
+	b.WriteString("$")
+	return regexp.Compile(b.String())
+}
+
+// matches reports whether a changed file matches a path pattern, a
+// changed package (owners, by directory) directly imports a declared
+// import path, or a changed .go file names one (named, from
+// namedImports).
+func (r testReadSet) matches(files []string, owners map[string]bool, all []pkg, named map[string]bool) bool {
+	for _, f := range files {
+		for _, re := range r.paths {
+			if re.MatchString(f) {
+				return true
+			}
+		}
+	}
+	if len(r.importersOf) == 0 {
+		return false
+	}
+	if slices.ContainsFunc(r.importersOf, func(imp string) bool { return named[imp] }) {
+		return true
+	}
+	for _, p := range all {
+		if owners[p.Dir] && slices.ContainsFunc(r.importersOf, func(imp string) bool {
+			return slices.Contains(p.Imports, imp)
+		}) {
+			return true
+		}
+	}
+	return false
+}
+
+// namedImports returns the importers: paths any package declares that a
+// changed .go file names in quotes, in the working tree or, when base is
+// known, at the base commit, or that a build-excluded file of a changed
+// package names. go list's Imports alone misses four shapes: a file in a
+// nested module (outside go list ./...), a deleted file, a file whose
+// change removed the import, and an import behind a build constraint
+// (the registry gates read every .go file, whatever the build). A quoted
+// path in a string literal counts too; that only widens the selection.
+func namedImports(root, base string, files []string, owners map[string]bool, all []pkg) map[string]bool {
+	var wanted []string
+	for _, p := range all {
+		wanted = append(wanted, p.reads.importersOf...)
+	}
+	slices.Sort(wanted)
+	wanted = slices.Compact(wanted)
+	var goFiles []string
+	for _, f := range files {
+		if strings.HasSuffix(f, ".go") {
+			goFiles = append(goFiles, f)
+		}
+	}
+	for _, p := range all {
+		if !owners[p.Dir] {
+			continue
+		}
+		for _, name := range p.IgnoredGoFiles {
+			if rel, err := filepath.Rel(root, filepath.Join(p.Dir, name)); err == nil {
+				goFiles = append(goFiles, filepath.ToSlash(rel))
+			}
+		}
+	}
+	named := map[string]bool{}
+	if len(wanted) == 0 || len(goFiles) == 0 {
+		return named
+	}
+	for _, imp := range wanted {
+		quoted := []byte(strconv.Quote(imp))
+		for _, f := range goFiles {
+			if src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(f))); err == nil && bytes.Contains(src, quoted) {
+				named[imp] = true
+				break
+			}
+		}
+		if named[imp] || base == "" {
+			continue
+		}
+		// git grep exits 1 on no match; only output decides.
+		out, _ := gitOutput(root, append([]string{"grep", "-l", "-F", "-e", string(quoted), base, "--"}, goFiles...)...)
+		if strings.TrimSpace(out) != "" {
+			named[imp] = true
+		}
+	}
+	return named
+}
+
 // changedFiles asks git for the change set: the working tree (staged and
-// unstaged) against the base commit, plus untracked files. Renames are
-// reported as a delete plus an add so the package a file left is tested
-// too.
-func changedFiles(o options) ([]string, error) {
+// unstaged) against the base commit, plus untracked files, and returns
+// that base commit. Renames are reported as a delete plus an add so the
+// package a file left is tested too.
+func changedFiles(o options) ([]string, string, error) {
 	base, err := resolveBase(o)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	diff, err := gitOutput(o.root, "diff", "--name-only", "--no-renames", base)
 	if err != nil {
-		return nil, fmt.Errorf("git diff against %s: %w", base, err)
+		return nil, "", fmt.Errorf("git diff against %s: %w", base, err)
 	}
 	untracked, err := gitOutput(o.root, "ls-files", "--others", "--exclude-standard")
 	if err != nil {
-		return nil, fmt.Errorf("git ls-files: %w", err)
+		return nil, "", fmt.Errorf("git ls-files: %w", err)
 	}
 	files := append(splitLines(diff), splitLines(untracked)...)
 	sort.Strings(files)
-	return slices.Compact(files), nil
+	return slices.Compact(files), base, nil
 }
 
 // resolveBase picks the base ref and, unless -diff-base, its merge base

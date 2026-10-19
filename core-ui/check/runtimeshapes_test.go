@@ -164,6 +164,7 @@ func TestLintSelectorInterpolation_SyntheticPositives(t *testing.T) {
 	}
 }
 
+//gofastr:test-reads core-ui/runtime/
 func TestLintSelectorInterpolation_RepoIsClean(t *testing.T) {
 	repoRoot, err := findRepoRoot()
 	if err != nil {

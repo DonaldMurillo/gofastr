@@ -78,6 +78,8 @@ func TestNormalizeGoldenNewlines(t *testing.T) {
 // regression check: each one must render without panicking, must produce
 // non-empty HTML, and must not leak a raw <script> or </h2 tag (a smoke test
 // that escaping is in effect on real-world inputs).
+//
+//gofastr:test-reads docs/
 func TestRendersProjectDocs(t *testing.T) {
 	docsDir := filepath.Join("..", "..", "docs")
 	entries, err := os.ReadDir(docsDir)

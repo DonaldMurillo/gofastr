@@ -40,6 +40,8 @@ func docManifest(t *testing.T) map[string][]string {
 //	| `<html>` attr | `aria-busy` | ... |
 //	| `<body>` class | `cui-sse-up` | ... |
 //	| `<body>` singleton | `cui-nav-toast` | ... |
+//
+//gofastr:test-reads core-ui/ARCHITECTURE.md
 func architectureDocTable(t *testing.T) map[string][]string {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("..", "ARCHITECTURE.md"))

@@ -10,6 +10,8 @@ import (
 // The embedded copy under cmd/gofastr/embedded/ must stay byte-equal to
 // the canonical skill source in .claude/skills/gofastr-host/SKILL.md.
 // If they drift, the binary ships stale content.
+//
+//gofastr:test-reads .claude/skills/gofastr-host/SKILL.md
 func TestEmbeddedHostSkillMatchesRepo(t *testing.T) {
 	repoCopy, err := os.ReadFile("../../.claude/skills/gofastr-host/SKILL.md")
 	if err != nil {

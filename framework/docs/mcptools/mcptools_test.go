@@ -261,6 +261,8 @@ func TestDocsSearchLimitIsCapped(t *testing.T) {
 // Registering a tool without updating the guidance fails here (the
 // "five tools" drift already happened once). GOFASTR_DEV implies the
 // dev-only tools, which an agent meets first.
+//
+//gofastr:test-reads .claude/skills/app-introspect/SKILL.md .claude/skills/gofastr-mcp-debug/SKILL.md
 func TestGuidanceNamesEveryTool(t *testing.T) {
 	t.Setenv("GOFASTR_DEV", "1")
 	t.Setenv("GOFASTR_ENV", "")

@@ -106,6 +106,7 @@ func TestLintLayerPrefixGo_FiresOnKitLiteralsOnly(t *testing.T) {
 	}
 }
 
+//gofastr:test-reads core-ui/runtime/ core-ui/**/*.go framework/headless/ importers:github.com/DonaldMurillo/gofastr/core-ui/registry
 func TestLintLayerPrefix_RepoIsClean(t *testing.T) {
 	repoRoot, err := findRepoRoot()
 	if err != nil {

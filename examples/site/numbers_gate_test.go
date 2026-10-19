@@ -70,6 +70,7 @@ func TestNumbersStripFiveMCPToolsPerEntity(t *testing.T) {
 	}
 }
 
+//gofastr:test-reads package.json
 func TestNumbersStripZeroNpmPackages(t *testing.T) {
 	root, err := filepath.Abs("../..")
 	if err != nil {

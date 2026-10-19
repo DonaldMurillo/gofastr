@@ -129,6 +129,8 @@ func TestGenerateWarnsOwnerScopedUnique(t *testing.T) {
 
 // The shipped blueprints are what readers copy; none of them may carry
 // the shape this lint warns about.
+//
+//gofastr:test-reads examples/*/gofastr.yml
 func TestShippedBlueprintsScopeUnique(t *testing.T) {
 	paths, err := filepath.Glob("../../examples/*/gofastr.yml")
 	if err != nil {

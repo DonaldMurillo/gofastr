@@ -67,7 +67,7 @@ var (
 const iifeHeader = "// GoFastr Core-UI Runtime v0.4, ES2020+ (composed: full = kernel+signals+nav+widgets-boot)\n" +
 	"// Assembled by the Go composer (core-ui/runtime/runtime.go composeFull) from\n" +
 	"// core-ui/runtime/frag/*.js. This file is the on-disk canonical form the gate\n" +
-	"// tests scan (attrdoc_test.go / integrity_test.go read it via os.ReadFile);\n" +
+	"// tests scan (fragment_map_test.go / integrity_test.go read it via os.ReadFile);\n" +
 	"// RuntimeJS() serves the minified composition produced by composeFull().\n" +
 	"(() => {\n" +
 	"  'use strict';\n"

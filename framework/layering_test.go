@@ -42,6 +42,8 @@ func outOfContract(pkg string) bool {
 // pluginhost is pinned here as the only package allowed to carry the root
 // transitively. If that edge ever goes away, this test fails too, so the
 // exemption cannot outlive its reason.
+//
+//gofastr:test-reads framework/pluginhost/gate.go
 func TestFrameworkPkgsDontImportRoot(t *testing.T) {
 	root := modRoot + "/framework"
 	sanctioned := map[string]bool{root + "/pluginhost": true}

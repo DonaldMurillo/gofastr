@@ -20,6 +20,8 @@ import (
 // nothing said why. A package here is either registered in
 // suite.go or named in suite.go's prose with the measurement
 // that justifies holding it back. Silence is the one thing it can't be.
+//
+//gofastr:test-reads internal/analyzers/
 func TestEveryAnalyzerIsWiredOrExplained(t *testing.T) {
 	const dir = ".."
 	entries, err := os.ReadDir(dir)

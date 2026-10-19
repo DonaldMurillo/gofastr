@@ -339,6 +339,8 @@ func TestRenderingPreFilterDropsNothing(t *testing.T) {
 // being tested some other way. Without this, adding an entry to
 // examplesNeedingMoreContext is a way to make a rule untested and have the
 // suite go quiet about it.
+//
+//gofastr:test-reads *_test.go
 func TestExemptedRulesAreTestedElsewhere(t *testing.T) {
 	root, err := repoRoot()
 	if err != nil {

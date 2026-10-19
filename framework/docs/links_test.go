@@ -89,6 +89,8 @@ func headingsIn(text string) map[string]bool {
 // checked against that target's headings (the same drift, one hop away).
 // Fenced code blocks and inline code are skipped, so links inside `…` or a
 // ``` block are not treated as real links.
+//
+//gofastr:test-reads examples/static-site/README.md examples/spa/README.md /ROADMAP.md battery/semantic/README.md framework/ARCHITECTURE.md
 func scanDocLinks(dir string) ([]linkIssue, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

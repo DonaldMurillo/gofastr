@@ -24,6 +24,8 @@ func readDoc(t *testing.T, name string) string {
 
 // readRepo loads a repo-relative file (CHANGELOG.md, core-ui/ARCHITECTURE.md)
 // so a gate can pin a claim that lives outside the embedded doc corpus.
+//
+//gofastr:test-reads /CHANGELOG.md core-ui/ARCHITECTURE.md
 func readRepo(t *testing.T, rel string) string {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("..", "..", rel))

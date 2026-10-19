@@ -225,6 +225,8 @@ var _ = `+"`<script>alert(1)</script>`"+`
 // run the linter against the live repo root and refuse to pass if
 // any production file emits inline <script>. This is the test-suite
 // mirror of `make csp-check`; CI runs both.
+//
+//gofastr:test-reads *.go
 func TestLintNoInlineScripts_RepoIsClean(t *testing.T) {
 	// Locate repo root by walking up from this file until we find
 	// go.mod. Avoids hard-coded relative paths fragile to refactors.

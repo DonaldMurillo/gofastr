@@ -16,6 +16,8 @@ import (
 // embedded doc, so adding an attribute upstream without carrying it
 // into the extract fails here, in the same spirit as
 // core-ui/runtime/doc_manifest_test.go.
+//
+//gofastr:test-reads core-ui/ARCHITECTURE.md
 func TestRuntimeContractCoversArchitectureAttrs(t *testing.T) {
 	arch, err := os.ReadFile(filepath.Join("..", "..", "core-ui", "ARCHITECTURE.md"))
 	if err != nil {

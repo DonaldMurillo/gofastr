@@ -171,6 +171,8 @@ func TestV087PrefixNotesListEveryOldSpelling(t *testing.T) {
 
 // TestV087ExamplesStaySilent scans the repo's migrated examples tree
 // with the v0.87.0 string, css and text matchers: zero hits.
+//
+//gofastr:test-reads examples/
 func TestV087ExamplesStaySilent(t *testing.T) {
 	reg, err := upgrade.Load()
 	if err != nil {

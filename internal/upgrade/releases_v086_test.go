@@ -1690,6 +1690,8 @@ var sidebarClass = "ui-sidebar"
 // matchers are stripped: a renamed symbol's replacement still exists
 // at HEAD and the examples call it, which is correct for an app below
 // v0.86.0 and not a property of migrated code.
+//
+//gofastr:test-reads examples/
 func TestV086ExamplesStaySilent(t *testing.T) {
 	reg, rel := v086Loaded(t)
 	notes := make([]*upgrade.Note, len(rel.Notes))

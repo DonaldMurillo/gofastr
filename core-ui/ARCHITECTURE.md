@@ -538,7 +538,7 @@ Every `data-cui-*` attribute is owned by exactly one **fragment**: the
 unit the runtime composer (spec: `SPEC-runtime-composer.md`; declaration:
 `core-ui/runtime/fragments.go`) includes or omits per composition. The goal
 is the same as the component-CSS pipeline: ship only the JavaScript a page
-needs. `attrdoc_test.go` fails the build if any attribute in the runtime
+needs. `fragment_map_test.go` fails the build if any attribute in the runtime
 sources lacks an owner, or any declared owner has drifted out of the source.
 
 Two kinds of fragment, and the distinction is a safety rule, not an

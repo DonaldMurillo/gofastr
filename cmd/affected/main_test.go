@@ -159,6 +159,167 @@ func TestGoRunOfACommandIsATestEdge(t *testing.T) {
 	want(t, run(t, options{root: root, files: []string{"f/f.go"}}), "f")
 }
 
+// A package that embeds a nested package's files depends on them with no
+// import edge: cmd/gofastr embeds the blueprint's packages/ trees, each
+// its own package, and a template edit selected neither the generator
+// nor the gates that go run it.
+func TestEmbeddedNestedPackageSelectsTheEmbedder(t *testing.T) {
+	root := newRepo(t)
+	writeFiles(t, root, map[string]string{
+		"g/main.go":       "package main\n\nimport \"embed\"\n\n//go:embed all:tpl\nvar tpl embed.FS\n\nfunc main() { _ = tpl }\n",
+		"g/tpl/tpl.go":    "package tpl\n",
+		"g/tpl/style.css": "a{}\n",
+		"h/h.go":          "package h\n",
+		"h/h_test.go":     "package h\n\nimport (\n\t\"os/exec\"\n\t\"testing\"\n)\n\nfunc TestH(t *testing.T) { _ = exec.Command(\"go\", \"run\", \"example.com/m/g\") }\n",
+	})
+	want(t, run(t, options{root: root, files: []string{"g/tpl/style.css"}}), "g", "g/tpl", "h")
+	want(t, run(t, options{root: root, files: []string{"g/tpl/tpl.go"}}), "g", "g/tpl", "h")
+	// go list's EmbedFiles names only what exists; a deleted template
+	// still changes what g ships.
+	if err := os.Remove(filepath.Join(root, "g", "tpl", "style.css")); err != nil {
+		t.Fatal(err)
+	}
+	want(t, run(t, options{root: root, files: []string{"g/tpl/style.css"}}), "g", "g/tpl", "h")
+}
+
+// A gate that walks the repo reads files no import edge reaches.
+// internal/chromedptest's launch-allowance gate reads every _test.go, and
+// a hand-booted Chrome added elsewhere never selected it (#536).
+func TestDeclaredTestReadsSelectThePackage(t *testing.T) {
+	root := newRepo(t)
+	writeFiles(t, root, map[string]string{
+		"w/w.go": "package w\n",
+		"w/w_test.go": "package w\n\n// The gate walks the repo.\n//\n//gofastr:test-reads *_test.go package.json\n" +
+			"//gofastr:test-reads c/ docs/**/*.md /ROOT.md notes/*/\n\nimport \"testing\"\n\nfunc TestW(t *testing.T) {}\n",
+		"x/x.go":      "package x\n",
+		"x/x_test.go": "package x\n\n// Mentions //gofastr:test-reads *.go in prose only.\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {}\n",
+	})
+	cases := []struct {
+		name  string
+		files []string
+		want  []string
+	}{
+		{"base name anywhere", []string{"d/d_test.go"}, []string{"d", "w"}},
+		{"base name at the root", []string{"package.json"}, []string{"w"}},
+		{"directory prefix", []string{"c/c.go"}, []string{"c", "d", "w"}},
+		{"double star spans directories", []string{"docs/a/b/guide.md"}, []string{"w"}},
+		{"double star spans none", []string{"docs/guide.md"}, []string{"w"}},
+		{"star stays in one segment", []string{"docs/guide.txt", "f/f.go"}, []string{"f"}},
+		{"prose mention declares nothing", []string{"scripts/gen.go"}, nil},
+		{"leading slash anchors at the root", []string{"ROOT.md"}, []string{"w"}},
+		{"anchored name is not a base name", []string{"docs/a/ROOT.txt", "notes/ROOT.md"}, nil},
+		{"directory prefix with a glob", []string{"notes/2026/a.txt"}, []string{"w"}},
+		{"glob prefix needs its segment", []string{"notes/a.txt"}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			want(t, run(t, options{root: root, files: tc.files}), tc.want...)
+		})
+	}
+}
+
+// core-ui/runtime's registry gates read the source of every package that
+// imports core-ui/registry; a list of directories would miss the next one.
+func TestTestReadsImportersOfAPackage(t *testing.T) {
+	root := newRepo(t)
+	writeFiles(t, root, map[string]string{
+		"r/r.go":      "package r\n",
+		"r/r_test.go": "package r\n\n//gofastr:test-reads importers:example.com/m/a\n\nimport \"testing\"\n\nfunc TestR(t *testing.T) {}\n",
+		"s/s.go":      "package s\n\nimport \"example.com/m/b\"\n\nvar S = b.B()\n",
+	})
+	// b imports a directly; s reaches a only through b.
+	want(t, run(t, options{root: root, files: []string{"b/testdata/fixture.txt"}}), "b", "e", "r", "s")
+	want(t, run(t, options{root: root, files: []string{"s/s.go"}}), "s")
+	want(t, run(t, options{root: root, files: []string{"c/c.go"}}), "c", "d")
+
+	// A nested module is outside go list ./..., so only the file's text
+	// says it imports a.
+	writeFiles(t, root, map[string]string{
+		"nested/go.mod": "module example.com/nested\n\ngo 1.22\n",
+		"nested/n.go":   "package n\n\nimport \"example.com/m/a\"\n\nvar N = a.A()\n",
+	})
+	want(t, run(t, options{root: root, files: []string{"nested/n.go"}}), "r")
+
+	// The registry gates read every .go file whatever the build; an
+	// import behind a constraint still makes v's assets their input.
+	writeFiles(t, root, map[string]string{
+		"v/v.go":       "package v\n",
+		"v/v_never.go": "//go:build never\n\npackage v\n\nimport \"example.com/m/a\"\n\nvar V = a.A()\n",
+		"v/v.js":       "x\n",
+	})
+	want(t, run(t, options{root: root, files: []string{"v/v.js"}}), "r", "v")
+}
+
+// The working tree no longer shows an import a deleted file, or a file
+// that dropped it, had at the base; the gate's input still changed.
+func TestTestReadsImportersSeesTheBase(t *testing.T) {
+	root := newRepo(t)
+	writeFiles(t, root, map[string]string{
+		"r/r.go":      "package r\n",
+		"r/r_test.go": "package r\n\n//gofastr:test-reads importers:example.com/m/a\n\nimport \"testing\"\n\nfunc TestR(t *testing.T) {}\n",
+		"q/q.go":      "package q\n\nimport \"example.com/m/a\"\n\nvar Q = a.A()\n",
+		"q/keep.go":   "package q\n",
+		"u/u.go":      "package u\n\nimport \"example.com/m/a\"\n\nvar U = a.A()\n",
+	})
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-q", "-m", "importers")
+	git(t, root, "checkout", "-q", "-b", "feature")
+	if err := os.Remove(filepath.Join(root, "q", "q.go")); err != nil {
+		t.Fatal(err)
+	}
+	writeFiles(t, root, map[string]string{"u/u.go": "package u\n\nvar U = 1\n"})
+	want(t, run(t, options{root: root, base: "main"}), "q", "r", "u")
+}
+
+// A fixture line inside a raw string is data, not a directive.
+func TestTestReadsInARawStringIsData(t *testing.T) {
+	root := newRepo(t)
+	writeFiles(t, root, map[string]string{
+		"w/w.go":      "package w\n",
+		"w/w_test.go": "package w\n\nimport \"testing\"\n\nconst fixture = `\n//gofastr:test-reads\n//gofastr:test-reads *.md\n`\n\nfunc TestW(t *testing.T) { _ = fixture }\n",
+	})
+	want(t, run(t, options{root: root, files: []string{"README.md"}}))
+}
+
+// A directive that can never match reads as coverage while selecting
+// nothing, so it is an error.
+func TestUnmatchableTestReadsIsAnError(t *testing.T) {
+	for _, tc := range []struct{ directive, want string }{
+		{"//gofastr:test-reads", "names no pattern"},
+		{"//gofastr:test-reads importers:", "names no import path"},
+		{"//gofastr:test-reads ./README.md", "repo-relative"},
+		{"//gofastr:test-reads ../x.go", "repo-relative"},
+		{"//gofastr:test-reads docs/../x.go", "repo-relative"},
+		{"//gofastr:test-reads /", "names no path"},
+		{"//gofastr:test-reads*.md", "space before its patterns"},
+	} {
+		t.Run(tc.directive, func(t *testing.T) {
+			root := newRepo(t)
+			writeFiles(t, root, map[string]string{
+				"w/w.go":      "package w\n",
+				"w/w_test.go": "package w\n\n" + tc.directive + "\n\nimport \"testing\"\n\nfunc TestW(t *testing.T) {}\n",
+			})
+			_, err := compute(options{root: root, files: []string{"f/f.go"}, format: "import", stderr: &bytes.Buffer{}})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("compute error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func writeFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for name, body := range files {
+		p := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestModuleFilesWidenToEverything(t *testing.T) {
 	root := newRepo(t)
 	all := []string{"a", "b", "c", "d", "e", "f"}

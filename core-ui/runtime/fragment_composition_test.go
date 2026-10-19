@@ -199,7 +199,8 @@ func manifestLines(s string) []string {
 }
 
 // TestComposedRuntimeMatchesOnDiskFile is the drift guard. The gate tests in
-// attrdoc_test.go / integrity_test.go scan `runtime.js` on DISK (os.ReadFile),
+// fragment_map_test.go, integrity_test.go and internal/treegate's
+// attrdoc_test.go scan `runtime.js` on DISK (os.ReadFile),
 // while RuntimeJS() serves the Go composition (composeFull → minify). If the
 // two drift apart, the gates would be certifying content users never receive.
 //

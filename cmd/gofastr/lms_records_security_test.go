@@ -24,6 +24,8 @@ import (
 // registers a SECOND, unrelated account and asserts that stranger is refused
 // on read and write of all three record families. RED today: the default
 // posture lets every session through.
+//
+//gofastr:test-reads examples/lms/gofastr.yml
 func TestLmsGatesStudentRecords(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, builds, and boots an app")

@@ -109,6 +109,10 @@ func TestEveryThemeTokenReferenceResolves(t *testing.T) {
 // see the reference) and every non-test Go/JS source under the trees
 // that ship the design system and its consumers. Test files are
 // exempt: asserting a name is absent requires writing it.
+//
+//gofastr:test-reads framework/**/*.go framework/**/*.js core-ui/**/*.go core-ui/**/*.js
+//gofastr:test-reads battery/**/*.go battery/**/*.js kiln/**/*.go kiln/**/*.js
+//gofastr:test-reads cmd/gofastr/**/*.go cmd/gofastr/**/*.js examples/**/*.go examples/**/*.js
 func TestNoRemovedAliasTokenReferences(t *testing.T) {
 	names := []string{
 		"--color-muted", "--color-surface-hover", "--color-border-subtle",

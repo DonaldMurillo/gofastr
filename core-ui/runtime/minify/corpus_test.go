@@ -20,6 +20,8 @@ import (
 // legitimately disappear during minification. Idempotency is the
 // stronger invariant: the minifier must reach a fixed point in one
 // pass.
+//
+//gofastr:test-reads core-ui/runtime/src/ core-ui/runtime/runtime.js
 func TestMinifyRuntimeCorpus(t *testing.T) {
 	root, err := repoRoot()
 	if err != nil {

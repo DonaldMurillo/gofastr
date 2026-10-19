@@ -13,6 +13,8 @@ import (
 // and after minification. Not an assertion, it exists so a `go test
 // -run TestReportSizes -v` invocation surfaces the actual shrink we're
 // shipping. Useful when tightening budget_test.go overrides.
+//
+//gofastr:test-reads core-ui/runtime/src/
 func TestReportSizes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("size report skipped in short mode")

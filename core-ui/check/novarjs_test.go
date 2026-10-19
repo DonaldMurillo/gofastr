@@ -99,6 +99,8 @@ func TestLintNoVarJS_FlagsMidLineVar(t *testing.T) {
 // (core-ui/runtime/*.js + core-ui/runtime/src/*.js) ship without any
 // var declarations. Mirrors the existing TestLintNoInlineScripts_RepoIsClean
 // pattern, if anyone reintroduces `var`, `go test ./...` flags it.
+//
+//gofastr:test-reads core-ui/runtime/
 func TestLintNoVarJS_RepoIsClean(t *testing.T) {
 	repoRoot, err := findRepoRoot()
 	if err != nil {
@@ -133,6 +135,8 @@ func TestLintNoVarJS_RepoIsClean(t *testing.T) {
 // modules hold it; before this helper existed the lints walked
 // core-ui/runtime alone and a module beside its Go package was held to
 // nothing.
+//
+//gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/core-ui/registry
 func runtimeLintRoots(t *testing.T, runtimeDir string) []string {
 	t.Helper()
 	repoRoot, err := findRepoRoot()

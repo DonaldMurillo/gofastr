@@ -11,6 +11,7 @@ import (
 	"testing"
 )
 
+//gofastr:test-reads cmd/gofastr/packages/
 func TestCommandReadsGeneratorSources(t *testing.T) {
 	read := Command(t, "github.com/DonaldMurillo/gofastr/cmd/gofastr")
 	root, err := filepath.Abs(filepath.Join("..", ".."))

@@ -359,6 +359,8 @@ func TestRegisterEmitsReadScopeLiteral(t *testing.T) {
 // unapproved testimonial the portfolio seed writes, and a signed-in caller
 // must. It also proves the bool predicate binds: approved eq "true" has to
 // match rows stored as boolean true.
+//
+//gofastr:test-reads examples/portfolio/gofastr.yml
 func TestExampleReadScopeBoots(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, builds, and boots an app")

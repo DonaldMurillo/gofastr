@@ -590,6 +590,8 @@ func TestReadmeGoQuickstartRuns(t *testing.T) {
 // Drift gate (a): the published docs must not present the framework as
 // unpublished or require a local replace directive. (A docs sibling is
 // purging the last occurrences; this asserts the end state.)
+//
+//gofastr:test-reads /README.md
 func TestReadmeDocsNoUnpublishedGuidance(t *testing.T) {
 	repoRoot := repoRootDir(t)
 	forbidden := []string{

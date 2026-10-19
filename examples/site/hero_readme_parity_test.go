@@ -10,6 +10,8 @@ import (
 // Quickstart programs. CI compiles, boots, and curls the README copies
 // (cmd/gofastr/readme_quickstart_test.go), so identity here means the
 // site never shows a program that doesn't run.
+//
+//gofastr:test-reads /README.md
 func TestHeroTabsMatchReadmeQuickstart(t *testing.T) {
 	raw, err := os.ReadFile("../../README.md")
 	if err != nil {

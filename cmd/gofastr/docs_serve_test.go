@@ -423,6 +423,7 @@ func TestDocsServeDirRejectsDownloadFlags(t *testing.T) {
 	}
 }
 
+//gofastr:test-reads /.github/workflows/release.yml
 func TestReleaseAttachesDocsSite(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "release.yml"))
 	if err != nil {

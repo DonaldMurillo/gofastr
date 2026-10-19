@@ -1,7 +1,7 @@
 // GoFastr Core-UI Runtime v0.4, ES2020+ (composed: full = kernel+signals+nav+widgets-boot)
 // Assembled by the Go composer (core-ui/runtime/runtime.go composeFull) from
 // core-ui/runtime/frag/*.js. This file is the on-disk canonical form the gate
-// tests scan (attrdoc_test.go / integrity_test.go read it via os.ReadFile);
+// tests scan (fragment_map_test.go / integrity_test.go read it via os.ReadFile);
 // RuntimeJS() serves the minified composition produced by composeFull().
 (() => {
   'use strict';

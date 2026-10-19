@@ -29,6 +29,8 @@ func tokensIn(t *testing.T, path string) map[string]bool {
 // broker JS READS must be documented in the core-ui/ARCHITECTURE.md attribute
 // table. This is the automated half the rule requires (the doc rows are the
 // other half), mirroring core-ui/runtime's attrdoc test for this surface.
+//
+//gofastr:test-reads core-ui/ARCHITECTURE.md
 func TestPluginAttrsAreDocumented(t *testing.T) {
 	const archPath = "../../core-ui/ARCHITECTURE.md"
 	documented := tokensIn(t, archPath)
