@@ -47,7 +47,7 @@
 
   NS._chromeCache = NS._chromeCache || {};
 
-  const catalogEntry = name => Object.prototype.hasOwnProperty.call(NS._widgetCatalog || {}, name) ? NS._widgetCatalog[name] : null;
+  const catalogEntry = name => NS._widgetCatalog && Object.prototype.hasOwnProperty.call(NS._widgetCatalog, name) ? NS._widgetCatalog[name] : null;
 
   NS.openWidget = async function (name, opts) {
     const entry = catalogEntry(name);
