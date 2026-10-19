@@ -231,7 +231,8 @@ again.
 
 ## Provenance markers
 
-The built-in generators stamp a marker at the top of each file they write.
+The built-in generators stamp a marker at the top of each file they write
+in a format with comments; the table below lists them.
 It says which generator made the file, its kind, and a sum of the rest of
 the file:
 
