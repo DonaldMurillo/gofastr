@@ -72,14 +72,18 @@ makes affected tests replay from Go's test cache.
   out. Nothing there ships, so its findings were noise.
 - **A disk-backed `core/static.Handler` opens its directory per request.**
   It used to hold one `os.Root` for its lifetime, which pinned the
-  directory on Windows and kept serving it after a replacement. Each
-  request now reopens the directory and checks it is the one the handler
-  started with; a replaced directory answers 404, so create a new handler
-  to serve it. The UI host's disk-backed static files work the same way.
+  directory on Windows and kept serving it after a replacement. The
+  handler resolves symlinks once, when it is built. Each request reopens
+  that resolved path and checks it is still the directory the handler
+  started with. A directory replaced at that path answers 404, so create
+  a new handler to serve it. After a symlink flip, the old handler keeps
+  serving the old target while it exists. The UI host's disk-backed
+  static files work the same way.
 - **The Timeout middleware answers 504 when a buffered handler finishes at
-  or after its budget**, even when the middleware sees it finish before
-  the timer fires. One that finishes before the deadline keeps its
-  response.
+  or after its budget**, whichever of the handler and the timer the
+  middleware sees first. A handler that finished exactly at the deadline
+  got a 200 or a 504 depending on that order. One that finishes before
+  the deadline keeps its response.
 - **Files GoFastr keeps owner-only get protected owner-only ACLs on
   Windows**, where Unix modes mean nothing: `battery/storage`,
   `core/upload`, data export directories, harness session stores and
@@ -206,9 +210,11 @@ makes affected tests replay from Go's test cache.
   them, and still starts at once when injected after `DOMContentLoaded`.
 - **An option-only Markdown fence keeps its title.** A fence whose info
   string is only options, such as `title="notes.txt" showLineNumbers`,
-  read the title as the language and dropped the filename. Options with no language are now
-  metadata, and `ui.Markdown` renders the title, numbering and
-  highlights itself.
+  read the title as the language and dropped the filename. An info
+  string whose first word is a `key=value` option or a `{...}` block is
+  now all metadata, and `ui.Markdown` renders the title, numbering and
+  highlights itself. A bare first word such as `showLineNumbers` still
+  reads as the language.
 - **A framed `CodeBlock` no longer repeats its ID.** The caller's ID stays
   on the root, and the body and copy target use `<ID>-code`.
 - **`gofastr verify` and `gofastr upgrade` skip a static export with a

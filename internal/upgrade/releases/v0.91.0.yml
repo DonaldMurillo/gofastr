@@ -16,12 +16,12 @@ notes:
     find:
       uses:
         - gofastr/core/static.Handler
-    guidance: "A deploy that swaps the served directory (a rename or a symlink flip) builds a new handler for the new directory; the old one answers 404. An app that serves one directory for its lifetime needs nothing."
+    guidance: "The handler resolves symlinks once, when it is built, and checks the resolved directory on each request. A deploy that renames the served directory away and creates a new one at the same path builds a new handler; the old one answers 404. After a symlink flip the old handler keeps serving the old target while it exists, so build a new handler there too. An app that serves one directory for its lifetime needs nothing."
   - change: "a framed ui.CodeBlock keeps the caller's ID on its root and gives the body and copy target <ID>-code, where both carried the same ID"
     find:
       uses:
         - gofastr/framework/ui.CodeBlock
     guidance: "CSS or script that selected the code body by the caller's ID selects #<ID>-code. Selecting the block itself by ID needs nothing."
-  - change: "the Timeout middleware answers 504 when a buffered handler finishes at or after its budget, even when it sees the handler finish before the timer fires"
-    nodetect: "a timing edge: only a handler that finishes within the timer's notification lag of its deadline sees a different status"
+  - change: "the Timeout middleware answers 504 when a buffered handler finishes at or after its budget, whichever of the handler and the timer it sees first"
+    nodetect: "a timing edge: only a handler that finishes within the timer's notification lag of its deadline, or exactly on it, sees a different status"
     guidance: "Nothing to change. A handler that needs its response to land gets a budget it finishes inside."
