@@ -45,7 +45,7 @@ func startShopfront(t *testing.T) string {
 	// package lives INSIDE the repo module so the generated code's
 	// self-imports resolve with no go.mod, replace directive, or network
 	// fetch.
-	dir := generateShopfront(t)
+	dir, _ := generateShopfront(t)
 
 	// Build the generated app (proves the blueprint → buildable Go path).
 	bin := filepath.Join(t.TempDir(), "shopfront")

@@ -18,25 +18,29 @@ import (
 const meridianDir = "../../examples/meridian"
 const meridianYML = "../../examples/meridian/gofastr.yml"
 
-// ensureMeridianEnv materializes the gitignored .env the generator emits
-// alongside the meridian app. A fresh checkout doesn't have it; the seed
+// meridianWithEnv returns a copy of the meridian app with the gitignored .env
+// the generator emits beside it. A fresh checkout doesn't have it; the seed
 // password lives ONLY there, by design, so packing the committed tree
-// cannot recover the blueprint's secrets without it. Leaves an existing
-// .env (a developer's own generate output) untouched.
-func ensureMeridianEnv(t *testing.T, bp Blueprint) {
+// cannot recover the blueprint's secrets without it. A developer's own .env
+// is copied as it is. The copy keeps the write out of the repo: a file
+// created and removed in examples/meridian moves the listing every repo
+// walker hashes, and Go's test cache re-ran them all.
+func meridianWithEnv(t *testing.T, bp Blueprint) string {
 	t.Helper()
-	path := filepath.Join(meridianDir, ".env")
+	dir := filepath.Join(t.TempDir(), "meridian")
+	if err := os.CopyFS(dir, os.DirFS(meridianDir)); err != nil {
+		t.Fatalf("copy %s: %v", meridianDir, err)
+	}
+	path := filepath.Join(dir, ".env")
 	if _, err := os.Stat(path); err == nil {
-		return
+		return dir
 	}
-	env := renderBlueprintEnv(bp)
-	if env == "" {
-		return
+	if env := renderBlueprintEnv(bp); env != "" {
+		if err := os.WriteFile(path, []byte(env), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
 	}
-	if err := os.WriteFile(path, []byte(env), 0o600); err != nil {
-		t.Fatalf("write %s: %v", path, err)
-	}
-	t.Cleanup(func() { _ = os.Remove(path) })
+	return dir
 }
 
 // TestPack_ReadEntities recovers the entity declarations from the generated
@@ -876,8 +880,8 @@ func TestPack_ReadApp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	ensureMeridianEnv(t, a)
-	app, err := packReadApp(meridianDir)
+	dir := meridianWithEnv(t, a)
+	app, err := packReadApp(dir)
 	if err != nil {
 		t.Fatalf("packReadApp: %v", err)
 	}
@@ -906,8 +910,8 @@ func TestPack_MeridianRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse meridian.yml: %v", err)
 	}
-	ensureMeridianEnv(t, a)
-	b, err := packBlueprint(meridianDir)
+	dir := meridianWithEnv(t, a)
+	b, err := packBlueprint(dir)
 	if err != nil {
 		t.Fatalf("packBlueprint: %v", err)
 	}

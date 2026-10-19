@@ -32,30 +32,11 @@ import (
 // go.mod, no replace, and no network. Deterministic and offline
 // (GOPROXY=off); a module-resolution failure skips with a message.
 
-// blueprintVetScratch is the throwaway package each blueprint is
-// rendered into. It differs from buildGateScratchPkg and from the
-// committed "_blueprintgen"/"_blueprintbuildgen" scratch names for the
-// same reason those two differ from each other: suites that run beside
-// each other must not share a scratch directory.
-//
-// The leading underscore is what keeps the window shut. The directory
-// is created inside the repo module mid-test and filled a moment
-// later, so a `go list ./...` or `go build ./...` running in another
-// package's test binary at that instant used to fail hard with "no Go
-// files in examples/<name>/<scratch>". Removing the directory before
-// and after the run covers a leaked one, not the window while the run
-// is live. Go's tooling ignores a directory whose name begins with
-// "_" when it expands a `./...` pattern, at every moment, while still
-// resolving an explicit import path through it — which is what the
-// rewritten module line below needs. Verified both halves before
-// relying on either.
-const blueprintVetScratch = "_blueprintvetgen"
-
-// TestVetScratchHiddenFromGoList: the scratch package must stay out of a ./... expansion while it
-// exists, or a parallel `go build ./...` sees a half-written package.
-func TestVetScratchHiddenFromGoList(t *testing.T) {
-	scratchdir.AssertHiddenFromGoList(t, "../../examples/ecommerce", blueprintVetScratch)
-}
+// blueprintVetScratch prefixes the throwaway package each blueprint is
+// rendered into, under scratchdir.Root. It differs from the build gate's
+// prefix because the two suites run beside each other and must not share a
+// scratch directory.
+const blueprintVetScratch = "vet_"
 
 func TestBlueprintProjectPassesRepoVettool(t *testing.T) {
 	if testing.Short() {
@@ -111,12 +92,7 @@ func TestBlueprintProjectPassesRepoVettool(t *testing.T) {
 func renderBlueprintForVet(t *testing.T, repoRoot, blueprintPath, name string) string {
 	t.Helper()
 
-	exampleDir := filepath.Dir(blueprintPath)
-	dir := filepath.Join(exampleDir, blueprintVetScratch)
-	if err := os.RemoveAll(dir); err != nil {
-		t.Fatalf("clear stale scratch: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir, scratchModule := scratchdir.Package(t, blueprintVetScratch+name)
 
 	src, err := os.ReadFile(blueprintPath)
 	if err != nil {
@@ -128,10 +104,7 @@ func renderBlueprintForVet(t *testing.T, repoRoot, blueprintPath, name string) s
 		t.Fatalf("%s no longer declares %q — update this test's rewrite", blueprintPath, moduleLine)
 	}
 	scratchYAML := filepath.Join(dir, "gofastr.yml")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("mkdir scratch: %v", err)
-	}
-	rewritten := strings.Replace(string(src), moduleLine, moduleLine+"/"+blueprintVetScratch, 1)
+	rewritten := strings.Replace(string(src), moduleLine, "module: "+scratchModule, 1)
 	if err := os.WriteFile(scratchYAML, []byte(rewritten), 0o644); err != nil {
 		t.Fatalf("write scratch blueprint: %v", err)
 	}
