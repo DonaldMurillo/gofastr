@@ -256,7 +256,7 @@ results, the harness contract) are exempt. The exemption list lives in
   by the app itself via `framework/sdkdocs`: live per-entity reference
   pages, tabbed install guides, and schema-hash drift detection.
 - [App specs](app-spec.md): deterministic YAML-to-code input for
-  `gofastr generate --from`, backed by the in-house `core/yaml` parser.
+  `gofastr generate app`, backed by the in-house `core/yaml` parser.
 - [Kiln (agent-driven build mode)](kiln.md): separate binary; build a
   GoFastr app live via an agent CLI, then freeze to a `gofastr.yml` app spec
   (with a lossless `world.json` snapshot) and generate owned Go.

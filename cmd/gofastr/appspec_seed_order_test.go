@@ -75,7 +75,7 @@ func TestAppSpecSeed_OwnerScopedRowsOnFreshDB(t *testing.T) {
 	}
 	writeTestFile(t, filepath.Join(dir, "gofastr.yml"), seedOrderAppSpecYAML)
 
-	generate := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "--from=gofastr.yml")
+	generate := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "app", "gofastr.yml")
 	generate.Dir = dir
 	if out, err := generate.CombinedOutput(); err != nil {
 		t.Fatalf("gofastr generate: %v\n%s", err, out)

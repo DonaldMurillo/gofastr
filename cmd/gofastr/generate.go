@@ -41,60 +41,40 @@ func runGenerate(args []string) {
 		return
 	}
 
-	resourceType := args[0]
-	switch resourceType {
+	name := args[0]
+	if g, ok := lookupGenerator(name); ok {
+		g.run(args[1:])
+		return
+	}
+	switch name {
 	case "all":
 		generateProject(args[1:])
-	case "entity":
-		generateScaffoldEntity(args[1:])
-	case "screen":
-		generateScaffoldScreen(args[1:])
-	case "package":
-		runGeneratePackage(args[1:])
-	case "styles":
-		runGenerateStyles(args[1:])
-	case "cli":
-		runGenerateCLI(args[1:])
-	case "sdk":
-		runGenerateSDK(args[1:])
 	case "ts", "typescript":
 		fail("TypeScript codegen has been removed. Use `gofastr generate sdk` for the typed JS/TS client, or gofastr.codegen.yml with a project extension for custom frontend artifacts.")
 		info("See framework/docs/content/sdk.md and codegen.md.")
 		osExit(1)
 	default:
-		fail("Unknown resource type: %s", resourceType)
-		info("Supported: all, entity, screen, package, styles, cli, sdk")
+		fail("Unknown generator: %s", name)
+		info("Generators: %s", generatorNames())
 		osExit(1)
 	}
 }
 
 func printGenerateHelp() {
-	fmt.Println(`gofastr generate: generate an app or add owned code
+	fmt.Print(`gofastr generate: run code generators
 
 Usage:
-  gofastr generate --from=<gofastr.yml> [--dry-run] [--force]
-  gofastr generate --config=<gofastr.codegen.yml>
-  gofastr generate entity <name> [--out=<dir>] [--dry-run]
-  gofastr generate screen <name> [--from-a11y=<file>] [--out=<dir>] [--dry-run]
-  gofastr generate package [<name>] [--out=<dir>] [--dry-run]
-  gofastr generate styles [patterns]
-  gofastr generate cli [flags]
-  gofastr generate sdk [flags]
+  gofastr generate [--config=<gofastr.codegen.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch]
+      Run the derived generators and extensions listed in the codegen
+      config (gofastr build does this too)
+  gofastr generate <generator> [args]
+      Run one generator
 
-Modes:
-  --from=<path>    Generate a deterministic application from an app spec
-  --config=<path>  Run configured project generators and extensions
-  entity           Add an editable entity stub through the app generator
-  screen           Add an editable server-rendered screen stub, or build it
-                   from a Playwright aria snapshot with --from-a11y
-  package          Copy a canonical chrome package (siteheader, sitefooter,
-                   docpage) into the app as owned code; no name lists them
-  styles           Typed Go for app tokens and owned style sheets
-  cli              Generate a customer-facing CLI for the app API
-  sdk              Generate Go and JavaScript/TypeScript API clients
-
-Run "gofastr docs app-spec", "gofastr docs app-cli", or
-"gofastr docs sdk" for the complete contracts.`)
+`)
+	fmt.Print(generatorHelp())
+	fmt.Println(`
+Run "gofastr docs codegen", "gofastr docs app-spec", "gofastr docs app-cli",
+or "gofastr docs sdk" for the complete contracts.`)
 }
 
 // generateScaffoldEntity is the `gofastr generate entity <name>` quick-stub
@@ -244,28 +224,19 @@ func parseScaffoldArgs(args []string, kind string) (name string, opts generateOp
 	return positionals[0], opts, true
 }
 
-// generateProject is the `gofastr generate` entrypoint. The gofastr.yml
-// app spec is the single declaration format, named explicitly via --from.
-// With no app spec, a gofastr.codegen.yml extension config (the project
-// extension protocol) is honored; failing both, we error with guidance.
-//
-// Auto-discovery of gofastr.yml is deliberately avoided: `--from` keeps
-// generation an explicit, reviewable step. (The isolation config no longer
-// collides, because `gofastr init` now writes gofastr.isolation.yml, but a
-// project may still legitimately have no app spec, so guessing would
-// misfire.)
+// generateProject is plain `gofastr generate`: it runs the derived
+// generators and extensions the codegen config lists (gofastr.codegen.yml,
+// or a `codegen:` section). `gofastr build` calls it on every build, which
+// is why the config may not list a scaffold generator (see
+// checkConfigGenerators). Generating an app from an app spec is the
+// explicit `gofastr generate app`, never discovered: a project may hold a
+// gofastr.yml it already generated from.
 func generateProject(args []string) {
-	options := parseGenerateOptions(args)
-	if options.add && options.force {
-		fail("--add and --force are mutually exclusive (--add never overwrites; --force overwrites everything)")
+	options, err := parseGenerateOptions(args)
+	if err != nil {
+		fail("%v", err)
+		info("Usage: gofastr generate [--config=<gofastr.codegen.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch], or gofastr generate <generator>. See `gofastr generate --help`.")
 		osExit(1)
-	}
-	if options.add && options.from == "" {
-		fail("--add requires --from=<spec.yml> (additive generation only applies to app specs)")
-		osExit(1)
-	}
-	if options.from != "" {
-		generateFromAppSpec(options)
 		return
 	}
 	discovered, err := discoverGenerateConfig(options)
@@ -281,15 +252,15 @@ func generateProject(args []string) {
 		generateFromCodegenConfig(options, discovered)
 		return
 	}
-	fail("Nothing to generate.")
-	info("Pass --from=<gofastr.yml> to generate from an app spec, or add a gofastr.codegen.yml extension config. See `gofastr docs app-spec`.")
+	fail("Nothing to generate: no codegen config found.")
+	info("Derived generators (%s) run from gofastr.codegen.yml. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
 	osExit(1)
 }
 
 type generateOptions struct {
 	outputDir  string
 	configPath string
-	from       string
+	spec       string
 	clean      bool
 	cleanSet   bool
 	dryRun     bool
@@ -302,59 +273,120 @@ type generateOptions struct {
 	fromA11y string
 }
 
-func parseGenerateOptions(args []string) generateOptions {
+// parseGenerateOptions parses plain `gofastr generate`'s flags. An unknown
+// flag is an error: dropping one silently used to turn a typo into
+// "Nothing to generate".
+func parseGenerateOptions(args []string) (generateOptions, error) {
 	options := generateOptions{outputDir: filepath.Join("gen", "entities"), clean: true}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		// Space form for the value-taking flags: `--from x` ≡ `--from=x`.
-		// The next arg is consumed only when it is not itself a flag;
-		// silently dropping `--from x` used to yield a misleading
-		// "Nothing to generate".
-		nextValue := func() (string, bool) {
+		// Space form for the value-taking flags: `--config x` ≡ `--config=x`.
+		nextValue := func() (string, error) {
 			if i+1 < len(args) && !strings.HasPrefix(args[i+1], "--") {
 				i++
-				return args[i], true
+				return args[i], nil
 			}
-			return "", false
+			return "", fmt.Errorf("%s requires a value", arg)
 		}
 		switch {
 		case arg == "--dry-run":
 			options.dryRun = true
 		case arg == "--json":
 			options.json = true
+		case arg == "--watch":
 		case arg == "--clean":
 			options.clean = true
 			options.cleanSet = true
 		case arg == "--no-clean":
 			options.clean = false
 			options.cleanSet = true
-		case arg == "--force":
-			options.force = true
-		case arg == "--add":
-			options.add = true
 		case strings.HasPrefix(arg, "--config="):
 			options.configPath = strings.TrimPrefix(arg, "--config=")
 		case arg == "--config":
-			if v, ok := nextValue(); ok {
-				options.configPath = v
+			v, err := nextValue()
+			if err != nil {
+				return options, err
 			}
-		case strings.HasPrefix(arg, "--from="):
-			options.from = strings.TrimPrefix(arg, "--from=")
-		case arg == "--from":
-			if v, ok := nextValue(); ok {
-				options.from = v
-			}
+			options.configPath = v
 		case strings.HasPrefix(arg, "--out="):
 			options.outputDir = strings.TrimPrefix(arg, "--out=")
 			options.outputSet = true
 		case arg == "--out":
-			if v, ok := nextValue(); ok {
-				options.outputDir = v
-				options.outputSet = true
+			v, err := nextValue()
+			if err != nil {
+				return options, err
 			}
+			options.outputDir = v
+			options.outputSet = true
+		default:
+			return options, fmt.Errorf("unknown argument %q for `gofastr generate`", arg)
 		}
 	}
-	return options
+	return options, nil
+}
+
+// appUsage is the usage line `gofastr generate app` prints after an
+// argument error.
+const appUsage = "Usage: gofastr generate app [spec] [--out=<dir>] [--force | --add] [--dry-run] [--json]"
+
+// runGenerateApp is `gofastr generate app [spec]`: the scaffold generator
+// that turns an app spec (a .yml/.yaml/.json file or a directory of them,
+// gofastr.yml by default) into owned Go.
+func runGenerateApp(args []string) {
+	options, err := parseAppGenerateArgs(args)
+	if err != nil {
+		fail("%v", err)
+		info("%s", appUsage)
+		osExit(1)
+		return
+	}
+	if options.add && options.force {
+		fail("--add and --force are mutually exclusive (--add never overwrites; --force overwrites everything)")
+		osExit(1)
+		return
+	}
+	generateFromAppSpec(options)
+}
+
+func parseAppGenerateArgs(args []string) (generateOptions, error) {
+	var options generateOptions
+	var positionals []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--dry-run":
+			options.dryRun = true
+		case arg == "--json":
+			options.json = true
+		case arg == "--force":
+			options.force = true
+		case arg == "--add":
+			options.add = true
+		case strings.HasPrefix(arg, "--out="):
+			options.outputDir = strings.TrimPrefix(arg, "--out=")
+			options.outputSet = true
+		case arg == "--out":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return options, fmt.Errorf("--out requires a directory argument")
+			}
+			i++
+			options.outputDir = args[i]
+			options.outputSet = true
+		case strings.HasPrefix(arg, "-"):
+			return options, fmt.Errorf("unknown flag %q for `gofastr generate app`", arg)
+		default:
+			positionals = append(positionals, arg)
+		}
+	}
+	switch len(positionals) {
+	case 0:
+		options.spec = "gofastr.yml"
+	case 1:
+		options.spec = positionals[0]
+	default:
+		return options, fmt.Errorf("`gofastr generate app` takes one app spec (a file or a directory), got %d", len(positionals))
+	}
+	return options, nil
 }
 
 func discoverGenerateConfig(options generateOptions) (codegen.Discovery, error) {
@@ -405,6 +437,51 @@ func generateFromCodegenConfig(options generateOptions, discovery codegen.Discov
 	defer restore()
 	cfg := discovery.Config
 	applyGenerateOverrides(&cfg, options)
+	failConfig := func(err error) {
+		if options.dryRun && options.json {
+			printGeneratedErrorsJSON(err)
+			osExit(1)
+		}
+		fail("%v", err)
+		osExit(1)
+	}
+	if err := checkConfigGenerators(cfg.Codegen); err != nil {
+		failConfig(err)
+		return
+	}
+	// styles writes each .gen.go beside the sheet it comes from, not under
+	// codegen.output, so it runs after the engine instead of inside its
+	// file set.
+	engineGens, stylePatterns, err := splitStylesEntries(cfg.Codegen.Generators)
+	if err != nil {
+		failConfig(err)
+		return
+	}
+	if stylePatterns != nil && options.dryRun && options.json {
+		failConfig(fmt.Errorf("the styles generator has no dry run, so --dry-run --json cannot report it; run `gofastr generate --dry-run --json` from a config without it, or drop --json"))
+		return
+	}
+	cfg.Codegen.Generators = engineGens
+	// With nothing left for the engine (a styles-only config), skip it:
+	// a clean would otherwise wipe codegen.output for no generator.
+	if len(engineGens) > 0 {
+		runCodegenEngine(options, cfg, discovery)
+	}
+	if stylePatterns == nil {
+		return
+	}
+	if options.dryRun {
+		info("styles has no dry run; skipped (run `gofastr generate styles` to see its findings)")
+		return
+	}
+	for _, patterns := range stylePatterns {
+		runGenerateStyles(patterns)
+	}
+}
+
+// runCodegenEngine runs the engine generators and extensions of a codegen
+// config and writes their files under codegen.output.
+func runCodegenEngine(options generateOptions, cfg codegen.Config, discovery codegen.Discovery) {
 	if err := validateOutputDir(cfg.Codegen.Output); err != nil {
 		if options.dryRun && options.json {
 			printGeneratedErrorsJSON(err)
@@ -474,6 +551,42 @@ func generateFromCodegenConfig(options generateOptions, discovery codegen.Discov
 	success("Generated %d file(s) in %s", len(files), cfg.Codegen.Output)
 }
 
+// splitStylesEntries pulls the `styles` entries out of a config's
+// generator list. Each one's config.patterns (a list of package patterns,
+// ./... when absent) is returned as one run; stylePatterns is nil when the
+// config lists no styles entry.
+func splitStylesEntries(gens []codegen.GeneratorConfig) (engine []codegen.GeneratorConfig, stylePatterns [][]string, err error) {
+	for i, gen := range gens {
+		if gen.Name != "styles" || gen.Extension != "" {
+			engine = append(engine, gen)
+			continue
+		}
+		if gen.Output != "" || gen.Source.Type != "" {
+			return nil, nil, fmt.Errorf("codegen.generators[%d] (styles): output and source do not apply; styles writes beside each sheet under config.patterns", i)
+		}
+		patterns := []string{}
+		for _, key := range slices.Sorted(maps.Keys(gen.Config)) {
+			raw := gen.Config[key]
+			if key != "patterns" {
+				return nil, nil, fmt.Errorf("codegen.generators[%d] (styles): unknown config key %q (only patterns)", i, key)
+			}
+			list, ok := raw.([]any)
+			if !ok {
+				return nil, nil, fmt.Errorf("codegen.generators[%d] (styles): config.patterns must be a list of package patterns", i)
+			}
+			for _, item := range list {
+				p, ok := item.(string)
+				if !ok || strings.TrimSpace(p) == "" || strings.HasPrefix(p, "-") {
+					return nil, nil, fmt.Errorf("codegen.generators[%d] (styles): config.patterns entries must be package patterns such as ./...", i)
+				}
+				patterns = append(patterns, p)
+			}
+		}
+		stylePatterns = append(stylePatterns, patterns)
+	}
+	return engine, stylePatterns, nil
+}
+
 func enterCodegenProjectDir(discovery codegen.Discovery) (func(), error) {
 	projectDir := discovery.ProjectDir
 	if strings.TrimSpace(projectDir) == "" || projectDir == "." {
@@ -497,9 +610,9 @@ func generateFromAppSpec(options generateOptions) {
 	var bp AppSpec
 	var err error
 	if options.add {
-		bp, err = loadAppSpecPath(options.from, false)
+		bp, err = loadAppSpecPath(options.spec, false)
 	} else {
-		bp, err = loadAppSpec(options.from)
+		bp, err = loadAppSpec(options.spec)
 	}
 	if err != nil {
 		if options.dryRun && options.json {
@@ -513,8 +626,8 @@ func generateFromAppSpec(options generateOptions) {
 }
 
 // generateAppSpec runs the app spec generation pipeline against an
-// already-loaded App spec. generateFromAppSpec (the --from / --add yml
-// path) and the `generate entity|screen <name>` scaffold subcommands (which
+// already-loaded App spec. generateFromAppSpec (the `generate app`
+// yml path) and the `generate entity|screen <name>` scaffold subcommands (which
 // synthesize a fragment in memory rather than loading yml) both route here,
 // so the additive machinery has exactly one implementation: union, order
 // offsets, skip-existing partition, legacy-layout refusal, client.go
@@ -629,7 +742,7 @@ func generateAppSpec(bp AppSpec, options generateOptions) {
 		// compiling. Refuse rather than emit broken output.
 		legacy, lerr := readLegacyRegisterUnder(writeRoot)
 		if lerr == nil && len(legacy) > 0 {
-			lerr = fmt.Errorf("entities/ uses the pre-0.15 aggregated layout, which --add cannot extend. Recover your app spec with `gofastr pack`, merge the new pieces into it, and regenerate with `gofastr generate --from=<spec.yml> --force`")
+			lerr = fmt.Errorf("entities/ uses the pre-0.15 aggregated layout, which --add cannot extend. Recover your app spec with `gofastr pack`, merge the new pieces into it, and regenerate with `gofastr generate app <spec.yml> --force`")
 			if options.dryRun && options.json {
 				printGeneratedErrorsJSON(lerr)
 				osExit(1)
@@ -642,12 +755,12 @@ func generateAppSpec(bp AppSpec, options generateOptions) {
 		// per-screen file dropped next to it self-registers against a seam
 		// that doesn't exist, so the project stops compiling. Refuse.
 		if packHasAggregatedScreens(writeRoot) {
-			serr := fmt.Errorf("screens use the pre-per-screen aggregated layout (screens.go), which --add cannot extend. Recover your app spec with `gofastr pack`, merge the new pieces into it, and regenerate with `gofastr generate --from=<spec.yml> --force`")
+			serr := fmt.Errorf("screens use the pre-per-screen aggregated layout (screens.go), which --add cannot extend. Recover your app spec with `gofastr pack`, merge the new pieces into it, and regenerate with `gofastr generate app <spec.yml> --force`")
 			if !fileExistsUnder(writeRoot, "app.go") {
 				// No app spec seam file: this is the `gofastr init`
 				// layout, which pack cannot read either. Point at the
 				// hand-edit seams its CLAUDE.md names instead.
-				serr = fmt.Errorf("this project uses the `gofastr init` layout (screens.go, main.go, entities/entities.go), which --add and `generate entity|screen` cannot extend; they extend apps made by `gofastr generate --from=<spec.yml>`. Add an entity with another app.Entity call in entities/entities.go's RegisterAll, and a screen with a type in screens.go plus a site.Register call in main.go")
+				serr = fmt.Errorf("this project uses the `gofastr init` layout (screens.go, main.go, entities/entities.go), which --add and `generate entity|screen` cannot extend; they extend apps made by `gofastr generate app <spec.yml>`. Add an entity with another app.Entity call in entities/entities.go's RegisterAll, and a screen with a type in screens.go plus a site.Register call in main.go")
 			}
 			if options.dryRun && options.json {
 				printGeneratedErrorsJSON(serr)
@@ -897,7 +1010,7 @@ func generateAppSpec(bp AppSpec, options generateOptions) {
 		}
 		if len(conflicts) > 0 {
 			sort.Strings(conflicts)
-			cerr := fmt.Errorf("generate is one-shot and would overwrite existing files: %s. The emitted code is yours to own. To ADD to an existing project (new entities/screens) use `gofastr generate --add --from=<spec.yml>`; to overwrite everything, re-run with --force", strings.Join(conflicts, ", "))
+			cerr := fmt.Errorf("generate is one-shot and would overwrite existing files: %s. The emitted code is yours to own. To ADD to an existing project (new entities/screens) use `gofastr generate app <spec.yml> --add`; to overwrite everything, re-run with --force", strings.Join(conflicts, ", "))
 			if options.json {
 				printGeneratedErrorsJSON(cerr)
 				osExit(1)

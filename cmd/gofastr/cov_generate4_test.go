@@ -76,7 +76,7 @@ func TestGenerateFromAppSpecCleanWriteHappy(t *testing.T) {
 	}
 	// Non-dry-run, explicit --out subdir, json output → exercises write + json.
 	covT_capStdout(t, func() {
-		generateFromAppSpec(generateOptions{from: bp, outputDir: ".gen", outputSet: true, json: true})
+		generateFromAppSpec(generateOptions{spec: bp, outputDir: ".gen", outputSet: true, json: true})
 	})
 	found := false
 	_ = filepath.Walk(filepath.Join(dir, ".gen"), func(p string, info os.FileInfo, err error) error {

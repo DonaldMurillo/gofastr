@@ -8,8 +8,8 @@ you can delete `gofastr.yml`. Generate with:
 
 ```bash
 gofastr validate gofastr.yml
-gofastr generate --from=gofastr.yml
-gofastr generate --from=specs/ --dry-run --json
+gofastr generate app gofastr.yml
+gofastr generate app specs/ --dry-run --json
 ```
 
 App specs are not runtime declarations: the CLI reads `.yml`, `.yaml`, or
@@ -19,7 +19,7 @@ owned Go into an idiomatic, module-root layout by default: a flat
 `screen_<name>.go` per screen, and, when needed, a thin `extensions.go` or
 `stubs.go`) plus the `entities/` package (set `--out=<dir>` or
 `app.output_dir` to scaffold into a subpackage instead).
-`generate` is one-shot: it refuses to overwrite an existing project
+`generate app` is one-shot: it refuses to overwrite an existing project
 (pass `--force`), because the emitted code is yours to own. `--add` is the
 additive alternative: it writes only the new files from a partial yml, never
 overwriting. See [Additive generation](#additive-generation---add).
@@ -49,12 +49,13 @@ entity shape and field types documented in
 The app spec root keys are `app`, `entities`, `screens`, `nav`, `seed`,
 `endpoints`, `hooks`, `middleware`, `plugins`, `helpers`, and `isolation`.
 
-App specs are separate from general codegen config. `gofastr generate
---from=gofastr.yml` means "treat this file as an app spec." Plain
-`gofastr generate` discovers `gofastr.codegen.yml` / `.yaml`, or a
-`codegen:` section in `gofastr.yml`, and runs the configurable codegen engine.
-Use [Codegen](codegen.md) when you want arbitrary configured generators or
-external extensions rather than a full app spec.
+`app` is a scaffold generator, one of the kinds described in
+[Codegen](codegen.md): `gofastr generate app [spec]` runs it (the spec
+defaults to `gofastr.yml`). Plain `gofastr generate`, which `gofastr build`
+calls, never does. It runs the codegen config (`gofastr.codegen.yml` /
+`.yaml`, or a `codegen:` section in `gofastr.yml`), and that config lists
+derived generators and extensions only, so a build cannot regenerate the app
+over code you have edited.
 
 ## What the app generator writes vs. what you hand-write
 
@@ -390,7 +391,7 @@ recovered by `gofastr pack` from each file's `screenRegistrar{order: …}`; see
 
 ## Additive generation (`--add`)
 
-`gofastr generate --from=<yml> --add` is additive: it reads *any partial yml*
+`gofastr generate app <yml> --add` is additive: it reads *any partial yml*
 (e.g. just two new entities, or a couple of new screens, not the canonical
 `gofastr.yml`) and emits only
 the new full-fidelity pieces into an existing project, never touching owned
@@ -400,7 +401,7 @@ as plain `generate`.
 
 ```bash
 # Add two entities to an existing project from a partial yml.
-gofastr generate --from=additions.yml --add
+gofastr generate app additions.yml --add
 ```
 
 Partial ymls are legal: an entities-only (or screens-only) fragment omits

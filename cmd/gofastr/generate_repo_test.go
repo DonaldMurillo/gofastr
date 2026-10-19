@@ -431,7 +431,7 @@ entities:
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	generateProject([]string{"--from=gofastr.yml", "--out=gen"})
+	runGenerateApp([]string{"gofastr.yml", "--out=gen"})
 
 	itDir := filepath.Join(dir, "integration")
 	if err := os.MkdirAll(itDir, 0o755); err != nil {

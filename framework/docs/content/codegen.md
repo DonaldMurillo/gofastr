@@ -1,10 +1,33 @@
 # Codegen
 
-GoFastr code generation is configured through a general YAML format.
-Generators are project extensions that consume structured sources and emit any
-generated code files under a safe output root. This is distinct from the
-[app spec](app-spec.md) pipeline (`gofastr generate --from=gofastr.yml`),
-which generates the framework's own entity/screen Go from a `gofastr.yml`.
+Every generator runs as `gofastr generate <name>`. Generators come in two
+kinds, and the kind decides who runs them and whether you may edit what they
+write.
+
+**Scaffold** generators write code into your repo once. From then on you own
+it and edit it like any other source file. A second run refuses to overwrite
+existing files unless you pass `--force`.
+
+- `app [spec]`: the whole app from an [app spec](app-spec.md)
+  (default `gofastr.yml`; a file or a directory). `--add` merges new
+  entities and screens into an existing app.
+- `entity <name>` and `screen <name>`: an editable stub in a generated app.
+- `package [<name>]`: a copy of a canonical chrome package (siteheader,
+  sitefooter, docpage). No name lists them.
+- `cli`: a customer-facing CLI for the app API. See [CLI](cli.md).
+
+**Derived** generators keep a type-safe layer in sync with a source. Their
+files say DO NOT EDIT, and a rerun replaces them.
+
+- `sdk`: Go and JavaScript/TypeScript API clients. See [SDK](sdk.md).
+- `styles [patterns]`: typed Go for app tokens and owned style sheets.
+
+Plain `gofastr generate` runs the codegen config below. `gofastr build`
+and `gofastr generate --watch` call it, so the config lists derived
+generators and project extensions only. A scaffold generator in the config
+is an error: a build would re-run it on code you own.
+
+`gofastr generate --help` prints the same list, grouped by kind.
 
 ## Config discovery
 
@@ -16,16 +39,16 @@ which generates the framework's own entity/screen Go from a `gofastr.yml`.
 4. `gofastr.yml` / `gofastr.yaml` only when the file has a top-level `codegen:`
    section.
 
-With no codegen config and no `--from` app spec, `gofastr generate` has
-nothing to generate and exits with guidance.
+With no codegen config, `gofastr generate` has nothing to generate and exits
+with guidance. To generate an app, run `gofastr generate app gofastr.yml`.
 
 CLI flags override config values where they overlap:
 
 - `--out=<dir>` overrides `codegen.output`.
 - `--clean` and `--no-clean` override `codegen.clean`.
 
-`--from=<path>` selects app spec mode instead. App spec generation is
-separate from this general codegen config. See [App specs](app-spec.md).
+Plain `gofastr generate` also accepts `--dry-run`, `--json` and `--watch`.
+Any other argument is an error.
 
 ## Config shape
 
@@ -50,11 +73,24 @@ codegen:
 is a subdirectory under that root. Generated paths must be relative and cannot
 contain parent traversal.
 
-Each generator names an `extension`, with one built-in exception: a
-generator entry named `sdk` (no `extension`) runs the built-in SDK
-generator, the same output as `gofastr generate sdk`; see the
-[sdk](sdk.md) doc. Use optional `id` when running the same generator more
-than once:
+Each generator names an `extension`, with two built-in exceptions. An entry
+named `sdk` (no `extension`) runs the built-in SDK generator, the same
+output as `gofastr generate sdk`; see the [sdk](sdk.md) doc. An entry named
+`styles` runs `gofastr generate styles` after the other generators. It
+writes beside each sheet rather than under `codegen.output`, so it takes no
+`output` or `source`; its only config key is `patterns`, a list of Go
+package patterns (`./...` when absent). `--dry-run` skips it, and
+`--dry-run --json` refuses a config that lists it.
+
+```yaml
+generators:
+  - name: sdk
+  - name: styles
+    config:
+      patterns: ["./ui/..."]
+```
+
+Use optional `id` when running the same generator more than once:
 
 ```yaml
 generators:

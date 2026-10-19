@@ -84,7 +84,7 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 
 	work := t.TempDir()
 	writeTestFile(t, filepath.Join(work, "gofastr.yml"), sidebarGateAppSpec)
-	gen := exec.Command(binPath, "generate", "--from=gofastr.yml")
+	gen := exec.Command(binPath, "generate", "app", "gofastr.yml")
 	gen.Dir = work
 	if out, err := gen.CombinedOutput(); err != nil {
 		t.Fatalf("generate: %v\n%s", err, out)

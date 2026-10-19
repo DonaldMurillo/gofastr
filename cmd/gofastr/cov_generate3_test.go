@@ -21,31 +21,48 @@ func TestGenerateProjectDryRunJSONDiscoverError(t *testing.T) {
 }
 
 func TestParseGenerateOptionsFlags(t *testing.T) {
-	opts := parseGenerateOptions([]string{"--dry-run", "--json", "--no-clean", "--config=c.yml", "--from=f.yml", "--out=o"})
-	if !opts.dryRun || !opts.json || opts.clean || opts.configPath != "c.yml" || opts.from != "f.yml" || opts.outputDir != "o" {
+	opts, err := parseGenerateOptions([]string{"--dry-run", "--json", "--no-clean", "--config=c.yml", "--out=o"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !opts.dryRun || !opts.json || opts.clean || opts.configPath != "c.yml" || opts.outputDir != "o" {
 		t.Fatalf("opts = %#v", opts)
 	}
 	if !opts.cleanSet || !opts.outputSet {
 		t.Fatal("set flags not tracked")
 	}
+	opts, err = parseGenerateOptions([]string{"--config", "c.yml", "--dry-run"})
+	if err != nil || opts.configPath != "c.yml" || !opts.dryRun {
+		t.Fatalf("space form: opts = %#v, err = %v", opts, err)
+	}
 }
 
-// The space form `--from f.yml` must work too. Silently ignoring it
-// yields a misleading "Nothing to generate".
-func TestFromFlagSpaceForm(t *testing.T) {
-	opts := parseGenerateOptions([]string{"--from", "f.yml", "--dry-run"})
-	if opts.from != "f.yml" {
-		t.Fatalf("--from f.yml not parsed: %#v", opts)
+// Plain `gofastr generate` runs the codegen config; an argument it does
+// not know is an error, never dropped. A dropped `--from x` used to turn
+// into a misleading "Nothing to generate".
+func TestGenerateRejectsUnknownArgs(t *testing.T) {
+	for _, args := range [][]string{{"--from=f.yml"}, {"--force"}, {"--add"}, {"--config"}, {"--out", "--json"}} {
+		if _, err := parseGenerateOptions(args); err == nil {
+			t.Errorf("parseGenerateOptions(%q) accepted it", args)
+		}
 	}
-	if !opts.dryRun {
-		t.Fatalf("flag after space-form value lost: %#v", opts)
+}
+
+func TestGenerateAppArgs(t *testing.T) {
+	opts, err := parseAppGenerateArgs(nil)
+	if err != nil || opts.spec != "gofastr.yml" {
+		t.Fatalf("default spec: opts = %#v, err = %v", opts, err)
 	}
-	// A trailing bare --from has no value to consume.
-	if opts := parseGenerateOptions([]string{"--from"}); opts.from != "" {
-		t.Fatalf("bare --from must stay empty: %#v", opts)
+	opts, err = parseAppGenerateArgs([]string{"specs/", "--out", "app", "--force", "--dry-run", "--json"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	// The next flag is not a value for --from.
-	if opts := parseGenerateOptions([]string{"--from", "--json"}); opts.from != "" || !opts.json {
-		t.Fatalf("--from must not eat the next flag: %#v", opts)
+	if opts.spec != "specs/" || opts.outputDir != "app" || !opts.outputSet || !opts.force || !opts.dryRun || !opts.json {
+		t.Fatalf("opts = %#v", opts)
+	}
+	for _, args := range [][]string{{"a.yml", "b.yml"}, {"--from=a.yml"}, {"--out"}, {"--out", "--json"}} {
+		if _, err := parseAppGenerateArgs(args); err == nil {
+			t.Errorf("parseAppGenerateArgs(%q) accepted it", args)
+		}
 	}
 }

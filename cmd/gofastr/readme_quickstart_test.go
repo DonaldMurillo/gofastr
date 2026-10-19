@@ -123,7 +123,7 @@ func readmeQuickstartBlocks(t *testing.T) (yamlBlock, bashBlock, initBlock strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	bashBlock, err = fencedBlock(section, "bash", "gofastr generate --from=gofastr.yml")
+	bashBlock, err = fencedBlock(section, "bash", "gofastr generate app gofastr.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestReadmeQuickstartShapeIsStable(t *testing.T) {
 	// `gofastr dev`, not `go run .`: only the dev server hot-reloads, and the
 	// quickstart is the development on-ramp. TestReadmeQuickstartAppSpecRuns
 	// keeps the sequence executable by building and booting the same app.
-	for _, want := range []string{"gofastr validate", "gofastr generate --from=gofastr.yml", "go mod tidy", "gofastr dev"} {
+	for _, want := range []string{"gofastr validate", "gofastr generate app gofastr.yml", "go mod tidy", "gofastr dev"} {
 		if !strings.Contains(bashBlock, want) {
 			t.Fatalf("tutorial quickstart command sequence lost %q — the documented path must stay the executable path:\n%s", want, bashBlock)
 		}

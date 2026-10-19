@@ -52,7 +52,7 @@ each command to the doc that covers it.
 
 - `gofastr validate <yml>`: validate an app spec without generating
   (exit 0 = valid; includes the unscoped-PII lint).
-- `gofastr generate --from=<yml>`: one-shot scaffold of the whole app
+- `gofastr generate app <yml>`: one-shot scaffold of the whole app
   as owned Go ([tutorial](tutorial-app-spec.md)). `generate --add`
   / `generate entity <name>` / `generate screen <name>` scaffold *new*
   files into an existing app; owned files are never touched.
@@ -60,7 +60,6 @@ each command to the doc that covers it.
   Playwright aria snapshot ([app specs](app-spec.md)).
   `generate --config=<codegen.yml>` runs the configurable codegen engine
   ([codegen](codegen.md)); `generate --watch` re-runs on every change.
-  `generate all` is the full-project path (same engine as `--from`).
 - `gofastr generate package [<name>]`: copy a canonical chrome package
   (`siteheader`, `sitefooter`, `docpage`) into the app as owned code.
   No name lists the packages with a one-line summary each. With a name,

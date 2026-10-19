@@ -110,22 +110,6 @@ func TestHashEntitiesDir_IgnoresNonJSON(t *testing.T) {
 	}
 }
 
-func TestHashGenerateInputsFromAppSpecDetectsAppSpecChange(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "gofastr.yml")
-	if err := os.WriteFile(path, []byte(`app: { name: Demo }`), 0o644); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	h1 := hashGenerateInputs(generateOptions{from: path})
-	if err := os.WriteFile(path, []byte(`app: { name: Changed }`), 0o644); err != nil {
-		t.Fatalf("rewrite: %v", err)
-	}
-	h2 := hashGenerateInputs(generateOptions{from: path})
-	if h1 == h2 {
-		t.Fatalf("hash unchanged after app spec edit: %q", h1)
-	}
-}
-
 func TestHashGenerateInputsWithConfigDetectsExtensionCommandChange(t *testing.T) {
 	dir := t.TempDir()
 	tools := filepath.Join(dir, "tools")

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Directory mode (--from=specs/) loads every app spec file in a dir and
+// Directory mode (generate app specs/) loads every app spec file in a dir and
 // folds them with mergeAppSpecs. Seed was the only slice field that
 // mergeAppSpecs dropped, so a `seed:` block in any file but the last was
 // silently discarded. Demos shipped empty with no error.

@@ -868,7 +868,7 @@ func TestGenerateWarnsAuthDevMode(t *testing.T) {
 	path := filepath.Join(dir, "gofastr.yml")
 	writeTestFile(t, path, "app:\n  name: Demo\n  module: example.com/demo\n  auth:\n    enabled: true\n")
 	output := captureStdout(t, func() {
-		generateProject([]string{"--from=" + path, "--dry-run"})
+		runGenerateApp([]string{path, "--dry-run"})
 	})
 	if !strings.Contains(output, "dev mode") {
 		t.Errorf("generate did not warn about auth dev mode; output:\n%s", output)
@@ -895,7 +895,7 @@ entities:
         required: true
 `)
 	output := captureStdout(t, func() {
-		generateProject([]string{"--from=" + path, "--dry-run"})
+		runGenerateApp([]string{path, "--dry-run"})
 	})
 	if !strings.Contains(output, "announcements") || !strings.Contains(output, "public: true") {
 		t.Errorf("generate did not warn about the public entity; output:\n%s", output)
@@ -910,7 +910,7 @@ func TestGenerateFromAppSpecDryRunJSON(t *testing.T) {
 	path := filepath.Join(dir, "gofastr.yml")
 	writeTestFile(t, path, testAppSpecYAML())
 	output := captureStdout(t, func() {
-		generateProject([]string{"--from=" + path, "--dry-run", "--json"})
+		runGenerateApp([]string{path, "--dry-run", "--json"})
 	})
 	var got struct {
 		Files []struct {
@@ -955,7 +955,7 @@ endpoints:
     path: /bad
     handler: bad
 `)
-	cmd := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "--from="+filepath.Join(dir, "bad.yml"), "--dry-run", "--json")
+	cmd := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "app", filepath.Join(dir, "bad.yml"), "--dry-run", "--json")
 	cmd.Dir = repoRoot
 	// Inherit the parent test's GOCACHE; overriding with a fresh
 	// cache here races against the outer `go test ./...` parallel
@@ -997,7 +997,7 @@ func TestGenerateFromAppSpecDryRunJSONReportsUnsafeOutputPath(t *testing.T) {
 app:
   name: Demo
 `)
-	cmd := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "--from="+filepath.Join(dir, "gofastr.yml"), "--out=..", "--dry-run", "--json")
+	cmd := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "app", filepath.Join(dir, "gofastr.yml"), "--out=..", "--dry-run", "--json")
 	cmd.Dir = repoRoot
 	// Inherit parent GOCACHE. See the matching note in
 	// TestGenerateFromAppSpecDryRunJSONReportsValidationErrors.
@@ -1095,7 +1095,7 @@ func TestAppSpecCLIGeneratesEntireWorkingAppE2E(t *testing.T) {
 	}
 	writeTestFile(t, filepath.Join(dir, "public", "hello.txt"), "static from generated app")
 
-	runGoFastr := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "--from=gofastr.yml")
+	runGoFastr := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "app", "gofastr.yml")
 	runGoFastr.Dir = dir
 	if output, err := runGoFastr.CombinedOutput(); err != nil {
 		t.Fatalf("gofastr generate failed: %v\n%s", err, output)

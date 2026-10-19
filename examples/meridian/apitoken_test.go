@@ -1,4 +1,4 @@
-// Seeded by `gofastr generate --from=gofastr.yml`, then hand-evolved.
+// Seeded by `gofastr generate app gofastr.yml`, then hand-evolved.
 // Meridian is hand-maintained and NOT regenerable. See doc.go.
 
 package main

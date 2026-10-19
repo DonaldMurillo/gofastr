@@ -33,7 +33,7 @@ func runBuild(args []string) {
 	}
 
 	// Step 1: run the codegen extension protocol when a gofastr.codegen.yml
-	// is present. App spec generation (gofastr generate --from) is an
+	// is present. App generation (gofastr generate app) is an
 	// explicit, separate step: `gofastr build` does not guess an app spec.
 	if !opts.noGenerate {
 		discovery, err := codegen.DiscoverConfig(".")

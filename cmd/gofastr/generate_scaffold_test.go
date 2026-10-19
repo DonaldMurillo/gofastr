@@ -129,7 +129,7 @@ entities:
 func generateBaseProject(t *testing.T, baseYml string) (dir, bp string) {
 	t.Helper()
 	dir, bp = addSetup(t, baseYml)
-	covT_capStdout(t, func() { generateFromAppSpec(generateOptions{from: bp}) })
+	covT_capStdout(t, func() { generateFromAppSpec(generateOptions{spec: bp}) })
 	return dir, bp
 }
 

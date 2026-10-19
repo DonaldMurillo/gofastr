@@ -18,7 +18,7 @@ func FreezeAndGenerate(w *world.World, dir, pkgPath string) error {
 	if err != nil {
 		return fmt.Errorf("freeze: generate: %w", LookForGofastr())
 	}
-	args := []string{"generate", "--from=gofastr.yml"}
+	args := []string{"generate", "app", "gofastr.yml"}
 	if pkgPath != "" {
 		args = append(args, "--out="+pkgPath)
 	}

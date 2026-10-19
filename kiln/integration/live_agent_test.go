@@ -1294,7 +1294,7 @@ Stop after world_get confirms the app config, both entities, the home page, and 
 		t.Fatalf("frozen app spec did not validate: %v", err)
 	}
 
-	genCmd := exec.Command(gofastrPath, "generate", "--from=gofastr.yml")
+	genCmd := exec.Command(gofastrPath, "generate", "app", "gofastr.yml")
 	genCmd.Dir = appDir
 	genCmd.Stdout = newLogPipe(t, "generate")
 	genCmd.Stderr = newLogPipe(t, "generate")

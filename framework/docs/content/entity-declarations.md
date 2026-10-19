@@ -482,7 +482,7 @@ All writes execute inside the parent's database transaction (`inTx`). If any chi
 that holds the row owner's id (e.g. `user_id`) and the declared
 entity gets the same per-user auto-CRUD scoping as a Go-declared one
 (see **Per-user scoping** below). Omit the key to keep pre-existing
-behaviour. `gofastr generate --from=gofastr.yml` emits `OwnerField:` inside a
+behaviour. `gofastr generate app gofastr.yml` emits `OwnerField:` inside a
 `Scope: &framework.ScopeConfig{…}` block in the generated `app.Entity(...)`
 registration, so the scoping survives code generation.
 
@@ -1461,7 +1461,7 @@ and the `crud.WithStateOverride` escape hatch are on the
 Generate Go from a `gofastr.yml` app spec:
 
 ```bash
-gofastr generate --from=gofastr.yml
+gofastr generate app gofastr.yml
 ```
 
 This scaffolds the owned entity package into `entities/` at the module root:

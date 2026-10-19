@@ -39,7 +39,7 @@ entities: `users` (RBAC-gated), `tasks` (owner-scoped via `owner_field:
 user_id`), and `tags` (public). Auth is wired in dev mode. The entity_list
 screens give the app a real interactive surface (server-side sort + row-action
 RPC). Each app was produced by running the matching old CLI's
-`gofastr generate --from=gofastr.yml`.
+`gofastr generate app gofastr.yml`.
 
 `seed.db` is what booting that old app once leaves on disk: two registered users
 (`alice@ex.com` / `bob@ex.com`, password `secret123`), three owner-scoped tasks

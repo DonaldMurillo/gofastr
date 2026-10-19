@@ -64,7 +64,7 @@ func runFreeze(args []string) int {
 	fmt.Fprintf(os.Stderr, "[kiln freeze] wrote to %s/\n", *dir)
 	fmt.Fprintf(os.Stderr, "  entities: %d  pages: %d  hooks: %d  routes: %d\n",
 		entCount, pageCount, hookCount, routeCount)
-	fmt.Fprintf(os.Stderr, "  next: `gofastr validate %s/gofastr.yml`, then `gofastr generate --from=%s/gofastr.yml --out=<app-dir>`\n", *dir, *dir)
+	fmt.Fprintf(os.Stderr, "  next: `gofastr validate %s/gofastr.yml`, then `gofastr generate app %s/gofastr.yml --out=<app-dir>`\n", *dir, *dir)
 	return 0
 }
 

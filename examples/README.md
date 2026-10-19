@@ -47,7 +47,7 @@ These are **`gofastr.yml` app specs**, no Go. They describe a whole app
 from one with:
 
 ```bash
-cd examples/ecommerce && gofastr generate --from=gofastr.yml
+cd examples/ecommerce && gofastr generate app gofastr.yml
 ```
 
 | App spec | Domain |

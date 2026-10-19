@@ -35,7 +35,7 @@ GoFastr leans on the two layouts Go developers already reach for, in order:
 **1. Declarations + scaffolded code.** Entities are the canonical
 description: written in Go (`entities/entities.go`, the `gofastr init`
 default) or declared in a [`gofastr.yml` app spec](app-spec.md). When you
-generate from an app spec (`gofastr generate --from=gofastr.yml`), it scaffolds
+generate from an app spec (`gofastr generate app gofastr.yml`), it scaffolds
 owned Go straight into this root layout: a flat `package main` (`main.go`,
 `app.go`, `screens_register.go` plus one `screen_<name>.go` per screen, …) plus
 the `entities/` package; you read, edit, and commit it.

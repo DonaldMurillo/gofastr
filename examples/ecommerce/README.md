@@ -30,7 +30,7 @@ git history has the full story of the fix.)
 
 ```sh
 cd examples/ecommerce
-gofastr generate --from=gofastr.yml --force   # re-emits app/ from the app spec (output_dir: app)
+gofastr generate app gofastr.yml --force   # re-emits app/ from the app spec (output_dir: app)
 gofastr dev --dir app                         # hot-reload dev server on localhost:8080
 ```
 

@@ -33,7 +33,7 @@ func TestGenerateWithoutGoModWarnsAndNamesTheInitCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := covT_capStdout(t, func() { runGenerate([]string{"--from=" + bp}) })
+	out := covT_capStdout(t, func() { runGenerate([]string{"app", bp}) })
 
 	if !strings.Contains(out, "go.mod") {
 		t.Errorf("generating outside a module never mentioned go.mod:\n%s", out)
@@ -68,7 +68,7 @@ func TestGenerateInsideModuleDoesNotWarnAboutGoMod(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := covT_capStdout(t, func() { runGenerate([]string{"--from=" + bp}) })
+	out := covT_capStdout(t, func() { runGenerate([]string{"app", bp}) })
 
 	if strings.Contains(out, "go mod init") {
 		t.Errorf("warned about a missing go.mod inside a real module:\n%s", out)
@@ -118,7 +118,7 @@ func TestGeneratePinsFrameworkVersion(t *testing.T) {
 	if err := os.WriteFile(bp, []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out := covT_capStdout(t, func() { runGenerate([]string{"--from=" + bp}) })
+	out := covT_capStdout(t, func() { runGenerate([]string{"app", bp}) })
 	mod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +146,7 @@ func TestGenerateDevBuildNamesGoGet(t *testing.T) {
 	if err := os.WriteFile(bp, []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out := covT_capStdout(t, func() { runGenerate([]string{"--from=" + bp}) })
+	out := covT_capStdout(t, func() { runGenerate([]string{"app", bp}) })
 	getAt := strings.Index(out, "go get github.com/DonaldMurillo/gofastr@")
 	tidyAt := strings.Index(out, "go mod tidy")
 	if getAt < 0 || tidyAt < 0 || getAt > tidyAt {

@@ -119,7 +119,7 @@ func TestGenerateWarnsOwnerScopedUnique(t *testing.T) {
 	writeValidateFile(t, filepath.Join(dir, "bp.yml"), ownerUniqueYML)
 	out := covT_capStdout(t, func() {
 		covT_capExit(t, func() {
-			generateFromAppSpec(generateOptions{from: filepath.Join(dir, "bp.yml"), outputDir: "gen", dryRun: true})
+			generateFromAppSpec(generateOptions{spec: filepath.Join(dir, "bp.yml"), outputDir: "gen", dryRun: true})
 		})
 	})
 	if !strings.Contains(out, `"customers"`) || !strings.Contains(out, "409") {

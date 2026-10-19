@@ -263,7 +263,7 @@ func TestSafeCleanOutputDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	// main.go is part of the app generator's output root; the cleaner
-	// must own it so re-running `gofastr generate --from` over an existing
+	// must own it so re-running `gofastr generate app` over an existing
 	// gen/ succeeds.
 	for _, n := range []string{"main.go", "register.go", "models.go", ".gitkeep"} {
 		if err := os.WriteFile(filepath.Join(sub, n), []byte("x"), 0o644); err != nil {

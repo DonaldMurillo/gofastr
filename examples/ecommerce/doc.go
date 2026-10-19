@@ -3,7 +3,7 @@
 // endpoints, seed data, and a theme, declared once in gofastr.yml and
 // emitted as runnable Go by the CLI:
 //
-//	gofastr generate --from=gofastr.yml
+//	gofastr generate app gofastr.yml
 //
 // The generated app is committed under app/ (output_dir: app in the
 // app spec) and is the proof of the framework's thesis: one app spec

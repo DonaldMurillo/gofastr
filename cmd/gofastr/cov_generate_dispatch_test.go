@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,46 +42,10 @@ func TestRunGenerateAppSpecDryRunJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := covT_capStdout(t, func() {
-		runGenerate([]string{"--from=" + bp, "--dry-run", "--json"})
+		runGenerate([]string{"app", bp, "--dry-run", "--json"})
 	})
 	if !strings.Contains(out, `"files"`) {
 		t.Fatalf("expected JSON file list, got: %s", out)
-	}
-}
-
-func TestHashAppSpecInputInto(t *testing.T) {
-	dir := t.TempDir()
-	// Missing path → hashes the path string only (no panic).
-	h := sha256.New()
-	hashAppSpecInputInto(h, filepath.Join(dir, "nope.yml"))
-	// Single file.
-	f := filepath.Join(dir, "bp.yml")
-	if err := os.WriteFile(f, []byte(testAppSpecYAML()), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	h2 := sha256.New()
-	hashAppSpecInputInto(h2, f)
-	// Directory of app spec files.
-	bpDir := filepath.Join(dir, "bps")
-	if err := os.MkdirAll(bpDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(bpDir, "a.gofastr.yml"), []byte(testAppSpecYAML()), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	h3 := sha256.New()
-	hashAppSpecInputInto(h3, bpDir)
-}
-
-func TestHashGenerateInputsAppSpec(t *testing.T) {
-	dir := t.TempDir()
-	f := filepath.Join(dir, "bp.yml")
-	if err := os.WriteFile(f, []byte(testAppSpecYAML()), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got := hashGenerateInputs(generateOptions{from: f})
-	if got == "" {
-		t.Fatal("expected non-empty hash")
 	}
 }
 

@@ -1,0 +1,7 @@
+version: v0.92.0
+title: One generator command per generator
+notes:
+  - change: "gofastr generate app [spec] replaces gofastr generate --from=<spec>; plain gofastr generate runs only the codegen config and refuses arguments it does not know, and a scaffold generator (app, entity, screen, package, cli) listed in the codegen config is an error"
+    breaking: true
+    nodetect: "a removed CLI flag: it lives in scripts, Makefiles and CI config, not in Go the scan reads"
+    guidance: "Replace gofastr generate --from=gofastr.yml with gofastr generate app gofastr.yml; the other flags are unchanged. Move a scaffold generator out of gofastr.codegen.yml and run it yourself; the config keeps derived generators (sdk, styles) and extensions."

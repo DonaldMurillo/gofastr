@@ -1106,7 +1106,7 @@ built in: no internet needed, always matches your installed version.
   next to ` + "`" + `HomeScreen` + "`" + ` in ` + "`" + `screens.go` + "`" + ` (or its own file) and register it
   in ` + "`" + `main.go` + "`" + ` with ` + "`" + `site.Register("/about", &AboutScreen{}, nil)` + "`" + `.
 - The app generator scaffolds (` + "`" + `gofastr docs app-spec` + "`" + `) extend apps made by
-  ` + "`" + `gofastr generate --from=<spec.yml>` + "`" + `, not this layout.
+  ` + "`" + `gofastr generate app <spec.yml>` + "`" + `, not this layout.
 - **UI: prefer the typed ` + "`" + `core-ui/html` + "`" + ` config structs**
   (` + "`" + `html.Div(html.DivConfig{...})` + "`" + `, ` + "`" + `html.Heading(...)` + "`" + `, …) over raw
   ` + "`" + `render.Tag(...)` + "`" + ` calls. ` + "`" + `render.Tag` + "`" + ` is the escape hatch for

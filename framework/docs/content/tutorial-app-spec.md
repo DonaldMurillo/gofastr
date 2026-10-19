@@ -92,7 +92,7 @@ Validate, generate, run:
 
 ```bash
 gofastr validate gofastr.yml
-gofastr generate --from=gofastr.yml   # scaffolds owned Go: main.go + app.go + screens_register.go + screen_*.go + entities/
+gofastr generate app gofastr.yml   # scaffolds owned Go: main.go + app.go + screens_register.go + screen_*.go + entities/
 go mod tidy                           # the scaffold pulls new imports; dev builds need this first
 gofastr dev                           # dev server with hot reload; the loop for everything below
 ```

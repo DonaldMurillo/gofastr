@@ -24,7 +24,7 @@ The pilot is successful only when all of these are recorded in a tracking issue:
 
 - A non-author owns the application repository and confirms it serves a real
   workflow.
-- `gofastr generate --from gofastr.yml` produces an inspectable starting point.
+- `gofastr generate app gofastr.yml` produces an inspectable starting point.
 - The app builds, tests, and deploys without a private framework fork.
 - SQL, REST, OpenAPI, MCP, and UI surfaces are exercised or consciously scoped
   out with a reason.
