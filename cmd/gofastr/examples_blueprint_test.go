@@ -85,8 +85,9 @@ func TestExampleBlueprintsGenerateAndCompile(t *testing.T) {
 		path := path
 		name := filepath.Base(filepath.Dir(path))
 		t.Run(name, func(t *testing.T) {
-			// Each example renders into its own scratch dir under its own
-			// example, so the seven compiles can overlap. The parent stays
+			// Each example renders into its own scratch package
+			// (_scratch/blueprints/build_<name>), so the seven compiles can
+			// overlap. The parent stays
 			// sequential: TestExampleBlueprintsBoot renders into the SAME
 			// scratch dirs and must not run alongside this test.
 			t.Parallel()

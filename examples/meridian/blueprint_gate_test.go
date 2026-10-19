@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/DonaldMurillo/gofastr/internal/scratchdir"
+	"github.com/DonaldMurillo/gofastr/internal/testinputs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,6 +57,9 @@ func scratchWithBlueprint(t *testing.T) (dir, scratchModule string) {
 // regression fails here rather than at the next release.
 func runGenerator(t *testing.T, dir string, args ...string) {
 	t.Helper()
+	// The generator's sources are this test's inputs too; without this Go
+	// replays a cached pass after the generator changes.
+	testinputs.Command(t, "github.com/DonaldMurillo/gofastr/cmd/gofastr")
 	argv := append([]string{"run", "github.com/DonaldMurillo/gofastr/cmd/gofastr"}, args...)
 	gen := exec.Command("go", argv...)
 	gen.Dir = dir
@@ -163,9 +167,10 @@ func TestGeneratedTreesMatchGenerator(t *testing.T) {
 			}
 			checked++
 			if normalizeModule(string(gotBytes), scratchModule) != string(wantBytes) {
-				t.Errorf("%s is stale: the generator emits different bytes. Regenerate with\n"+
-					"    (cd _scratch/blueprints/meridian && go run github.com/DonaldMurillo/gofastr/cmd/gofastr generate --from=gofastr.yml && go run github.com/DonaldMurillo/gofastr/cmd/gofastr generate cli --binary=meridian)\n"+
-					"and copy entities/ and cmd/meridian/ over the committed trees (keep cmd/meridian/custom.go)",
+				t.Errorf("%s is stale: the generator emits different bytes. Regenerate in a scratch copy from the repo root:\n"+
+					"    d=$(mktemp -d) && cp examples/meridian/gofastr.yml \"$d\" && go build -o \"$d/gofastr\" ./cmd/gofastr &&\n"+
+					"    (cd \"$d\" && echo 'module github.com/DonaldMurillo/gofastr/examples/meridian' > go.mod && ./gofastr generate --from=gofastr.yml && ./gofastr generate cli --binary=meridian)\n"+
+					"and copy entities/ and cmd/meridian/ from $d over the committed trees (keep cmd/meridian/custom.go)",
 					filepath.Join(tree.committed, rel))
 			}
 			return nil

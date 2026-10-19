@@ -2,6 +2,7 @@ package ecommerce_test
 
 import (
 	"github.com/DonaldMurillo/gofastr/internal/scratchdir"
+	"github.com/DonaldMurillo/gofastr/internal/testinputs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,6 +63,9 @@ func generateShopfront(t *testing.T) (appDir, scratchModule string) {
 		t.Fatalf("write scratch blueprint: %v", err)
 	}
 
+	// The generator's sources are this test's inputs too; without this Go
+	// replays a cached pass after the generator changes.
+	testinputs.Command(t, "github.com/DonaldMurillo/gofastr/cmd/gofastr")
 	gen := exec.Command("go", "run", "github.com/DonaldMurillo/gofastr/cmd/gofastr",
 		"generate", "--from=gofastr.yml")
 	gen.Dir = dir
