@@ -153,6 +153,8 @@ var symbolRef = regexp.MustCompile("`([a-z][a-z0-9]*)\\.([A-Z][A-Za-z0-9]*(?:\\.
 // TestBackendCapabilityMapSymbolsExist fails when the map names a symbol the
 // tree does not export: the failure mode that makes a lookup table
 // actively harmful.
+//
+//gofastr:test-reads *.go
 func TestBackendCapabilityMapSymbolsExist(t *testing.T) {
 	body := backendMapBody(t)
 	root := repoRoot(t)

@@ -163,6 +163,8 @@ func TestDeeplinkRedDecodeThrows(t *testing.T) {
 // keydown) and recordOpen (MutationObserver), srcOf from the lightbox
 // chrome. A malformed escape throws out of those handlers and kills gallery
 // nav instead of degrading to a no-op (empty src / skipped pair).
+//
+//gofastr:test-reads framework/ui/lightbox.js
 func TestLightboxRedDecodeThrows(t *testing.T) {
 	// The module moved to framework/ui (a registered behaviour); the
 	// deeplink parser it carries moved with it unchanged.

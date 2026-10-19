@@ -13,6 +13,8 @@ import (
 // DevTools websocket-URL wait. Under parallel package load a cold Chrome
 // on a CI runner misses 20s, and the test fails with "websocket url
 // timeout reached" while asserting nothing (core-ui/ownstyle, PR #482).
+//
+//gofastr:test-reads *_test.go
 func TestHandBootedChromeKeepsLaunchAllowance(t *testing.T) {
 	root := filepath.Join("..", "..")
 	var bad []string

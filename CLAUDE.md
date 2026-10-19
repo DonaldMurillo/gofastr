@@ -155,7 +155,11 @@ expose them to agents connected to a live app.**
   prints the closure, or runs the command after `--` with it appended.
   Changing go.mod, go.sum or cmd/affected widens to everything, as does
   a base ref that cannot be resolved: the tool degrades to the full run,
-  never to a skipped one.
+  never to a skipped one. A test that reads files outside its package
+  (a repo walk, a doc, another package's source) declares them with
+  `//gofastr:test-reads <pattern>` in the test file, or the selection
+  never picks it up when those files change: `dir/`, a base name like
+  `*_test.go`, a glob with `**`, or `importers:<import path>`.
 - **Test everything**: `./scripts/test-all.sh` (or `make test-all`), or
   `GOFASTR_TEST_ALL=1` in front of any of the gates above. Pushes to main
   and the merge queue always run everything in CI.

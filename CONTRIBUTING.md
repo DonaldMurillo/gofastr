@@ -68,6 +68,16 @@ in that shell first; `make clean` removes it:
 export GOFASTR_AXE_COVERAGE_DIR="$(go run ./cmd/affected -coverage-dir)"
 ```
 
+`cmd/affected` selects a package when a changed file is in it or in
+something it imports. A test that reads files no import reaches, such as
+a gate that walks every `_test.go` in the repo, names them in its test
+file so a change there still selects it:
+
+```go
+//gofastr:test-reads *_test.go
+//gofastr:test-reads framework/ui/ docs/**/*.md importers:github.com/DonaldMurillo/gofastr/core-ui/registry
+```
+
 Windows CI runs one build with `CGO_ENABLED=0`.
 
 ### Known isolation rules

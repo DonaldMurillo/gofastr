@@ -72,6 +72,8 @@ func TestFlagBeforeInstallReadsTheWriteNotTheInit(t *testing.T) {
 // a later loadModule re-executes the file and installs every listener
 // of the first pass a second time. The check runs on the minified
 // source so a comment naming either token cannot satisfy it.
+//
+//gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/core-ui/registry
 func TestRegisteredBehaviorsSetLoadedFlagBeforeInstalling(t *testing.T) {
 	files, err := check.RegisteredBehaviorSources(filepath.Join("..", ".."))
 	if err != nil {

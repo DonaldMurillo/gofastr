@@ -20,6 +20,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 )
 
+// The gates below read the attribute table, the trees that emit
+// data-cui-* markup, and every package that registers a behaviour; none
+// of them is an import of this package.
+//
+//gofastr:test-reads core-ui/ARCHITECTURE.md core-ui/interactive/ core-ui/html/ core-ui/widget/ core-ui/app/
+//gofastr:test-reads framework/ui/ framework/headless/ framework/pluginhost/ framework/uihost/
+//gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/core-ui/registry
+
 // attrPattern matches a full data-cui-* attribute token. It is greedy on
 // the name body, so a comment that wraps mid-name (`data-cui-foo-` at the
 // end of a line) yields a trailing-dash token; such artifacts are dropped

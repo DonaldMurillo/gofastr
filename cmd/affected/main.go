@@ -12,7 +12,9 @@
 //   - the package imports an affected package, transitively (go list's
 //     Deps);
 //   - the package's test files import an affected package (TestImports
-//     and XTestImports, whose own transitive deps the first rule covers).
+//     and XTestImports, whose own transitive deps the first rule covers);
+//   - a changed file matches a pattern one of the package's test files
+//     declares it reads (see "Files a test reads" below).
 //
 // Some changes make the graph meaningless and widen the set to every
 // package: go.mod, go.sum, go.work, and this tool's own source. A base ref
@@ -28,6 +30,26 @@
 // ref is diffed directly instead; CI uses that with the pull request's
 // base SHA, where the checkout is the PR's merge commit and no history is
 // fetched.
+//
+// Files a test reads: a gate that walks the repo (every _test.go, every
+// package.json, every exported symbol) depends on files no import edge
+// reaches. internal/chromedptest's launch-allowance gate reads every test
+// file in the module, so a new hand-booted Chrome in another package
+// never selected it, and #536's missing allowance reached main. Such a
+// test names its inputs with a directive at the start of a comment line
+// in the test file:
+//
+//	//gofastr:test-reads *_test.go
+//	//gofastr:test-reads framework/ui/ README.md core-ui/**/*.js
+//
+// A pattern ending in "/" is a directory prefix; one with no "/" matches
+// the base name anywhere ("*_test.go", "package.json"); any other is a
+// repo-relative glob where "**" spans directories. "importers:<import
+// path>" matches a change in any package that imports that path
+// directly, for a gate that reads the source of every caller of an API
+// (core-ui/runtime's registry gates). Patterns are space-separated and a
+// file may carry several directive lines. A match selects the declaring
+// package only: nothing imports a test.
 //
 // Usage:
 //
@@ -105,11 +127,21 @@ type pkg struct {
 	ImportPath   string
 	Name         string
 	Dir          string
+	Imports      []string
 	Deps         []string
 	TestImports  []string
 	XTestImports []string
 	TestGoFiles  []string
 	XTestGoFiles []string
+
+	reads testReadSet // from //gofastr:test-reads in the test files
+}
+
+// testReadSet is what a package's tests declare they read: repo-relative
+// path patterns, and import paths whose direct importers they read.
+type testReadSet struct {
+	paths       []*regexp.Regexp
+	importersOf []string
 }
 
 type stringList []string
@@ -305,7 +337,13 @@ func compute(o options) ([]string, error) {
 		return format(o, all, nil), nil
 	}
 
-	affected := closure(all, ownerDirs(o.root, files, all))
+	owners := ownerDirs(o.root, files, all)
+	affected := closure(all, owners)
+	for _, p := range all {
+		if p.reads.matches(files, owners, all) {
+			affected[p.ImportPath] = true
+		}
+	}
 	return format(o, all, affected), nil
 }
 
@@ -419,7 +457,7 @@ func format(o options, all []pkg, set map[string]bool) []string {
 }
 
 func listPackages(root, tags string) ([]pkg, error) {
-	args := []string{"list", "-e", "-json=ImportPath,Name,Dir,Deps,TestImports,XTestImports,TestGoFiles,XTestGoFiles"}
+	args := []string{"list", "-e", "-json=ImportPath,Name,Dir,Imports,Deps,TestImports,XTestImports,TestGoFiles,XTestGoFiles"}
 	if tags != "" {
 		args = append(args, "-tags", tags)
 	}
@@ -443,10 +481,37 @@ func listPackages(root, tags string) ([]pkg, error) {
 		}
 		pkgs = append(pkgs, p)
 	}
-	if err := addCommandRuns(pkgs); err != nil {
+	if err := scanTestFiles(pkgs); err != nil {
 		return nil, err
 	}
 	return pkgs, nil
+}
+
+// scanTestFiles reads every package's test files once for the edges go
+// list cannot report: commands the tests run, and files they declare
+// they read.
+func scanTestFiles(pkgs []pkg) error {
+	var mains []string
+	for _, p := range pkgs {
+		if p.Name == "main" {
+			mains = append(mains, p.ImportPath)
+		}
+	}
+	for i := range pkgs {
+		p := &pkgs[i]
+		for _, name := range append(slices.Clone(p.TestGoFiles), p.XTestGoFiles...) {
+			path := filepath.Join(p.Dir, name)
+			src, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("read %s: %w", path, err)
+			}
+			addCommandRuns(p, src, mains)
+			if err := p.reads.parse(src); err != nil {
+				return fmt.Errorf("%s: %w", path, err)
+			}
+		}
+	}
+	return nil
 }
 
 // addCommandRuns records a test that runs one of the module's commands
@@ -457,31 +522,99 @@ func listPackages(root, tags string) ([]pkg, error) {
 // generator changed, and the stale tree surfaced only in CI. The edge is
 // read from the full import path spelled as a Go string literal in the
 // package's test files.
-func addCommandRuns(pkgs []pkg) error {
-	var mains []string
-	for _, p := range pkgs {
-		if p.Name == "main" {
-			mains = append(mains, p.ImportPath)
+func addCommandRuns(p *pkg, src []byte, mains []string) {
+	for _, m := range mains {
+		if m != p.ImportPath && bytes.Contains(src, []byte(`"`+m+`"`)) && !slices.Contains(p.TestImports, m) {
+			p.TestImports = append(p.TestImports, m)
 		}
 	}
-	if len(mains) == 0 {
-		return nil
-	}
-	for i := range pkgs {
-		p := &pkgs[i]
-		for _, name := range append(slices.Clone(p.TestGoFiles), p.XTestGoFiles...) {
-			src, err := os.ReadFile(filepath.Join(p.Dir, name))
-			if err != nil {
-				return fmt.Errorf("read %s: %w", filepath.Join(p.Dir, name), err)
-			}
-			for _, m := range mains {
-				if m != p.ImportPath && bytes.Contains(src, []byte(`"`+m+`"`)) && !slices.Contains(p.TestImports, m) {
-					p.TestImports = append(p.TestImports, m)
+}
+
+const testReadsDirective = "//gofastr:test-reads"
+
+// parse adds the patterns of every //gofastr:test-reads line in src. The
+// directive must open the line's comment, so prose that mentions it
+// declares nothing. A directive with no pattern is an error: it would
+// read as coverage while selecting nothing.
+func (r *testReadSet) parse(src []byte) error {
+	for _, line := range strings.Split(string(src), "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), testReadsDirective)
+		if !ok || rest != "" && rest[0] != ' ' && rest[0] != '\t' {
+			continue
+		}
+		fields := strings.Fields(rest)
+		if len(fields) == 0 {
+			return fmt.Errorf("%s names no pattern", testReadsDirective)
+		}
+		for _, f := range fields {
+			if imp, ok := strings.CutPrefix(f, "importers:"); ok {
+				if imp == "" {
+					return fmt.Errorf("%s: importers: names no import path", testReadsDirective)
 				}
+				r.importersOf = append(r.importersOf, imp)
+				continue
 			}
+			r.paths = append(r.paths, readPattern(f))
 		}
 	}
 	return nil
+}
+
+// readPattern turns one test-reads pattern into a regexp over
+// repo-relative slash paths: "dir/" is a prefix, a pattern with no "/"
+// matches the base name in any directory, and otherwise "**/" spans zero
+// or more directories, "*" and "?" stay within one.
+func readPattern(pat string) *regexp.Regexp {
+	if strings.HasSuffix(pat, "/") {
+		return regexp.MustCompile("^" + regexp.QuoteMeta(pat))
+	}
+	if !strings.Contains(pat, "/") {
+		pat = "**/" + pat
+	}
+	var b strings.Builder
+	b.WriteString("^")
+	for i := 0; i < len(pat); i++ {
+		switch {
+		case strings.HasPrefix(pat[i:], "**/"):
+			b.WriteString("(?:[^/]+/)*")
+			i += 2
+		case strings.HasPrefix(pat[i:], "**"):
+			b.WriteString(".*")
+			i++
+		case pat[i] == '*':
+			b.WriteString("[^/]*")
+		case pat[i] == '?':
+			b.WriteString("[^/]")
+		default:
+			b.WriteString(regexp.QuoteMeta(pat[i : i+1]))
+		}
+	}
+	b.WriteString("$")
+	return regexp.MustCompile(b.String())
+}
+
+// matches reports whether a changed file matches a path pattern, or a
+// changed package (owners, by directory) directly imports a declared
+// import path.
+func (r testReadSet) matches(files []string, owners map[string]bool, all []pkg) bool {
+	for _, f := range files {
+		for _, re := range r.paths {
+			if re.MatchString(f) {
+				return true
+			}
+		}
+	}
+	if len(r.importersOf) == 0 {
+		return false
+	}
+	for _, p := range all {
+		if owners[p.Dir] && slices.ContainsFunc(r.importersOf, func(imp string) bool {
+			return slices.Contains(p.Imports, imp)
+		}) {
+			return true
+		}
+	}
+	return false
 }
 
 // changedFiles asks git for the change set: the working tree (staged and

@@ -93,6 +93,8 @@ func TestSchemeGuardStripsInteriorControls(t *testing.T) {
 // Surfaces: shared dispatchRPC + kiln POST (src/rpc.js), and
 // sortable-list reorder (framework/headless/sortablelist.js, a
 // registered behaviour whose own commit POST forwards the token).
+//
+//gofastr:test-reads framework/headless/sortablelist.js
 func TestCsrfHeaderForwardedOnRPC(t *testing.T) {
 	surfaces := []string{
 		filepath.Join("src", "rpc.js"),

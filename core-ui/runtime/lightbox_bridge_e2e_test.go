@@ -29,6 +29,8 @@ import (
 
 // lightboxModuleSource returns the module's source as shipped beside
 // its Go.
+//
+//gofastr:test-reads framework/ui/lightbox.js framework/ui/lightbox.go
 func lightboxModuleSource(t *testing.T) string {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join("..", "..", "framework", "ui", "lightbox.js"))

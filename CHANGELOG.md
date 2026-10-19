@@ -7,6 +7,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Fixed
+- **Affected selection sees tests that read other packages' files.** A
+  test file declares what it reads with `//gofastr:test-reads <pattern>`:
+  a `dir/` prefix, a base name such as `*_test.go` or `package.json`, a
+  repo-relative glob where `**` spans directories, or
+  `importers:<import path>` for every package that imports that path.
+  `cmd/affected` selects the package when a changed file matches. The
+  repo-walking gates in `internal/chromedptest`, `framework/docs`,
+  `framework/ui`, `framework/contracts/analyzers`, `core-ui/runtime`,
+  `cmd/gofastr` and `examples/site` declare their inputs; before this, a
+  hand-booted Chrome added in another package never selected the
+  launch-allowance gate, and one reached main that way.
+
 ## [0.91.0] - 2026-10-19
 
 **BREAKING** for generated code. The generated Go HTTP client and Go SDK

@@ -1023,6 +1023,8 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 // TestPlainSiteLineMatchesCoreBudget keeps framework/uihost's served-bytes
 // copy of the line equal to coreGoalGZ. A raised line once left that copy
 // behind, and the plain-site test failed on a correctly itemised bundle.
+//
+//gofastr:test-reads framework/uihost/plain_site_e2e_test.go
 func TestPlainSiteLineMatchesCoreBudget(t *testing.T) {
 	src, err := os.ReadFile(filepath.Join("..", "..", "framework", "uihost", "plain_site_e2e_test.go"))
 	if err != nil {
@@ -1106,6 +1108,8 @@ func TestCoreBudgetRejectsCliffOverflow(t *testing.T) {
 //
 // Never add or raise an override to silence a regression: split or shrink the
 // module instead.
+//
+//gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/core-ui/registry
 func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	// 12.5 KB, not 12: the budget was 12 KB measured at gzip level 9,
 	// which nothing ships at. Re-measuring at the level browsers

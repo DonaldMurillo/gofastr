@@ -15,6 +15,8 @@ import (
 // core-ui/check.LintLayerPrefix*; this is the live-tree gate for the
 // runtime package's frag/ and src/ and the core-ui Go tree, with a
 // vacuity control so a quiet result means clean, not blind.
+//
+//gofastr:test-reads core-ui/**/*.go
 func TestKernelNamesNoKitVocabulary(t *testing.T) {
 	js, err := check.LintLayerPrefixJS(".")
 	if err != nil {

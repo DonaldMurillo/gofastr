@@ -159,6 +159,78 @@ func TestGoRunOfACommandIsATestEdge(t *testing.T) {
 	want(t, run(t, options{root: root, files: []string{"f/f.go"}}), "f")
 }
 
+// A gate that walks the repo reads files no import edge reaches.
+// internal/chromedptest's launch-allowance gate reads every _test.go, and
+// a hand-booted Chrome added elsewhere never selected it (#536).
+func TestDeclaredTestReadsSelectThePackage(t *testing.T) {
+	root := newRepo(t)
+	writeFiles(t, root, map[string]string{
+		"w/w.go": "package w\n",
+		"w/w_test.go": "package w\n\n// The gate walks the repo.\n//\n//gofastr:test-reads *_test.go package.json\n" +
+			"//gofastr:test-reads c/ docs/**/*.md\n\nimport \"testing\"\n\nfunc TestW(t *testing.T) {}\n",
+		"x/x.go":      "package x\n",
+		"x/x_test.go": "package x\n\n// Mentions //gofastr:test-reads *.go in prose only.\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {}\n",
+	})
+	cases := []struct {
+		name  string
+		files []string
+		want  []string
+	}{
+		{"base name anywhere", []string{"d/d_test.go"}, []string{"d", "w"}},
+		{"base name at the root", []string{"package.json"}, []string{"w"}},
+		{"directory prefix", []string{"c/c.go"}, []string{"c", "d", "w"}},
+		{"double star spans directories", []string{"docs/a/b/guide.md"}, []string{"w"}},
+		{"double star spans none", []string{"docs/guide.md"}, []string{"w"}},
+		{"star stays in one segment", []string{"docs/guide.txt", "f/f.go"}, []string{"f"}},
+		{"prose mention declares nothing", []string{"scripts/gen.go"}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			want(t, run(t, options{root: root, files: tc.files}), tc.want...)
+		})
+	}
+}
+
+// core-ui/runtime's registry gates read the source of every package that
+// imports core-ui/registry; a list of directories would miss the next one.
+func TestTestReadsImportersOfAPackage(t *testing.T) {
+	root := newRepo(t)
+	writeFiles(t, root, map[string]string{
+		"r/r.go":      "package r\n",
+		"r/r_test.go": "package r\n\n//gofastr:test-reads importers:example.com/m/a\n\nimport \"testing\"\n\nfunc TestR(t *testing.T) {}\n",
+		"s/s.go":      "package s\n\nimport \"example.com/m/b\"\n\nvar S = b.B()\n",
+	})
+	// b imports a directly; s reaches a only through b.
+	want(t, run(t, options{root: root, files: []string{"b/testdata/fixture.txt"}}), "b", "e", "r", "s")
+	want(t, run(t, options{root: root, files: []string{"s/s.go"}}), "s")
+	want(t, run(t, options{root: root, files: []string{"c/c.go"}}), "c", "d")
+}
+
+func TestEmptyTestReadsIsAnError(t *testing.T) {
+	root := newRepo(t)
+	writeFiles(t, root, map[string]string{
+		"w/w.go":      "package w\n",
+		"w/w_test.go": "package w\n\n//gofastr:test-reads\n\nimport \"testing\"\n\nfunc TestW(t *testing.T) {}\n",
+	})
+	_, err := compute(options{root: root, files: []string{"f/f.go"}, format: "import", stderr: &bytes.Buffer{}})
+	if err == nil || !strings.Contains(err.Error(), "names no pattern") {
+		t.Fatalf("compute error = %v, want a no-pattern error", err)
+	}
+}
+
+func writeFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+	for name, body := range files {
+		p := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestModuleFilesWidenToEverything(t *testing.T) {
 	root := newRepo(t)
 	all := []string{"a", "b", "c", "d", "e", "f"}
