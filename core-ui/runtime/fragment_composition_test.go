@@ -135,7 +135,7 @@ func TestComposedRuntimeIsSymbolComplete(t *testing.T) {
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatalf("read %s: %v", symbolManifestPath, err)
 	}
-	want := string(wantRaw)
+	want := strings.ReplaceAll(string(wantRaw), "\r\n", "\n")
 	if have == want {
 		return
 	}

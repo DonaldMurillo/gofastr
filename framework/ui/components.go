@@ -1237,6 +1237,9 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	// horizontal scroll. (role=region is intentionally avoided. It would
 	// make every block a landmark and fail landmark-unique.)
 	bodyID := cfg.ID
+	if framed && bodyID != "" {
+		bodyID += "-code"
+	}
 	if framed && cfg.ShowCopy && bodyID == "" {
 		bodyID = "ui-code-block-" + strconv.FormatUint(codeBlockSeq.Add(1), 10)
 	}

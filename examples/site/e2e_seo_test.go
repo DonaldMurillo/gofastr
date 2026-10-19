@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/chromedp/chromedp"
+	"golang.org/x/net/html"
 )
 
 // fetchE2E hits the e2e server with the standard net/http client. Used
@@ -23,6 +24,64 @@ func fetchE2E(t *testing.T, base, path string) (int, http.Header, string) {
 	defer res.Body.Close()
 	body, _ := io.ReadAll(res.Body)
 	return res.StatusCode, res.Header, string(body)
+}
+
+// hasHeadElement checks parsed attributes so page-ownership markers and attribute
+// ordering do not change the assertion. Stop at </head> so a body carrier cannot
+// satisfy a check for metadata in the actual document head.
+func hasHeadElement(t *testing.T, body, tag string, attrs map[string]string) bool {
+	t.Helper()
+	z := html.NewTokenizer(strings.NewReader(body))
+	inHead := false
+	for {
+		typ := z.Next()
+		if typ == html.ErrorToken {
+			if err := z.Err(); err != io.EOF {
+				t.Fatalf("parse head: %v", err)
+			}
+			return false
+		}
+		token := z.Token()
+		if typ == html.EndTagToken && token.Data == "head" {
+			return false
+		}
+		if typ != html.StartTagToken && typ != html.SelfClosingTagToken {
+			continue
+		}
+		if token.Data == "head" {
+			inHead = true
+		}
+		if !inHead || token.Data != tag {
+			continue
+		}
+		got := make(map[string]string, len(token.Attr))
+		for _, attr := range token.Attr {
+			got[attr.Key] = attr.Val
+		}
+		matches := true
+		for key, value := range attrs {
+			if actual, ok := got[key]; !ok || actual != value {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return true
+		}
+	}
+}
+
+func TestHeadElementMatchesAttributes(t *testing.T) {
+	body := `<html><head><meta content="A &amp; B" data-cui-page-meta="" name="description"></head><body><template data-cui-page-head><link rel="canonical" href="/carrier-only"></template></body></html>`
+	if !hasHeadElement(t, body, "meta", map[string]string{"name": "description", "content": "A & B"}) {
+		t.Error("missed reordered, escaped head attributes")
+	}
+	if hasHeadElement(t, body, "meta", map[string]string{"content": "wrong description"}) {
+		t.Error("accepted an incorrect attribute value")
+	}
+	if hasHeadElement(t, body, "link", map[string]string{"rel": "canonical", "href": "/carrier-only"}) {
+		t.Error("accepted body carrier metadata as a document head element")
+	}
 }
 
 func TestE2ESitemapXML(t *testing.T) {
@@ -83,7 +142,7 @@ func TestE2EAutoMetaDescription(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("expected 200, got %d", code)
 	}
-	if !strings.Contains(body, `<meta name="description" content="Per-page SEO`) {
+	if !hasHeadElement(t, body, "meta", map[string]string{"name": "description", "content": new(SEOScreen).ScreenDescription()}) {
 		t.Errorf("expected auto-emitted meta description from ScreenDescriber, got:\n%s",
 			snippet(body, "meta name=\"description\""))
 	}
@@ -96,8 +155,7 @@ func TestE2ECanonicalLink(t *testing.T) {
 	base := startE2EServer(t)
 	// Site route is /seo; the canonical uses siteOrigin.
 	_, _, body := fetchE2E(t, base, "/seo")
-	want := `<link rel="canonical" href="` + siteOrigin + `/seo">`
-	if !strings.Contains(body, want) {
+	if !hasHeadElement(t, body, "link", map[string]string{"rel": "canonical", "href": siteOrigin + "/seo"}) {
 		t.Errorf("expected per-page canonical, got:\n%s", snippet(body, "rel=\"canonical\""))
 	}
 }
@@ -108,13 +166,9 @@ func TestE2EHreflangAlternates(t *testing.T) {
 	}
 	base := startE2EServer(t)
 	_, _, body := fetchE2E(t, base, "/seo")
-	for _, want := range []string{
-		`<link rel="alternate" hreflang="en"`,
-		`<link rel="alternate" hreflang="es"`,
-		`<link rel="alternate" hreflang="x-default"`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("missing %q in head\n%s", want, snippet(body, "hreflang"))
+	for _, lang := range []string{"en", "es", "x-default"} {
+		if !hasHeadElement(t, body, "link", map[string]string{"rel": "alternate", "hreflang": lang}) {
+			t.Errorf("missing alternate for %q in head\n%s", lang, snippet(body, "hreflang"))
 		}
 	}
 }
@@ -191,20 +245,25 @@ func TestE2ESEOBundleEmitsHead(t *testing.T) {
 	// Site route is /seo-bundle, not /components/seo-bundle.
 	// Canonical is siteOrigin + /seo-bundle.
 	_, _, body := fetchE2E(t, base, "/seo-bundle")
-	for _, want := range []string{
-		`content="Bundle-style SEO declaration in one method."`,
-		`href="` + siteOrigin + `/seo-bundle"`,
-		`<link rel="alternate" hreflang="en"`,
-		`<link rel="alternate" hreflang="es"`,
-		`<meta name="robots" content="index,follow">`,
-		`<meta property="og:title" content="GoFastr SEO bundle">`,
-		`<meta property="og:type" content="article">`,
-		`<meta name="twitter:card" content="summary_large_image">`,
-		`<script type="application/ld+json">`,
-		`"headline":"GoFastr SEO bundle"`,
+	for _, want := range []struct {
+		tag   string
+		attrs map[string]string
+	}{
+		{"meta", map[string]string{"name": "description", "content": "Bundle-style SEO declaration in one method."}},
+		{"link", map[string]string{"rel": "canonical", "href": siteOrigin + "/seo-bundle"}},
+		{"link", map[string]string{"rel": "alternate", "hreflang": "en"}},
+		{"link", map[string]string{"rel": "alternate", "hreflang": "es"}},
+		{"meta", map[string]string{"name": "robots", "content": "index,follow"}},
+		{"meta", map[string]string{"property": "og:title", "content": "GoFastr SEO bundle"}},
+		{"meta", map[string]string{"property": "og:type", "content": "article"}},
+		{"meta", map[string]string{"name": "twitter:card", "content": "summary_large_image"}},
+		{"script", map[string]string{"type": "application/ld+json"}},
 	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("missing %q in bundle <head>\n%s", want, snippet(body, want))
+		if !hasHeadElement(t, body, want.tag, want.attrs) {
+			t.Errorf("missing %s %v in bundle <head>", want.tag, want.attrs)
 		}
+	}
+	if !strings.Contains(body, `"headline":"GoFastr SEO bundle"`) {
+		t.Error("missing bundle JSON-LD headline")
 	}
 }

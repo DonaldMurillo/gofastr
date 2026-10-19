@@ -7,6 +7,20 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 )
 
+func TestCSSSkipsCustomNamedStaticExport(t *testing.T) {
+	n := cssNote([]string{"ui-button"}, nil)
+	root := cssWorkspace(t, map[string]string{
+		"app.style.css":                       ".ui-button { color: red; }",
+		"preview-output/__gofastr/runtime.js": "runtime",
+		"preview-output/__gofastr/app.css":    ".ui-button { color: red; }",
+		"preview-output/404.css":              ".ui-button { color: red; }",
+	})
+	res := mustRun(t, root, n)
+	if len(res.Hits[n]) != 1 || res.Hits[n][0].File != "app.style.css" {
+		t.Fatalf("export output was scanned: %+v", res.Hits[n])
+	}
+}
+
 // cssWorkspace builds an app whose only Go file compiles, plus stylesheets.
 func cssWorkspace(t *testing.T, files map[string]string) string {
 	files["main.go"] = "package main\n\nfunc main() {}\n"

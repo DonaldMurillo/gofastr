@@ -154,8 +154,9 @@ func prepZero(names ...string) func([]reflect.Value) {
 // kitMarkingExempt lists exported render.HTML functions that are not
 // components, each with the reason.
 var kitMarkingExempt = map[string]string{
-	"headless.El":  "the element builder every component uses; it has no structure of its own",
-	"headless.Own": "marks markup a composing component built; it renders nothing of its own",
+	"WithComponentCSS": "adds styles to an existing document; it renders no component structure",
+	"headless.El":      "the element builder every component uses; it has no structure of its own",
+	"headless.Own":     "marks markup a composing component built; it renders nothing of its own",
 }
 
 func TestKitMarkingCoversEveryComponent(t *testing.T) {

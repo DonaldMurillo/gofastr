@@ -99,10 +99,10 @@ and both stylesheets together come to about 12 KB.
 
 After minification (typical end-user deploy):
 
-- `runtime.js`: 13,655 B gz at level 6 and 15,779 B at level 1
-  (44,777 B raw), measured 2026-10-18. `core-ui/runtime/budget_test.go`
-  holds the lines at 13,695 B (level 6) and 15,779 B (level 1). The
-  level-1 line sits 1,443 B past the 14 KiB initial congestion window,
+- `runtime.js`: 14,176 B gz at level 6 and 16,426 B at level 1
+  (46,639 B raw), measured 2026-10-18. `core-ui/runtime/budget_test.go`
+  holds the lines at 14,214 B (level 6) and 16,426 B (level 1). The
+  level-1 line sits 2,090 B past the 14 KiB initial congestion window,
   so a cold first load of the core takes a second round trip; each
   byte over 14 KiB is a named entry in that test
 - Every on-demand module: ≤ 3 KB gz each; a page only fetches the
@@ -155,3 +155,11 @@ If you expected one and got the other, check `GOFASTR_ENV` /
   minified output keeps identifiers and stays debuggable. For full
   readability while reproducing an issue, restart with
   `RUNTIME_NOMINIFY=1`.
+
+The October 18 navigation metadata fix adds 519 bytes at level 6 and 649
+at level 1, measured against the merged tree without that change. These bytes
+carry page metadata and language through plain navigation and cache replay.
+The envelope shares the core implementation. Deep-link parameter handling
+moves to `widgetlinks`; envelope and widgets retain their existing limits.
+The budget tests also require an artificially padded core to cross the
+level-1 line, so recording the new measured cost does not disable that guard.

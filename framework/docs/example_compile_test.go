@@ -42,7 +42,7 @@ var packageClause = regexp.MustCompile(`(?m)^package\s+\w+`)
 // compileDirective matches the directive comment plus the ```go fence that
 // follows it. Group 1 is the directive body, group 2 the snippet.
 var compileDirective = regexp.MustCompile(
-	"(?s)<!--\\s*gofastr:compile\\s*\n(.*?)-->\\s*\n```go\n(.*?)\n```")
+	"(?s)<!--\\s*gofastr:compile\\s*\r?\n(.*?)-->\\s*\r?\n```go\r?\n(.*?)\r?\n```")
 
 // goFence counts every fenced Go block so the test can report opt-in coverage
 // instead of silently implying the whole corpus is compiled.
@@ -280,6 +280,17 @@ replace github.com/DonaldMurillo/gofastr => %s
 	for pkg, s := range index {
 		if strings.Contains(string(out), pkg) {
 			t.Errorf("\n--- %s (generated from %s) ---\n%s", pkg, s.doc, s.body)
+		}
+	}
+}
+
+func TestCompileDirectiveAcceptsCheckoutLineEndings(t *testing.T) {
+	source := "<!-- gofastr:compile\n-->\n```go\nprintln(1)\n```"
+	for _, newline := range []string{"\n", "\r\n"} {
+		body := strings.ReplaceAll(source, "\n", newline)
+		matches := compileDirective.FindAllStringSubmatch(body, -1)
+		if len(matches) != 1 || strings.TrimSpace(matches[0][2]) != "println(1)" {
+			t.Fatalf("compile directive missed a %q checkout: %q", newline, body)
 		}
 	}
 }

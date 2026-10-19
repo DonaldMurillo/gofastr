@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/internal/buildoutput"
+
 	"golang.org/x/mod/modfile"
 )
 
@@ -132,6 +134,9 @@ func (p *Pass) discover() error {
 			// tree and a directory //go:embed leaves it out, so neither
 			// its Go nor its CSS ships, and the analysis does not read it.
 			if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
+				return fs.SkipDir
+			}
+			if buildoutput.StaticExport(os.DirFS(path), ".") {
 				return fs.SkipDir
 			}
 			return nil

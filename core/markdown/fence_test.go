@@ -16,7 +16,7 @@ func TestParseFenceInfo(t *testing.T) {
 		{`go title="main.go"`, "go", `title="main.go"`},
 		{"go {1,3-5} showLineNumbers", "go", "{1,3-5} showLineNumbers"},
 		{"go\ttitle=x", "go", "title=x"},
-		{`title="no language"`, `title="no`, `language"`},
+		{`title="no language"`, "", `title="no language"`},
 	}
 	for _, c := range cases {
 		got := ParseFenceInfo(c.in)
@@ -149,5 +149,14 @@ func TestTwoBackticksStayInline(t *testing.T) {
 	out := string(Render("``code`` in a sentence\n").HTML)
 	if strings.Contains(out, "<pre") {
 		t.Fatalf("a two-backtick run opened a code block: %s", out)
+	}
+}
+
+func TestOptionOnlyFenceInfo(t *testing.T) {
+	for _, info := range []string{`title="notes.txt"`, `title="release notes.txt" showLineNumbers`, `{1,3-5}`} {
+		got := ParseFenceInfo(info)
+		if got.Lang != "" || got.Meta != info {
+			t.Errorf("ParseFenceInfo(%q) = %+v; want metadata without a language", info, got)
+		}
 	}
 }

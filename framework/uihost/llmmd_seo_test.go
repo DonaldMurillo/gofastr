@@ -67,6 +67,7 @@ func TestScreenLLMMD_InheritsSEOFrontMatter(t *testing.T) {
 	// The SAME values must appear in the HTML head: that's the parity
 	// contract.
 	htmlBody, _ := getBody(t, srv.URL+"/products")
+	htmlBody = withoutPageMetadataMarkers(htmlBody)
 	for _, want := range []string{
 		`<meta name="description" content="Browse the catalog">`,
 		`<link rel="canonical" href="https://example.com/products">`,

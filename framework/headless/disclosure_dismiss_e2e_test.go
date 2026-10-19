@@ -11,6 +11,20 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
+func TestE2E_DisclosureRestoreKeepsCurrentSidebarRouteVisible(t *testing.T) {
+	b := startBehaviorServer(t, `<nav><details id="section" data-hui-disclosure data-hui-disclosure-persist="current-section"><summary>Section</summary><a data-cui-activelink aria-current="page" href="/">Current</a></details><details id="other" data-hui-disclosure data-hui-disclosure-persist="other-section"><summary>Other</summary>Other</details></nav>`)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, disclosureLoaded) {
+		t.Fatal("disclosure module did not load")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`sessionStorage.setItem('gofastr.disclosure.current-section','0');sessionStorage.setItem('gofastr.disclosure.other-section','0');document.getElementById('section').open=false;document.getElementById('other').open=false;window.dispatchEvent(new CustomEvent('gofastr:navigate',{detail:{path:'/'}}));`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `document.getElementById('section').open && !document.getElementById('other').open`) {
+		t.Fatal("saved closed state hid the current route")
+	}
+}
+
 // A dismissable disclosure closes on a press outside it and stays open
 // for a press inside its panel; an ordinary one ignores outside presses
 // (an accordion section is not a popup). A menu is dismissable.

@@ -177,7 +177,7 @@ func TestCodeBlockZeroConfigUnchanged(t *testing.T) {
 	// The head (built from Filename, ShowCopy's copy button, and the
 	// line count — none of it a caller's markup) and the body (Code
 	// only here, no Lines) are both this component's own.
-	wantFramed := `<div class="fui-code-block fui-code-block--framed fui-code-block--numbered" id="fixed-id" data-cui-comp="ui-code-block"><div class="fui-code-block__head" data-cui-internal=""><span aria-hidden="true" class="fui-code-block__status"></span><span class="fui-code-block__file">main.go</span><div class="fui-code-block__meta"><span class="fui-copy-btn-wrap" data-hui-copy="" data-hui-copy-back="copy" data-hui-copy-copied="copied" data-hui-copy-name="fixed-id" data-hui-copy-sentence="Copied" data-hui-copy-target="fixed-id" data-cui-comp="ui-copy-btn"><button class="fui-copy-btn fui-code-block__copy" data-cui-internal="" type="button"><span class="fui-copy-btn__label">copy</span><span aria-hidden="true" class="fui-copy-btn__copied">copied</span></button><span aria-live="polite" class="fui-visually-hidden" data-cui-internal="" data-hui-copy-status="" role="status"></span></span></div></div><pre aria-label="source code" class="fui-code-block__body" data-cui-internal="" id="fixed-id" tabindex="0"><code>x := 1</code></pre></div>`
+	wantFramed := `<div class="fui-code-block fui-code-block--framed fui-code-block--numbered" id="fixed-id" data-cui-comp="ui-code-block"><div class="fui-code-block__head" data-cui-internal=""><span aria-hidden="true" class="fui-code-block__status"></span><span class="fui-code-block__file">main.go</span><div class="fui-code-block__meta"><span class="fui-copy-btn-wrap" data-hui-copy="" data-hui-copy-back="copy" data-hui-copy-copied="copied" data-hui-copy-name="fixed-id-code" data-hui-copy-sentence="Copied" data-hui-copy-target="fixed-id-code" data-cui-comp="ui-copy-btn"><button class="fui-copy-btn fui-code-block__copy" data-cui-internal="" type="button"><span class="fui-copy-btn__label">copy</span><span aria-hidden="true" class="fui-copy-btn__copied">copied</span></button><span aria-live="polite" class="fui-visually-hidden" data-cui-internal="" data-hui-copy-status="" role="status"></span></span></div></div><pre aria-label="source code" class="fui-code-block__body" data-cui-internal="" id="fixed-id-code" tabindex="0"><code>x := 1</code></pre></div>`
 	if framed != wantFramed {
 		t.Errorf("framed zero-config output changed:\n got: %s\nwant: %s", framed, wantFramed)
 	}
@@ -247,6 +247,18 @@ func TestCodeBlockNumberedBandsReachGutter(t *testing.T) {
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("code-block CSS lacks %q", want)
+		}
+	}
+}
+
+func TestFramedCodeBlockIDsAreUniqueAndCopyTargetsBody(t *testing.T) {
+	for _, cfg := range []CodeBlockConfig{{ID: "sample", Scroll: true}, {ID: "sample", Filename: "main.go"}, {ID: "sample", ShowCopy: true}, {ID: "sample", Lines: []render.HTML{render.Text("line")}}} {
+		out := string(CodeBlock(cfg))
+		if strings.Count(out, `id="sample"`) != 1 || strings.Count(out, `id="sample-code"`) != 1 {
+			t.Fatalf("duplicate or missing ID: %s", out)
+		}
+		if cfg.ShowCopy && !strings.Contains(out, `data-hui-copy-target="sample-code"`) {
+			t.Fatalf("copy does not target body: %s", out)
 		}
 	}
 }

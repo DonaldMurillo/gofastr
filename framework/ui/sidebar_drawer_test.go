@@ -49,7 +49,7 @@ func TestSidebarDrawerHeaderRenders(t *testing.T) {
 		`<span class="fui-sidebar__drawer-brand">Acme Tracker</span>`,
 		`aria-label="Close navigation"`,
 		`data-cui-action="close"`,
-		`class="fui-sidebar__drawer-close"`,
+		`fui-sidebar__drawer-close`,
 	} {
 		if !strings.Contains(chrome, want) {
 			t.Errorf("drawer chrome missing %s:\n%s", want, chrome)
@@ -58,6 +58,23 @@ func TestSidebarDrawerHeaderRenders(t *testing.T) {
 	// The header must sit ABOVE the body slot (brand read first).
 	if head, body := strings.Index(chrome, "fui-sidebar__drawer-head"),
 		strings.Index(chrome, "cui-slot-body"); head < 0 || body < 0 || head > body {
+	}
+}
+
+func TestSidebarDrawerCloseLabel(t *testing.T) {
+	r := &mountRecorder{}
+	def := MountSidebar(r, SidebarConfig{DrawerTitle: "Ayuda", DrawerCloseLabel: `Cerrar "navegación"`})
+	chrome := string(widget.RenderChrome(&def))
+	if !strings.Contains(chrome, `aria-label="Cerrar &quot;navegación&quot;"`) || strings.Contains(chrome, `aria-label="Close navigation"`) {
+		t.Fatalf("drawer close label was not localized and escaped: %s", chrome)
+	}
+	def = MountSidebarFunc(r, func(ctx context.Context) SidebarConfig {
+		label, _ := ctx.Value(sectionKey{}).(string)
+		return SidebarConfig{DrawerTitle: "Help", DrawerCloseLabel: label}
+	})
+	ctx := context.WithValue(context.Background(), sectionKey{}, "Cerrar navegación")
+	if chrome = widget.RenderChromeCtx(ctx, &def); !strings.Contains(chrome, `aria-label="Cerrar navegación"`) {
+		t.Fatalf("drawer close label did not follow the request: %s", chrome)
 	}
 }
 

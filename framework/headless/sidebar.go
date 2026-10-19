@@ -56,10 +56,9 @@ type SidebarItem struct {
 	// prefix. The caller resolves the active state for first paint;
 	// this is the same rule, handed to the client.
 	MatchPrefix string
-	// Count is optional content after the label: the rows behind the
+	// Count is optional content after a link or group label: the rows behind the
 	// link, an unread total. It is the caller's (a route area cell
-	// keeps it current across client navigations). Inert on groups,
-	// as Open is on leaves.
+	// keeps it current across client navigations).
 	Count render.HTML
 	// Children make this entry a group. Mutually exclusive with Href.
 	Children []SidebarItem
@@ -343,7 +342,7 @@ func sidebarRegion(b Box, p SidebarProps) render.HTML {
 // own row, so a caller's icon anywhere in there must stay reachable.
 func sidebarItemsHaveOwnContent(items []SidebarItem) bool {
 	for _, it := range items {
-		if it.Icon != "" || (len(it.Children) == 0 && it.Count != "") {
+		if it.Icon != "" || it.Count != "" {
 			return true
 		}
 		if len(it.Children) > 0 && sidebarItemsHaveOwnContent(it.Children) {
@@ -424,7 +423,7 @@ func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int, mark bool) r
 	}
 	// The caller's content in this entry's control: its glyph, and a
 	// leaf's count.
-	callerContent := it.Icon != "" || (len(it.Children) == 0 && it.Count != "")
+	callerContent := it.Icon != "" || it.Count != ""
 	itemAttrs := html.Attrs(nil)
 	if depth > 0 {
 		// The sub-item variant rides the item part's own class slot,
@@ -461,6 +460,10 @@ func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int, mark bool) r
 		textOwn = Internal(nil)
 	} else if mark {
 		controlMark = Internal(nil)
+	}
+	var count render.HTML
+	if it.Count != "" {
+		count = b.El("span", PartSidebarCount, nil, it.Count)
 	}
 	if len(it.Children) > 0 {
 		childMark := sidebarItemsHaveOwnContent(it.Children)
@@ -499,7 +502,7 @@ func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int, mark bool) r
 			}
 			return b.El("li", PartSidebarItem, itemAttrs,
 				b.El("button", PartControl, Merge(toggleAttrs, controlMark),
-					icon, b.El("span", PartText, textOwn, render.Text(scrubControlBytes(it.Label)))),
+					icon, b.El("span", PartText, textOwn, render.Text(scrubControlBytes(it.Label))), count),
 				b.El("ul", PartSidebarGroupList, listAttrs, kids...))
 		}
 		// Details dialect: native open/close, the disclosure module's
@@ -515,7 +518,7 @@ func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int, mark bool) r
 		return b.El("li", PartSidebarItem, itemAttrs,
 			b.El("details", PartSidebarGroup, groupAttrs,
 				b.El("summary", PartControl, controlMark,
-					icon, b.El("span", PartText, textOwn, render.Text(scrubControlBytes(it.Label)))),
+					icon, b.El("span", PartText, textOwn, render.Text(scrubControlBytes(it.Label))), count),
 				b.El("ul", PartSidebarGroupList, listOwn, kids...)))
 	}
 	href := safeHref(it.Href)
@@ -536,10 +539,6 @@ func sidebarItem(b Box, it SidebarItem, st *sidebarWalk, depth int, mark bool) r
 		// the server settled for first paint survives client
 		// navigations into sub-paths.
 		own["data-cui-match-prefix"] = scrubControlBytes(it.MatchPrefix)
-	}
-	var count render.HTML
-	if it.Count != "" {
-		count = b.El("span", PartSidebarCount, nil, it.Count)
 	}
 	return b.El("li", PartSidebarItem, itemAttrs,
 		b.El("a", PartControl, Merge(own, controlMark),

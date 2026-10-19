@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/buildoutput"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
 	"golang.org/x/tools/go/packages"
 )
@@ -422,7 +423,7 @@ func (e *engine) walkAppSkip(visit func(rel string, read func() ([]byte, bool)),
 			return nil
 		}
 		if d.IsDir() {
-			if p != "." && skip(d.Name()) {
+			if p != "." && (skip(d.Name()) || buildoutput.StaticExport(e.appFS, p)) {
 				return fs.SkipDir
 			}
 			return nil

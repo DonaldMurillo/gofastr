@@ -45,6 +45,13 @@
   function restore(d) {
     const key = d.getAttribute('data-hui-disclosure-persist');
     if (!key) return;
+    // A sidebar's current route must remain reachable after its markup
+    // arrives or navigation restores saved groups. A saved closed group
+    // belongs to the previous page; the current link owns this arrival.
+    if (d.querySelector('a[data-cui-activelink][aria-current="page"]')) {
+      d.setAttribute('open', '');
+      return;
+    }
     let saved = null;
     try { saved = sessionStorage.getItem(persistKey(key)); } catch (_) { return; }
     if (saved === '1') d.setAttribute('open', '');

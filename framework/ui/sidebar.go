@@ -165,9 +165,8 @@ func checkStackBreakpoint(b StackBreakpoint) {
 	}
 }
 
-// SidebarItem is one navigation entry. Children nest one level deep.
-// Deeper nesting is unsupported by design. Sidebars should not be
-// trees.
+// SidebarItem is one navigation entry. Children form nested groups, each
+// using the same disclosure and current-link contract at every depth.
 type SidebarItem struct {
 	Label    string
 	Href     string
@@ -193,11 +192,11 @@ type SidebarItem struct {
 	// manually.
 	MatchPath string
 
-	// Count is drawn after a link's label, small and muted at the
+	// Count is drawn after a link or group label, small and muted at the
 	// row's end: the rows behind the link, an unread total. Hand in
 	// render.Text("12"), or a route area cell (app.AreaSpec Inline)
 	// so the figure follows client navigations while the sidebar
-	// stays put. Links only; the collapsed rail hides it.
+	// stays put. The collapsed rail hides it.
 	Count render.HTML
 
 	// Open forces a group to render expanded on first paint regardless
@@ -288,6 +287,10 @@ type SidebarConfig struct {
 	// the same brand the top bar shows when the layout does not
 	// expose one.
 	DrawerTitle string
+	// DrawerCloseLabel names the drawer's dismiss button. Empty keeps the
+	// English default. Set it for localized navigation; MountSidebarFunc
+	// resolves it for each drawer request.
+	DrawerCloseLabel string
 
 	// DrawerName overrides the widget name used for the < md drawer.
 	// Defaults to "ui-sidebar-drawer". Apps that host multiple
@@ -827,23 +830,34 @@ func (s sidebarDrawerSlot) render(ctx context.Context) render.HTML {
 // button that rides the widget runtime's data-cui-action="close"
 // contract — the same dismiss path the backdrop and Escape take, and
 // dismiss returns focus to the trigger that opened the drawer.
-type sidebarDrawerHeader struct{ title string }
+type sidebarDrawerHeader struct {
+	title, closeLabel string
+	resolve           func(context.Context) SidebarConfig
+}
 
 func (h sidebarDrawerHeader) Render() render.HTML {
+	return h.RenderCtx(context.Background())
+}
+
+func (h sidebarDrawerHeader) RenderCtx(ctx context.Context) render.HTML {
 	if h.title == "" {
 		return ""
+	}
+	label := h.closeLabel
+	if h.resolve != nil {
+		label = h.resolve(ctx).DrawerCloseLabel
+	}
+	if label == "" {
+		label = "Close navigation"
 	}
 	// Wrapped in the ui-sidebar marker so the drawer's chrome fetch
 	// pulls this sheet too — the header slot sits in the widget
 	// chrome, beside (not inside) the body's marked region.
 	return sidebarStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-sidebar__drawer-head"},
 		html.Span(html.TextConfig{Class: "fui-sidebar__drawer-brand"}, render.Text(h.title)),
-		render.Tag("button", map[string]string{
-			"type":            "button",
-			"class":           "fui-sidebar__drawer-close",
-			"aria-label":      "Close navigation",
-			"data-cui-action": "close",
-		}, render.Text("×")),
+		Button(ButtonConfig{Label: label, Icon: "close", IconOnly: true,
+			Variant: ButtonGhost, Class: "fui-sidebar__drawer-close",
+			ExtraAttrs: html.Attrs{"data-cui-action": "close"}}),
 	))
 }
 
@@ -892,7 +906,7 @@ func mountSidebar(r WidgetMounter, cfg SidebarConfig, build func(context.Context
 	}
 	b := preset.Drawer(cfg.DrawerName).
 		Hidden().
-		Slot("header", sidebarDrawerHeader{title: title}).
+		Slot("header", sidebarDrawerHeader{title: title, closeLabel: cfg.DrawerCloseLabel, resolve: build}).
 		Slot("body", sidebarDrawerSlot{cfg: cfg, resolve: build})
 	// Optional page scoping: apps that only use the sidebar on a
 	// subset of routes can declare them explicitly; omitting `pages`

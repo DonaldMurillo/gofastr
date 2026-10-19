@@ -47,7 +47,7 @@ func TestSpecGolden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading golden: %v (run with GOFASTR_UPDATE_GOLDEN=1 to create)", err)
 	}
-	if string(golden) != got {
+	if strings.ReplaceAll(string(golden), "\r\n", "\n") != got {
 		t.Fatalf("the structure of one or more components changed.\n"+
 			"Every difference below is a change to what assistive tech is told.\n"+
 			"If it is intended, regenerate with GOFASTR_UPDATE_GOLDEN=1 and read the diff.\n\n%s",

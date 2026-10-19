@@ -251,3 +251,10 @@ func TestMarkdownTableScrollsInItsOwnBox(t *testing.T) {
 		t.Error("sheet should cap each table column at 70cqi of its scroll box and wrap past it")
 	}
 }
+
+func TestMarkdownTitleWithoutLanguage(t *testing.T) {
+	got := string(Markdown(MarkdownConfig{Source: "```title=\"release notes.txt\" showLineNumbers\nhello\n```"}))
+	if !strings.Contains(got, `release notes.txt`) || !strings.Contains(got, `fui-code-block--numbered`) || strings.Contains(got, `language-title`) {
+		t.Fatalf("option-only fence did not use the native code component: %s", got)
+	}
+}
