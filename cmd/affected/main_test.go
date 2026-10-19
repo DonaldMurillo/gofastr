@@ -447,3 +447,23 @@ func TestWrappedBuildLeavesGitDirAlone(t *testing.T) {
 		t.Fatal("a go build under affected moved .git's mtime")
 	}
 }
+
+// CI's replay gate greps this line to tell an empty selection, which runs
+// no test, from a second run that tested nothing.
+func TestEmptySelectionSkipsTheCommand(t *testing.T) {
+	bin := buildAffected(t)
+	cmd := exec.Command(bin, "-base", "HEAD", "--", "echo", "ran")
+	cmd.Dir = newRepo(t)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("affected: %v\n%s", err, stderr.String())
+	}
+	if len(out) != 0 {
+		t.Fatalf("the command ran on an empty selection: %q", out)
+	}
+	if !strings.HasPrefix(stderr.String(), "affected: no packages affected") {
+		t.Fatalf("stderr %q does not start with the line CI's replay gate greps", stderr.String())
+	}
+}

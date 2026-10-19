@@ -346,6 +346,12 @@ jobs:
             2> "$RUNNER_TEMP/testcache-2.log" | tee "$RUNNER_TEMP/replay.log" || status=$?
           grep -v '^testcache: ' "$RUNNER_TEMP/testcache-2.log" >&2 || true
           [ "$status" = 0 ] || exit "$status"
+          # A change that reaches no package (docs, workflow-only) runs no
+          # test at all, so there is nothing to replay.
+          if grep -q '^affected: no packages affected' "$RUNNER_TEMP/testcache-2.log"; then
+            echo "test-cache-replay: no packages affected, nothing to replay"
+            exit 0
+          fi
           scripts/test-cache-replay.sh "$RUNNER_TEMP/replay.log" "$RUNNER_TEMP/test-start" \
             "$RUNNER_TEMP/testcache-1.log" "$RUNNER_TEMP/testcache-2.log"
 
