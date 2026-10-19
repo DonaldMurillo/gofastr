@@ -129,7 +129,8 @@ func (p *Pass) discover() error {
 			// Hidden directories are tooling state (.git, .gofastr,
 			// .claude), never app source. A leading underscore is Go's
 			// own ignore marker: `go build ./...` never compiles such a
-			// tree, so the analysis does not read it either.
+			// tree and a directory //go:embed leaves it out, so neither
+			// its Go nor its CSS ships, and the analysis does not read it.
 			if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") {
 				return fs.SkipDir
 			}

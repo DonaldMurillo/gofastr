@@ -143,3 +143,24 @@ func TestRemoveTreeDoesNotFollowSymlinks(t *testing.T) {
 		t.Fatalf("removeTree of a missing tree: %v", err)
 	}
 }
+
+func TestRemoveTreeUnlinksASymlinkRoot(t *testing.T) {
+	target := t.TempDir()
+	keep := filepath.Join(target, "keep.txt")
+	if err := fileperm.WriteOwnerOnly(keep, []byte("keep\n")); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "pkg")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := removeTree(link); err != nil {
+		t.Fatalf("removeTree: %v", err)
+	}
+	if _, err := os.Lstat(link); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("symlink left behind: %v", err)
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("removeTree emptied the symlink's target: %v", err)
+	}
+}

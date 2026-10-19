@@ -927,6 +927,9 @@ func TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 			case ".git", "dist", "node_modules", "vendor", "tmp", "worktrees":
 				return filepath.SkipDir
 			}
+			if strings.HasPrefix(d.Name(), "_") {
+				return filepath.SkipDir // Go ignores these; _scratch holds other tests' output
+			}
 			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
@@ -1036,6 +1039,9 @@ func TestMarkersInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 			switch d.Name() {
 			case ".git", "dist", "node_modules", "vendor", "tmp", "worktrees":
 				return filepath.SkipDir
+			}
+			if strings.HasPrefix(d.Name(), "_") {
+				return filepath.SkipDir // Go ignores these; _scratch holds other tests' output
 			}
 			return nil
 		}

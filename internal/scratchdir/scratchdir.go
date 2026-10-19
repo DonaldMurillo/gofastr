@@ -85,8 +85,11 @@ func Package(t testing.TB, name string) (dir, importPath string) {
 }
 
 // removeTree deletes dir and everything below it, opening only dir and its
-// subdirectories. A symlink is removed, never followed.
+// subdirectories. A symlink is removed, never followed, dir itself included.
 func removeTree(dir string) error {
+	if fi, err := os.Lstat(dir); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		return os.Remove(dir)
+	}
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
