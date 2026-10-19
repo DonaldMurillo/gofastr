@@ -2,6 +2,7 @@
 # Fail when a `go test` run over an unchanged tree re-ran any package.
 #
 # Usage: scripts/test-cache-replay.sh <go test output> [start marker]
+#            [first-run cache log] [second-run cache log]
 #
 # CI runs the test step's command a second time and hands its output
 # here. Every package should come back "(cached)": a package that re-ran
@@ -16,10 +17,16 @@
 # test writes or rewrites during the first run is the usual culprit. Go
 # also declines to cache a run whose opened files changed under 2s
 # before it finished.
+#
+# The cache logs are the two runs' stderr under GODEBUG=gocachetest=1.
+# For each package that re-ran, a failure prints what go test said about
+# its cache entry in each run: a declined save in the first ("input file
+# ... too new", "reading cover profile") or a lookup miss in the second.
 set -euo pipefail
 
-log=${1:?usage: test-cache-replay.sh <go test output> [start marker]}
+log=${1:?usage: test-cache-replay.sh <go test output> [start marker] [cache logs...]}
 marker=${2:-}
+cachelogs=("${@:3}")
 
 if [ ! -r "$log" ]; then
 	echo "test-cache-replay: cannot read $log" >&2
@@ -40,6 +47,17 @@ if [ -n "$reran" ]; then
 		echo "Module files changed since the first run started:" >&2
 		find . -path ./.git -prune -o -newer "$marker" -print | sed -n 1,50p >&2
 	fi
+	for cl in "${cachelogs[@]}"; do
+		[ -r "$cl" ] || continue
+		echo "go test's cache decisions in $cl:" >&2
+		for pkg in $(echo "$reran" | awk '{print $2}'); do
+			# The bare "test ID X => Y" and "input list not found" lines
+			# say nothing about why.
+			grep -F "testcache: $pkg: " "$cl" |
+				grep -vE ': test ID [0-9a-f]+ => [0-9a-f]+$|: input list not found' |
+				sed -n 1,20p >&2 || true
+		done
+	done
 	echo "Find the input: GODEBUG=gocachetest=1 go test <pkg> twice, then read the input list Go saved." >&2
 	exit 1
 fi
