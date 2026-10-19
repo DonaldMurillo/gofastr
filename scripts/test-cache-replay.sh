@@ -44,10 +44,12 @@ if [ -n "$reran" ]; then
 	echo "test-cache-replay: these packages re-ran on an unchanged tree:" >&2
 	echo "$reran" >&2
 	if [ -n "$marker" ] && [ -r "$marker" ]; then
-		echo "Module files changed since the first run started:" >&2
-		find . -path ./.git -prune -o -newer "$marker" -print | sed -n 1,50p >&2
+		# -cnewer, not -newer: a chmod, or an mtime set back into the
+		# past, changes the stat Go hashes and leaves the mtime old.
+		echo "Module files whose inode changed since the first run started:" >&2
+		find . -path ./.git -prune -o -cnewer "$marker" -print | sed -n 1,50p >&2
 	fi
-	for cl in "${cachelogs[@]}"; do
+	for cl in ${cachelogs[@]+"${cachelogs[@]}"}; do
 		[ -r "$cl" ] || continue
 		echo "go test's cache decisions in $cl:" >&2
 		for pkg in $(echo "$reran" | awk '{print $2}'); do
