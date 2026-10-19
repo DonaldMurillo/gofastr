@@ -38,7 +38,16 @@
   // A tab strip keeps its rule across the slash too, so an href's query
   // is compared after its path's bare form.
   const bare = (p) => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p);
-  const key = (u) => { const i = u.indexOf('?'); return i < 0 ? bare(u) : bare(u.slice(0, i)) + u.slice(i); };
+  // The browser encodes Unicode in pathname while SSR may keep it in href.
+  // URL.pathname gives both the same spelling without decoding %2F or %3F
+  // into separators, or treating another origin's link as a local route.
+  const pathKey = (p) => {
+    try {
+      const url = new URL(p, location.origin);
+      return url.origin === location.origin ? bare(url.pathname) : p;
+    } catch (_) { return bare(p); }
+  };
+  const key = (u) => { const i = u.indexOf('?'); return i < 0 ? pathKey(u) : pathKey(u.slice(0, i)) + u.slice(i); };
   const update = (path, navigated, scope) => {
     const pathOnly = (path || '').split('?')[0].split('#')[0];
     // Whether the link's nav (or the document, outside one) also holds
@@ -48,7 +57,7 @@
     const inTabStrip = (link) => {
       const box = link.closest('nav') || document;
       if (!tabsIn.has(box)) {
-        tabsIn.set(box, [...box.querySelectorAll('a[href]')].some((a) => { const h = a.getAttribute('href'); return h.includes('?') && key(h).startsWith(bare(pathOnly) + '?'); }));
+        tabsIn.set(box, [...box.querySelectorAll('a[href]')].some((a) => { const h = a.getAttribute('href'); return h.includes('?') && key(h).startsWith(pathKey(pathOnly) + '?'); }));
       }
       return tabsIn.get(box);
     };
@@ -62,7 +71,8 @@
       // its own query (a filter tab) can only match the exact URL, and
       // so can its query-less sibling in a tab strip: the "All" tab
       // (/orders) stays dark on /orders?status=open and on its pages.
-      let active = key(href) === key(path || '') || (bare(href) === bare(pathOnly) && !inTabStrip(link));
+      if (href.startsWith('#')) continue;
+      let active = key(href) === key(path || '') || (!href.includes('?') && pathKey(href) === pathKey(pathOnly) && !inTabStrip(link));
       if (!active && link.hasAttribute('data-cui-match-prefix')) {
         // The attribute's VALUE is the prefix when non-empty — the
         // sidebar emits its MatchPath there, and the owned section can
@@ -78,8 +88,9 @@
         // text prefix with /docs but not a segment, so it stays out.
         // "/" is never used as a prefix, otherwise every nav link
         // would match every page.
-        const hrefBase = hrefPath.endsWith('/') ? hrefPath.slice(0, -1) : hrefPath;
-        if (hrefBase !== '' && (pathOnly === hrefBase || pathOnly.startsWith(hrefBase + '/'))) {
+        const hrefBase = pathKey(hrefPath);
+        const currentBase = pathKey(pathOnly);
+        if (hrefBase !== '/' && hrefBase !== '' && (currentBase === hrefBase || currentBase.startsWith(hrefBase + '/'))) {
           active = true;
         }
       }
@@ -95,11 +106,20 @@
         // <nav> is one: a <details> that wraps the whole nav (the site
         // header's phone drawer) is a menu, and opening it on load put
         // the drawer over every page.
-        const grp = link.closest('[data-hui-sidebar-group], details');
         const nav = link.closest('nav');
-        if (grp && nav && nav.contains(grp)) {
-          if (grp.tagName === 'DETAILS') grp.open = true;
-          else grp.setAttribute('open', '');
+        for (let group = link.parentElement; nav && group && group !== nav; group = group.parentElement) {
+          if (group.tagName === 'DETAILS') group.open = true;
+          else if (group.hasAttribute('data-hui-sidebar-group')) group.setAttribute('open', '');
+          // The button dialect uses a sibling panel, not <details>. Open
+          // every controlling ancestor, keeping its ARIA and hidden in sync.
+          for (const toggle of group.children) {
+            if (!toggle.hasAttribute('data-hui-sidebar-group-toggle')) continue;
+            const panel = document.getElementById(toggle.getAttribute('aria-controls'));
+            if (panel && group.contains(panel) && panel.contains(link)) {
+              panel.hidden = false;
+              toggle.setAttribute('aria-expanded', 'true');
+            }
+          }
         }
       } else if (link.classList.contains('active') || (navigated && link.hasAttribute('data-cui-activelink')) || link.hasAttribute('data-cui-match-prefix')) {
         // Clear what this module stamped (the class is our marker) and
@@ -131,7 +151,7 @@
   // drawer opened over. Scoped to the root, so the page is not swept.
   document.addEventListener('fui:widget-open', (e) => {
     const root = e.detail && e.detail.root;
-    if (root && root.querySelectorAll) update(location.pathname + location.search, !!G._navigated, root);
+    if (root && root.querySelectorAll) update(location.pathname + location.search, true, root);
   });
   // Correct the highlight for wherever the page is NOW, SSR covered the
   // initial URL, but a navigation may have happened before idle load.

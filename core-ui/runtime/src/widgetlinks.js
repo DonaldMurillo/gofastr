@@ -3,6 +3,30 @@
   'use strict';
   const G = window.__gofastr;
 
+  G._deepLinkOpen = function (cfg, o) {
+    const params = o.params || {};
+    const declared = cfg.deepLinkParams || [];
+    if (declared.length) {
+      const url = new URL(window.location.href);
+      for (const k of declared) {
+        // Own-property check: `in` walks the prototype chain, and a
+        // param literally named "constructor" would pass it.
+        const fromCaller = Object.prototype.hasOwnProperty.call(params, k);
+        const v = fromCaller ? params[k] : url.searchParams.get(k);
+        // Values read off the query string are attacker-supplied.
+        // Flagging them here is what lets setSignal's html render mode
+        // treat them as text instead of markup.
+        if (v != null) G.setSignal(k, v, fromCaller ? undefined : { untrusted: true });
+      }
+    }
+    if (o.pushUrl && cfg.deepLinkKey && cfg.deepLinkValue) {
+      // Skip if dismissed while the module loaded (cold cache).
+      const stillMounted = Object.prototype.hasOwnProperty.call(G._widgets, cfg.name) && G._widgets[cfg.name];
+      if (!stillMounted) return;
+      G._deepLinkPushUrl(cfg, params);
+    }
+  };
+
   G._deepLinkPushUrl = function (cfg, params) {
     const url = new URL(location.href);
     url.searchParams.set(cfg.deepLinkKey, cfg.deepLinkValue);

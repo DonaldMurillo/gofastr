@@ -89,6 +89,8 @@ func newTestUIHostWithMultipleRoutes() *UIHost {
 
 func assertContains(t *testing.T, html, substr string) {
 	t.Helper()
+	// Page ownership is internal metadata; these assertions compare authored head content.
+	html = strings.ReplaceAll(html, ` data-cui-page-meta=""`, "")
 	if !strings.Contains(html, substr) {
 		t.Errorf("expected HTML to contain %q, got:\n%s", substr, truncate(html, 500))
 	}
@@ -96,6 +98,7 @@ func assertContains(t *testing.T, html, substr string) {
 
 func assertNotContains(t *testing.T, html, substr string) {
 	t.Helper()
+	html = strings.ReplaceAll(html, ` data-cui-page-meta=""`, "")
 	if strings.Contains(html, substr) {
 		t.Errorf("expected HTML NOT to contain %q", substr)
 	}
@@ -121,7 +124,7 @@ func TestUIHostServesPages(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	assertContains(t, body, "Home Page")
 	assertContains(t, body, "Test Site")
 	assertContains(t, body, "© 2025")
@@ -209,7 +212,7 @@ func TestUIHostInjectsRuntimeJS(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	assertContains(t, body, `<script defer src="/__gofastr/runtime.js?v=`)
 }
 
@@ -222,7 +225,7 @@ func TestUIHostServesRuntimeJS(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	assertContains(t, body, "__gofastr")
 	// `EventSource` lived in a runtime.js comment until SSE was
 	// extracted to its own module. The minifier correctly strips
@@ -244,7 +247,7 @@ func TestUIHostInjectsSSEMetaTag(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	assertContains(t, body, `name="gofastr-sse"`)
 	assertContains(t, body, "/__gofastr/sse?session=")
 }
@@ -497,7 +500,7 @@ func TestUIHostReuseSession(t *testing.T) {
 	w2 := httptest.NewRecorder()
 	ds.ServeHTTP(w2, req2)
 
-	body := w2.Body.String()
+	body := withoutPageMetadataMarkers(w2.Body.String())
 	// The page embeds the bare session id (never the signed token) in
 	// the SSE meta; the id must be the one from the reused cookie.
 	id, ok := ds.verifySessionToken(cookie.Value)
@@ -541,7 +544,7 @@ func TestUIHostExtraScriptsInjectedBeforeBodyEnd(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	ds.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
-	page := rec.Body.String()
+	page := withoutPageMetadataMarkers(rec.Body.String())
 
 	for _, src := range []string{`<script defer src="/__livereload.js"></script>`, `<script defer src="/diag.js"></script>`} {
 		assertContains(t, page, src)
@@ -577,7 +580,7 @@ func TestUIHostAppCSSAlwaysEmitsRootVars(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	for _, want := range []string{
 		":root",
 		"--color-primary:",
@@ -605,7 +608,7 @@ func TestUIHostAppCSSShipsFrameworkBuiltinCSS(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	if !strings.Contains(body, ".fui-visually-hidden") {
 		t.Errorf("app.css must ship .fui-visually-hidden helper — without it the polite live region for SPA-nav and the skip link become visible on screen; got:\n%s",
 			truncate(body, 600))
@@ -630,7 +633,7 @@ func TestUIHostCustomCSS(t *testing.T) {
 	pageReq := httptest.NewRequest("GET", "/", nil)
 	pageRec := httptest.NewRecorder()
 	ds.ServeHTTP(pageRec, pageReq)
-	page := pageRec.Body.String()
+	page := withoutPageMetadataMarkers(pageRec.Body.String())
 	assertContains(t, page, `<link rel="stylesheet" href="/__gofastr/app.css?v=`)
 	if strings.Contains(page, "body { background: red; }") {
 		t.Errorf("custom CSS should not be inlined; expected external <link>. got:\n%s", page)
@@ -693,13 +696,13 @@ func TestUIHostRouteGraph(t *testing.T) {
 	// per deploy, instead of carrying it in every document.
 	pageRec := httptest.NewRecorder()
 	ds.ServeHTTP(pageRec, httptest.NewRequest("GET", "/", nil))
-	page := pageRec.Body.String()
+	page := withoutPageMetadataMarkers(pageRec.Body.String())
 	if strings.Contains(page, `id="gofastr-routes"`) {
 		t.Errorf("live page still inlines the route graph")
 	}
 	mRec := httptest.NewRecorder()
 	ds.ServeHTTP(mRec, httptest.NewRequest("GET", "/__gofastr/manifest.js", nil))
-	manifest := mRec.Body.String()
+	manifest := withoutPageMetadataMarkers(mRec.Body.String())
 	assertContains(t, manifest, `window.__gofastr_routes = [`)
 	assertContains(t, manifest, `"path":"/about"`)
 	// Titles and descriptions stay out of the graph: no runtime code
@@ -744,7 +747,7 @@ func TestUIHostInjectsActions(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
-	page := w.Body.String()
+	page := withoutPageMetadataMarkers(w.Body.String())
 	// Live pages no longer ship the whole-app concat: this page has no
 	// element carrying btn-1, so neither the legacy actions.js reference
 	// nor the per-id script belongs on it. The registry is reachable via
@@ -783,7 +786,7 @@ func TestUIHostMountAutoCompilesScreenActions(t *testing.T) {
 	w = httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	assertContains(t, body, `// Component: home`)
 	assertContains(t, body, `G.register(id, handlers)`)
 }
@@ -802,7 +805,7 @@ func TestUIHostActionsEndpoint(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	assertContains(t, body, "btn-1")
 }
 
@@ -938,7 +941,7 @@ func TestScreenDescriberMeta(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	if !strings.Contains(body, `<meta name="description" content="Welcome to the test site">`) {
 		t.Errorf("expected auto-emitted meta description from ScreenDescriber, got:\n%s",
 			body)
@@ -952,7 +955,7 @@ func TestNoMetaWithoutDescriber(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	if strings.Contains(body, `<meta name="description"`) {
 		t.Errorf("did not expect meta description when screen has no ScreenDescriber, got:\n%s",
 			body)
@@ -969,7 +972,7 @@ func TestPerPageMetaWinsOverGlobal(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	gIdx := strings.Index(body, "Global site description")
 	pIdx := strings.Index(body, "Welcome to the test site")
 	if gIdx < 0 || pIdx < 0 {
@@ -978,4 +981,10 @@ func TestPerPageMetaWinsOverGlobal(t *testing.T) {
 	if pIdx >= gIdx {
 		t.Errorf("expected per-screen meta BEFORE global meta, got per-page=%d global=%d", pIdx, gIdx)
 	}
+}
+
+// withoutPageMetadataMarkers leaves authored metadata byte-comparable while
+// the navigation ownership marker remains covered by the transport tests.
+func withoutPageMetadataMarkers(s string) string {
+	return strings.ReplaceAll(s, ` data-cui-page-meta=""`, "")
 }

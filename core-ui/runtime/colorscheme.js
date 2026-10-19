@@ -51,6 +51,9 @@
         } catch (_) {}
       },
     };
+    window.addEventListener('storage', (event) => {
+      if (event.key === KEY || event.key === null) window.__gofastr_theme.set(window.__gofastr_theme.get());
+    });
   } catch (_) { /* SSR / non-browser */ }
 })();
 (() => {
@@ -80,13 +83,13 @@
     // Re-apply on OS preference change when there's no explicit
     // override. If the user picks an explicit mode via a toggle, the
     // change is ignored until they switch back to 'auto'.
-    if (stored !== 'light' && stored !== 'dark') {
+    {
       try {
         const mq2 = window.matchMedia('(prefers-color-scheme: dark)');
         const handler = () => {
           // Re-read storage in case the toggle wrote since boot.
           try { stored = localStorage.getItem(KEY) || ''; } catch (_) {}
-          apply();
+          if (stored !== 'light' && stored !== 'dark') apply();
         };
         if (mq2.addEventListener) mq2.addEventListener('change', handler);
         else if (mq2.addListener) mq2.addListener(handler); // Safari < 14
@@ -109,5 +112,10 @@
         apply();
       },
     };
+    window.addEventListener('storage', (event) => {
+      if (event.key !== KEY && event.key !== null) return;
+      try { stored = localStorage.getItem(KEY) || ''; } catch (_) {}
+      apply();
+    });
   } catch (_) { /* SSR / non-browser */ }
 })();

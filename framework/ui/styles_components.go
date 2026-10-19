@@ -170,6 +170,12 @@ func buttonCSS(t style.Theme) string {
   box-shadow: var(--fui-button-state-shadow, var(--ui-button-shadow, var(--shadow-xs)));
 }
 .fui-button--secondary:hover { background: var(--color-surface-soft); }
+.fui-button--secondary[aria-pressed="true"],
+.fui-button--ghost[aria-pressed="true"] {
+  background: var(--color-primary);
+  color: var(--color-primary-fg);
+  border-color: var(--color-primary);
+}
 /* QuietUntilDirty: the leave guard sets data-hui-dirty on the form
    and on a control naming it by form=; until then the button reads
    as idle, in body text so its label and chips keep their contrast. */

@@ -54,7 +54,7 @@ func TestSitemapXMLBasic(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	if !strings.Contains(body, `<?xml version="1.0" encoding="UTF-8"?>`) {
 		t.Errorf("expected XML preamble, got:\n%s", body)
 	}
@@ -81,7 +81,7 @@ func TestSitemapExpandsDynamicRoutes(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	if strings.Contains(body, ":slug") {
 		t.Errorf("dynamic placeholder must be expanded, got: %s", body)
 	}
@@ -99,7 +99,7 @@ func TestSitemapSkipsDynamicWithoutStaticPaths(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	if strings.Contains(body, ":id") || strings.Contains(body, "/u/") {
 		t.Errorf("expected /u/:id to be skipped, got: %s", body)
 	}
@@ -119,7 +119,7 @@ func TestSitemapExcludePaths(t *testing.T) {
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
 
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	if strings.Contains(body, "/admin") {
 		t.Errorf("expected /admin to be excluded, got: %s", body)
 	}
@@ -152,7 +152,7 @@ func TestSitemapOmitsPolicyGatedScreens(t *testing.T) {
 		}
 		w := httptest.NewRecorder()
 		ds.ServeHTTP(w, req)
-		body := w.Body.String()
+		body := withoutPageMetadataMarkers(w.Body.String())
 		if !strings.Contains(body, `<loc>https://example.com/</loc>`) {
 			t.Errorf("user %q: public root missing:\n%s", user, body)
 		}
@@ -167,7 +167,7 @@ func TestRobotsDefaultsToAllow(t *testing.T) {
 	req := httptest.NewRequest("GET", "/robots.txt", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	if !strings.Contains(body, "User-agent: *") {
 		t.Errorf("expected default User-agent *, got:\n%s", body)
 	}
@@ -186,7 +186,7 @@ func TestRobotsCustomRules(t *testing.T) {
 	req := httptest.NewRequest("GET", "/robots.txt", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	for _, want := range []string{
 		"User-agent: GPTBot",
 		"Disallow: /private",
@@ -210,7 +210,7 @@ func TestRobotsDerivesSitemapFromBaseURL(t *testing.T) {
 	req := httptest.NewRequest("GET", "/robots.txt", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	if !strings.Contains(body, "Sitemap: https://example.com/sitemap.xml") {
 		t.Errorf("expected derived Sitemap line, got:\n%s", body)
 	}
@@ -246,7 +246,7 @@ func TestHreflangEmitsAlternateLinks(t *testing.T) {
 	req := httptest.NewRequest("GET", "/about", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	for _, want := range []string{
 		`<link rel="alternate" hreflang="en" href="https://example.com/en/about">`,
 		`<link rel="alternate" hreflang="es" href="https://example.com/es/about">`,
@@ -270,7 +270,7 @@ func TestCanonicalLink(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	want := `<link rel="canonical" href="https://example.com/canonical-path">`
 	if !strings.Contains(body, want) {
 		t.Errorf("expected canonical link, got:\n%s", body)
@@ -294,7 +294,7 @@ func TestScreenSchemaEmitsJSONLD(t *testing.T) {
 	req := httptest.NewRequest("GET", "/post", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	if !strings.Contains(body, `<script type="application/ld+json">`) {
 		t.Errorf("expected JSON-LD script, got:\n%s", body)
 	}
@@ -327,7 +327,7 @@ func TestSEOBundleEmitsAllTags(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	for _, want := range []string{
 		`<meta name="description" content="Bundle desc">`,
 		`<link rel="canonical" href="https://example.com/c">`,
@@ -363,7 +363,7 @@ func TestSEOBundleDescriptionOverrides(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	if !strings.Contains(body, `content="From bundle"`) {
 		t.Errorf("expected bundle description to win, got:\n%s", body)
 	}
@@ -392,7 +392,7 @@ func TestPerPageOGBeatsGlobal(t *testing.T) {
 	req := httptest.NewRequest("GET", "/product", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 
 	// Both tags must be present.
 	if !strings.Contains(body, `content="Per-page OG title"`) {
@@ -426,7 +426,7 @@ func TestSEOBundleFallsThroughEmptyFields(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 	for _, want := range []string{
 		`content="fallback desc"`,               // from ScreenDescriber
 		`href="https://example.com/c-fallback"`, // from ScreenCanonical

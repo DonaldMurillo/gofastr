@@ -28,7 +28,15 @@
 // core can still read them.
 (() => {
   'use strict';
-  const _wEv = (t, d) => document.dispatchEvent(new CustomEvent(t, { detail: d }));
+  const _wEv = (t, d) => {
+    const { root, name } = d;
+    root.id ||= name;
+    for (const trigger of document.querySelectorAll('[data-cui-open="' + CSS.escape(name) + '"]')) {
+      trigger.setAttribute('aria-controls', root.id);
+      trigger.setAttribute('aria-expanded', String(t === 'fui:widget-open'));
+    }
+    document.dispatchEvent(new CustomEvent(t, { detail: d }));
+  };
   // #409: widget lifecycle events are dispatched on document (fui: is
   // the widget-UI family; gofastr: stays reserved for window-level
   // navigation events). One shared dispatch spelling: three inline
@@ -39,11 +47,10 @@
 
   NS._chromeCache = NS._chromeCache || {};
 
+  const catalogEntry = name => NS._widgetCatalog && Object.prototype.hasOwnProperty.call(NS._widgetCatalog, name) ? NS._widgetCatalog[name] : null;
+
   NS.openWidget = async function (name, opts) {
-    const entry = NS._widgetCatalog
-      && Object.prototype.hasOwnProperty.call(NS._widgetCatalog, name)
-        ? NS._widgetCatalog[name]
-        : undefined;
+    const entry = catalogEntry(name);
     if (!entry) {
       // Static export + the target widget isn't registered (e.g. a note-only
       // showcase demo whose modal was never mounted). Don't fail silently,
@@ -55,7 +62,6 @@
       return;
     }
     const o = opts || {};
-    const params = o.params || {};
     // #321: the open trigger may carry context (data-cui-ctx). It is
     // opaque to the runtime: forwarded on the chrome fetch and keyed in
     // the client cache, never parsed. The chrome render authorises it
@@ -63,34 +69,14 @@
     const ctx = (o.btn && o.btn.getAttribute('data-cui-ctx')) || '';
     const cfg = entry.cfg;
     await NS._mountByName(name, ctx);
-    const declared = cfg.deepLinkParams || [];
-    if (declared.length) {
-      const url = new URL(window.location.href);
-      for (const k of declared) {
-        // Own-property check: `in` walks the prototype chain, and a
-        // param literally named "constructor" would pass it.
-        const fromCaller = Object.prototype.hasOwnProperty.call(params, k);
-        const v = fromCaller ? params[k] : url.searchParams.get(k);
-        // Values read off the query string are attacker-supplied.
-        // Flagging them here is what lets setSignal's html render mode
-        // treat them as text instead of markup.
-        if (v != null) NS.setSignal(k, v, fromCaller ? undefined : { untrusted: true });
-      }
-    }
-    if (o.pushUrl && cfg.deepLinkKey && cfg.deepLinkValue) {
-      if (!NS._deepLinkPushUrl) await NS.loadModule('widgetlinks');
-      // Skip if dismissed while the module loaded (cold cache).
-      const stillMounted = Object.prototype.hasOwnProperty.call(NS._widgets, name) && NS._widgets[name];
-      if (!stillMounted) return;
-      NS._deepLinkPushUrl(cfg, params);
+    if ((cfg.deepLinkParams || []).length || o.pushUrl && cfg.deepLinkKey && cfg.deepLinkValue) {
+      if (!NS._deepLinkOpen) await NS.loadModule('widgetlinks');
+      NS._deepLinkOpen(cfg, o);
     }
   };
 
   NS._mountByName = async function (name, ctx) {
-    const entry = NS._widgetCatalog
-      && Object.prototype.hasOwnProperty.call(NS._widgetCatalog, name)
-        ? NS._widgetCatalog[name]
-        : undefined;
+    const entry = catalogEntry(name);
     if (!entry) return;
     if (Object.prototype.hasOwnProperty.call(NS._widgets, name) && NS._widgets[name]) return; // already mounted
     const cfg = entry.cfg;

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/internal/buildoutput"
+
 	"golang.org/x/mod/modfile"
 )
 
@@ -129,6 +131,9 @@ func (p *Pass) discover() error {
 			// Hidden directories are tooling state (.git, .gofastr,
 			// .claude), never app source.
 			if strings.HasPrefix(name, ".") {
+				return fs.SkipDir
+			}
+			if buildoutput.StaticExport(os.DirFS(path), ".") {
 				return fs.SkipDir
 			}
 			return nil

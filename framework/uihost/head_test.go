@@ -358,3 +358,19 @@ func TestRenderStaticPageIncludesHeadTags(t *testing.T) {
 	// No SSE meta in static output
 	assertNotContains(t, page, `data-sse`)
 }
+
+func TestPartialCarriesInertPageMetadata(t *testing.T) {
+	application := app.NewApp("SEO")
+	host := New(application)
+	comp := &seoTestComp{headHTML: `<link rel="alternate" hreflang="es" href="/es"><script>alert(1)</script>`}
+	application.RegisterScreen(app.NewScreen("/en", comp), nil)
+	res := app.RenderResult{HTML: render.Text("Page"), Component: comp, SwapLayer: "l:site", Fills: []app.Fill{{Addr: "l:site~header", HTML: render.Text("Header")}}}
+	request := httptest.NewRequest("GET", "/en", nil)
+	request.Header.Set("X-Gofastr-Fills", "2")
+	response := httptest.NewRecorder()
+	host.writePartialResult(response, request, context.Background(), "/en", res, nil, 0)
+	body := response.Body.String()
+	if !strings.Contains(body, "data-cui-page-head=") || !strings.Contains(body, "data-cui-page-meta=") || strings.Contains(body, "<link ") || strings.Contains(body, "alert(1)") {
+		t.Fatalf("page metadata is absent, active, or unsafe: %s", body)
+	}
+}

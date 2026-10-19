@@ -586,7 +586,7 @@ const (
 	// spelling) plus the fixes and boot rows named with their tests.
 	// The line is the measurement plus clearance (moved DOWN from
 	// 13527, never up).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 8
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -944,7 +944,16 @@ const (
 	// module wait: a shared bound helper (15811, 13682 at level 6), an
 	// inline bound with a one-pass flag (15777, but 13665 at level 6), and
 	// this one, an async wait with no recursion at all (13655 at level 6).
-	coreCongestionWindowGZ = 14*1024 + 1443
+	// 2026-10-18, measured after merging main: page-owned head/language
+	// carriers and cache replay raise core from 13657/15777 to 14176/16426
+	// bytes at gzip levels 6/1. This is the plain-page navigation commit
+	// itself, like applyDocShell above: deferring it to another module would
+	// publish the old language/head while announcing the destination. The
+	// envelope reuses this implementation; deep-link parameter handling moved
+	// into widgetlinks, keeping envelope/widgets under their existing caps.
+	// 16426 is the smallest level-1 line accepting the real bundle. The padded
+	// level-6 fixture must still cross it, checked by the cliff guard below.
+	coreCongestionWindowGZ = 16426
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -992,6 +1001,7 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"nav waits for the incoming page's own sheets (_sheetsFor in _swapCommit)": 174, // (l1: 220)
 		"in-flight dedup joins only the live navigation (epoch-owned)":             3,   // (l1: -20)
 		"stale cleanup keeps the live dedup + one-shot bounded module wait":        8,   // (l1: 23)
+		"page head/language carriers, safe metadata application and cache replay":  519, // (l1: 649)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {

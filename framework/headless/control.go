@@ -182,6 +182,9 @@ type Option struct {
 	// text is edited.
 	Value string
 	Label string
+	// ExtraAttrs adds option metadata such as lang or a short display label.
+	// Value and selected state remain owned by the control.
+	ExtraAttrs html.Attrs
 }
 
 // SelectProps configures a dropdown.
@@ -228,7 +231,8 @@ func Select(p SelectProps, s Classes) render.HTML {
 		kids = append(kids, El("option", s, PartOption, Internal(ph), render.Text(p.Placeholder)))
 	}
 	for _, o := range p.Options {
-		a := html.Attrs{"value": o.Value}
+		a := Safe(o.ExtraAttrs, "value", "selected", "disabled")
+		a["value"] = o.Value
 		if p.Selected != "" && o.Value == p.Selected {
 			a["selected"] = ""
 		}

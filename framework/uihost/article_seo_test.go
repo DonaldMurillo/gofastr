@@ -34,7 +34,7 @@ func TestScreenArticleSynthesizesMetadata(t *testing.T) {
 	req := httptest.NewRequest("GET", "/post", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 
 	for name, want := range map[string]string{
 		"<article> wrapper":      "<article>",
@@ -75,7 +75,7 @@ func TestScreenArticleDoesNotDuplicateSchema(t *testing.T) {
 	req := httptest.NewRequest("GET", "/p", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 
 	if c := strings.Count(body, `"@type":"Article"`); c != 1 {
 		t.Errorf("expected exactly 1 Article JSON-LD (explicit ScreenSchema wins), got %d", c)
@@ -108,7 +108,7 @@ func TestScreenArticlePreservesExplicitOG(t *testing.T) {
 	req := httptest.NewRequest("GET", "/p", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 
 	if !strings.Contains(body, `<meta property="og:type" content="website">`) {
 		t.Errorf("explicit og:type=website must be preserved, got:\n%s", body)
@@ -142,7 +142,7 @@ func TestAsArticleDerivesFromScreenTitle(t *testing.T) {
 	req := httptest.NewRequest("GET", "/p", nil)
 	w := httptest.NewRecorder()
 	ds.ServeHTTP(w, req)
-	body := w.Body.String()
+	body := withoutPageMetadataMarkers(w.Body.String())
 
 	for name, want := range map[string]string{
 		"<article> wrapper":       "<article>",

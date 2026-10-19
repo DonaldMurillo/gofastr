@@ -76,7 +76,6 @@
   // since the rpc's finally only touches the node it disabled, by then
   // detached. Pages with nothing in flight pay only the selector.
   function captureHTML(el) {
-    if (!el.querySelector('.cui-loading,[data-state="pending"]')) return el.innerHTML;
     const c = el.cloneNode(true);
     for (const n of c.querySelectorAll('.cui-loading')) {
       n.classList.remove('cui-loading');
@@ -88,7 +87,8 @@
       n.setAttribute('data-state', 'idle');
       n.removeAttribute('aria-busy');
     }
-    return c.innerHTML;
+    c.querySelectorAll('template[data-cui-page-head]').forEach(node => node.remove());
+    return NS._docCarrier(document) + c.innerHTML;
   }
 
   const cacheScreen = (path, html, title, layer, fills, seed, partAddrs, parts, vt) => {
@@ -211,18 +211,6 @@
     if (m && m.focus) _focusSwapTarget(m);
     return el;
   };
-  const applyDocShell = (root) => {
-    const c = root && (root.matches('[data-cui-lang],[data-cui-skip-label]')
-      ? root : root.querySelector('[data-cui-lang],[data-cui-skip-label]'));
-    if (c) {
-      const lang = c.getAttribute('data-cui-lang');
-      if (lang) NS.doc.setHtmlAttr('lang', lang);
-      const skip = c.getAttribute('data-cui-skip-label');
-      const link = skip && document.querySelector('[data-skip-link]');
-      if (link) link.textContent = skip;
-    }
-  };
-
   const _settleScroll = (fn) => NS._settleScroll(fn);
   const scrollToHash = () => {
     const id = (location.hash || '').replace(/^#/, '');
@@ -235,7 +223,7 @@
     });
   };
   const finishNav = (path, prevPath, cached, root, ps) => {
-    applyDocShell(root);
+    NS._applyDocShell(root);
     if (!ps && (location.hash || (prevPath || '').split('?')[0] != path.split('?')[0])) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
     if (ps) {
@@ -440,7 +428,7 @@
     // chain keeps above the boundary travels as a fill.
     const seed = pdoc.querySelector('script#gofastr-signals-partial') || routeSeedIsland(routeSeedFromHead(pdoc));
     return {
-      swapKey, slot, html: docSlot.innerHTML, fills: captureLiveFills(docSlot, pdoc), seed,
+      swapKey, slot, html: NS._docCarrier(pdoc) + docSlot.innerHTML, fills: captureLiveFills(docSlot, pdoc), seed,
       title: pdoc.querySelector('title')?.textContent || document.title,
     };
   };
@@ -912,7 +900,9 @@
         swapCommit(myEpoch, prevPath, dest, () => {
           // The whole-shell swap: cross-chain replaces the outermost
           // shell, falling back to whole-main for a layout-less origin.
-          const el = swapShell(shellEl(pdoc) || nm);
+          const sourceRoot = shellEl(pdoc) || nm;
+          if (sourceRoot) sourceRoot.insertAdjacentHTML("afterbegin", NS._docCarrier(pdoc));
+          const el = swapShell(sourceRoot);
           // The fetched head's route keys fold through the same atomic
           // merge (route-only for the scoping reason on routeFold;
           // non-route page-scoped signals keep their correct SSR
@@ -1056,7 +1046,7 @@
         }
         const nm = pdoc.querySelector('main');
         title = pdoc.querySelector('title')?.textContent || document.title;
-        body = nm?.innerHTML ?? '';
+        body = NS._docCarrier(pdoc) + (nm?.innerHTML ?? '');
         swapKey = nm?.getAttribute('data-cui-layout-slot') || '';
       }
       const slot = swapKey ? findSlot(swapKey) : ((layouts.length === 0) ? _mainEl() : null);

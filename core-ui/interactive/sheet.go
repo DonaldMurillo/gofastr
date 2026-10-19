@@ -309,7 +309,14 @@ func sheetPillCSS(_ style.Theme) string {
 // (a widget's data-cui-action, a popover's popovertarget). The dialog's
 // name says what "Close" closes.
 func sheetHead(title, id string, closeAttrs map[string]string) render.HTML {
-	attrs := map[string]string{"class": "cui-sheet-head__close", "type": "button", "aria-label": "Close"}
+	return sheetHeadWithLabel(title, id, "", closeAttrs)
+}
+
+func sheetHeadWithLabel(title, id, closeLabel string, closeAttrs map[string]string) render.HTML {
+	if closeLabel == "" {
+		closeLabel = "Close"
+	}
+	attrs := map[string]string{"class": "cui-sheet-head__close", "type": "button", "aria-label": closeLabel}
 	for k, v := range closeAttrs {
 		attrs[k] = v
 	}
@@ -361,6 +368,9 @@ func sheetHeadCSS(_ style.Theme) string {
 
 // PhoneSheetConfig configures a PhoneSheet.
 type PhoneSheetConfig struct {
+	// CloseLabel names the dismiss control in the reader's language.
+	// Empty keeps the default "Close".
+	CloseLabel string
 	// ID is the sheet's element id, which the pill names to open it.
 	// Unique on the page. Required.
 	ID string
@@ -409,7 +419,7 @@ func PhoneSheet(cfg PhoneSheetConfig, body render.HTML) render.HTML {
 			"aria-labelledby": titleID,
 		},
 			html.Div(html.DivConfig{Class: "cui-phone-sheet__top"},
-				sheetHead(cfg.Title, titleID, map[string]string{
+				sheetHeadWithLabel(cfg.Title, titleID, cfg.CloseLabel, map[string]string{
 					"popovertarget":       cfg.ID,
 					"popovertargetaction": "hide",
 				})),

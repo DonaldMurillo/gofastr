@@ -697,8 +697,11 @@
     );
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", boot);
+  // Parser-deferred scripts run while readyState is interactive, before
+  // later adapters register. A dynamically injected script may instead run
+  // after DOMContentLoaded, so it must not wait for that event again.
+  if (document.readyState === "loading" || document.currentScript?.defer) {
+    document.addEventListener("DOMContentLoaded", boot, { once: true });
   } else {
     boot();
   }

@@ -76,7 +76,7 @@ func TestDynamicRouteLLMMDServed(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /things/42/llm.md: got %d, want 200", rec.Code)
 	}
-	body := rec.Body.String()
+	body := withoutPageMetadataMarkers(rec.Body.String())
 	if !strings.Contains(body, "Thing 42") {
 		t.Errorf("llm.md missing loaded title/content:\n%s", body)
 	}
@@ -123,7 +123,7 @@ func TestDynamicMetaDescriptionLoaded(t *testing.T) {
 		t.Fatalf("GET /things/42: got %d, want 200", rec.Code)
 	}
 	want := `<meta name="description" content="All about thing 42">`
-	if !strings.Contains(rec.Body.String(), want) {
+	if !strings.Contains(withoutPageMetadataMarkers(rec.Body.String()), want) {
 		t.Errorf("page missing loaded meta description %q", want)
 	}
 }
@@ -161,7 +161,7 @@ func TestNegotiatedMarkdownLoadsInstance(t *testing.T) {
 	req.Header.Set("Accept", "text/markdown")
 	rec := httptest.NewRecorder()
 	ds.ServeHTTP(rec, req)
-	body := rec.Body.String()
+	body := withoutPageMetadataMarkers(rec.Body.String())
 	if !strings.Contains(body, "Loaded detail body.") {
 		t.Errorf("negotiated markdown missing loaded content:\n%s", body)
 	}
@@ -201,7 +201,7 @@ func TestGatedLLMMDHasNoFrontMatter(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	ds.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/secret/42/llm.md", nil))
-	body := rec.Body.String()
+	body := withoutPageMetadataMarkers(rec.Body.String())
 	if strings.Contains(body, "NIGHTFALL") || strings.Contains(body, "Thing 42") {
 		t.Errorf("gated llm.md leaked metadata:\n%s", body)
 	}
