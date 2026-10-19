@@ -131,6 +131,8 @@ type interceptStackServer struct {
 	froms []string
 	// cssDelay holds the pane's component stylesheet back, in ms.
 	cssDelay atomic.Int64
+	// pageDelay holds partial page responses back to test navigation completion.
+	pageDelay atomic.Int64
 	// overlayMiss, when set, answers every overlay request after 300 ms
 	// without a pane: "decline" (200, no X-Gofastr-Overlay), "fail"
 	// (500) or "drop" (the connection closes; Chrome retries a dropped
@@ -197,6 +199,7 @@ func startInterceptStackServer(t *testing.T) *interceptStackServer {
 			w.Header().Set("X-Gofastr-Overlay", interceptOverlayAs(r.URL.Path))
 			fmt.Fprint(w, interceptOverlayBody(r.URL.Path, r.URL.RawQuery))
 		case r.Header.Get("X-Gofastr-Navigate") == "1":
+			time.Sleep(time.Duration(s.pageDelay.Load()) * time.Millisecond)
 			if r.URL.Path == "/slow-page" {
 				time.Sleep(1500 * time.Millisecond)
 			}
@@ -540,10 +543,13 @@ func TestInterceptForwardAfterBackLoadsPage(t *testing.T) {
 	}
 	// Forward today does what the single-layer intercept does: no layer
 	// re-opens; the URL renders as a plain page in the content cell.
+	// URL and overlay teardown precede the fetch commit. Delay the response
+	// so this test must wait for the destination content as well.
+	s.pageDelay.Store(250)
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`history.forward()`, nil)); err != nil {
 		t.Fatalf("forward: %v", err)
 	}
-	if !interceptWait(ctx, `location.pathname === '/rel/r1' && !document.getElementById('cui-intercept')`) {
+	if !interceptWait(ctx, `location.pathname === '/rel/r1' && !document.getElementById('cui-intercept') && document.getElementById('plain-screen')?.textContent === 'plain /rel/r1'`) {
 		t.Fatal("Forward never landed on the record as a plain page")
 	}
 	var main string

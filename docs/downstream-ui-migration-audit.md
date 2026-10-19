@@ -27,6 +27,8 @@ Use framework/ui first, then framework/headless. Keep custom code only for a sta
 | F17 | Static area navigation can retain the prior document language; page meta/alternate links do not follow live navigation or cache replay. | Carry inert page metadata with navigation payloads and cached content, refresh marked meta/link nodes, and retain global head nodes. Scripts are not replayed. |
 | F18 | Golden comparisons can fail only because Windows checked out CRLF. | Normalize line endings in the headless golden comparisons and runtime symbol manifest comparison. Golden content is unchanged. |
 | F19 | An option-only Markdown fence treats its title as a language and drops the filename. | Parse option-only info as metadata; native Markdown renders the title, numbering and highlights without a downstream fence parser. |
+| F20 | Docs compile-directive detection misses CRLF checkouts. | Accept both LF and CRLF fences, with a regression for each. |
+| F21 | The Forward-after-Back browser test reads content before the destination fetch commits. | Delay the fixture response and wait for the destination content, URL, and overlay closure. |
 
 F02, F07-F10, and F13 include backward-compatible API additions. These are not all regressions introduced by the dependency upgrade.
 
@@ -109,3 +111,6 @@ The PR branch merges main through `077632ea0` (#534 and #535). Local follow-up v
 
 
 The first remote follow-up run passed the original size and embedded-docs checks, but exposed further SEO assertions tied to attribute order and a catalog guard spelling the own-property analyzer could not recognize. The SEO assertions now match parsed head elements and exact attributes; a regression checks reordered/escaped attributes, wrong values, and rejection of body-only metadata carriers. The catalog helper uses the analyzer's recognized own-property spelling. The security analyzer remains unchanged and its existing negative control still runs. The affected SEO, registry-security, and module-budget checks pass locally; widgets remains below its original cap at 3,072 gzip bytes.
+
+
+F21 surfaced in the broader local runtime run. The original Forward assertion failed nine of ten focused repeats: URL changes and overlay removal happen before destination content arrives. The fixture now delays that response by 250 ms and the wait includes the destination content. All ten repeats pass. Restoring the old wait with the delay makes the test fail; restoring the content wait passes. This is a test synchronization fix; production navigation code is unchanged.
