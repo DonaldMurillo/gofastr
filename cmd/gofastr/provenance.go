@@ -84,7 +84,7 @@ func warnForceOverwrite(edited []string) {
 	for _, name := range edited {
 		warn("    %s", name)
 	}
-	warn("  If this code is maintained by hand, recover with `git checkout -- <file>` and do not regenerate it.")
+	warn("  Edits you never committed are gone. If this code is maintained by hand, restore the committed version with `git restore <file>` and do not regenerate it.")
 }
 
 // describeExisting says what made the files a scaffold generator found in

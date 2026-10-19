@@ -25,8 +25,9 @@ additive alternative: it writes only the new files from a partial yml, never
 overwriting. See [Additive generation](#additive-generation---add).
 
 `--force` overwrites everything, so it tells you what it is destroying.
-Every file the generator writes carries a provenance marker with a sum of
-its content (see [Codegen](codegen.md#provenance-markers)); before
+Every file the generator writes in a format with comments carries a
+provenance marker with a sum of its content (JSON and binary files such
+as fonts carry none; see [Codegen](codegen.md#provenance-markers)); before
 writing, `--force` names every target whose content no longer matches its
 sum, since a mismatch means someone edited that file after scaffolding. A
 marked file you never touched is not listed, even when today's template
@@ -37,7 +38,7 @@ listed when it differs from what replaces it.
 ⚠ --force is overwriting 2 file(s) edited since they were generated: the edits are being discarded:
 ⚠     app.go
 ⚠     resource.go
-⚠   If this code is maintained by hand, recover with `git checkout -- <file>` and do not regenerate it.
+⚠   Edits you never committed are gone. If this code is maintained by hand, restore the committed version with `git restore <file>` and do not regenerate it.
 ```
 
 It warns rather than stops: you asked to overwrite. Regenerating an app you
