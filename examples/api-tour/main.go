@@ -34,7 +34,13 @@ import (
 )
 
 func main() {
-	db, err := sql.Open("sqlite3", "./api-tour.db")
+	// DATABASE_URL wins, so a test or a deploy keeps the database out of
+	// the source tree.
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "./api-tour.db"
+	}
+	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		log.Fatal(err)
 	}

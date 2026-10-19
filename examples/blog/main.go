@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/DonaldMurillo/gofastr/battery/search"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -15,7 +16,13 @@ import (
 )
 
 func main() {
-	db, err := sql.Open("sqlite3", "./blog.db")
+	// DATABASE_URL wins, so a test or a deploy keeps the database out of
+	// the source tree.
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "./blog.db"
+	}
+	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
 		log.Fatal(err)
 	}
