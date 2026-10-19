@@ -159,6 +159,29 @@ func TestGoRunOfACommandIsATestEdge(t *testing.T) {
 	want(t, run(t, options{root: root, files: []string{"f/f.go"}}), "f")
 }
 
+// A package that embeds a nested package's files depends on them with no
+// import edge: cmd/gofastr embeds the blueprint's packages/ trees, each
+// its own package, and a template edit selected neither the generator
+// nor the gates that go run it.
+func TestEmbeddedNestedPackageSelectsTheEmbedder(t *testing.T) {
+	root := newRepo(t)
+	writeFiles(t, root, map[string]string{
+		"g/main.go":       "package main\n\nimport \"embed\"\n\n//go:embed all:tpl\nvar tpl embed.FS\n\nfunc main() { _ = tpl }\n",
+		"g/tpl/tpl.go":    "package tpl\n",
+		"g/tpl/style.css": "a{}\n",
+		"h/h.go":          "package h\n",
+		"h/h_test.go":     "package h\n\nimport (\n\t\"os/exec\"\n\t\"testing\"\n)\n\nfunc TestH(t *testing.T) { _ = exec.Command(\"go\", \"run\", \"example.com/m/g\") }\n",
+	})
+	want(t, run(t, options{root: root, files: []string{"g/tpl/style.css"}}), "g", "g/tpl", "h")
+	want(t, run(t, options{root: root, files: []string{"g/tpl/tpl.go"}}), "g", "g/tpl", "h")
+	// go list's EmbedFiles names only what exists; a deleted template
+	// still changes what g ships.
+	if err := os.Remove(filepath.Join(root, "g", "tpl", "style.css")); err != nil {
+		t.Fatal(err)
+	}
+	want(t, run(t, options{root: root, files: []string{"g/tpl/style.css"}}), "g", "g/tpl", "h")
+}
+
 // A gate that walks the repo reads files no import edge reaches.
 // internal/chromedptest's launch-allowance gate reads every _test.go, and
 // a hand-booted Chrome added elsewhere never selected it (#536).

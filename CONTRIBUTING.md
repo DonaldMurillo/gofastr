@@ -78,6 +78,19 @@ file so a change there still selects it:
 //gofastr:test-reads framework/ui/ /README.md docs/**/*.md importers:github.com/DonaldMurillo/gofastr/core-ui/registry
 ```
 
+A file a package embeds counts as part of that package even when it sits
+inside a nested package, so editing a blueprint template under
+`cmd/gofastr/packages/` selects the generator and every gate that runs
+it. To find tests that read undeclared files, run
+`scripts/test-reads-audit.sh` (optionally with package patterns). It
+runs the tests with Go's test log on, which records every file a test
+binary opens itself, and fails for each recorded file whose change would
+not select the package that read it. CI runs it every Monday. It cannot
+see reads by a subprocess (`go build`, `go run`, `git`), tests behind a
+build tag such as the `red` probes, or a test that depends on which
+files a directory holds rather than on their contents; those still need
+a directive written by hand.
+
 Windows CI runs one build with `CGO_ENABLED=0`.
 
 ### Known isolation rules

@@ -9,6 +9,11 @@
 //
 //   - a changed file sits in the package's directory or anywhere below it
 //     that is not itself a package (testdata, embedded assets, fixtures);
+//   - one of the package's //go:embed patterns covers a changed file,
+//     deleted ones included, which can sit inside a nested package: cmd/gofastr
+//     embeds the blueprint's packages/ trees, each its own package, so
+//     editing a template never selected the generator or the gates that
+//     run it;
 //   - the package imports an affected package, transitively (go list's
 //     Deps);
 //   - the package's test files import an affected package (TestImports
@@ -50,9 +55,12 @@
 // that path directly, and any changed .go file whose text, now or at the
 // base, names it in quotes: a nested module's file, a deleted file, or
 // one that dropped the import still changes what a gate reading "every
-// caller of this API" sees (core-ui/runtime's registry gates). Patterns are space-separated and a
-// file may carry several directive lines. A match selects the declaring
-// package only: nothing imports a test.
+// caller of this API" sees (core-ui/runtime/internal/treegate's registry
+// gates). Patterns are space-separated and a file may carry several
+// directive lines. A match selects the declaring package only: nothing
+// imports a test. scripts/test-reads-audit.sh finds the tests that need
+// a directive: it records the files each test opens and fails on one
+// whose change would not select its reader.
 //
 // Usage:
 //
@@ -103,6 +111,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -130,16 +139,19 @@ type options struct {
 }
 
 type pkg struct {
-	ImportPath     string
-	Name           string
-	Dir            string
-	Imports        []string
-	IgnoredGoFiles []string // build-excluded; a registry gate reads them anyway
-	Deps           []string
-	TestImports    []string
-	XTestImports   []string
-	TestGoFiles    []string
-	XTestGoFiles   []string
+	ImportPath         string
+	Name               string
+	Dir                string
+	Imports            []string
+	IgnoredGoFiles     []string // build-excluded; a registry gate reads them anyway
+	EmbedPatterns      []string
+	TestEmbedPatterns  []string
+	XTestEmbedPatterns []string
+	Deps               []string
+	TestImports        []string
+	XTestImports       []string
+	TestGoFiles        []string
+	XTestGoFiles       []string
 
 	reads testReadSet // from //gofastr:test-reads in the test files
 }
@@ -370,7 +382,11 @@ func widensToAll(files []string, extra []string) string {
 }
 
 // ownerDirs maps every changed file to the nearest enclosing package
-// directory. A file under no package (README.md, scripts/) owns nothing.
+// directory, and to every package whose //go:embed patterns cover it. A
+// file under no package (README.md, scripts/) owns nothing. The patterns
+// are matched rather than go list's EmbedFiles, which lists only what
+// exists now: a deleted template, or the old name of a renamed one, still
+// changes what the embedding package ships.
 func ownerDirs(root string, files []string, all []pkg) map[string]bool {
 	isPkg := make(map[string]bool, len(all))
 	for _, p := range all {
@@ -381,7 +397,13 @@ func ownerDirs(root string, files []string, all []pkg) map[string]bool {
 		if f == "" {
 			continue
 		}
-		d := filepath.Dir(filepath.Join(root, filepath.FromSlash(f)))
+		abs := filepath.Join(root, filepath.FromSlash(f))
+		for _, p := range all {
+			if embeds(p, abs) {
+				owners[p.Dir] = true
+			}
+		}
+		d := filepath.Dir(abs)
 		for {
 			if isPkg[d] {
 				owners[d] = true
@@ -394,6 +416,30 @@ func ownerDirs(root string, files []string, all []pkg) map[string]bool {
 		}
 	}
 	return owners
+}
+
+// embeds reports whether one of p's //go:embed patterns, test patterns
+// included, names file or a directory above it. Go leaves out a matched
+// directory's dot and underscore files unless the pattern says "all:";
+// counting them anyway only selects more.
+func embeds(p pkg, file string) bool {
+	rel, err := filepath.Rel(p.Dir, file)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+		return false
+	}
+	for _, pat := range slices.Concat(p.EmbedPatterns, p.TestEmbedPatterns, p.XTestEmbedPatterns) {
+		pat = strings.TrimPrefix(pat, "all:")
+		for at := rel; at != "."; at = path.Dir(at) {
+			if ok, _ := path.Match(pat, at); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // closure returns the import paths affected by the packages in dirs: the
@@ -465,7 +511,7 @@ func format(o options, all []pkg, set map[string]bool) []string {
 }
 
 func listPackages(root, tags string) ([]pkg, error) {
-	args := []string{"list", "-e", "-json=ImportPath,Name,Dir,Imports,IgnoredGoFiles,Deps,TestImports,XTestImports,TestGoFiles,XTestGoFiles"}
+	args := []string{"list", "-e", "-json=ImportPath,Name,Dir,Imports,IgnoredGoFiles,EmbedPatterns,TestEmbedPatterns,XTestEmbedPatterns,Deps,TestImports,XTestImports,TestGoFiles,XTestGoFiles"}
 	if tags != "" {
 		args = append(args, "-tags", tags)
 	}

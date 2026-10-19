@@ -160,7 +160,11 @@ expose them to agents connected to a live app.**
   `//gofastr:test-reads <pattern>` in the test file, or the selection
   never picks it up when those files change: `dir/`, a base name like
   `*_test.go`, a root-anchored `/README.md`, a glob with `**`, or
-  `importers:<import path>`.
+  `importers:<import path>`. `scripts/test-reads-audit.sh [pkgs]` finds
+  the undeclared ones: it records every file each test binary opens
+  itself (Go's test log) and fails on a file whose change would not
+  select its reader. CI runs it weekly. Subprocess reads (`go run`,
+  `git`) and build-tagged tests stay invisible to it.
 - **Test everything**: `./scripts/test-all.sh` (or `make test-all`), or
   `GOFASTR_TEST_ALL=1` in front of any of the gates above. Pushes to main
   and the merge queue always run everything in CI.
