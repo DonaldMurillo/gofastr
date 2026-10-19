@@ -167,7 +167,7 @@ func TestDeclaredTestReadsSelectThePackage(t *testing.T) {
 	writeFiles(t, root, map[string]string{
 		"w/w.go": "package w\n",
 		"w/w_test.go": "package w\n\n// The gate walks the repo.\n//\n//gofastr:test-reads *_test.go package.json\n" +
-			"//gofastr:test-reads c/ docs/**/*.md\n\nimport \"testing\"\n\nfunc TestW(t *testing.T) {}\n",
+			"//gofastr:test-reads c/ docs/**/*.md /ROOT.md notes/*/\n\nimport \"testing\"\n\nfunc TestW(t *testing.T) {}\n",
 		"x/x.go":      "package x\n",
 		"x/x_test.go": "package x\n\n// Mentions //gofastr:test-reads *.go in prose only.\n\nimport \"testing\"\n\nfunc TestX(t *testing.T) {}\n",
 	})
@@ -183,6 +183,10 @@ func TestDeclaredTestReadsSelectThePackage(t *testing.T) {
 		{"double star spans none", []string{"docs/guide.md"}, []string{"w"}},
 		{"star stays in one segment", []string{"docs/guide.txt", "f/f.go"}, []string{"f"}},
 		{"prose mention declares nothing", []string{"scripts/gen.go"}, nil},
+		{"leading slash anchors at the root", []string{"ROOT.md"}, []string{"w"}},
+		{"anchored name is not a base name", []string{"docs/a/ROOT.txt", "notes/ROOT.md"}, nil},
+		{"directory prefix with a glob", []string{"notes/2026/a.txt"}, []string{"w"}},
+		{"glob prefix needs its segment", []string{"notes/a.txt"}, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -204,17 +208,59 @@ func TestTestReadsImportersOfAPackage(t *testing.T) {
 	want(t, run(t, options{root: root, files: []string{"b/testdata/fixture.txt"}}), "b", "e", "r", "s")
 	want(t, run(t, options{root: root, files: []string{"s/s.go"}}), "s")
 	want(t, run(t, options{root: root, files: []string{"c/c.go"}}), "c", "d")
+
+	// A nested module is outside go list ./..., so only the file's text
+	// says it imports a.
+	writeFiles(t, root, map[string]string{
+		"nested/go.mod": "module example.com/nested\n\ngo 1.22\n",
+		"nested/n.go":   "package n\n\nimport \"example.com/m/a\"\n\nvar N = a.A()\n",
+	})
+	want(t, run(t, options{root: root, files: []string{"nested/n.go"}}), "r")
 }
 
-func TestEmptyTestReadsIsAnError(t *testing.T) {
+// The working tree no longer shows an import a deleted file, or a file
+// that dropped it, had at the base; the gate's input still changed.
+func TestTestReadsImportersSeesTheBase(t *testing.T) {
 	root := newRepo(t)
 	writeFiles(t, root, map[string]string{
-		"w/w.go":      "package w\n",
-		"w/w_test.go": "package w\n\n//gofastr:test-reads\n\nimport \"testing\"\n\nfunc TestW(t *testing.T) {}\n",
+		"r/r.go":      "package r\n",
+		"r/r_test.go": "package r\n\n//gofastr:test-reads importers:example.com/m/a\n\nimport \"testing\"\n\nfunc TestR(t *testing.T) {}\n",
+		"q/q.go":      "package q\n\nimport \"example.com/m/a\"\n\nvar Q = a.A()\n",
+		"q/keep.go":   "package q\n",
+		"u/u.go":      "package u\n\nimport \"example.com/m/a\"\n\nvar U = a.A()\n",
 	})
-	_, err := compute(options{root: root, files: []string{"f/f.go"}, format: "import", stderr: &bytes.Buffer{}})
-	if err == nil || !strings.Contains(err.Error(), "names no pattern") {
-		t.Fatalf("compute error = %v, want a no-pattern error", err)
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-q", "-m", "importers")
+	git(t, root, "checkout", "-q", "-b", "feature")
+	if err := os.Remove(filepath.Join(root, "q", "q.go")); err != nil {
+		t.Fatal(err)
+	}
+	writeFiles(t, root, map[string]string{"u/u.go": "package u\n\nvar U = 1\n"})
+	want(t, run(t, options{root: root, base: "main"}), "q", "r", "u")
+}
+
+// A directive that can never match reads as coverage while selecting
+// nothing, so it is an error.
+func TestUnmatchableTestReadsIsAnError(t *testing.T) {
+	for _, tc := range []struct{ directive, want string }{
+		{"//gofastr:test-reads", "names no pattern"},
+		{"//gofastr:test-reads importers:", "names no import path"},
+		{"//gofastr:test-reads ./README.md", "repo-relative"},
+		{"//gofastr:test-reads ../x.go", "repo-relative"},
+		{"//gofastr:test-reads docs/../x.go", "repo-relative"},
+		{"//gofastr:test-reads /", "names no path"},
+	} {
+		t.Run(tc.directive, func(t *testing.T) {
+			root := newRepo(t)
+			writeFiles(t, root, map[string]string{
+				"w/w.go":      "package w\n",
+				"w/w_test.go": "package w\n\n" + tc.directive + "\n\nimport \"testing\"\n\nfunc TestW(t *testing.T) {}\n",
+			})
+			_, err := compute(options{root: root, files: []string{"f/f.go"}, format: "import", stderr: &bytes.Buffer{}})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("compute error = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }
 

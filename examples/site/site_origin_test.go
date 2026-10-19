@@ -22,6 +22,7 @@ import (
 
 var exportBaseRe = regexp.MustCompile(`--export-base[ =]+(/[A-Za-z0-9._-]*)`)
 
+//gofastr:test-reads .github/workflows/pages.yml
 func TestSiteOriginMatchesDeployedBase(t *testing.T) {
 	wf, err := os.ReadFile("../../.github/workflows/pages.yml")
 	if err != nil {

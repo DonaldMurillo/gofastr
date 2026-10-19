@@ -10,6 +10,8 @@ import (
 // If you edit examples/<app>/gofastr.yml, re-copy it into exampleblueprints/
 // or this test fails. (go:embed can't reach the sibling examples/ dir, so the
 // copy is unavoidable; this test makes "exact yaml" enforceable.)
+//
+//gofastr:test-reads examples/meridian/gofastr.yml
 func TestEmbeddedBlueprintsMatchSource(t *testing.T) {
 	cases := []struct {
 		name string

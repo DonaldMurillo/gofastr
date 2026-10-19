@@ -40,14 +40,17 @@
 // in the test file:
 //
 //	//gofastr:test-reads *_test.go
-//	//gofastr:test-reads framework/ui/ README.md core-ui/**/*.js
+//	//gofastr:test-reads framework/ui/ /README.md core-ui/**/*.js
 //
 // A pattern ending in "/" is a directory prefix; one with no "/" matches
-// the base name anywhere ("*_test.go", "package.json"); any other is a
-// repo-relative glob where "**" spans directories. "importers:<import
-// path>" matches a change in any package that imports that path
-// directly, for a gate that reads the source of every caller of an API
-// (core-ui/runtime's registry gates). Patterns are space-separated and a
+// the base name anywhere ("*_test.go", "package.json"); one starting with
+// "/" is anchored at the repo root ("/README.md" is the root README
+// only); any other is a repo-relative glob where "**" spans directories.
+// "importers:<import path>" matches a change in any package that imports
+// that path directly, and any changed .go file whose text, now or at the
+// base, names it in quotes: a nested module's file, a deleted file, or
+// one that dropped the import still changes what a gate reading "every
+// caller of this API" sees (core-ui/runtime's registry gates). Patterns are space-separated and a
 // file may carry several directive lines. A match selects the declaring
 // package only: nothing imports a test.
 //
@@ -102,6 +105,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -324,9 +328,9 @@ func compute(o options) ([]string, error) {
 		return format(o, all, nil), nil
 	}
 
-	files := o.files
+	files, base := o.files, ""
 	if files == nil {
-		files, err = changedFiles(o)
+		files, base, err = changedFiles(o)
 		if err != nil {
 			fmt.Fprintf(o.stderr, "affected: %v; testing everything\n", err)
 			return format(o, all, nil), nil
@@ -339,8 +343,9 @@ func compute(o options) ([]string, error) {
 
 	owners := ownerDirs(o.root, files, all)
 	affected := closure(all, owners)
+	named := namedImports(o.root, base, files, all)
 	for _, p := range all {
-		if p.reads.matches(files, owners, all) {
+		if p.reads.matches(files, owners, all, named) {
 			affected[p.ImportPath] = true
 		}
 	}
@@ -554,22 +559,40 @@ func (r *testReadSet) parse(src []byte) error {
 				r.importersOf = append(r.importersOf, imp)
 				continue
 			}
-			r.paths = append(r.paths, readPattern(f))
+			re, err := readPattern(f)
+			if err != nil {
+				return fmt.Errorf("%s: %w", testReadsDirective, err)
+			}
+			r.paths = append(r.paths, re)
 		}
 	}
 	return nil
 }
 
 // readPattern turns one test-reads pattern into a regexp over
-// repo-relative slash paths: "dir/" is a prefix, a pattern with no "/"
-// matches the base name in any directory, and otherwise "**/" spans zero
-// or more directories, "*" and "?" stay within one.
-func readPattern(pat string) *regexp.Regexp {
-	if strings.HasSuffix(pat, "/") {
-		return regexp.MustCompile("^" + regexp.QuoteMeta(pat))
+// repo-relative slash paths: "dir/" is everything below dir, a leading
+// "/" anchors at the repo root, a pattern with no "/" matches the base
+// name in any directory, and otherwise "**/" spans zero or more
+// directories, "*" and "?" stay within one. A pattern that could never
+// match a repo-relative path ("./x", "../x", "/") is an error, not a
+// declaration that selects nothing.
+func readPattern(pat string) (*regexp.Regexp, error) {
+	for _, bad := range []string{"./", "../"} {
+		if strings.HasPrefix(pat, bad) || strings.Contains(pat, "/"+bad) {
+			return nil, fmt.Errorf("pattern %q: paths are repo-relative, without %q", pat, bad)
+		}
 	}
-	if !strings.Contains(pat, "/") {
+	switch {
+	case strings.HasPrefix(pat, "/"):
+		pat = strings.TrimPrefix(pat, "/")
+		if pat == "" || strings.HasPrefix(pat, "/") {
+			return nil, fmt.Errorf("pattern %q names no path", "/"+pat)
+		}
+	case !strings.Contains(pat, "/"):
 		pat = "**/" + pat
+	}
+	if strings.HasSuffix(pat, "/") {
+		pat += "**"
 	}
 	var b strings.Builder
 	b.WriteString("^")
@@ -590,13 +613,14 @@ func readPattern(pat string) *regexp.Regexp {
 		}
 	}
 	b.WriteString("$")
-	return regexp.MustCompile(b.String())
+	return regexp.Compile(b.String())
 }
 
-// matches reports whether a changed file matches a path pattern, or a
+// matches reports whether a changed file matches a path pattern, a
 // changed package (owners, by directory) directly imports a declared
-// import path.
-func (r testReadSet) matches(files []string, owners map[string]bool, all []pkg) bool {
+// import path, or a changed .go file names one (named, from
+// namedImports).
+func (r testReadSet) matches(files []string, owners map[string]bool, all []pkg, named map[string]bool) bool {
 	for _, f := range files {
 		for _, re := range r.paths {
 			if re.MatchString(f) {
@@ -606,6 +630,9 @@ func (r testReadSet) matches(files []string, owners map[string]bool, all []pkg) 
 	}
 	if len(r.importersOf) == 0 {
 		return false
+	}
+	if slices.ContainsFunc(r.importersOf, func(imp string) bool { return named[imp] }) {
+		return true
 	}
 	for _, p := range all {
 		if owners[p.Dir] && slices.ContainsFunc(r.importersOf, func(imp string) bool {
@@ -617,26 +644,69 @@ func (r testReadSet) matches(files []string, owners map[string]bool, all []pkg) 
 	return false
 }
 
+// namedImports returns the importers: paths any package declares that a
+// changed .go file names in quotes, in the working tree or, when base is
+// known, at the base commit. The package graph alone misses three
+// shapes: a file in a nested module (outside go list ./...), a deleted
+// file, and a file whose change removed the import. A quoted path in a
+// string literal counts too; that only widens the selection.
+func namedImports(root, base string, files []string, all []pkg) map[string]bool {
+	var wanted []string
+	for _, p := range all {
+		wanted = append(wanted, p.reads.importersOf...)
+	}
+	slices.Sort(wanted)
+	wanted = slices.Compact(wanted)
+	var goFiles []string
+	for _, f := range files {
+		if strings.HasSuffix(f, ".go") {
+			goFiles = append(goFiles, f)
+		}
+	}
+	named := map[string]bool{}
+	if len(wanted) == 0 || len(goFiles) == 0 {
+		return named
+	}
+	for _, imp := range wanted {
+		quoted := []byte(strconv.Quote(imp))
+		for _, f := range goFiles {
+			if src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(f))); err == nil && bytes.Contains(src, quoted) {
+				named[imp] = true
+				break
+			}
+		}
+		if named[imp] || base == "" {
+			continue
+		}
+		// git grep exits 1 on no match; only output decides.
+		out, _ := gitOutput(root, append([]string{"grep", "-l", "-F", "-e", string(quoted), base, "--"}, goFiles...)...)
+		if strings.TrimSpace(out) != "" {
+			named[imp] = true
+		}
+	}
+	return named
+}
+
 // changedFiles asks git for the change set: the working tree (staged and
-// unstaged) against the base commit, plus untracked files. Renames are
-// reported as a delete plus an add so the package a file left is tested
-// too.
-func changedFiles(o options) ([]string, error) {
+// unstaged) against the base commit, plus untracked files, and returns
+// that base commit. Renames are reported as a delete plus an add so the
+// package a file left is tested too.
+func changedFiles(o options) ([]string, string, error) {
 	base, err := resolveBase(o)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	diff, err := gitOutput(o.root, "diff", "--name-only", "--no-renames", base)
 	if err != nil {
-		return nil, fmt.Errorf("git diff against %s: %w", base, err)
+		return nil, "", fmt.Errorf("git diff against %s: %w", base, err)
 	}
 	untracked, err := gitOutput(o.root, "ls-files", "--others", "--exclude-standard")
 	if err != nil {
-		return nil, fmt.Errorf("git ls-files: %w", err)
+		return nil, "", fmt.Errorf("git ls-files: %w", err)
 	}
 	files := append(splitLines(diff), splitLines(untracked)...)
 	sort.Strings(files)
-	return slices.Compact(files), nil
+	return slices.Compact(files), base, nil
 }
 
 // resolveBase picks the base ref and, unless -diff-base, its merge base

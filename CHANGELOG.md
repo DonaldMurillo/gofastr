@@ -11,9 +11,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **Affected selection sees tests that read other packages' files.** A
   test file declares what it reads with `//gofastr:test-reads <pattern>`:
   a `dir/` prefix, a base name such as `*_test.go` or `package.json`, a
-  repo-relative glob where `**` spans directories, or
-  `importers:<import path>` for every package that imports that path.
-  `cmd/affected` selects the package when a changed file matches. The
+  root-anchored path such as `/README.md`, a repo-relative glob where
+  `**` spans directories, or `importers:<import path>`. The last matches
+  a change in any package that imports the path directly, and any changed
+  `.go` file that names it now or named it at the base (a nested module,
+  a deleted file, a dropped import). `cmd/affected` selects the package
+  when a changed file matches; a pattern that can never match, such as
+  `./README.md`, is an error. The
   repo-walking gates in `internal/chromedptest`, `framework/docs`,
   `framework/ui`, `framework/contracts/analyzers`, `core-ui/runtime`,
   `cmd/gofastr` and `examples/site` declare their inputs; before this, a

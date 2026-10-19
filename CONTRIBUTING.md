@@ -75,7 +75,7 @@ file so a change there still selects it:
 
 ```go
 //gofastr:test-reads *_test.go
-//gofastr:test-reads framework/ui/ docs/**/*.md importers:github.com/DonaldMurillo/gofastr/core-ui/registry
+//gofastr:test-reads framework/ui/ /README.md docs/**/*.md importers:github.com/DonaldMurillo/gofastr/core-ui/registry
 ```
 
 Windows CI runs one build with `CGO_ENABLED=0`.
