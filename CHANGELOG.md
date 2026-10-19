@@ -61,6 +61,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   names. The YAML format and flags are unchanged. Newly generated code
   behaves the same; its comments say app spec and its toast stack is
   named `app-toasts`. Apps already generated need no change.
+  **BREAKING**: `kiln/freeze.BlueprintYAML` is renamed `AppSpecYAML`,
+  with the same input and output.
 - **BREAKING: every generator runs as `gofastr generate <name>`, and
   `gofastr generate app [spec]` replaces `--from`.** The spec defaults
   to `gofastr.yml`; `--out`, `--force`, `--add`, `--dry-run` and `--json`
@@ -88,6 +90,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   setting never drops away unnoticed. `gofastr generate --config` and
   `gofastr verify --config` take a settings file, and `gofastr init`
   writes `gofastr.settings.yml`. `gofastr upgrade` reports each old file.
+  `codegen.HasCodegenSection` and `contracts.ConfigFileNames` are gone;
+  `core/settings` (`settings.Find`, `File.Section`) reads the file.
   See `gofastr docs settings`.
 - **`gofastr generate package <name>` records its copy as unmounted.** The
   chrome package copy carries the unmount marker and an

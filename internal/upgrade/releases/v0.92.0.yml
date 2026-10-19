@@ -1,5 +1,5 @@
 version: v0.92.0
-title: One generator command per generator; one settings file
+title: The app spec, one generator command per generator, one settings file
 notes:
   - change: "gofastr generate app [spec] replaces gofastr generate --from=<spec>; plain gofastr generate runs only the codegen config and refuses arguments it does not know, and a scaffold generator (app, entity, screen, package, cli) listed in the codegen config is an error"
     breaking: true
@@ -27,3 +27,18 @@ notes:
         - glob: "**/gofastr.yaml"
           match: '^(codegen|contracts|isolation):'
     guidance: "Copy each file's codegen:, contracts: or isolation: block into gofastr.settings.yml beside go.mod (a contracts file written without the contracts: wrapper needs one), move those sections out of gofastr.yml, and delete the old files. gofastr generate --config and gofastr verify --config now take the settings file. See gofastr docs settings."
+  - change: "kiln/freeze.BlueprintYAML is renamed AppSpecYAML; the output is unchanged"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/kiln/freeze.BlueprintYAML
+    guidance: "Rename the call to freeze.AppSpecYAML. It takes the same world and returns the same gofastr.yml bytes."
+  - change: "codegen.HasCodegenSection and contracts.ConfigFileNames are removed with the files they described; core/settings reads gofastr.settings.yml"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/codegen.HasCodegenSection
+        - gofastr/framework/contracts.ConfigFileNames
+    guidance: "Use core/settings: settings.Find(dir, \"codegen\") walks up to the project root and returns the gofastr.settings.yml it finds, and File.Section(\"codegen\") is nil when that file has no such section. settings.FileName names the one file that replaced the list."
