@@ -160,7 +160,7 @@ func TestRuntimeModule_Widgets(t *testing.T) {
 		"NS.openWidget",
 		"NS.closeWidget",
 		"NS._mountByName",
-		"NS._deepLinkPushUrl",
+		"NS._deepLinkOpen",
 		"NS._deepLinkStripUrl",
 		"NS._syncDeepLinks",
 		"NS._modalStack", // reads state from core

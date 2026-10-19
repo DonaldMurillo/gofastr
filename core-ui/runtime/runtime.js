@@ -1078,7 +1078,6 @@
     if (skip) carrier.setAttribute('data-cui-skip-label', skip.textContent);
     return carrier.outerHTML;
   };
-  window.__gofastr._syncPageHead = syncPageHead;
   window.__gofastr._docCarrier = docCarrier;
 
   // Cache the initial page so back-navigation to it works instantly.
@@ -1346,6 +1345,8 @@
     const link = skip && document.querySelector('[data-skip-link]');
     if (link) link.textContent = skip;
   };
+
+  window.__gofastr._applyDocShell = applyDocShell;
 
   // Shared tail of every successful swap. root is the swapped element,
   // exposed on the navigate event so teardown-aware modules can scope

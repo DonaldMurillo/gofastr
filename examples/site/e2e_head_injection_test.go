@@ -84,13 +84,20 @@ func TestE2E_HeadInjection_CanonicalOnSEOPage(t *testing.T) {
 
 	// /seo implements ScreenCanonical, must emit a canonical link.
 	seoHead := collectHeadHTML(t, ctx, base+"/seo")
-	if !strings.Contains(seoHead, `<link rel="canonical"`) {
+	var canonical string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.head.querySelector('link[rel="canonical"]')?.href || ""`, &canonical)); err != nil {
+		t.Fatal(err)
+	}
+	if canonical != siteOrigin+"/seo" {
 		t.Errorf("/seo should emit a canonical link; head:\n%s", seoHead)
 	}
 
 	// Home page has no canonical configured, must NOT emit one.
 	homeHead := collectHeadHTML(t, ctx, base+"/")
-	if strings.Contains(homeHead, `<link rel="canonical"`) {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.head.querySelector('link[rel="canonical"]')?.href || ""`, &canonical)); err != nil {
+		t.Fatal(err)
+	}
+	if canonical != "" {
 		t.Errorf("home page should NOT emit a canonical link (no global canonical configured); head:\n%s", homeHead)
 	}
 }

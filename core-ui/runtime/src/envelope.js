@@ -211,20 +211,6 @@
     if (m && m.focus) _focusSwapTarget(m);
     return el;
   };
-  const applyDocShell = (root) => {
-    NS._syncPageHead(root);
-    const fresh = root && root.querySelector('template[data-cui-page-head][data-cui-lang]');
-    const c = fresh || root && (root.matches('[data-cui-lang],[data-cui-skip-label]')
-      ? root : root.querySelector('[data-cui-lang],[data-cui-skip-label]'));
-    if (c) {
-      const lang = c.getAttribute('data-cui-lang');
-      if (lang) NS.doc.setHtmlAttr('lang', lang);
-      const skip = c.getAttribute('data-cui-skip-label');
-      const link = skip && document.querySelector('[data-skip-link]');
-      if (link) link.textContent = skip;
-    }
-  };
-
   const _settleScroll = (fn) => NS._settleScroll(fn);
   const scrollToHash = () => {
     const id = (location.hash || '').replace(/^#/, '');
@@ -237,7 +223,7 @@
     });
   };
   const finishNav = (path, prevPath, cached, root, ps) => {
-    applyDocShell(root);
+    NS._applyDocShell(root);
     if (!ps && (location.hash || (prevPath || '').split('?')[0] != path.split('?')[0])) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
     if (ps) {
