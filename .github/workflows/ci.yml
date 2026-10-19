@@ -312,7 +312,9 @@ jobs:
         # -coverprofile: the coverage-floors step below reads this one
         # merged profile instead of running the floored suites a second
         # time. Own-package coverage, the same arithmetic as `-cover`.
+        # test-start marks the run's start for the replay gate below.
         run: |
+          touch "$RUNNER_TEMP/test-start"
           go run ./cmd/affected \
             -exclude "$TEST_EXCLUDE" \
             -- go test -timeout=20m -coverprofile="$RUNNER_TEMP/cover.out" \
@@ -332,7 +334,7 @@ jobs:
             -- go test -timeout=20m -coverprofile="$RUNNER_TEMP/cover.out" \
             -skip "$TEST_SKIP" \
             | tee "$RUNNER_TEMP/replay.log"
-          scripts/test-cache-replay.sh "$RUNNER_TEMP/replay.log"
+          scripts/test-cache-replay.sh "$RUNNER_TEMP/replay.log" "$RUNNER_TEMP/test-start"
 
       - name: Benchmarks run once (affected packages)
         # `go test` never runs benchmarks, so a broken one fails nobody's
