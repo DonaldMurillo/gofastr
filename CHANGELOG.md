@@ -33,6 +33,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   names. The YAML format and flags are unchanged. Newly generated code
   behaves the same; its comments say app spec and its toast stack is
   named `app-toasts`. Apps already generated need no change.
+  **BREAKING**: `kiln/freeze.BlueprintYAML` is renamed `AppSpecYAML`,
+  with the same input and output.
 - **BREAKING: every generator runs as `gofastr generate <name>`, and
   `gofastr generate app [spec]` replaces `--from`.** The spec defaults
   to `gofastr.yml`; `--out`, `--force`, `--add`, `--dry-run` and `--json`
