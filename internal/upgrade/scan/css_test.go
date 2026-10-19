@@ -178,3 +178,16 @@ func TestCSSDeclarationGlob(t *testing.T) {
 	res := mustRun(t, cssWorkspace(t, map[string]string{"site/site.style.css": css, "static/app.css": css}), n)
 	wantHits(t, res, n, hitAt(css, "opacity", "site/site.style.css", "css opacity: 0.6"))
 }
+
+// Go's tooling ignores "_" and "." directories, and the CSS walk does too:
+// a _scratch tree of generated output is not the app's style sheet.
+func TestCSSSkipsUnderscoreAndDotDirs(t *testing.T) {
+	css := ".ui-button {\n\tcolor: red;\n}\n"
+	n := cssNote([]string{"ui-button"}, nil)
+	res := mustRun(t, cssWorkspace(t, map[string]string{
+		"static/app.style.css":       css,
+		"_scratch/gen/app.style.css": css,
+		".cache/app.style.css":       css,
+	}), n)
+	wantHits(t, res, n, hitAt(css, "ui-button {", "static/app.style.css", "css .ui-button"))
+}
