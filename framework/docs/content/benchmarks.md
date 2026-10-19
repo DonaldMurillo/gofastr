@@ -37,6 +37,7 @@ make bench-overhead      # alias for tier 7 (framework vs hand-rolled)
 
 make bench-sqlite        # everything, BENCH_SKIP_PG=1
 make bench-pg            # only the /postgres/ sub-benchmarks
+make bench-smoke         # every benchmark in the affected packages, once
 ```
 
 Tunable via env:
@@ -115,8 +116,8 @@ overhead but does not show the bounded-memory advantage. Worth fixing.
   Logging → SecurityHeaders → Timeout`. The Logging middleware writes
   stdout; benchmarks that don't redirect it will see I/O overhead.
 - **JSON casing**: every request runs `mapToCamelCase` once
-  (write paths run `mapToSnakeCase` too). ~26 allocations per row is
-  the current baseline; opportunities for buffer reuse exist.
+  (write paths run `mapToSnakeCase` too). 4 allocations per 10-key
+  row is the 2026-10-18 baseline.
 - **DSL parse**: agents may invoke this per prompt. Should stay well
   under 100µs for a complex query.
 
@@ -198,32 +199,50 @@ JSON, single-query, and filtered list endpoints, paired with the same
 endpoints expressed through the framework. The delta is what the
 declare-once style actually costs.
 
-What to look for:
+What to look for (2026-10-18, SQLite, darwin/arm64):
 
-- **Plaintext + JSON deltas should be in the 5-15% range.** These paths
-  go through the router and not much else; bigger overhead suggests
-  router work that should be inlined.
-- **SingleQuery delta exposes the entity + CRUD machinery.** Expect 20-
-  30% overhead from filter parsing, case conversion, projection logic.
-- **FilteredList delta is the worst case** (allocations dominate).
-  This is the hottest optimization target.
-- **Fixture authentication (2026-07-18).** Since commit `4758c4a0`
-  generated CRUD requires a session by default, so `BenchmarkT7_FilteredList_GoFastr`
-  and `BenchmarkTier1_IncludesVsN1` build their requests with
-  `benchAuthedGet` (helper in `bench_tier1_test.go`), which stamps a
-  user into the request context via `handler.SetUser`, the same shape
-  production auth middleware produces. Without it the `setupBlogDomain`
-  entities (no `OwnerField`/`Access`/`Config.Public`) 401 before the
-  List body runs and the bench measures the rejection, not the list.
-- **Single-parse threading (2026-07-18, issue #100B).** The List and
-  ServeStreamingList handlers now parse `r.URL.Query()` exactly once per
-  request and thread the resulting `url.Values` through every helper
-  (filter, sort, pagination, includes, nested filters, soft-delete gate,
-  projection, offset, stream check). The `filter` package exposes
-  additive `ParseFiltersValues` / `ParseSortValues` variants and a
-  shared exported `FilterSuffixes` operator table; the `r`-taking
-  originals remain as thin wrappers so external callers are unaffected.
-  See `perf-results.md` for the resulting before/after benchstat.
+- **Plaintext and JSON** go through the router and not much else. Both
+  run within 10% of `http.ServeMux` (Plaintext 445 ns against 410 ns,
+  JSON 542 ns against 494 ns, 10 allocs on each side). A bigger gap
+  points at router work on the request path.
+- **SingleQuery** exposes the entity and CRUD machinery: filter
+  parsing, case conversion, projection, the access check. It runs about
+  30% above the hand-rolled handler (7.6 µs against 5.8 µs).
+- **FilteredList** is the widest path. The hand-rolled baseline runs
+  the same COUNT query, selects the same eight columns and writes the
+  same `data`/`total`/`page`/`perPage`/`totalPages` envelope as the
+  generated list, so the pair compares equal work. The framework side
+  allocates less (2,381 allocs against 3,027) and runs about 4% slower
+  (167 µs against 161 µs).
+
+### Benchmarks measure the production posture
+
+The fixtures build requests the way a deployed app sees them:
+
+- `benchRequest` (in `bench_helpers_test.go`) creates a request whose
+  context switches off the two wrappers a test binary arms for every
+  response: the retired-markup scan (`internal/retired.ProductionContext`)
+  and the render diagnostics (`internal/renderdiag.ProductionContext`).
+  Production never runs either, so a benchmark that keeps them on times
+  dev instrumentation.
+- `benchAuthed` does the same and stamps a user into the context with
+  `handler.SetUser`, the shape production auth middleware produces.
+  Generated CRUD requires a session by default, so without it the
+  `setupBlogDomain` entities answer 401 before the handler body runs.
+- `benchMountCrud` mounts CRUD routes through `App.CrudHandler`, which
+  wires the registry, JSON casing, hooks and events. A bare
+  `NewCrudHandler` has no registry, so `?include=` answers 400.
+
+The `*_NetHTTP` baselines keep `httptest.NewRequest`: they never pass
+through either wrapper.
+
+### Every benchmark runs once in CI
+
+`go test` never runs benchmarks, so one that breaks fails nobody's
+build. `make bench-smoke` (`scripts/bench-smoke.sh`) runs every
+benchmark in the affected packages once (`-benchtime=1x`,
+`BENCH_SKIP_PG=1`), and CI runs it after the test step. It proves each
+benchmark still runs; it measures nothing.
 
 ## Tier 9: UI runtime streams, islands, and full SSR
 
@@ -243,8 +262,8 @@ those paths.
 ### What to look for
 
 - **Streaming wins over buffered-paginated** at any volume that pays
-  network round-trips. The first SQLite smoke run showed 14ms vs 15ms
-  (small win); Postgres showed 12ms vs 46ms, a **3.9× win**, because
+  network round-trips. SQLite shows a small win (12.2 ms vs 13.4 ms
+  on 2026-10-18); Postgres showed 12ms vs 46ms, a **3.9× win**, because
   one query beats 50 round-trips.
 - **SSE delivery_ratio** ≪ 1.0 under bursty emit. Default subscribers
   drop oldest events on overflow; this is documented behaviour. A
@@ -253,8 +272,8 @@ those paths.
   This is the response-time floor for "click → see new content."
 - **UIHostPageRender** vs `BenchmarkT7_JSON_GoFastr` (~500ns) tells
   you what SSR + hydration shell adds over a bare framework JSON
-  response. Expect 50-100µs at minimum because of the HTML tree
-  build and runtime script injection.
+  response. The 15–16 KB witness pages take about 140–160 µs
+  (2026-10-18) for the HTML tree build and runtime script injection.
 
 ### Caveats
 
@@ -290,37 +309,40 @@ Plus the two cmd binaries (`gofastr`, `kiln`) for build-only comparison.
 
 Output is Markdown to stdout and `dist/bench/resources.md`:
 
-```
-| App         | Bin size | Build wall | Build peak RAM | Idle RAM | Loaded RAM | Load reqs/dur |
-| minimal     |  8.8 MB  |   5.4s     | 311.3 MB       | 11.0 MB  | 12.5 MB    | 200 / 12ms    |
-| crud        | 12.9 MB  |  16.7s     | 759.8 MB       | 13.7 MB  | 14.8 MB    | 200 / 16ms    |
-| full        | 13.5 MB  |  16.9s     | 752.8 MB       | 14.8 MB  | 16.2 MB    | 200 / 17ms    |
-```
+Measured 2026-10-18 on darwin/arm64 with Go 1.27.2 (v0.90.0):
+
+| App     | Bin size | Build peak RAM | Idle RAM | Loaded RAM |
+|---------|---------:|---------------:|---------:|-----------:|
+| minimal | 22.2 MB  | 357 MB         | 21.7 MB  | 24.0 MB    |
+| crud    | 29.1 MB  | 831 MB         | 28.3 MB  | 30.3 MB    |
+| full    | 30.2 MB  | 804 MB         | 28.6 MB  | 31.4 MB    |
+
+The `gofastr` CLI builds to 52.2 MB and `kiln` to 31.2 MB.
 
 ### What to look for
 
-- **Bin size delta `crud` − `minimal`** is the cost of the SQLite cgo
-  driver. Switching to a pure-Go driver (`modernc.org/sqlite`) would
-  cut this in half but slow the binary a few %.
+- **Bin size delta `crud` − `minimal`** is mostly the SQLite driver,
+  the pure-Go `modernc.org/sqlite` (no cgo), plus the entity, CRUD and
+  migration packages.
 - **Bin size delta `full` − `crud`** is what every other framework
   feature costs at once: UI host, file storage, search backend, audit,
   cron, MCP, access control, multi-tenant, OpenAPI/Swagger, plugins.
-  About **+0.6 MB** total. They're code paths inside the framework
+  About **+1.1 MB** total. They're code paths inside the framework
   and its sibling packages, not separate binaries' worth of code.
-- **Build peak RAM** is mostly the cgo toolchain. CI machines need to
-  budget ~1 GB headroom for the compile step.
+- **Build peak RAM** is mostly compiling the SQLite driver, a large
+  machine-translated Go package. CI machines need to budget ~1 GB
+  headroom for the compile step.
 - **Idle vs Loaded RAM** should be roughly equal after a warmup. A
   significant climb under load means GC pressure, retained slices, or
   goroutine leaks. Pair with Tier 8's `HeapAfterLoad`.
 
 ### Dev-server RAM
 
-`scripts/dev-watch.sh` rebuilds the compiled binary on change and
-re-runs it. Its long-running RAM is the same as the running binary
-(see Idle RAM column for `full`), with brief spikes to the build peak
-(~750 MB on cgo builds) during rebuilds. There is no separate
-dev-server overhead worth measuring. It's a thin shell loop around
-`go build` + `exec`.
+`gofastr dev` runs the app plus a watcher that rebuilds on change. On
+`examples/meridian` the whole process tree idles at about 95 MB (the
+dev process itself at 35 MB), and a rebuild after a real edit peaks at
+about 256 MB with a warm build cache. A cold first build pays the full
+build peak from the table above.
 
 ## Tier 8: operational
 

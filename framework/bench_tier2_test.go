@@ -27,7 +27,7 @@ func BenchmarkMiddleware_DefaultChain(b *testing.B) {
 	b.Run("with-default-chain", func(b *testing.B) {
 		app := NewApp()
 		app.Router().GetFunc("/ping", noop)
-		req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+		req := benchRequest(b, http.MethodGet, "/ping", nil)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			rec := httptest.NewRecorder()
@@ -38,7 +38,7 @@ func BenchmarkMiddleware_DefaultChain(b *testing.B) {
 	b.Run("without-default-chain", func(b *testing.B) {
 		app := NewApp(WithoutDefaultMiddleware())
 		app.Router().GetFunc("/ping", noop)
-		req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+		req := benchRequest(b, http.MethodGet, "/ping", nil)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			rec := httptest.NewRecorder()
@@ -49,7 +49,7 @@ func BenchmarkMiddleware_DefaultChain(b *testing.B) {
 	b.Run("raw-router", func(b *testing.B) {
 		r := router.New()
 		r.GetFunc("/ping", noop)
-		req := httptest.NewRequest(http.MethodGet, "/ping", nil)
+		req := benchRequest(b, http.MethodGet, "/ping", nil)
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			rec := httptest.NewRecorder()

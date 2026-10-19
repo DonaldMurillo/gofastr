@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -79,7 +80,7 @@ func (l *latencyRecorder) report(b *testing.B) {
 func BenchmarkT6_ListConcurrency(b *testing.B) {
 	forEachBenchDialect(b, func(b *testing.B, db *sql.DB, _ Dialect) {
 		app := setupBlogDomain(b, db, 500, 0)
-		req := httptest.NewRequest(http.MethodGet, "/posts?limit=50", nil)
+		req := benchAuthed(b, http.MethodGet, "/posts?limit=50", nil)
 
 		for _, par := range []int{1, 8, 64} {
 			b.Run(fmt.Sprintf("parallelism=%d", par), func(b *testing.B) {
@@ -136,7 +137,7 @@ func BenchmarkT6_CreateConcurrency(b *testing.B) {
 					for pb.Next() {
 						id := counter.Add(1)
 						body := buildBody(id)
-						req := httptest.NewRequest(http.MethodPost, "/posts", bytesReader(body))
+						req := benchAuthed(b, http.MethodPost, "/posts", bytes.NewReader(body))
 						req.Header.Set("Content-Type", "application/json")
 						start := time.Now()
 						w := httptest.NewRecorder()
@@ -164,7 +165,7 @@ func BenchmarkT6_CreateConcurrency(b *testing.B) {
 func BenchmarkT6_MixedRW(b *testing.B) {
 	forEachBenchDialect(b, func(b *testing.B, db *sql.DB, _ Dialect) {
 		app := setupBlogDomain(b, db, 200, 0)
-		listReq := httptest.NewRequest(http.MethodGet, "/posts?limit=20", nil)
+		listReq := benchAuthed(b, http.MethodGet, "/posts?limit=20", nil)
 
 		buildBody := func(i int64) []byte {
 			body, _ := json.Marshal(map[string]any{
@@ -192,7 +193,7 @@ func BenchmarkT6_MixedRW(b *testing.B) {
 							// Write
 							id := counter.Add(1)
 							body := buildBody(id)
-							req := httptest.NewRequest(http.MethodPost, "/posts", bytesReader(body))
+							req := benchAuthed(b, http.MethodPost, "/posts", bytes.NewReader(body))
 							req.Header.Set("Content-Type", "application/json")
 							app.Router().ServeHTTP(w, req)
 							writes.Add(1)

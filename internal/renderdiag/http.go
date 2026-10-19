@@ -34,16 +34,31 @@ type productionStatusKey struct{}
 // ProductionStatus scopes production recovery status to a test-owned handler.
 func ProductionStatus(t testing.TB, next http.Handler) http.Handler {
 	t.Helper()
+	active := productionFlag(t)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), productionStatusKey{}, active)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// ProductionContext returns ctx carrying the exemption ProductionStatus
+// installs, for a caller that builds its own requests: a benchmark
+// timing the production render path rather than the test-only 500
+// wrapper.
+func ProductionContext(t testing.TB, ctx context.Context) context.Context {
+	t.Helper()
+	return context.WithValue(ctx, productionStatusKey{}, productionFlag(t))
+}
+
+func productionFlag(t testing.TB) *atomic.Bool {
+	t.Helper()
 	if !testing.Testing() {
 		panic("renderdiag: production status exemption requires a test binary")
 	}
 	active := new(atomic.Bool)
 	active.Store(true)
 	t.Cleanup(func() { active.Store(false) })
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), productionStatusKey{}, active)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+	return active
 }
 
 type testResponse struct {

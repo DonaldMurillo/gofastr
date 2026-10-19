@@ -49,9 +49,9 @@ func BenchmarkT8_ColdStart_Minimal(b *testing.B) {
 			Fields: []schema.Field{{Name: "random_number", Type: schema.Int}},
 		}.WithTimestamps(false))
 		app.Registry.Register(worlds)
-		RegisterCrudRoutes(app.Router(), NewCrudHandler(worlds, db), "/worlds")
+		benchMountCrud(b, app, worlds, "/worlds")
 
-		req := httptest.NewRequest(http.MethodGet, "/worlds", nil)
+		req := benchAuthed(b, http.MethodGet, "/worlds", nil)
 		rec := httptest.NewRecorder()
 		app.Router().ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -89,10 +89,10 @@ func BenchmarkT8_ColdStart_TenEntities(b *testing.B) {
 				},
 			}.WithTimestamps(false))
 			app.Registry.Register(ent)
-			RegisterCrudRoutes(app.Router(), NewCrudHandler(ent, db), fmt.Sprintf("/ent_%d", j))
+			benchMountCrud(b, app, ent, fmt.Sprintf("/ent_%d", j))
 		}
 
-		req := httptest.NewRequest(http.MethodGet, "/ent_0", nil)
+		req := benchAuthed(b, http.MethodGet, "/ent_0", nil)
 		rec := httptest.NewRecorder()
 		app.Router().ServeHTTP(rec, req)
 		if rec.Code != http.StatusOK {
@@ -122,7 +122,7 @@ func BenchmarkT8_HeapAfterLoad(b *testing.B) {
 	forEachBenchDialect(b, func(b *testing.B, db *sql.DB, _ Dialect) {
 		// Setup once; benchmark loop just measures memory after the workload.
 		app := setupBlogDomain(b, db, 200, 0)
-		req := httptest.NewRequest(http.MethodGet, "/posts?limit=50", nil)
+		req := benchAuthed(b, http.MethodGet, "/posts?limit=50", nil)
 		// Drive the load.
 		const reqs = 5000
 
@@ -162,7 +162,7 @@ func BenchmarkT8_HeapAfterLoad(b *testing.B) {
 func BenchmarkT8_GoroutinesAfterLoad(b *testing.B) {
 	forEachBenchDialect(b, func(b *testing.B, db *sql.DB, _ Dialect) {
 		app := setupBlogDomain(b, db, 200, 0)
-		req := httptest.NewRequest(http.MethodGet, "/posts?limit=50", nil)
+		req := benchAuthed(b, http.MethodGet, "/posts?limit=50", nil)
 		const reqs = 2000
 
 		before := runtime.NumGoroutine()

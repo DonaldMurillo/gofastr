@@ -86,7 +86,21 @@ type taskRun struct {
 	// (RequireInput/RequireAuth). Working after that is an error: the
 	// handler already handed control back to the client.
 	interrupted bool
+	// rn is the in-process run this task executes under, set when the
+	// run starts. Its halted flag refuses every mutation once
+	// CancelTask has claimed the task.
+	rn *run
 }
+
+func (t *taskRun) attach(rn *run) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.rn = rn
+}
+
+// haltedLocked reports whether CancelTask has claimed this run. The
+// caller holds t.mu.
+func (t *taskRun) haltedLocked() bool { return t.rn != nil && t.rn.halted.Load() }
 
 func newTaskRun(s *Server, rec *TaskRecord, msg *Message, r *http.Request, owner string) *taskRun {
 	return &taskRun{srv: s, rec: rec, msg: msg, req: r, owner: owner}
@@ -307,6 +321,9 @@ func (t *taskRun) resumeWorking(msg *Message) error {
 func (t *taskRun) mutate(build func(task *Task) (*StreamResponse, error)) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.haltedLocked() {
+		return fmt.Errorf("%w: task %s is being canceled", errConcurrentChange, t.rec.Task.ID)
+	}
 	cand := t.rec.Clone()
 	ev, err := build(&cand.Task)
 	if err != nil {
@@ -365,6 +382,7 @@ func (s *Server) invoke(ctx context.Context, t *taskRun, h Handler) (err error) 
 func (s *Server) finalize(ctx context.Context, t *taskRun, err error) {
 	t.mu.Lock()
 	local := t.rec.Task.Status.State
+	halted := t.haltedLocked()
 	t.mu.Unlock()
 
 	var final TaskState
@@ -374,7 +392,7 @@ func (s *Server) finalize(ctx context.Context, t *taskRun, err error) {
 		return
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		final, msg = TaskStateFailed, "task timed out"
-	case ctx.Err() != nil:
+	case ctx.Err() != nil, halted:
 		final = TaskStateCanceled
 	case err != nil:
 		final, msg = TaskStateFailed, "skill handler failed"
@@ -413,6 +431,12 @@ func (t *taskRun) setFinalAgainstStore(state TaskState, msgText string) {
 			return true
 		}
 		if cur := rec.Task.Status.State; cur.Terminal() || cur.Interrupted() {
+			// Settled elsewhere (CancelTask, another replica): adopt the
+			// stored record, so a SendMessage waiting on this run answers
+			// with it rather than with the run's stale WORKING copy.
+			t.mu.Lock()
+			t.rec = rec
+			t.mu.Unlock()
 			return true
 		}
 		cand := rec.Clone()

@@ -27,6 +27,22 @@ of the new type names.
   `Eq`, `Neq` and `In` accept only `T`. A value that has no identifier
   form, or whose constant name another name in the file already uses,
   gets no constant and is listed in a comment.
+- **`make bench-smoke` runs every benchmark once.** It covers the
+  packages `cmd/affected` selects, with `-benchtime=1x` and Postgres
+  skipped, and CI runs it after the test step, so a benchmark that
+  stops working now fails the build.
+
+### Changed
+- **SQL fragments and route gates cost fewer allocations per request.**
+  `core/query` returns a clean identifier or fragment as is instead of
+  building a `strings.Replacer` for it each time, and `core/router`
+  computes a route's gate key once at registration instead of on every
+  request.
+
+### Removed
+- **Widget roots no longer carry `data-hydrate`.** Nothing read the
+  attribute. `Widget.Render` emits `data-widget`, plus `data-behavior`
+  when the component has actions.
 
 ### Fixed
 - **The typed repository stores false, 0 and "".** `Create` and `Update`
@@ -56,6 +72,32 @@ of the new type names.
   `Patch`, no longer offer the owner field or the `multi_tenant` tenant
   column, which an update never sets, and `Input` no longer offers an
   `auto_generate` column.
+- **`CancelTask` can no longer lose to the handler it cancels.** It
+  canceled the run's context before storing CANCELED, so a handler that
+  completed on wake stored COMPLETED first and the client got -32002
+  for a task it had asked to cancel. The cancel now halts the local
+  run, which refuses the run's writes, then stores CANCELED, then wakes
+  the run, so neither a handler that completes on wake nor one writing
+  in a loop can beat it. A `SendMessage` waiting on the run answers
+  CANCELED rather than its stale WORKING copy, and a subscriber gets
+  the CANCELED event even when the handler returns before the cancel
+  publishes. The cancel's store calls are bounded by the store timeout,
+  so a stalled database fails the cancel instead of holding the run.
+- **56 framework benchmarks ran again.** Their requests had no session,
+  so generated CRUD answered 401 before the handler body ran, and the
+  POST/PUT body helper ended its input with an error other than
+  `io.EOF`. The fixtures now stamp a user, mount CRUD through
+  `App.CrudHandler`, and switch off the test-binary-only markup scan
+  and render diagnostics, so they time what a deployed app runs.
+  `BenchmarkT7_FilteredList_NetHTTP` now runs the same COUNT query and
+  selects the same columns as the generated list it is compared with.
+- **The benchmark docs carry current numbers.** `benchmarks.md` has
+  the 2026-10-18 binary sizes, build and dev RAM, and Tier 7 gaps, and
+  drops the cgo note (the SQLite driver is pure Go); `perf-results.md`
+  opens with a v0.90.0 snapshot ahead of the v0.26.0 one.
+- **The runtime-size docs state the core's real gzip size**: 13,655 B
+  at level 6 and 15,779 B at level 1, which is 1,443 B past the 14 KiB
+  congestion window. They said 12.3 KB.
 
 ## [0.90.0] - 2026-10-18
 

@@ -502,3 +502,416 @@ func TestPollStorePanicEndsStreamCleanly(t *testing.T) {
 		t.Fatalf("post-panic subscribe = %+v, want task t1 back", sr2.Task)
 	}
 }
+
+// lateWriteStore holds the CANCELED write until the woken handler has
+// tried its late write (or a short bound passes), so a cancel that
+// wakes the run before persisting loses to that write every time.
+type lateWriteStore struct {
+	Store
+	tried chan struct{}
+}
+
+func (s *lateWriteStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
+	if rec.Task.Status.State == TaskStateCanceled {
+		select {
+		case <-s.tried:
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	return s.Store.UpdateTask(ctx, rec)
+}
+
+// TestCancelPersistsBeforeWakingRun pins the CancelTask order: the
+// CANCELED write lands before the run's context is canceled. Waking the
+// handler first let its next write land on the unchanged task, so a
+// handler that completed on wake turned the cancel into -32002 and the
+// task into COMPLETED.
+func TestCancelPersistsBeforeWakingRun(t *testing.T) {
+	st := &lateWriteStore{Store: NewMemoryStore(), tried: make(chan struct{})}
+	h := newHarness(t, func(c *Config) { c.Store = st })
+	late := make(chan error, 1)
+	h.setHandler(func(ctx context.Context, tc TaskContext) error {
+		if err := tc.Working(TextPart("start")); err != nil {
+			return err
+		}
+		<-ctx.Done()
+		err := tc.Complete(TextPart("late"))
+		late <- err
+		close(st.tried)
+		return nil
+	})
+	task := h.send("alice", map[string]any{"returnImmediately": true})
+	h.waitTask("alice", task.ID, TaskStateWorking, 2*time.Second)
+
+	if _, e, raw := h.call("alice", MethodCancelTask, map[string]any{"id": task.ID}); e.Error != nil {
+		t.Fatalf("cancel: %+v body=%s", e.Error, raw)
+	}
+	select {
+	case err := <-late:
+		if err == nil {
+			t.Fatal("late Complete after cancel was accepted")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler never woke after cancel")
+	}
+	got := h.waitTask("alice", task.ID, TaskStateCanceled, 2*time.Second)
+	if len(got.History) != 2 {
+		t.Fatalf("history = %d messages, want 2 (the late write must not land)", len(got.History))
+	}
+}
+
+// busyStore makes every CANCELED write wait for one fresh handler
+// write first, so a cancel that leaves the run free to write loses the
+// version check on every attempt.
+type busyStore struct {
+	Store
+	wrote chan struct{}
+}
+
+func (s *busyStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
+	if rec.Task.Status.State == TaskStateCanceled {
+		select {
+		case <-s.wrote:
+		default:
+		}
+		select {
+		case <-s.wrote:
+		case <-time.After(100 * time.Millisecond):
+		}
+		return s.Store.UpdateTask(ctx, rec)
+	}
+	err := s.Store.UpdateTask(ctx, rec)
+	if err == nil {
+		select {
+		case s.wrote <- struct{}{}:
+		default:
+		}
+	}
+	return err
+}
+
+// TestCancelStopsBusyHandler pins that a handler writing in a loop
+// cannot starve CancelTask: the run's writes are refused from the
+// moment the cancel claims it, so the CANCELED write lands and the
+// handler is woken.
+func TestCancelStopsBusyHandler(t *testing.T) {
+	st := &busyStore{Store: NewMemoryStore(), wrote: make(chan struct{}, 1)}
+	h := newHarness(t, func(c *Config) { c.Store = st })
+	stopped := make(chan struct{})
+	h.setHandler(func(ctx context.Context, tc TaskContext) error {
+		defer close(stopped)
+		if err := tc.Working(TextPart("start")); err != nil {
+			return err
+		}
+		for ctx.Err() == nil {
+			if err := tc.Artifact(Artifact{ArtifactID: "tick", Parts: []Part{TextPart("x")}}, true); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	task := h.send("alice", map[string]any{"returnImmediately": true})
+	h.waitTask("alice", task.ID, TaskStateWorking, 2*time.Second)
+
+	if _, e, raw := h.call("alice", MethodCancelTask, map[string]any{"id": task.ID}); e.Error != nil {
+		t.Fatalf("cancel: %+v body=%s", e.Error, raw)
+	}
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("busy handler still running after cancel")
+	}
+	h.waitTask("alice", task.ID, TaskStateCanceled, 2*time.Second)
+}
+
+// finalizeFirstStore holds CancelTask's CANCELED write until a second
+// CANCELED write (the halted run's finalize) has landed.
+type finalizeFirstStore struct {
+	Store
+	n         atomic.Int32
+	finalized chan struct{}
+}
+
+func (s *finalizeFirstStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
+	if rec.Task.Status.State != TaskStateCanceled {
+		return s.Store.UpdateTask(ctx, rec)
+	}
+	if s.n.Add(1) == 1 {
+		select {
+		case <-s.finalized:
+		case <-time.After(2 * time.Second):
+		}
+		return s.Store.UpdateTask(ctx, rec)
+	}
+	err := s.Store.UpdateTask(ctx, rec)
+	close(s.finalized)
+	return err
+}
+
+// TestCancelAnswersRunFinalizedCanceled pins the other side of the
+// halt: a run that settles while halted finalizes as CANCELED, and the
+// cancel that halted it answers with the task instead of -32002 when
+// that write beats its own.
+func TestCancelAnswersRunFinalizedCanceled(t *testing.T) {
+	st := &finalizeFirstStore{Store: NewMemoryStore(), finalized: make(chan struct{})}
+	h := newHarness(t, func(c *Config) { c.Store = st })
+	h.setHandler(func(ctx context.Context, tc TaskContext) error {
+		if err := tc.Working(TextPart("start")); err != nil {
+			return err
+		}
+		for {
+			if err := tc.Artifact(Artifact{ArtifactID: "tick", Parts: []Part{TextPart("x")}}, true); err != nil {
+				return err
+			}
+			time.Sleep(time.Millisecond)
+		}
+	})
+	task := h.send("alice", map[string]any{"returnImmediately": true})
+	h.waitTask("alice", task.ID, TaskStateWorking, 2*time.Second)
+
+	_, e, raw := h.call("alice", MethodCancelTask, map[string]any{"id": task.ID})
+	if e.Error != nil {
+		t.Fatalf("cancel: %+v body=%s", e.Error, raw)
+	}
+	var resp SendMessageResponse
+	if err := json.Unmarshal(e.Result, &resp); err != nil || resp.Task == nil || resp.Task.Status.State != TaskStateCanceled {
+		t.Fatalf("cancel result = %s (err %v)", e.Result, err)
+	}
+	if got := st.n.Load(); got != 2 {
+		t.Fatalf("CANCELED writes = %d, want 2 (the run's finalize, then the cancel's lost race)", got)
+	}
+}
+
+// TestBlockingSendAnswersCanceled pins the answer a waiting SendMessage
+// gets when its task is canceled: CancelTask stores CANCELED before the
+// run settles, and the run's finalize must answer from that stored
+// state, not from its own copy still saying WORKING.
+func TestBlockingSendAnswersCanceled(t *testing.T) {
+	h := newHarness(t, nil)
+	ids := make(chan string, 1)
+	h.setHandler(func(ctx context.Context, tc TaskContext) error {
+		if err := tc.Working(TextPart("start")); err != nil {
+			return err
+		}
+		ids <- tc.Task().ID
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	sent := make(chan *env, 1)
+	go func() {
+		_, e, _ := h.call("alice", MethodSendMessage, map[string]any{
+			"message": map[string]any{
+				"role":     "ROLE_USER",
+				"parts":    []any{map[string]any{"text": "hi"}},
+				"metadata": map[string]any{"skill": "echo"},
+			},
+		})
+		sent <- e
+	}()
+	var id string
+	select {
+	case id = <-ids:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler never started")
+	}
+	if _, e, raw := h.call("alice", MethodCancelTask, map[string]any{"id": id}); e.Error != nil {
+		t.Fatalf("cancel: %+v body=%s", e.Error, raw)
+	}
+	select {
+	case e := <-sent:
+		var out SendMessageResponse
+		if e.Error != nil || json.Unmarshal(e.Result, &out) != nil || out.Task == nil {
+			t.Fatalf("SendMessage answer = %+v %s", e.Error, e.Result)
+		}
+		if out.Task.Status.State != TaskStateCanceled {
+			t.Fatalf("SendMessage answered %s, want CANCELED", out.Task.Status.State)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("SendMessage never answered after cancel")
+	}
+}
+
+// slowCancelStore returns from CancelTask's CANCELED write only after
+// the halted handler has returned on its own, so the run is torn down
+// before CancelTask gets to publish.
+type slowCancelStore struct {
+	Store
+	exited chan struct{}
+}
+
+func (s *slowCancelStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
+	err := s.Store.UpdateTask(ctx, rec)
+	if err == nil && rec.Task.Status.State == TaskStateCanceled {
+		select {
+		case <-s.exited:
+			time.Sleep(50 * time.Millisecond) // let finishRun run
+		case <-time.After(time.Second):
+		}
+	}
+	return err
+}
+
+// TestSubscriberSeesCancelOfHaltedRun pins that a subscriber gets the
+// CANCELED event even when the halted handler returns, and its run is
+// torn down, before CancelTask publishes.
+func TestSubscriberSeesCancelOfHaltedRun(t *testing.T) {
+	st := &slowCancelStore{Store: NewMemoryStore(), exited: make(chan struct{})}
+	h := newHarness(t, func(c *Config) { c.Store = st })
+	h.setHandler(func(ctx context.Context, tc TaskContext) error {
+		defer close(st.exited)
+		if err := tc.Working(TextPart("start")); err != nil {
+			return err
+		}
+		for {
+			time.Sleep(5 * time.Millisecond)
+			if err := tc.Working(TextPart("tick")); err != nil {
+				return err
+			}
+		}
+	})
+	task := h.send("alice", map[string]any{"returnImmediately": true})
+	h.waitTask("alice", task.ID, TaskStateWorking, 2*time.Second)
+	r := h.openStream("alice", MethodSubscribeToTask, map[string]any{"id": task.ID})
+	if _, sr := r.nextResult(2 * time.Second); sr.Task == nil {
+		t.Fatalf("no snapshot: %+v", sr)
+	}
+
+	if _, e, raw := h.call("alice", MethodCancelTask, map[string]any{"id": task.ID}); e.Error != nil {
+		t.Fatalf("cancel: %+v body=%s", e.Error, raw)
+	}
+	for {
+		ev, ok := r.next(2 * time.Second)
+		if !ok {
+			t.Fatal("stream ended without a CANCELED event")
+		}
+		if ev.comment != "" {
+			continue
+		}
+		var e env
+		var sr StreamResponse
+		if json.Unmarshal([]byte(ev.data), &e) != nil || json.Unmarshal(e.Result, &sr) != nil {
+			t.Fatalf("bad event %q", ev.data)
+		}
+		if sr.StatusUpdate != nil && sr.StatusUpdate.Status.State == TaskStateCanceled {
+			return
+		}
+	}
+}
+
+// wedgedCancelStore blocks every CANCELED write until its context ends:
+// a database that stalls on the cancel. Other writes go through.
+type wedgedCancelStore struct{ Store }
+
+func (s *wedgedCancelStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
+	if rec.Task.Status.State == TaskStateCanceled {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return s.Store.UpdateTask(ctx, rec)
+}
+
+// TestWedgedCancelWriteReleasesRun pins that a cancel against a stalled
+// store gives up after storeOpTimeout. The halted run's teardown waits
+// for the cancel, so an unbounded write pinned the run, and the blocking
+// SendMessage waiting on it, for as long as the store stalled.
+func TestWedgedCancelWriteReleasesRun(t *testing.T) {
+	prev := storeOpTimeout
+	storeOpTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { storeOpTimeout = prev })
+
+	h := newHarness(t, func(c *Config) { c.Store = &wedgedCancelStore{Store: NewMemoryStore()} })
+	h.setHandler(func(ctx context.Context, tc TaskContext) error {
+		if err := tc.Working(TextPart("start")); err != nil {
+			return err
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	task := h.send("alice", map[string]any{"returnImmediately": true})
+	h.waitTask("alice", task.ID, TaskStateWorking, 2*time.Second)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		h.call("alice", MethodCancelTask, map[string]any{"id": task.ID})
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("CancelTask blocked past storeOpTimeout on a wedged store")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for h.srv.runFor(task.ID) != nil {
+		if time.Now().After(deadline) {
+			t.Fatal("the halted run was never released")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// pairedCancelStore holds the first two CANCELED writes until both have
+// arrived, so two cancels have each claimed the run before either write
+// lands.
+type pairedCancelStore struct {
+	Store
+	n       atomic.Int32
+	arrived chan struct{}
+}
+
+func (s *pairedCancelStore) UpdateTask(ctx context.Context, rec *TaskRecord) error {
+	if rec.Task.Status.State == TaskStateCanceled && s.n.Add(1) <= 2 {
+		s.arrived <- struct{}{}
+		for s.n.Load() < 2 {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	return s.Store.UpdateTask(ctx, rec)
+}
+
+// TestOverlappingCancelsCloseOnce pins haltsOwner: of two cancels that
+// both found the same running task, only the one that halted the run
+// closes cancelDone. Closing it from both panics; answering -32002 to
+// the second fails the cancel the client asked for.
+func TestOverlappingCancelsCloseOnce(t *testing.T) {
+	st := &pairedCancelStore{Store: NewMemoryStore(), arrived: make(chan struct{}, 2)}
+	h := newHarness(t, func(c *Config) { c.Store = st })
+	h.setHandler(func(ctx context.Context, tc TaskContext) error {
+		if err := tc.Working(TextPart("start")); err != nil {
+			return err
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	task := h.send("alice", map[string]any{"returnImmediately": true})
+	h.waitTask("alice", task.ID, TaskStateWorking, 2*time.Second)
+
+	errs := make(chan string, 2)
+	for range 2 {
+		go func() {
+			_, e, raw := h.call("alice", MethodCancelTask, map[string]any{"id": task.ID})
+			if e.Error != nil {
+				errs <- fmt.Sprintf("%+v body=%s", e.Error, raw)
+				return
+			}
+			errs <- ""
+		}()
+	}
+	for range 2 {
+		select {
+		case <-st.arrived:
+		case <-time.After(2 * time.Second):
+			t.Fatal("both cancels never reached the store")
+		}
+	}
+	for range 2 {
+		select {
+		case e := <-errs:
+			if e != "" {
+				t.Fatalf("cancel: %s", e)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("a cancel never returned")
+		}
+	}
+	h.waitTask("alice", task.ID, TaskStateCanceled, 2*time.Second)
+}
