@@ -53,7 +53,7 @@ each command to the doc that covers it.
 - `gofastr validate <yml>`: validate an app spec without generating
   (exit 0 = valid; includes the unscoped-PII lint).
 - `gofastr generate app <yml>`: one-shot scaffold of the whole app
-  as owned Go ([tutorial](tutorial-app-spec.md)). `generate --add`
+  as owned Go ([tutorial](tutorial-app-spec.md)). `generate app --add`
   / `generate entity <name>` / `generate screen <name>` scaffold *new*
   files into an existing app; owned files are never touched.
   `generate screen <name> --from-a11y=<file>` builds the screen from a
@@ -453,9 +453,9 @@ does not cover: a runtime browser scan, and the dependency report.
   version independently. After `go get …@vX.Y.Z`, also
   `go install …/cmd/gofastr@vX.Y.Z`. `gofastr upgrade --apply` keeps
   them in step ([upgrading](upgrading.md)).
-- **`generate --force` on an app you've edited.** It regenerates the
+- **`generate app --force` on an app you've edited.** It regenerates the
   *entire* set and discards your changes. To add to an existing app use
-  `generate --add` / `generate entity <name>`; owned files are never
+  `generate app --add` / `generate entity <name>`; owned files are never
   touched there.
 - **`dev --pkg ./cmd/server` from the wrong directory.** Keep `--dir`
   at the project root and point `--pkg` below it; otherwise the watcher

@@ -765,7 +765,7 @@ appUI = fwApp.EntityUI(appExtensions)
 
 `fwApp.EntityUI` panics at boot on a name `appExtensions` uses that the
 entity does not declare, the way `App.Entity` refuses a bad declaration.
-The file ships even with zero entities, so a later `generate --add` never
+The file ships even with zero entities, so a later `generate app --add` never
 edits an owned file.
 
 #### Writable app screens (`create:`, edit, delete)

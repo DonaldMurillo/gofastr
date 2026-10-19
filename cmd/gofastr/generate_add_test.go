@@ -149,7 +149,7 @@ func TestAddOnlyOnGenerateApp(t *testing.T) {
 }
 
 // TestOverwriteErrorNamesAddPath pins issue #77 item 5: the refuse-to-
-// overwrite conflict error must name `generate --add` so a user who hits
+// overwrite conflict error must name `generate app --add` so a user who hits
 // it at the moment of need discovers the additive path without reading docs.
 func TestOverwriteErrorNamesAddPath(t *testing.T) {
 	_, bp := addSetup(t, addTestAppSpec("example.com/addtest"))
