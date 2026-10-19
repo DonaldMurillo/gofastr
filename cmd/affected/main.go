@@ -98,6 +98,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/scanner"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
@@ -128,15 +130,16 @@ type options struct {
 }
 
 type pkg struct {
-	ImportPath   string
-	Name         string
-	Dir          string
-	Imports      []string
-	Deps         []string
-	TestImports  []string
-	XTestImports []string
-	TestGoFiles  []string
-	XTestGoFiles []string
+	ImportPath     string
+	Name           string
+	Dir            string
+	Imports        []string
+	IgnoredGoFiles []string // build-excluded; a registry gate reads them anyway
+	Deps           []string
+	TestImports    []string
+	XTestImports   []string
+	TestGoFiles    []string
+	XTestGoFiles   []string
 
 	reads testReadSet // from //gofastr:test-reads in the test files
 }
@@ -343,7 +346,7 @@ func compute(o options) ([]string, error) {
 
 	owners := ownerDirs(o.root, files, all)
 	affected := closure(all, owners)
-	named := namedImports(o.root, base, files, all)
+	named := namedImports(o.root, base, files, owners, all)
 	for _, p := range all {
 		if p.reads.matches(files, owners, all, named) {
 			affected[p.ImportPath] = true
@@ -462,7 +465,7 @@ func format(o options, all []pkg, set map[string]bool) []string {
 }
 
 func listPackages(root, tags string) ([]pkg, error) {
-	args := []string{"list", "-e", "-json=ImportPath,Name,Dir,Imports,Deps,TestImports,XTestImports,TestGoFiles,XTestGoFiles"}
+	args := []string{"list", "-e", "-json=ImportPath,Name,Dir,Imports,IgnoredGoFiles,Deps,TestImports,XTestImports,TestGoFiles,XTestGoFiles"}
 	if tags != "" {
 		args = append(args, "-tags", tags)
 	}
@@ -537,13 +540,24 @@ func addCommandRuns(p *pkg, src []byte, mains []string) {
 
 const testReadsDirective = "//gofastr:test-reads"
 
-// parse adds the patterns of every //gofastr:test-reads line in src. The
-// directive must open the line's comment, so prose that mentions it
-// declares nothing. A directive with no pattern is an error: it would
-// read as coverage while selecting nothing.
+// parse adds the patterns of every //gofastr:test-reads comment in src.
+// The directive must open a // comment; go/scanner finds the comments, so
+// a fixture line inside a raw string declares nothing. A directive with
+// no pattern is an error: it would read as coverage while selecting
+// nothing.
 func (r *testReadSet) parse(src []byte) error {
-	for _, line := range strings.Split(string(src), "\n") {
-		rest, ok := strings.CutPrefix(strings.TrimSpace(line), testReadsDirective)
+	var sc scanner.Scanner
+	fset := token.NewFileSet()
+	sc.Init(fset.AddFile("", fset.Base(), len(src)), src, nil, scanner.ScanComments)
+	for {
+		_, tok, lit := sc.Scan()
+		if tok == token.EOF {
+			break
+		}
+		if tok != token.COMMENT {
+			continue
+		}
+		rest, ok := strings.CutPrefix(lit, testReadsDirective)
 		if !ok || rest != "" && rest[0] != ' ' && rest[0] != '\t' {
 			continue
 		}
@@ -646,11 +660,13 @@ func (r testReadSet) matches(files []string, owners map[string]bool, all []pkg, 
 
 // namedImports returns the importers: paths any package declares that a
 // changed .go file names in quotes, in the working tree or, when base is
-// known, at the base commit. The package graph alone misses three
-// shapes: a file in a nested module (outside go list ./...), a deleted
-// file, and a file whose change removed the import. A quoted path in a
-// string literal counts too; that only widens the selection.
-func namedImports(root, base string, files []string, all []pkg) map[string]bool {
+// known, at the base commit, or that a build-excluded file of a changed
+// package names. go list's Imports alone misses four shapes: a file in a
+// nested module (outside go list ./...), a deleted file, a file whose
+// change removed the import, and an import behind a build constraint
+// (the registry gates read every .go file, whatever the build). A quoted
+// path in a string literal counts too; that only widens the selection.
+func namedImports(root, base string, files []string, owners map[string]bool, all []pkg) map[string]bool {
 	var wanted []string
 	for _, p := range all {
 		wanted = append(wanted, p.reads.importersOf...)
@@ -661,6 +677,16 @@ func namedImports(root, base string, files []string, all []pkg) map[string]bool 
 	for _, f := range files {
 		if strings.HasSuffix(f, ".go") {
 			goFiles = append(goFiles, f)
+		}
+	}
+	for _, p := range all {
+		if !owners[p.Dir] {
+			continue
+		}
+		for _, name := range p.IgnoredGoFiles {
+			if rel, err := filepath.Rel(root, filepath.Join(p.Dir, name)); err == nil {
+				goFiles = append(goFiles, filepath.ToSlash(rel))
+			}
 		}
 	}
 	named := map[string]bool{}

@@ -216,6 +216,15 @@ func TestTestReadsImportersOfAPackage(t *testing.T) {
 		"nested/n.go":   "package n\n\nimport \"example.com/m/a\"\n\nvar N = a.A()\n",
 	})
 	want(t, run(t, options{root: root, files: []string{"nested/n.go"}}), "r")
+
+	// The registry gates read every .go file whatever the build; an
+	// import behind a constraint still makes v's assets their input.
+	writeFiles(t, root, map[string]string{
+		"v/v.go":       "package v\n",
+		"v/v_never.go": "//go:build never\n\npackage v\n\nimport \"example.com/m/a\"\n\nvar V = a.A()\n",
+		"v/v.js":       "x\n",
+	})
+	want(t, run(t, options{root: root, files: []string{"v/v.js"}}), "r", "v")
 }
 
 // The working tree no longer shows an import a deleted file, or a file
@@ -237,6 +246,16 @@ func TestTestReadsImportersSeesTheBase(t *testing.T) {
 	}
 	writeFiles(t, root, map[string]string{"u/u.go": "package u\n\nvar U = 1\n"})
 	want(t, run(t, options{root: root, base: "main"}), "q", "r", "u")
+}
+
+// A fixture line inside a raw string is data, not a directive.
+func TestTestReadsInARawStringIsData(t *testing.T) {
+	root := newRepo(t)
+	writeFiles(t, root, map[string]string{
+		"w/w.go":      "package w\n",
+		"w/w_test.go": "package w\n\nimport \"testing\"\n\nconst fixture = `\n//gofastr:test-reads\n//gofastr:test-reads *.md\n`\n\nfunc TestW(t *testing.T) { _ = fixture }\n",
+	})
+	want(t, run(t, options{root: root, files: []string{"README.md"}}))
 }
 
 // A directive that can never match reads as coverage while selecting

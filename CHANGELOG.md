@@ -15,9 +15,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `**` spans directories, or `importers:<import path>`. The last matches
   a change in any package that imports the path directly, and any changed
   `.go` file that names it now or named it at the base (a nested module,
-  a deleted file, a dropped import). `cmd/affected` selects the package
-  when a changed file matches; a pattern that can never match, such as
-  `./README.md`, is an error. The
+  a deleted file, a dropped import) or names it in a build-excluded file
+  of a changed package. `cmd/affected` selects the package when a changed
+  file matches. Only a `//` comment declares; a raw-string fixture line
+  does not. A pattern that can never match, such as `./README.md`, is an
+  error. The
   repo-walking gates in `internal/chromedptest`, `framework/docs`,
   `framework/ui`, `framework/contracts/analyzers`, `core-ui/runtime`,
   `cmd/gofastr` and `examples/site` declare their inputs; before this, a
