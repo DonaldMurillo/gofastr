@@ -22,7 +22,8 @@ import (
 )
 
 // Command lists every package in the main module that importPath builds
-// from, itself included, and reads each one's directory and embedded files.
+// from, itself included, and reads each one's directory, its embedded
+// files, and every directory between the two.
 // Go's test cache records those reads: a directory's listing carries each
 // entry's name, size and mtime, so an edited, added or removed source file
 // changes the key. It returns the paths it read.
@@ -60,12 +61,23 @@ func Command(t testing.TB, importPath string) []string {
 			t.Fatalf("read %s: %v", p.Dir, err)
 		}
 		read = append(read, p.Dir)
+		listed := map[string]bool{p.Dir: true}
 		for _, name := range p.EmbedFiles {
 			path := filepath.Join(p.Dir, filepath.FromSlash(name))
 			if _, err := os.Stat(path); err != nil {
 				t.Fatalf("stat %s: %v", path, err)
 			}
 			read = append(read, path)
+			// List each directory between the file and the package, so a
+			// file added beside it under an embedded directory changes the
+			// key too. The package directory's listing does not see it.
+			for dir := filepath.Dir(path); !listed[dir]; dir = filepath.Dir(dir) {
+				listed[dir] = true
+				if _, err := os.ReadDir(dir); err != nil {
+					t.Fatalf("read %s: %v", dir, err)
+				}
+				read = append(read, dir)
+			}
 		}
 	}
 	if len(read) == 0 {
