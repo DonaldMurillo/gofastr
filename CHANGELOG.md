@@ -39,8 +39,8 @@ of the new type names.
   computes a route's gate key once at registration instead of on every
   request.
 - **`gofastr verify` skips directories whose name starts with `_`**, the
-  same ones `go build ./...` ignores. Code there is never compiled, so
-  its findings were noise.
+  same ones `go build ./...` ignores and a directory `//go:embed` leaves
+  out. Nothing there ships, so its findings were noise.
 
 ### Removed
 - **Widget roots no longer carry `data-hydrate`.** Nothing read the
@@ -54,8 +54,10 @@ of the new type names.
   Tests read files the suite itself rewrites: the coverage manifests in
   the module's `.gofastr/`, the blueprint gates' scratch packages inside
   `examples/<name>/`, the `.env` the pack tests wrote into
-  `examples/meridian/`, and the `.git` directory, which
-  framework/isolation stats.
+  `examples/meridian/`, the SQLite files the blog, spa and api-tour
+  examples created in their own directories when the livereload test
+  booted them (they ignored `DATABASE_URL`; they read it now), and the
+  `.git` directory, which framework/isolation stats.
   `cmd/affected` now points `GOFASTR_AXE_COVERAGE_DIR` at a per-checkout
   directory in the user cache, the gates generate under a tracked
   `_scratch/blueprints/` without touching its listing, the pack tests
@@ -63,9 +65,19 @@ of the new type names.
   `.git/HEAD` instead. The git hooks drop the `libexec/git-core` entry
   git puts at the front of PATH, which every test that runs `go` or
   `git` records, so a hook's sweep replays what `make test` ran. A
-  second local sweep now replays all 282 packages in 7 s. CI stamps each file with an mtime derived
-  from its content (`scripts/content-mtimes.sh`), and a second run of the
-  test step must replay every package (`scripts/test-cache-replay.sh`).
+  second local sweep now replays all 282 packages in 7 s. CI stamps each
+  file with an mtime derived from its content
+  (`scripts/content-mtimes.sh`), restores the coverage manifests with the
+  test cache, since a replayed package records nothing, and a second run
+  of the test step must replay every package
+  (`scripts/test-cache-replay.sh`). The blueprint gates that `go run` the
+  generator list its in-module sources as inputs (`internal/testinputs`),
+  so a generator change re-runs them instead of replaying a stale pass.
+- **`gofastr verify` reads the semantic-coverage manifest from
+  `GOFASTR_SEMANTIC_COVERAGE_DIR` or `GOFASTR_AXE_COVERAGE_DIR` when one
+  is set.** Tests and servers already wrote it there, while verify kept
+  reading the project root, found no manifest, and skipped every coverage
+  rule.
 - **The typed repository stores false, 0 and "".** `Create` and `Update`
   marshalled the model struct, whose `omitempty` value fields dropped
   zero values: an update could never clear a field, and a create could

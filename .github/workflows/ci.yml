@@ -164,6 +164,28 @@ jobs:
           restore-keys: |
             go-test-${{ runner.os }}-
 
+      - name: Coverage manifest directory
+        # One directory for the axe and semantic-coverage manifests, shared
+        # by cmd/affected, the test steps and gofastr verify. Outside the
+        # checkout, because a manifest the sweep rewrites inside the module
+        # is an input that moves on every run. A fixed path, because the
+        # variable's value is part of every test's cache key.
+        run: echo "GOFASTR_AXE_COVERAGE_DIR=$HOME/.cache/gofastr-coverage" >> "$GITHUB_ENV"
+
+      - name: Coverage manifests (per-SHA, restored with the test cache)
+        # A package Go replays from the test cache runs nothing and records
+        # nothing, so the manifests its earlier run wrote come back from
+        # here, the way nx restores a cached task's outputs. Without them
+        # gofastr verify reads a manifest missing every replayed package.
+        # The manifests merge, so a record outlives a test that is later
+        # deleted; the coverage rules report at info.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/gofastr-coverage
+          key: gofastr-coverage-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            gofastr-coverage-${{ runner.os }}-
+
       - name: Install Chrome (stable chromedp suites run here too)
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
         with:

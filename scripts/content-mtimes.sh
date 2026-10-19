@@ -35,12 +35,16 @@ if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
 	exit 1
 fi
 
-git ls-files -s -z | perl -0 -ne '
+# 48 bits of the hash: 28 in the seconds, 20 in the fraction (2^-20 s
+# steps, exact in a double and kept by ext4's nanosecond timestamps). Two
+# versions of a file only share an mtime when they also share 48 bits of
+# blob hash, and Go would then also need them to be the same size.
+git ls-files -s -z | perl -MTime::HiRes=utime -0 -ne '
 	chomp;
 	my ($meta, $path) = split /\t/, $_, 2;
 	my (undef, $sha) = split / /, $meta;
 	next if -l $path || ! -f $path;
-	my $t = 978307200 + hex(substr($sha, 0, 7));
+	my $t = 978307200 + hex(substr($sha, 0, 7)) + hex(substr($sha, 7, 5)) / 1048576;
 	utime($t, $t, $path) or die "utime $path: $!\n";
 '
 

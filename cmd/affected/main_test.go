@@ -306,10 +306,7 @@ func TestWrappedCommandGetsCoverageDir(t *testing.T) {
 		t.Skip("prints the variable through sh")
 	}
 	t.Setenv(coverageDirEnv, "")
-	bin := filepath.Join(t.TempDir(), "affected")
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
-		t.Fatalf("build affected: %v\n%s", err, out)
-	}
+	bin := buildAffected(t)
 	root := newRepo(t)
 	if err := os.WriteFile(filepath.Join(root, "c", "c.go"), []byte("package c\n\nfunc C() int { return 7 }\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -322,5 +319,32 @@ func TestWrappedCommandGetsCoverageDir(t *testing.T) {
 	}
 	if want, _ := envValue(commandEnv(root), coverageDirEnv); string(out) != want {
 		t.Fatalf("wrapped command saw %s=%q, want %q", coverageDirEnv, out, want)
+	}
+}
+
+func buildAffected(t *testing.T) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "affected")
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build affected: %v\n%s", err, out)
+	}
+	return bin
+}
+
+// The hooks export what -coverage-dir prints before the sweep, so the
+// sweep and the gofastr verify after it agree on where the manifests are.
+func TestCoverageDirFlagPrintsTheWrappedValue(t *testing.T) {
+	t.Setenv(coverageDirEnv, "")
+	bin := buildAffected(t)
+	root := newRepo(t)
+	cmd := exec.Command(bin, "-coverage-dir")
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("affected -coverage-dir: %v", err)
+	}
+	want, _ := envValue(commandEnv(root), coverageDirEnv)
+	if got := strings.TrimSpace(string(out)); got != want || want == "" {
+		t.Fatalf("-coverage-dir printed %q, want the wrapped value %q", got, want)
 	}
 }

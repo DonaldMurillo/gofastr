@@ -37,6 +37,7 @@
 //	go run ./cmd/affected -tags red -format dir
 //	go run ./cmd/affected -exclude 'examples/site$' -- go test -p 2
 //	go run ./cmd/affected -match '/framework(/|$)' -- go test
+//	go run ./cmd/affected -coverage-dir           # where wrapped commands keep coverage manifests
 //
 // With a command after `--`, an empty set skips the command and exits 0
 // with a note on stderr: `go test` with no packages would test the
@@ -126,6 +127,7 @@ func main() {
 		exclude  = flag.String("exclude", "", "drop import paths matching this regexp from the output")
 		match    = flag.String("match", "", "keep only import paths matching this regexp")
 		format   = flag.String("format", "import", "output form: import (import paths) or dir (./relative dirs)")
+		covDir   = flag.Bool("coverage-dir", false, "print the coverage-manifest directory a wrapped command gets, then exit")
 		allIf    stringList
 	)
 	flag.Var(&allIf, "all-if-changed", "repo-relative file or dir/ prefix whose change widens to every package (repeatable)")
@@ -177,6 +179,10 @@ func main() {
 		fatal(fmt.Errorf("not inside a git repository: %w", err))
 	}
 	opts.root = strings.TrimSpace(root)
+	if *covDir {
+		fmt.Println(coverageDir(opts.root))
+		return
+	}
 
 	pkgs, err := compute(opts)
 	if err != nil {
@@ -226,13 +232,27 @@ func commandEnv(root string) []string {
 	if os.Getenv(coverageDirEnv) != "" {
 		return env
 	}
+	if dir := coverageDir(root); dir != "" {
+		env = append(env, coverageDirEnv+"="+dir)
+	}
+	return env
+}
+
+// coverageDir is the coverage root commandEnv hands the wrapped command:
+// the explicit setting, else a per-checkout directory in the user cache,
+// else "" (the module root) when there is no user cache. -coverage-dir
+// prints it, so `gofastr verify` in the hooks reads the manifests the
+// sweep wrote.
+func coverageDir(root string) string {
+	if v := os.Getenv(coverageDirEnv); v != "" {
+		return v
+	}
 	base, err := os.UserCacheDir()
 	if err != nil {
-		return env
+		return ""
 	}
 	sum := sha256.Sum256([]byte(root))
-	dir := filepath.Join(base, "gofastr", "test-coverage", hex.EncodeToString(sum[:6]))
-	return append(env, coverageDirEnv+"="+dir)
+	return filepath.Join(base, "gofastr", "test-coverage", hex.EncodeToString(sum[:6]))
 }
 
 func fatal(err error) {
