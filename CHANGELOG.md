@@ -60,8 +60,10 @@ of the new type names.
   directory in the user cache, the gates generate under a tracked
   `_scratch/blueprints/` without touching its listing, the pack tests
   read a copy, repo walkers skip `_` directories, and isolation reads
-  `.git/HEAD` instead. A second local sweep now replays all 282
-  packages in 7 s. CI stamps each file with an mtime derived
+  `.git/HEAD` instead. The git hooks drop the `libexec/git-core` entry
+  git puts at the front of PATH, which every test that runs `go` or
+  `git` records, so a hook's sweep replays what `make test` ran. A
+  second local sweep now replays all 282 packages in 7 s. CI stamps each file with an mtime derived
   from its content (`scripts/content-mtimes.sh`), and a second run of the
   test step must replay every package (`scripts/test-cache-replay.sh`).
 - **The typed repository stores false, 0 and "".** `Create` and `Update`

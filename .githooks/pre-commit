@@ -21,6 +21,12 @@
 
 set -e
 
+# Git runs hooks with its own libexec/git-core at the front of PATH. Tests
+# that run go or git record PATH in their Go test cache key, so with that
+# entry left in, a hook's sweep and a `make test` from the shell never
+# share a cached result. Drop it.
+PATH=${PATH#"$(git --exec-path):"}
+
 RED='\033[31m'
 GREEN='\033[32m'
 YELLOW='\033[33m'
