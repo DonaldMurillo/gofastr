@@ -200,6 +200,9 @@ func runGenerateSDK(args []string) {
 	}
 
 	files, err := renderSDKFiles(spec, opts.targets, !opts.noArchive)
+	if err == nil {
+		files, err = stampGeneratedFiles("sdk", files)
+	}
 	if err != nil {
 		fail("SDK generation failed: %v", err)
 		osExit(1)
@@ -218,6 +221,11 @@ func runGenerateSDK(args []string) {
 		return
 	}
 
+	for _, f := range files {
+		if existing, rerr := readFileUnder(opts.outDir, f.name); rerr == nil {
+			warnDerivedEdit("sdk", filepath.Join(opts.outDir, f.name), string(existing), "the entity declarations")
+		}
+	}
 	fileSet, err := fileSetFromGeneratedFiles(files, "sdk")
 	if err != nil {
 		fail("SDK generation failed: %v", err)
@@ -790,15 +798,13 @@ func (sdkGenerator) Generate(_ context.Context, genCtx *codegen.Context, cfg cod
 	if err != nil {
 		return nil, err
 	}
+	files, err = stampGeneratedFiles("sdk", files)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]codegen.GeneratedFile, 0, len(files))
 	for _, f := range files {
-		content := f.content
-		if strings.HasSuffix(f.name, ".go") {
-			if formatted, err := format.Source([]byte(content)); err == nil {
-				content = string(formatted)
-			}
-		}
-		out = append(out, codegen.GeneratedFile{Path: f.name, Content: content})
+		out = append(out, codegen.GeneratedFile{Path: f.name, Content: f.content})
 	}
 	return out, nil
 }

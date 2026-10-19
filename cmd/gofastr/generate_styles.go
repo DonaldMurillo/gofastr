@@ -260,10 +260,16 @@ func generateStyleFile(wd *os.Root, f styleFile, src string, checkDiags []ownsty
 		return err
 	}
 	out, err := ownstyle.GenerateFile(f.name, kind, css, model, pkg, sharedPkg)
+	if err == nil {
+		out, err = stampFile("styles", ownstyle.GeneratedFileName(f.name), out)
+	}
 	if err != nil {
 		return err
 	}
 	dst := filepath.Join(filepath.Dir(f.path), ownstyle.GeneratedFileName(f.name))
+	if existing, rerr := wd.ReadFile(dst); rerr == nil {
+		warnDerivedEdit("styles", filepath.ToSlash(dst), string(existing), filepath.ToSlash(f.rel))
+	}
 	//gofastr:allow(worldreadable) the file is generated Go source (ownstyle.GeneratedFileName ends in .go), a public build artifact like every other generated file; 0644 is the repo's mode for generated code
 	if err := wd.WriteFile(dst, []byte(out), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", dst, err)
@@ -572,12 +578,18 @@ func generateTokenFiles(wd *os.Root, files []styleFile, srcOf map[string]string,
 			continue
 		}
 		out, err := ownstyle.GenerateTokensFile(f.name, src, parsedOf[f.rel], pkg, perDir[filepath.Dir(f.path)] > 1)
+		if err == nil {
+			out, err = stampFile("styles", ownstyle.GeneratedTokensFileName(f.name), out)
+		}
 		if err != nil {
 			fail("%s: %v", f.rel, err)
 			failed = true
 			continue
 		}
 		dst := filepath.Join(filepath.Dir(f.path), ownstyle.GeneratedTokensFileName(f.name))
+		if existing, rerr := wd.ReadFile(dst); rerr == nil {
+			warnDerivedEdit("styles", filepath.ToSlash(dst), string(existing), filepath.ToSlash(f.rel))
+		}
 		//gofastr:allow(worldreadable) the file is generated Go source (ownstyle.GeneratedTokensFileName ends in .go), a public build artifact like every other generated file; 0644 is the repo's mode for generated code
 		if err := wd.WriteFile(dst, []byte(out), 0o644); err != nil {
 			fail("write %s: %v", dst, err)

@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -290,29 +292,78 @@ func safeWriteRoot(root string, allowCWD bool) (string, error) {
 type manifest struct {
 	Version int      `json:"version"`
 	Files   []string `json:"files"`
+	// Sums maps each file to the Sum of the content this run wrote, so the
+	// next run can tell a file edited since from an untouched one.
+	Sums map[string]string `json:"sums,omitempty"`
 }
 
-func cleanManifestFiles(root string) error {
+// readManifest loads root's manifest; a missing one is the zero manifest.
+func readManifest(root string) (manifest, error) {
 	if err := EnsureNoSymlinkPath(root); err != nil {
-		return err
+		return manifest{}, err
 	}
 	manifestPath := filepath.Join(root, ManifestName)
 	if err := EnsureNoSymlinkLeaf(manifestPath); err != nil {
-		return err
+		return manifest{}, err
 	}
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return manifest{}, nil
 		}
-		return err
+		return manifest{}, err
 	}
 	var m manifest
 	if err := json.Unmarshal(data, &m); err != nil {
-		return fmt.Errorf("read codegen manifest: %w", err)
+		return manifest{}, fmt.Errorf("read codegen manifest: %w", err)
 	}
 	if m.Version != ProtocolVersion {
-		return fmt.Errorf("codegen manifest version %d is not supported", m.Version)
+		return manifest{}, fmt.Errorf("codegen manifest version %d is not supported", m.Version)
+	}
+	return m, nil
+}
+
+// EditedOutputs returns the files under root, slash-relative and sorted,
+// that the last run wrote and that changed since: their content no longer
+// matches the sum the manifest recorded. A file gone from disk is not
+// edited, and a manifest written before sums existed reports nothing.
+func EditedOutputs(root string) ([]string, error) {
+	if _, err := os.Lstat(root); os.IsNotExist(err) {
+		return nil, nil
+	}
+	m, err := readManifest(root)
+	if err != nil || len(m.Sums) == 0 {
+		return nil, err
+	}
+	dir, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer dir.Close()
+	var edited []string
+	for _, rel := range slices.Sorted(maps.Keys(m.Sums)) {
+		clean, err := SafeRelativePath(rel)
+		if err != nil {
+			return nil, err
+		}
+		data, err := dir.ReadFile(filepath.FromSlash(clean))
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return nil, err
+		}
+		if Sum(string(data)) != m.Sums[rel] {
+			edited = append(edited, clean)
+		}
+	}
+	return edited, nil
+}
+
+func cleanManifestFiles(root string) error {
+	m, err := readManifest(root)
+	if err != nil {
+		return err
 	}
 	for _, path := range m.Files {
 		rel, err := SafeRelativePath(path)
@@ -410,11 +461,13 @@ func pruneEmptyParents(root, dir string) {
 
 func writeManifest(root string, files []GeneratedFile) error {
 	paths := make([]string, 0, len(files))
+	sums := make(map[string]string, len(files))
 	for _, file := range files {
 		paths = append(paths, file.Path)
+		sums[file.Path] = Sum(file.Content)
 	}
 	sort.Strings(paths)
-	data, err := json.MarshalIndent(manifest{Version: ProtocolVersion, Files: paths}, "", "  ")
+	data, err := json.MarshalIndent(manifest{Version: ProtocolVersion, Files: paths, Sums: sums}, "", "  ")
 	if err != nil {
 		return err
 	}

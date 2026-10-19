@@ -41,23 +41,29 @@ type generatorSpec struct {
 }
 
 // generators is the one registry every generator lives in. The help text,
-// the subcommand dispatch and the codegen-config check all read it, so a
-// new generator is one entry here.
-var generators = []generatorSpec{
-	{name: "app", kind: scaffoldKind, usage: "app [spec] [--out=<dir>] [--force | --add] [--dry-run] [--json]",
-		summary: "Generate an app from an app spec (default gofastr.yml; a file or a directory)", run: runGenerateApp},
-	{name: "entity", kind: scaffoldKind, usage: "entity <name> [--out=<dir>] [--dry-run] [--json]",
-		summary: "Add an editable entity stub to a generated app", run: generateScaffoldEntity},
-	{name: "screen", kind: scaffoldKind, usage: "screen <name> [--from-a11y=<file>] [--out=<dir>] [--dry-run] [--json]",
-		summary: "Add an editable screen stub, or build it from a Playwright aria snapshot", run: generateScaffoldScreen},
-	{name: "package", kind: scaffoldKind, usage: "package [<name>] [--out=<dir>] [--dry-run]",
-		summary: "Copy a canonical chrome package (siteheader, sitefooter, docpage) into the app; no name lists them", run: runGeneratePackage},
-	{name: "cli", kind: scaffoldKind, usage: "cli [flags]",
-		summary: "Generate a customer-facing CLI for the app API", run: runGenerateCLI},
-	{name: "sdk", kind: derivedKind, usage: "sdk [flags]",
-		summary: "Generate Go and JavaScript/TypeScript API clients", run: runGenerateSDK},
-	{name: "styles", kind: derivedKind, usage: "styles [patterns]",
-		summary: "Typed Go for app tokens and owned style sheets", run: runGenerateStyles},
+// the subcommand dispatch, the codegen-config check and the provenance
+// marker all read it, so a new generator is one entry here. init fills it:
+// the run funcs stamp their output through this registry, and a package
+// var initializer may not refer back to itself.
+var generators []generatorSpec
+
+func init() {
+	generators = []generatorSpec{
+		{name: "app", kind: scaffoldKind, usage: "app [spec] [--out=<dir>] [--force | --add] [--dry-run] [--json]",
+			summary: "Generate an app from an app spec (default gofastr.yml; a file or a directory)", run: runGenerateApp},
+		{name: "entity", kind: scaffoldKind, usage: "entity <name> [--out=<dir>] [--dry-run] [--json]",
+			summary: "Add an editable entity stub to a generated app", run: generateScaffoldEntity},
+		{name: "screen", kind: scaffoldKind, usage: "screen <name> [--from-a11y=<file>] [--out=<dir>] [--dry-run] [--json]",
+			summary: "Add an editable screen stub, or build it from a Playwright aria snapshot", run: generateScaffoldScreen},
+		{name: "package", kind: scaffoldKind, usage: "package [<name>] [--out=<dir>] [--dry-run]",
+			summary: "Copy a canonical chrome package (siteheader, sitefooter, docpage) into the app; no name lists them", run: runGeneratePackage},
+		{name: "cli", kind: scaffoldKind, usage: "cli [flags]",
+			summary: "Generate a customer-facing CLI for the app API", run: runGenerateCLI},
+		{name: "sdk", kind: derivedKind, usage: "sdk [flags]",
+			summary: "Generate Go and JavaScript/TypeScript API clients", run: runGenerateSDK},
+		{name: "styles", kind: derivedKind, usage: "styles [patterns]",
+			summary: "Typed Go for app tokens and owned style sheets", run: runGenerateStyles},
+	}
 }
 
 func lookupGenerator(name string) (generatorSpec, bool) {

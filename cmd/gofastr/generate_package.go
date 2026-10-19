@@ -115,6 +115,10 @@ func runGeneratePackage(args []string) {
 	}
 
 	files, hasTokens, hasChromiumTest, err := copyCanonicalPackage(name, tgt.importPath)
+	if err == nil {
+		// Stamped before the write so the rollback compares what it wrote.
+		files, err = stampGeneratedFiles("package", files)
+	}
 	if err != nil {
 		fail("%v", err)
 		osExit(1)
