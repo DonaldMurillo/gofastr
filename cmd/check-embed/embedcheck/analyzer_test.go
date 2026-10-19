@@ -49,7 +49,8 @@ func loadAll(t *testing.T, pkgName string) ([]Finding, []Unresolved) {
 		Tests: false,
 		// testdata/go.mod is its own module with a local replace; module mode +
 		// GOPROXY=off resolves everything from the working tree and cache.
-		Env: append(os.Environ(), "GO111MODULE=on", "GOPROXY=off", "GOWORK=off"),
+		Env:     append(os.Environ(), "GO111MODULE=on", "GOPROXY=off", "GOWORK=off"),
+		Overlay: overlay,
 	}
 	pkgs, err := packages.Load(cfg, "./src/"+pkgName)
 	if err != nil {
@@ -212,20 +213,23 @@ func TestAnalyzerSilentWhenFullyResolved(t *testing.T) {
 // --- mutation checks ----------------------------------------------------
 //
 // Each proves its static test is actually exercising the trigger: the source
-// is rewritten on disk, the mutation is verified to have applied (occurrence
-// count before/after), and the finding count must flip. A mutation that
+// is rewritten in the loader's overlay, the mutation is verified to have
+// applied (occurrence count before/after), and the finding count must flip. A mutation that
 // silently did not apply looks exactly like a test that cannot fail.
 
 // replacement is one (from→to) edit applied to a fixture file.
 type replacement struct{ from, to string }
 
-// mutateFixture rewrites relPath on disk by applying each replacement exactly
+// mutateFixture rewrites relPath in the loader overlay by applying each replacement exactly
 // once, in order, and asserts each one actually changed the content. An edit
 // whose `from` is absent is a silent no-op, exactly the failure mode that
 // makes a mutated test indistinguishable from an inert one, which has bitten
 // this repo before. The before/after occurrence count of each `to` is logged so
-// the test output proves the mutation landed. It returns the original bytes.
-func mutateFixture(t *testing.T, relPath string, reps ...replacement) []byte {
+// the test output proves the mutation landed. The file on disk is never
+// written: a fixture rewritten in place, even restored, carries a fresh
+// mtime, and every package that walks the repo then misses Go's test cache.
+// The overlay lasts until the test ends.
+func mutateFixture(t *testing.T, relPath string, reps ...replacement) {
 	t.Helper()
 	orig, err := os.ReadFile(relPath)
 	if err != nil {
@@ -233,7 +237,7 @@ func mutateFixture(t *testing.T, relPath string, reps ...replacement) []byte {
 	}
 	// Git may check fixtures out with CRLF on Windows, while the mutation
 	// patterns intentionally use source-style LF line endings. Normalize only
-	// the working copy used for the mutation; restore writes the original bytes.
+	// the overlay copy used for the mutation; the file on disk keeps its bytes.
 	cur := strings.ReplaceAll(string(orig), "\r\n", "\n")
 	for _, r := range reps {
 		if !strings.Contains(cur, r.from) {
@@ -244,29 +248,27 @@ func mutateFixture(t *testing.T, relPath string, reps ...replacement) []byte {
 		after := strings.Count(cur, r.to)
 		t.Logf("applied in %s: %q removed; %q occurrences %d→%d", relPath, r.from, r.to, before, after)
 	}
-	if err := os.WriteFile(relPath, []byte(cur), 0o644); err != nil {
-		t.Fatalf("write %s: %v", relPath, err)
+	abs, err := filepath.Abs(relPath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return orig
+	overlay = map[string][]byte{abs: []byte(cur)}
+	t.Cleanup(func() { overlay = nil })
 }
 
-func restore(t *testing.T, relPath string, orig []byte) {
-	t.Helper()
-	if err := os.WriteFile(relPath, orig, 0o644); err != nil {
-		t.Fatalf("restore %s: %v", relPath, err)
-	}
-}
+// overlay is the mutated fixture source loadAll hands the loader in place
+// of the file on disk; nil outside a mutation check.
+var overlay map[string][]byte
 
 // TestMutationCleanBecomesFlagged: turning the clean surface's setState action
 // into a server action must produce exactly one finding, proving the clean
 // case passed because it had no server action, not because detection is inert.
 func TestMutationCleanBecomesFlagged(t *testing.T) {
 	const rel = "testdata/src/clean/clean.go"
-	orig := mutateFixture(t, rel, replacement{
+	mutateFixture(t, rel, replacement{
 		from: "G.setState('count', 1)",
 		to:   `G.serverAction(\"save\")`,
 	})
-	defer restore(t, rel, orig)
 	if got := loadFindings(t, "clean"); len(got) != 1 {
 		t.Fatalf("after mutation, expected 1 finding on clean, got %d: %+v", len(got), got)
 	}
@@ -277,11 +279,10 @@ func TestMutationCleanBecomesFlagged(t *testing.T) {
 // G.serverAction token, not a side effect.
 func TestMutationBadBecomesClean(t *testing.T) {
 	const rel = "testdata/src/bad/bad.go"
-	orig := mutateFixture(t, rel, replacement{
+	mutateFixture(t, rel, replacement{
 		from: `G.serverAction("save")`,
 		to:   "G.setState('saved', true)",
 	})
-	defer restore(t, rel, orig)
 	if got := loadFindings(t, "bad"); len(got) != 0 {
 		t.Fatalf("after mutation, expected 0 findings on bad, got %d: %+v", len(got), got)
 	}
@@ -294,7 +295,7 @@ func TestMutationBadBecomesClean(t *testing.T) {
 // fembed import and the Surface declaration that replaces RegisterScreen.
 func TestMutationNonEmbeddableBecomesFlagged(t *testing.T) {
 	const rel = "testdata/src/notembeddable/notembeddable.go"
-	orig := mutateFixture(t, rel,
+	mutateFixture(t, rel,
 		replacement{
 			from: `"github.com/DonaldMurillo/gofastr/core/render"
 )`,
@@ -316,7 +317,6 @@ func TestMutationNonEmbeddableBecomesFlagged(t *testing.T) {
 }`,
 		},
 	)
-	defer restore(t, rel, orig)
 	if got := loadFindings(t, "notembeddable"); len(got) != 1 {
 		t.Fatalf("after mutation, expected 1 finding on notembeddable, got %d: %+v", len(got), got)
 	}
@@ -336,11 +336,10 @@ func TestMutationResolvedShapesBecomeClean(t *testing.T) {
 	for _, fixture := range fixtures {
 		t.Run(fixture.pkgName, func(t *testing.T) {
 			rel := filepath.Join("testdata", "src", fixture.pkgName, fixture.pkgName+".go")
-			orig := mutateFixture(t, rel, replacement{
+			mutateFixture(t, rel, replacement{
 				from: fixture.from,
 				to:   `G.setState("saved", true)`,
 			})
-			defer restore(t, rel, orig)
 			if got := loadFindings(t, fixture.pkgName); len(got) != 0 {
 				t.Fatalf("after mutation, expected 0 findings on %s, got %d: %+v",
 					fixture.pkgName, len(got), got)
