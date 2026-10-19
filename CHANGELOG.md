@@ -28,7 +28,28 @@ of the new type names.
   form, or whose constant name another name in the file already uses,
   gets no constant and is listed in a comment.
 
+### Changed
+- **`gofastr verify` skips directories whose name starts with `_`**, the
+  same ones `go build ./...` ignores. Code there is never compiled, so
+  its findings were noise.
+
 ### Fixed
+- **Affected tests replay from the cache instead of re-running.** On an
+  unchanged tree a second `make test` re-ran 14 packages (75 s), and CI
+  replayed none of 158 packages from its restored cache.
+  Tests read files the suite itself rewrites: the coverage manifests in
+  the module's `.gofastr/`, the blueprint gates' scratch packages inside
+  `examples/<name>/`, the `.env` the pack tests wrote into
+  `examples/meridian/`, and the `.git` directory, which
+  framework/isolation stats.
+  `cmd/affected` now points `GOFASTR_AXE_COVERAGE_DIR` at a per-checkout
+  directory in the user cache, the gates generate under a tracked
+  `_scratch/blueprints/` without touching its listing, the pack tests
+  read a copy, repo walkers skip `_` directories, and isolation reads
+  `.git/HEAD` instead. A second local sweep now replays all 282
+  packages in 7 s. CI stamps each file with an mtime derived
+  from its content (`scripts/content-mtimes.sh`), and a second run of the
+  test step must replay every package (`scripts/test-cache-replay.sh`).
 - **The typed repository stores false, 0 and "".** `Create` and `Update`
   marshalled the model struct, whose `omitempty` value fields dropped
   zero values: an update could never clear a field, and a create could

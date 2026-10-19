@@ -1,9 +1,12 @@
 #!/bin/sh
 # GoFastr pre-push hook: safety net behind pre-commit.
 #
-# Re-runs the deterministic CI test sweep when a commit skipped it
-# (GOFASTR_SKIP_COMMIT_TESTS=1 or --no-verify), then module integrity and
-# govulncheck. The old `go test -race ./...` is gone: it took half an
+# Runs the deterministic CI test sweep over the affected packages on every
+# push, then govulncheck and module integrity. After a pre-commit sweep
+# over the same tree every package replays from Go's test cache, so the
+# sweep only does real work when a commit skipped it
+# (GOFASTR_SKIP_COMMIT_TESTS=1) or something changed since. CI's replay
+# gate keeps that true. The old `go test -race ./...` is gone: it took half an
 # hour and swept the packages CI deliberately excludes as flaky-by-design
 # (core-ui/runtime, core-ui/widget, examples/site), use `make test-race`
 # for a deliberate race pass.

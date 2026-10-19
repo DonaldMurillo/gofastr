@@ -103,6 +103,11 @@ jobs:
       GOFASTR_TEST_ALL: ${{ github.event_name == 'pull_request' && '0' || '1' }}
       GOFASTR_AFFECTED_BASE: ${{ github.event.pull_request.base.sha }}
       GOFASTR_AFFECTED_DIFF_BASE: "1"
+      # The deterministic test step's scope, shared with the replay gate
+      # after it. The Test step's comment says why each one runs in
+      # browser-e2e instead.
+      TEST_EXCLUDE: 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$'
+      TEST_SKIP: 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
     services:
       # pgvector/pgvector:pg16 is stock Postgres 16 plus the `vector`
       # extension, so this one service also covers battery/semantic's pgvector
@@ -236,6 +241,16 @@ jobs:
         # ~7s on an M-series laptop, dominated by parsing, no services.
         run: make dupl
 
+      - name: Content-derived mtimes (test cache keys)
+        # Go keys a cached test result on the size and mtime of every file
+        # the test read. A fresh checkout stamps every file with the time
+        # of the checkout, so no package replayed from the restored cache:
+        # 0 of 158 on a push that changed one test file. This gives each
+        # tracked file an mtime derived from its blob hash, and every
+        # directory, .git included, one fixed time. Runs here, not right
+        # after checkout, so the steps above cannot stamp new times again.
+        run: scripts/content-mtimes.sh
+
       - name: Test (deterministic packages)
         # -timeout=20m. The old `-p 2` kept chromedp sockets off the
         # ephemeral-port ceiling while chromedp suites ran here; those now
@@ -277,9 +292,25 @@ jobs:
         # time. Own-package coverage, the same arithmetic as `-cover`.
         run: |
           go run ./cmd/affected \
-            -exclude 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$' \
+            -exclude "$TEST_EXCLUDE" \
             -- go test -timeout=20m -coverprofile="$RUNNER_TEMP/cover.out" \
-            -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
+            -skip "$TEST_SKIP"
+
+      - name: Test cache replays (second run re-runs nothing)
+        # The same command again, over a tree nothing has changed. Every
+        # package must come back "(cached)". One that re-runs reads an
+        # input that moves when no code did (a stat of .git, a file another
+        # package's test writes into the module, a directory listing that
+        # picks up run state), and every later run pays for it in full.
+        shell: bash
+        run: |
+          set -o pipefail
+          go run ./cmd/affected \
+            -exclude "$TEST_EXCLUDE" \
+            -- go test -timeout=20m -coverprofile="$RUNNER_TEMP/cover.out" \
+            -skip "$TEST_SKIP" \
+            | tee "$RUNNER_TEMP/replay.log"
+          scripts/test-cache-replay.sh "$RUNNER_TEMP/replay.log"
 
       - name: Race detector (concurrency packages)
         # The recurring defect class in this repo's release history is
