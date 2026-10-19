@@ -38,16 +38,20 @@ if [ "${1:-}" = "--exec" ]; then
   exit "$status"
 fi
 
-root=$(git rev-parse --show-toplevel)
-cd "$root"
+# Everything runs from the caller's directory, so relative package
+# patterns and a relative log directory mean what they say there; the log
+# directory is made absolute because the wrapper and the audit each run
+# from a package directory.
 dir="${GOFASTR_TESTLOG_DIR:-$(mktemp -d)}"
 mkdir -p "$dir"
+dir=$(cd "$dir" && pwd -P)
+root=$(git rev-parse --show-toplevel)
 if [ -n "$(ls -A "$dir")" ]; then
   echo "test-reads-audit: $dir is not empty; older logs would be audited as this run's" >&2
   exit 2
 fi
 if [ "$#" -eq 0 ]; then
-  set -- ./...
+  set -- "$root/..."
 fi
 
 echo "test-reads-audit: recording into $dir" >&2
@@ -63,7 +67,7 @@ if [ "$suite" -ne 0 ]; then
 fi
 
 audit=0
-GOFASTR_TESTLOG_DIR="$dir" go test -count=1 -run '^TestRecordedReadsSelectTheirReader$' ./cmd/affected || audit=$?
+GOFASTR_TESTLOG_DIR="$dir" go test -count=1 -run '^TestRecordedReadsSelectTheirReader$' "$root/cmd/affected" || audit=$?
 
 if grep -E '\[(build|setup) failed\]' "$dir/run.txt" >&2; then
   echo "test-reads-audit: the lines above left packages with no complete log, so their reads went unaudited" >&2

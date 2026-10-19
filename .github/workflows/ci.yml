@@ -71,10 +71,11 @@ on:
   workflow_dispatch:
 
 # Cancel superseded runs on the same ref to save CI minutes. Scheduled and
-# manual runs get their own group: they sit on main too, and a push to
-# main must not cancel a 90-minute audit halfway.
+# manual runs get their own group per ref: they sit on main too, and a
+# push to main must not cancel a 90-minute audit halfway, nor a manual run
+# on another branch.
 concurrency:
-  group: ci-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && github.event_name || github.ref }}
+  group: ci-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('{0}-{1}', github.event_name, github.ref) || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -707,8 +708,12 @@ jobs:
     # tracked file in those logs selects the package that read it. A test
     # that starts reading a file outside its package without a
     # //gofastr:test-reads directive fails here, not after a pull request
-    # skipped it. Schedule only: it is a full run, and pull requests keep
-    # their affected scope.
+    # skipped it. Schedule and manual runs only: it is a full run, and pull
+    # requests keep their affected scope.
+    #
+    # A skipped test records no reads, so this job gives the suites the
+    # same environment the `test` job does: Postgres, the gofastr binary
+    # and bubblewrap.
     name: test-reads audit (weekly)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -716,6 +721,22 @@ jobs:
     env:
       CGO_ENABLED: "1"
       GOFASTR_TESTLOG_DIR: ${{ github.workspace }}/../testlogs
+      TEST_POSTGRES_DSN: "postgres://test:test@localhost:5432/framework_test?sslmode=disable"
+      PGTEST_REQUIRED: "1"
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: framework_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d framework_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -729,6 +750,12 @@ jobs:
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
         with:
           install-dependencies: true
+
+      - name: Install bubblewrap (the sandbox probes skip without it)
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+
+      - name: Install the gofastr binary (the cmd/gofastr e2e tests skip without it)
+        run: go install ./cmd/gofastr
 
       - name: Record every test's reads and audit them
         run: scripts/test-reads-audit.sh
