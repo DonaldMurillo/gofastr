@@ -99,9 +99,12 @@ and both stylesheets together come to about 12 KB.
 
 After minification (typical end-user deploy):
 
-- `runtime.js`: ~12.3 KB gz at level 6, ~14.2 KB at level 1, under
-  the 12.5 KB goal and the 14 KB initial-congestion-window line
-  `core-ui/runtime/budget_test.go` enforces
+- `runtime.js`: 13,655 B gz at level 6 and 15,779 B at level 1
+  (44,777 B raw), measured 2026-10-18. `core-ui/runtime/budget_test.go`
+  holds the lines at 13,695 B (level 6) and 15,779 B (level 1). The
+  level-1 line sits 1,443 B past the 14 KiB initial congestion window,
+  so a cold first load of the core takes a second round trip; each
+  byte over 14 KiB is a named entry in that test
 - Every on-demand module: ≤ 3 KB gz each; a page only fetches the
   modules whose markers it renders
 

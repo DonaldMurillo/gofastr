@@ -4,14 +4,19 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
+	"github.com/DonaldMurillo/gofastr/internal/retired"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 	_ "github.com/lib/pq"
 )
@@ -111,22 +116,44 @@ func benchSchemaName(b *testing.B) string {
 	return fmt.Sprintf("b_%s_%d", clean, id)
 }
 
-// doBenchRequest executes a single request against the app's router and
-// asserts a successful response. Used by HTTP-level benchmarks.
-func doBenchRequest(b *testing.B, router http.Handler, method, path string, body []byte) {
-	b.Helper()
-	var bodyReader *strings.Reader
-	var req *http.Request
-	if body != nil {
-		bodyReader = strings.NewReader(string(body))
-		req = httptest.NewRequest(method, path, bodyReader)
-		req.Header.Set("Content-Type", "application/json")
-	} else {
-		req = httptest.NewRequest(method, path, nil)
+// benchRequest builds a request that takes the production path. A Go test
+// binary arms two test-only wrappers on every request (testing.Testing()):
+// the retired-markup tee on the App router and the render-500 wrapper in
+// uihost. Without the exemptions a benchmark times dev instrumentation that
+// production never runs.
+func benchRequest(b *testing.B, method, target string, body io.Reader) *http.Request {
+	return httptest.NewRequestWithContext(benchContexts(b).prod, method, target, body)
+}
+
+// benchAuthed is benchRequest with an authenticated user in its context, the
+// way production auth middleware hands a request to the CRUD layer.
+// Generated CRUD requires a session by default, and the bench entities set
+// no OwnerField, Access or Config.Public, so a bare request 401s before the
+// handler body runs and the bench measures the rejection instead of the path
+// it names.
+func benchAuthed(b *testing.B, method, target string, body io.Reader) *http.Request {
+	return httptest.NewRequestWithContext(benchContexts(b).authed, method, target, body)
+}
+
+const benchUser = "bench-user"
+
+type benchCtx struct{ prod, authed context.Context }
+
+// benchCtxs holds each benchmark's contexts. They are built once per
+// benchmark, not per request: each exemption registers a b.Cleanup, and a
+// request context built in the loop would allocate on the timed path that
+// the net/http baselines don't.
+var benchCtxs sync.Map // *testing.B → benchCtx
+
+func benchContexts(b *testing.B) benchCtx {
+	if c, ok := benchCtxs.Load(b); ok {
+		return c.(benchCtx)
 	}
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	if rec.Code >= 400 {
-		b.Fatalf("%s %s → %d: %s", method, path, rec.Code, rec.Body.String())
+	prod := renderdiag.ProductionContext(b, retired.ProductionContext(b, context.Background()))
+	c := benchCtx{prod: prod, authed: handler.SetUser(prod, benchUser)}
+	if prev, loaded := benchCtxs.LoadOrStore(b, c); loaded {
+		return prev.(benchCtx)
 	}
+	b.Cleanup(func() { benchCtxs.Delete(b) })
+	return c
 }

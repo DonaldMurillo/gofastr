@@ -1,6 +1,7 @@
 package framework
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -9,8 +10,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // ============================================================================
@@ -135,22 +136,23 @@ func setupBlogDomain(b *testing.B, db *sql.DB, numPosts, commentsPerPost int) *A
 	app.Registry.Register(authors)
 	app.Registry.Register(comments)
 
-	RegisterCrudRoutes(app.Router(), NewCrudHandler(posts, db), "/posts")
-	RegisterCrudRoutes(app.Router(), NewCrudHandler(authors, db), "/authors")
-	RegisterCrudRoutes(app.Router(), NewCrudHandler(comments, db), "/comments")
+	benchMountCrud(b, app, posts, "/posts")
+	benchMountCrud(b, app, authors, "/authors")
+	benchMountCrud(b, app, comments, "/comments")
 	return app
 }
 
-// benchAuthedGet builds a GET request with an authenticated user already
-// stamped into its context, mirroring how production auth middleware hands
-// a request to the CRUD layer. Commit 4758c4a0 made generated CRUD require
-// a session by default; without this, the setupBlogDomain fixtures (no
-// OwnerField, no Access, no Config.Public) 401 in requireAuthenticated
-// before the List body runs, so every bench that hit /posts via the
-// framework was measuring the auth rejection, not the list path.
-func benchAuthedGet(target string) *http.Request {
-	req := httptest.NewRequest(http.MethodGet, target, nil)
-	return req.WithContext(handler.SetUser(req.Context(), "bench-user"))
+// benchMountCrud mounts ent's CRUD routes at path through App.CrudHandler, so
+// the handler carries the wiring a real app gives it (the registry that
+// ?include= resolves against, JSON casing, hooks, events) rather than the
+// bare crud.NewCrudHandler defaults.
+func benchMountCrud(b *testing.B, app *App, ent *entity.Entity, path string) {
+	b.Helper()
+	ch, err := app.CrudHandler(ent.GetName())
+	if err != nil {
+		b.Fatalf("crud handler %s: %v", ent.GetName(), err)
+	}
+	RegisterCrudRoutes(app.Router(), ch, path)
 }
 
 // ----------------------------------------------------------------------------
@@ -170,7 +172,7 @@ func BenchmarkTier1_IncludesVsN1(b *testing.B) {
 		for _, limit := range []int{20, 100} {
 			b.Run(fmt.Sprintf("eager-include/limit=%d", limit), func(b *testing.B) {
 				path := fmt.Sprintf("/posts?limit=%d&include=author,comments", limit)
-				req := benchAuthedGet(path)
+				req := benchAuthed(b, http.MethodGet, path, nil)
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					rec := httptest.NewRecorder()
@@ -183,7 +185,7 @@ func BenchmarkTier1_IncludesVsN1(b *testing.B) {
 
 			b.Run(fmt.Sprintf("naive-n+1/limit=%d", limit), func(b *testing.B) {
 				listPath := fmt.Sprintf("/posts?limit=%d", limit)
-				listReq := benchAuthedGet(listPath)
+				listReq := benchAuthed(b, http.MethodGet, listPath, nil)
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					rec := httptest.NewRecorder()
@@ -204,13 +206,13 @@ func BenchmarkTier1_IncludesVsN1(b *testing.B) {
 							authorID, _ = row["author_id"].(string)
 						}
 						if authorID != "" {
-							authReq := benchAuthedGet("/authors/" + authorID)
+							authReq := benchAuthed(b, http.MethodGet, "/authors/"+authorID, nil)
 							rec := httptest.NewRecorder()
 							app.Router().ServeHTTP(rec, authReq)
 						}
 						postID, _ := row["id"].(string)
 						if postID != "" {
-							commReq := benchAuthedGet("/comments?post_id=" + postID)
+							commReq := benchAuthed(b, http.MethodGet, "/comments?post_id="+postID, nil)
 							rec := httptest.NewRecorder()
 							app.Router().ServeHTTP(rec, commReq)
 						}
@@ -235,15 +237,15 @@ func BenchmarkTier1_PaginationDepth(b *testing.B) {
 
 		const pageSize = 50
 
-		// Pre-compute a cursor positioned near the deep page so the cursor
-		// benchmark doesn't pay for "page 1 → page 200" navigation per iter.
-		// Use offset to find the row at index 9000, then request cursor mode
-		// from there.
+		// Walk the cursor chain once, outside the timer, to the cursor that
+		// opens deepPage, so cursor/page=180 times the same depth as
+		// offset/page=180. Fetching page k yields the cursor for page k+1.
+		const deepPage = 180
 		var deepCursor string
 		{
 			path := fmt.Sprintf("/posts?cursor=&limit=%d", pageSize)
-			req := httptest.NewRequest(http.MethodGet, path, nil)
-			for range N/pageSize - 2 {
+			req := benchAuthed(b, http.MethodGet, path, nil)
+			for range deepPage - 1 {
 				rec := httptest.NewRecorder()
 				app.Router().ServeHTTP(rec, req)
 				var page struct {
@@ -254,13 +256,13 @@ func BenchmarkTier1_PaginationDepth(b *testing.B) {
 					break
 				}
 				deepCursor = page.Cursor
-				req = httptest.NewRequest(http.MethodGet,
+				req = benchAuthed(b, http.MethodGet,
 					fmt.Sprintf("/posts?cursor=%s&limit=%d", deepCursor, pageSize), nil)
 			}
 		}
 
 		b.Run("offset/page=1", func(b *testing.B) {
-			req := httptest.NewRequest(http.MethodGet,
+			req := benchAuthed(b, http.MethodGet,
 				fmt.Sprintf("/posts?page=1&limit=%d", pageSize), nil)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -273,7 +275,7 @@ func BenchmarkTier1_PaginationDepth(b *testing.B) {
 		})
 
 		b.Run("offset/page=180", func(b *testing.B) {
-			req := httptest.NewRequest(http.MethodGet,
+			req := benchAuthed(b, http.MethodGet,
 				fmt.Sprintf("/posts?page=180&limit=%d", pageSize), nil)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -286,7 +288,7 @@ func BenchmarkTier1_PaginationDepth(b *testing.B) {
 		})
 
 		b.Run("cursor/page=1", func(b *testing.B) {
-			req := httptest.NewRequest(http.MethodGet,
+			req := benchAuthed(b, http.MethodGet,
 				fmt.Sprintf("/posts?cursor=&limit=%d", pageSize), nil)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
@@ -300,7 +302,7 @@ func BenchmarkTier1_PaginationDepth(b *testing.B) {
 
 		if deepCursor != "" {
 			b.Run("cursor/page=180", func(b *testing.B) {
-				req := httptest.NewRequest(http.MethodGet,
+				req := benchAuthed(b, http.MethodGet,
 					fmt.Sprintf("/posts?cursor=%s&limit=%d", deepCursor, pageSize), nil)
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
@@ -357,7 +359,7 @@ func BenchmarkTier1_BatchVsN(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				body := buildBatch(i * batchSize)
-				req := httptest.NewRequest(http.MethodPost, "/posts/_batch", bytesReader(body))
+				req := benchAuthed(b, http.MethodPost, "/posts/_batch", bytes.NewReader(body))
 				req.Header.Set("Content-Type", "application/json")
 				rec := httptest.NewRecorder()
 				app.Router().ServeHTTP(rec, req)
@@ -372,7 +374,7 @@ func BenchmarkTier1_BatchVsN(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				for j := range batchSize {
 					body := single(i*batchSize + j + 1_000_000) // disjoint IDs
-					req := httptest.NewRequest(http.MethodPost, "/posts", bytesReader(body))
+					req := benchAuthed(b, http.MethodPost, "/posts", bytes.NewReader(body))
 					req.Header.Set("Content-Type", "application/json")
 					rec := httptest.NewRecorder()
 					app.Router().ServeHTTP(rec, req)
@@ -407,7 +409,7 @@ func BenchmarkTier1_StreamingVsBuffered(b *testing.B) {
 		const limit = 100 // ceiling enforced by parsePagination
 
 		b.Run("buffered", func(b *testing.B) {
-			req := httptest.NewRequest(http.MethodGet,
+			req := benchAuthed(b, http.MethodGet,
 				fmt.Sprintf("/posts?limit=%d", limit), nil)
 			b.ResetTimer()
 			b.ReportAllocs()
@@ -422,7 +424,7 @@ func BenchmarkTier1_StreamingVsBuffered(b *testing.B) {
 		})
 
 		b.Run("streaming", func(b *testing.B) {
-			req := httptest.NewRequest(http.MethodGet,
+			req := benchAuthed(b, http.MethodGet,
 				fmt.Sprintf("/posts?limit=%d&stream=true", limit), nil)
 			b.ResetTimer()
 			b.ReportAllocs()
@@ -436,21 +438,4 @@ func BenchmarkTier1_StreamingVsBuffered(b *testing.B) {
 			}
 		})
 	})
-}
-
-// bytesReader is a tiny helper so we don't import "bytes" in two places.
-func bytesReader(b []byte) *jsonBodyReader { return &jsonBodyReader{data: b} }
-
-type jsonBodyReader struct {
-	data []byte
-	off  int
-}
-
-func (r *jsonBodyReader) Read(p []byte) (int, error) {
-	if r.off >= len(r.data) {
-		return 0, fmt.Errorf("EOF")
-	}
-	n := copy(p, r.data[r.off:])
-	r.off += n
-	return n, nil
 }

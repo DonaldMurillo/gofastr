@@ -129,18 +129,13 @@ func SlugifyWidgetID(id string) string {
 }
 
 // Render renders the widget's component wrapped in a data-widget attribute.
-// Output: <div data-widget="{id}" data-hydrate="lazy">{component.Render()}</div>
+// Output: <div data-widget="{id}">{component.Render()}</div>, plus
+// data-behavior when the component has actions.
 func (w *Widget) Render() render.HTML {
-	hydrateStrategy := "lazy"
-	attrs := map[string]string{
-		"data-widget":  w.ID,
-		"data-hydrate": hydrateStrategy,
-	}
-	if w.Actions != nil && w.Actions.HasActions() {
-		hydrateStrategy = "interaction"
+	attrs := map[string]string{"data-widget": w.ID}
+	if w.IsInteractive() {
 		attrs["data-behavior"] = "/__gofastr/widget/" + w.ID + ".js"
 	}
-	attrs["data-hydrate"] = hydrateStrategy
 	return render.Tag("div", attrs, w.Component.Render())
 }
 

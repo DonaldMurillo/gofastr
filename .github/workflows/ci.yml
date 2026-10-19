@@ -312,6 +312,13 @@ jobs:
             | tee "$RUNNER_TEMP/replay.log"
           scripts/test-cache-replay.sh "$RUNNER_TEMP/replay.log"
 
+      - name: Benchmarks run once (affected packages)
+        # `go test` never runs benchmarks, so a broken one fails nobody's
+        # build; 56 framework benchmarks sat broken until 2026-10. This runs
+        # each benchmark in the affected packages once (-benchtime=1x,
+        # SQLite only) to prove it still works. It measures nothing.
+        run: make bench-smoke
+
       - name: Race detector (concurrency packages)
         # The recurring defect class in this repo's release history is
         # concurrency — queue claim/lease fencing, per-consumer outbox

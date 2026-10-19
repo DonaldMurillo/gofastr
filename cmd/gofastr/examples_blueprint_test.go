@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"html"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -546,14 +547,51 @@ func postMCP(t *testing.T, baseURL, payload string) (int, string) {
 // the deadline, so each hung attempt costs one bounded retry, not the gate.
 var bootProbeClient = &http.Client{Timeout: 5 * time.Second}
 
+// bootPortAttempts bounds how many fresh ports bootGeneratedApp tries.
+// freeAddr closes its probe listener before the child binds, so a
+// parallel subtest can take the port in between and the child dies on
+// "address already in use". CI hit that on the real-estate blueprint.
+const bootPortAttempts = 3
+
 // bootGeneratedApp starts a generated app binary on a free port and waits
 // for it to serve. A process that exits first (seed validation, failed
 // migration, refused bind) fails immediately with its captured output,
 // faster than burning the whole HTTP deadline, and the output is the
-// diagnostic that matters.
+// diagnostic that matters. A bind lost to another test is the one exit
+// retried, on a fresh port and a fresh database.
 func bootGeneratedApp(t *testing.T, name, bin, appDir string) (string, *syncBuffer) {
 	t.Helper()
-	addr := freeAddr(t)
+	return bootGeneratedAppOn(t, name, bin, appDir, freeAddr)
+}
+
+func bootGeneratedAppOn(t *testing.T, name, bin, appDir string, nextAddr func(*testing.T) string) (string, *syncBuffer) {
+	t.Helper()
+	for attempt := 1; ; attempt++ {
+		baseURL, output, lostPort := bootGeneratedAppOnce(t, name, bin, appDir, nextAddr(t))
+		if !lostPort {
+			return baseURL, output
+		}
+		if attempt == bootPortAttempts {
+			t.Fatalf("generated %s app lost its port %d times:\n%s", name, attempt, output.String())
+		}
+		t.Logf("%s: port taken before the app bound it; retrying on a fresh port", name)
+		for _, suffix := range []string{"", "-wal", "-shm"} {
+			_ = os.Remove(filepath.Join(appDir, "boot-gate.db"+suffix))
+		}
+	}
+}
+
+// portTaken reports a child that exited because its address was bound:
+// EADDRINUSE on Unix, WSAEADDRINUSE on Windows.
+func portTaken(output string) bool {
+	return strings.Contains(output, "address already in use") ||
+		strings.Contains(output, "Only one usage of each socket address")
+}
+
+// bootGeneratedAppOnce boots the app on addr. lostPort reports that the
+// child exited because addr was already bound.
+func bootGeneratedAppOnce(t *testing.T, name, bin, appDir, addr string) (baseURL string, output *syncBuffer, lostPort bool) {
+	t.Helper()
 	cmd := exec.Command(testExecutablePath(bin))
 	cmd.Dir = appDir
 	cmd.Env = append(os.Environ(),
@@ -572,7 +610,7 @@ func bootGeneratedApp(t *testing.T, name, bin, appDir string) (string, *syncBuff
 	configureTestProcessGroup(cmd)
 	// syncBuffer: exerciseGeneratedApp reads this while the app is running,
 	// and os/exec copies a child's output from its own goroutines until Wait.
-	output := &syncBuffer{}
+	output = &syncBuffer{}
 	cmd.Stdout = output
 	cmd.Stderr = output
 	if err := cmd.Start(); err != nil {
@@ -585,11 +623,14 @@ func bootGeneratedApp(t *testing.T, name, bin, appDir string) (string, *syncBuff
 	exited := make(chan error, 1)
 	go func() { exited <- cmd.Wait() }()
 
-	baseURL := "http://" + addr
+	baseURL = "http://" + addr
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case err := <-exited:
+			if portTaken(output.String()) {
+				return "", output, true
+			}
 			t.Fatalf("generated %s app exited before serving (err=%v):\n%s", name, err, output.String())
 		default:
 		}
@@ -599,13 +640,67 @@ func bootGeneratedApp(t *testing.T, name, bin, appDir string) (string, *syncBuff
 			// Any non-server-error answer proves the app is up and routing:
 			// auth-gated apps answer 302/401 on /, a screen-less one 404.
 			if resp.StatusCode < 500 {
-				return baseURL, output
+				return baseURL, output, false
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatalf("generated %s app did not serve at %s within 90s:\n%s", name, baseURL, output.String())
-	return "", nil
+	return "", nil, false
+}
+
+// TestPortTakenMatchesBothOSes pins the lost-port match on the Unix and
+// the Windows wording, and that another early exit is not one.
+func TestPortTakenMatchesBothOSes(t *testing.T) {
+	for out, want := range map[string]bool{
+		"listen tcp 127.0.0.1:39815: bind: address already in use":                                                                       true,
+		"listen tcp 127.0.0.1:39815: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.": true,
+		"seed: validation failed": false,
+	} {
+		if got := portTaken(out); got != want {
+			t.Errorf("portTaken(%q) = %v, want %v", out, got, want)
+		}
+	}
+}
+
+// TestBootRetriesOnTakenPort pins the retry: the first port handed out
+// is held by another listener, so the child exits on "address already
+// in use", and the boot must succeed on the next port instead of
+// failing the test.
+func TestBootRetriesOnTakenPort(t *testing.T) {
+	dir := t.TempDir()
+	src := "package main\n\nimport (\n\t\"log\"\n\t\"net/http\"\n\t\"os\"\n)\n\n" +
+		"func main() {\n\tlog.Fatal(http.ListenAndServe(os.Getenv(\"PORT\"), http.NotFoundHandler()))\n}\n"
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module bootprobe\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "bootprobe")
+	build := exec.Command("go", "build", "-o", testExecutablePath(bin), ".")
+	build.Dir = dir
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build probe: %v\n%s", err, out)
+	}
+
+	held, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	calls := 0
+	next := func(t *testing.T) string {
+		calls++
+		if calls == 1 {
+			return held.Addr().String()
+		}
+		return freeAddr(t)
+	}
+	baseURL, _ := bootGeneratedAppOn(t, "bootprobe", bin, dir, next)
+	if calls != 2 || baseURL == "http://"+held.Addr().String() {
+		t.Fatalf("calls = %d, baseURL = %s; want a second port after the held one", calls, baseURL)
+	}
 }
 
 // TestBootProbeClientTimesOut pins the readiness probe's timeout: a

@@ -117,16 +117,31 @@ type productionScanKey struct{}
 // is invisible to any HTTP request, and pans outside a test binary.
 func ProductionScan(t testing.TB, next http.Handler) http.Handler {
 	t.Helper()
-	if !testing.Testing() {
-		panic("retired: ProductionScan requires a test binary")
-	}
-	active := new(atomic.Bool)
-	active.Store(true)
-	t.Cleanup(func() { active.Store(false) })
+	active := productionFlag(t, "ProductionScan")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), productionScanKey{}, active)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// ProductionContext returns ctx carrying the exemption ProductionScan
+// installs, for a caller that builds its own requests: a benchmark
+// timing the production path rather than the test-binary tee. It ends
+// at t.Cleanup and panics outside a test binary.
+func ProductionContext(t testing.TB, ctx context.Context) context.Context {
+	t.Helper()
+	return context.WithValue(ctx, productionScanKey{}, productionFlag(t, "ProductionContext"))
+}
+
+func productionFlag(t testing.TB, caller string) *atomic.Bool {
+	t.Helper()
+	if !testing.Testing() {
+		panic("retired: " + caller + " requires a test binary")
+	}
+	active := new(atomic.Bool)
+	active.Store(true)
+	t.Cleanup(func() { active.Store(false) })
+	return active
 }
 
 // bodyKind is how a response body is read, decided from its
