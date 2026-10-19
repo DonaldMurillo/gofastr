@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -905,6 +906,69 @@ func interactionAttrNames(specs []registry.Interaction) []string {
 	return out
 }
 
+// registrySources calls visit with every non-test Go file under root that
+// imports the registry. It skips the directories Go itself ignores (_ and
+// . prefixes, where _scratch holds other tests' output) and the
+// build-output and dependency trees.
+func registrySources(t *testing.T, root string, visit func(path, src string)) {
+	t.Helper()
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if path == root {
+				return nil
+			}
+			switch name := d.Name(); {
+			case name == "dist" || name == "node_modules" || name == "vendor" || name == "tmp" || name == "worktrees",
+				strings.HasPrefix(name, "_"), strings.HasPrefix(name, "."):
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		raw, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+		if strings.Contains(string(raw), registryImportPath) {
+			visit(path, string(raw))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRegistrySourcesSkipsGoIgnoredDirs(t *testing.T) {
+	root := t.TempDir()
+	src := "package p\nimport \"" + registryImportPath + "\"\n"
+	for _, name := range []string{"pub/a.go", "_scratch/b.go", ".cache/c.go", "pub/a_test.go"} {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got []string
+	registrySources(t, root, func(path, _ string) {
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, filepath.ToSlash(rel))
+	})
+	if !slices.Equal(got, []string{"pub/a.go"}) {
+		t.Fatalf("visited %v, want only pub/a.go", got)
+	}
+}
+
 // TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs is the
 // hard-rule-5 gate for the interaction half of a descriptor: a click's
 // node selector and a keydown's scope selector name attributes the
@@ -918,40 +982,13 @@ func TestInteractionSelectorsInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 	root := filepath.Join("..", "..")
 	var specs []registry.Interaction
 	var nonLiteral []string
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "dist", "node_modules", "vendor", "tmp", "worktrees":
-				return filepath.SkipDir
-			}
-			if strings.HasPrefix(d.Name(), "_") {
-				return filepath.SkipDir // Go ignores these; _scratch holds other tests' output
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		raw, rerr := os.ReadFile(path)
-		if rerr != nil {
-			return rerr
-		}
-		if !strings.Contains(string(raw), registryImportPath) {
-			return nil
-		}
-		got, non := interactionsInSource(string(raw))
+	registrySources(t, root, func(path, src string) {
+		got, non := interactionsInSource(src)
 		specs = append(specs, got...)
 		for _, n := range non {
 			nonLiteral = append(nonLiteral, path+": "+n)
 		}
-		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if len(specs) == 0 {
 		t.Fatal("no Interactions call found in the tree — the lightbox's registration declares two, so the scan is broken")
 	}
@@ -1031,40 +1068,13 @@ func TestMarkersInTheTreeUseDocumentedDataFuiAttrs(t *testing.T) {
 	doc := documentedAttrs(t)
 	root := filepath.Join("..", "..")
 	var selectors, nonLiteral []string
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "dist", "node_modules", "vendor", "tmp", "worktrees":
-				return filepath.SkipDir
-			}
-			if strings.HasPrefix(d.Name(), "_") {
-				return filepath.SkipDir // Go ignores these; _scratch holds other tests' output
-			}
-			return nil
-		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
-		}
-		raw, rerr := os.ReadFile(path)
-		if rerr != nil {
-			return rerr
-		}
-		if !strings.Contains(string(raw), registryImportPath) {
-			return nil
-		}
-		sel, non := markerSelectorsInSource(string(raw))
+	registrySources(t, root, func(path, src string) {
+		sel, non := markerSelectorsInSource(src)
 		selectors = append(selectors, sel...)
 		for _, n := range non {
 			nonLiteral = append(nonLiteral, path+": "+n)
 		}
-		return nil
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if len(selectors) == 0 {
 		t.Fatal("no Markers call found in the tree — the site's behavior_ping.go registers one, so the scan is broken")
 	}
