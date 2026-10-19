@@ -16,6 +16,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   names. The YAML format and flags are unchanged. Newly generated code
   behaves the same; its comments say app spec and its toast stack is
   named `app-toasts`. Apps already generated need no change.
+  **BREAKING**: `kiln/freeze.BlueprintYAML` is renamed `AppSpecYAML`,
+  with the same input and output.
 
 ### Fixed
 - **Affected selection sees tests that read other packages' files.** A
