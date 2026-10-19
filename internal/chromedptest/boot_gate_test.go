@@ -21,8 +21,13 @@ func TestHandBootedChromeKeepsLaunchAllowance(t *testing.T) {
 			return err
 		}
 		if d.IsDir() {
+			// Hidden and "_" directories are tooling state and scratch
+			// packages; Go skips the same ones.
+			if path != root && (strings.HasPrefix(d.Name(), ".") || strings.HasPrefix(d.Name(), "_")) {
+				return filepath.SkipDir
+			}
 			switch d.Name() {
-			case ".git", ".claude", "node_modules", "dist", "testdata":
+			case "node_modules", "dist", "testdata":
 				return filepath.SkipDir
 			}
 			return nil

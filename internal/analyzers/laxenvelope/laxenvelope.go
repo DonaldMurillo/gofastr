@@ -976,7 +976,7 @@ func buildIndex(root, modPath string) *strictIndex {
 		if d.IsDir() {
 			name := d.Name()
 			if path != root && (name == "testdata" || name == "vendor" || name == "node_modules" ||
-				strings.HasPrefix(name, ".") || name == "dist") {
+				strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "dist") {
 				return fs.SkipDir
 			}
 			if path != root {

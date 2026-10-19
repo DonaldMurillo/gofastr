@@ -17,7 +17,9 @@ command palette, copy buttons, and widgets.
 Disk-backed `core/static.Handler` instances release their directory handles
 between requests, including on Windows. Each request checks the original
 directory identity; replacing that directory makes the handler return 404.
-Create a new handler to serve the replacement directory.
+Create a new handler to serve the replacement directory. The handler
+resolves symlinks once, when it is built, so after a symlink flip it keeps
+serving the old target while that directory exists.
 
 `framework.App.ExportStatic(ctx, dir, basePath)` drives the app in-process,
 with no port and no crawl: it enumerates every declared route, renders each

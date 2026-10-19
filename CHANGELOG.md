@@ -7,15 +7,44 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.91.0] - 2026-10-19
+
 **BREAKING** for generated code. The generated Go HTTP client and Go SDK
 make optional `<Entity>Input` fields pointers, and the generated typed
 repository writes through `<Entity>Input` and `<Entity>Patch` instead of
 the model struct. Regenerating changes call sites; the compiler names
 each one. A field named `input`, `patch` or `move`, or `<enum>_value`
 next to an enum, now fails `gofastr generate`: its column var meets one
-of the new type names.
+of the new type names. v0.91.0 also gives generated repositories typed
+moves and enum values, lets the sidebar drawer and the TOC phone sheet
+take a localized close label, carries page metadata through client-side
+navigation, protects stored files with owner-only ACLs on Windows, and
+makes affected tests replay from Go's test cache.
 
 ### Added
+- **Localized close labels.** `ui.SidebarConfig.DrawerCloseLabel`
+  names the sidebar drawer's dismiss button, and `MountSidebarFunc`
+  resolves it per request. `ui.TOCConfig.CloseLabel` and
+  `interactive.PhoneSheetConfig.CloseLabel` do the same for the TOC's
+  phone sheet. Empty keeps the English default.
+- **Select options carry extra attributes.** `ui.SelectOption.ExtraAttrs`
+  and `headless.Option.ExtraAttrs` add per-option metadata such as `lang`
+  or a short display label. The control keeps `value`, `selected` and
+  `disabled`.
+- **Sidebar groups nest at any depth and show a `Count`.** Every level
+  uses the same disclosure and current-link contract, and the `Count`
+  slot renders on a group's label as well as a link's.
+- **`app.AreaSpec.Contents`** keeps a route area addressable for swaps
+  without adding a box, so a sticky header inside it still composes.
+- **`ui.ComponentCSS` and `ui.WithComponentCSS`** collect the CSS for the
+  framework controls a document renders, for a standalone page with no
+  UI host: the first returns it for an external stylesheet, the second
+  inlines it.
+- **`storage.LocalStorage` and `upload.LocalStorage` have `Close()`.** It
+  releases the pinned directory handle, which otherwise stops Windows
+  from removing the storage directory. Call it at shutdown, after
+  readers from `Get` and `GetRange` are closed.
+- **CI builds the module on Windows** with `CGO_ENABLED=0`.
 - **The typed repository runs moves.** An entity with `States` gets one
   `<Entity>Move` constant per move and `Repo.Transition(ctx, id, move)`,
   which calls `CrudHandler.RunTransition`. System moves are included,
@@ -38,6 +67,40 @@ of the new type names.
   building a `strings.Replacer` for it each time, and `core/router`
   computes a route's gate key once at registration instead of on every
   request.
+- **`gofastr verify` skips directories whose name starts with `_`**, the
+  same ones `go build ./...` ignores and a directory `//go:embed` leaves
+  out. Nothing there ships, so its findings were noise.
+- **A disk-backed `core/static.Handler` opens its directory per request.**
+  It used to hold one `os.Root` for its lifetime, which pinned the
+  directory on Windows and kept serving it after a replacement. The
+  handler resolves symlinks once, when it is built. Each request reopens
+  that resolved path and checks it is still the directory the handler
+  started with. A directory replaced at that path answers 404, so create
+  a new handler to serve it. After a symlink flip, the old handler keeps
+  serving the old target while it exists. The UI host's disk-backed
+  static files work the same way.
+- **The Timeout middleware answers 504 when a buffered handler finishes at
+  or after its budget**, whichever of the handler and the timer the
+  middleware sees first. A handler that finished exactly at the deadline
+  got a 200 or a 504 depending on that order. One that finishes before
+  the deadline keeps its response.
+- **Owner-only files get a protected owner-only ACL on Windows**, where
+  Unix modes mean nothing: `battery/storage`,
+  `core/upload`, data export directories, harness session stores and
+  bundles, the isolation data directory, desktop app state, and the
+  kiln journal. ACL changes stop at the storage root, even when two
+  spellings of it differ only in letter case.
+- **`gofastr init` keeps the CLI's Go requirement.** The generated
+  `go.mod` uses the release's minimum Go version and preferred toolchain
+  even when the `go` on PATH is older, and `init .` keeps a higher
+  requirement already in `go.mod`, `toolchain default` included. A
+  project name must also start with a letter or digit.
+- **Navigation opens every ancestor of the current link.** Active-link
+  handling opens each enclosing disclosure in that navigation (not an
+  enclosing site menu), updates a button-dialect group's `aria-expanded`
+  and panel, compares canonical URL pathnames so a Unicode href matches
+  its encoded form, and recomputes the selection when a lazy drawer
+  opens. A current sidebar link wins over a saved closed state.
 
 ### Removed
 - **Widget roots no longer carry `data-hydrate`.** Nothing read the
@@ -45,6 +108,40 @@ of the new type names.
   when the component has actions.
 
 ### Fixed
+- **Affected tests replay from the cache instead of re-running.** On an
+  unchanged tree a second `make test` re-ran 14 packages (75 s), and CI
+  replayed none of 158 packages from its restored cache.
+  Tests read files the suite itself rewrites: the coverage manifests in
+  the module's `.gofastr/`, the blueprint gates' scratch packages inside
+  `examples/<name>/`, the `.env` the pack tests wrote into
+  `examples/meridian/`, the SQLite files the blog, spa and api-tour
+  examples created in their own directories when the livereload test
+  booted them (they ignored `DATABASE_URL`; they read it now), and the
+  `.git` directory, which framework/isolation stats and every repo
+  walker's root listing carries. Any `go build` a test ran inside the
+  repo stamped VCS data by running git, which moved `.git`'s mtime.
+  `cmd/affected` now points `GOFASTR_AXE_COVERAGE_DIR` at a per-checkout
+  directory in the user cache and adds `-buildvcs=false` to the wrapped
+  command's `GOFLAGS`, the embedcheck mutation checks edit fixtures in
+  the loader's overlay rather than on disk, the gates generate under a tracked
+  `_scratch/blueprints/` without touching its listing, the pack tests
+  read a copy, repo walkers skip `_` directories, and isolation reads
+  `.git/HEAD` instead. The git hooks drop the `libexec/git-core` entry
+  git puts at the front of PATH, which every test that runs `go` or
+  `git` records, so a hook's sweep replays what `make test` ran. A
+  second local sweep now replays all 282 packages in 7 s. CI stamps each
+  file with an mtime derived from its content
+  (`scripts/content-mtimes.sh`), restores the coverage manifests with the
+  test cache, since a replayed package records nothing, and a second run
+  of the test step must replay every package
+  (`scripts/test-cache-replay.sh`). The blueprint gates that `go run` the
+  generator list its in-module sources as inputs (`internal/testinputs`),
+  so a generator change re-runs them instead of replaying a stale pass.
+- **`gofastr verify` reads the semantic-coverage manifest from
+  `GOFASTR_SEMANTIC_COVERAGE_DIR` or `GOFASTR_AXE_COVERAGE_DIR` when one
+  is set.** Tests and servers already wrote it there, while verify kept
+  reading the project root, found no manifest, and skipped every coverage
+  rule.
 - **The typed repository stores false, 0 and "".** `Create` and `Update`
   marshalled the model struct, whose `omitempty` value fields dropped
   zero values: an update could never clear a field, and a create could
@@ -95,9 +192,49 @@ of the new type names.
   the 2026-10-18 binary sizes, build and dev RAM, and Tier 7 gaps, and
   drops the cgo note (the SQLite driver is pure Go); `perf-results.md`
   opens with a v0.90.0 snapshot ahead of the v0.26.0 one.
-- **The runtime-size docs state the core's real gzip size**: 13,655 B
-  at level 6 and 15,779 B at level 1, which is 1,443 B past the 14 KiB
-  congestion window. They said 12.3 KB.
+- **The runtime-size docs state the core's real gzip size**: 14,176 B
+  at level 6 and 16,426 B at level 1, which is 2,090 B past the 14 KiB
+  congestion window. They said 12.3 KB. Page metadata on navigation
+  (below) accounts for 519 B of the level-6 figure.
+- **Page metadata follows client-side navigation.** A navigation payload,
+  and the cached copy a Back replays, carries the destination's `lang`,
+  page `<meta>` and alternate links, inert until the runtime applies
+  them, so a static area no longer keeps the previous page's language.
+- **Theme preferences follow other tabs.** The color-scheme runtime
+  listens for its storage keys, and going from an explicit scheme back to
+  auto keeps following the OS setting.
+- **Widget openers mirror the widget.** Every opener of a widget updates
+  `aria-controls` and `aria-expanded` when it opens and closes.
+- **The plugin host waits for deferred adapters.** Its broker scanned
+  before parser-deferred adapter scripts registered; it now waits for
+  them, and still starts at once when injected after `DOMContentLoaded`.
+- **An option-only Markdown fence keeps its title.** A fence whose info
+  string is only options, such as `title="notes.txt" showLineNumbers`,
+  read the title as the language and dropped the filename. An info
+  string whose first word is a `key=value` option or a `{...}` block is
+  now all metadata, and `ui.Markdown` renders the title, numbering and
+  highlights itself. A bare first word such as `showLineNumbers` still
+  reads as the language.
+- **A framed `CodeBlock` no longer repeats its ID.** The caller's ID stays
+  on the root, and the body and copy target use `<ID>-code`.
+- **`gofastr verify` and `gofastr upgrade` skip a static export with a
+  custom name.** They read its exported framework CSS as authored UI and
+  reported it as ownerless.
+- **An entity event stream acknowledges after its listeners are
+  installed.** The `: subscribed <entity>` comment went out first, so a
+  write published right after it could miss the stream.
+- **An RPC success toast finishes before its navigation**, including when
+  the feedback module has to load first. A form submitted again during
+  that wait keeps the older request from navigating.
+- **Line endings no longer change results on Windows.** The CSP linter's
+  comment directives, the docs compile-directive scan and the headless
+  golden comparisons accept CRLF, and `.gitattributes` checks text out
+  with LF.
+- **A macOS bundle zipped on Windows keeps its executables runnable.**
+  The zipper sets execute modes under `Contents/MacOS`, which Windows
+  cannot report, and closes the output before removing a failed archive.
+- **An entityui job lease can resume at its exact expiry**, and a
+  released lease no longer waits for another clock tick before a retry.
 
 ## [0.90.0] - 2026-10-18
 

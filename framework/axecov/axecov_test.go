@@ -136,6 +136,7 @@ func TestReadCorruptManifestIsNotNotExist(t *testing.T) {
 }
 
 func TestDefaultDirPrefersEnvThenModuleRoot(t *testing.T) {
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "") // cmd/affected sets it; this test resolves from cwd
 	root := t.TempDir()
 	sub := filepath.Join(root, "cmd", "app")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
@@ -158,6 +159,7 @@ func TestDefaultDirPrefersEnvThenModuleRoot(t *testing.T) {
 }
 
 func TestDefaultDirFallsBackToCwdWithoutModule(t *testing.T) {
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "") // cmd/affected sets it; this test resolves from cwd
 	dir := t.TempDir()
 	t.Chdir(dir)
 	got := DefaultDir()
@@ -169,6 +171,7 @@ func TestDefaultDirFallsBackToCwdWithoutModule(t *testing.T) {
 }
 
 func TestDefaultDirResolvesOutermostWorkspaceRoot(t *testing.T) {
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "") // cmd/affected sets it; this test resolves from cwd
 	// A workspace root (go.work) above a nested module (go.mod): the
 	// test binary in the nested module and a dev server at the
 	// workspace root must resolve the SAME directory, the outermost.

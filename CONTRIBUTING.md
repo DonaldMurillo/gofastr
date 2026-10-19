@@ -55,6 +55,19 @@ SHORT=1 ./scripts/test-all.sh          # -short, skips the slow suites
 Quick iteration: `go test ./path/to/pkg/` on the packages you touched, plus
 `make test` (`-short ./...`) for a fast sweep.
 
+`make test`, the git hooks and CI run through `cmd/affected`, which
+records the axe and semantic-coverage manifests in a per-checkout
+directory under your user cache instead of the module's `.gofastr/`. A
+manifest the sweep rewrote inside the module was a test input that moved
+on every run, so Go's test cache could never replay the tests that read
+it. The pre-commit hook's `gofastr verify` reads from the same directory.
+To run a strict `gofastr dev` against what the sweep recorded, export it
+in that shell first; `make clean` removes it:
+
+```sh
+export GOFASTR_AXE_COVERAGE_DIR="$(go run ./cmd/affected -coverage-dir)"
+```
+
 Windows CI runs one build with `CGO_ENABLED=0`.
 
 ### Known isolation rules

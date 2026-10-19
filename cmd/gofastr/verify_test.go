@@ -126,6 +126,10 @@ func writeModule(t *testing.T, files map[string]string) string {
 // intercepted, returning the output and the requested exit code.
 func captureVerify(t *testing.T, args []string) (string, int) {
 	t.Helper()
+	// cmd/affected sets it for the sweep, and verify would read the repo's
+	// semantic-coverage manifest instead of the fixture's.
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "")
+	t.Setenv("GOFASTR_SEMANTIC_COVERAGE_DIR", "")
 	origExit, origStdout := osExit, os.Stdout
 	code := 0
 	osExit = func(c int) { code = c }

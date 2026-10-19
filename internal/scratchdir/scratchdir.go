@@ -1,19 +1,32 @@
-// Package scratchdir checks the naming contract the blueprint gate tests rely
-// on: a scratch package they generate inside the repo module must stay
-// invisible to `go list ./...` and `go build ./...` while it exists.
+// Package scratchdir owns where the blueprint gate tests generate their
+// scratch packages, and checks the naming contract that keeps those packages
+// invisible to `go list ./...` and `go build ./...` while they exist.
 //
-// The gates create the directory and fill it a moment later. A `./...`
-// expansion in another test binary during that window used to fail with "no
-// Go files in examples/<name>/<scratch>". Go's tooling skips any directory
-// whose name begins with "_" or ".", so the gates name their scratch
-// directories with a leading underscore. Renaming one without it reopens the
-// window, and nothing else would notice until a parallel run flaked.
+// The gates generate an app from a blueprint and compile it. The generated
+// code imports its own packages, so it has to sit inside the repo module for
+// those imports to resolve without a go.mod, a replace directive, or a
+// network fetch. Every gate generates under Root, one directory per gate.
+//
+// Root's first element begins with "_". The gates create a directory and fill
+// it a moment later; a `./...` expansion in another test binary during that
+// window used to fail with "no Go files in". Go's tooling skips any
+// directory whose name begins with "_" or ".", at every moment, while still
+// resolving an explicit import path through it.
+//
+// Root is tracked (its README keeps it in every checkout) and never removed,
+// and only its children come and go. Go's test cache hashes the directory
+// listings a test reads, entry mtimes included. When the gates generated
+// beside each example (examples/<name>/_blueprint*gen), every package that
+// walks the repo saw examples/ and the example directory change during each
+// sweep and re-ran on an unchanged tree. Now the only listing that moves is
+// Root's own, and the walkers skip "_" directories the way Go does.
 package scratchdir
 
 import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +36,86 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
+
+// Root is where the gates generate, relative to the module root.
+const Root = "_scratch/blueprints"
+
+// modulePath is the repo module's path; go.mod declares it.
+const modulePath = "github.com/DonaldMurillo/gofastr"
+
+// ModuleRoot returns the nearest directory at or above the working directory
+// that holds a go.mod.
+func ModuleRoot(t testing.TB) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("stat %s: %v", filepath.Join(dir, "go.mod"), err)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatalf("no go.mod at or above the working directory")
+		}
+		dir = parent
+	}
+}
+
+// Package clears the scratch package Root/name, creates it, and returns its
+// absolute directory and import path. Cleanup removes it again, so a killed
+// run is the only way one is left behind, and the next run clears it.
+//
+// It never opens or stats Root itself. Go's test cache records those calls,
+// and Root's listing changes whenever another gate's package comes or goes,
+// so a gate that touched it would re-run on an unchanged tree. That rules
+// out os.MkdirAll (it stats the parent) and os.RemoveAll (it opens it).
+func Package(t testing.TB, name string) (dir, importPath string) {
+	t.Helper()
+	dir = filepath.Join(ModuleRoot(t), filepath.FromSlash(Root), name)
+	if err := removeTree(dir); err != nil {
+		t.Fatalf("clear stale scratch %s: %v", dir, err)
+	}
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatalf("mkdir scratch %s: %v", dir, err)
+	}
+	t.Cleanup(func() { _ = removeTree(dir) })
+	return dir, modulePath + "/" + Root + "/" + name
+}
+
+// removeTree deletes dir and everything below it, opening only dir and its
+// subdirectories. A symlink is removed, never followed, dir itself included.
+func removeTree(dir string) error {
+	if fi, err := os.Lstat(dir); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		return os.Remove(dir)
+	}
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		p := filepath.Join(dir, e.Name())
+		if e.IsDir() {
+			if err := removeTree(p); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	if err := os.Remove(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
 
 // AssertHiddenFromGoList writes a Go package under parent/name, runs
 // `go list ./...` in parent, and fails t if the package shows up. It removes

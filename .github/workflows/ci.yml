@@ -103,6 +103,11 @@ jobs:
       GOFASTR_TEST_ALL: ${{ github.event_name == 'pull_request' && '0' || '1' }}
       GOFASTR_AFFECTED_BASE: ${{ github.event.pull_request.base.sha }}
       GOFASTR_AFFECTED_DIFF_BASE: "1"
+      # The deterministic test step's scope, shared with the replay gate
+      # after it. The Test step's comment says why each one runs in
+      # browser-e2e instead.
+      TEST_EXCLUDE: 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$'
+      TEST_SKIP: 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
     services:
       # pgvector/pgvector:pg16 is stock Postgres 16 plus the `vector`
       # extension, so this one service also covers battery/semantic's pgvector
@@ -158,6 +163,28 @@ jobs:
           key: go-test-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
             go-test-${{ runner.os }}-
+
+      - name: Coverage manifest directory
+        # One directory for the axe and semantic-coverage manifests, shared
+        # by cmd/affected, the test steps and gofastr verify. Outside the
+        # checkout, because a manifest the sweep rewrites inside the module
+        # is an input that moves on every run. A fixed path, because the
+        # variable's value is part of every test's cache key.
+        run: echo "GOFASTR_AXE_COVERAGE_DIR=$HOME/.cache/gofastr-coverage" >> "$GITHUB_ENV"
+
+      - name: Coverage manifests (per-SHA, restored with the test cache)
+        # A package Go replays from the test cache runs nothing and records
+        # nothing, so the manifests its earlier run wrote come back from
+        # here, the way nx restores a cached task's outputs. Without them
+        # gofastr verify reads a manifest missing every replayed package.
+        # The manifests merge, so a record outlives a test that is later
+        # deleted; the coverage rules report at info.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/gofastr-coverage
+          key: gofastr-coverage-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            gofastr-coverage-${{ runner.os }}-
 
       - name: Install Chrome (stable chromedp suites run here too)
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
@@ -236,6 +263,16 @@ jobs:
         # ~7s on an M-series laptop, dominated by parsing, no services.
         run: make dupl
 
+      - name: Content-derived mtimes (test cache keys)
+        # Go keys a cached test result on the size and mtime of every file
+        # the test read. A fresh checkout stamps every file with the time
+        # of the checkout, so no package replayed from the restored cache:
+        # 0 of 158 on a push that changed one test file. This gives each
+        # tracked file an mtime derived from its blob hash, and every
+        # directory, .git included, one fixed time. Runs here, not right
+        # after checkout, so the steps above cannot stamp new times again.
+        run: scripts/content-mtimes.sh
+
       - name: Test (deterministic packages)
         # -timeout=20m. The old `-p 2` kept chromedp sockets off the
         # ephemeral-port ceiling while chromedp suites ran here; those now
@@ -275,11 +312,48 @@ jobs:
         # -coverprofile: the coverage-floors step below reads this one
         # merged profile instead of running the floored suites a second
         # time. Own-package coverage, the same arithmetic as `-cover`.
+        # test-start marks the run's start for the replay gate below, and
+        # GODEBUG=gocachetest=1 has go test log each package's cache
+        # decisions (what it saved, and why it declined to) to
+        # testcache-1.log for the same gate. GODEBUG is itself a cache
+        # input, so both runs set the same value.
+        shell: bash
         run: |
-          go run ./cmd/affected \
-            -exclude 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$' \
+          touch "$RUNNER_TEMP/test-start"
+          status=0
+          GODEBUG=gocachetest=1 go run ./cmd/affected \
+            -exclude "$TEST_EXCLUDE" \
             -- go test -timeout=20m -coverprofile="$RUNNER_TEMP/cover.out" \
-            -skip 'TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
+            -skip "$TEST_SKIP" \
+            2> "$RUNNER_TEMP/testcache-1.log" || status=$?
+          grep -v '^testcache: ' "$RUNNER_TEMP/testcache-1.log" >&2 || true
+          exit "$status"
+
+      - name: Test cache replays (second run re-runs nothing)
+        # The same command again, over a tree nothing has changed. Every
+        # package must come back "(cached)". One that re-runs reads an
+        # input that moves when no code did (a stat of .git, a file another
+        # package's test writes into the module, a directory listing that
+        # picks up run state), and every later run pays for it in full.
+        shell: bash
+        run: |
+          set -o pipefail
+          status=0
+          GODEBUG=gocachetest=1 go run ./cmd/affected \
+            -exclude "$TEST_EXCLUDE" \
+            -- go test -timeout=20m -coverprofile="$RUNNER_TEMP/cover.out" \
+            -skip "$TEST_SKIP" \
+            2> "$RUNNER_TEMP/testcache-2.log" | tee "$RUNNER_TEMP/replay.log" || status=$?
+          grep -v '^testcache: ' "$RUNNER_TEMP/testcache-2.log" >&2 || true
+          [ "$status" = 0 ] || exit "$status"
+          # A change that reaches no package (docs, workflow-only) runs no
+          # test at all, so there is nothing to replay.
+          if grep -q '^affected: no packages affected' "$RUNNER_TEMP/testcache-2.log"; then
+            echo "test-cache-replay: no packages affected, nothing to replay"
+            exit 0
+          fi
+          scripts/test-cache-replay.sh "$RUNNER_TEMP/replay.log" "$RUNNER_TEMP/test-start" \
+            "$RUNNER_TEMP/testcache-1.log" "$RUNNER_TEMP/testcache-2.log"
 
       - name: Benchmarks run once (affected packages)
         # `go test` never runs benchmarks, so a broken one fails nobody's

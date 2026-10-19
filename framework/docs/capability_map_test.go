@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -65,13 +66,19 @@ func exportedSymbolsByPackage(t *testing.T, root string) map[string]map[string]b
 	index := map[string]map[string]bool{}
 	fset := token.NewFileSet()
 
-	skip := map[string]bool{".git": true, "dist": true, "node_modules": true, "testdata": true}
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	skip := map[string]bool{"dist": true, "node_modules": true, "testdata": true}
+	// WalkDir, not Walk: Walk lists a directory before asking whether to
+	// skip it, and Go's test cache records that listing.
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // unreadable dirs are not the subject of this test
 		}
-		if info.IsDir() {
-			if skip[info.Name()] {
+		if d.IsDir() {
+			// Hidden directories are tooling state: .claude/worktrees
+			// holds whole copies of the repo, whose symbols would let a
+			// doc name one this checkout no longer declares. "_"
+			// directories hold the blueprint gates' scratch packages.
+			if skip[d.Name()] || path != root && (strings.HasPrefix(d.Name(), ".") || strings.HasPrefix(d.Name(), "_")) {
 				return filepath.SkipDir
 			}
 			return nil

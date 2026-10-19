@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/DonaldMurillo/gofastr/battery/search"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -14,8 +15,17 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
+// databaseURL is DATABASE_URL when set, so a test or a deploy keeps the
+// database out of the source tree, and ./blog.db otherwise.
+func databaseURL() string {
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		return dsn
+	}
+	return "./blog.db"
+}
+
 func main() {
-	db, err := sql.Open("sqlite3", "./blog.db")
+	db, err := sql.Open("sqlite3", databaseURL())
 	if err != nil {
 		log.Fatal(err)
 	}

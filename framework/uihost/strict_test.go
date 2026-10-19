@@ -137,6 +137,7 @@ func TestStrictOffByDefault(t *testing.T) {
 }
 
 func TestStrictAxeCoverageEnforcedInDevOnly(t *testing.T) {
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "") // cmd/affected sets it; this test resolves from cwd
 	newHost := func(t *testing.T) *UIHost {
 		a := app.NewApp("demo")
 		a.Register("/", &describedScreen{}, nil)
@@ -292,6 +293,7 @@ func TestStrictConfigExemptScreens(t *testing.T) {
 }
 
 func TestStrictConfigManifestMissingCanBeEnforced(t *testing.T) {
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "") // cmd/affected sets it; this test resolves from cwd
 	t.Chdir(t.TempDir())
 	t.Setenv("GOFASTR_DEV", "1")
 	a := app.NewApp("demo")
@@ -322,6 +324,7 @@ func TestStrictAxeCoverageSkipsScreenlessApp(t *testing.T) {
 }
 
 func TestStrictAxeCoverageResolvesDynamicRoutes(t *testing.T) {
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "") // cmd/affected sets it; this test resolves from cwd
 	t.Chdir(t.TempDir())
 	t.Setenv("GOFASTR_DEV", "1")
 	a := app.NewApp("demo")
@@ -396,6 +399,7 @@ func TestStrictFlagsInvalidSitemapBaseURL(t *testing.T) {
 }
 
 func TestStrictCorruptManifestFailsBoot(t *testing.T) {
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "") // cmd/affected sets it; this test resolves from cwd
 	// A missing manifest warns (fresh checkout); a CORRUPT one must not
 	// be mistaken for absence. That would relax enforcement exactly
 	// when the coverage record is untrustworthy.
@@ -466,6 +470,7 @@ func TestStrictDynamicRouteWithEmptyStaticPathsWarnsNotDemands(t *testing.T) {
 }
 
 func TestStrictDynamicRouteWithStaticPathsIsDemanded(t *testing.T) {
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "") // cmd/affected sets it; this test resolves from cwd
 	t.Chdir(t.TempDir())
 	t.Setenv("GOFASTR_DEV", "1")
 	if err := axecov.Record(".", "/", "dark"); err != nil {

@@ -1,5 +1,5 @@
 version: v0.91.0
-title: Typed repository write shapes, moves and enum values
+title: Typed repository write shapes, localized UI labels, Windows owner-only storage
 notes:
   - change: "gofastr generate emits typed repositories whose writes take <Entity>Input (Create, BatchCreate, FirstOrCreate) and <Entity>Patch (Update, BatchUpdate) and return the stored row, instead of marshalling the model struct, whose omitempty value fields dropped false, 0 and \"\"; it also emits <Entity>Move constants with Repo.Transition, and typed enum values with framework.NewEnumColumn"
     breaking: true
@@ -12,3 +12,16 @@ notes:
   - change: "the JS SDK's client.d.ts and the /openapi.json request schemas leave a required field with a default out of the required set, and their update bodies drop the owner field and the multi_tenant tenant column"
     nodetect: "a schema and a generated d.ts, not an API: a client generated from /openapi.json or the d.ts sees optional fields where it saw required ones, and loses update fields the server already ignored"
     guidance: "Nothing to change in the app. Regenerate an external client built from /openapi.json if its types should match; code that sent the owner or tenant field in an update was already sending a field the server skipped."
+  - change: "a disk-backed core/static.Handler, and the UI host's disk-backed static files, reopen their directory per request and answer 404 once it is replaced, where they kept serving the directory they first opened"
+    find:
+      uses:
+        - gofastr/core/static.Handler
+    guidance: "The handler resolves symlinks once, when it is built, and checks the resolved directory on each request. A deploy that renames the served directory away and creates a new one at the same path builds a new handler; the old one answers 404. After a symlink flip the old handler keeps serving the old target while it exists, so build a new handler there too. An app that serves one directory for its lifetime needs nothing."
+  - change: "a framed ui.CodeBlock keeps the caller's ID on its root and gives the body and copy target <ID>-code, where both carried the same ID"
+    find:
+      uses:
+        - gofastr/framework/ui.CodeBlock
+    guidance: "CSS or script that selected the code body by the caller's ID selects #<ID>-code. Selecting the block itself by ID needs nothing."
+  - change: "the Timeout middleware answers 504 when a buffered handler finishes at or after its budget, whichever of the handler and the timer it sees first"
+    nodetect: "a timing edge: only a handler that finishes within the timer's notification lag of its deadline, or exactly on it, sees a different status"
+    guidance: "Nothing to change. A handler that needs its response to land gets a budget it finishes inside."

@@ -21,6 +21,10 @@
 
 set -e
 
+# Drop git's libexec from PATH so the sweep shares Go test cache entries
+# with a shell run. Sourced from the hook's own checkout.
+. "${0%/*}/../internal/hookenv/strip-git-path.sh"
+
 RED='\033[31m'
 GREEN='\033[32m'
 YELLOW='\033[33m'
@@ -190,9 +194,13 @@ fi
 # --strict because the repository carries a baseline
 # (.gofastr-contracts-baseline.json): existing debt is absorbed, so the
 # only things that can fail here are findings this change adds.
+#
+# The sweep wrote its coverage manifests where cmd/affected pointed
+# GOFASTR_AXE_COVERAGE_DIR, outside the module; verify reads them there.
 echo ""
 echo "  → Contracts on the uncommitted change..."
-go run ./cmd/gofastr verify --no-vet --strict --changed
+GOFASTR_AXE_COVERAGE_DIR=$(go run ./cmd/affected -coverage-dir) \
+  go run ./cmd/gofastr verify --no-vet --strict --changed
 pass "No new contract findings"
 
 echo ""

@@ -427,6 +427,27 @@ func normalizePattern(p string) string {
 	return p
 }
 
+// DirFor is the coverage root for the project at root: the
+// GOFASTR_SEMANTIC_COVERAGE_DIR or GOFASTR_AXE_COVERAGE_DIR override when
+// one is set, as [DefaultDir] resolves it for the tests and server that
+// write the manifest, else root. Readers that already know the project
+// root use it, so they look where the writers wrote.
+func DirFor(root string) string {
+	if v := overrideDir(); v != "" {
+		return v
+	}
+	return root
+}
+
+func overrideDir() string {
+	for _, key := range []string{"GOFASTR_SEMANTIC_COVERAGE_DIR", "GOFASTR_AXE_COVERAGE_DIR"} {
+		if v := os.Getenv(key); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // DefaultDir resolves the coverage root the same way [framework/axecov]
 // does, so a project has one place where its coverage artifacts live:
 //
@@ -438,10 +459,8 @@ func normalizePattern(p string) string {
 //  4. Else the nearest ancestor holding go.mod.
 //  5. Else the working directory.
 func DefaultDir() string {
-	for _, key := range []string{"GOFASTR_SEMANTIC_COVERAGE_DIR", "GOFASTR_AXE_COVERAGE_DIR"} {
-		if v := os.Getenv(key); v != "" {
-			return v
-		}
+	if v := overrideDir(); v != "" {
+		return v
 	}
 	wd, err := os.Getwd()
 	if err != nil {

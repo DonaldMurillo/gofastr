@@ -281,6 +281,9 @@ dev:
 
 clean:
 	rm -rf $(DIST_DIR)/ bin/ gen/ .gofastr/
+	@# The coverage manifests cmd/affected keeps outside the module. The
+	@# variable is cleared so an exported override is never deleted.
+	@d="$$(GOFASTR_AXE_COVERAGE_DIR= go run ./cmd/affected -coverage-dir)"; [ -z "$$d" ] || rm -rf "$$d"
 
 # ---- Security ----
 

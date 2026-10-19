@@ -35,34 +35,12 @@ func TestExampleBlueprintsLoad(t *testing.T) {
 	}
 }
 
-// buildGateScratchPkg is the throwaway package each blueprint is generated
-// into. It lives inside the repo module so the generated code's self-imports
-// (github.com/DonaldMurillo/gofastr/examples/<name>/<scratch>/entities) resolve
-// without a go.mod, a replace directive, or a network fetch.
-//
-// The name deliberately differs from the "blueprintgen" used by
-// examples/{ecommerce,meridian}/blueprint_gate_test.go: those packages run as
-// their own test binaries, so a shared directory name would collide when the
-// suites run beside each other under `go test -p 2`.
-//
-// The leading underscore is what keeps the window shut. The directory
-// is created inside the repo module mid-test and filled a moment
-// later, so a `go list ./...` or `go build ./...` running in another
-// package's test binary at that instant used to fail hard with "no Go
-// files in examples/<name>/<scratch>". Removing the directory before
-// and after the run covers a leaked one, not the window while the run
-// is live. Go's tooling ignores a directory whose name begins with
-// "_" when it expands a `./...` pattern, at every moment, while still
-// resolving an explicit import path through it — which is what the
-// rewritten module line below needs. Verified both halves before
-// relying on either.
-const buildGateScratchPkg = "_blueprintbuildgen"
-
-// TestBuildScratchHiddenFromGoList: the scratch package must stay out of a ./... expansion while it
-// exists, or a parallel `go build ./...` sees a half-written package.
-func TestBuildScratchHiddenFromGoList(t *testing.T) {
-	scratchdir.AssertHiddenFromGoList(t, "../../examples/ecommerce", buildGateScratchPkg)
-}
+// buildGateScratchPkg prefixes the throwaway package each blueprint is
+// generated into, under scratchdir.Root (see that package for why it lives
+// in the repo module and why there). The prefix differs from the vet gate's
+// because the two suites run beside each other and must not share a scratch
+// directory.
+const buildGateScratchPkg = "build_"
 
 // exampleBlueprints returns every examples/<name>/gofastr.yml in the repo.
 func exampleBlueprints(t *testing.T) []string {
@@ -107,8 +85,9 @@ func TestExampleBlueprintsGenerateAndCompile(t *testing.T) {
 		path := path
 		name := filepath.Base(filepath.Dir(path))
 		t.Run(name, func(t *testing.T) {
-			// Each example renders into its own scratch dir under its own
-			// example, so the seven compiles can overlap. The parent stays
+			// Each example renders into its own scratch package
+			// (_scratch/blueprints/build_<name>), so the seven compiles can
+			// overlap. The parent stays
 			// sequential: TestExampleBlueprintsBoot renders into the SAME
 			// scratch dirs and must not run alongside this test.
 			t.Parallel()
@@ -749,26 +728,12 @@ func TestBootProbeClientTimesOut(t *testing.T) {
 	}
 }
 
-// generateAndCompileBlueprint generates one blueprint into a scratch package
-// beside it, compiles every package it emitted, and returns the built app
+// generateAndCompileBlueprint generates one blueprint into a scratch package, compiles every package it emitted, and returns the built app
 // binary plus the directory it should run from (output_dir aware).
 func generateAndCompileBlueprint(t *testing.T, blueprintPath, name string) (string, string) {
 	t.Helper()
 
-	exampleDir := filepath.Dir(blueprintPath)
-	dir, err := filepath.Abs(filepath.Join(exampleDir, buildGateScratchPkg))
-	if err != nil {
-		t.Fatalf("abs scratch dir: %v", err)
-	}
-	// Removed before AND after, so a killed run cannot leave a package behind
-	// that later trips `go build ./...` at the repo root.
-	if err := os.RemoveAll(dir); err != nil {
-		t.Fatalf("clear stale scratch: %v", err)
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatalf("mkdir scratch: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	dir, scratchModule := scratchdir.Package(t, buildGateScratchPkg+name)
 
 	src, err := os.ReadFile(blueprintPath)
 	if err != nil {
@@ -782,7 +747,7 @@ func generateAndCompileBlueprint(t *testing.T, blueprintPath, name string) (stri
 	if !strings.Contains(string(src), moduleLine) {
 		t.Fatalf("%s no longer declares %q — update this test's rewrite", blueprintPath, moduleLine)
 	}
-	rewritten := strings.Replace(string(src), moduleLine, moduleLine+"/"+buildGateScratchPkg, 1)
+	rewritten := strings.Replace(string(src), moduleLine, "module: "+scratchModule, 1)
 	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(rewritten), 0o644); err != nil {
 		t.Fatalf("write scratch blueprint: %v", err)
 	}

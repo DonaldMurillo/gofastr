@@ -15,8 +15,17 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
+// databaseURL is DATABASE_URL when set, so a test or a deploy keeps the
+// database out of the source tree, and ./spa.db otherwise.
+func databaseURL() string {
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		return dsn
+	}
+	return "./spa.db"
+}
+
 func main() {
-	db, err := sql.Open("sqlite3", "./spa.db")
+	db, err := sql.Open("sqlite3", databaseURL())
 	if err != nil {
 		log.Fatal(err)
 	}

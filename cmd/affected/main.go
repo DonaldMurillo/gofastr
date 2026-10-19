@@ -37,11 +37,21 @@
 //	go run ./cmd/affected -tags red -format dir
 //	go run ./cmd/affected -exclude 'examples/site$' -- go test -p 2
 //	go run ./cmd/affected -match '/framework(/|$)' -- go test
+//	go run ./cmd/affected -coverage-dir           # where wrapped commands keep coverage manifests
 //
 // With a command after `--`, an empty set skips the command and exits 0
 // with a note on stderr: `go test` with no packages would test the
 // current directory, which is never what a caller meant. The command's
 // own exit code is propagated otherwise.
+//
+// The affected set is the first half of what nx affected does; Go's test
+// cache is the second. A package in the set whose binary and recorded
+// inputs (files read, env vars) match a previous pass replays "(cached)"
+// instead of running. That only holds while tests read nothing the suite
+// itself rewrites, so the wrapped command gets GOFASTR_AXE_COVERAGE_DIR
+// pointed outside the module (see commandEnv), and CI fails a second run
+// over the same tree that re-runs any package
+// (scripts/test-cache-replay.sh).
 //
 // Environment:
 //
@@ -57,6 +67,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -115,6 +127,7 @@ func main() {
 		exclude  = flag.String("exclude", "", "drop import paths matching this regexp from the output")
 		match    = flag.String("match", "", "keep only import paths matching this regexp")
 		format   = flag.String("format", "import", "output form: import (import paths) or dir (./relative dirs)")
+		covDir   = flag.Bool("coverage-dir", false, "print the coverage-manifest directory a wrapped command gets, then exit")
 		allIf    stringList
 	)
 	flag.Var(&allIf, "all-if-changed", "repo-relative file or dir/ prefix whose change widens to every package (repeatable)")
@@ -166,6 +179,10 @@ func main() {
 		fatal(fmt.Errorf("not inside a git repository: %w", err))
 	}
 	opts.root = strings.TrimSpace(root)
+	if *covDir {
+		fmt.Println(coverageDir(opts.root))
+		return
+	}
 
 	pkgs, err := compute(opts)
 	if err != nil {
@@ -186,6 +203,7 @@ func main() {
 	fmt.Fprintf(os.Stderr, "affected: %d package(s)\n", len(pkgs))
 	c := exec.Command(cmd[0], append(cmd[1:], pkgs...)...) //gofastr:allow(nowaitdelay) interactive wrapper with inherited stdio; no pipes to wedge on
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+	c.Env = commandEnv(opts.root)
 	if err := c.Run(); err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
@@ -193,6 +211,68 @@ func main() {
 		}
 		fatal(err)
 	}
+}
+
+// coverageDirEnv moves the axe and semantic-coverage manifests (semcov
+// falls back to it) out of the module.
+const coverageDirEnv = "GOFASTR_AXE_COVERAGE_DIR"
+
+// commandEnv is the wrapped command's environment. Test binaries merge
+// what they scanned into one manifest per coverage root, by default
+// .gofastr/ at the module root, and read it back: a strict-mode boot
+// reads the axe manifest, every recorder reads before it merges. That
+// file changes during every sweep, and Go's test cache hashes the
+// in-module files a test opens, so every package touching it re-ran on
+// an unchanged tree. Outside the module Go does not recheck it. The
+// directory is fixed per checkout, because the variable's value is a
+// cache input too, and survives runs, because a package replayed from
+// the cache records nothing. An explicit setting wins.
+//
+// It also turns off VCS stamping for every go build under it. A stamped
+// build runs git, which takes and drops index.lock in .git; that moves the
+// .git directory's mtime, the root listing that every repo-walking test
+// hashes carries it, and those tests re-ran on the next sweep. Tests do
+// not read the stamp.
+func commandEnv(root string) []string {
+	env := append(os.Environ(), "GOFLAGS="+noVCSStamp(os.Getenv("GOFLAGS")))
+	if os.Getenv(coverageDirEnv) != "" {
+		return env
+	}
+	if dir := coverageDir(root); dir != "" {
+		env = append(env, coverageDirEnv+"="+dir)
+	}
+	return env
+}
+
+// noVCSStamp adds -buildvcs=false to goflags unless it already sets
+// -buildvcs either way.
+func noVCSStamp(goflags string) string {
+	for _, f := range strings.Fields(goflags) {
+		name, _, _ := strings.Cut(strings.TrimLeft(f, "-"), "=")
+		if name == "buildvcs" {
+			return goflags
+		}
+	}
+	return strings.TrimSpace(goflags + " -buildvcs=false")
+}
+
+// coverageDir is the coverage root commandEnv hands the wrapped command:
+// the explicit setting, else a per-checkout directory in the user cache,
+// else "" (the module root) when there is no user cache, which it says on
+// stderr because every test that records coverage then misses the cache.
+// -coverage-dir prints it, so `gofastr verify` in the hooks reads the
+// manifests the sweep wrote.
+func coverageDir(root string) string {
+	if v := os.Getenv(coverageDirEnv); v != "" {
+		return v
+	}
+	base, err := os.UserCacheDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "affected: no user cache directory (%v); coverage manifests stay in the module and tests that record them will not replay from the cache\n", err)
+		return ""
+	}
+	sum := sha256.Sum256([]byte(root))
+	return filepath.Join(base, "gofastr", "test-coverage", hex.EncodeToString(sum[:6]))
 }
 
 func fatal(err error) {

@@ -2,8 +2,11 @@ package scratchdir
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
@@ -53,5 +56,155 @@ func TestCleanupRemovesTheScratchItMade(t *testing.T) {
 	})
 	if _, err := os.Stat(filepath.Join(dir, "_scratch")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("scratch directory left behind: %v", err)
+	}
+}
+
+// The gates rely on Root staying out of `./...` at the module root.
+func TestRootHiddenFromGoList(t *testing.T) {
+	// The probe goes one level down so the check never writes into Root
+	// itself (see Package).
+	Package(t, "listcheck")
+	AssertHiddenFromGoList(t, ModuleRoot(t), Root+"/listcheck")
+}
+
+func TestModulePathMatchesGoMod(t *testing.T) {
+	mod, err := os.ReadFile(filepath.Join(ModuleRoot(t), "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first, _, _ := strings.Cut(string(mod), "\n"); first != "module "+modulePath {
+		t.Fatalf("go.mod declares %q, scratchdir assumes %q", first, "module "+modulePath)
+	}
+}
+
+// Root must exist in every checkout: a gate that created it would change
+// the module root's listing mid-sweep.
+func TestRootIsTracked(t *testing.T) {
+	readme := filepath.Join(ModuleRoot(t), filepath.FromSlash(Root), "README.md")
+	if _, err := os.Stat(readme); err != nil {
+		t.Fatalf("%s missing: %v", readme, err)
+	}
+}
+
+func TestPackageIsRemovedAfterTheTest(t *testing.T) {
+	var dir, importPath string
+	t.Run("gate", func(t *testing.T) {
+		dir, importPath = Package(t, "scratchdirprobe")
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			t.Fatalf("scratch package not created: %v", err)
+		}
+	})
+	if want := modulePath + "/" + Root + "/scratchdirprobe"; importPath != want {
+		t.Fatalf("import path %q, want %q", importPath, want)
+	}
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("scratch package left behind: %v", err)
+	}
+}
+
+// A killed run leaves its package behind; the next run must not build on it.
+func TestPackageClearsAStaleRun(t *testing.T) {
+	stale := filepath.Join(ModuleRoot(t), filepath.FromSlash(Root), "scratchdirstale", "stale.go")
+	if err := os.Mkdir(filepath.Dir(stale), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := fileperm.WriteOwnerOnly(stale, []byte("package stale\n")); err != nil {
+		t.Fatal(err)
+	}
+	Package(t, "scratchdirstale")
+	if _, err := os.Stat(stale); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stale file survived: %v", err)
+	}
+}
+
+func TestRemoveTreeDoesNotFollowSymlinks(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "keep.txt")
+	if err := fileperm.WriteOwnerOnly(outside, []byte("keep\n")); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "tree")
+	if err := os.MkdirAll(filepath.Join(dir, "a", "b"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := fileperm.WriteOwnerOnly(filepath.Join(dir, "a", "b", "f.go"), []byte("package b\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Dir(outside), filepath.Join(dir, "a", "link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := removeTree(dir); err != nil {
+		t.Fatalf("removeTree: %v", err)
+	}
+	if _, err := os.Lstat(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("tree left behind: %v", err)
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Fatalf("removeTree followed a symlink out of the tree: %v", err)
+	}
+	if err := removeTree(dir); err != nil {
+		t.Fatalf("removeTree of a missing tree: %v", err)
+	}
+}
+
+func TestRemoveTreeUnlinksASymlinkRoot(t *testing.T) {
+	target := t.TempDir()
+	keep := filepath.Join(target, "keep.txt")
+	if err := fileperm.WriteOwnerOnly(keep, []byte("keep\n")); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "pkg")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := removeTree(link); err != nil {
+		t.Fatalf("removeTree: %v", err)
+	}
+	if _, err := os.Lstat(link); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("symlink left behind: %v", err)
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("removeTree emptied the symlink's target: %v", err)
+	}
+}
+
+// fatalTB records Fatalf and stops the goroutine the way testing.T does.
+type fatalTB struct {
+	testing.TB
+	msg string
+}
+
+func (f *fatalTB) Helper() {}
+
+func (f *fatalTB) Fatalf(format string, args ...any) {
+	f.msg = fmt.Sprintf(format, args...)
+	runtime.Goexit()
+}
+
+// A go.mod that cannot be stat'ed is not a missing one: walking past it
+// would hand back the parent module's root.
+func TestModuleRootStopsOnAStatError(t *testing.T) {
+	parent := t.TempDir()
+	if err := fileperm.WriteOwnerOnly(filepath.Join(parent, "go.mod"), []byte("module example.test/parent\n")); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(parent, "child")
+	if err := os.Mkdir(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A self-referencing symlink: stat fails with ELOOP, not ErrNotExist.
+	if err := os.Symlink("go.mod", filepath.Join(child, "go.mod")); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	t.Chdir(child)
+	tb := &fatalTB{TB: t}
+	var got string
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		got = ModuleRoot(tb)
+	}()
+	<-done
+	if !strings.Contains(tb.msg, "stat ") {
+		t.Fatalf("ModuleRoot returned %q, want a stat failure (fatal: %q)", got, tb.msg)
 	}
 }

@@ -377,6 +377,9 @@ func TestContractsVerifyNeverEchoesADetectedSecret(t *testing.T) {
 // miscount misdirects the whole response. This tree yields one of each
 // severity.
 func TestContractsVerifyTalliesEachSeverity(t *testing.T) {
+	// cmd/affected sets it; the tally counts this fixture's findings.
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "")
+	t.Setenv("GOFASTR_SEMANTIC_COVERAGE_DIR", "")
 	writeTreeAndChdir(t, map[string]string{"main.go": `package main
 
 import "github.com/DonaldMurillo/gofastr/core/router"
