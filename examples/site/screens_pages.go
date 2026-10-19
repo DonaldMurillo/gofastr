@@ -428,7 +428,7 @@ var exampleLoC = map[string]int{
 	"site":                 12000,
 	"api-tour":             160,
 	"semantic-demo":        120,
-	"spa":                  110,
+	"spa":                  140,
 	"embed-demo":           310,
 	"static-site":          60,
 	"backoffice":           310,
