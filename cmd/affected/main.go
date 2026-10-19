@@ -558,8 +558,11 @@ func (r *testReadSet) parse(src []byte) error {
 			continue
 		}
 		rest, ok := strings.CutPrefix(lit, testReadsDirective)
-		if !ok || rest != "" && rest[0] != ' ' && rest[0] != '\t' {
+		if !ok {
 			continue
+		}
+		if rest != "" && rest[0] != ' ' && rest[0] != '\t' {
+			return fmt.Errorf("%s needs a space before its patterns: %q", testReadsDirective, lit)
 		}
 		fields := strings.Fields(rest)
 		if len(fields) == 0 {

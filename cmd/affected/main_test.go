@@ -268,6 +268,7 @@ func TestUnmatchableTestReadsIsAnError(t *testing.T) {
 		{"//gofastr:test-reads ../x.go", "repo-relative"},
 		{"//gofastr:test-reads docs/../x.go", "repo-relative"},
 		{"//gofastr:test-reads /", "names no path"},
+		{"//gofastr:test-reads*.md", "space before its patterns"},
 	} {
 		t.Run(tc.directive, func(t *testing.T) {
 			root := newRepo(t)
