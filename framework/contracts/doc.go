@@ -41,7 +41,7 @@
 //
 // The two escape hatches are:
 //
-//	# gofastr.contracts.yml: visible in review, applies to a whole tree
+//	# gofastr.settings.yml: visible in review, applies to a whole tree
 //	contracts:
 //	  performance:
 //	    severity: warn

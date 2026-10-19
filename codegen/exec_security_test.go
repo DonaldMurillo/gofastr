@@ -24,7 +24,7 @@ import (
 // RunPhase left cmd.Env nil, so the child inherited every variable the gofastr
 // process held — GOFASTR_SECRET (the session signing key: forge sessions for
 // the deployed app), DATABASE_URL, cloud credentials, CI tokens. The extension
-// binary is chosen by whoever wrote gofastr.codegen.yml, which the sibling
+// binary is chosen by whoever wrote gofastr.settings.yml, which the sibling
 // test's own doc comment describes as possibly "a cloned repo, a dependency
 // vendored into the tree, a teammate's branch".
 //

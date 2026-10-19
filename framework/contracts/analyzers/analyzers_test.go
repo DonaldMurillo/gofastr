@@ -1123,7 +1123,7 @@ func archFixture(t *testing.T, config string, files map[string]string) []contrac
 	t.Helper()
 	dir := t.TempDir()
 	files["go.mod"] = "module example.com/app\n\ngo 1.26\n"
-	files["gofastr.contracts.yml"] = config
+	files["gofastr.settings.yml"] = config
 	for name, body := range files {
 		path := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -1344,10 +1344,10 @@ func TestLayerGlobDoesNotCollideWithTheModuleName(t *testing.T) {
 	// The rule then found nothing, silently, forever.
 	dir := t.TempDir()
 	files := map[string]string{
-		"go.mod":                "module example.com/acme/core\n\ngo 1.26\n",
-		"gofastr.contracts.yml": layerConfig,
-		"app/app.go":            "package app\n\nfunc Run() {}\n",
-		"core/core.go":          "package core\n\nimport _ \"example.com/acme/core/app\"\n",
+		"go.mod":               "module example.com/acme/core\n\ngo 1.26\n",
+		"gofastr.settings.yml": layerConfig,
+		"app/app.go":           "package app\n\nfunc Run() {}\n",
+		"core/core.go":         "package core\n\nimport _ \"example.com/acme/core/app\"\n",
 	}
 	for name, body := range files {
 		path := filepath.Join(dir, name)

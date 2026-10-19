@@ -186,7 +186,7 @@ func LookupRule(idOrSlug string) (Rule, bool) {
 func lookupRuleLocked(idOrSlug string) (Rule, bool) {
 	key := strings.TrimSpace(idOrSlug)
 	// Rule references are repo content (a suppression directive, a
-	// `rules:` key in gofastr.contracts.yml), and the catalog's IDs and
+	// `contracts.rules` key in gofastr.settings.yml), and the catalog's IDs and
 	// slugs are ASCII by construction (reRuleID / reRuleSlug). Unicode
 	// case folding maps look-alikes ONTO ASCII — ſ uppercases to S — so a
 	// fold-equivalent spelling ("gofaſtr1003") resolves GOFASTR1003 and

@@ -190,7 +190,7 @@ func (c *cappedBuffer) Len() int      { return c.buf.Len() }
 // Go. Everything the extension needs to do its *job* already arrives on stdin
 // (the ExtensionRequest carries the source, the metadata and the whole
 // FileSet), and anything project-specific belongs under the extension's
-// `config:` key in gofastr.codegen.yml — which is also delivered on stdin.
+// `config:` key in gofastr.settings.yml — which is also delivered on stdin.
 var extensionEnvAllowlist = map[string]bool{
 	"PATH": true, "HOME": true, "TMPDIR": true, "TMP": true, "TEMP": true,
 	"USER": true, "LOGNAME": true, "SHELL": true, "LANG": true, "LC_ALL": true,
@@ -216,7 +216,7 @@ var extensionEnvAllowlistWindows = map[string]bool{
 // inheriting the parent's.
 //
 // A command extension is an arbitrary binary named by whichever
-// gofastr.codegen.yml is in the project — which config_security_test.go's
+// gofastr.settings.yml is in the project — which config_security_test.go's
 // threat model already treats as potentially hostile (a cloned repo, a
 // dependency vendored into the tree, a teammate's branch); that is why running
 // one from a discovered config needs an opt-in at all. Handing that binary the

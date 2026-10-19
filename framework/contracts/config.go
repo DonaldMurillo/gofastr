@@ -3,26 +3,14 @@ package contracts
 import (
 	"fmt"
 	"maps"
-	"os"
-	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 )
-
-// ConfigFileNames are the files [LoadConfig] looks for, in order. The
-// first two are dedicated; the third is the app spec, which may carry a
-// top-level `contracts:` block so a small project needs one file rather
-// than two.
-var ConfigFileNames = []string{
-	"gofastr.contracts.yml",
-	"gofastr.contracts.yaml",
-	"gofastr.yml",
-	"gofastr.yaml",
-}
 
 // CoverageConfig governs the testing capability's thresholds. Zero values
 // are the strict setting throughout: every demand on, and a line-coverage
@@ -118,68 +106,40 @@ func DefaultConfig() *Config {
 	}
 }
 
-// LoadConfig resolves configuration for a project root. An explicit path
-// must exist; otherwise the first of [ConfigFileNames] present in root is
-// used, and defaults apply when none is. A file that exists but is
-// malformed is an error: falling back to defaults there would silently
-// re-enable rules the author believed they had turned off.
+// LoadConfig resolves configuration for a project root from the
+// `contracts:` section of gofastr.settings.yml. An explicit path names a
+// settings file and must exist; otherwise the file is looked up from root
+// to the project root, and defaults apply when there is none or it has no
+// contracts section. A file that exists but is malformed is an error:
+// falling back to defaults there would silently re-enable rules the
+// author believed they had turned off.
 func LoadConfig(root, explicit string) (*Config, error) {
+	var f settings.File
 	if explicit != "" {
-		body, err := os.ReadFile(explicit)
-		if err != nil {
-			return nil, fmt.Errorf("read contracts config %q: %w", explicit, err)
+		var err error
+		if f, err = settings.Load(explicit); err != nil {
+			return nil, fmt.Errorf("read contracts config: %w", err)
 		}
-		return parseConfig(explicit, body)
-	}
-	for _, name := range ConfigFileNames {
-		path := filepath.Join(root, name)
-		body, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		cfg, err := parseConfig(path, body)
+	} else {
+		found, ok, err := settings.Find(root, "contracts")
 		if err != nil {
 			return nil, err
 		}
-		// A gofastr.yml without a `contracts:` block is an app spec, not a
-		// contracts config. Keep looking rather than claiming it.
-		if cfg == nil {
-			continue
+		if !ok {
+			return DefaultConfig(), nil
 		}
-		return cfg, nil
-	}
-	return DefaultConfig(), nil
-}
-
-// parseConfig returns (nil, nil) when the document parses but holds no
-// contracts block, the "this is an app spec, not my config" case.
-func parseConfig(path string, body []byte) (*Config, error) {
-	doc, err := coreyaml.Parse(string(body))
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	root := doc
-	if doc != nil && doc.Kind == coreyaml.Map {
-		if block, ok := doc.Map["contracts"]; ok {
-			root = block
-		} else if isAppSpecName(path) {
-			return nil, nil
-		}
+		f = found
 	}
 	cfg := DefaultConfig()
-	cfg.Path = path
-	if root == nil || root.Kind != coreyaml.Map {
+	cfg.Path = f.Path
+	section := f.Section("contracts")
+	if section == nil || section.Kind != coreyaml.Map {
 		return cfg, nil
 	}
-	if err := cfg.applyNode(path, root); err != nil {
+	if err := cfg.applyNode(f.Path, section); err != nil {
 		return nil, err
 	}
 	return cfg, nil
-}
-
-func isAppSpecName(path string) bool {
-	base := filepath.Base(path)
-	return base == "gofastr.yml" || base == "gofastr.yaml"
 }
 
 func (c *Config) applyNode(path string, root *coreyaml.Node) error {

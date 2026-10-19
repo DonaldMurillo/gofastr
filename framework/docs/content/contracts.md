@@ -207,7 +207,8 @@ Both Go-side rules resolve a handle the way it is normally written:
 or `pkg.Style` through an import. A handle first copied into a local
 variable is not traced.
 
-**A whole surface**, in `gofastr.contracts.yml`:
+**A whole surface**, in the `contracts:` section of
+[`gofastr.settings.yml`](settings.md):
 
 ```yaml
 contracts:
@@ -232,9 +233,9 @@ Path globs are slash-separated (`cmd/**`, `**/testdata/**`); a backslash
 is accepted as a separator too, so a path typed on Windows works rather
 than silently matching nothing.
 
-A `contracts:` block in `gofastr.yml` works too, so a small project needs
-one file rather than two. Every relaxation is printed in the report
-footer: a run that passes because half of it was switched off says so.
+The app spec (`gofastr.yml`) is not read for this. Every relaxation is
+printed in the report footer: a run that passes because half of it was
+switched off says so.
 
 ## Adopting it on an existing codebase
 
@@ -307,9 +308,9 @@ flaky by construction: a baseline recorded in one lane fails in the
 other. The usual answer is to downgrade them to `info` in the config, so
 they stay visible on every run and never gate; the filter above is what
 stops `--baseline-write` from then silencing them anyway. This repository
-does exactly that. See its `gofastr.contracts.yml`.
+does exactly that. See its `gofastr.settings.yml`.
 
-A baseline is not a substitute for the config. Use `gofastr.contracts.yml`
+A baseline is not a substitute for the config. Use `gofastr.settings.yml`
 when a rule's premise genuinely does not hold for a surface: that is
 permanent and explained. Use a baseline for debt you intend to pay.
 
@@ -539,7 +540,7 @@ must notice.
   "schema": 1,
   "tool": "gofastr verify",
   "root": "/abs/path",
-  "config": "gofastr.contracts.yml",
+  "config": "gofastr.settings.yml",
   "passed": false,
   "failOn": "error",
   "vet":   { "ran": true, "passed": true },

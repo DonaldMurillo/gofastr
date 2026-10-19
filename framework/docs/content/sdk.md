@@ -106,7 +106,8 @@ gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>]
     [--dry-run] [--json]
 ```
 
-Defaults can live in `gofastr.codegen.yml` as a generator entry named
+Defaults can live in the `codegen:` section of `gofastr.settings.yml` as
+a generator entry named
 `sdk` (flags win). The same entry runs under `gofastr generate --config`
 via the built-in in-process generator, the first generator that ships
 built into the codegen registry:
@@ -124,7 +125,7 @@ codegen:
 ```
 
 Config-provenance strings are treated as hostile at emission: the app
-name (flag or `gofastr.codegen.yml`) is scrubbed before it reaches the
+name (flag or `gofastr.settings.yml`) is scrubbed before it reaches the
 generated READMEs — control bytes and fence characters are stripped, and
 in the copyable install fence the `-sdk` directory hint is reduced to the
 module-path alphabet — so a cloned config cannot add lines or shell

@@ -13,7 +13,7 @@ import (
 // ".."; the PREFIX the caller contributes is composed into the same entry
 // names ("prefix + "/" + path") but is not validated at all. The generator
 // derives the prefix from the app name (spec.App + "-sdk"), which comes
-// from --name or the project's gofastr.codegen.yml — a file an attacker
+// from --name or the project's gofastr.settings.yml — a file an attacker
 // can edit without touching either the generator or the app source — so a
 // "../" there turns every entry of the published, publicly downloadable
 // archive into zip-slip.

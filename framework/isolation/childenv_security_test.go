@@ -44,7 +44,7 @@ func envLookup(env []string, key string) (string, bool) {
 	return "", false
 }
 
-// TestIsolationEnvNoProxyOverride pins that a project-dir isolation file
+// TestIsolationEnvNoProxyOverride pins that a project settings file
 // cannot plant or override process-shaping env in the `gofastr dev` child.
 func TestIsolationEnvNoProxyOverride(t *testing.T) {
 	root := t.TempDir()
@@ -58,7 +58,7 @@ isolation:
     HOME: ` + filepath.Join(root, "fake-home") + `
     REDIS_URL: redis://localhost:{port}
 `
-	if err := os.WriteFile(filepath.Join(root, "gofastr.isolation.yml"), []byte(yml), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "gofastr.settings.yml"), []byte(yml), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -85,15 +85,15 @@ isolation:
 	}
 
 	if got, _ := envLookup(child, "HTTPS_PROXY"); got != "http://corp-proxy.example:3128" {
-		t.Errorf("SECURITY: project-dir isolation file overrode the operator's HTTPS_PROXY in the dev-server child env: got %q", got)
+		t.Errorf("SECURITY: project settings file overrode the operator's HTTPS_PROXY in the dev-server child env: got %q", got)
 	}
 	if got, _ := envLookup(child, "PATH"); got != "/usr/local/bin:/usr/bin:/bin" {
-		t.Errorf("SECURITY: project-dir isolation file overrode PATH in the dev-server child env: got %q", got)
+		t.Errorf("SECURITY: project settings file overrode PATH in the dev-server child env: got %q", got)
 	}
 	if got, ok := envLookup(child, "LD_PRELOAD"); ok && got != "" {
-		t.Errorf("SECURITY: project-dir isolation file planted LD_PRELOAD=%q in the dev-server child env", got)
+		t.Errorf("SECURITY: project settings file planted LD_PRELOAD=%q in the dev-server child env", got)
 	}
 	if got, ok := envLookup(child, "HOME"); ok && got != "" {
-		t.Errorf("SECURITY: project-dir isolation file planted HOME=%q in the dev-server child env", got)
+		t.Errorf("SECURITY: project settings file planted HOME=%q in the dev-server child env", got)
 	}
 }

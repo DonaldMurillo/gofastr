@@ -69,6 +69,8 @@ func TestUnknownKeySuggestsCorrectLocation(t *testing.T) {
 		{"db at root", "app:\n  name: A\ndb:\n  driver: sqlite\n", "app.db"},
 		{"screens under app", "app:\n  name: A\n  screens: []\n", "top level"},
 		{"entities under app", "app:\n  name: A\n  entities: []\n", "top level"},
+		{"isolation at root", "app:\n  name: A\nisolation:\n  enabled: true\n", `under "isolation:" in gofastr.settings.yml`},
+		{"codegen at root", "app:\n  name: A\ncodegen:\n  output: gen\n", `under "codegen:" in gofastr.settings.yml`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

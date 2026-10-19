@@ -51,13 +51,15 @@ entity shape and field types documented in
 [Entity Declarations](entity-declarations.md).
 
 The app spec root keys are `app`, `entities`, `screens`, `nav`, `seed`,
-`endpoints`, `hooks`, `middleware`, `plugins`, `helpers`, and `isolation`.
+`endpoints`, `hooks`, `middleware`, `plugins`, and `helpers`. Project
+configuration (codegen, contracts, isolation) is not part of the app: it
+lives in [`gofastr.settings.yml`](settings.md).
 
 `app` is a scaffold generator, one of the kinds described in
 [Codegen](codegen.md): `gofastr generate app [spec]` runs it (the spec
 defaults to `gofastr.yml`). Plain `gofastr generate`, which `gofastr build`
-calls, never does. It runs the codegen config (`gofastr.codegen.yml` /
-`.yaml`, or a `codegen:` section in `gofastr.yml`), and that config lists
+calls, never does. It runs the `codegen:` section of
+`gofastr.settings.yml`, and that section lists
 derived generators and extensions only, so a build cannot regenerate the app
 over code you have edited.
 

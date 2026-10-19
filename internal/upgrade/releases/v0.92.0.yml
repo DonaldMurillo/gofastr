@@ -1,7 +1,29 @@
 version: v0.92.0
-title: One generator command per generator
+title: One generator command per generator; one settings file
 notes:
   - change: "gofastr generate app [spec] replaces gofastr generate --from=<spec>; plain gofastr generate runs only the codegen config and refuses arguments it does not know, and a scaffold generator (app, entity, screen, package, cli) listed in the codegen config is an error"
     breaking: true
     nodetect: "a removed CLI flag: it lives in scripts, Makefiles and CI config, not in Go the scan reads"
-    guidance: "Replace gofastr generate --from=gofastr.yml with gofastr generate app gofastr.yml; the other flags are unchanged. Move a scaffold generator out of gofastr.codegen.yml and run it yourself; the config keeps derived generators (sdk, styles) and extensions."
+    guidance: "Replace gofastr generate --from=gofastr.yml with gofastr generate app gofastr.yml; the other flags are unchanged. Move a scaffold generator out of the codegen config and run it yourself; the config keeps derived generators (sdk, styles) and extensions."
+  - change: "gofastr.settings.yml at the project root replaces gofastr.codegen.yml, gofastr.contracts.yml and gofastr.isolation.yml (and their .yaml spellings), one top-level section each; the app spec no longer carries codegen, contracts or isolation sections, and each reader refuses its old file instead of reading it"
+    breaking: true
+    hits: edit
+    find:
+      text:
+        - glob: "**/gofastr.codegen.yml"
+          match: '^[a-z_-]+:'
+        - glob: "**/gofastr.codegen.yaml"
+          match: '^[a-z_-]+:'
+        - glob: "**/gofastr.contracts.yml"
+          match: '^[a-z_-]+:'
+        - glob: "**/gofastr.contracts.yaml"
+          match: '^[a-z_-]+:'
+        - glob: "**/gofastr.isolation.yml"
+          match: '^[a-z_-]+:'
+        - glob: "**/gofastr.isolation.yaml"
+          match: '^[a-z_-]+:'
+        - glob: "**/gofastr.yml"
+          match: '^(codegen|contracts|isolation):'
+        - glob: "**/gofastr.yaml"
+          match: '^(codegen|contracts|isolation):'
+    guidance: "Copy each file's codegen:, contracts: or isolation: block into gofastr.settings.yml beside go.mod (a contracts file written without the contracts: wrapper needs one), move those sections out of gofastr.yml, and delete the old files. gofastr generate --config and gofastr verify --config now take the settings file. See gofastr docs settings."

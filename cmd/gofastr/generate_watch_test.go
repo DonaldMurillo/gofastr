@@ -123,7 +123,7 @@ func TestHashGenerateInputsWithConfigDetectsExtensionCommandChange(t *testing.T)
 	if err := os.WriteFile(filepath.Join(dir, "input.json"), []byte(`{"ok":true}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	configPath := filepath.Join(dir, "gofastr.codegen.yml")
+	configPath := filepath.Join(dir, "gofastr.settings.yml")
 	if err := os.WriteFile(configPath, []byte(`
 version: 1
 codegen:
@@ -152,7 +152,7 @@ codegen:
 
 func TestHashGenerateInputsWithInvalidConfigDetectsConfigFix(t *testing.T) {
 	dir := t.TempDir()
-	configPath := filepath.Join(dir, "gofastr.codegen.yml")
+	configPath := filepath.Join(dir, "gofastr.settings.yml")
 	if err := os.WriteFile(configPath, []byte(`
 version: nope
 codegen:

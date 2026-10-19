@@ -275,13 +275,13 @@ func runAudit(args []string) {
 			osExit(1)
 		}
 		// `audit lint` predates the contract system and knows nothing
-		// about gofastr.contracts.yml or //gofastr:allow, so it reports
+		// about gofastr.settings.yml or //gofastr:allow, so it reports
 		// findings verify deliberately exempts. A project running both
 		// gets two answers to the same question. Say which one is
 		// authoritative rather than leaving that to be discovered.
 		warn("`gofastr audit lint` is superseded by `gofastr verify security data`.")
 		info("verify covers these rules with a reason, a fix, and an example per finding,")
-		info("and honours gofastr.contracts.yml + //gofastr:allow, which this scan does not.")
+		info("and honours gofastr.settings.yml + //gofastr:allow, which this scan does not.")
 		fmt.Println()
 		fmt.Print(formatLintReport(findings))
 		if len(findings) > 0 {

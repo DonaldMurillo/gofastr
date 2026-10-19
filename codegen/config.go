@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 )
 
@@ -26,97 +26,19 @@ type Discovery struct {
 	Discovered bool
 }
 
-// DiscoverConfig finds the project codegen config. Dedicated codegen config
-// files win; gofastr.yml is only considered when it has a codegen section.
+// DiscoverConfig finds the codegen section of the project's settings
+// file (see core/settings for where it looks). A settings file with no
+// codegen section is not a codegen config: Found stays false.
 func DiscoverConfig(projectDir string) (Discovery, error) {
-	dirs, err := searchDirs(projectDir)
+	f, ok, err := settings.Find(projectDir, "codegen")
+	if err != nil || !ok || f.Section("codegen") == nil {
+		return Discovery{}, err
+	}
+	cfg, err := decodeSettings(f)
 	if err != nil {
 		return Discovery{}, err
 	}
-	for _, dir := range dirs {
-		for _, name := range []string{"gofastr.codegen.yml", "gofastr.codegen.yaml"} {
-			path := filepath.Join(dir, name)
-			if _, err := os.Stat(path); err == nil {
-				cfg, err := LoadConfig(path)
-				if err != nil {
-					return Discovery{}, err
-				}
-				return Discovery{Path: path, ProjectDir: dir, Config: cfg, Found: true, Discovered: true}, nil
-			} else if !os.IsNotExist(err) {
-				return Discovery{}, err
-			}
-		}
-	}
-	for _, dir := range dirs {
-		for _, name := range []string{"gofastr.yml", "gofastr.yaml"} {
-			path := filepath.Join(dir, name)
-			has, err := HasCodegenSection(path)
-			if err != nil {
-				if os.IsNotExist(err) {
-					continue
-				}
-				return Discovery{}, err
-			}
-			if !has {
-				continue
-			}
-			cfg, err := LoadConfig(path)
-			if err != nil {
-				return Discovery{}, err
-			}
-			return Discovery{Path: path, ProjectDir: dir, Config: cfg, Found: true, Discovered: true}, nil
-		}
-	}
-	return Discovery{}, nil
-}
-
-// searchDirs lists the directories config discovery may look in: the
-// project directory and each ancestor UP TO AND INCLUDING the module or
-// repo root, never past it.
-//
-// The walk used to run to `/`. A discovered config may declare a
-// `command` extension that generate executes, so an unbounded walk meant
-// a file planted in any shared ancestor — a workspace parent, /tmp,
-// $HOME — ran as the developer on a bare `gofastr generate`, silently.
-// The module/repo root is where "the project" ends by every other
-// definition the framework uses (framework/isolation resolves the same
-// markers), and nothing above it is the project's to configure.
-//
-// When no marker is found anywhere the walk yields the starting
-// directory alone: fail closed, since an unmarked tree gives no evidence
-// about how far "the project" extends.
-func searchDirs(projectDir string) ([]string, error) {
-	start, err := filepath.Abs(projectDir)
-	if err != nil {
-		return nil, err
-	}
-	var dirs []string
-	for {
-		dirs = append(dirs, start)
-		if isProjectRoot(start) {
-			return dirs, nil
-		}
-		parent := filepath.Dir(start)
-		if parent == start {
-			break
-		}
-		start = parent
-	}
-	// No marker anywhere up the chain — trust only where we started.
-	return dirs[:1], nil
-}
-
-// projectRootMarkers are the files that mean "this directory is the top
-// of a project".
-var projectRootMarkers = []string{"go.work", "go.mod", ".git"}
-
-func isProjectRoot(dir string) bool {
-	for _, m := range projectRootMarkers {
-		if _, err := os.Stat(filepath.Join(dir, m)); err == nil {
-			return true
-		}
-	}
-	return false
+	return Discovery{Path: f.Path, ProjectDir: f.Dir, Config: cfg, Found: true, Discovered: true}, nil
 }
 
 // ErrCommandExtensionNotAllowed is returned by CheckCommandExtensions
@@ -156,32 +78,19 @@ func CheckCommandExtensions(d Discovery) error {
 		ErrCommandExtensionNotAllowed, d.Path, strings.Join(named, "\n  "), d.Path, commandOptInEnv)
 }
 
-// HasCodegenSection reports whether path has a top-level codegen key.
-func HasCodegenSection(path string) (bool, error) {
-	data, err := os.ReadFile(path)
+// LoadConfig reads the codegen section of the settings file at path.
+func LoadConfig(path string) (Config, error) {
+	f, err := settings.Load(path)
 	if err != nil {
-		return false, err
+		return Config{}, err
 	}
-	node, err := coreyaml.Parse(string(data))
-	if err != nil {
-		return false, err
-	}
-	return node.Kind == coreyaml.Map && node.Map["codegen"] != nil, nil
+	return decodeSettings(f)
 }
 
-// LoadConfig reads and validates a YAML codegen configuration file.
-func LoadConfig(path string) (Config, error) {
-	data, err := os.ReadFile(path)
+func decodeSettings(f settings.File) (Config, error) {
+	cfg, err := DecodeConfig(f.Root())
 	if err != nil {
-		return Config{}, err
-	}
-	node, err := coreyaml.Parse(string(data))
-	if err != nil {
-		return Config{}, err
-	}
-	cfg, err := DecodeConfig(node)
-	if err != nil {
-		return Config{}, fmt.Errorf("%s: %w", path, err)
+		return Config{}, fmt.Errorf("%s: %w", f.Path, err)
 	}
 	return cfg, nil
 }

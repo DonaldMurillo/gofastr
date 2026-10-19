@@ -143,7 +143,7 @@ func TestGenerateProjectWithExternalCodegenExtension(t *testing.T) {
 	dir := t.TempDir()
 	extCommand := writeReportExtension(t, dir, "")
 	writeTestFile(t, filepath.Join(dir, "reports.codegen.json"), `{"name":"reports"}`)
-	writeTestFile(t, filepath.Join(dir, "gofastr.codegen.yml"), `
+	writeTestFile(t, filepath.Join(dir, "gofastr.settings.yml"), `
 version: 1
 codegen:
   output: generated
@@ -167,7 +167,7 @@ codegen:
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	generateProject([]string{"--config=gofastr.codegen.yml"})
+	generateProject([]string{"--config=gofastr.settings.yml"})
 	data, err := os.ReadFile(filepath.Join("generated", "reports", "report.go"))
 	if err != nil {
 		t.Fatal(err)
@@ -256,7 +256,7 @@ func TestGenerateProjectDryRunJSONValidatesOutputBeforeExtensions(t *testing.T) 
 	marker := filepath.Join(dir, "extension-ran")
 	extCommand := writeReportExtension(t, dir, marker)
 	writeTestFile(t, filepath.Join(dir, "reports.codegen.json"), `{"name":"reports"}`)
-	writeTestFile(t, filepath.Join(dir, "gofastr.codegen.yml"), `
+	writeTestFile(t, filepath.Join(dir, "gofastr.settings.yml"), `
 version: 1
 codegen:
   output: generated
@@ -270,7 +270,7 @@ codegen:
     - name: report-generator
       command: `+extCommand+`
 `)
-	cmd := exec.Command("go", "run", "./cmd/gofastr", "generate", "--config="+filepath.Join(dir, "gofastr.codegen.yml"), "--out=..", "--dry-run", "--json")
+	cmd := exec.Command("go", "run", "./cmd/gofastr", "generate", "--config="+filepath.Join(dir, "gofastr.settings.yml"), "--out=..", "--dry-run", "--json")
 	cmd.Dir = repoRoot
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

@@ -72,7 +72,7 @@ func writeExtensionTestScript(t *testing.T, path, response, requestPath string) 
 
 func TestDecodeConfig(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gofastr.codegen.yml")
+	path := filepath.Join(dir, "gofastr.settings.yml")
 	if err := os.WriteFile(path, []byte(`
 version: 1
 codegen:
@@ -123,7 +123,7 @@ codegen:
 
 func TestDecodeConfigRejectsUnknownKeys(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gofastr.codegen.yml")
+	path := filepath.Join(dir, "gofastr.settings.yml")
 	if err := os.WriteFile(path, []byte(`
 version: 1
 codegen:
@@ -183,7 +183,7 @@ version: nope
 codegen:
   output: gen
 `,
-			want: "version must be an integer",
+			want: "the settings file format is version 1",
 		},
 		{
 			name: "bad clean",
@@ -209,7 +209,7 @@ codegen:
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			path := filepath.Join(dir, "gofastr.codegen.yml")
+			path := filepath.Join(dir, "gofastr.settings.yml")
 			if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -221,28 +221,25 @@ codegen:
 	}
 }
 
-func TestDiscoverConfigPrefersDedicatedFile(t *testing.T) {
-	dir := t.TempDir()
-	writeConfigFile(t, filepath.Join(dir, "gofastr.yml"), "from-main")
-	writeConfigFile(t, filepath.Join(dir, "gofastr.codegen.yaml"), "from-dedicated")
-
-	got, err := DiscoverConfig(dir)
-	if err != nil {
-		t.Fatalf("DiscoverConfig: %v", err)
-	}
-	if !got.Found || filepath.Base(got.Path) != "gofastr.codegen.yaml" {
-		t.Fatalf("discovery = %#v", got)
-	}
-	if got.Config.Codegen.Generators[0].Name != "from-dedicated" {
-		t.Fatalf("generator = %#v", got.Config.Codegen.Generators)
+// The files gofastr.settings.yml replaced are refused, never dropped: a
+// generator list that stopped applying would otherwise go unnoticed.
+func TestDiscoverConfigRefusesRetiredFile(t *testing.T) {
+	for _, name := range []string{"gofastr.codegen.yml", "gofastr.codegen.yaml"} {
+		dir := t.TempDir()
+		writeConfigFile(t, filepath.Join(dir, "gofastr.settings.yml"), "from-settings")
+		writeConfigFile(t, filepath.Join(dir, name), "from-retired")
+		_, err := DiscoverConfig(dir)
+		if err == nil || !strings.Contains(err.Error(), name+" is no longer read") {
+			t.Fatalf("%s: err = %v", name, err)
+		}
 	}
 }
 
-func TestDiscoverConfigIgnoresAppSpecWithoutCodegen(t *testing.T) {
+func TestDiscoverConfigNeedsCodegenSection(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(`
-app:
-  name: Demo
+	if err := os.WriteFile(filepath.Join(dir, "gofastr.settings.yml"), []byte(`
+contracts:
+  disable: [GOFASTR1001]
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +252,8 @@ app:
 	}
 }
 
-func TestDiscoverConfigReadsCodegenSectionAlongsideAppSpecKeys(t *testing.T) {
+// The app spec describes the app; a codegen section in it is not config.
+func TestDiscoverConfigIgnoresAppSpecSection(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(`
 app:
@@ -271,8 +269,8 @@ codegen:
 	if err != nil {
 		t.Fatalf("DiscoverConfig: %v", err)
 	}
-	if !got.Found || got.Config.Codegen.Generators[0].Name != "go/entities" {
-		t.Fatalf("discovery = %#v", got)
+	if got.Found {
+		t.Fatalf("read codegen from the app spec: %#v", got)
 	}
 }
 
@@ -287,7 +285,7 @@ func TestDiscoverConfigWalksUpward(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/x\n\ngo 1.26\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	writeConfigFile(t, filepath.Join(dir, "gofastr.codegen.yml"), "from-root")
+	writeConfigFile(t, filepath.Join(dir, "gofastr.settings.yml"), "from-root")
 	child := filepath.Join(dir, "nested", "child")
 	if err := os.MkdirAll(child, 0o755); err != nil {
 		t.Fatal(err)

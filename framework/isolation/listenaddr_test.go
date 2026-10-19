@@ -49,7 +49,7 @@ func TestListenAddrRemapsInALinkedWorktree(t *testing.T) {
 func TestListenAddrReturnsResolveErrors(t *testing.T) {
 	t.Setenv("GOFASTR_ISOLATION", "on")
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "gofastr.isolation.yml"), "isolation:\n  mode: bogus\n")
+	writeFile(t, filepath.Join(dir, "gofastr.settings.yml"), "isolation:\n  mode: bogus\n")
 	_, err := ListenAddr(dir, ":8080")
 	if err == nil {
 		t.Fatal("a config with an unsupported mode resolved; the Resolve error is being swallowed")

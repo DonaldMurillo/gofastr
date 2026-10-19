@@ -13,7 +13,7 @@ func TestResolveActivatesOnlyForLinkedWorktreeByDefault(t *testing.T) {
 	clearIsolationEnv(t)
 	main := t.TempDir()
 	writeFile(t, filepath.Join(main, ".git", "HEAD"), "ref: refs/heads/main\n")
-	writeFile(t, filepath.Join(main, "gofastr.yml"), "isolation:\n  enabled: true\n")
+	writeFile(t, filepath.Join(main, "gofastr.settings.yml"), "isolation:\n  enabled: true\n")
 
 	rt, err := Resolve(main)
 	if err != nil {
@@ -25,7 +25,7 @@ func TestResolveActivatesOnlyForLinkedWorktreeByDefault(t *testing.T) {
 
 	linked := t.TempDir()
 	writeFile(t, filepath.Join(linked, ".git"), "gitdir: "+filepath.Join(main, ".git", "worktrees", "feature")+"\n")
-	writeFile(t, filepath.Join(linked, "gofastr.yml"), "isolation:\n  enabled: true\n")
+	writeFile(t, filepath.Join(linked, "gofastr.settings.yml"), "isolation:\n  enabled: true\n")
 
 	rt, err = Resolve(linked)
 	if err != nil {
@@ -39,7 +39,7 @@ func TestResolveActivatesOnlyForLinkedWorktreeByDefault(t *testing.T) {
 func TestResolveHonorsConfigAndEnvOff(t *testing.T) {
 	clearIsolationEnv(t)
 	dir := linkedWorktree(t)
-	writeFile(t, filepath.Join(dir, "gofastr.yml"), "isolation:\n  enabled: false\n")
+	writeFile(t, filepath.Join(dir, "gofastr.settings.yml"), "isolation:\n  enabled: false\n")
 
 	rt, err := Resolve(dir)
 	if err != nil {
@@ -49,7 +49,7 @@ func TestResolveHonorsConfigAndEnvOff(t *testing.T) {
 		t.Fatal("disabled config should disable isolation")
 	}
 
-	writeFile(t, filepath.Join(dir, "gofastr.yml"), "isolation:\n  enabled: true\n")
+	writeFile(t, filepath.Join(dir, "gofastr.settings.yml"), "isolation:\n  enabled: true\n")
 	t.Setenv(envIsolation, "off")
 	rt, err = Resolve(dir)
 	if err != nil {
@@ -67,7 +67,7 @@ func TestResolveHonorsConfigAndEnvOff(t *testing.T) {
 func TestAddrHonorsExplicitPortWhenRewriteDisabled(t *testing.T) {
 	clearIsolationEnv(t)
 	dir := linkedWorktree(t)
-	writeFile(t, filepath.Join(dir, "gofastr.yml"), "isolation:\n  enabled: true\n  port:\n    offset: 1000\n    range: 1\n    scan: 0\n")
+	writeFile(t, filepath.Join(dir, "gofastr.settings.yml"), "isolation:\n  enabled: true\n  port:\n    offset: 1000\n    range: 1\n    scan: 0\n")
 
 	// Both spellings of the off switch, including the mixed case the
 	// EqualFold arm exists for.
@@ -107,7 +107,7 @@ func TestAddrHonorsExplicitPortWhenRewriteDisabled(t *testing.T) {
 func TestAddrIsStableAndDoesNotDoubleOffsetAppliedPort(t *testing.T) {
 	clearIsolationEnv(t)
 	dir := linkedWorktree(t)
-	writeFile(t, filepath.Join(dir, "gofastr.yml"), "isolation:\n  enabled: true\n  port:\n    offset: 1000\n    range: 1\n    scan: 0\n")
+	writeFile(t, filepath.Join(dir, "gofastr.settings.yml"), "isolation:\n  enabled: true\n  port:\n    offset: 1000\n    range: 1\n    scan: 0\n")
 	rt, err := Resolve(dir)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -142,7 +142,7 @@ func TestAddrIsStableAndDoesNotDoubleOffsetAppliedPort(t *testing.T) {
 func TestEnvRewritesExplicitValuesAndTemplates(t *testing.T) {
 	clearIsolationEnv(t)
 	dir := linkedWorktree(t)
-	writeFile(t, filepath.Join(dir, "gofastr.yml"), `
+	writeFile(t, filepath.Join(dir, "gofastr.settings.yml"), `
 isolation:
   enabled: true
   port:
@@ -179,7 +179,7 @@ isolation:
 func TestEnvCanPreserveExplicitValues(t *testing.T) {
 	clearIsolationEnv(t)
 	dir := linkedWorktree(t)
-	writeFile(t, filepath.Join(dir, "gofastr.yml"), "isolation:\n  enabled: true\n  port:\n    offset: 1000\n    range: 1\n    scan: 0\n")
+	writeFile(t, filepath.Join(dir, "gofastr.settings.yml"), "isolation:\n  enabled: true\n  port:\n    offset: 1000\n    range: 1\n    scan: 0\n")
 	rt, err := Resolve(dir)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -200,7 +200,7 @@ func TestEnvCanPreserveExplicitValues(t *testing.T) {
 func TestDatabaseRewritesSQLiteAndPostgres(t *testing.T) {
 	clearIsolationEnv(t)
 	dir := linkedWorktree(t)
-	writeFile(t, filepath.Join(dir, "gofastr.yml"), "isolation:\n  enabled: true\n")
+	writeFile(t, filepath.Join(dir, "gofastr.settings.yml"), "isolation:\n  enabled: true\n")
 	rt, err := Resolve(dir)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -271,7 +271,7 @@ func TestRenderPortValueKeepsPortOnlyShape(t *testing.T) {
 func TestPostgresDSNFitsIdentifierLimit(t *testing.T) {
 	clearIsolationEnv(t)
 	dir := linkedWorktree(t)
-	writeFile(t, filepath.Join(dir, "gofastr.yml"), "isolation:\n  enabled: true\n")
+	writeFile(t, filepath.Join(dir, "gofastr.settings.yml"), "isolation:\n  enabled: true\n")
 	rt, err := Resolve(dir)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -303,10 +303,10 @@ func TestPostgresDSNFitsIdentifierLimit(t *testing.T) {
 func TestRuntimePortStateIsPerInstance(t *testing.T) {
 	clearIsolationEnv(t)
 	dir1 := linkedWorktree(t)
-	writeFile(t, filepath.Join(dir1, "gofastr.yml"),
+	writeFile(t, filepath.Join(dir1, "gofastr.settings.yml"),
 		"isolation:\n  enabled: true\n  port:\n    offset: 1000\n    range: 1\n    scan: 0\n")
 	dir2 := linkedWorktree(t)
-	writeFile(t, filepath.Join(dir2, "gofastr.yml"),
+	writeFile(t, filepath.Join(dir2, "gofastr.settings.yml"),
 		"isolation:\n  enabled: true\n  port:\n    offset: 2000\n    range: 1\n    scan: 0\n")
 
 	rt1, err := Resolve(dir1)
@@ -335,7 +335,7 @@ func TestRuntimePortStateIsPerInstance(t *testing.T) {
 func TestPortScanIsClamped(t *testing.T) {
 	clearIsolationEnv(t)
 	dir := linkedWorktree(t)
-	writeFile(t, filepath.Join(dir, "gofastr.yml"),
+	writeFile(t, filepath.Join(dir, "gofastr.settings.yml"),
 		"isolation:\n  enabled: true\n  port:\n    scan: 1000000\n")
 	rt, err := Resolve(dir)
 	if err != nil {
@@ -346,15 +346,15 @@ func TestPortScanIsClamped(t *testing.T) {
 	}
 }
 
-// Resolve must not walk past the git root looking for gofastr.yml.
+// Resolve must not walk past the git root looking for gofastr.settings.yml.
 // Otherwise a parent workspace's config silently applies to nested projects.
 func TestDiscoverConfigBoundedAtGitRoot(t *testing.T) {
 	clearIsolationEnv(t)
 	parent := t.TempDir()
-	// Parent has a gofastr.yml that should NOT be picked up.
-	writeFile(t, filepath.Join(parent, "gofastr.yml"), "isolation:\n  enabled: true\n  port:\n    offset: 5000\n")
+	// Parent has a gofastr.settings.yml that should NOT be picked up.
+	writeFile(t, filepath.Join(parent, "gofastr.settings.yml"), "isolation:\n  enabled: true\n  port:\n    offset: 5000\n")
 	// Project is a linked worktree inside parent, with its own .git pointer
-	// and no gofastr.yml of its own.
+	// and no gofastr.settings.yml of its own.
 	project := filepath.Join(parent, "project")
 	writeFile(t, filepath.Join(project, ".git"), "gitdir: "+filepath.Join(t.TempDir(), ".git", "worktrees", "feature")+"\n")
 
@@ -364,6 +364,35 @@ func TestDiscoverConfigBoundedAtGitRoot(t *testing.T) {
 	}
 	// The parent's offset=5000 must NOT have been loaded.
 	if rt.cfg.Port.Offset == 5000 {
-		t.Fatalf("Resolve walked past git root and picked up parent gofastr.yml (offset=%d)", rt.cfg.Port.Offset)
+		t.Fatalf("Resolve walked past git root and picked up parent gofastr.settings.yml (offset=%d)", rt.cfg.Port.Offset)
+	}
+}
+
+// The app spec describes the app; an isolation section in it configures
+// nothing. Only gofastr.settings.yml does.
+func TestResolveIgnoresAppSpecSection(t *testing.T) {
+	clearIsolationEnv(t)
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"), "module example.com/app\n")
+	writeFile(t, filepath.Join(dir, "gofastr.yml"), "isolation:\n  enabled: true\n  port:\n    offset: 5000\n")
+	rt, err := Resolve(dir)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if rt.cfg.Port.Offset == 5000 || rt.configPath != "" {
+		t.Fatalf("read isolation from the app spec: offset=%d path=%q", rt.cfg.Port.Offset, rt.configPath)
+	}
+}
+
+// The file this section replaced is refused, never dropped: a project
+// that set isolation off would otherwise find it back on.
+func TestResolveRefusesRetiredFile(t *testing.T) {
+	clearIsolationEnv(t)
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"), "module example.com/app\n")
+	writeFile(t, filepath.Join(dir, "gofastr.isolation.yml"), "isolation:\n  enabled: false\n")
+	_, err := Resolve(dir)
+	if err == nil || !strings.Contains(err.Error(), "gofastr.isolation.yml is no longer read") {
+		t.Fatalf("err = %v", err)
 	}
 }

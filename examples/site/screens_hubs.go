@@ -603,10 +603,10 @@ func generatorHub() *TeachHubScreen {
 				Body:     []render.HTML{hubP("gofastr generate turns a declaration into Go on disk. Config-driven generators write under gen/; every run is reproducible, and --dry-run shows you the plan first.")},
 				CodeLang: "shell",
 				Code: `# preview without writing
-gofastr generate --config gofastr.codegen.yml --dry-run --json
+gofastr generate --config gofastr.settings.yml --dry-run --json
 
 # write the generated Go
-gofastr generate --config gofastr.codegen.yml`,
+gofastr generate --config gofastr.settings.yml`,
 				RefSlug: "codegen",
 			},
 			{

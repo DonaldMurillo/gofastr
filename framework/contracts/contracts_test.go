@@ -127,7 +127,7 @@ func TestDefaultConfigEnforcesEverything(t *testing.T) {
 
 func TestConfigRelaxations(t *testing.T) {
 	dir := t.TempDir()
-	writeTemp(t, dir, "gofastr.contracts.yml", `
+	writeTemp(t, dir, "gofastr.settings.yml", `
 contracts:
   exempt:
     - "vendorized/**"
@@ -186,13 +186,14 @@ contracts:
 // say out loud.
 func TestRelaxationsListEveryExemptionForm(t *testing.T) {
 	dir := t.TempDir()
-	writeTemp(t, dir, "gofastr.contracts.yml", `exempt:
-  - "vendor/**"
-rules:
-  GOFASTR1403:
-    exempt: ["gen/**"]
-security:
-  exempt: ["legacy/**"]
+	writeTemp(t, dir, "gofastr.settings.yml", `contracts:
+  exempt:
+    - "vendor/**"
+  rules:
+    GOFASTR1403:
+      exempt: ["gen/**"]
+  security:
+    exempt: ["legacy/**"]
 `)
 	cfg, err := LoadConfig(dir, "")
 	if err != nil {
@@ -208,7 +209,7 @@ security:
 
 func TestConfigRejectsUnknownRule(t *testing.T) {
 	dir := t.TempDir()
-	writeTemp(t, dir, "gofastr.contracts.yml", "contracts:\n  rules:\n    GOFASTR9999: off\n")
+	writeTemp(t, dir, "gofastr.settings.yml", "contracts:\n  rules:\n    GOFASTR9999: off\n")
 	_, err := LoadConfig(dir, "")
 	if err == nil {
 		t.Fatal("unknown rule accepted — a typo would silently enforce the rule it meant to disable")
@@ -230,7 +231,9 @@ func TestConfigIgnoresAppSpecWithoutContractsBlock(t *testing.T) {
 	}
 }
 
-func TestConfigReadsContractsBlockInAppSpec(t *testing.T) {
+// The app spec describes the app; a contracts block in it relaxes
+// nothing. Only gofastr.settings.yml configures verify.
+func TestConfigIgnoresContractsBlockInAppSpec(t *testing.T) {
 	dir := t.TempDir()
 	writeTemp(t, dir, "gofastr.yml", "app:\n  name: demo\ncontracts:\n  performance: \"off\"\n")
 	cfg, err := LoadConfig(dir, "")
@@ -238,14 +241,25 @@ func TestConfigReadsContractsBlockInAppSpec(t *testing.T) {
 		t.Fatal(err)
 	}
 	perf, _ := LookupRule(RuleRegexpCompilePerCall)
-	if cfg.Enabled(perf) {
-		t.Error("contracts block inside gofastr.yml not applied")
+	if !cfg.Enabled(perf) {
+		t.Error("a contracts block inside gofastr.yml relaxed a rule")
+	}
+}
+
+// The dedicated file this section replaced is refused, never dropped: its
+// relaxations would vanish and its waived rules start failing unexplained.
+func TestConfigRefusesRetiredContractsFile(t *testing.T) {
+	dir := t.TempDir()
+	writeTemp(t, dir, "gofastr.contracts.yml", "contracts:\n  performance: \"off\"\n")
+	_, err := LoadConfig(dir, "")
+	if err == nil || !strings.Contains(err.Error(), "gofastr.contracts.yml is no longer read") {
+		t.Fatalf("err = %v", err)
 	}
 }
 
 func TestMalformedConfigIsAnError(t *testing.T) {
 	dir := t.TempDir()
-	writeTemp(t, dir, "gofastr.contracts.yml", "contracts:\n  rules:\n    GOFASTR1003: banana\n")
+	writeTemp(t, dir, "gofastr.settings.yml", "contracts:\n  rules:\n    GOFASTR1003: banana\n")
 	if _, err := LoadConfig(dir, ""); err == nil {
 		t.Fatal("a bad severity silently fell back to defaults — the relaxation would look applied")
 	}
@@ -958,7 +972,7 @@ func TestUnknownCapabilitySortsLast(t *testing.T) {
 
 func TestArchitectureConfigParses(t *testing.T) {
 	dir := t.TempDir()
-	writeTemp(t, dir, "gofastr.contracts.yml", `
+	writeTemp(t, dir, "gofastr.settings.yml", `
 contracts:
   architecture:
     layers:
@@ -1005,7 +1019,7 @@ func TestUnconfiguredArchitectureIsSilent(t *testing.T) {
 
 func TestLayerWithoutPackagesIsAnError(t *testing.T) {
 	dir := t.TempDir()
-	writeTemp(t, dir, "gofastr.contracts.yml",
+	writeTemp(t, dir, "gofastr.settings.yml",
 		"contracts:\n  architecture:\n    layers:\n      - name: app\n")
 	if _, err := LoadConfig(dir, ""); err == nil {
 		t.Fatal("a layer with no packages was accepted")
@@ -1032,7 +1046,7 @@ func TestCapabilityBlockFormsParse(t *testing.T) {
 	}
 	for _, c := range cases {
 		dir := t.TempDir()
-		writeTemp(t, dir, "gofastr.contracts.yml", c.body)
+		writeTemp(t, dir, "gofastr.settings.yml", c.body)
 		cfg, err := LoadConfig(dir, "")
 		if err != nil {
 			t.Fatalf("%q: %v", c.body, err)
@@ -1045,7 +1059,7 @@ func TestCapabilityBlockFormsParse(t *testing.T) {
 
 func TestCapabilityExemptAppliesOnlyToItsCapability(t *testing.T) {
 	dir := t.TempDir()
-	writeTemp(t, dir, "gofastr.contracts.yml",
+	writeTemp(t, dir, "gofastr.settings.yml",
 		"contracts:\n  capabilities:\n    security:\n      exempt: [\"gen/**\"]\n")
 	cfg, err := LoadConfig(dir, "")
 	if err != nil {
@@ -1065,7 +1079,7 @@ func TestFailOnOffIsRejected(t *testing.T) {
 	// `fail-on: off` would make every run pass, which is worse than no
 	// gate at all because it still prints a report.
 	dir := t.TempDir()
-	writeTemp(t, dir, "gofastr.contracts.yml", "contracts:\n  fail-on: \"off\"\n")
+	writeTemp(t, dir, "gofastr.settings.yml", "contracts:\n  fail-on: \"off\"\n")
 	if _, err := LoadConfig(dir, ""); err == nil {
 		t.Fatal("fail-on: off was accepted")
 	}
@@ -1073,7 +1087,7 @@ func TestFailOnOffIsRejected(t *testing.T) {
 
 func TestStrictLowersTheFailFloor(t *testing.T) {
 	dir := t.TempDir()
-	writeTemp(t, dir, "gofastr.contracts.yml", "contracts:\n  strict: true\n")
+	writeTemp(t, dir, "gofastr.settings.yml", "contracts:\n  strict: true\n")
 	cfg, err := LoadConfig(dir, "")
 	if err != nil {
 		t.Fatal(err)
@@ -1436,7 +1450,7 @@ func TestCustomRulesRideTheWholePipeline(t *testing.T) {
 		writeTemp(t, dir, "a.go", source)
 		cfgPath := ""
 		if config != "" {
-			cfgPath = writeTemp(t, dir, "gofastr.contracts.yml", config)
+			cfgPath = writeTemp(t, dir, "gofastr.settings.yml", config)
 		}
 		cfg, err := LoadConfig(dir, cfgPath)
 		if err != nil {
@@ -1470,7 +1484,7 @@ func TestCustomRulesRideTheWholePipeline(t *testing.T) {
 
 	// Configurable like any catalog rule.
 	relaxed := run(t, "package a\n\nfunc f() { rawOrderWrite() }\n",
-		"rules:\n  ACME101: off\n")
+		"contracts:\n  rules:\n    ACME101: off\n")
 	if len(relaxed.Diagnostics) != 0 {
 		t.Errorf("config could not turn the custom rule off: %+v", relaxed.Diagnostics)
 	}
@@ -1698,8 +1712,8 @@ func TestStaleSuppressionIsWaivableLikeAnyFinding(t *testing.T) {
 
 	// A per-rule exemption does the same.
 	exempt := run(t, map[string]string{
-		"a.go":                  staleFile,
-		"gofastr.contracts.yml": "rules:\n  GOFASTR0002:\n    exempt: [\"a.go\"]\n",
+		"a.go":                 staleFile,
+		"gofastr.settings.yml": "contracts:\n  rules:\n    GOFASTR0002:\n      exempt: [\"a.go\"]\n",
 	})
 	if got := countStale(exempt); got != 0 {
 		t.Errorf("stale findings under an exemption = %d, want 0: %+v", got, exempt.Diagnostics)
@@ -1793,7 +1807,7 @@ func f() {
 	trip()
 }
 `)
-	writeTemp(t, dir, "gofastr.contracts.yml", "rules:\n  GOFASTR1403: warn\n")
+	writeTemp(t, dir, "gofastr.settings.yml", "contracts:\n  rules:\n    GOFASTR1403: warn\n")
 	cfg, err := LoadConfig(dir, "")
 	if err != nil {
 		t.Fatal(err)
@@ -1977,7 +1991,7 @@ func TestConfigCanEscalateNotOnlyRelax(t *testing.T) {
 	// STRICTER than the catalog default is a legitimate, visible choice,
 	// and every test until now only exercised the downward direction.
 	dir := t.TempDir()
-	writeTemp(t, dir, "gofastr.contracts.yml",
+	writeTemp(t, dir, "gofastr.settings.yml",
 		"contracts:\n  rules:\n    GOFASTR1902: error\n  routing: error\n")
 	cfg, err := LoadConfig(dir, "")
 	if err != nil {

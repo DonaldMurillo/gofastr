@@ -712,7 +712,7 @@ func printVerifyUsage() {
 Runs go vet and GoFastr's type-aware analyzers, then every contract
 analyzer, and reports what does not hold.
 Strict by default: every rule in the catalog is enforced at its declared
-severity unless a gofastr.contracts.yml relaxes it, or a
+severity unless a gofastr.settings.yml relaxes it, or a
 %s directive on the line waives one instance.
 
 %s:
@@ -735,8 +735,8 @@ severity unless a gofastr.contracts.yml relaxes it, or a
                      The analysis still runs whole-tree, so cross-file
                      findings are still found; only reporting narrows.
   --strict           Warnings fail the run too
-  --config <file>    Config file (default: gofastr.contracts.yml, or a
-                     contracts: block in gofastr.yml)
+  --config <file>    Settings file whose contracts: section applies
+                     (default: gofastr.settings.yml at the project root)
   --analyzer <name>  Run only the named analyzer(s), comma-separated
   --rule <id>        Report only the named rule(s), comma-separated. IDs or
                      slugs. Pair with --fix to apply one rule's fixes at a

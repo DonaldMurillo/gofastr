@@ -1,7 +1,7 @@
 //check-csp:ignore-file
 // Every rule ships a deliberately-wrong example, and the one for
 // GOFASTR1804 is an inline style attribute. Same exemption check-csp
-// applies to its own source, and the same reason gofastr.contracts.yml
+// applies to its own source, and the same reason gofastr.settings.yml
 // exempts this package from the rendering and SQL rules: a catalog of
 // counter-examples trips the checks it documents.
 

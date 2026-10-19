@@ -13,6 +13,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
@@ -195,7 +196,7 @@ PORT=localhost:8080
 		osExit(1)
 	}
 
-	writeIsolationConfig(name, dbDriver)
+	writeSettingsFile(name, dbDriver)
 
 	// Write .gitignore. gen/ holds generated Go (regenerated, not committed);
 	// .gofastr/ holds local runtime state (worktree DB isolation, harness).
@@ -314,7 +315,7 @@ bin/
 		fmt.Println("    entities/entities.go : Sample entity (posts) served at /api/posts")
 	}
 	fmt.Println("    .env                 : Environment configuration")
-	fmt.Println("    gofastr.isolation.yml : Process-isolation configuration")
+	fmt.Println("    gofastr.settings.yml : Project settings (process isolation)")
 	fmt.Println("    .gitignore           : Git ignore rules")
 	fmt.Println()
 	fmt.Printf("  %s (read by AI coding tools so they reach for framework primitives instead of reinventing):\n", bold("AI-agent onboarding"))
@@ -730,7 +731,9 @@ func writeEnvFile(path, content string) error {
 	return f.Close()
 }
 
-func writeIsolationConfig(name, _ string) {
+// writeSettingsFile writes gofastr.settings.yml with the isolation
+// section a new project starts from.
+func writeSettingsFile(name, _ string) {
 	// strategy: fields are intentionally omitted; the resolver currently
 	// dispatches by driver, not by strategy name. Re-introduce them only
 	// when they actually toggle behavior.
@@ -745,8 +748,8 @@ isolation:
   services:
   env:
 `
-	if err := os.WriteFile(filepath.Join(name, "gofastr.isolation.yml"), []byte(content), 0o644); err != nil {
-		fail("Failed to write gofastr.isolation.yml: %v", err)
+	if err := fileperm.WriteOwnerOnly(filepath.Join(name, settings.FileName), []byte(content)); err != nil {
+		fail("Failed to write %s: %v", settings.FileName, err)
 		osExit(1)
 	}
 }

@@ -18,7 +18,7 @@ myapp/
 │   └── entities.go     # app.Entity(...) registrations (sample: posts, at /api/posts)
 ├── migrations/         # versioned SQL (reversible)
 ├── static/             # assets served as-is
-├── gofastr.isolation.yml  # process-isolation config (local DB per worktree)
+├── gofastr.settings.yml   # project settings: isolation, codegen, contracts
 ├── go.mod
 └── AGENTS.md, CLAUDE.md, DESIGN.md, .agents/   # agent onboarding
 ```

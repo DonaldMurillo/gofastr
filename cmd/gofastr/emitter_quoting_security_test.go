@@ -374,7 +374,7 @@ func irQuotingSites(payload string) []irSite {
 // emitted into.
 //
 // `gofastr generate sdk` reads name / sdk_version / module from --flags or from
-// the project's own gofastr.codegen.yml (applySDKConfigDefaults) and
+// the project's own gofastr.settings.yml (applySDKConfigDefaults) and
 // concatenates them into a stamp comment at the top of every emitted artifact.
 // Only client.go had a gate behind it (format.Source in renderSDKGoFiles); the
 // JS/TS clients and both READMEs had none, and client.js is what
@@ -469,7 +469,7 @@ func assertStampStayedInert(t *testing.T, site string, f generatedFile) {
 //
 // renderSDKGoFiles builds it as fmt.Sprintf("module %s\n\ngo 1.21\n", …) with
 // nothing between the value and the next directive, so a newline in --module
-// (or in gofastr.codegen.yml's `module:`) appends directives of the attacker's
+// (or in gofastr.settings.yml's `module:`) appends directives of the attacker's
 // choosing. `replace` is the sharp one: it redirects a dependency to a path in
 // the tree, and every downstream repo that builds the SDK compiles whatever is
 // there. Rejected at buildSDKSpec so no target can emit it.

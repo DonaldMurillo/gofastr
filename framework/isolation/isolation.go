@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
@@ -102,17 +103,20 @@ func Resolve(projectDir string) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	configPath, configDir, err := discoverConfig(start)
+	// The isolation section of gofastr.settings.yml, looked up to the
+	// project root and never past it: a parent workspace's settings must
+	// not silently apply to a nested project.
+	settingsFile, found, err := settings.Find(start, "isolation")
 	if err != nil {
 		return nil, err
 	}
-	if configPath != "" {
-		loaded, err := loadConfig(configPath, cfg)
+	if found {
+		loaded, err := loadConfig(settingsFile, cfg)
 		if err != nil {
 			return nil, err
 		}
 		cfg = loaded
-		start = configDir
+		start = settingsFile.Dir
 	}
 	gitRoot, linkedWorktree := findGitRoot(start)
 	id := os.Getenv(envID)
@@ -153,7 +157,7 @@ func Resolve(projectDir string) (*Runtime, error) {
 	return &Runtime{
 		projectDir:      start,
 		gitRoot:         gitRoot,
-		configPath:      configPath,
+		configPath:      settingsFile.Path,
 		cfg:             cfg,
 		active:          active,
 		id:              id,
@@ -340,43 +344,12 @@ func defaultConfig() Config {
 	}
 }
 
-func discoverConfig(start string) (path, dir string, err error) {
-	dir = start
-	for {
-		for _, name := range []string{"gofastr.isolation.yml", "gofastr.isolation.yaml", "gofastr.yml", "gofastr.yaml"} {
-			path := filepath.Join(dir, name)
-			if _, err := os.Stat(path); err == nil {
-				return path, dir, nil
-			} else if !os.IsNotExist(err) {
-				return "", "", err
-			}
-		}
-		// Stop at the git root: a parent workspace's gofastr.yml must not
-		// silently apply to a nested project.
-		if kind, _ := gitMarker(dir); kind != gitNone {
-			return "", start, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", start, nil
-		}
-		dir = parent
-	}
-}
-
-func loadConfig(path string, base Config) (Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return Config{}, err
-	}
-	node, err := coreyaml.Parse(string(data))
-	if err != nil {
-		return Config{}, err
-	}
-	if node.Kind != coreyaml.Map || node.Map["isolation"] == nil {
+func loadConfig(f settings.File, base Config) (Config, error) {
+	section := f.Section("isolation")
+	if section == nil {
 		return base, nil
 	}
-	m, err := expectMap(node.Map["isolation"], "isolation")
+	m, err := expectMap(section, "isolation")
 	if err != nil {
 		return Config{}, err
 	}
@@ -468,8 +441,8 @@ func loadConfig(path string, base Config) (Config, error) {
 			// operator set, whatever GOFASTR_ISOLATION_REWRITE says).
 			if isEnvShapingName(key) || !isTemplateValue(val) {
 				fmt.Fprintf(os.Stderr,
-					"isolation: ignoring env %q from %s: only port/id/dir template values may come from the project isolation file\n",
-					key, path)
+					"isolation: ignoring env %q from %s: only port/id/dir template values may come from the project settings file\n",
+					key, f.Path)
 				continue
 			}
 			cfg.Env[key] = val

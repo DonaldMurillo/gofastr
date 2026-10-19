@@ -9,7 +9,7 @@ import (
 // Property family: a rule reference resolves only when it spells the
 // catalog entry exactly, ASCII case aside. Rule references are repo
 // content — a suppression directive or a `rules:` key in
-// gofastr.contracts.yml ships in the PR being verified — so a Unicode
+// gofastr.settings.yml ships in the PR being verified — so a Unicode
 // fold-equivalent that *resolves* is a review-evasion primitive: the
 // directive reads like a typo ("gofaſtr1003") in the diff while it
 // silently disables the real rule.
@@ -62,7 +62,7 @@ func TestSuppressionHomoglyphRefStaysUnknown(t *testing.T) {
 
 func TestConfigHomoglyphRuleKeyRejected(t *testing.T) {
 	dir := t.TempDir()
-	writeTemp(t, dir, "gofastr.contracts.yml", "contracts:\n  rules:\n    gofaſtr1003: off\n")
+	writeTemp(t, dir, "gofastr.settings.yml", "contracts:\n  rules:\n    gofaſtr1003: off\n")
 	if _, err := LoadConfig(dir, ""); err == nil {
 		t.Error("SECURITY: [homoglyph] a rules key spelled with a Unicode fold-equivalent resolved and turned GOFASTR1003 off; it must be rejected like any other unknown rule")
 	}

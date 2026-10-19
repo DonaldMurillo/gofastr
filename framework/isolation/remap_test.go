@@ -16,7 +16,7 @@ func TestChildBindsParentResolvedAddr(t *testing.T) {
 	clearIsolationEnv(t)
 	t.Setenv("PORT", "")
 	dir := linkedWorktree(t)
-	writeFile(t, filepath.Join(dir, "gofastr.yml"), remapConfig)
+	writeFile(t, filepath.Join(dir, "gofastr.settings.yml"), remapConfig)
 	parent, err := Resolve(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestListenAddrThenStartRemapsOnce(t *testing.T) {
 	clearIsolationEnv(t)
 	t.Setenv("PORT", "")
 	dir := linkedWorktree(t)
-	writeFile(t, filepath.Join(dir, "gofastr.yml"), remapConfig)
+	writeFile(t, filepath.Join(dir, "gofastr.settings.yml"), remapConfig)
 	addr, err := ListenAddr(dir, ":8080")
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestListenAddrThenStartRemapsOnce(t *testing.T) {
 func TestRecordPortKeepsFirstMapping(t *testing.T) {
 	clearIsolationEnv(t)
 	dir := linkedWorktree(t)
-	writeFile(t, filepath.Join(dir, "gofastr.yml"), remapConfig)
+	writeFile(t, filepath.Join(dir, "gofastr.settings.yml"), remapConfig)
 	rt, err := Resolve(dir)
 	if err != nil {
 		t.Fatal(err)

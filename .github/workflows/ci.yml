@@ -461,7 +461,7 @@ jobs:
         #
         # Pay the debt down and re-record with `gofastr verify --strict
         # --baseline-write`; the run tells you when an entry is
-        # over-accepting. Relaxations live in gofastr.contracts.yml, in the
+        # over-accepting. Relaxations live in gofastr.settings.yml, in the
         # repository, in review, not in this file as CI-only flags nobody
         # reads.
         run: |

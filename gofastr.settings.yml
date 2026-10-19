@@ -1,4 +1,4 @@
-# GoFastr's own contract configuration.
+# GoFastr's own settings. Only the contracts section is set here.
 #
 # The framework is held to its own rules — `gofastr verify` runs against
 # this repository the same way it runs against an app built with it. Every

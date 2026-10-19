@@ -1586,7 +1586,7 @@ See [Quick scaffolds](app-spec.md#quick-scaffolds-generate-entityscreen) in
 the App specs guide for the relationship between stubs and full yml.
 
 For arbitrary configured generators (not a full app spec), use a
-`gofastr.codegen.yml` extension config. See [Codegen](codegen.md) for
+`codegen:` section in `gofastr.settings.yml`. See [Codegen](codegen.md) for
 config discovery, the extension protocol, and manifest-based cleaning.
 
 To ship the API as a branded terminal client for your customers,
