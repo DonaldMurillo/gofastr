@@ -51,6 +51,7 @@ func TestLintReplaceFill_FiresOnComputed(t *testing.T) {
 	}
 }
 
+//gofastr:test-reads core-ui/runtime/
 func TestLintReplaceFill_RepoIsClean(t *testing.T) {
 	repoRoot, err := findRepoRoot()
 	if err != nil {

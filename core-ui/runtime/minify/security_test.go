@@ -54,6 +54,8 @@ func TestMinify_PreservesSchemeStringLiterals(t *testing.T) {
 // src=…> so this is defense-in-depth, but a host that ever inlines
 // the bundle would be one buggy minifier transform away from an HTML
 // parser premature-close.
+//
+//gofastr:test-reads core-ui/runtime/src/ core-ui/runtime/runtime.js
 func TestMinify_DoesNotIntroduceScriptCloser(t *testing.T) {
 	root, err := repoRoot()
 	if err != nil {

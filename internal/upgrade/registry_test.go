@@ -427,6 +427,8 @@ func nextVersions(v string) []string {
 // pending file written as v0.87.0 while the release shipped as v0.88.0
 // slips under `through` at the bump with a version that never existed;
 // this is the tripwire that says rename it.
+//
+//gofastr:test-reads /CHANGELOG.md
 func TestShippedEntriesAreChangelogReleases(t *testing.T) {
 	body, err := os.ReadFile(filepath.Join("..", "..", "CHANGELOG.md"))
 	if err != nil {

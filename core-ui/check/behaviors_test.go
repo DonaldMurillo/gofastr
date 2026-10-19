@@ -17,6 +17,8 @@ import (
 // TestRegisteredBehaviorSources_FindsTheTreesModules pins the
 // registrations the tree carries today, by path, so a refactor that
 // moves a module or renames its directive cannot slip out of the walk.
+//
+//gofastr:test-reads importers:github.com/DonaldMurillo/gofastr/core-ui/registry
 func TestRegisteredBehaviorSources_FindsTheTreesModules(t *testing.T) {
 	repoRoot, err := findRepoRoot()
 	if err != nil {

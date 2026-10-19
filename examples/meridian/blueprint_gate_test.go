@@ -120,6 +120,8 @@ func TestBlueprintStillGenerates(t *testing.T) {
 // The reverse direction is checked too: a committed file the generator
 // no longer emits would linger as dead code that looks owned, so it
 // fails the gate until deleted.
+//
+//gofastr:test-reads examples/meridian/cmd/ examples/meridian/entities/
 func TestGeneratedTreesMatchGenerator(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the generator; skipped under -short")

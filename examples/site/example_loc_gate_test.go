@@ -14,6 +14,7 @@ import (
 	"testing"
 )
 
+//gofastr:test-reads examples/**/*.go
 func measureExampleLoC(t *testing.T, slug string) int {
 	t.Helper()
 	dir := filepath.Join("..", slug)
@@ -77,6 +78,7 @@ func TestLoCBadgeDriftBoundary(t *testing.T) {
 	}
 }
 
+//gofastr:test-reads examples/*/gofastr.yml
 func TestExampleLoCBadgesMatchTree(t *testing.T) {
 	page := body(t, "/examples")
 	for slug, badge := range exampleLoC {

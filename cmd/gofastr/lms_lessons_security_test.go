@@ -42,6 +42,8 @@ import (
 // Contrast legs (courses create 403, lessons PATCH/DELETE 403, modules GET
 // 200) pin the premise that only the lessons create gate is missing, and
 // stay green once the access block gains create: catalog:write.
+//
+//gofastr:test-reads examples/lms/gofastr.yml
 func TestLmsLessonsRedCreateGated(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, builds, and boots an app")

@@ -20,6 +20,8 @@ import (
 // docs, real technical English: each word is drawn as often as the
 // docs use it, so prefixes spread the way a docs site's do. Each page
 // has six sections of 130 words and a camelCase title.
+//
+//gofastr:test-reads framework/docs/content/
 func bigCorpus(tb testing.TB, n int) []Page {
 	tb.Helper()
 	paths, err := filepath.Glob("../../framework/docs/content/*.md")

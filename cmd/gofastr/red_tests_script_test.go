@@ -13,6 +13,8 @@ import (
 // affected-package computation exits non-zero. The gate must degrade
 // to every red-tagged package, never filter against an empty list and
 // report "nothing to run".
+//
+//gofastr:test-reads scripts/red-tests.sh
 func TestRedScriptRunsAllWhenAffectedFails(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs go test in a temp module")

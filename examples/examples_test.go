@@ -17,6 +17,8 @@ import (
 )
 
 // TestStaticSiteSmoke verifies the static site serves HTML pages and CSS.
+//
+//gofastr:test-reads examples/static-site/pages/
 func TestStaticSiteSmoke(t *testing.T) {
 	app := framework.NewApp(
 		framework.WithConfig(framework.AppConfig{Name: "static-site-test"}),
@@ -345,6 +347,8 @@ func TestBlogEntityDeclarationsLoad(t *testing.T) {
 		}
 	}
 }
+
+//gofastr:test-reads examples/spa/static/
 func TestSPAStaticFiles(t *testing.T) {
 	staticDir := "spa/static"
 	if _, err := os.Stat(staticDir); os.IsNotExist(err) {

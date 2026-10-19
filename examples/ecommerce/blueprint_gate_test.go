@@ -94,6 +94,8 @@ func normalizeModule(s, scratchModule string) string {
 //
 // This fails with the file that differs instead, so drift is a red test rather
 // than a dirty tree nobody reads.
+//
+//gofastr:test-reads examples/ecommerce/app/
 func TestCommittedAppMatchesGeneratorOutput(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the generator; skipped under -short")

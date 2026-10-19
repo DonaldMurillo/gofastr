@@ -43,6 +43,8 @@ func TestExampleBlueprintsLoad(t *testing.T) {
 const buildGateScratchPkg = "build_"
 
 // exampleBlueprints returns every examples/<name>/gofastr.yml in the repo.
+//
+//gofastr:test-reads examples/*/gofastr.yml
 func exampleBlueprints(t *testing.T) []string {
 	t.Helper()
 	matches, err := filepath.Glob("../../examples/*/gofastr.yml")

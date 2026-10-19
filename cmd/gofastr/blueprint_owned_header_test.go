@@ -14,6 +14,8 @@ import (
 // files) say "Code generated", and they say DO NOT EDIT with it.
 // Meridian's blueprint covers entities, auth and marketing, so every
 // owned-file emitter runs.
+//
+//gofastr:test-reads examples/meridian/gofastr.yml
 func TestBlueprintOwnedFilesHaveNoGeneratedHeader(t *testing.T) {
 	bp, err := loadBlueprint("../../examples/meridian/gofastr.yml")
 	if err != nil {

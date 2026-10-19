@@ -39,6 +39,7 @@ func TestDocGoInventoryComplete(t *testing.T) {
 		"doc.go package-doc inventory")
 }
 
+//gofastr:test-reads framework/docs/content/ui-new-components.md
 func TestCatalogDocListsAllComponents(t *testing.T) {
 	path := filepath.Join("..", "docs", "content", "ui-new-components.md")
 	src, err := os.ReadFile(path)

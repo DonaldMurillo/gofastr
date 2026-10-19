@@ -114,6 +114,8 @@ var x = "<div style=\"x\"></div>"
 // repo-clean test: run the inline-style check against the live tree
 // and fail if any production file emits an inline style attribute.
 // CI runs both.
+//
+//gofastr:test-reads *.go
 func TestLintNoInlineStyles_RepoIsClean(t *testing.T) {
 	wd, err := os.Getwd()
 	if err != nil {

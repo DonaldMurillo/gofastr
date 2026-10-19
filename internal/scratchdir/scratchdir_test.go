@@ -60,6 +60,8 @@ func TestCleanupRemovesTheScratchItMade(t *testing.T) {
 }
 
 // The gates rely on Root staying out of `./...` at the module root.
+//
+//gofastr:test-reads _scratch/
 func TestRootHiddenFromGoList(t *testing.T) {
 	// The probe goes one level down so the check never writes into Root
 	// itself (see Package).

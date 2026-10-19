@@ -25,6 +25,8 @@ const meridianYML = "../../examples/meridian/gofastr.yml"
 // is copied as it is. The copy keeps the write out of the repo: a file
 // created and removed in examples/meridian moves the listing every repo
 // walker hashes, and Go's test cache re-ran them all.
+//
+//gofastr:test-reads examples/meridian/
 func meridianWithEnv(t *testing.T, bp Blueprint) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "meridian")
@@ -130,6 +132,8 @@ func diffValue(a, b reflect.Value, path string) string {
 // run Meridian alone, and Meridian happens to be the one example that
 // declares no middleware/plugins/helpers — the fixture guarding the inverse
 // claim was the fixture least able to observe it failing (#318).
+//
+//gofastr:test-reads examples/*/gofastr.yml
 func TestPack_SerializerRoundTrip(t *testing.T) {
 	matches, err := filepath.Glob("../../examples/*/gofastr.yml")
 	if err != nil {

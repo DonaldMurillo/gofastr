@@ -19,12 +19,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   of a changed package. `cmd/affected` selects the package when a changed
   file matches. Only a `//` comment declares; a raw-string fixture line
   does not. A pattern that can never match, such as `./README.md`, is an
-  error, as is a directive with no space before its patterns. The
-  repo-walking gates in `internal/chromedptest`, `framework/docs`,
-  `framework/ui`, `framework/contracts/analyzers`, `core-ui/runtime`,
-  `cmd/gofastr` and `examples/site` declare their inputs; before this, a
-  hand-booted Chrome added in another package never selected the
-  launch-allowance gate, and one reached main that way.
+  error, as is a directive with no space before its patterns. A file a
+  package's `//go:embed` patterns cover now selects that package, even
+  inside a nested package and even once deleted:
+  a blueprint template edit under `cmd/gofastr/packages/` used to select
+  neither the generator nor the gates that run it. The tests that read
+  outside their package now declare those inputs, found with the new
+  `scripts/test-reads-audit.sh`. The script records each file a test
+  binary opens through Go's test log and fails on one whose change would
+  not select its reader; reads by a subprocess or a build-tagged test
+  stay outside what it sees. CI runs it weekly. Before this, a hand-booted Chrome
+  added in another package never selected the launch-allowance gate, and
+  one reached main that way. `core-ui/runtime`'s repo-tree gates moved to
+  `core-ui/runtime/internal/treegate`, so a change to a registry caller
+  selects that small package instead of the runtime's browser suite.
 - **`laxenvelope` names a strict package's own types to its importers.**
   A package that strict-decodes a type it declares, the way core/mcp
   decodes its `Request`, now exports that type in its strictness fact, so
