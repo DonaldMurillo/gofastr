@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -260,4 +261,66 @@ func TestDefaultBaseFallsBackToMain(t *testing.T) {
 	}
 	// No origin/main in this repository, so the default resolves to main.
 	want(t, run(t, options{root: root}), "c", "d")
+}
+
+// envValue is the last value of key in env, the one exec uses.
+func envValue(env []string, key string) (string, bool) {
+	val, found := "", false
+	for _, kv := range env {
+		if k, v, ok := strings.Cut(kv, "="); ok && k == key {
+			val, found = v, true
+		}
+	}
+	return val, found
+}
+
+func TestCoverageDirIsOutsideTheModule(t *testing.T) {
+	t.Setenv(coverageDirEnv, "")
+	root := t.TempDir()
+	dir, ok := envValue(commandEnv(root), coverageDirEnv)
+	if !ok || dir == "" {
+		t.Fatalf("%s not set for the wrapped command", coverageDirEnv)
+	}
+	if rel, err := filepath.Rel(root, dir); err == nil && !strings.HasPrefix(rel, "..") {
+		t.Fatalf("coverage dir %q is inside the module %q", dir, root)
+	}
+	// The value is a test cache input: it must not move between runs.
+	if again, _ := envValue(commandEnv(root), coverageDirEnv); again != dir {
+		t.Fatalf("coverage dir moved between runs: %q then %q", dir, again)
+	}
+	if other, _ := envValue(commandEnv(t.TempDir()), coverageDirEnv); other == dir {
+		t.Fatalf("two checkouts share coverage dir %q", dir)
+	}
+}
+
+func TestExplicitCoverageDirWins(t *testing.T) {
+	t.Setenv(coverageDirEnv, "/elsewhere")
+	if got, _ := envValue(commandEnv(t.TempDir()), coverageDirEnv); got != "/elsewhere" {
+		t.Fatalf("explicit %s replaced: got %q", coverageDirEnv, got)
+	}
+}
+
+// commandEnv is only half of it: the wrapped command must see the value.
+func TestWrappedCommandGetsCoverageDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("prints the variable through sh")
+	}
+	t.Setenv(coverageDirEnv, "")
+	bin := filepath.Join(t.TempDir(), "affected")
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build affected: %v\n%s", err, out)
+	}
+	root := newRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "c", "c.go"), []byte("package c\n\nfunc C() int { return 7 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bin, "-base", "main", "--", "sh", "-c", `printf %s "$`+coverageDirEnv+`"`)
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("affected -- sh: %v", err)
+	}
+	if want, _ := envValue(commandEnv(root), coverageDirEnv); string(out) != want {
+		t.Fatalf("wrapped command saw %s=%q, want %q", coverageDirEnv, out, want)
+	}
 }
