@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fixture is a tiny module with the import shapes the tool must read:
@@ -325,7 +326,9 @@ func TestWrappedCommandGetsCoverageDir(t *testing.T) {
 func buildAffected(t *testing.T) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "affected")
-	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+	// -buildvcs=false: a stamped build runs git in this repo and moves
+	// .git's mtime (see commandEnv).
+	if out, err := exec.Command("go", "build", "-buildvcs=false", "-o", bin, ".").CombinedOutput(); err != nil {
 		t.Fatalf("build affected: %v\n%s", err, out)
 	}
 	return bin
@@ -368,5 +371,79 @@ func TestCoverageDirWarnsWithoutAUserCache(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "no user cache directory") {
 		t.Fatalf("no warning on stderr: %q", stderr.String())
+	}
+}
+
+func TestCommandEnvTurnsOffVCSStamping(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"", "-buildvcs=false"},
+		{"-mod=mod", "-mod=mod -buildvcs=false"},
+		{"-buildvcs=true", "-buildvcs=true"},
+		{"--buildvcs=auto -mod=mod", "--buildvcs=auto -mod=mod"},
+	} {
+		t.Setenv("GOFLAGS", tc.in)
+		for _, cov := range []string{"", "/elsewhere"} {
+			t.Setenv(coverageDirEnv, cov)
+			if got, _ := envValue(commandEnv(t.TempDir()), "GOFLAGS"); got != tc.want {
+				t.Errorf("GOFLAGS=%q, %s=%q: wrapped GOFLAGS=%q, want %q", tc.in, coverageDirEnv, cov, got, tc.want)
+			}
+		}
+	}
+}
+
+// A stamped go build runs git, which moves .git's mtime; every test that
+// lists the repo root then misses the cache. The wrapped command's builds
+// must leave .git alone.
+func TestWrappedBuildLeavesGitDirAlone(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("runs the build through sh")
+	}
+	t.Setenv(coverageDirEnv, "")
+	bin := buildAffected(t)
+	root := newRepo(t)
+	if err := os.MkdirAll(filepath.Join(root, "app"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "app", "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	git(t, root, "add", ".")
+	git(t, root, "commit", "-q", "-m", "app")
+	gitDir := filepath.Join(root, ".git")
+	old := time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
+	moved := func() bool {
+		t.Helper()
+		fi, err := os.Stat(gitDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return !fi.ModTime().Equal(old)
+	}
+	build := func(cmd *exec.Cmd) {
+		t.Helper()
+		// A fresh mtime on a tracked file gives git's status an index
+		// refresh to write, which is when it takes index.lock.
+		now := time.Now()
+		if err := os.Chtimes(filepath.Join(root, "app", "main.go"), now, now); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(gitDir, old, old); err != nil {
+			t.Fatal(err)
+		}
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("%v: %v\n%s", cmd.Args, err, out)
+		}
+	}
+	out := filepath.Join(t.TempDir(), "app")
+
+	// Control: a stamped build does move it, so the check below can fail.
+	build(exec.Command("go", "build", "-o", out, "./app"))
+	if !moved() {
+		t.Skip("this git leaves .git alone on a stamped build; nothing to prove")
+	}
+	build(exec.Command(bin, "-all", "--", "sh", "-c", `go build -o "$0" ./app`, out))
+	if moved() {
+		t.Fatal("a go build under affected moved .git's mtime")
 	}
 }

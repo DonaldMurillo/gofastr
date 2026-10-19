@@ -57,9 +57,13 @@ of the new type names.
   `examples/meridian/`, the SQLite files the blog, spa and api-tour
   examples created in their own directories when the livereload test
   booted them (they ignored `DATABASE_URL`; they read it now), and the
-  `.git` directory, which framework/isolation stats.
+  `.git` directory, which framework/isolation stats and every repo
+  walker's root listing carries. Any `go build` a test ran inside the
+  repo stamped VCS data by running git, which moved `.git`'s mtime.
   `cmd/affected` now points `GOFASTR_AXE_COVERAGE_DIR` at a per-checkout
-  directory in the user cache, the gates generate under a tracked
+  directory in the user cache and adds `-buildvcs=false` to the wrapped
+  command's `GOFLAGS`, the embedcheck mutation checks edit fixtures in
+  the loader's overlay rather than on disk, the gates generate under a tracked
   `_scratch/blueprints/` without touching its listing, the pack tests
   read a copy, repo walkers skip `_` directories, and isolation reads
   `.git/HEAD` instead. The git hooks drop the `libexec/git-core` entry

@@ -227,8 +227,14 @@ const coverageDirEnv = "GOFASTR_AXE_COVERAGE_DIR"
 // directory is fixed per checkout, because the variable's value is a
 // cache input too, and survives runs, because a package replayed from
 // the cache records nothing. An explicit setting wins.
+//
+// It also turns off VCS stamping for every go build under it. A stamped
+// build runs git, which takes and drops index.lock in .git; that moves the
+// .git directory's mtime, the root listing that every repo-walking test
+// hashes carries it, and those tests re-ran on the next sweep. Tests do
+// not read the stamp.
 func commandEnv(root string) []string {
-	env := os.Environ()
+	env := append(os.Environ(), "GOFLAGS="+noVCSStamp(os.Getenv("GOFLAGS")))
 	if os.Getenv(coverageDirEnv) != "" {
 		return env
 	}
@@ -236,6 +242,18 @@ func commandEnv(root string) []string {
 		env = append(env, coverageDirEnv+"="+dir)
 	}
 	return env
+}
+
+// noVCSStamp adds -buildvcs=false to goflags unless it already sets
+// -buildvcs either way.
+func noVCSStamp(goflags string) string {
+	for _, f := range strings.Fields(goflags) {
+		name, _, _ := strings.Cut(strings.TrimLeft(f, "-"), "=")
+		if name == "buildvcs" {
+			return goflags
+		}
+	}
+	return strings.TrimSpace(goflags + " -buildvcs=false")
 }
 
 // coverageDir is the coverage root commandEnv hands the wrapped command:
