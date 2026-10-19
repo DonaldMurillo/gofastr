@@ -19,7 +19,7 @@ func TestWriteFiles_ConflictSkip(t *testing.T) {
 
 	write := func(path, content string, conflicted *[]string) error {
 		fs := NewFileSet()
-		if err := fs.Add(GeneratedFile{Path: path, Content: content, Owner: "blueprint"}); err != nil {
+		if err := fs.Add(GeneratedFile{Path: path, Content: content, Owner: "app"}); err != nil {
 			return err
 		}
 		return WriteFiles(fs, WriteOptions{
@@ -77,7 +77,7 @@ func TestWriteFiles_ConflictSkip(t *testing.T) {
 // is only legal when NOT cleaning.
 func TestWriteFiles_RootRejectedWhenCleaning(t *testing.T) {
 	fs := NewFileSet()
-	_ = fs.Add(GeneratedFile{Path: "main.go", Content: "package main\n", Owner: "blueprint"})
+	_ = fs.Add(GeneratedFile{Path: "main.go", Content: "package main\n", Owner: "app"})
 	err := WriteFiles(fs, WriteOptions{OutputRoot: ".", Clean: true})
 	if err == nil {
 		t.Fatal("expected root + clean to be rejected")

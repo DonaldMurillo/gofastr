@@ -113,7 +113,7 @@ func AuditPreImageAs[T any](ctx context.Context) (T, bool) {
 //
 // Prefer AuditPreImageAs[T] when a typed shape is available; this exists
 // for hooks that want plain map[string]any access keyed the way every
-// other hook-adjacent surface (columns, typed-query API, blueprint fields)
+// other hook-adjacent surface (columns, typed-query API, app spec fields)
 // already speaks.
 //
 // Returns nil when no pre-image was captured for this context.

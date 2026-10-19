@@ -110,7 +110,7 @@ func TestColumnConstructorAll(t *testing.T) {
 	}
 }
 
-// ── blueprint.go scalar/value helpers ─────────────────────────────────
+// ── appspec.go scalar/value helpers ─────────────────────────────────
 
 func sc(v any) *coreyaml.Node { return &coreyaml.Node{Kind: coreyaml.Scalar, Value: v} }
 func lst(n ...*coreyaml.Node) *coreyaml.Node {
@@ -120,7 +120,7 @@ func mp(m map[string]*coreyaml.Node) *coreyaml.Node {
 	return &coreyaml.Node{Kind: coreyaml.Map, Map: m}
 }
 
-func TestBlueprintScalarHelpers(t *testing.T) {
+func TestAppSpecScalarHelpers(t *testing.T) {
 	// boolValue
 	if !boolValue(sc(true)) || boolValue(sc("false")) {
 		t.Fatal("boolValue bool")
@@ -203,16 +203,16 @@ func TestRelationTypeFromStringAndScreenType(t *testing.T) {
 	}
 }
 
-func TestBlueprintThemeColorPathAll(t *testing.T) {
+func TestAppSpecThemeColorPathAll(t *testing.T) {
 	keys := []string{"primary", "primary-fg", "secondary", "background", "surface",
 		"surface-soft", "text", "text-muted", "text-subtle", "border", "border-strong",
 		"accent", "success", "warning", "danger", "danger-fg", "info"}
 	for _, k := range keys {
-		if _, ok := blueprintThemeColorPath(k); !ok {
-			t.Errorf("blueprintThemeColorPath(%q) not ok", k)
+		if _, ok := appSpecThemeColorPath(k); !ok {
+			t.Errorf("appSpecThemeColorPath(%q) not ok", k)
 		}
 	}
-	if _, ok := blueprintThemeColorPath("nonsense"); ok {
+	if _, ok := appSpecThemeColorPath("nonsense"); ok {
 		t.Fatal("unknown key should be !ok")
 	}
 }

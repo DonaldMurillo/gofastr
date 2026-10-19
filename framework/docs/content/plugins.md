@@ -130,7 +130,7 @@ listener's resolved address; starting on `":0"` delivers the real
 port. Hooks run in registration order, take no error return, and must
 not block. If any Start phase fails, `OnReady` never fires, so a
 banner printed here can't lie about a server that never came up.
-Blueprint-generated apps and `gofastr init` scaffolds print their
+Generated apps and `gofastr init` scaffolds print their
 startup banner this way. The framework's own `server ready` banner follows
 the same bind boundary and includes `Listening: http://<resolved-address>`;
 a bind failure emits no readiness banner.

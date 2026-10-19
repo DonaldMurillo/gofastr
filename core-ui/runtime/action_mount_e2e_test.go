@@ -14,7 +14,7 @@ import (
 // TestActionMount_FiresOnHydration drives the data-action-mount contract in a
 // real browser: a component action registered via actions.js must fire once
 // on load (not only on a user event), so a server-rendered island can
-// populate itself. This is the keystone the blueprint entity_list / detail /
+// populate itself. This is the keystone the app spec entity_list / detail /
 // relation-select blocks rely on to fetch their data on first paint.
 func TestActionMount_FiresOnHydration(t *testing.T) {
 	runActionMount(t, "")

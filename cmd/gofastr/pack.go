@@ -22,35 +22,35 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/freeze"
 )
 
-// decodeBlueprintString parses a gofastr.yml from a string into a Blueprint.
-func decodeBlueprintString(yml string) (Blueprint, error) {
+// decodeAppSpecString parses a gofastr.yml from a string into a App spec.
+func decodeAppSpecString(yml string) (AppSpec, error) {
 	node, err := coreyaml.Parse(yml)
 	if err != nil {
-		return Blueprint{}, err
+		return AppSpec{}, err
 	}
-	return decodeBlueprint(node)
+	return decodeAppSpec(node)
 }
 
 // =============================================================================
-// pack.go: a lossy app→blueprint snapshot. encodeBlueprintYAML serializes a Blueprint
-// back to gofastr.yml; the AST readers (further down) reconstruct a Blueprint
+// pack.go: a lossy app→app spec snapshot. encodeAppSpecYAML serializes a App spec
+// back to gofastr.yml; the AST readers (further down) reconstruct a App spec
 // from a generated app's Go source so `gofastr pack <dir>` recovers the
 // authoring YAML. The invariant the round-trip test gates:
 //
 //	parse(meridian.yml)  deep-equals  parse(pack(generate(meridian.yml)))
 //
-// i.e. encodeBlueprintYAML is the exact inverse of decodeBlueprint (modulo
-// comments + formatting). When a new blueprint construct is added, BOTH the
+// i.e. encodeAppSpecYAML is the exact inverse of decodeAppSpec (modulo
+// comments + formatting). When a new app spec construct is added, BOTH the
 // decoder and this serializer must learn it or the round-trip test fails.
 // =============================================================================
 
-// encodeBlueprintYAML serializes a Blueprint to gofastr.yml text. It returns
+// encodeAppSpecYAML serializes a App spec to gofastr.yml text. It returns
 // an error — naming the key and the map it came from — for any map key that
-// cannot survive the decodeBlueprint round trip: core/yaml never unquotes
+// cannot survive the decodeAppSpec round trip: core/yaml never unquotes
 // keys, so quoting would mangle them just as surely as emitting them raw
 // would forge structure. Refusing is the honest inverse.
-func encodeBlueprintYAML(bp Blueprint) (string, error) {
-	root := blueprintToMap(bp)
+func encodeAppSpecYAML(bp AppSpec) (string, error) {
+	root := appSpecToMap(bp)
 	var sb strings.Builder
 	if err := writeYAMLMap(&sb, root, 0, topLevelOrder, ""); err != nil {
 		return "", err
@@ -58,9 +58,9 @@ func encodeBlueprintYAML(bp Blueprint) (string, error) {
 	return sb.String(), nil
 }
 
-// ----- Blueprint -> nested map[string]any (mirrors the decoders) -------------
+// ----- App spec -> nested map[string]any (mirrors the decoders) -------------
 
-func blueprintToMap(bp Blueprint) map[string]any {
+func appSpecToMap(bp AppSpec) map[string]any {
 	m := map[string]any{}
 	if app := appToMap(bp.App); len(app) > 0 {
 		m["app"] = app
@@ -153,9 +153,9 @@ func blueprintToMap(bp Blueprint) map[string]any {
 }
 
 // stubsToAny mirrors decodeNamedStubs: a stub with no description is a bare
-// scalar (the form hand-authored blueprints use), one with a description is
-// a name/description map. Both decode back to the same BlueprintNamedStub.
-func stubsToAny(stubs []BlueprintNamedStub) []any {
+// scalar (the form hand-authored app specs use), one with a description is
+// a name/description map. Both decode back to the same AppSpecNamedStub.
+func stubsToAny(stubs []AppSpecNamedStub) []any {
 	out := make([]any, len(stubs))
 	for i, s := range stubs {
 		if s.Description == "" {
@@ -169,7 +169,7 @@ func stubsToAny(stubs []BlueprintNamedStub) []any {
 	return out
 }
 
-func appToMap(a BlueprintApp) map[string]any {
+func appToMap(a AppSpecApp) map[string]any {
 	m := map[string]any{}
 	putStr(m, "name", a.Name)
 	putStr(m, "description", a.Description)
@@ -322,7 +322,7 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 		for _, f := range e.Fields {
 			// Drop the hidden owner column the generator synthesizes from
 			// owner_field: the author never wrote it, so packing it back
-			// would diverge from the source blueprint.
+			// would diverge from the source app spec.
 			if e.Scope != nil && e.Scope.OwnerField != "" && f.Name == e.Scope.OwnerField && f.Hidden {
 				continue
 			}
@@ -382,7 +382,7 @@ func fieldToMap(f framework.FieldDeclaration) map[string]any {
 	return m
 }
 
-func screenToMap(s BlueprintScreen) map[string]any {
+func screenToMap(s AppSpecScreen) map[string]any {
 	m := map[string]any{}
 	putStr(m, "name", s.Name)
 	putStr(m, "route", s.Route)
@@ -402,7 +402,7 @@ func screenToMap(s BlueprintScreen) map[string]any {
 	return m
 }
 
-func blocksToAny(blocks []BlueprintBlock) []any {
+func blocksToAny(blocks []AppSpecBlock) []any {
 	out := make([]any, len(blocks))
 	for i, b := range blocks {
 		out[i] = blockToMap(b)
@@ -410,7 +410,7 @@ func blocksToAny(blocks []BlueprintBlock) []any {
 	return out
 }
 
-func blockToMap(b BlueprintBlock) map[string]any {
+func blockToMap(b AppSpecBlock) map[string]any {
 	m := map[string]any{}
 	putStr(m, "kind", b.Kind)
 	putStr(m, "type", b.Type)
@@ -443,7 +443,7 @@ func blockToMap(b BlueprintBlock) map[string]any {
 	return m
 }
 
-func navItemsToAny(items []BlueprintNavItem) []any {
+func navItemsToAny(items []AppSpecNavItem) []any {
 	out := make([]any, len(items))
 	for i, n := range items {
 		nm := map[string]any{}
@@ -459,7 +459,7 @@ func navItemsToAny(items []BlueprintNavItem) []any {
 	return out
 }
 
-func actionToMap(a BlueprintAction) map[string]any {
+func actionToMap(a AppSpecAction) map[string]any {
 	m := map[string]any{}
 	putStr(m, "name", a.Name)
 	putStr(m, "event", a.Event)
@@ -467,7 +467,7 @@ func actionToMap(a BlueprintAction) map[string]any {
 	return m
 }
 
-// relationTypeToString returns the blueprint YAML spelling of t ("has_one",
+// relationTypeToString returns the app spec YAML spelling of t ("has_one",
 // "belongs_to", ...), via the shared relationKinds table.
 func relationTypeToString(t framework.RelationType) string {
 	return relationKindFor(t).yaml
@@ -670,7 +670,7 @@ func writeYAMLEntry(sb *strings.Builder, key string, val any, indent int, path s
 	case map[string]any:
 		if len(v) == 0 {
 			// core/yaml rejects flow mappings outright (parseScalar →
-			// flowMapError), so `key: {}` writes a file decodeBlueprint
+			// flowMapError), so `key: {}` writes a file decodeAppSpec
 			// cannot read back. A bare `key:` line is the exact inverse:
 			// parseMap reads it as an empty map node, which is what the
 			// grouped decoders produce for an authored bare `scope:` /
@@ -939,7 +939,7 @@ func needsQuote(s string) bool {
 	// writeFlowList emits scalars inside `[a, b]`. An interior comma there is
 	// an ITEM SEPARATOR: "open,closed" emitted bare re-parses as two items,
 	// which breaks the exact-inverse contract this file's banner claims for
-	// encodeBlueprintYAML/decodeBlueprint and lets a `values:` enum set gain a
+	// encodeAppSpecYAML/decodeAppSpec and lets a `values:` enum set gain a
 	// member the app never declared (unlike search_fields/fields/filters/
 	// columns, `values:` is not re-checked against the declaration on decode).
 	// Testing only s[:1] was the bug. Quoting these in block context too costs
@@ -974,10 +974,10 @@ func needsQuote(s string) bool {
 
 // ----- key orders (readability; semantics are order-independent) -------------
 var (
-	// Ordered to match blueprintToMap's emission order, which is also the
-	// order the blueprint docs present these keys in. A key the serializer
+	// Ordered to match appSpecToMap's emission order, which is also the
+	// order the app spec docs present these keys in. A key the serializer
 	// emits but this list omits ships unsorted, which
-	// TestPackSerializerCoversEveryBlueprintField catches.
+	// TestPackSerializerCoversEveryAppSpecField catches.
 	topLevelOrder  = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "hooks", "middleware", "plugins", "helpers"}
 	appOrder       = []string{"name", "description", "base_url", "module", "db", "static_dir", "output_dir", "api_prefix", "public_openapi", "theme", "auth", "admin", "pwa", "llm_md"}
 	entityOrder    = []string{"name", "table", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations", "display", "states"}
@@ -1043,7 +1043,7 @@ func orderFor(key string) []string {
 }
 
 // =============================================================================
-// AST readers: reconstruct a Blueprint from a generated app's Go source.
+// AST readers: reconstruct a App spec from a generated app's Go source.
 // The generator emits a known, finite grammar; these readers reverse it.
 // =============================================================================
 
@@ -1886,7 +1886,7 @@ func assignedLiteral(body []ast.Stmt, name string) ast.Expr {
 }
 
 // packReadSeed reconstructs seed data from stubs.go seedData().
-func packReadSeed(dir string) ([]BlueprintSeedEntity, error) {
+func packReadSeed(dir string) ([]AppSpecSeedEntity, error) {
 	path := filepath.Join(dir, "stubs.go")
 	if _, err := os.Stat(path); err != nil {
 		return nil, nil
@@ -1899,10 +1899,10 @@ func packReadSeed(dir string) ([]BlueprintSeedEntity, error) {
 	if !ok {
 		return nil, nil
 	}
-	var out []BlueprintSeedEntity
+	var out []AppSpecSeedEntity
 	for _, el := range lit.Elts {
 		sv := fieldVals(el)
-		se := BlueprintSeedEntity{Entity: astString(sv["Entity"])}
+		se := AppSpecSeedEntity{Entity: astString(sv["Entity"])}
 		if rowsLit, ok := sv["Rows"].(*ast.CompositeLit); ok {
 			for _, rowEl := range rowsLit.Elts {
 				if m, ok := astAny(rowEl).(map[string]any); ok {
@@ -1915,9 +1915,9 @@ func packReadSeed(dir string) ([]BlueprintSeedEntity, error) {
 	return out, nil
 }
 
-// packReadNav reconstructs the sidebar nav from blueprint/app.go
+// packReadNav reconstructs the sidebar nav from app.go
 // sidebarConfig() ui.SidebarConfig{Items: []ui.SidebarItem{...}}.
-func packReadNav(dir string) ([]BlueprintNavItem, error) {
+func packReadNav(dir string) ([]AppSpecNavItem, error) {
 	path := filepath.Join(dir, "app.go")
 	if _, err := os.Stat(path); err != nil {
 		return nil, nil
@@ -1935,14 +1935,14 @@ func packReadNav(dir string) ([]BlueprintNavItem, error) {
 	if !ok {
 		return nil, nil
 	}
-	var out []BlueprintNavItem
+	var out []AppSpecNavItem
 	for _, el := range itemsLit.Elts {
 		iv := fieldVals(el)
 		role := ""
 		if rolesLit, ok := iv["Roles"].(*ast.CompositeLit); ok && len(rolesLit.Elts) > 0 {
 			role = astString(rolesLit.Elts[0])
 		}
-		out = append(out, BlueprintNavItem{
+		out = append(out, AppSpecNavItem{
 			Label: astString(iv["Label"]),
 			Href:  astString(iv["Href"]),
 			Icon:  astString(iv["Icon"]),
@@ -1955,9 +1955,9 @@ func packReadNav(dir string) ([]BlueprintNavItem, error) {
 // ----- P3: app config + theme + auth + admin --------------------------------
 
 // packReadApp reconstructs the app config (consts + theme + auth + admin) from
-// blueprint/app.go and main.go.
-func packReadApp(dir string) (BlueprintApp, error) {
-	app := BlueprintApp{APIPrefix: "api"}
+// app.go and main.go.
+func packReadApp(dir string) (AppSpecApp, error) {
+	app := AppSpecApp{APIPrefix: "api"}
 	appPath := filepath.Join(dir, "app.go")
 	appFile, err := packParseFile(appPath)
 	if err != nil {
@@ -2054,7 +2054,7 @@ func packReadApp(dir string) (BlueprintApp, error) {
 
 	// Secrets moved out of committed source into the generated .env
 	// (JWT_SECRET, DATABASE_URL, ADMIN_SEED_PASSWORD). Recover them from
-	// there so pack round-trips the authored blueprint. Absent .env → the
+	// there so pack round-trips the authored app spec. Absent .env → the
 	// fields stay as recovered from source (empty for the env-backed ones).
 	env := packReadDotEnv(filepath.Join(dir, ".env"))
 	if v := env["JWT_SECRET"]; v != "" {
@@ -2088,8 +2088,8 @@ func packReadDotEnv(path string) map[string]string {
 }
 
 // packPWADisplay maps a generated uihost.PWADisplay* constant name back
-// to the blueprint's display string, the reverse of
-// blueprintPWADisplayConst. Unknown/absent → "" (the omitted default).
+// to the app spec's display string, the reverse of
+// appSpecPWADisplayConst. Unknown/absent → "" (the omitted default).
 func packPWADisplay(constName string) string {
 	switch constName {
 	case "PWADisplayStandalone":
@@ -2190,7 +2190,7 @@ type screenReg struct {
 // so apps generated before the per-screen split still pack. In both layouts
 // synthesized /new + /{id}/edit form screens (body is a resource Form call)
 // are dropped: they weren't authored.
-func packReadScreens(dir string) ([]BlueprintScreen, error) {
+func packReadScreens(dir string) ([]AppSpecScreen, error) {
 	if screens, err := packReadPerScreenFiles(dir); err != nil {
 		return nil, err
 	} else if screens != nil {
@@ -2213,7 +2213,7 @@ func packReadScreens(dir string) ([]BlueprintScreen, error) {
 // same walk shape as packReadPerEntityFiles). Returns (nil, nil) when the
 // project uses the legacy aggregated layout (no screen_*.go files), so the
 // caller falls back to packReadLegacyScreens.
-func packReadPerScreenFiles(dir string) ([]BlueprintScreen, error) {
+func packReadPerScreenFiles(dir string) ([]AppSpecScreen, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return nil, nil // no output dir yet
@@ -2256,7 +2256,7 @@ func packReadPerScreenFiles(dir string) ([]BlueprintScreen, error) {
 	}
 	titles := map[string]string{}
 	descs := map[string]string{}
-	bodies := map[string][]BlueprintBlock{}
+	bodies := map[string][]AppSpecBlock{}
 	var orderedRegs []screenOrderReg
 	for _, name := range screenNames {
 		file, perr := parseRoot(name)
@@ -2304,13 +2304,13 @@ func packReadPerScreenFiles(dir string) ([]BlueprintScreen, error) {
 		}
 	}
 	sort.SliceStable(orderedRegs, func(i, j int) bool { return orderedRegs[i].order < orderedRegs[j].order })
-	var out []BlueprintScreen
+	var out []AppSpecScreen
 	for _, r := range orderedRegs {
 		body := bodies[r.reg.typeName]
 		if isSynthesizedBody(body) {
 			continue
 		}
-		s := BlueprintScreen{
+		s := AppSpecScreen{
 			Name:   typeNameToScreenName(r.reg.typeName),
 			Route:  paramToBrace(r.reg.route),
 			Title:  titles[r.reg.typeName],
@@ -2321,7 +2321,7 @@ func packReadPerScreenFiles(dir string) ([]BlueprintScreen, error) {
 			s.Description = d
 		}
 		if r.reg.authed {
-			s.Access = BlueprintAccess{Auth: true, Role: r.reg.role}
+			s.Access = AppSpecAccess{Auth: true, Role: r.reg.role}
 		}
 		out = append(out, s)
 	}
@@ -2436,7 +2436,7 @@ func screenArg(e ast.Expr, fn *ast.FuncDecl) ast.Expr {
 
 // packReadLegacyScreens reads the pre-per-screen aggregated layout: screen
 // types in screens.go, registrations in app.go's RegisterGenerated.
-func packReadLegacyScreens(dir string) ([]BlueprintScreen, error) {
+func packReadLegacyScreens(dir string) ([]AppSpecScreen, error) {
 	appFile, err := packParseFile(filepath.Join(dir, "app.go"))
 	if err != nil {
 		return nil, err
@@ -2454,7 +2454,7 @@ func packReadLegacyScreens(dir string) ([]BlueprintScreen, error) {
 	helpers := packHelperReturns(appFile, scrFile)
 	titles := map[string]string{}
 	descs := map[string]string{}
-	bodies := map[string][]BlueprintBlock{}
+	bodies := map[string][]AppSpecBlock{}
 	for _, d := range scrFile.Decls {
 		fn, ok := d.(*ast.FuncDecl)
 		if !ok || fn.Recv == nil || len(fn.Recv.List) != 1 {
@@ -2470,13 +2470,13 @@ func packReadLegacyScreens(dir string) ([]BlueprintScreen, error) {
 			bodies[recv] = reverseRenderBody(fn, helpers)
 		}
 	}
-	var out []BlueprintScreen
+	var out []AppSpecScreen
 	for _, r := range regs {
 		body := bodies[r.typeName]
 		if isSynthesizedBody(body) {
 			continue
 		}
-		s := BlueprintScreen{
+		s := AppSpecScreen{
 			Name:   typeNameToScreenName(r.typeName),
 			Route:  paramToBrace(r.route),
 			Title:  titles[r.typeName],
@@ -2487,7 +2487,7 @@ func packReadLegacyScreens(dir string) ([]BlueprintScreen, error) {
 			s.Description = d
 		}
 		if r.authed {
-			s.Access = BlueprintAccess{Auth: true, Role: r.role}
+			s.Access = AppSpecAccess{Auth: true, Role: r.role}
 		}
 		out = append(out, s)
 	}
@@ -2584,7 +2584,7 @@ func packReadScreenRegs(file *ast.File) []screenReg {
 					layout:   layoutVarToName(call.Args[2]),
 				})
 			}
-		case "RegisterScreen": // site.RegisterScreen(app.NewScreen(route, &X{}).WithTitle(..).WithPolicy(blueprintAuthPolicy(login, role)), layout)
+		case "RegisterScreen": // site.RegisterScreen(app.NewScreen(route, &X{}).WithTitle(..).WithPolicy(appSpecAuthPolicy(login, role)), layout)
 			if len(call.Args) == 2 {
 				r := screenReg{layout: layoutVarToName(call.Args[1])}
 				packWalkScreenChain(call.Args[0], &r)
@@ -2608,7 +2608,7 @@ func packWalkScreenChain(e ast.Expr, r *screenReg) {
 				r.typeName = compositeTypeName(call.Args[1])
 			}
 		case "WithPolicy":
-			// arg is blueprintAuthPolicy(login, role)
+			// arg is appSpecAuthPolicy(login, role)
 			if len(call.Args) == 1 {
 				if pc, ok := call.Args[0].(*ast.CallExpr); ok && len(pc.Args) == 2 {
 					r.authed = true
@@ -2682,7 +2682,7 @@ func paramToBrace(route string) string {
 	return strings.Join(parts, "/")
 }
 
-func isSynthesizedBody(body []BlueprintBlock) bool {
+func isSynthesizedBody(body []AppSpecBlock) bool {
 	return len(body) == 1 && (body[0].Kind == "entity_create" || body[0].Kind == "entity_edit")
 }
 
@@ -2700,7 +2700,7 @@ func isSynthesizedBody(body []BlueprintBlock) bool {
 // hand-written screens that never moved) `render.Tag("div", attrs,
 // children…)`. pack has to read all three or it silently returns no
 // blocks for the others, which is how a round-trip loses screens.
-func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []BlueprintBlock {
+func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []AppSpecBlock {
 	if fn.Body == nil {
 		return nil
 	}
@@ -2742,7 +2742,7 @@ func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []Blueprin
 				call, firstChild = inner, 1
 			}
 		}
-		var out []BlueprintBlock
+		var out []AppSpecBlock
 		for _, arg := range call.Args[firstChild:] {
 			if b, ok := reverseBlock(arg, helpers); ok {
 				out = append(out, b)
@@ -2754,7 +2754,7 @@ func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []Blueprin
 }
 
 // isScreenStack reports whether call is the generator's screen stack,
-// `ui.Stack(ui.StackConfig{Gap: ui.GapXL}, …)` (blueprintScreenStackOpen),
+// `ui.Stack(ui.StackConfig{Gap: ui.GapXL}, …)` (appSpecScreenStackOpen),
 // as opposed to a stack block an author placed on the screen.
 func isScreenStack(call *ast.CallExpr) bool {
 	if callSel(call) != "ui.Stack" || len(call.Args) < 1 {
@@ -2809,11 +2809,11 @@ func callSel(call *ast.CallExpr) string {
 	return ""
 }
 
-// reverseBlock turns one emitted UI expression back into a BlueprintBlock.
-func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, bool) {
+// reverseBlock turns one emitted UI expression back into an AppSpecBlock.
+func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (AppSpecBlock, bool) {
 	call, ok := e.(*ast.CallExpr)
 	if !ok {
-		return BlueprintBlock{}, false
+		return AppSpecBlock{}, false
 	}
 	// Entity builder chains (appUI.List("x")…): the entityui spelling the
 	// generator emits now. The older appResources chains are read by
@@ -2888,7 +2888,7 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, bool
 	case "ui.StatCard":
 		return reverseStatCard(call), true
 	case "ui.Markdown":
-		return BlueprintBlock{Kind: "markdown", Text: astString(cfgOf(call, 0)["Source"])}, true
+		return AppSpecBlock{Kind: "markdown", Text: astString(cfgOf(call, 0)["Source"])}, true
 	case "ui.AuthCard":
 		return reverseAuthCard(call), true
 	case "html.Heading":
@@ -2897,15 +2897,15 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, bool
 		if n, ok := astInt(c["Level"]); ok {
 			lvl = n
 		}
-		return BlueprintBlock{Type: "heading", Level: lvl, Text: renderTextArg(call.Args[len(call.Args)-1])}, true
+		return AppSpecBlock{Type: "heading", Level: lvl, Text: renderTextArg(call.Args[len(call.Args)-1])}, true
 	case "render.Tag":
 		return reverseRenderTag(call)
 	}
-	return BlueprintBlock{}, false
+	return AppSpecBlock{}, false
 }
 
-func reverseLayoutBlock(kind string, call *ast.CallExpr, helpers map[string]ast.Expr) BlueprintBlock {
-	b := BlueprintBlock{Kind: kind, Props: map[string]any{}}
+func reverseLayoutBlock(kind string, call *ast.CallExpr, helpers map[string]ast.Expr) AppSpecBlock {
+	b := AppSpecBlock{Kind: kind, Props: map[string]any{}}
 	cfg := cfgOf(call, 0)
 	if kind == "grid" {
 		putStr(b.Props, "min", astString(cfg["Min"]))
@@ -2958,16 +2958,16 @@ func reverseJustify(name string) string {
 	}[name]
 }
 
-func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (BlueprintBlock, bool) {
+func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (AppSpecBlock, bool) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
-		return BlueprintBlock{}, false
+		return AppSpecBlock{}, false
 	}
 	method := sel.Sel.Name
 	if method != "List" && method != "Detail" && method != "Form" {
-		return BlueprintBlock{}, false
+		return AppSpecBlock{}, false
 	}
-	b := BlueprintBlock{}
+	b := AppSpecBlock{}
 	node := sel.X
 	hops := 0
 	for {
@@ -2977,18 +2977,18 @@ func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (Blu
 		// returning not-reversible is the safe fallback (the screen
 		// just isn't packed; it stays as authored Go).
 		if hops > 32 {
-			return BlueprintBlock{}, false
+			return AppSpecBlock{}, false
 		}
 		if idx, ok := node.(*ast.IndexExpr); ok {
 			if identName(idx.X) == "appResources" {
 				b.Entity = astString(idx.Index)
 				break
 			}
-			return BlueprintBlock{}, false
+			return AppSpecBlock{}, false
 		}
 		c, ok := node.(*ast.CallExpr)
 		if !ok {
-			return BlueprintBlock{}, false
+			return AppSpecBlock{}, false
 		}
 		s, ok := c.Fun.(*ast.SelectorExpr)
 		if !ok {
@@ -3002,7 +3002,7 @@ func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (Blu
 					continue
 				}
 			}
-			return BlueprintBlock{}, false
+			return AppSpecBlock{}, false
 		}
 		switch s.Sel.Name {
 		case "WithColumns":
@@ -3047,17 +3047,17 @@ func reverseEntityResource(call *ast.CallExpr, helpers map[string]ast.Expr) (Blu
 }
 
 // reverseEntityUI turns one appUI.List/Record/Create builder chain back
-// into its BlueprintBlock: Columns→fields, PageSize→limit, As→mode,
+// into its AppSpecBlock: Columns→fields, PageSize→limit, As→mode,
 // Heading→text, Empty→empty_text, Bulk→bulk, and a list without NoCreate
 // is create:true (the builder's default). Key, Base, Delete and Duplicate
 // are structural and do not round-trip. Returns false for anything that is
 // not an appUI chain.
-func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, bool) {
+func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (AppSpecBlock, bool) {
 	call, ok := e.(*ast.CallExpr)
 	if !ok {
-		return BlueprintBlock{}, false
+		return AppSpecBlock{}, false
 	}
-	b := BlueprintBlock{}
+	b := AppSpecBlock{}
 	noCreate := false
 	node := ast.Expr(call)
 	hops := 0
@@ -3065,11 +3065,11 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, b
 		// Same hop bound as reverseEntityResource: a self-referential or
 		// mutually recursive helper must break the walk, not loop forever.
 		if hops > 32 {
-			return BlueprintBlock{}, false
+			return AppSpecBlock{}, false
 		}
 		c, ok := node.(*ast.CallExpr)
 		if !ok {
-			return BlueprintBlock{}, false
+			return AppSpecBlock{}, false
 		}
 		s, ok := c.Fun.(*ast.SelectorExpr)
 		if !ok {
@@ -3080,7 +3080,7 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, b
 					continue
 				}
 			}
-			return BlueprintBlock{}, false
+			return AppSpecBlock{}, false
 		}
 		if identName(s.X) == "appUI" {
 			switch s.Sel.Name {
@@ -3093,10 +3093,10 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, b
 				// synthesized create screen: marked so pack can drop it.
 				b.Kind = "entity_create"
 			default:
-				return BlueprintBlock{}, false
+				return AppSpecBlock{}, false
 			}
 			if len(c.Args) < 1 {
-				return BlueprintBlock{}, false
+				return AppSpecBlock{}, false
 			}
 			b.Entity = astString(c.Args[0])
 			return b, true
@@ -3129,18 +3129,18 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (BlueprintBlock, b
 				b.EmptyText = astString(c.Args[0])
 			}
 		case "Key", "Base", "Delete", "Duplicate", "RenderCtx", "Actions", "Related", "RelatedAt":
-			// structural: no blueprint key (RenderCtx turns the builder
+			// structural: no app spec key (RenderCtx turns the builder
 			// into the HTML the screen's stack takes; Actions, Related and
 			// RelatedAt are app-side extensions pack does not declare)
 		default:
-			return BlueprintBlock{}, false
+			return AppSpecBlock{}, false
 		}
 		node = s.X
 		hops++
 	}
 }
 
-func reverseHero(call *ast.CallExpr) BlueprintBlock {
+func reverseHero(call *ast.CallExpr) AppSpecBlock {
 	c := cfgOf(call, 0)
 	p := map[string]any{}
 	putStr(p, "eyebrow", astString(c["Eyebrow"]))
@@ -3164,12 +3164,12 @@ func reverseHero(call *ast.CallExpr) BlueprintBlock {
 			}
 		}
 	}
-	return BlueprintBlock{Kind: "hero", Props: p}
+	return AppSpecBlock{Kind: "hero", Props: p}
 }
 
-func reverseSection(call *ast.CallExpr, helpers map[string]ast.Expr) BlueprintBlock {
+func reverseSection(call *ast.CallExpr, helpers map[string]ast.Expr) AppSpecBlock {
 	c := cfgOf(call, 0)
-	b := BlueprintBlock{Kind: "section", Props: props2("heading", astString(c["Heading"]), "eyebrow", astString(c["Eyebrow"]), "description", astString(c["Description"]))}
+	b := AppSpecBlock{Kind: "section", Props: props2("heading", astString(c["Heading"]), "eyebrow", astString(c["Eyebrow"]), "description", astString(c["Description"]))}
 	// The section's children are wrapped in ui.Grid/ui.Stack(cfg, children…).
 	for _, arg := range call.Args[1:] {
 		wrap, ok := arg.(*ast.CallExpr)
@@ -3187,7 +3187,7 @@ func reverseSection(call *ast.CallExpr, helpers map[string]ast.Expr) BlueprintBl
 	return b
 }
 
-func reverseStatCard(call *ast.CallExpr) BlueprintBlock {
+func reverseStatCard(call *ast.CallExpr) AppSpecBlock {
 	c := cfgOf(call, 0)
 	p := map[string]any{}
 	putStr(p, "label", astString(c["Label"]))
@@ -3206,10 +3206,10 @@ func reverseStatCard(call *ast.CallExpr) BlueprintBlock {
 			putStr(p, "format", astString(vc.Args[5]))
 		}
 	}
-	return BlueprintBlock{Kind: "stat_card", Props: p}
+	return AppSpecBlock{Kind: "stat_card", Props: p}
 }
 
-func reversePricing(call *ast.CallExpr) BlueprintBlock {
+func reversePricing(call *ast.CallExpr) AppSpecBlock {
 	plans := []any{}
 	for _, arg := range call.Args[1:] {
 		pc, ok := arg.(*ast.CallExpr)
@@ -3236,10 +3236,10 @@ func reversePricing(call *ast.CallExpr) BlueprintBlock {
 		}
 		plans = append(plans, plan)
 	}
-	return BlueprintBlock{Kind: "pricing", Props: map[string]any{"plans": plans}}
+	return AppSpecBlock{Kind: "pricing", Props: map[string]any{"plans": plans}}
 }
 
-func reverseAuthCard(call *ast.CallExpr) BlueprintBlock {
+func reverseAuthCard(call *ast.CallExpr) AppSpecBlock {
 	c := cfgOf(call, 0)
 	// Body: ui.Form(ui.FormConfig{Action: …}, hidden-next, fields…).
 	action, next := "", ""
@@ -3272,7 +3272,7 @@ func reverseAuthCard(call *ast.CallExpr) BlueprintBlock {
 	putStr(p, "action", action)
 	putStr(p, "next", next)
 	putStr(p, hrefKey, footerHref)
-	return BlueprintBlock{Kind: kind, Text: astString(c["Title"]), Props: p}
+	return AppSpecBlock{Kind: kind, Text: astString(c["Title"]), Props: p}
 }
 
 // rawString unwraps render.Raw("…") → its string content.
@@ -3297,11 +3297,11 @@ func htmlAttr(html, attr string) string {
 	return ""
 }
 
-func reverseRenderTag(call *ast.CallExpr) (BlueprintBlock, bool) {
+func reverseRenderTag(call *ast.CallExpr) (AppSpecBlock, bool) {
 	tag := astString(call.Args[0])
 	switch tag {
 	case "p":
-		return BlueprintBlock{Type: "paragraph", Text: renderTextArg(call.Args[len(call.Args)-1])}, true
+		return AppSpecBlock{Type: "paragraph", Text: renderTextArg(call.Args[len(call.Args)-1])}, true
 	case "div":
 		// chart wrapper: render.Tag("div", {class:"mrd-chart"}, Heading(title), ui.BarChart/PieChart(...)).
 		for _, arg := range call.Args[2:] {
@@ -3326,21 +3326,21 @@ func reverseRenderTag(call *ast.CallExpr) (BlueprintBlock, bool) {
 				} else if dataCall, ok := cc["Slices"].(*ast.CallExpr); ok {
 					p["source"] = chartSource(dataCall)
 				}
-				return BlueprintBlock{Kind: kind, Props: p}, true
+				return AppSpecBlock{Kind: kind, Props: p}, true
 			}
 		}
 	}
-	return BlueprintBlock{}, false
+	return AppSpecBlock{}, false
 }
 
 // reverseChartCall recognizes the three chart emission shapes and returns
-// the corresponding blueprint block (without a title; the caller sets it
+// the corresponding app spec block (without a title; the caller sets it
 // from a wrapping ui.Card heading when present):
 //
 //	ui.BarChart(ui.BarChartConfig{Bars: groupBars(ctx, e, g), …})
 //	ui.PieChart(ui.PieChartConfig{Slices: groupSlices(ctx, e, g)})
 //	lineChart(ctx, e, g)
-func reverseChartCall(call *ast.CallExpr) (BlueprintBlock, bool) {
+func reverseChartCall(call *ast.CallExpr) (AppSpecBlock, bool) {
 	switch callSel(call) {
 	case "ui.BarChart", "ui.PieChart":
 		kind := map[string]string{"ui.BarChart": "bar_chart", "ui.PieChart": "pie_chart"}[callSel(call)]
@@ -3351,12 +3351,12 @@ func reverseChartCall(call *ast.CallExpr) (BlueprintBlock, bool) {
 		} else if dataCall, ok := cc["Slices"].(*ast.CallExpr); ok {
 			p["source"] = chartSource(dataCall)
 		}
-		return BlueprintBlock{Kind: kind, Props: p}, true
+		return AppSpecBlock{Kind: kind, Props: p}, true
 	case "lineChart":
 		// lineChart(ctx, entity, group_by)
-		return BlueprintBlock{Kind: "line_chart", Props: map[string]any{"source": chartSource(call)}}, true
+		return AppSpecBlock{Kind: "line_chart", Props: map[string]any{"source": chartSource(call)}}, true
 	}
-	return BlueprintBlock{}, false
+	return AppSpecBlock{}, false
 }
 
 func chartSource(dataCall *ast.CallExpr) map[string]any {
@@ -3377,8 +3377,8 @@ func cfgOf(call *ast.CallExpr, i int) map[string]ast.Expr {
 	return map[string]ast.Expr{}
 }
 
-func block(kind string, props map[string]any) BlueprintBlock {
-	return BlueprintBlock{Kind: kind, Props: props}
+func block(kind string, props map[string]any) AppSpecBlock {
+	return AppSpecBlock{Kind: kind, Props: props}
 }
 
 func props2(kv ...string) map[string]any {
@@ -3421,24 +3421,24 @@ func buttonVariant(e ast.Expr) string {
 	return ""
 }
 
-// packBlueprint reconstructs a full Blueprint from a generated app directory.
-// secretsInBlueprint reports whether the packed blueprint carries any of
+// packAppSpec reconstructs a full App spec from a generated app directory.
+// secretsInAppSpec reports whether the packed app spec carries any of
 // the three values packReadDotEnv recovers from .env.
-// secretsInBlueprint decides whether pack prints its do-NOT-commit
+// secretsInAppSpec decides whether pack prints its do-NOT-commit
 // warning. It defers to dsnredact.HasSecret for the DSN rather than
 // testing for "@": the generator already uses the same predicate to
 // decide what to redact, and the two disagreeing means pack stays silent
 // about a secret the generator considered worth hiding. A keyword/value
 // DSN ("host=db user=app password=hunter2") is the case that fell
 // through -- it carries a password and no "@" at all.
-func secretsInBlueprint(bp Blueprint) bool {
+func secretsInAppSpec(bp AppSpec) bool {
 	return bp.App.Auth.JWTSecret != "" ||
 		bp.App.Admin.SeedPassword != "" ||
 		dsnredact.HasSecret(bp.App.DBURL)
 }
 
-func packBlueprint(dir string) (Blueprint, error) {
-	var bp Blueprint
+func packAppSpec(dir string) (AppSpec, error) {
+	var bp AppSpec
 	app, err := packReadApp(dir)
 	if err != nil {
 		return bp, err
@@ -3485,26 +3485,26 @@ func runPack(args []string) {
 			}
 		}
 	}
-	bp, err := packBlueprint(dir)
+	bp, err := packAppSpec(dir)
 	if err != nil {
 		fail("pack: %v", err)
 		osExit(1)
 		return
 	}
-	yml, err := encodeBlueprintYAML(bp)
+	yml, err := encodeAppSpecYAML(bp)
 	if err != nil {
 		fail("pack: %v", err)
 		osExit(1)
 		return
 	}
 	// packReadDotEnv rehydrates JWT_SECRET / ADMIN_SEED_PASSWORD /
-	// DATABASE_URL from the app's .env so the packed blueprint round-trips
+	// DATABASE_URL from the app's .env so the packed app spec round-trips
 	// (see the comment on packReadDotEnv). That reverses the generator's
 	// own "secrets never land in committed source" rule, which
-	// TestBlueprintNeverInlinesSecrets pins, and unlike `.env`, an
+	// TestAppSpecNeverInlinesSecrets pins, and unlike `.env`, an
 	// arbitrary `-o` path is not covered by the generated .gitignore. Warn
 	// loudly and write 0600 rather than 0644.
-	if secretsInBlueprint(bp) {
+	if secretsInAppSpec(bp) {
 		// With no -o the YAML is stdout and `pack > gofastr.yml` is the
 		// documented pipe, so the warning goes to stderr: a warning
 		// line ahead of the document is not valid YAML.

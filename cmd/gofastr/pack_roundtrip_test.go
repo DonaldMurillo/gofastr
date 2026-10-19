@@ -7,14 +7,14 @@ import (
 
 // Two serializer defects found by the #362 audit, both stated as the property
 // the serializer's own banner claims (pack.go: parse ∘ pack is the identity
-// on decodeBlueprint output) rather than as predicates on the writer:
+// on decodeAppSpec output) rather than as predicates on the writer:
 //
 //  1. writeYAMLEntry emitted `key: {}` for an empty map, and core/yaml
 //     rejects flow mappings outright (parseScalar → flowMapError), so a
-//     blueprint that legitimately decodes to an empty grouped struct — an
+//     app spec that legitimately decodes to an empty grouped struct — an
 //     authored bare `scope:`, `pagination:`, `exposure:`, `access:`, or an
 //     empty map inside properties/seed rows — packed to a file
-//     decodeBlueprintString could not read at all.
+//     decodeAppSpecString could not read at all.
 //  2. needsQuote("a:b") is false, which is correct for block VALUES (the
 //     parser only rejects ": " there), but parseList cuts ANY unquoted block
 //     list item at the first ':' into a map entry. Two different rules, and
@@ -23,7 +23,7 @@ import (
 //     URL) re-packed as `- a: b` and re-read as a map the source never
 //     declared.
 //
-// The comparison is reflect.DeepEqual over the WHOLE Blueprint, so a field
+// The comparison is reflect.DeepEqual over the WHOLE App spec, so a field
 // the writer silently drops fails the comparison rather than being skipped
 // by it — a comparison that only walks fields both sides have cannot see a
 // dropped one.
@@ -55,7 +55,7 @@ seed:
       -
       - title: second
 `
-	a, err := decodeBlueprintString(yml)
+	a, err := decodeAppSpecString(yml)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -81,16 +81,16 @@ seed:
 		t.Fatalf("fixture does not exercise the fix: rows = %#v, want a fully empty row in the middle", rows)
 	}
 
-	out, err := encodeBlueprintYAML(a)
+	out, err := encodeAppSpecYAML(a)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
-	b, err := decodeBlueprintString(out)
+	b, err := decodeAppSpecString(out)
 	if err != nil {
 		t.Fatalf("pack emitted an unreadable file: %v\n--- yaml ---\n%s", err, out)
 	}
 	if !reflect.DeepEqual(a, b) {
-		t.Errorf("empty-map round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstBlueprintDiff(a, b), out)
+		t.Errorf("empty-map round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstAppSpecDiff(a, b), out)
 	}
 }
 
@@ -123,7 +123,7 @@ screens:
             - "https://cdn.example.net/img.png"
             - alt: hero
 `
-	a, err := decodeBlueprintString(yml)
+	a, err := decodeAppSpecString(yml)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -151,15 +151,15 @@ screens:
 		t.Fatalf("fixture does not exercise the fix: block props.links = %#v", blocks[0].Props["links"])
 	}
 
-	out, err := encodeBlueprintYAML(a)
+	out, err := encodeAppSpecYAML(a)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
-	b, err := decodeBlueprintString(out)
+	b, err := decodeAppSpecString(out)
 	if err != nil {
 		t.Fatalf("pack emitted an unreadable file: %v\n--- yaml ---\n%s", err, out)
 	}
 	if !reflect.DeepEqual(a, b) {
-		t.Errorf("colon-scalar round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstBlueprintDiff(a, b), out)
+		t.Errorf("colon-scalar round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstAppSpecDiff(a, b), out)
 	}
 }

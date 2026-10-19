@@ -1178,7 +1178,7 @@ func TestLive_ButtonToolDispatch(t *testing.T) {
 }
 
 // TestLive_FreezeAndGenerateGo is the ship-it contract:
-// OMP/GLM-5.2 edits a live world, `kiln freeze` emits the current blueprint,
+// OMP/GLM-5.2 edits a live world, `kiln freeze` emits the current app spec,
 // the current CLI validates and generates it, and the complete owned-Go app
 // compiles against this worktree.
 func TestLive_FreezeAndGenerateGo(t *testing.T) {
@@ -1242,7 +1242,7 @@ Stop after world_get confirms the app config, both entities, the home page, and 
 	}
 	saveShot(t, "09_live_omp_forge_desktop", shot)
 
-	// Freeze into the future app root. A go.mod beside the blueprint lets both
+	// Freeze into the future app root. A go.mod beside the app spec lets both
 	// validate and generation prove module-path consistency.
 	appDir := filepath.Join(srv.Dir, "app")
 	freezeCmd := exec.Command(kilnBin(t), "freeze",
@@ -1285,13 +1285,13 @@ Stop after world_get confirms the app config, both entities, the home page, and 
 		t.Fatalf("build current gofastr: %v", err)
 	}
 
-	blueprint := filepath.Join(appDir, "gofastr.yml")
-	validateCmd := exec.Command(gofastrPath, "validate", blueprint)
+	appSpec := filepath.Join(appDir, "gofastr.yml")
+	validateCmd := exec.Command(gofastrPath, "validate", appSpec)
 	validateCmd.Dir = appDir
 	validateCmd.Stdout = newLogPipe(t, "validate")
 	validateCmd.Stderr = newLogPipe(t, "validate")
 	if err := validateCmd.Run(); err != nil {
-		t.Fatalf("frozen blueprint did not validate: %v", err)
+		t.Fatalf("frozen app spec did not validate: %v", err)
 	}
 
 	genCmd := exec.Command(gofastrPath, "generate", "--from=gofastr.yml")

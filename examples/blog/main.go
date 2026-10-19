@@ -47,7 +47,7 @@ func main() {
 	// drive generated surfaces that `go run` does not build. What DOES have to
 	// match is the EXPOSURE, which entity is readable and writable by whom.
 	// That is the half that drifted once, leaving this runnable twin accepting
-	// anonymous deletes the blueprint had already closed, so keep the
+	// anonymous deletes the app spec had already closed, so keep the
 	// Exposure blocks below in step with gofastr.yml.
 	registerEntities(app)
 
@@ -83,7 +83,7 @@ func registerEntities(app *framework.App) {
 	app.Entity("users", framework.EntityConfig{Scope:
 	// email is PII: accounts are staff-managed records, so every operation
 	// is RBAC-gated (fail-closed 403 for anonymous), hard rule #6. This
-	// mirrors the access: block in the blueprint twin (gofastr.yml).
+	// mirrors the access: block in the app spec twin (gofastr.yml).
 	&framework.ScopeConfig{}, Exposure: &framework.ExposureConfig{Access: framework.AccessControl{
 		Read:   "users:read",
 		Create: "users:write",

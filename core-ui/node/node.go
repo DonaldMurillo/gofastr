@@ -1,7 +1,7 @@
 // Package node is the JSON-clean UI element tree, the serializable
 // description of a screen that renders to HTML via core-ui/noderender.
 //
-// It is a first-party UI primitive. Both the blueprint codegen
+// It is a first-party UI primitive. Both the app spec codegen
 // (cmd/gofastr) and Kiln's World IR (kiln/world) compose it; neither owns
 // it. The package is deliberately dependency-free (stdlib only) so any
 // layer can describe a node tree without dragging in a renderer or the

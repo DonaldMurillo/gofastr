@@ -287,7 +287,7 @@ func TestThemeEditWritebackKeepsComponentOptions(t *testing.T) {
 }
 
 // goLiteralBreakers are the byte sequences that end a Go string literal,
-// the same set blueprint_emitter_injection_test.go uses. A raw backtick
+// the same set appspec_emitter_injection_test.go uses. A raw backtick
 // literal has no escape mechanism, so one backtick closes it; an
 // interpreted literal ends at an unescaped quote and never spans a newline.
 // %q must neutralise every one.
@@ -336,7 +336,7 @@ func TestThemeEditWritebackInjectionSafety(t *testing.T) {
 // injected `func PWN()` is valid Go, so "does it compile" passes it. The
 // question is whether "PWN" appears as an IDENTIFIER: inside a string
 // literal it is just the value the theme asked for. Modeled on
-// blueprint_emitter_injection_test.go's assertPayloadStayedData.
+// appspec_emitter_injection_test.go's assertPayloadStayedData.
 func assertThemePayloadStayedData(t *testing.T, src []byte) {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -1406,7 +1406,7 @@ func TestThemeEditTokenIsNotTheHarnessSigningKey(t *testing.T) {
 // its own setter in style.ApplyTokens and any one of them accepting a
 // declaration-breaking value would let that token's class inject rules into
 // the variant CSS the preview iframe loads (same-origin /preview). The
-// blueprint emitter's copy of this boundary is TestThemeValueCannotInjectCSS;
+// app generator's copy of this boundary is TestThemeValueCannotInjectCSS;
 // this is the theme-edit API's copy — the two must not drift.
 func TestThemeEditRejectsDeclarationBreaks(t *testing.T) {
 	srv := newTestServer(t)

@@ -218,19 +218,19 @@ func TestConfigRejectsUnknownRule(t *testing.T) {
 	}
 }
 
-func TestConfigIgnoresBlueprintWithoutContractsBlock(t *testing.T) {
+func TestConfigIgnoresAppSpecWithoutContractsBlock(t *testing.T) {
 	dir := t.TempDir()
 	writeTemp(t, dir, "gofastr.yml", "app:\n  name: demo\nentities:\n  - name: posts\n")
 	cfg, err := LoadConfig(dir, "")
 	if err != nil {
-		t.Fatalf("a blueprint with no contracts block must not be an error: %v", err)
+		t.Fatalf("an app spec with no contracts block must not be an error: %v", err)
 	}
 	if cfg.Path != "" {
 		t.Errorf("claimed %q as a contracts config", cfg.Path)
 	}
 }
 
-func TestConfigReadsContractsBlockInBlueprint(t *testing.T) {
+func TestConfigReadsContractsBlockInAppSpec(t *testing.T) {
 	dir := t.TempDir()
 	writeTemp(t, dir, "gofastr.yml", "app:\n  name: demo\ncontracts:\n  performance: \"off\"\n")
 	cfg, err := LoadConfig(dir, "")

@@ -34,7 +34,7 @@ func TestFreezePWACrossOriginRefused(t *testing.T) {
 			Enabled: true, Display: "standalone",
 			StartURL: tc.startURL, Scope: tc.scope,
 		}
-		_, err := freeze.BlueprintYAML(w)
+		_, err := freeze.AppSpecYAML(w)
 		if tc.bad && err == nil {
 			t.Errorf("SECURITY: %s: start_url=%q scope=%q graduated; the frozen app's manifest installs a PWA that launches on the attacker's origin", name, tc.startURL, tc.scope)
 		}
@@ -55,10 +55,10 @@ func TestProdAuthWithoutSecretRefused(t *testing.T) {
 		w.App.Auth = world.AuthConfig{Enabled: true, DevMode: devMode}
 		return w
 	}
-	if _, err := freeze.BlueprintYAML(newWorld(false)); err == nil {
+	if _, err := freeze.AppSpecYAML(newWorld(false)); err == nil {
 		t.Error("SECURITY: production auth (dev_mode off) with an empty jwt_secret graduated")
 	}
-	if _, err := freeze.BlueprintYAML(newWorld(true)); err != nil {
+	if _, err := freeze.AppSpecYAML(newWorld(true)); err != nil {
 		t.Errorf("dev_mode auth refused: %v", err)
 	}
 }
@@ -95,7 +95,7 @@ func TestFreezeRefusesSeedsLiveRefuses(t *testing.T) {
 			Entity: "posts", Rows: []map[string]any{{`title") VALUES('x'); --`: "x"}},
 		},
 	} {
-		if _, err := freeze.BlueprintYAML(newWorld(seed)); err == nil {
+		if _, err := freeze.AppSpecYAML(newWorld(seed)); err == nil {
 			t.Errorf("SECURITY: %s graduated. kiln/render's ApplySeeds (the code path every live\n"+
 				"add_seed runs through) refuses this seed, so the preview shows the refusal while the\n"+
 				"frozen app ships it and fails at first boot. The graduation gate must refuse what the\n"+
@@ -103,7 +103,7 @@ func TestFreezeRefusesSeedsLiveRefuses(t *testing.T) {
 		}
 	}
 	// Guard: an ordinary seed for a real entity still graduates.
-	if _, err := freeze.BlueprintYAML(newWorld(&world.Seed{Entity: "posts", Rows: []map[string]any{{"title": "ok"}}})); err != nil {
+	if _, err := freeze.AppSpecYAML(newWorld(&world.Seed{Entity: "posts", Rows: []map[string]any{{"title": "ok"}}})); err != nil {
 		t.Errorf("ordinary seed refused at graduation: %v", err)
 	}
 }

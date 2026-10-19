@@ -10,25 +10,25 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// Property family: no blueprint string may escape the NON-Go output context it
+// Property family: no app spec string may escape the NON-Go output context it
 // is emitted into.
 //
-// emitter_quoting_security_test.go + blueprint_emitter_injection_test.go cover the
-// GO context (literal / identifier / comment), and assertBlueprintGoParses is now
+// emitter_quoting_security_test.go + appspec_emitter_injection_test.go cover the
+// GO context (literal / identifier / comment), and assertAppSpecGoParses is now
 // the emitter-side backstop for it. Neither says anything about the contexts the
 // emitted Go then *produces at runtime*: CSS custom properties, an <a href>, or
 // (via `gofastr pack`) YAML. A value can be a perfectly well-formed Go string
 // literal and still break out of the CSS declaration or the anchor scheme that
 // literal is fed into, so the Go-side gate cannot see any of the three below.
 //
-// Threat model is the same one the sibling files state: a blueprint is
+// Threat model is the same one the sibling files state: an app spec is
 // developer-authored YAML OR agent-transcribed text (the documented workflow has
 // an agent authoring gofastr.yml from natural-language requirements). It is NOT
 // request-borne; no end user reaches these fields.
 
-func bpTheme(light, dark map[string]string) Blueprint {
-	return Blueprint{
-		App: BlueprintApp{
+func bpTheme(light, dark map[string]string) AppSpec {
+	return AppSpec{
+		App: AppSpecApp{
 			Name: "app", Module: "local/app",
 			Theme: light, ThemeDark: dark,
 		},
@@ -36,7 +36,7 @@ func bpTheme(light, dark map[string]string) Blueprint {
 			Name:   "tickets",
 			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
 		}},
-		Screens: []BlueprintScreen{{Name: "home", Route: "/", Type: "page"}},
+		Screens: []AppSpecScreen{{Name: "home", Route: "/", Type: "page"}},
 	}
 }
 
@@ -48,14 +48,14 @@ func bpTheme(light, dark map[string]string) Blueprint {
 //   - theme.DarkColors[<token>]       → `:root[data-color-scheme="dark"] { … }`
 //     and the `@media (prefers-color-scheme: dark)` copy of it
 //   - theme.Fonts.Body/Heading.Value  → `--font-body: '<family>', …`  (GUARDED:
-//     blueprintFontFamilyName allow-lists it; the control case below)
+//     appSpecFontFamilyName allow-lists it; the control case below)
 //
 // core-ui/style already owns this exact property: cssDeclBreakers + validateColorValue
 // reject `;` `}` `{` `/*` `*/` `<` `>` `\` newline and `url(`. But that validation
-// only runs through ApplyTokens (the `gofastr theme` setter path). The blueprint
+// only runs through ApplyTokens (the `gofastr theme` setter path). The app spec
 // emitter writes `theme.Colors.X.Value = %q` and `theme.DarkColors = map[...]{…}`
-// as DIRECT STRUCT ASSIGNMENTS, which bypass every setter, and validateBlueprint
-// checks only the theme KEY (blueprintThemeColorPath), never the value.
+// as DIRECT STRUCT ASSIGNMENTS, which bypass every setter, and validateAppSpec
+// checks only the theme KEY (appSpecThemeColorPath), never the value.
 //
 // The font sibling got the guard in the 2026-08-04 pass
 // (TestFontFamilyCannotInjectCSS); the color values beside it did not.
@@ -76,25 +76,25 @@ func TestThemeValueCannotInjectCSS(t *testing.T) {
 	}
 	sites := []struct {
 		site string
-		mut  func(*Blueprint, string)
+		mut  func(*AppSpec, string)
 	}{
-		{"app.theme.primary", func(b *Blueprint, v string) { b.App.Theme = map[string]string{"primary": v} }},
-		{"app.theme.dark.primary", func(b *Blueprint, v string) {
+		{"app.theme.primary", func(b *AppSpec, v string) { b.App.Theme = map[string]string{"primary": v} }},
+		{"app.theme.dark.primary", func(b *AppSpec, v string) {
 			b.App.Theme = map[string]string{"primary": "#fff"}
 			b.App.ThemeDark = map[string]string{"primary": v}
 		}},
-		// Control: the same blueprint block, the guarded sibling field.
-		{"app.theme.font_body", func(b *Blueprint, v string) { b.App.Theme = map[string]string{"font_body": v} }},
+		// Control: the same app spec block, the guarded sibling field.
+		{"app.theme.font_body", func(b *AppSpec, v string) { b.App.Theme = map[string]string{"font_body": v} }},
 	}
 	for label, payload := range payloads {
 		for _, tc := range sites {
 			t.Run(tc.site+"/"+label, func(t *testing.T) {
 				bp := bpTheme(nil, nil)
 				tc.mut(&bp, payload)
-				if err := validateBlueprint(bp); err != nil {
+				if err := validateAppSpec(bp); err != nil {
 					return // rejected at the boundary
 				}
-				files, err := renderBlueprintFiles(bp)
+				files, err := renderAppSpecFiles(bp)
 				if err != nil {
 					return // emitter refused
 				}
@@ -114,7 +114,7 @@ func TestThemeValueCannotInjectCSS(t *testing.T) {
 				case "app.theme.dark.primary":
 					th.DarkColors = map[string]string{"primary": payload}
 				case "app.theme.font_body":
-					body, _ := blueprintFontStacks(bp.App.Theme)
+					body, _ := appSpecFontStacks(bp.App.Theme)
 					if body == "" {
 						return
 					}
@@ -141,29 +141,29 @@ func TestThemeValueCannotInjectCSS(t *testing.T) {
 }
 
 // Guards TestThemeValueCannotInjectCSS against going vacuous: that test treats
-// "validateBlueprint rejected it" as a pass, so a guard that rejected EVERY
+// "validateAppSpec rejected it" as a pass, so a guard that rejected EVERY
 // theme value would look identical. style.ValidateColorValue is the shared
 // grammar (exported from core-ui/style for this caller rather than copied into
-// the generator), and these are the shapes real blueprints use.
+// the generator), and these are the shapes real app specs use.
 func TestThemeAcceptsRealColorValues(t *testing.T) {
 	for _, v := range []string{"#2563EB", "#fff", "oklch(0.82 0.155 78)", "rgba(0, 0, 0, 0.5)", "var(--color-primary)"} {
 		bp := bpTheme(map[string]string{"primary": v}, map[string]string{"primary": v})
-		if err := validateBlueprint(bp); err != nil {
+		if err := validateAppSpec(bp); err != nil {
 			t.Errorf("theme value %q rejected but is a legitimate color: %v", v, err)
 			continue
 		}
-		if note := blueprintUnsafeColorNote("primary", v); note != "" {
+		if note := appSpecUnsafeColorNote("primary", v); note != "" {
 			t.Errorf("theme value %q dropped by the emitter backstop: %s", v, note)
 		}
 	}
 }
 
-// The emitter is reachable without validateBlueprint (loadBlueprintPath's
-// validate=false directory pass, a hand-built Blueprint), so the drop backstop
+// The emitter is reachable without validateAppSpec (loadAppSpecPath's
+// validate=false directory pass, a hand-built AppSpec), so the drop backstop
 // carries the property on its own, and its generated comment must not itself
 // become an escape.
 func TestEmitterDropsUnsafeThemeColor(t *testing.T) {
-	note := blueprintUnsafeColorNote("primary", "#fff; } body{display:none} /* */")
+	note := appSpecUnsafeColorNote("primary", "#fff; } body{display:none} /* */")
 	if note == "" {
 		t.Fatal("emitter kept a declaration-breaking color value")
 	}
@@ -211,7 +211,7 @@ func firstLineWith(s string, needles ...string) string {
 	return "(not found)"
 }
 
-// Property: every blueprint field that reaches an <a href> allow-lists the URL
+// Property: every app spec field that reaches an <a href> allow-lists the URL
 // scheme.
 //
 // Surfaces, and which of them hold the property today:
@@ -224,7 +224,7 @@ func firstLineWith(s string, needles ...string) string {
 //   - login_form  props `register_href` → hand-rolled <a> inside render.Raw:  UNGUARDED
 //   - signup_form props `login_href`    → same builder:  UNGUARDED
 //
-// blueprintAuthFormExpr builds the card footer as
+// appSpecAuthFormExpr builds the card footer as
 //
 //	`<a href="` + htmlEscapeJSString(footerHref) + `">` + … + `</a>`
 //
@@ -252,19 +252,19 @@ func TestAuthFormHrefRejectsBadScheme(t *testing.T) {
 		expr func(string) string
 	}{
 		{"login_form.register_href", func(v string) string {
-			return renderBlueprintLoginFormExpr(BlueprintBlock{
+			return renderAppSpecLoginFormExpr(AppSpecBlock{
 				Kind: "login_form", Props: map[string]any{"register_href": v},
 			})
 		}},
 		{"signup_form.login_href", func(v string) string {
-			return renderBlueprintSignupFormExpr(BlueprintBlock{
+			return renderAppSpecSignupFormExpr(AppSpecBlock{
 				Kind: "signup_form", Props: map[string]any{"login_href": v},
 			})
 		}},
 		// Controls: the guarded siblings. ui.LinkButton refuses the scheme, so the
-		// blueprint may legitimately emit the value and the check lands downstream.
+		// app spec may legitimately emit the value and the check lands downstream.
 		{"link_button.href", func(v string) string {
-			expr, _ := renderBlueprintCatalogBlock(Blueprint{}, BlueprintScreen{Name: "home"}, BlueprintBlock{
+			expr, _ := renderAppSpecCatalogBlock(AppSpec{}, AppSpecScreen{Name: "home"}, AppSpecBlock{
 				Kind: "link_button", Props: map[string]any{"label": "Go", "href": v},
 			}, nil, nil, "")
 			return expr
@@ -323,10 +323,10 @@ func TestUILinkNeutralizesBadScheme(t *testing.T) {
 // Property: a value interpolated into the generator's hand-built HTML is
 // escaped at EVERY interpolation, not most of them.
 //
-// blueprintEntityFormExpr built `name="` + e(field.Name) + `" id="` + fieldID,
+// appSpecEntityFormExpr built `name="` + e(field.Name) + `" id="` + fieldID,
 // where fieldID = "field-" + field.Name; the same value, escaped in one
-// attribute and raw in the next, three tokens apart. validateBlueprint requires
-// field.Name to produce a Go identifier, so no blueprint reaches this today;
+// attribute and raw in the next, three tokens apart. validateAppSpec requires
+// field.Name to produce a Go identifier, so no app spec reaches this today;
 // the test calls the emitter directly because the asymmetry, not its current
 // reachability, is the bug. `For:` stays raw on purpose: ui.FormField's
 // renderer escapes it, and pre-escaping would double-escape.
@@ -335,9 +335,9 @@ func TestFormFieldIDIsEscaped(t *testing.T) {
 		Name:   "tickets",
 		Fields: []framework.FieldDeclaration{{Name: `x" onfocus=PWN() z`, Type: "string"}},
 	}
-	expr := blueprintEntityFormExpr(
-		BlueprintScreen{Name: "home"},
-		BlueprintBlock{Kind: "entity_form", Entity: "tickets"},
+	expr := appSpecEntityFormExpr(
+		AppSpecScreen{Name: "home"},
+		AppSpecBlock{Kind: "entity_form", Entity: "tickets"},
 		nil, map[string]framework.EntityDeclaration{"tickets": decl}, "/api",
 	)
 	if strings.Contains(expr, `id=\"field-x\" onfocus=`) {
@@ -348,7 +348,7 @@ func TestFormFieldIDIsEscaped(t *testing.T) {
 // Property: an enum-like config value the emitter switches on must be
 // validated, not silently defaulted.
 //
-// blueprintScreenLayoutExpr maps anything that is not "marketing" to appLayout,
+// appSpecScreenLayoutExpr maps anything that is not "marketing" to appLayout,
 // so `layout: markting` renders a public marketing page in the authenticated app
 // shell. Access gating is `access:`, so this is wrong chrome rather than a gate
 // bypass, but it is a setting the author believes they set.
@@ -356,14 +356,14 @@ func TestScreenLayoutMustBeKnown(t *testing.T) {
 	for _, layout := range []string{"markting", "App", "admin", " marketing"} {
 		bp := bpTheme(nil, nil)
 		bp.Screens[0].Layout = layout
-		if err := validateBlueprint(bp); err == nil {
-			t.Errorf("screen layout %q accepted; it renders as %s", layout, blueprintScreenLayoutExpr(bp.Screens[0], bp))
+		if err := validateAppSpec(bp); err == nil {
+			t.Errorf("screen layout %q accepted; it renders as %s", layout, appSpecScreenLayoutExpr(bp.Screens[0], bp))
 		}
 	}
 	for _, layout := range []string{"", "app", "marketing"} {
 		bp := bpTheme(nil, nil)
 		bp.Screens[0].Layout = layout
-		if err := validateBlueprint(bp); err != nil {
+		if err := validateAppSpec(bp); err != nil {
 			t.Errorf("screen layout %q rejected but is documented: %v", layout, err)
 		}
 	}
@@ -372,8 +372,8 @@ func TestScreenLayoutMustBeKnown(t *testing.T) {
 // Property: a name interpolated into the generated client.js never lands in a
 // position where a metacharacter would be parsed as JS.
 //
-// client.go gets format.Source and the blueprint tree gets
-// assertBlueprintGoParses; .js and .d.ts get no syntax gate at all (no JS parser
+// client.go gets format.Source and the app spec tree gets
+// assertAppSpecGoParses; .js and .d.ts get no syntax gate at all (no JS parser
 // in the Go stdlib, and third-party deps are not an option here), so the two
 // emission sites in the executable .js carry the property themselves: a quoted
 // object key and this[...] bracket access. f.Wire is toCamelJSON(field name) and
@@ -425,9 +425,9 @@ func TestClientJSQuotesEmittedNames(t *testing.T) {
 // Property: the only host generation will fetch a font binary from is the one
 // the doc comment names.
 //
-// blueprintFirstWoff2URL's result goes straight to blueprintFontHTTPGet, so the
+// appSpecFirstWoff2URL's result goes straight to appSpecFontHTTPGet, so the
 // fetch target comes from the css2 RESPONSE BODY. The comment said gstatic; the
-// code only looked for ".woff2" anywhere in the string. No blueprint reaches it
+// code only looked for ".woff2" anywhere in the string. No app spec reaches it
 // (the family param is reduced to [A-Za-z0-9 _-]), so this pins the contract.
 func TestFontFetchOnlyTrustsGstatic(t *testing.T) {
 	bad := []string{
@@ -439,20 +439,20 @@ func TestFontFetchOnlyTrustsGstatic(t *testing.T) {
 	}
 	for _, u := range bad {
 		css := "/* latin */\n@font-face { src: url(" + u + ") format('woff2'); }"
-		if got := blueprintFirstWoff2URL(css); got != "" {
+		if got := appSpecFirstWoff2URL(css); got != "" {
 			t.Errorf("SECURITY: [ssrf] font fetch accepted %q (returned %q)", u, got)
 		}
 	}
 	// Control: the real thing still resolves, or fonts stop working.
 	real := "https://fonts.gstatic.com/s/hankengrotesk/v8/abc.woff2"
-	if got := blueprintFirstWoff2URL("/* latin */\n@font-face { src: url(" + real + ") format('woff2'); }"); got != real {
+	if got := appSpecFirstWoff2URL("/* latin */\n@font-face { src: url(" + real + ") format('woff2'); }"); got != real {
 		t.Errorf("legitimate gstatic woff2 rejected: got %q", got)
 	}
 }
 
 // Property: `gofastr pack` must emit a scalar that re-parses as the same single
-// scalar; encodeBlueprintYAML is documented as the exact inverse of
-// decodeBlueprint (see the banner comment in pack.go).
+// scalar; encodeAppSpecYAML is documented as the exact inverse of
+// decodeAppSpec (see the banner comment in pack.go).
 //
 // Surfaces: every list-of-strings the writer emits as a YAML FLOW list via
 // writeFlowList: entity field `values:` (enums), `search_fields:`, entity_list
@@ -470,7 +470,7 @@ func TestFontFetchOnlyTrustsGstatic(t *testing.T) {
 //
 // This is the reverse trust boundary: `pack` reads a generated app's Go source
 // and writes the YAML you regenerate from. A list element gains a sibling that
-// the app never declared, and the regenerated blueprint then validates it
+// the app never declared, and the regenerated app spec then validates it
 // happily; `search_fields` and `filters:` are the sharp ones, since both widen
 // the query surface of the generated API.
 func TestPackYAMLListItemStaysOneItem(t *testing.T) {
@@ -482,8 +482,8 @@ func TestPackYAMLListItemStaysOneItem(t *testing.T) {
 		"open: closed",  // key/value separator
 		"open #comment", // comment introducer
 	} {
-		bp := Blueprint{
-			App: BlueprintApp{Name: "app", Module: "local/app"},
+		bp := AppSpec{
+			App: AppSpecApp{Name: "app", Module: "local/app"},
 			Entities: []framework.EntityDeclaration{{
 				Name: "tickets",
 				Fields: []framework.FieldDeclaration{
@@ -492,12 +492,12 @@ func TestPackYAMLListItemStaysOneItem(t *testing.T) {
 				},
 			}},
 		}
-		yml, err := encodeBlueprintYAML(bp)
+		yml, err := encodeAppSpecYAML(bp)
 		if err != nil {
-			t.Errorf("SECURITY: [yaml-injection] %q: pack refused a value-only hostile blueprint: %v", payload, err)
+			t.Errorf("SECURITY: [yaml-injection] %q: pack refused a value-only hostile app spec: %v", payload, err)
 			continue
 		}
-		back, err := decodeBlueprintString(yml)
+		back, err := decodeAppSpecString(yml)
 		if err != nil {
 			t.Errorf("SECURITY: [yaml-injection] %q: pack emitted YAML that no longer parses: %v\n%s", payload, err, yml)
 			continue

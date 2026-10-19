@@ -39,13 +39,13 @@ func runMigrate(args []string) {
 	case "status":
 		runMigrateStatus(rest)
 	case "diff":
-		// Removed: `migrate diff` *applied* a blueprint onto a live DB,
-		// reconciling the running database to the blueprint, i.e. treating
-		// the blueprint as authoritative over the world. Schema migration is a
+		// Removed: `migrate diff` *applied* an app spec onto a live DB,
+		// reconciling the running database to the app spec, i.e. treating
+		// the app spec as authoritative over the world. Schema migration is a
 		// separate concern from code generation: emit a reviewable, versioned
 		// migration instead. See framework/ARCHITECTURE.md.
 		fail("`gofastr migrate diff` has been removed.")
-		info("It applied a blueprint directly onto a live DB. Use `gofastr migrate generate <name>` to emit a reviewable migration, then `gofastr migrate up`. See `gofastr docs migrations`.")
+		info("It applied an app spec directly onto a live DB. Use `gofastr migrate generate <name>` to emit a reviewable migration, then `gofastr migrate up`. See `gofastr docs migrations`.")
 	case "generate":
 		runMigrateGenerate(rest)
 	case "force":
@@ -108,9 +108,9 @@ func runMigrateForce(args []string) {
 // runMigrateRepair reports — and with --apply rebuilds — SQLite tables still
 // carrying the pre-v0.67 foreign key on an entity's owner column.
 //
-//	gofastr migrate repair --from=<blueprint.yml> [--apply]
+//	gofastr migrate repair --from=<gofastr.yml> [--apply]
 //
-// The scan needs each entity's owner column, so it reads the blueprint the
+// The scan needs each entity's owner column, so it reads the app spec the
 // same way `migrate generate` does. Without --apply it prints each finding
 // and exits non-zero (0 when the database is clean), so a release check can
 // gate on it. With --apply it names every table it is about to rebuild
@@ -127,7 +127,7 @@ func runMigrateRepair(args []string) {
 		}
 	}
 	if from == "" {
-		fail("Usage: gofastr migrate repair --from=<blueprint.yml> [--apply] [--db-url=<url>]")
+		fail("Usage: gofastr migrate repair --from=<gofastr.yml> [--apply] [--db-url=<url>]")
 		info("The scan reads the entity declarations to know each table's owner column.")
 		osExit(1)
 	}
@@ -149,13 +149,13 @@ func runMigrateRepair(args []string) {
 	defer func() { _ = db.Close() }()
 
 	reg := framework.NewRegistry()
-	bp, err := loadBlueprint(from)
+	bp, err := loadAppSpec(from)
 	if err != nil {
-		fail("Failed to load blueprint %s: %v", from, err)
+		fail("Failed to load app spec %s: %v", from, err)
 		osExit(1)
 	}
 	if len(bp.Entities) == 0 {
-		fail("Blueprint %s declares no entities.", from)
+		fail("App spec %s declares no entities.", from)
 		osExit(1)
 	}
 	for _, decl := range bp.Entities {
@@ -334,7 +334,7 @@ func migratorFromArgs(args []string) (*migrate.Migrator, func(), error) {
 	if _, err := os.Stat("migrations"); os.IsNotExist(err) {
 		return nil, nil, fmt.Errorf("directory 'migrations/' not found.\n" +
 			"This subcommand reads file-based migrations (migrations/*.sql), but apps scaffolded by `gofastr init` register migrations inline in Go (entities/entities.go → RegisterMigrations) and apply them at boot: there may be nothing on disk to read.\n" +
-			"Review inline migrations in your entities package; to adopt file-based migrations, generate one with `gofastr migrate generate <name> --from=<blueprint.yml>` (see `gofastr docs migrations`).")
+			"Review inline migrations in your entities package; to adopt file-based migrations, generate one with `gofastr migrate generate <name> --from=<gofastr.yml>` (see `gofastr docs migrations`).")
 	}
 	dbURL := getMigrateDBURL(args)
 	if dbURL == "" {

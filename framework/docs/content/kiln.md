@@ -1,9 +1,9 @@
 # Kiln: agent-driven build mode
 
 > **Experimental.** Kiln is a separate binary for shaping a GoFastr app live.
-> When you graduate, it writes the same `gofastr.yml` blueprint the generator
+> When you graduate, it writes the same `gofastr.yml` app spec the generator
 > already reads: a scaffolder, not the thing you ship. The generated Go code
-> is what you keep; it's the source of truth, not the blueprint.
+> is what you keep; it's the source of truth, not the app spec.
 
 Kiln gives an agent a small, journaled application IR. Each accepted edit is
 replayed into a fresh framework app, SQLite is migrated, and the browser sees
@@ -82,7 +82,7 @@ Kiln's tools, not by editing the repository.
 Read and configuration:
 
 - `world_get`
-- `set_app_config`: current blueprint app config; HTTP calls use
+- `set_app_config`: current app spec app config; HTTP calls use
   `{"config":{...}}`, a non-empty `config.name` is required, and an
   omitted/empty API prefix resolves to `api`
 - `set_theme`: semantic light theme token overrides
@@ -144,14 +144,14 @@ map that replay never rebuilt, so a restart re-armed every spent approval.
 The `multi_tenant` refusal runs on the same path.
 
 This matters because the journal is replayed at boot and by `kiln freeze`,
-which turns the replayed world into a blueprint. A hand-authored
+which turns the replayed world into an app spec. A hand-authored
 `.kiln.session.jsonl` used to install world state the tool API refuses. It
 needs a local filesystem write, so it is an integrity property rather than a
 remote one, but a guard only one of two readers applies is not a guard.
 
 ## Current world contract
 
-The world mirrors the current blueprint where a live representation is safe:
+The world mirrors the current app spec where a live representation is safe:
 
 - app module/database/static/output/API prefix, auth/admin/PWA, light and dark
   semantic theme tokens;
@@ -228,7 +228,7 @@ go test ./...
 
 Freeze writes exactly:
 
-- `build/gofastr.yml`: deterministic current blueprint, ready for the
+- `build/gofastr.yml`: deterministic current app spec, ready for the
   one-shot generator;
 - `build/world.json`: lossless authoring snapshot.
 
@@ -238,7 +238,7 @@ app refuses to boot until the variable is supplied (credential-free DSNs,
 like SQLite file paths, stay verbatim).
 
 Declarative Kiln hook/route actions remain exact in `world.json`. Where the
-current blueprint requires a Go function, freeze emits an owned-Go handler
+current app spec requires a Go function, freeze emits an owned-Go handler
 stub with a description naming the declarative action; implement that behavior
 after generation. Entity endpoints graduate the same way: they are part of the
 world IR but are not served by the live build-mode app (rendering one needs
@@ -247,7 +247,7 @@ owned-Go handler stubs after generation. The removed pre-v0.1 `entities/*.json`
 format is not emitted.
 
 Freeze fails loudly, naming the offending key, when world data cannot
-round-trip through the blueprint's YAML subset: a seed row whose every value
+round-trip through the app spec's YAML subset: a seed row whose every value
 is a nested object, or a props/row key containing a colon, comment marker, or
 brackets. Reshape the data (or drop the row) and re-run; a freeze that
 succeeded is guaranteed to re-parse into the same values.
@@ -282,7 +282,7 @@ From the framework checkout on Windows, ensure an MSYS2 GCC is on `PATH` so
 
 ```bash
 go test ./cmd/kiln ./kiln/...
-go test ./cmd/gofastr -run TestKilnFreezeBlueprintParsesAndValidates
+go test ./cmd/gofastr -run TestKilnFreezeAppSpecParsesAndValidates
 ```
 
 The integration suite covers journal replay, live migrations, CRUD, hooks,

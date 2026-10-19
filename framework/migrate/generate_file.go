@@ -29,7 +29,7 @@ type MigrationFileOptions struct {
 // opts.SnapshotPath, writes the next numbered migration file into
 // opts.MigrationsDir, and updates the snapshot: the offline declarative
 // workflow driven from a Plan (entity registry + raw Tables + Views +
-// Routines) rather than a blueprint. It is the supported entrypoint a host
+// Routines) rather than an app spec. It is the supported entrypoint a host
 // binary calls from its own main() to emit versioned migrations from its
 // compiled entity registry:
 //
@@ -40,7 +40,7 @@ type MigrationFileOptions struct {
 //	    Dialect:       migrate.DialectSQLite,
 //	})
 //
-// The output matches `gofastr migrate generate --from=<blueprint>` exactly:
+// The output matches `gofastr migrate generate --from=<spec.yml>` exactly:
 // same NNNN_name.sql naming, same -- +migrate directive layout, same snapshot
 // format, because both paths use the same GeneratePlan + RenderMigrationFile +
 // SaveSnapshot primitives.
@@ -160,7 +160,7 @@ func GenerateMigrationFile(plan Plan, name string, opts MigrationFileOptions) (s
 var afterVersionScan func(dir, filename string)
 
 // nextMigrationVersion returns one past the highest NNNN_ prefix among the
-// existing .sql files, or 1 when the directory is empty. Matches the blueprint
+// existing .sql files, or 1 when the directory is empty. Matches the app spec
 // CLI's version-numbering exactly (cmd/gofastr/migrate_generate.go).
 func nextMigrationVersion(dir string) uint64 {
 	entries, err := os.ReadDir(dir)
@@ -251,7 +251,7 @@ func parseMigrationSections(content string) (up, down string, ok bool) {
 
 // sanitizeMigrationName lower-cases and replaces non-alphanumeric runs with a
 // single underscore so the name is filesystem- and directive-safe. Matches the
-// blueprint CLI's sanitization exactly (cmd/gofastr/migrate_generate.go).
+// app spec CLI's sanitization exactly (cmd/gofastr/migrate_generate.go).
 func sanitizeMigrationName(name string) string {
 	var b strings.Builder
 	lastUnderscore := false

@@ -143,7 +143,7 @@ var hunkExemptions = map[string]string{
 }
 
 // coverageTarget reports whether a patch file is one the registry's
-// matchers can read: Go, CSS, go.mod, or a gofastr blueprint YAML.
+// matchers can read: Go, CSS, go.mod, or a gofastr app spec YAML.
 func coverageTarget(file string) bool {
 	switch {
 	case strings.HasSuffix(file, ".go"), strings.HasSuffix(file, ".css"):

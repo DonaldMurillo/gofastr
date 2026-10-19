@@ -162,7 +162,7 @@ func TestOwnerScope_CreateAutoStampsOwner(t *testing.T) {
 }
 
 // setupHiddenOwnerHandler mirrors setupOwnerScopedHandler but marks the owner
-// column Hidden, the blueprint generator synthesizes the owner column this way
+// column Hidden, the app generator synthesizes the owner column this way
 // so it never appears in generated forms/tables. The framework still manages it
 // (InjectOwner stamps it; ApplyOwnerScope filters on it), so it MUST be
 // persisted on create even though it's hidden from the API surface.

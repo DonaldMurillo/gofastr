@@ -79,7 +79,7 @@ file so a change there still selects it:
 ```
 
 A file a package embeds counts as part of that package even when it sits
-inside a nested package, so editing a blueprint template under
+inside a nested package, so editing an app spec template under
 `cmd/gofastr/packages/` selects the generator and every gate that runs
 it. To find tests that read undeclared files, run
 `scripts/test-reads-audit.sh` (optionally with package patterns). It

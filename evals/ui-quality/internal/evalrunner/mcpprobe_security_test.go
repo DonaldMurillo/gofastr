@@ -57,7 +57,7 @@ func TestMcpprobeUnboundedBody(t *testing.T) {
 // on its own (mcpProbeClient's timeout), not at the request-context wall.
 // Family: every outbound probe carries an operative per-attempt deadline.
 // Pinned sibling (green): TestBootProbeClientTimesOut
-// (cmd/gofastr/examples_blueprint_test.go:601) pins bootProbeClient
+// (cmd/gofastr/examples_appspec_test.go:601) pins bootProbeClient
 // (&http.Client{Timeout: 5s}).
 // Finding (2026-09-06/07 probe): on http.DefaultClient (zero Timeout) only
 // the 15s request context ever fired, so every wedged candidate stalled the

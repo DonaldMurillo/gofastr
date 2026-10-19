@@ -9,10 +9,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
-// runValidate implements `gofastr validate <blueprint.yml|dir>`: parse the
-// blueprint, run every generate-time validation (including the app.module /
+// runValidate implements `gofastr validate <gofastr.yml|dir>`: parse the
+// app spec, run every generate-time validation (including the app.module /
 // go.mod consistency check and a full render pass), and exit 0/1. Errors are
-// written for agents iterating on a blueprint: each names the file (and line
+// written for agents iterating on an app spec: each names the file (and line
 // where the parser provides one), what is wrong, and the remedy.
 func runValidate(args []string) {
 	if hasHelpFlag(args) {
@@ -20,33 +20,33 @@ func runValidate(args []string) {
 		return
 	}
 	if len(args) == 0 || strings.HasPrefix(args[0], "--") {
-		fail("Usage: gofastr validate <blueprint.yml|blueprint-dir>")
-		info("Parses the blueprint and runs every generate-time validation. Exit 0 = valid.")
+		fail("Usage: gofastr validate <gofastr.yml|dir>")
+		info("Parses the app spec and runs every generate-time validation. Exit 0 = valid.")
 		osExit(1)
 		return
 	}
 	path := args[0]
-	bp, err := loadBlueprint(path)
+	bp, err := loadAppSpec(path)
 	if err != nil {
-		failBlueprintValidation(path, err)
+		failAppSpecValidation(path, err)
 		osExit(1)
 		return
 	}
-	// Module consistency is anchored at the blueprint's own directory: the
-	// blueprint conventionally sits at the project root next to go.mod.
+	// Module consistency is anchored at the app spec's own directory: the
+	// app spec conventionally sits at the project root next to go.mod.
 	anchor := path
 	if info, statErr := os.Stat(path); statErr == nil && !info.IsDir() {
 		anchor = filepath.Dir(path)
 	}
-	if err := resolveBlueprintModule(&bp, anchor); err != nil {
-		failBlueprintValidation(path, err)
+	if err := resolveAppSpecModule(&bp, anchor); err != nil {
+		failAppSpecValidation(path, err)
 		osExit(1)
 		return
 	}
 	// Render without writing: catches codegen-only failures (bad field
 	// literals, unsupported defaults) that pure validation does not reach.
-	if _, err := renderBlueprintFiles(bp); err != nil {
-		failBlueprintValidation(path, err)
+	if _, err := renderAppSpecFiles(bp); err != nil {
+		failAppSpecValidation(path, err)
 		osExit(1)
 		return
 	}
@@ -73,15 +73,15 @@ func runValidate(args []string) {
 	for _, f := range lintOwnerScopedUnique(bp) {
 		warn("%s: %s", path, f.Message())
 	}
-	success("Blueprint %s is valid: %d entity(ies), %d screen(s), %d endpoint(s), %d hook(s)",
+	success("App spec %s is valid: %d entity(ies), %d screen(s), %d endpoint(s), %d hook(s)",
 		path, len(bp.Entities), len(bp.Screens), len(bp.Endpoints), len(bp.Hooks))
 }
 
 func printValidateHelp() {
-	fmt.Println(`gofastr validate: validate a blueprint without writing files
+	fmt.Println(`gofastr validate: validate an app spec without writing files
 
 Usage:
-  gofastr validate <blueprint.yml|blueprint-dir>
+  gofastr validate <gofastr.yml|dir>
 
 Checks:
   YAML decoding and unknown keys
@@ -92,16 +92,16 @@ Checks:
 Exit status is 0 when valid and 1 when any check fails.`)
 }
 
-// failBlueprintValidation prints a validation failure prefixed with the
-// blueprint path. Parser/decoder errors already carry "at line N"; semantic
+// failAppSpecValidation prints a validation failure prefixed with the
+// app spec path. Parser/decoder errors already carry "at line N"; semantic
 // errors name the entity/field/screen, since the decoded declarations do not
 // retain source positions.
-func failBlueprintValidation(path string, err error) {
-	msg := strings.TrimPrefix(err.Error(), "blueprint: ")
+func failAppSpecValidation(path string, err error) {
+	msg := strings.TrimPrefix(err.Error(), "app spec: ")
 	fail("%s: %s", path, msg)
 }
 
-// resolveBlueprintModule reconciles the blueprint's app.module with the Go
+// resolveAppSpecModule reconciles the app spec's app.module with the Go
 // module enclosing anchorDir:
 //
 //   - no enclosing go.mod  → the declared module (possibly empty) stands.
@@ -110,7 +110,7 @@ func failBlueprintValidation(path string, err error) {
 //   - both present, equal  → fine.
 //   - both present, differ → error with the remedy; generating code that
 //     imports a module the enclosing go.mod does not declare cannot build.
-func resolveBlueprintModule(bp *Blueprint, anchorDir string) error {
+func resolveAppSpecModule(bp *AppSpec, anchorDir string) error {
 	abs, err := filepath.Abs(anchorDir)
 	if err != nil {
 		return err
@@ -129,7 +129,7 @@ func resolveBlueprintModule(bp *Blueprint, anchorDir string) error {
 		return nil
 	}
 	if declared != expected {
-		return fmt.Errorf("blueprint: app.module is %q but the enclosing go.mod (%s) makes this directory %q. Set `module: %s` (or remove module: to derive it automatically)", declared, filepath.Join(moduleRoot, "go.mod"), expected, expected)
+		return fmt.Errorf("app spec: app.module is %q but the enclosing go.mod (%s) makes this directory %q. Set `module: %s` (or remove module: to derive it automatically)", declared, filepath.Join(moduleRoot, "go.mod"), expected, expected)
 	}
 	return nil
 }

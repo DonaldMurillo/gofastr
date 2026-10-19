@@ -49,6 +49,6 @@ reviews:
       instructions: |
         Generated code is one-shot owned output: no auto-renaming on
         collisions (fail with a precise error), custom.go is never
-        overwritten, and every spec- or blueprint-derived string that
+        overwritten, and every spec- or app-spec-derived string that
         lands in generated Go source must be validated or %q-quoted —
         specs can come from URLs.

@@ -1,8 +1,8 @@
 // Runtime regression guards for the generated storefront.
 //
 // These assertions live OUTSIDE the generator-emitted e2e_test.go (which
-// `gofastr generate --force` rewrites from the blueprint) so they survive
-// regeneration. They guard two regressions the blueprint validator now
+// `gofastr generate --force` rewrites from the app spec) so they survive
+// regeneration. They guard two regressions the app spec validator now
 // catches at generate time but that must also fail loudly at runtime:
 //
 //  1. Reviews declare a required product_id relation. Before the seed wired
@@ -119,7 +119,7 @@ func bootSeededStorefront(t *testing.T) string {
 	addr := e2eFreeAddr(t)
 	srv := exec.Command(bin)
 	srv.Dir = dir
-	// guard.db is a fresh file every run, so the blueprint's admin seed runs
+	// guard.db is a fresh file every run, so the app spec's admin seed runs
 	// and the app refuses to boot without a password for it.
 	seedPw := os.Getenv("ADMIN_SEED_PASSWORD")
 	if seedPw == "" {

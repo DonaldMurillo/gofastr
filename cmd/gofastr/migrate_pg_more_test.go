@@ -12,9 +12,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
-// covT_chdirBlueprint writes a gofastr.yml with the given fields YAML into a
+// covT_chdirAppSpec writes a gofastr.yml with the given fields YAML into a
 // temp dir and chdirs to it.
-func covT_chdirBlueprint(t *testing.T, fields string) {
+func covT_chdirAppSpec(t *testing.T, fields string) {
 	t.Helper()
 	dir := t.TempDir()
 	bp := "app:\n  name: testapp\nentities:\n  - name: posts\n    table: posts\n    fields:\n" + fields

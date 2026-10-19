@@ -1,8 +1,8 @@
-// Package scratchdir owns where the blueprint gate tests generate their
+// Package scratchdir owns where the app spec gate tests generate their
 // scratch packages, and checks the naming contract that keeps those packages
 // invisible to `go list ./...` and `go build ./...` while they exist.
 //
-// The gates generate an app from a blueprint and compile it. The generated
+// The gates generate an app from an app spec and compile it. The generated
 // code imports its own packages, so it has to sit inside the repo module for
 // those imports to resolve without a go.mod, a replace directive, or a
 // network fetch. Every gate generates under Root, one directory per gate.
@@ -16,7 +16,7 @@
 // Root is tracked (its README keeps it in every checkout) and never removed,
 // and only its children come and go. Go's test cache hashes the directory
 // listings a test reads, entry mtimes included. When the gates generated
-// beside each example (examples/<name>/_blueprint*gen), every package that
+// beside each example (examples/<name>/_appspec*gen), every package that
 // walks the repo saw examples/ and the example directory change during each
 // sweep and re-ran on an unchanged tree. Now the only listing that moves is
 // Root's own, and the walkers skip "_" directories the way Go does.
@@ -38,7 +38,7 @@ import (
 )
 
 // Root is where the gates generate, relative to the module root.
-const Root = "_scratch/blueprints"
+const Root = "_scratch/appspecs"
 
 // modulePath is the repo module's path; go.mod declares it.
 const modulePath = "github.com/DonaldMurillo/gofastr"

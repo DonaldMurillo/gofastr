@@ -127,7 +127,7 @@ func TestGeneratedNoQueryResourceBehavior(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	bp, err := covT_decode(t, blueprintWithNoQuery+`
+	bp, err := covT_decode(t, appSpecWithNoQuery+`
 screens:
   - name: cards
     route: /cards
@@ -141,7 +141,7 @@ screens:
 	}
 	bp.App.Module = "example.com/noquerytest"
 	bp.App.OutputDir = "gen"
-	for _, file := range mustRenderBlueprintFiles(t, bp) {
+	for _, file := range mustRenderAppSpecFiles(t, bp) {
 		full := filepath.Join(dir, "gen", file.name)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatal(err)

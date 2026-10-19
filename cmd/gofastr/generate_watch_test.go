@@ -110,7 +110,7 @@ func TestHashEntitiesDir_IgnoresNonJSON(t *testing.T) {
 	}
 }
 
-func TestHashGenerateInputsFromBlueprintDetectsBlueprintChange(t *testing.T) {
+func TestHashGenerateInputsFromAppSpecDetectsAppSpecChange(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gofastr.yml")
 	if err := os.WriteFile(path, []byte(`app: { name: Demo }`), 0o644); err != nil {
@@ -122,7 +122,7 @@ func TestHashGenerateInputsFromBlueprintDetectsBlueprintChange(t *testing.T) {
 	}
 	h2 := hashGenerateInputs(generateOptions{from: path})
 	if h1 == h2 {
-		t.Fatalf("hash unchanged after blueprint edit: %q", h1)
+		t.Fatalf("hash unchanged after app spec edit: %q", h1)
 	}
 }
 

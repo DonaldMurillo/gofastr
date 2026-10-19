@@ -50,7 +50,7 @@ func tagAccent(label string) render.HTML {
 // Kiln surfaces. Neutral tone + dot so it reads as a status without
 // competing with the accent pills. Kiln is the framework's most
 // provisional surface: its in-memory IR, journal-freeze format, and
-// blueprint graduation flow may still change. Used on the Kiln hero
+// app spec graduation flow may still change. Used on the Kiln hero
 // and the get-started "Try Kiln" card; list/index entries (footer,
 // palette, docs catalog) carry the word inline instead.
 func experimentalPill() render.HTML {
@@ -261,7 +261,7 @@ func gsNext() render.HTML {
 		ui.Grid(ui.GridConfig{Min: "16rem"},
 			card("Browse the docs", fmt.Sprintf("%d docs grouped by what you're trying to do.", docCount()), "/docs/"),
 			card("Read an example", fmt.Sprintf("%d full apps you can clone and modify.", len(exRowItems())), "/examples"),
-			card("Try Kiln", "Build the app by chatting with an agent; freeze the result into a blueprint you commit.", "/kiln", experimentalPill()),
+			card("Try Kiln", "Build the app by chatting with an agent; freeze the result into an app spec you commit.", "/kiln", experimentalPill()),
 			card("Stuck?", "Ask in GitHub Discussions.", "https://github.com/DonaldMurillo/gofastr/discussions"),
 		),
 	)
@@ -451,15 +451,15 @@ func exRowItems() []render.HTML {
 	return []render.HTML{
 		exRow("01", "examples/meridian", "Meridian: SaaS console", "flagship", "seeded + hand-evolved",
 			"A billing & revenue console (customers, subscriptions, invoices, MRR + charts) plus its marketing site, auth, RBAC, and an admin back-office, seeded from one gofastr.yml and hand-evolved since, with writable screens (add/edit/delete).",
-			[]string{"One blueprint seeded marketing + app + auth + admin", "Server-rendered DataTable / charts / forms, island RPCs", "Writable CRUD + RBAC, with a generated end-to-end test suite"},
+			[]string{"One app spec seeded marketing + app + auth + admin", "Server-rendered DataTable / charts / forms, island RPCs", "Writable CRUD + RBAC, with a generated end-to-end test suite"},
 			"cd examples/meridian && gofastr dev",
-			// The exact, full blueprint that generates the app, embedded at
+			// The exact, full app spec that generates the app, embedded at
 			// build time, shown verbatim in a scrolling block. Drift-guarded by
-			// TestEmbeddedBlueprintsMatchSource.
-			codeBlockScroll("examples/meridian/gofastr.yml", meridianBlueprintYAML, "yaml")),
-		exRow("02", "examples/ecommerce", "ShopFront: storefront", "blueprint pipeline", "100% generated",
+			// TestEmbeddedAppSpecsMatchSource.
+			codeBlockScroll("examples/meridian/gofastr.yml", meridianAppSpecYAML, "yaml")),
+		exRow("02", "examples/ecommerce", "ShopFront: storefront", "app generator", "100% generated",
 			"A complete storefront from one gofastr.yml: five related entities (categories, products, orders, order_items, reviews), a themed eight-screen UI, custom endpoints, and seed data. Nothing under app/ is hand-written.",
-			[]string{"Second blueprint pipeline beside Meridian", "Owner-scoped orders and reviews", "Exercised by its own end-to-end test"},
+			[]string{"Second app generator beside Meridian", "Owner-scoped orders and reviews", "Exercised by its own end-to-end test"},
 			"cd examples/ecommerce && gofastr dev --dir app",
 			codeBlock("examples/ecommerce/gofastr.yml", []render.HTML{
 				ln(com("# 5 entities, 8 screens, auth, seeds: one YAML")),
@@ -572,13 +572,13 @@ func exRowItems() []render.HTML {
 	}
 }
 
-// exBlueprints is row 14: the declarative examples that are blueprints
+// exAppSpecs is row 14: the declarative examples that are app specs
 // only, no Go until `gofastr generate` runs. It shares exRowShell with
 // the runnable rows but stays out of exRowItems, whose length is the
 // "runs in one command" count. The source links sit in their own row
 // below the points, never inline in prose, so axe's link-in-text-block
 // rule has nothing to flag.
-func exBlueprints() render.HTML {
+func exAppSpecs() render.HTML {
 	items := []struct{ slug, domain string }{
 		{"lms", "courses, lessons, enrollments"},
 		{"portfolio", "projects and case studies"},
@@ -596,7 +596,7 @@ func exBlueprints() render.HTML {
 	body := exRowBody(exRowBodyConfig{
 		Tag:     "gofastr.yml only",
 		LoC:     "0 LoC until you generate",
-		Desc:    "Each is one gofastr.yml with no Go beside it. Generate in the directory to get a runnable app you own; every one is validated by the CLI's blueprint test suite.",
+		Desc:    "Each is one gofastr.yml with no Go beside it. Generate in the directory to get a runnable app you own; every one is validated by the CLI's app spec test suite.",
 		Points:  points,
 		Command: "cd examples/lms && gofastr generate --from=gofastr.yml",
 		Extra:   ui.Cluster(ui.ClusterConfig{Gap: ui.GapMD}, links...),
@@ -606,11 +606,11 @@ func exBlueprints() render.HTML {
 		ln(render.Text("$ gofastr generate --from=gofastr.yml")),
 		ln(render.Text("$ go run .")),
 	})
-	return exRowShell("14", "blueprints", "examples/…", "Four more blueprints", body, code)
+	return exRowShell("14", "app-spec", "examples/…", "Four more app specs", body, code)
 }
 
 func exRows() render.HTML {
-	return ui.Stack(ui.StackConfig{Gap: ui.Gap2XL}, append(exRowItems(), exBlueprints())...)
+	return ui.Stack(ui.StackConfig{Gap: ui.Gap2XL}, append(exRowItems(), exAppSpecs())...)
 }
 
 // exRowBodyConfig is the left column of one example row. Points are
@@ -619,7 +619,7 @@ type exRowBodyConfig struct {
 	Tag, LoC, Desc, Command string
 	Points                  []render.HTML
 	Source                  string      // "View source" href; empty hides the link
-	Extra                   render.HTML // optional trailing block (the blueprint row's source links)
+	Extra                   render.HTML // optional trailing block (the app spec row's source links)
 }
 
 // exSourceLink is an off-site link to an example's source tree.
@@ -665,7 +665,7 @@ func exRowShell(num, id, path, title string, body, code render.HTML) render.HTML
 }
 
 // exRow renders one runnable example. code is the pre-built code sample (a
-// snippet for most rows; the full embedded blueprint for Meridian); path
+// snippet for most rows; the full embedded app spec for Meridian); path
 // names the directory for the "View source" link.
 func exRow(num, path, title, tag, loc, desc string, points []string, cmd string, code render.HTML) render.HTML {
 	slug := strings.TrimPrefix(path, "examples/")
@@ -823,7 +823,7 @@ func kTimeline() render.HTML {
 			evt("12s", ui.TimelineInfo, "Agent calls propose_plan", "Lists destructive targets (none) and the three add_* operations."),
 			evt("18s", ui.TimelineSuccess, "You click Approve", "Plan id is stamped onto the agent's retry call."),
 			evt("19s", ui.TimelineNeutral, "Schema auto-migrates", "The plan applies and the schema auto-migrates in-process; the posts table is live."),
-			evt("25s", ui.TimelineNeutral, "Journal freezable", "kiln freeze --dir build/ snapshots the world; graduate to Go via a gofastr.yml blueprint."),
+			evt("25s", ui.TimelineNeutral, "Journal freezable", "kiln freeze --dir build/ snapshots the world; graduate to Go via a gofastr.yml app spec."),
 		}}),
 	)
 }

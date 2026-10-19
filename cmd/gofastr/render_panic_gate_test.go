@@ -19,7 +19,7 @@ func TestGeneratedE2ERejectsRecoveredRenderPanic(t *testing.T) {
 	if err := copyGoSum(root, dir); err != nil {
 		t.Fatal(err)
 	}
-	writeTestFile(t, filepath.Join(dir, "e2e_test.go"), renderBlueprintE2ETest(Blueprint{}))
+	writeTestFile(t, filepath.Join(dir, "e2e_test.go"), renderAppSpecE2ETest(AppSpec{}))
 	writeTestFile(t, filepath.Join(dir, "main.go"), `package main
 import (
  "fmt"

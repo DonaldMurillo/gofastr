@@ -27,7 +27,7 @@ type footerLink struct {
 	Href  string
 }
 
-// chromeFooter stands in for the marketing footer the blueprint
+// chromeFooter stands in for the marketing footer the app spec
 // generator writes into an app (its sitefooter package, with a Legal
 // column) — the live instance this check exists for: footer link
 // columns declared as data at app-wiring time.

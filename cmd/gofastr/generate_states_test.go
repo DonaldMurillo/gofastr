@@ -299,7 +299,7 @@ func TestGeneratorsRefuseBadTransitionKeys(t *testing.T) {
 // The scaffolded project's typed client is emitted straight from the same
 // declarations, so the states boot check runs on that path too: a move key
 // registration refuses never reaches renderClient, whatever declared it
-// (the blueprint path validates shape, not states).
+// (the app spec path validates shape, not states).
 func TestRenderGeneratedProjectRefusesBadStates(t *testing.T) {
 	decls := statesFixtureDecls()
 	decls[0].States.Transitions[0].Key = "patch"

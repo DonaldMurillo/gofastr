@@ -293,7 +293,7 @@ func TestSearchWithLimit(t *testing.T) {
 func TestDevLoopDocsLeadWithGofastrDev(t *testing.T) {
 	for _, topic := range []string{
 		"ui-getting-started",
-		"tutorial-blueprint-app",
+		"tutorial-app-spec",
 		"project-structure",
 	} {
 		body, err := Get(topic)

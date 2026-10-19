@@ -10,8 +10,8 @@ import (
 
 // This is the cross-package parity gate: Kiln's emitted YAML must decode and
 // validate through the exact current generator, not a second approximation of
-// the blueprint schema.
-func TestKilnFreezeBlueprintParsesAndValidates(t *testing.T) {
+// the app spec schema.
+func TestKilnFreezeAppSpecParsesAndValidates(t *testing.T) {
 	timestamps := false
 	crud := true
 	w := world.New()
@@ -54,18 +54,18 @@ func TestKilnFreezeBlueprintParsesAndValidates(t *testing.T) {
 	w.Nav = []world.NavItem{{Label: "Home", Href: "/"}}
 	w.Seeds = []*world.Seed{{Entity: "tasks", Rows: []map[string]any{{"title": "Ship", "status": "open"}}}}
 
-	buf, err := freeze.BlueprintYAML(w)
+	buf, err := freeze.AppSpecYAML(w)
 	if err != nil {
-		t.Fatalf("BlueprintYAML: %v", err)
+		t.Fatalf("AppSpecYAML: %v", err)
 	}
-	bp, err := decodeBlueprintString(string(buf))
+	bp, err := decodeAppSpecString(string(buf))
 	if err != nil {
 		t.Fatalf("current decoder rejected Kiln output: %v\n%s", err, buf)
 	}
-	if err := validateBlueprint(bp); err != nil {
+	if err := validateAppSpec(bp); err != nil {
 		t.Fatalf("current validator rejected Kiln output: %v\n%s", err, buf)
 	}
-	files, err := renderBlueprintFiles(bp)
+	files, err := renderAppSpecFiles(bp)
 	if err != nil {
 		t.Fatalf("current renderer rejected Kiln output: %v\n%s", err, buf)
 	}

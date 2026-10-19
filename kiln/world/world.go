@@ -7,7 +7,7 @@ import (
 )
 
 // The UI node tree (Node, Action, action-kind consts) and its helpers now
-// live in the first-party core-ui/node package so the blueprint codegen
+// live in the first-party core-ui/node package so the app spec codegen
 // can compose them without importing the Kiln namespace. These aliases +
 // re-exports keep every kiln-internal caller (journal, freeze, effect,
 // protocol, render, chat, live) compiling unchanged.
@@ -276,7 +276,7 @@ type Middleware struct {
 }
 
 // EndpointStub, NamedStub, and NavItem are the scaffold-only surfaces from
-// the current blueprint contract. They do not invent live handler bodies;
+// the current app spec contract. They do not invent live handler bodies;
 // freeze emits owned-Go stubs while world.json retains the exact live IR.
 type EndpointStub struct {
 	Name        string `json:"name,omitempty"`

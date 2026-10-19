@@ -15,7 +15,7 @@ import (
 // agent-built and untrusted, so a peer that accepts the connection but
 // never responds must fail the probe on its own (2s, well under the 15s
 // request context, which stays the outer backstop — the bootProbeClient
-// shape, cmd/gofastr/examples_blueprint_test.go).
+// shape, cmd/gofastr/examples_appspec_test.go).
 var mcpProbeClient = &http.Client{Timeout: 2 * time.Second}
 
 // mcpProbeBodyCap bounds the bytes read from a candidate's /mcp reply: a

@@ -11,7 +11,7 @@ import (
 
 // CLAUDE.md hard rule #6: an entity holding per-user (PII-shaped) data must
 // not be exposed via auto-CRUD/MCP without owner_field, access, or
-// multi_tenant. Blueprint auth alone does NOT suppress the rule: enabling
+// multi_tenant. App spec auth alone does NOT suppress the rule: enabling
 // auth only mounts pass-through SessionMiddleware, so anonymous requests
 // still reach auto-CRUD/MCP.
 
@@ -28,7 +28,7 @@ func piiEntity(name string, fields ...string) framework.EntityDeclaration {
 }
 
 func TestPIIUnscopedFlagged(t *testing.T) {
-	bp := Blueprint{Entities: []framework.EntityDeclaration{
+	bp := AppSpec{Entities: []framework.EntityDeclaration{
 		piiEntity("patients", "name", "email", "ssn"),
 	}}
 	got := lintUnscopedPII(bp)
@@ -52,7 +52,7 @@ func TestPIIUnscopedFlagged(t *testing.T) {
 func TestPIIOwnerFieldPasses(t *testing.T) {
 	decl := piiEntity("patients", "email", "user_id")
 	decl.Scope.OwnerField = "user_id"
-	bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}
+	bp := AppSpec{Entities: []framework.EntityDeclaration{decl}}
 	if got := lintUnscopedPII(bp); len(got) != 0 {
 		t.Fatalf("owner_field set, want no findings: %+v", got)
 	}
@@ -61,7 +61,7 @@ func TestPIIOwnerFieldPasses(t *testing.T) {
 func TestPIIMultiTenantPasses(t *testing.T) {
 	decl := piiEntity("patients", "email")
 	decl.Scope.MultiTenant = true
-	bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}
+	bp := AppSpec{Entities: []framework.EntityDeclaration{decl}}
 	if got := lintUnscopedPII(bp); len(got) != 0 {
 		t.Fatalf("multi_tenant set, want no findings: %+v", got)
 	}
@@ -70,7 +70,7 @@ func TestPIIMultiTenantPasses(t *testing.T) {
 func TestPIIAccessPasses(t *testing.T) {
 	decl := piiEntity("patients", "email")
 	decl.Exposure.Access = &fwentity.AccessDeclaration{Read: "patients:read"}
-	bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}
+	bp := AppSpec{Entities: []framework.EntityDeclaration{decl}}
 	if got := lintUnscopedPII(bp); len(got) != 0 {
 		t.Fatalf("access set, want no findings: %+v", got)
 	}
@@ -81,7 +81,7 @@ func TestPIIAccessPasses(t *testing.T) {
 func TestPIIEmptyAccessStillFlagged(t *testing.T) {
 	decl := piiEntity("patients", "email")
 	decl.Exposure.Access = &fwentity.AccessDeclaration{}
-	bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}
+	bp := AppSpec{Entities: []framework.EntityDeclaration{decl}}
 	if got := lintUnscopedPII(bp); len(got) != 1 {
 		t.Fatalf("blank access map should not suppress: %+v", got)
 	}
@@ -91,8 +91,8 @@ func TestPIIEmptyAccessStillFlagged(t *testing.T) {
 // scoping. Auth only mounts pass-through SessionMiddleware: anonymous
 // requests still reach auto-CRUD/MCP, so it must NOT suppress the rule.
 func TestPIIAuthAloneStillFlagged(t *testing.T) {
-	bp := Blueprint{
-		App:      BlueprintApp{Auth: BlueprintAuth{Enabled: true}},
+	bp := AppSpec{
+		App:      AppSpecApp{Auth: AppSpecAuth{Enabled: true}},
 		Entities: []framework.EntityDeclaration{piiEntity("users", "email")},
 	}
 	got := lintUnscopedPII(bp)
@@ -109,7 +109,7 @@ func TestPIICrudOffPasses(t *testing.T) {
 	decl := piiEntity("patients", "email")
 	off := false
 	decl.Exposure.CRUD = &off
-	bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}
+	bp := AppSpec{Entities: []framework.EntityDeclaration{decl}}
 	if got := lintUnscopedPII(bp); len(got) != 0 {
 		t.Fatalf("crud off, want no findings: %+v", got)
 	}
@@ -121,7 +121,7 @@ func TestPIIMcpOnlyFlagged(t *testing.T) {
 	off := false
 	decl.Exposure.CRUD = &off
 	decl.Exposure.MCP = true
-	bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}
+	bp := AppSpec{Entities: []framework.EntityDeclaration{decl}}
 	if got := lintUnscopedPII(bp); len(got) != 1 {
 		t.Fatalf("mcp-only entity should be flagged: %+v", got)
 	}
@@ -129,7 +129,7 @@ func TestPIIMcpOnlyFlagged(t *testing.T) {
 
 // Column naming preserves case, so camelCase PII names must match too.
 func TestPIICamelCaseFieldFlagged(t *testing.T) {
-	bp := Blueprint{Entities: []framework.EntityDeclaration{
+	bp := AppSpec{Entities: []framework.EntityDeclaration{
 		piiEntity("users", "userEmail", "creditCard"),
 	}}
 	got := lintUnscopedPII(bp)
@@ -145,14 +145,14 @@ func TestPIIRelationFieldNotFlagged(t *testing.T) {
 		{Name: "address_id", Type: "relation", To: "addresses"},
 		{Name: "total", Type: "float"},
 	}}
-	bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}
+	bp := AppSpec{Entities: []framework.EntityDeclaration{decl}}
 	if got := lintUnscopedPII(bp); len(got) != 0 {
 		t.Fatalf("relation FK should not be flagged: %+v", got)
 	}
 }
 
 func TestPIINoPIIFieldsPasses(t *testing.T) {
-	bp := Blueprint{Entities: []framework.EntityDeclaration{
+	bp := AppSpec{Entities: []framework.EntityDeclaration{
 		piiEntity("posts", "title", "body"),
 	}}
 	if got := lintUnscopedPII(bp); len(got) != 0 {
@@ -217,7 +217,7 @@ func TestValidatePIIExits1(t *testing.T) {
 	}
 }
 
-// The blog repro end to end: auth enabled in the blueprint, users entity
+// The blog repro end to end: auth enabled in the app spec, users entity
 // with email, no scoping; validate must still exit 1.
 func TestValidateAuthOnPIIExits1(t *testing.T) {
 	dir := t.TempDir()
@@ -244,7 +244,7 @@ func TestValidatePIIOwnerFieldOk(t *testing.T) {
 		code = covT_capExit(t, func() { runValidate([]string{path}) })
 	})
 	if code != -1 {
-		t.Fatalf("owner_field set, blueprint should validate, got exit %d\n%s", code, out)
+		t.Fatalf("owner_field set, app spec should validate, got exit %d\n%s", code, out)
 	}
 }
 
@@ -257,7 +257,7 @@ func TestGeneratePIIWarnsNotFatal(t *testing.T) {
 	var code int
 	out := covT_capStdout(t, func() {
 		code = covT_capExit(t, func() {
-			generateFromBlueprint(generateOptions{from: filepath.Join(dir, "bp.yml"), outputDir: "gen", dryRun: true})
+			generateFromAppSpec(generateOptions{from: filepath.Join(dir, "bp.yml"), outputDir: "gen", dryRun: true})
 		})
 	})
 	if code != -1 {
@@ -272,7 +272,7 @@ func TestGeneratePIIWarnsNotFatal(t *testing.T) {
 
 // --- gofastr audit lint: a root gofastr.yml is linted with the Go rules.
 
-func TestAuditLintFlagsBlueprintPII(t *testing.T) {
+func TestAuditLintFlagsAppSpecPII(t *testing.T) {
 	dir := t.TempDir()
 	writeValidateFile(t, filepath.Join(dir, "gofastr.yml"), piiTripYML)
 	got, err := auditLint(dir)
@@ -282,12 +282,12 @@ func TestAuditLintFlagsBlueprintPII(t *testing.T) {
 	mustHaveRule(t, got, "unscoped-pii")
 	for _, f := range got {
 		if f.Rule == "unscoped-pii" && f.File != "gofastr.yml" {
-			t.Fatalf("finding should name the blueprint file: %+v", f)
+			t.Fatalf("finding should name the app spec file: %+v", f)
 		}
 	}
 }
 
-func TestAuditLintBlueprintOwnerFieldOk(t *testing.T) {
+func TestAuditLintAppSpecOwnerFieldOk(t *testing.T) {
 	dir := t.TempDir()
 	writeValidateFile(t, filepath.Join(dir, "gofastr.yml"), piiOwnerYML)
 	got, err := auditLint(dir)
@@ -298,9 +298,9 @@ func TestAuditLintBlueprintOwnerFieldOk(t *testing.T) {
 }
 
 // --- gofastr audit lint: Go-declared entities are linted as well as
-// the blueprint. A Go `app.Entity("x", framework.EntityConfig{...})` with
+// the app spec. A Go `app.Entity("x", framework.EntityConfig{...})` with
 // an unscoped PII-shaped field exposed via auto-CRUD must surface the
-// SAME rule "unscoped-pii" as the blueprint path; it's the same defect.
+// SAME rule "unscoped-pii" as the app spec path; it's the same defect.
 
 // goPiiTripGo is a hand-written Go entity declaration: "members" with an
 // email field, auto-CRUD on by default (no Exposure.CRUD), no scoping.

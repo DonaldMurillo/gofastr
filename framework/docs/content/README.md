@@ -18,8 +18,8 @@ results, the harness contract) are exempt. The exemption list lives in
   such as a live dashboard, optimistic board, master/detail workspace,
   or server-authoritative reactive SaaS; choose state and delivery
   boundaries before package names.
-- [Blueprint tutorial](tutorial-blueprint-app.md): walks through the
-  optional scaffolder: blueprint → generated UI + API → auth + owner
+- [AppSpec tutorial](tutorial-app-spec.md): walks through the
+  optional scaffolder: app spec → generated UI + API → auth + owner
   scoping + RBAC → customize in plain Go → deploy.
 - [Comparison](comparison.md): vs PocketBase, Encore, Wasp, and
   hand-rolled Gin+sqlc; weaknesses stated honestly.
@@ -255,10 +255,10 @@ results, the harness contract) are exempt. The exemption list lives in
   downloadable Go SDK module and a zero-dependency JS/TS client, served
   by the app itself via `framework/sdkdocs`: live per-entity reference
   pages, tabbed install guides, and schema-hash drift detection.
-- [Blueprints](blueprints.md): deterministic YAML-to-code input for
+- [App specs](app-spec.md): deterministic YAML-to-code input for
   `gofastr generate --from`, backed by the in-house `core/yaml` parser.
 - [Kiln (agent-driven build mode)](kiln.md): separate binary; build a
-  GoFastr app live via an agent CLI, then freeze to a `gofastr.yml` blueprint
+  GoFastr app live via an agent CLI, then freeze to a `gofastr.yml` app spec
   (with a lossless `world.json` snapshot) and generate owned Go.
 - [Benchmarks](benchmarks.md): tiered Go benchmarks covering claims-
   defending end-to-end paths, hot-path microbenchmarks, concurrency,

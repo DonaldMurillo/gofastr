@@ -67,7 +67,7 @@ func runNew(args []string) {
 	switch resource {
 	case "entity":
 		fail("`gofastr new entity` has been removed.")
-		info("Declare entities in a gofastr.yml blueprint instead. See `gofastr docs blueprints`.")
+		info("Declare entities in a gofastr.yml app spec instead. See `gofastr docs app-spec`.")
 		osExit(1)
 	case "handler":
 		runNewHandler(rest, overwrite)

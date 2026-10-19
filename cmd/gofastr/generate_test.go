@@ -199,8 +199,8 @@ func TestSafeCleanOutputDirRejectsSymlinkRoot(t *testing.T) {
 	}
 }
 
-func TestBlueprintGenerateRejectsSymlinkOutput(t *testing.T) {
-	if os.Getenv("GOFASTR_BLUEPRINT_SYMLINK_HELPER") == "1" {
+func TestAppSpecGenerateRejectsSymlinkOutput(t *testing.T) {
+	if os.Getenv("GOFASTR_APPSPEC_SYMLINK_HELPER") == "1" {
 		generateProject([]string{"--from=gofastr.yml", "--out=out", "--no-clean"})
 		return
 	}
@@ -230,9 +230,9 @@ entities:
 	if err != nil {
 		self = os.Args[0]
 	}
-	cmd := exec.Command(self, "-test.run=^TestBlueprintGenerateRejectsSymlinkOutput$")
+	cmd := exec.Command(self, "-test.run=^TestAppSpecGenerateRejectsSymlinkOutput$")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GOFASTR_BLUEPRINT_SYMLINK_HELPER=1")
+	cmd.Env = append(os.Environ(), "GOFASTR_APPSPEC_SYMLINK_HELPER=1")
 	output, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatalf("expected symlink output to fail\n%s", output)
@@ -243,7 +243,7 @@ entities:
 	if entries, err := os.ReadDir(outside); err != nil {
 		t.Fatal(err)
 	} else if len(entries) != 0 {
-		t.Fatalf("blueprint wrote through symlink: %#v", entries)
+		t.Fatalf("app spec wrote through symlink: %#v", entries)
 	}
 }
 

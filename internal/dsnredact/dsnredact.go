@@ -1,7 +1,7 @@
 // Package dsnredact strips credentials from database DSNs so the
 // remainder can be logged or committed (host/db name are configuration,
 // not secrets). It is the one canonical redactor, lifted verbatim from
-// cmd/gofastr/blueprint.go::redactDSN (the rules there were proven
+// cmd/gofastr/appspec.go::redactDSN (the rules there were proven
 // against the round-5 probes; the two test-infra twins that drifted from
 // them are its callers now).
 //

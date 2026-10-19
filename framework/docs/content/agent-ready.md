@@ -356,7 +356,7 @@ the analyzers over the app's source and returns structured findings, and
 `contracts_fix` applies one rule's autofixes. Neither is registered
 outside the dev loop, since both touch local source files.
 Calling `WithMCP` **and** manually mounting `/mcp`
-panics with a route conflict. Pick one. Blueprint-generated apps ship with
+panics with a route conflict. Pick one. Generated apps ship with
 `WithMCP`, `WithMCPIntrospection` and `WithMCPTools(mcptools.Register)` wired.
 
 `framework.WithMCPControl()` adds the mutating counterpart:

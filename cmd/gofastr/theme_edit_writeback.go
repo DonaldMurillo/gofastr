@@ -24,7 +24,7 @@ import (
 // Theme values are free-form CSS: oklch() expressions, font stacks with
 // embedded quotes, shadow lists. A raw backtick literal has no escape
 // mechanism, so a single backtick in a value closes it: the same class
-// of injection blueprint_emitter_injection_test.go pins for the IR
+// of injection appspec_emitter_injection_test.go pins for the IR
 // emitters. %q produces a Go double-quoted literal that escapes every
 // breaking byte (backtick, quote, newline, backslash), so no theme
 // value can leave its literal and become syntax. The companion

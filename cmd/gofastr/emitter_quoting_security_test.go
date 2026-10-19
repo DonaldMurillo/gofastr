@@ -11,10 +11,10 @@ import (
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// Property: no blueprint-IR-derived string may leave the Go literal,
+// Property: no app-spec-IR-derived string may leave the Go literal,
 // identifier position, or comment it is emitted into.
 //
-// blueprint_emitter_injection_test.go covers 12 IR sites and states the threat
+// appspec_emitter_injection_test.go covers 12 IR sites and states the threat
 // model this file inherits (an agent authors gofastr.yml from natural-language
 // requirements, so every IR string is transcribed text). This file is the
 // exhaustive complement: every remaining string-bearing IR field the entity and
@@ -39,10 +39,10 @@ func TestIRStringsStayInsideTheirLiteral(t *testing.T) {
 		label := strings.NewReplacer("\n", "N", "`", "BT", `"`, "Q", "*", "S", "/", "SL", " ", "_").Replace(payload)
 		for _, tc := range irQuotingSites(payload) {
 			t.Run(tc.site+"/"+label, func(t *testing.T) {
-				if err := validateBlueprint(tc.bp); err != nil {
+				if err := validateAppSpec(tc.bp); err != nil {
 					return // rejected at the boundary
 				}
-				files, err := renderBlueprintFiles(tc.bp)
+				files, err := renderAppSpecFiles(tc.bp)
 				if err != nil {
 					return // emitter refused
 				}
@@ -81,13 +81,13 @@ func assertIRStayedData(t *testing.T, site, name, src string) {
 
 type irSite struct {
 	site string
-	bp   Blueprint
+	bp   AppSpec
 }
 
 func irQuotingSites(payload string) []irSite {
-	base := func() Blueprint {
-		return Blueprint{
-			App: BlueprintApp{Name: "app"},
+	base := func() AppSpec {
+		return AppSpec{
+			App: AppSpecApp{Name: "app"},
 			Entities: []framework.EntityDeclaration{{
 				Name: "tickets",
 				Fields: []framework.FieldDeclaration{
@@ -97,128 +97,128 @@ func irQuotingSites(payload string) []irSite {
 					{Name: "due_on", Type: "date"},
 				},
 			}},
-			Screens: []BlueprintScreen{{Name: "home", Route: "/", Type: "page"}},
+			Screens: []AppSpecScreen{{Name: "home", Route: "/", Type: "page"}},
 		}
 	}
 	var out []irSite
-	add := func(site string, mut func(*Blueprint)) {
+	add := func(site string, mut func(*AppSpec)) {
 		bp := base()
 		mut(&bp)
 		out = append(out, irSite{site, bp})
 	}
-	ent := func(b *Blueprint) *framework.EntityDeclaration { return &b.Entities[0] }
+	ent := func(b *AppSpec) *framework.EntityDeclaration { return &b.Entities[0] }
 
 	// ---- app ----
-	add("app.base_url", func(b *Blueprint) { b.App.BaseURL = payload })
-	add("app.db_driver", func(b *Blueprint) { b.App.DBDriver = payload })
-	add("app.db_url", func(b *Blueprint) { b.App.DBURL = payload })
-	add("app.static_dir", func(b *Blueprint) { b.App.StaticDir = payload })
-	add("app.api_prefix", func(b *Blueprint) { b.App.APIPrefix = payload })
-	add("app.theme_value", func(b *Blueprint) { b.App.Theme = map[string]string{"primary": payload} })
-	add("app.auth.base_path", func(b *Blueprint) {
-		b.App.Auth = BlueprintAuth{Enabled: true, DevMode: true, BasePath: payload}
+	add("app.base_url", func(b *AppSpec) { b.App.BaseURL = payload })
+	add("app.db_driver", func(b *AppSpec) { b.App.DBDriver = payload })
+	add("app.db_url", func(b *AppSpec) { b.App.DBURL = payload })
+	add("app.static_dir", func(b *AppSpec) { b.App.StaticDir = payload })
+	add("app.api_prefix", func(b *AppSpec) { b.App.APIPrefix = payload })
+	add("app.theme_value", func(b *AppSpec) { b.App.Theme = map[string]string{"primary": payload} })
+	add("app.auth.base_path", func(b *AppSpec) {
+		b.App.Auth = AppSpecAuth{Enabled: true, DevMode: true, BasePath: payload}
 	})
-	add("app.auth.jwt_secret", func(b *Blueprint) {
-		b.App.Auth = BlueprintAuth{Enabled: true, JWTSecret: payload}
+	add("app.auth.jwt_secret", func(b *AppSpec) {
+		b.App.Auth = AppSpecAuth{Enabled: true, JWTSecret: payload}
 	})
-	add("app.admin.path", func(b *Blueprint) {
-		b.App.Admin = BlueprintAdmin{Enabled: true, Path: payload}
+	add("app.admin.path", func(b *AppSpec) {
+		b.App.Admin = AppSpecAdmin{Enabled: true, Path: payload}
 	})
-	add("app.admin.role", func(b *Blueprint) {
-		b.App.Admin = BlueprintAdmin{Enabled: true, Role: payload}
+	add("app.admin.role", func(b *AppSpec) {
+		b.App.Admin = AppSpecAdmin{Enabled: true, Role: payload}
 	})
-	add("app.admin.login_path", func(b *Blueprint) {
-		b.App.Admin = BlueprintAdmin{Enabled: true, LoginPath: payload}
+	add("app.admin.login_path", func(b *AppSpec) {
+		b.App.Admin = AppSpecAdmin{Enabled: true, LoginPath: payload}
 	})
-	add("app.admin.seed_email", func(b *Blueprint) {
-		b.App.Admin = BlueprintAdmin{Enabled: true, SeedEmail: payload}
+	add("app.admin.seed_email", func(b *AppSpec) {
+		b.App.Admin = AppSpecAdmin{Enabled: true, SeedEmail: payload}
 	})
-	add("app.admin.seed_password", func(b *Blueprint) {
-		b.App.Admin = BlueprintAdmin{Enabled: true, SeedPassword: payload}
+	add("app.admin.seed_password", func(b *AppSpec) {
+		b.App.Admin = AppSpecAdmin{Enabled: true, SeedPassword: payload}
 	})
-	add("app.pwa.name", func(b *Blueprint) { b.App.PWA = BlueprintPWA{Enabled: true, Name: payload} })
-	add("app.pwa.short_name", func(b *Blueprint) { b.App.PWA = BlueprintPWA{Enabled: true, ShortName: payload} })
-	add("app.pwa.description", func(b *Blueprint) {
-		b.App.PWA = BlueprintPWA{Enabled: true, Description: payload}
+	add("app.pwa.name", func(b *AppSpec) { b.App.PWA = AppSpecPWA{Enabled: true, Name: payload} })
+	add("app.pwa.short_name", func(b *AppSpec) { b.App.PWA = AppSpecPWA{Enabled: true, ShortName: payload} })
+	add("app.pwa.description", func(b *AppSpec) {
+		b.App.PWA = AppSpecPWA{Enabled: true, Description: payload}
 	})
-	add("app.pwa.theme_color", func(b *Blueprint) {
-		b.App.PWA = BlueprintPWA{Enabled: true, ThemeColor: payload}
+	add("app.pwa.theme_color", func(b *AppSpec) {
+		b.App.PWA = AppSpecPWA{Enabled: true, ThemeColor: payload}
 	})
-	add("app.pwa.background_color", func(b *Blueprint) {
-		b.App.PWA = BlueprintPWA{Enabled: true, BackgroundColor: payload}
+	add("app.pwa.background_color", func(b *AppSpec) {
+		b.App.PWA = AppSpecPWA{Enabled: true, BackgroundColor: payload}
 	})
 
 	// ---- nav ----
-	add("nav.label", func(b *Blueprint) { b.Nav = []BlueprintNavItem{{Label: payload, Href: "/"}} })
-	add("nav.href", func(b *Blueprint) { b.Nav = []BlueprintNavItem{{Label: "Home", Href: payload}} })
-	add("nav.icon", func(b *Blueprint) { b.Nav = []BlueprintNavItem{{Label: "Home", Href: "/", Icon: payload}} })
-	add("nav.role", func(b *Blueprint) { b.Nav = []BlueprintNavItem{{Label: "Home", Href: "/", Role: payload}} })
-	add("nav.child.label", func(b *Blueprint) {
-		b.Nav = []BlueprintNavItem{{Label: "Top", Items: []BlueprintNavItem{{Label: payload, Href: "/"}}}}
+	add("nav.label", func(b *AppSpec) { b.Nav = []AppSpecNavItem{{Label: payload, Href: "/"}} })
+	add("nav.href", func(b *AppSpec) { b.Nav = []AppSpecNavItem{{Label: "Home", Href: payload}} })
+	add("nav.icon", func(b *AppSpec) { b.Nav = []AppSpecNavItem{{Label: "Home", Href: "/", Icon: payload}} })
+	add("nav.role", func(b *AppSpec) { b.Nav = []AppSpecNavItem{{Label: "Home", Href: "/", Role: payload}} })
+	add("nav.child.label", func(b *AppSpec) {
+		b.Nav = []AppSpecNavItem{{Label: "Top", Items: []AppSpecNavItem{{Label: payload, Href: "/"}}}}
 	})
-	add("nav.child.href", func(b *Blueprint) {
-		b.Nav = []BlueprintNavItem{{Label: "Top", Items: []BlueprintNavItem{{Label: "Kid", Href: payload}}}}
+	add("nav.child.href", func(b *AppSpec) {
+		b.Nav = []AppSpecNavItem{{Label: "Top", Items: []AppSpecNavItem{{Label: "Kid", Href: payload}}}}
 	})
-	add("nav.child.role", func(b *Blueprint) {
-		b.Nav = []BlueprintNavItem{{Label: "Top", Items: []BlueprintNavItem{{Label: "Kid", Href: "/", Role: payload}}}}
+	add("nav.child.role", func(b *AppSpec) {
+		b.Nav = []AppSpecNavItem{{Label: "Top", Items: []AppSpecNavItem{{Label: "Kid", Href: "/", Role: payload}}}}
 	})
 
 	// ---- entity ----
-	add("field.pattern", func(b *Blueprint) { ent(b).Fields[0].Pattern = payload })
-	add("field.default", func(b *Blueprint) { ent(b).Fields[0].Default = payload })
-	add("scope.tenant_field", func(b *Blueprint) {
+	add("field.pattern", func(b *AppSpec) { ent(b).Fields[0].Pattern = payload })
+	add("field.default", func(b *AppSpec) { ent(b).Fields[0].Default = payload })
+	add("scope.tenant_field", func(b *AppSpec) {
 		ent(b).Scope = &fwentity.ScopeDeclaration{TenantField: payload}
 	})
-	add("scope.owner_field", func(b *Blueprint) {
+	add("scope.owner_field", func(b *AppSpec) {
 		ent(b).Scope = &fwentity.ScopeDeclaration{OwnerField: payload}
 	})
-	add("scope.cross_owner_read", func(b *Blueprint) {
+	add("scope.cross_owner_read", func(b *AppSpec) {
 		ent(b).Scope = &fwentity.ScopeDeclaration{OwnerField: "owner_id", CrossOwnerRead: payload}
 	})
-	add("search_fields", func(b *Blueprint) { ent(b).SearchFields = []string{payload} })
-	add("pagination.cursor_field", func(b *Blueprint) {
+	add("search_fields", func(b *AppSpec) { ent(b).SearchFields = []string{payload} })
+	add("pagination.cursor_field", func(b *AppSpec) {
 		ent(b).Pagination = &fwentity.PaginationDeclaration{CursorField: payload}
 	})
-	add("pagination.cursor_fields", func(b *Blueprint) {
+	add("pagination.cursor_fields", func(b *AppSpec) {
 		ent(b).Pagination = &fwentity.PaginationDeclaration{CursorFields: []string{payload}}
 	})
-	add("index.name", func(b *Blueprint) {
+	add("index.name", func(b *AppSpec) {
 		ent(b).Indices = []framework.Index{{Name: payload, Columns: []string{"title"}}}
 	})
-	add("index.column", func(b *Blueprint) {
+	add("index.column", func(b *AppSpec) {
 		ent(b).Indices = []framework.Index{{Name: "idx", Columns: []string{payload}}}
 	})
-	add("properties.key", func(b *Blueprint) { ent(b).Properties = map[string]any{payload: "v"} })
-	add("properties.value", func(b *Blueprint) { ent(b).Properties = map[string]any{"k": payload} })
-	add("access.read", func(b *Blueprint) {
+	add("properties.key", func(b *AppSpec) { ent(b).Properties = map[string]any{payload: "v"} })
+	add("properties.value", func(b *AppSpec) { ent(b).Properties = map[string]any{"k": payload} })
+	add("access.read", func(b *AppSpec) {
 		ent(b).Exposure = &fwentity.ExposureDeclaration{Access: &fwentity.AccessDeclaration{Read: payload}}
 	})
-	add("access.create", func(b *Blueprint) {
+	add("access.create", func(b *AppSpec) {
 		ent(b).Exposure = &fwentity.ExposureDeclaration{Access: &fwentity.AccessDeclaration{Create: payload}}
 	})
-	add("relation.name", func(b *Blueprint) {
+	add("relation.name", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
 			Type: framework.RelManyToOne, Name: payload, Entity: "tickets", ForeignKey: "parent_id",
 		}}
 	})
-	add("relation.foreign_key", func(b *Blueprint) {
+	add("relation.foreign_key", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
 			Type: framework.RelManyToOne, Name: "parent", Entity: "tickets", ForeignKey: payload,
 		}}
 	})
-	add("relation.through", func(b *Blueprint) {
+	add("relation.through", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
 			Type: framework.RelManyToMany, Name: "tags", Entity: "tickets",
 			ForeignKey: "tag_id", Through: payload, LocalKey: "ticket_id",
 		}}
 	})
-	add("relation.local_key", func(b *Blueprint) {
+	add("relation.local_key", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
 			Type: framework.RelManyToMany, Name: "tags", Entity: "tickets",
 			ForeignKey: "tag_id", Through: "t_pivot", LocalKey: payload,
 		}}
 	})
-	add("relation.foreign_key_target", func(b *Blueprint) {
+	add("relation.foreign_key_target", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
 			Type: framework.RelManyToOne, Name: "parent", Entity: "tickets",
 			ForeignKey: "parent_id", ForeignKeyTarget: payload,
@@ -230,7 +230,7 @@ func irQuotingSites(payload string) []irSite {
 	// the entity emitter writes each of their strings into the registration
 	// literal, so every one of them gets the same sweep.
 	display := func(site string, mut func(*fwentity.DisplayConfig)) {
-		add(site, func(b *Blueprint) {
+		add(site, func(b *AppSpec) {
 			d := &fwentity.DisplayConfig{}
 			mut(d)
 			ent(b).Display = d
@@ -277,7 +277,7 @@ func irQuotingSites(payload string) []irSite {
 		d.Fields = map[string]fwentity.FieldDisplay{"title": {Input: payload}}
 	})
 	states := func(site string, mut func(*fwentity.StatesConfig)) {
-		add(site, func(b *Blueprint) {
+		add(site, func(b *AppSpec) {
 			s := &fwentity.StatesConfig{Field: "status", Transitions: []fwentity.Transition{{
 				Key: "open_it", From: []string{"open"}, To: "closed",
 			}}}
@@ -296,14 +296,14 @@ func irQuotingSites(payload string) []irSite {
 	states("states.move_permission", func(s *fwentity.StatesConfig) { s.Transitions[0].Permission = payload })
 
 	// ---- seed ----
-	add("seed.row_value", func(b *Blueprint) {
-		b.Seed = []BlueprintSeedEntity{{Entity: "tickets", Rows: []map[string]any{{"title": payload}}}}
+	add("seed.row_value", func(b *AppSpec) {
+		b.Seed = []AppSpecSeedEntity{{Entity: "tickets", Rows: []map[string]any{{"title": payload}}}}
 	})
-	add("seed.row_key", func(b *Blueprint) {
-		b.Seed = []BlueprintSeedEntity{{Entity: "tickets", Rows: []map[string]any{{payload: "x"}}}}
+	add("seed.row_key", func(b *AppSpec) {
+		b.Seed = []AppSpecSeedEntity{{Entity: "tickets", Rows: []map[string]any{{payload: "x"}}}}
 	})
-	add("seed.weight_key", func(b *Blueprint) {
-		b.Seed = []BlueprintSeedEntity{{
+	add("seed.weight_key", func(b *AppSpec) {
+		b.Seed = []AppSpecSeedEntity{{
 			Entity: "tickets", Count: 2,
 			Weights: map[string]map[string]int{payload: {"open": 1}},
 		}}
@@ -313,20 +313,20 @@ func irQuotingSites(payload string) []irSite {
 	// Screen chrome strings the 2026-08-04 sweep never reached: title and
 	// description feed the SEO describers and the registrar table, route
 	// feeds the router registration AND the e2e/axe test files.
-	add("screen.title", func(b *Blueprint) { b.Screens[0].Title = payload })
-	add("screen.description", func(b *Blueprint) { b.Screens[0].Description = payload })
-	add("screen.route", func(b *Blueprint) { b.Screens[0].Route = payload })
-	add("screen.layout", func(b *Blueprint) { b.Screens[0].Layout = payload })
-	add("screen.access.role", func(b *Blueprint) {
-		b.Screens[0].Access = BlueprintAccess{Auth: true, Role: payload}
+	add("screen.title", func(b *AppSpec) { b.Screens[0].Title = payload })
+	add("screen.description", func(b *AppSpec) { b.Screens[0].Description = payload })
+	add("screen.route", func(b *AppSpec) { b.Screens[0].Route = payload })
+	add("screen.layout", func(b *AppSpec) { b.Screens[0].Layout = payload })
+	add("screen.access.role", func(b *AppSpec) {
+		b.Screens[0].Access = AppSpecAccess{Auth: true, Role: payload}
 	})
 
 	// ---- blocks ----
-	block := func(site string, blk BlueprintBlock) {
-		add(site, func(b *Blueprint) {
-			b.Screens[0].Body = []BlueprintBlock{blk}
+	block := func(site string, blk AppSpecBlock) {
+		add(site, func(b *AppSpec) {
+			b.Screens[0].Body = []AppSpecBlock{blk}
 			// entity_detail / entity_form(edit) render a specific record and
-			// require an {id} route param to clear validateBlueprint; without it
+			// require an {id} route param to clear validateAppSpec; without it
 			// the validator (correctly) rejects and these injection sites would
 			// be skipped instead of exercised.
 			if blk.Kind == "entity_detail" || (blk.Kind == "entity_form" && strings.EqualFold(blk.Mode, "edit")) {
@@ -334,38 +334,38 @@ func irQuotingSites(payload string) []irSite {
 			}
 		})
 	}
-	block("block.mode", BlueprintBlock{Kind: "entity_form", Entity: "tickets", Mode: payload})
-	block("block.fields", BlueprintBlock{Kind: "entity_list", Entity: "tickets", Fields: []string{payload}})
-	block("block.island", BlueprintBlock{Kind: "island", Island: payload})
-	block("block.widget", BlueprintBlock{Kind: "widget", Widget: payload})
+	block("block.mode", AppSpecBlock{Kind: "entity_form", Entity: "tickets", Mode: payload})
+	block("block.fields", AppSpecBlock{Kind: "entity_list", Entity: "tickets", Fields: []string{payload}})
+	block("block.island", AppSpecBlock{Kind: "island", Island: payload})
+	block("block.widget", AppSpecBlock{Kind: "widget", Widget: payload})
 	// Typed block string fields the sweep never reached: they all flow into
 	// the uinode Props literal (renderGoLiteral), the catalog emitters, or
 	// the empty-state copy of a list block.
-	block("block.text", BlueprintBlock{Kind: "text", Text: payload})
-	block("block.class", BlueprintBlock{Kind: "div", Class: payload})
-	block("block.href", BlueprintBlock{Kind: "text", Text: "hi", Href: payload})
-	block("block.empty_text", BlueprintBlock{Kind: "entity_list", Entity: "tickets", Fields: []string{"title"}, EmptyText: payload})
+	block("block.text", AppSpecBlock{Kind: "text", Text: payload})
+	block("block.class", AppSpecBlock{Kind: "div", Class: payload})
+	block("block.href", AppSpecBlock{Kind: "text", Text: "hi", Href: payload})
+	block("block.empty_text", AppSpecBlock{Kind: "entity_list", Entity: "tickets", Fields: []string{"title"}, EmptyText: payload})
 
 	// ---- endpoints / stubs ----
-	add("endpoint.name", func(b *Blueprint) {
-		b.Endpoints = []BlueprintEndpoint{{Name: payload, Method: "GET", Path: "/x", Handler: "handleX"}}
+	add("endpoint.name", func(b *AppSpec) {
+		b.Endpoints = []AppSpecEndpoint{{Name: payload, Method: "GET", Path: "/x", Handler: "handleX"}}
 	})
-	add("endpoint.path", func(b *Blueprint) {
-		b.Endpoints = []BlueprintEndpoint{{Name: "x", Method: "GET", Path: payload, Handler: "handleX"}}
+	add("endpoint.path", func(b *AppSpec) {
+		b.Endpoints = []AppSpecEndpoint{{Name: "x", Method: "GET", Path: payload, Handler: "handleX"}}
 	})
-	add("endpoint.description", func(b *Blueprint) {
-		b.Endpoints = []BlueprintEndpoint{{
+	add("endpoint.description", func(b *AppSpec) {
+		b.Endpoints = []AppSpecEndpoint{{
 			Name: "x", Method: "GET", Path: "/x", Handler: "handleX", Description: payload,
 		}}
 	})
-	add("middleware.description", func(b *Blueprint) {
-		b.Middleware = []BlueprintNamedStub{{Name: "audit", Description: payload}}
+	add("middleware.description", func(b *AppSpec) {
+		b.Middleware = []AppSpecNamedStub{{Name: "audit", Description: payload}}
 	})
-	add("plugin.description", func(b *Blueprint) {
-		b.Plugins = []BlueprintNamedStub{{Name: "metrics", Description: payload}}
+	add("plugin.description", func(b *AppSpec) {
+		b.Plugins = []AppSpecNamedStub{{Name: "metrics", Description: payload}}
 	})
-	add("helper.description", func(b *Blueprint) {
-		b.Helpers = []BlueprintNamedStub{{Name: "slugify", Description: payload}}
+	add("helper.description", func(b *AppSpec) {
+		b.Helpers = []AppSpecNamedStub{{Name: "slugify", Description: payload}}
 	})
 	return out
 }
@@ -495,7 +495,7 @@ func TestSDKModulePathRejectsDirectives(t *testing.T) {
 // Property: an entity relation name is constrained the same way every other
 // name in the IR is.
 //
-// validateBlueprint runs isGoIdentifier(toCamelCase(x)) over entity names, field
+// validateAppSpec runs isGoIdentifier(toCamelCase(x)) over entity names, field
 // names, screen names, endpoint handlers, middleware, plugins and helpers.
 // Relation names got NO such check, yet renderEntityModel emits
 // toCamelCase(rel.Name) in struct-field-identifier position and
@@ -510,11 +510,11 @@ func TestSDKModulePathRejectsDirectives(t *testing.T) {
 // is prefixed with "TicketsIncl"), so satisfying one breaks the other. That is
 // an argument, not a proof of impossibility, which is why the fix is the guard
 // every sibling name already has rather than a bet on that argument holding.
-// assertBlueprintGoParses in blueprint.go is the backstop for the next such gap.
+// assertAppSpecGoParses in appspec.go is the backstop for the next such gap.
 func TestRelationNameMustBeAnIdentifier(t *testing.T) {
-	bp := func(name string) Blueprint {
-		return Blueprint{
-			App: BlueprintApp{Name: "app"},
+	bp := func(name string) AppSpec {
+		return AppSpec{
+			App: AppSpecApp{Name: "app"},
 			Entities: []framework.EntityDeclaration{{
 				Name:   "tickets",
 				Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
@@ -522,17 +522,17 @@ func TestRelationNameMustBeAnIdentifier(t *testing.T) {
 					Type: framework.RelManyToOne, Name: name, Entity: "tickets", ForeignKey: "parent_id",
 				}},
 			}},
-			Screens: []BlueprintScreen{{Name: "home", Route: "/", Type: "page"}},
+			Screens: []AppSpecScreen{{Name: "home", Route: "/", Type: "page"}},
 		}
 	}
 	for _, name := range []string{
 		"parent`+PWN()+`",
 		"parent\tstring\n}\n\nfunc\tPWN(){}\n\ntype\tJunk\tstruct{\n\tZ",
 	} {
-		if err := validateBlueprint(bp(name)); err != nil {
+		if err := validateAppSpec(bp(name)); err != nil {
 			continue // the fix: reject at the boundary like every sibling name
 		}
-		files, err := renderBlueprintFiles(bp(name))
+		files, err := renderAppSpecFiles(bp(name))
 		if err != nil {
 			continue
 		}
@@ -696,40 +696,40 @@ func TestSDKDerivedNamesMustNotCollide(t *testing.T) {
 }
 
 // Pins the endpoint-stub identifier gap the extended emitident sweep
-// found (2026-09-04 round 3 extension): blueprintEndpointHandlerName
+// found (2026-09-04 round 3 extension): appSpecEndpointHandlerName
 // falls back to the endpoint Name when Handler is empty, and
-// renderBlueprintStubs emitted `func %s` from that fallback root with no
+// renderAppSpecStubs emitted `func %s` from that fallback root with no
 // identifier check of its own — toCamelCase transforms, it does not
 // validate. Fixed by gating the stub and the app.go registration on
-// isGoIdentifier, mirroring the hook stubs (validateBlueprint refuses the
+// isGoIdentifier, mirroring the hook stubs (validateAppSpec refuses the
 // Handler root; the Name fallback root had no validator).
 // Property: no emitted `func %s` / `http.HandlerFunc(%s)` ever carries a
 // non-identifier, whatever root derived it.
-// Surfaces: blueprint.go::renderBlueprintStubs (the stub),
-// ::renderBlueprintApp (the registration), ::validateBlueprint (Handler
+// Surfaces: appspec.go::renderAppSpecStubs (the stub),
+// ::renderAppSpecApp (the registration), ::validateAppSpec (Handler
 // root refusal), versus the hook stubs' isGoIdentifier gate.
-func TestBlueprintEndpointStubRefusesNonIdentifiers(t *testing.T) {
-	bp := Blueprint{Endpoints: []BlueprintEndpoint{
+func TestAppSpecEndpointStubRefusesNonIdentifiers(t *testing.T) {
+	bp := AppSpec{Endpoints: []AppSpecEndpoint{
 		{Name: "hostile-handler", Handler: "x =(pwn)(); y", Path: "/a", Method: "get"}, // hostile Handler root
 		{Name: "x =(pwn)(); y", Path: "/b", Method: "get"},                             // hostile Name fallback root
 		{Name: "benign", Handler: "RealHandler", Path: "/c", Method: "get"},            // benign control
 	}}
-	stubs := renderBlueprintStubs(bp)
+	stubs := renderAppSpecStubs(bp)
 	if strings.Contains(stubs, "pwn") {
-		t.Fatalf("SECURITY: [blueprint-endpoint-ident] stubs.go carries a non-identifier handler at `func` position:\n%s", stubs)
+		t.Fatalf("SECURITY: [app-spec-endpoint-ident] stubs.go carries a non-identifier handler at `func` position:\n%s", stubs)
 	}
 	if !strings.Contains(stubs, "func RealHandler(w http.ResponseWriter, r *http.Request) {") {
 		t.Fatalf("benign handler stub missing — the gate must skip junk, not drop endpoints:\n%s", stubs)
 	}
-	app := renderBlueprintApp(bp)
+	app := renderAppSpecApp(bp)
 	if strings.Contains(app, "pwn") {
-		t.Fatalf("SECURITY: [blueprint-endpoint-ident] app.go registers a non-identifier handler:\n%s", app)
+		t.Fatalf("SECURITY: [app-spec-endpoint-ident] app.go registers a non-identifier handler:\n%s", app)
 	}
 	if !strings.Contains(app, "http.HandlerFunc(RealHandler)") {
 		t.Fatalf("benign handler registration missing:\n%s", app)
 	}
 	// And the parse backstop still holds over the full set.
-	if err := assertBlueprintGoParses([]generatedFile{
+	if err := assertAppSpecGoParses([]generatedFile{
 		{name: "stubs.go", content: stubs},
 		{name: "app.go", content: app},
 	}); err != nil {

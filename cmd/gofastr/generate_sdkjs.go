@@ -173,7 +173,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		// The KEY is quoted in the .js. f.Wire is toCamelJSON(field name), and
 		// toCamelCase only splits on "_ - space". Every other byte survives, so
 		// Wire is not an identifier by construction. `client.go` gets
-		// format.Source and the blueprint tree gets assertBlueprintGoParses;
+		// format.Source and the app spec tree gets assertAppSpecGoParses;
 		// .js/.d.ts get no syntax gate at all (Go's stdlib has no JS parser and
 		// third-party deps are not an option here), so the emission site has to
 		// carry the property itself. A quoted key cannot leave its object

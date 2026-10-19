@@ -108,12 +108,12 @@ func printHelp() {
       --db=<driver>    Database driver: sqlite (default) or postgres (aliases: sqlite3, postgresql)
   new handler <n>       Scaffold a new HTTP handler
   new route <path>      Scaffold a route registration
-  generate (gen, g) --from=<yml> Generate code from a deterministic YAML blueprint
+  generate (gen, g) --from=<yml> Generate an app from a gofastr.yml app spec
   generate --config=<yml> Run YAML-configured code generators/extensions
   generate cli          Generate a customer-facing CLI for the app's API (docs: gofastr docs app-cli)
   generate styles [patterns] Generate typed Go for app tokens and owned style sheets
   pack [app-dir]        Snapshot a generated app into a best-effort gofastr.yml (lossy; not an inverse of generate)
-  validate <yml>        Validate a blueprint without generating (exit 0 = valid)
+  validate <yml>        Validate an app spec without generating (exit 0 = valid)
   theme init            Scaffold theme/theme.go for a UI project
   theme edit            Live theme configurator with a component preview
   build                 Run codegen + go vet + accessibility lint + go build

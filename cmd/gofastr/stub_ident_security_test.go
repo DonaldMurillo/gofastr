@@ -8,40 +8,40 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// Pins: every blueprint string emitted into Go identifier position is gated (skipped) at the emitter.
+// Pins: every app spec string emitted into Go identifier position is gated (skipped) at the emitter.
 // (tier T3).
 //
-// CONTRACT-QUESTION: is assertBlueprintGoParses an acceptable substitute for
-// an emitter-side identifier gate on a path that skips validateBlueprint
-// (loadBlueprintPath(path, false), tests, --add fragments)? The file's own
+// CONTRACT-QUESTION: is assertAppSpecGoParses an acceptable substitute for
+// an emitter-side identifier gate on a path that skips validateAppSpec
+// (loadAppSpecPath(path, false), tests, --add fragments)? The file's own
 // convention answers no, twice: the endpoint stub loop refuses to emit a
-// non-identifier because "assertBlueprintGoParses is the backstop, not the
-// guard" (blueprint.go:7327-7336), and the resource-only mount applies the
+// non-identifier because "assertAppSpecGoParses is the backstop, not the
+// guard" (appspec.go:7327-7336), and the resource-only mount applies the
 // "same rule as the hook stubs" for exactly this reachability reason
 // (:5600-5608). The middleware/plugins/helpers loops and the screen
 // type/mount declarations sit between those two gates with none of their
 // own — divergence, not decision.
 //
-// Pinned sibling (green today): TestBlueprintEndpointStubRefusesNonIdentifiers
+// Pinned sibling (green today): TestAppSpecEndpointStubRefusesNonIdentifiers
 // (emitter_quoting_security_test.go) pins the endpoint arm's isGoIdentifier
 // skip at both the stub emitter and the app.go registration.
-// Property: every blueprint string emitted into Go identifier position is
+// Property: every app spec string emitted into Go identifier position is
 // gated (skipped) at the emitter whenever render is reachable without
-// validateBlueprint — toCamelCase transforms, it does not validate.
-// Surfaces: blueprint.go::renderBlueprintStubs — middleware `func
+// validateAppSpec — toCamelCase transforms, it does not validate.
+// Surfaces: appspec.go::renderAppSpecStubs — middleware `func
 // %sMiddleware` :7345-7350, plugins `type %s struct{}` :7351-7356, helpers
 // `func %s()` :7357-7360, all via toCamelCase(item.Name) straight into
-// identifier position with no isGoIdentifier gate; ::renderBlueprintApp
+// identifier position with no isGoIdentifier gate; ::renderAppSpecApp
 // :8027-8032 registers the same ungated names (`fwApp.Use(%sMiddleware)`);
 // screen typeName/decls :5228/:5248-5257 and mount declarations
 // :5559-5561/:5589-5596 are ungated while the resource-only mount in the
 // SAME function (:5598-5608) is guarded.
 // Finding: Middleware{Name:"2bad"} — a digit-leading name toCamelCase passes
 // through untouched — emits `func 2badMiddleware(next http.Handler)` into
-// stubs.go, so renderBlueprintFiles fails WHOLESALE at assertBlueprintGoParses
+// stubs.go, so renderAppSpecFiles fails WHOLESALE at assertAppSpecGoParses
 // (:3637 → :3668) with "generated stubs.go does not parse … Please report
-// this with the blueprint that produced it": the documented per-field refusal
-// (validateBlueprint rejects the name; the endpoint arm skips it) becomes a
+// this with the app spec that produced it": the documented per-field refusal
+// (validateAppSpec rejects the name; the endpoint arm skips it) becomes a
 // whole-generate failure with an unactionable message. The same-shaped
 // endpoint Handler is skipped and renders fine.
 // Fix direction: gate the middleware/plugins/helper stub loops (and the
@@ -56,14 +56,14 @@ func TestStubIdentRedSkipsLikeEndpoints(t *testing.T) {
 	fontFetcher = func(string) ([]byte, error) { return nil, fmt.Errorf("offline") }
 	t.Cleanup(func() { fontFetcher = prev })
 
-	base := func() Blueprint {
-		return Blueprint{
-			App: BlueprintApp{Name: "app", Module: "m"},
+	base := func() AppSpec {
+		return AppSpec{
+			App: AppSpecApp{Name: "app", Module: "m"},
 			Entities: []framework.EntityDeclaration{{
 				Name:   "tickets",
 				Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
 			}},
-			Screens: []BlueprintScreen{{Name: "home", Route: "/", Type: "page"}},
+			Screens: []AppSpecScreen{{Name: "home", Route: "/", Type: "page"}},
 		}
 	}
 
@@ -71,10 +71,10 @@ func TestStubIdentRedSkipsLikeEndpoints(t *testing.T) {
 	// non-identifier must be skipped at the emitter, mirroring the endpoint
 	// stub: render succeeds, the identifier never appears.
 	bp := base()
-	bp.Middleware = []BlueprintNamedStub{{Name: "2bad"}}
-	files, err := renderBlueprintFiles(bp)
+	bp.Middleware = []AppSpecNamedStub{{Name: "2bad"}}
+	files, err := renderAppSpecFiles(bp)
 	if err != nil {
-		t.Errorf("SECURITY: [stub-ident-guard-asymmetry] Middleware{Name:%q} fails the WHOLE generate: %v — the endpoint stub loop in the same function is isGoIdentifier-gated and skips (assertBlueprintGoParses is the backstop, not the guard, blueprint.go:7333), but the middleware loop at :7345 emits `func 2badMiddleware(...)` into identifier position. Skip like the endpoint arm, never emit.", "2bad", err)
+		t.Errorf("SECURITY: [stub-ident-guard-asymmetry] Middleware{Name:%q} fails the WHOLE generate: %v — the endpoint stub loop in the same function is isGoIdentifier-gated and skips (assertAppSpecGoParses is the backstop, not the guard, appspec.go:7333), but the middleware loop at :7345 emits `func 2badMiddleware(...)` into identifier position. Skip like the endpoint arm, never emit.", "2bad", err)
 	} else {
 		for _, f := range files {
 			if strings.Contains(f.content, "2badMiddleware") {
@@ -88,8 +88,8 @@ func TestStubIdentRedSkipsLikeEndpoints(t *testing.T) {
 	// both the stub emitter and the app.go registration, and the render
 	// succeeds. If this leg breaks, the convention moved, not the bug.
 	ctrl := base()
-	ctrl.Endpoints = []BlueprintEndpoint{{Name: "probe", Method: "GET", Path: "/probe", Handler: "2bad"}}
-	cfiles, cerr := renderBlueprintFiles(ctrl)
+	ctrl.Endpoints = []AppSpecEndpoint{{Name: "probe", Method: "GET", Path: "/probe", Handler: "2bad"}}
+	cfiles, cerr := renderAppSpecFiles(ctrl)
 	if cerr != nil {
 		t.Fatalf("setup broken: endpoint Handler %q no longer renders (the pinned skip convention regressed): %v", "2bad", cerr)
 	}
@@ -110,7 +110,7 @@ func TestStubIdentRedSkipsLikeEndpoints(t *testing.T) {
 // shape: "Safe, but silent: the author asked for a link and got one that
 // goes nowhere. Reject here instead, the way every sibling problem in this
 // validator does. urlsafe.Anchor is the SAME predicate the renderer applies
-// … so validate and render cannot disagree" (blueprint.go:3236-3242).
+// … so validate and render cannot disagree" (appspec.go:3236-3242).
 // `action` gets the string-type check the comment's reasoning starts from
 // (:3231-3235) and then stops, leaning on the render-side degradation the
 // comment exists to reject.
@@ -121,17 +121,17 @@ func TestStubIdentRedSkipsLikeEndpoints(t *testing.T) {
 // validate half for hrefs; TestFormActionSinksRejectUnsafeURL
 // (framework/ui/ui_link_form_security_test.go) documents ui.Form as the
 // guarded form sink. This test pins the missing validate half for `action`.
-// Property: within validateBlueprintBlock's login_form/signup_form arm,
+// Property: within validateAppSpecBlock's login_form/signup_form arm,
 // sibling props get the same boundary — `action` must be refused at validate
 // time when it is not a safe form action, by the same urlsafe.Anchor
 // predicate the renderer applies.
-// Surfaces: blueprint.go::validateBlueprintBlock :3229-3251 (action
+// Surfaces: appspec.go::validateAppSpecBlock :3229-3251 (action
 // :3231-3235 is string-type-only; register_href/login_href :3243-3250 are
 // refused through urlsafe.Anchor); the value is emitted via
-// blueprintAuthFormExpr :6945 as `ui.Form(ui.FormConfig{Action: %q …})`,
+// appSpecAuthFormExpr :6945 as `ui.Form(ui.FormConfig{Action: %q …})`,
 // where the guard is render-side only.
 // Finding: props action "javascript:alert(1)" (and the case-, data-, and
-// vbscript- variants) validateBlueprint cleanly today; the generated login
+// vbscript- variants) validateAppSpec cleanly today; the generated login
 // screen then silently degrades to a form whose action goes nowhere. The
 // author asked for a form and got one that does not post, with no error at
 // the only layer that names the screen and prop.
@@ -140,14 +140,14 @@ func TestStubIdentRedSkipsLikeEndpoints(t *testing.T) {
 // disagree about what a safe form action is.
 
 func TestAuthFormActionRedValidated(t *testing.T) {
-	authFormBp := func(action string) Blueprint {
-		return Blueprint{
-			App: BlueprintApp{Name: "app", Module: "m"},
-			Screens: []BlueprintScreen{{
+	authFormBp := func(action string) AppSpec {
+		return AppSpec{
+			App: AppSpecApp{Name: "app", Module: "m"},
+			Screens: []AppSpecScreen{{
 				Name:  "signin",
 				Route: "/signin",
 				Type:  "page",
-				Body:  []BlueprintBlock{{Kind: "login_form", Props: map[string]any{"action": action}}},
+				Body:  []AppSpecBlock{{Kind: "login_form", Props: map[string]any{"action": action}}},
 			}},
 		}
 	}
@@ -160,14 +160,14 @@ func TestAuthFormActionRedValidated(t *testing.T) {
 		"data:text/html;x",
 		"vbscript:x",
 	} {
-		if err := validateBlueprint(authFormBp(action)); err == nil || !strings.Contains(err.Error(), "action") {
-			t.Errorf("SECURITY: [authform-action-validate] login_form action %q accepted by validateBlueprint (err=%v): the arm checks the prop is a string and stops, leaning on silent render-side degradation — the exact shape the arm's own comment rejects for register_href eight lines below (\"Safe, but silent … Reject here instead, the way every sibling problem in this validator does\")", action, err)
+		if err := validateAppSpec(authFormBp(action)); err == nil || !strings.Contains(err.Error(), "action") {
+			t.Errorf("SECURITY: [authform-action-validate] login_form action %q accepted by validateAppSpec (err=%v): the arm checks the prop is a string and stops, leaning on silent render-side degradation — the exact shape the arm's own comment rejects for register_href eight lines below (\"Safe, but silent … Reject here instead, the way every sibling problem in this validator does\")", action, err)
 		}
 	}
 
 	// Controls: the documented shapes stay valid.
 	for _, action := range []string{"/auth/login", "https://host/login"} {
-		if err := validateBlueprint(authFormBp(action)); err != nil {
+		if err := validateAppSpec(authFormBp(action)); err != nil {
 			t.Fatalf("setup broken: login_form action %q must stay valid: %v", action, err)
 		}
 	}
@@ -177,7 +177,7 @@ func TestAuthFormActionRedValidated(t *testing.T) {
 	// refused for the same scheme family.
 	sib := authFormBp("/auth/login")
 	sib.Screens[0].Body[0].Props["register_href"] = "javascript:alert(1)"
-	if err := validateBlueprint(sib); err == nil || !strings.Contains(err.Error(), "register_href") {
+	if err := validateAppSpec(sib); err == nil || !strings.Contains(err.Error(), "register_href") {
 		t.Fatalf("setup broken: sibling register_href refusal moved — the arm this test targets is stale: %v", err)
 	}
 }

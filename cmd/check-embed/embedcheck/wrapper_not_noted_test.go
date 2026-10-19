@@ -17,7 +17,7 @@ import "testing"
 // neither has a fix the note's own message suggests (you cannot "move
 // island.Island into this package").
 //
-// cleanisland is the exact shape the blueprint emits for an island block,
+// cleanisland is the exact shape the app generator emits for an island block,
 // with an action-free same-package child. The analyzer resolves the child
 // completely and finds nothing. It must therefore be SILENT.
 func TestCleanIslandSurfaceIsNotNoted(t *testing.T) {

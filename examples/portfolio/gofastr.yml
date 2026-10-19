@@ -286,7 +286,7 @@ entities:
     mcp: true
     # Lead-capture pattern: the public contact form needs create open, but
     # the submitted email/phone are PII; reads and mutations are RBAC-gated
-    # (fail-closed 403 for anonymous). See blueprints.md "Unscoped PII".
+    # (fail-closed 403 for anonymous). See app-spec.md "Unscoped PII".
     access:
       read: contacts:read
       update: contacts:write

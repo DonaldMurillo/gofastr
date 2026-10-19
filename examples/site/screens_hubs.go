@@ -594,9 +594,9 @@ func generatorHub() *TeachHubScreen {
 	return &TeachHubScreen{
 		Name:  "Generator",
 		Title: "Scaffold plain Go from a declaration",
-		Desc:  "GoFastr's code generators: app code from a blueprint, client SDKs, and a customer CLI. Each writes plain Go you own and edit, not a runtime you configure.",
+		Desc:  "GoFastr's code generators: app code from an app spec, client SDKs, and a customer CLI. Each writes plain Go you own and edit, not a runtime you configure.",
 		Lede:  "When you want a head start, generate the code. It writes plain Go to disk. You own it, read it, and edit it. One shot: nothing to keep regenerating against.",
-		Moves: []string{"code generation", "SDKs", "customer CLI", "blueprints"},
+		Moves: []string{"code generation", "SDKs", "customer CLI", "app-spec"},
 		Concepts: []hubConcept{
 			{
 				Title:    "Code generation",
@@ -627,7 +627,7 @@ echo "$TOKEN" | ./meridian login --url https://app.example.com --with-token`,
 				RefSlug: "app-cli",
 			},
 			{
-				Title: "Blueprints",
+				Title: "App specs",
 				Body: []render.HTML{html.Paragraph(html.TextConfig{},
 					render.Text("A "), codeText("gofastr.yml"), render.Text(" is a bundle of entities and screens. "),
 					codeText("gofastr generate --from=gofastr.yml"),
@@ -645,7 +645,7 @@ echo "$TOKEN" | ./meridian login --url https://app.example.com --with-token`,
       - name: slug
         type: string
         unique: true`,
-				RefSlug: "blueprints",
+				RefSlug: "app-spec",
 			},
 		},
 		Next: []hubNextLink{

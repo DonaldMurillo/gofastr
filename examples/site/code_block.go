@@ -38,7 +38,7 @@ func codeBlock(filename string, lines []render.HTML) render.HTML {
 
 // codeBlockScroll renders a raw source file (highlighted via the framework's
 // generic tokenizer) in a framed, copyable, internally-scrolling block. Used
-// for showing a long blueprint file in full, e.g. the Meridian gofastr.yml on
+// for showing a long app spec file in full, e.g. the Meridian gofastr.yml on
 // /examples, without it dominating the page.
 func codeBlockScroll(filename, code, lang string) render.HTML {
 	return ui.CodeBlock(ui.CodeBlockConfig{

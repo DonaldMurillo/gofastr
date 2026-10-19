@@ -128,7 +128,7 @@ func returnsComponentType(res *ast.FieldList) bool {
 var extraAttrsRawLegacy = map[string]bool{
 	// form.go stays raw on purpose: its doc comment promises that
 	// ExtraAttrs may override the form's own attributes (the
-	// data-entity-form / interactive wiring pattern the blueprint
+	// data-entity-form / interactive wiring pattern the app spec
 	// generator and examples rely on). It is the documented exception,
 	// not migration debt.
 	"form.go": true,

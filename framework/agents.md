@@ -163,7 +163,7 @@ The embedded framework docs are a separate option, `framework.WithMCPTools(mcpto
 from `framework/docs/mcptools`: it adds `framework_docs_list`,
 `framework_docs_get` and `framework_docs_search`. Package framework does not
 import the docs corpus, so an app that wants the docs tools on `/mcp` adds
-that option beside `WithMCPIntrospection()` (the blueprint and the examples
+that option beside `WithMCPIntrospection()` (the app spec and the examples
 do).
 
 It also adds the contract catalog tools `contracts_list`,

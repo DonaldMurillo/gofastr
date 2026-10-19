@@ -65,7 +65,7 @@
 //     .js .ts .tsx .svg .png .jpg .jpeg .ico .webmanifest .mod .sum
 //     .lock, and the committed VCS dotfiles .gitignore .gitkeep
 //     .gitattributes .gitmodules .editorconfig): generated docs,
-//     blueprints, migrations, assets, scaffold files;
+//     app specs, migrations, assets, scaffold files;
 //     (b) the path's provenance (the Join root, the whole expression,
 //     or a bare parameter resolved through same-package callers) names
 //     an output/build root: output, outdir, dist, dst, dest, build,
@@ -76,7 +76,7 @@
 //     into that dir — same function, an os.CreateTemp minted into it
 //     (the atomic-write pattern, whose mode is set explicitly on the
 //     handle), or one same-package helper hop called with that dir —
-//     is itself public or owner-only (freeze's blueprint dir holds
+//     is itself public or owner-only (freeze's app spec dir holds
 //     gofastr.yml 0644 + world.json 0600; the migrations dir holds
 //     .sql files; kiln's skill dir holds SKILL.md). A dir with no
 //     reachable writer stays loud: it is created group-traversable and

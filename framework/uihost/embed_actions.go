@@ -166,7 +166,7 @@ const reachWalkDepth = 64
 //
 // core-ui/island is deliberately NOT here, though it was. island.Island is a
 // one-field wrapper around the component it renders, and islands are the
-// framework's main composition primitive: the blueprint emits
+// framework's main composition primitive: the app generator emits
 // island.NewIsland(...).Render() for every island block. Stopping at it meant
 // an action-bearing child inside an island was never seen, which is the
 // opposite of a host back-reference: the wrapper's whole purpose is to render

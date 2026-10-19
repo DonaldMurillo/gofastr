@@ -482,7 +482,7 @@ func copyStringMap(m map[string]string) map[string]string {
 // that toggles parsing. "\" is the CSS escape character and is rejected to
 // deny obfuscation. Newlines end a CSS declaration in some parsing contexts.
 //
-// This is the same property blueprint_emitter_injection_test.go encodes for
+// This is the same property appspec_emitter_injection_test.go encodes for
 // Go literals ("no input may terminate the literal it is emitted into"),
 // transposed to CSS.
 var cssDeclBreakers = []string{
@@ -625,7 +625,7 @@ func validateColorValue(v string) error {
 // (`theme.Colors.Primary.Value = v`, `theme.DarkColors[k] = v`) runs nothing at
 // all, so any producer that assigns must call this itself.
 //
-// The blueprint generator in cmd/gofastr is exactly that producer: it emits
+// The app generator in cmd/gofastr is exactly that producer: it emits
 // those assignments as generated Go from `app.theme` / `app.theme.dark` in
 // gofastr.yml, and the value lands verbatim in `--color-<token>` on the
 // app-wide stylesheet the UI host and the admin battery serve.

@@ -53,12 +53,12 @@ var docIntents = []docIntent{
 	{
 		Num: "00", Slug: "start", Title: "Start here",
 		Lede: "What GoFastr is, how a project is laid out, and a map of every feature, the newcomer narrative before the per-feature references.",
-		Path: []string{"Overview", "Tutorial: blueprint app", "Project structure"},
+		Path: []string{"Overview", "Tutorial: app spec app", "Project structure"},
 		Docs: []docEntry{
 			{"backend-capability-map", "Backend capability map", "One row per job: scope rows to a user, add auth, run background work. Each row gives the symbols to compose and a command that proves the result."},
 			{"overview", "Overview", "What the framework is, the two layers, and a linked map of every capability."},
 			{"cli", "The gofastr CLI", "Every subcommand mapped to its doc: init, dev, migrate, generate, audit, upgrade."},
-			{"tutorial-blueprint-app", "Tutorial: blueprint app", "The optional blueprint scaffolder end to end: one gofastr.yml becomes a UI + API you own, in about twenty minutes."},
+			{"tutorial-app-spec", "Tutorial: app spec app", "The optional app spec scaffolder end to end: one gofastr.yml becomes a UI + API you own, in about twenty minutes."},
 			{"project-structure", "Project structure", "Start flat; grow into internal/<domain> as real boundaries appear. Structure follows the app."},
 			{"comparison", "Comparison", "Where GoFastr sits relative to other full-stack frameworks."},
 			{"upgrading", "Upgrading", "Move an app (and the CLI) to a newer release, plus gofastr upgrade, the guided helper."},
@@ -188,7 +188,7 @@ var docIntents = []docIntent{
 			{"generative-ui", "Generative UI", "The position: models compose the design system, never emit markup or CSS; what that means per surface."},
 			{"semantic-search", "Semantic search", "Local semantic search via brute-force cosine. No API key."},
 			{"audit-deps", "Audit deps", "Detect packages an agent shouldn't import."},
-			{"blueprints", "Blueprints", "Reusable bundles of entities + screens an agent can apply."},
+			{"app-spec", "App specs", "Reusable bundles of entities + screens an agent can apply."},
 		},
 	},
 	{

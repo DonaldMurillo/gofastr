@@ -185,7 +185,7 @@ func TestReadScopeAllowsLegitimateSameFieldCombinations(t *testing.T) {
 // declaration decoded to an Exposure with a nil ReadScope.
 //
 // The posture vanished silently, which is the worst way for this to fail: the
-// blueprint says the rows are filtered, the app serves all of them, and
+// app spec says the rows are filtered, the app serves all of them, and
 // nothing anywhere reports a problem.
 func TestFlatReadScopeSurvivesDecoding(t *testing.T) {
 	raw := []byte(`{

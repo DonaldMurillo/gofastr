@@ -33,8 +33,8 @@ func runBuild(args []string) {
 	}
 
 	// Step 1: run the codegen extension protocol when a gofastr.codegen.yml
-	// is present. Blueprint generation (gofastr generate --from) is an
-	// explicit, separate step: `gofastr build` does not guess a blueprint.
+	// is present. App spec generation (gofastr generate --from) is an
+	// explicit, separate step: `gofastr build` does not guess an app spec.
 	if !opts.noGenerate {
 		discovery, err := codegen.DiscoverConfig(".")
 		if err != nil {
@@ -197,7 +197,7 @@ func buildEmbedGate(pattern string, allowUnverified bool) bool {
 	// can vouch for it, so that one stops the build.
 	//
 	// Failing on every note was tried and reverted: it also rejected clean
-	// island surfaces (the shape the blueprint emits for every island block),
+	// island surfaces (the shape the app generator emits for every island block),
 	// interface-typed fields the analyzer had already resolved, and the
 	// fixture named for false positives, with no remedy available, since
 	// "hold the child in a field" is impossible for a wrapper.

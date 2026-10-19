@@ -155,7 +155,7 @@ func (p *parser) parseMapSeeded(indent int, seed map[string]int) (*Node, error) 
 	// A duplicate key was silent last-wins: `enabled: false` followed later
 	// by `enabled: true` took the second value while a reviewer, and grep,
 	// read the first. Every mainstream parser refuses that, and this
-	// parser's inputs are the security-relevant config — blueprints,
+	// parser's inputs are the security-relevant config — app specs,
 	// codegen configs, kiln freeze snapshots — so the ambiguity has to fail
 	// closed here rather than resolve to whichever line came last. Same
 	// class as the YAML 1.2 boolean that read `auth: yes` as a string and

@@ -72,7 +72,7 @@ func FontFaceCSS(dir string, fonts ...WebFont) string {
 // the string; ; { } < > are stripped too so the emitted rule stays
 // balanced even against a future refactor that drops the quotes. This
 // is FontFaceCSS's ingestion boundary: its inputs arrive file-borne
-// (gofastr.yml theme map → cmd/gofastr/blueprint.go), the same reason
+// (gofastr.yml theme map → cmd/gofastr/appspec.go), the same reason
 // ApplyTokens validates every token value (tokenmap.go cssDeclBreakers).
 // A family whose runes were stripped simply matches no font and the
 // browser falls back, which is where a typo'd family lands too.

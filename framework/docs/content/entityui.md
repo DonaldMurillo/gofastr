@@ -233,7 +233,7 @@ no image.
 
 ## How it reads the entity
 
-`Display` (`entity.DisplayConfig`, spelled `display:` in a blueprint) is
+`Display` (`entity.DisplayConfig`, spelled `display:` in an app spec) is
 plain data on the entity; nil means every default falls back to the schema
 itself. It names the record (`Singular`, `Plural`, `TitleFields`,
 `Description`), the list (`Columns`, `Views`, `Facets`, `PageSizes`,

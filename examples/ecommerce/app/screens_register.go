@@ -12,7 +12,7 @@ import (
 // Each screen file appends one or more screenRegistrars in init();
 // mountGenerated runs them in declaration order, so the package behaves
 // identically regardless of the lexical order Go runs each file's init()
-// in. The order field is also how gofastr pack recovers the blueprint's
+// in. The order field is also how gofastr pack recovers the app spec's
 // authored screen order from source.
 type screenRegistrar struct {
 	order int

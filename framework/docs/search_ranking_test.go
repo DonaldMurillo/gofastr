@@ -5,7 +5,7 @@ import "testing"
 // TestSearchRanksRelevantTopicsFirst pins the --grep ranking: the topic
 // a term is ABOUT comes first, not whichever topic is alphabetically
 // early. Before the ranking, `gofastr docs --grep sidebar` listed
-// topics alphabetically, so auth, blueprints and harness-architecture
+// topics alphabetically, so auth, app specs and harness-architecture
 // came before layouts — the teaching topic was buried under topics
 // that merely mention the word. Ranking tiers, strongest first: a
 // title match, a match in the topic's own lede, a section-heading

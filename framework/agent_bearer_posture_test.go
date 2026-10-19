@@ -71,7 +71,7 @@ const (
 // framework/docs/content/auth.md prescribes. mountCSRF selects between the
 // two documented postures: the browser posture (auth.CSRF mounted app-wide,
 // the worst case for a cookieless client) and the generated-app posture
-// (no CSRF, agents and JSON clients in mind — see docs/content/blueprints).
+// (no CSRF, agents and JSON clients in mind — see docs/content/app-spec.md).
 func newBearerPostureEnv(t *testing.T, role framework.Role, mountCSRF bool) *bearerPostureEnv {
 	t.Helper()
 	t.Setenv("GOFASTR_ROLE", "")

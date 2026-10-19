@@ -78,7 +78,7 @@ func runEmptyErrBranch(pass *analysis.Pass) (any, error) {
 //
 // Silent postures, deliberately: _test.go files (a test hanging is a
 // failed test, and the suite owns the deadline); code emitted as
-// STRING text into generated files (blueprint.go's e2e templates,
+// STRING text into generated files (appspec.go's e2e templates,
 // generate_cli_openapi_render.go) — the analyzer reads ASTs, and
 // template text has none until the generator runs.
 var ClientTimeoutAnalyzer = &analysis.Analyzer{

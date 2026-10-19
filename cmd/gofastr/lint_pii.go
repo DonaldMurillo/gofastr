@@ -1,8 +1,8 @@
 package main
 
-// Blueprint-level lint for CLAUDE.md hard rule #6: an entity holding
+// App-spec-level lint for CLAUDE.md hard rule #6: an entity holding
 // per-user data must set OwnerField (or another scoping mechanism) before
-// it is exposed via auto-CRUD/MCP. The blueprint generator cannot prove a
+// it is exposed via auto-CRUD/MCP. The app generator cannot prove a
 // field is per-user, so this is a heuristic over field NAMES: when an
 // entity is auto-exposed (crud defaults on, or mcp: true), declares
 // PII-shaped fields, and has no owner_field / multi_tenant / non-blank
@@ -13,7 +13,7 @@ package main
 // operation. See framework/crud's requireAuthenticated and
 // EntityConfig.Public, issue #65. This lint's remaining concern is the
 // narrower "logged-in user A can read/write user B's row" gap that only
-// owner_field/access/multi_tenant close.) Blueprint auth alone does NOT
+// owner_field/access/multi_tenant close.) App spec auth alone does NOT
 // close that gap: enabling auth only mounts pass-through
 // SessionMiddleware: it authenticates the caller but does not scope rows
 // to them.
@@ -67,7 +67,7 @@ func (f piiFinding) Message() string {
 
 // lintUnscopedPII returns one finding per auto-exposed entity with
 // PII-shaped fields and no scoping.
-func lintUnscopedPII(bp Blueprint) []piiFinding {
+func lintUnscopedPII(bp AppSpec) []piiFinding {
 	var out []piiFinding
 	for _, decl := range bp.Entities {
 		exposure := entityDeclarationExposure(decl)
@@ -116,7 +116,7 @@ func (f unscopedFinding) Message() string {
 }
 
 // publicFinding is one entity flagged by lintPublicEntities, a
-// blueprint-declared `public: true` opt-out. Unlike unscopedFinding this
+// declared `public: true` opt-out. Unlike unscopedFinding this
 // IS the anonymous-access surface: Public is a deliberate, full bypass of
 // the session requirement (issue #65), not an oversight, so the message
 // confirms the declaration rather than prescribing a remedy.
@@ -133,13 +133,13 @@ func (f publicFinding) Message() string {
 		f.Entity)
 }
 
-// frameworkModulePath is the module every generated app imports. A blueprint
+// frameworkModulePath is the module every generated app imports. An app spec
 // whose own app.module sits UNDER this path claims a package namespace the
 // framework module also provides, and the Go toolchain refuses the ambiguity:
 //
 //	ambiguous import: found package <path> in multiple modules
 //
-// The in-repo example blueprints legitimately declare such paths; they are
+// The in-repo example app specs legitimately declare such paths; they are
 // generated inside this module, where the local package wins. Copying one out
 // to learn from it (the documented way to start from an example) produces a
 // build that cannot be repaired by any go.mod edit, and the generator used to
@@ -147,7 +147,7 @@ func (f publicFinding) Message() string {
 // reader further in.
 const frameworkModulePath = "github.com/DonaldMurillo/gofastr"
 
-// moduleCollisionFinding is a blueprint whose app.module collides with the
+// moduleCollisionFinding is an app spec whose app.module collides with the
 // framework's own module path.
 type moduleCollisionFinding struct {
 	Module string
@@ -159,9 +159,9 @@ func (f moduleCollisionFinding) Message() string {
 		f.Module, frameworkModulePath, lastPathSegment(f.Module))
 }
 
-// lintModuleCollision reports a blueprint whose app.module is the framework
+// lintModuleCollision reports an app spec whose app.module is the framework
 // module or a subpath of it. Returns nil for every other module path.
-func lintModuleCollision(bp Blueprint) []moduleCollisionFinding {
+func lintModuleCollision(bp AppSpec) []moduleCollisionFinding {
 	m := strings.TrimSpace(bp.App.Module)
 	if m != frameworkModulePath && !strings.HasPrefix(m, frameworkModulePath+"/") {
 		return nil
@@ -208,7 +208,7 @@ func (f ownerUniqueFinding) Message() string {
 // (created_at) stays quiet too. A warning from `gofastr validate` and
 // `gofastr generate`, never an error: a value unique across all accounts
 // (a public handle) can be deliberate.
-func lintOwnerScopedUnique(bp Blueprint) []ownerUniqueFinding {
+func lintOwnerScopedUnique(bp AppSpec) []ownerUniqueFinding {
 	var out []ownerUniqueFinding
 	for _, decl := range bp.Entities {
 		owner := entityDeclarationScope(decl).OwnerField
@@ -236,13 +236,13 @@ func lintOwnerScopedUnique(bp Blueprint) []ownerUniqueFinding {
 	return out
 }
 
-// lintPublicEntities returns one finding per blueprint entity declaring
+// lintPublicEntities returns one finding per app spec entity declaring
 // `public: true`, the full, deliberate opt-out from auto-CRUD's
 // secure-by-default session requirement. Every one of these is genuinely
 // reachable by an anonymous caller, so `gofastr generate` always surfaces
 // the list (never blocks: Public is an intentional declaration, not a
 // mistake to error on).
-func lintPublicEntities(bp Blueprint) []publicFinding {
+func lintPublicEntities(bp AppSpec) []publicFinding {
 	var out []publicFinding
 	for _, decl := range bp.Entities {
 		if entityDeclarationExposure(decl).Public {
@@ -255,7 +255,7 @@ func lintPublicEntities(bp Blueprint) []publicFinding {
 // lintUnscopedEntities returns one finding per auto-exposed entity with NO
 // scoping mechanism at all: the superset of lintUnscopedPII that doesn't
 // depend on field names. Warned at generate time; never blocks.
-func lintUnscopedEntities(bp Blueprint) []unscopedFinding {
+func lintUnscopedEntities(bp AppSpec) []unscopedFinding {
 	var out []unscopedFinding
 	for _, decl := range bp.Entities {
 		exposure := entityDeclarationExposure(decl)
@@ -329,23 +329,23 @@ func splitFieldTokens(name string) []string {
 	return tokens
 }
 
-// blueprintRootCandidates are the conventional blueprint file names probed
+// appSpecRootCandidates are the conventional app spec file names probed
 // by `gofastr audit lint` at the audited root. Arbitrary *.yml files are
 // NOT decoded; a project root full of CI configs must not break the lint
-// walk or masquerade as a blueprint.
-var blueprintRootCandidates = []string{"gofastr.yml", "gofastr.yaml", "gofastr.json"}
+// walk or masquerade as an app spec.
+var appSpecRootCandidates = []string{"gofastr.yml", "gofastr.yaml", "gofastr.json"}
 
-// lintBlueprintPIIRoot adapts lintUnscopedPII to the audit-lint surface:
-// it decodes the conventional blueprint file(s) at root (silently skipping
+// lintAppSpecPIIRoot adapts lintUnscopedPII to the audit-lint surface:
+// it decodes the conventional app spec file(s) at root (silently skipping
 // files that do not parse; `gofastr validate` owns those errors), merges
 // them so the lint sees the whole declared app, and attributes each
 // finding to the file declaring the entity.
-func lintBlueprintPIIRoot(root string) []LintFinding {
-	var merged Blueprint
+func lintAppSpecPIIRoot(root string) []LintFinding {
+	var merged AppSpec
 	fileOf := map[string]string{}
 	found := false
-	for _, name := range blueprintRootCandidates {
-		bp, err := decodeBlueprintFile(filepath.Join(root, name))
+	for _, name := range appSpecRootCandidates {
+		bp, err := decodeAppSpecFile(filepath.Join(root, name))
 		if err != nil {
 			continue
 		}
@@ -355,7 +355,7 @@ func lintBlueprintPIIRoot(root string) []LintFinding {
 				fileOf[decl.Name] = name
 			}
 		}
-		merged = mergeBlueprints(merged, bp)
+		merged = mergeAppSpecs(merged, bp)
 	}
 	if !found {
 		return nil
@@ -364,7 +364,7 @@ func lintBlueprintPIIRoot(root string) []LintFinding {
 	for _, f := range lintUnscopedPII(merged) {
 		file := fileOf[f.Entity]
 		if file == "" {
-			file = blueprintRootCandidates[0]
+			file = appSpecRootCandidates[0]
 		}
 		out = append(out, LintFinding{
 			File:    file,

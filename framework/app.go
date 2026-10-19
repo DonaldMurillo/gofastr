@@ -2313,7 +2313,7 @@ func (a *App) View(v migrate.View) *App {
 // App.RoutinesFS / App.View. It is the schema source for the host-binary
 // generation path: pass it to migrate.GenerateMigrationFile so a `myapp
 // migrate generate <name>` verb emits versioned migrations from the same
-// compiled schema boot auto-migrates, with no blueprint and no database
+// compiled schema boot auto-migrates, with no app spec and no database
 // touched. See the "Generating from a host binary" section of migrations.md.
 func (a *App) MigrationPlan() migrate.Plan {
 	return migrate.Plan{Registry: a.Registry, Views: a.migrationViews, Routines: a.migrationRoutines}
@@ -3821,7 +3821,7 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 	// The note covers ENTITY tools, which re-enter the app router and so answer
 	// an anonymous call with the same error their REST route would. The
 	// introspection tools (app_routes, app_config, …) are a separate, ungated
-	// surface. See `gofastr docs blueprints`, so the wording says "your app's
+	// surface. See `gofastr docs app-spec`, so the wording says "your app's
 	// permissions" rather than claiming every tool is gated.
 	// a.MCP is optional and nil-checked elsewhere in this file, and this line
 	// runs AFTER the listener has bound, a panic here kills a server that is

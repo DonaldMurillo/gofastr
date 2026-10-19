@@ -2,7 +2,7 @@ package main
 
 // The `gofastr desktop` subcommand: run (build + launch with dev tools),
 // build (a .app bundle), and types (a .d.ts from the app's real
-// manifest). The posture is the blueprint's: the CLI never owns app
+// manifest). The posture is the app spec's: the CLI never owns app
 // code, it compiles the app you wrote and wraps the output.
 
 import (

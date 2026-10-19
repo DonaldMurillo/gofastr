@@ -17,7 +17,7 @@ GoFastr is a pre-v1 full-stack Go framework. The API can still change between re
 
 It is built for both the agentic web and AI-assisted development. The app you ship joins the agentic web: the agents your users bring call your data over MCP, with the same login and permissions your users have. While you build, `gofastr dev` hands your coding agent, Claude Code or Codex, the app's routes, config, and logs over MCP, to help build and debug it.
 
-Start with [the quickstart](#quickstart). Or scaffold a whole app in one command: screens, API, and auth from `gofastr init <name>`, or `gofastr generate` from a one-file declaration ([blueprint tutorial](framework/docs/content/tutorial-blueprint-app.md)).
+Start with [the quickstart](#quickstart). Or scaffold a whole app in one command: screens, API, and auth from `gofastr init <name>`, or `gofastr generate` from a one-file declaration ([app spec tutorial](framework/docs/content/tutorial-app-spec.md)).
 
 **A shoutout to [CodeRabbit](https://www.coderabbit.ai):** it reviews every
 PR in this repo and keeps catching what everyone else missed, like six Major
@@ -234,7 +234,7 @@ writes its minimum Go version and preferred toolchain into `go.mod`. See the
 
 The framework emits routes, validation, migrations, pagination, uploads,
 the spec, and agent tools from one declaration
-(`app.Entity` in Go, or an `entities:` entry in a blueprint).
+(`app.Entity` in Go, or an `entities:` entry in an app spec).
 Declarations are optional: `core/` routes and hand-written screens run
 without them. A declaration grows the same way it starts, with fields,
 enums, relations, soft delete, and a state machine on the status:
@@ -297,7 +297,7 @@ uploads, and sparse updates. Hooks run inside the write's transaction
 - **You own the output.** The generated code is normal Go you read, debug, commit, edit, and compose from your own `main`. Registration is ordinary Go in the generated files; no reflection discovers your entities, and no platform sits between your binary and your server.
 - **Batteries are separate packages.** Auth, cache, email, queue, search, storage sit behind narrow interfaces; swap any one without forking.
 - **The framework checks whether you're still using it well.** `gofastr verify` runs the 79 rules of the contract catalog (routing, permissions, security, rendering, accessibility) and measures semantic coverage: not "did this line run" but "did a request ever reach this route, did this permission ever get evaluated". Error-severity findings fail the run (`--strict` makes warnings fail too), with per-line waivers and a baseline mode for existing codebases. See [contracts](framework/docs/content/contracts.md).
-- **A blueprint scaffolds the whole app when you want a head start.** One `gofastr.yml` generates the screens and the API in one pass; then it's plain Go you own and edit, and the running app never needs the blueprint again ([blueprint tutorial](framework/docs/content/tutorial-blueprint-app.md)).
+- **The app generator scaffolds the whole app when you want a head start.** One `gofastr.yml` generates the screens and the API in one pass; then it's plain Go you own and edit, and the running app never needs the app spec again ([app spec tutorial](framework/docs/content/tutorial-app-spec.md)).
 
 ## The repo in 60 seconds
 
@@ -307,9 +307,9 @@ uploads, and sparse updates. Hooks run inside the write's transaction
 | `framework/` | The opinionated entity layer (`App`, `EntityConfig`, CRUD, hooks, migrations). A thin facade re-exporting its focused runtime subpackages. | you want one declaration → SQL + REST + OpenAPI + MCP. |
 | `core-ui/` | Server-driven UI runtime: `html` primitives, `patterns`, `widget` islands, signals, `localdb` (IndexedDB databases declared in Go, records kept in the visitor's browser), the vanilla-JS runtime. Independently usable. | you're rendering HTML from Go. |
 | `battery/` | Opt-in infrastructure: admin, auth, cache, email, semantic, log, notify, print, queue, relay, rtc, search, setup, storage, webhook, desktop (experimental: the app in the OS WebView, pure Go), and service (experimental: the app binary as a per-user OS service with a browser UI on loopback). Each behind a small interface. | you need a real subsystem; import only the ones you use. |
-| `cmd/gofastr` | The CLI: `init`, `generate`, `pack` (lossy app→blueprint snapshot), `migrate`, `build`, `dev`, `verify`, `docs`, and more. | you're scaffolding, generating, or checking code. |
+| `cmd/gofastr` | The CLI: `init`, `generate`, `pack` (lossy app→app spec snapshot), `migrate`, `build`, `dev`, `verify`, `docs`, and more. | you're scaffolding, generating, or checking code. |
 | `kiln` | Experimental agent build-mode runtime (mutate an in-memory IR over HTTP). | you're driving the app from an agent. |
-| `examples/` | Runnable reference apps: the `meridian` blueprint flagship (a SaaS billing console + marketing site), the `ecommerce` blueprint pipeline, plus blog, api-tour, spa, and the docs site. | you want to see it wired end-to-end. |
+| `examples/` | Runnable reference apps: the `meridian` app spec flagship (a SaaS billing console + marketing site), the `ecommerce` app generator, plus blog, api-tour, spa, and the docs site. | you want to see it wired end-to-end. |
 
 You import `framework` and the batteries you opt into, not each of its subpackages. The
 subpackage split is an internal seam (see `framework/ARCHITECTURE.md`); the
@@ -326,7 +326,7 @@ In production:
 
 The framework also runs on itself: [`examples/site`](examples/site) is the
 docs site and component gallery, [`examples/meridian`](examples/meridian) is a
-blueprint-generated SaaS console + marketing site edited by hand ever since,
+generated SaaS console + marketing site edited by hand ever since,
 and [`examples/ecommerce`](examples/ecommerce) is still owned by the generator
 and regenerated on every test run. All three import the same `framework`,
 `core-ui`, and batteries a user app does, and each carries an end-to-end
@@ -344,7 +344,7 @@ agents connected to a running app. The
 Start with:
 
 - [The gofastr CLI](framework/docs/content/cli.md): every subcommand mapped to its doc
-- [Blueprint tutorial](framework/docs/content/tutorial-blueprint-app.md): generate a whole app from one file, then own the code
+- [AppSpec tutorial](framework/docs/content/tutorial-app-spec.md): generate a whole app from one file, then own the code
 - [Entity declarations](framework/docs/content/entity-declarations.md): the declaration schema reference
 - [UI getting started](framework/docs/content/ui-getting-started.md), the [UI components index](framework/docs/content/ui-new-components.md), and the [runtime contract](framework/docs/content/runtime-contract.md)
 - [Authentication](framework/docs/content/auth.md) and [access control](framework/docs/content/access-control.md)

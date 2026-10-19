@@ -13,7 +13,7 @@ import (
 //
 // withoutActionAttrs runs at the untrusted entry points only and removes
 // data-action, data-action-* and data-param-*. The trusted entry points skip
-// it, so a developer-authored blueprint can still wire button actions through
+// it, so a developer-authored app spec can still wire button actions through
 // those exact attributes. attrAllowed then independently strips the
 // privileged data-cui-* family on BOTH paths, that is asserted here only for
 // the untrusted path (the case the task names), since the code strips it
@@ -55,7 +55,7 @@ func TestRenderNodeStripsActionAttrs(t *testing.T) {
 
 // RenderTrustedNode keeps the same family (emits it as an attribute), that is
 // the whole reason the trusted variant exists. If it ever stops, every
-// blueprint-generated action goes silently dead.
+// generated action goes silently dead.
 func TestRenderTrustedNodeKeepsActionAttrs(t *testing.T) {
 	for _, attr := range strippedActionAttrs {
 		t.Run(attr, func(t *testing.T) {

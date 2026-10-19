@@ -28,8 +28,8 @@ with a name, and 192px + 512px icons: supply the icon files as static
 assets, or skip file management entirely: `uihost.WithAppIcon(logo)`
 derives the 192/512 manifest icons (plus favicon and apple-touch-icon)
 from one source image when `Icons` is left empty (see [SEO](/docs/seo)).
-Blueprint-generated apps scaffold placeholder icons automatically (see
-[Blueprints](/docs/blueprints), `app.pwa`).
+Generated apps scaffold placeholder icons automatically (see
+[App specs](/docs/app-spec), `app.pwa`).
 
 ## What gets mounted
 
@@ -95,7 +95,7 @@ The generated worker is deliberately conservative:
   `/api/*`, and `/auth/*` are on a deny list baked into the worker;
   `Precache` entries that point at them (or at another origin) are
   dropped. Apps that mount their API or auth elsewhere extend the list
-  with `DenyPaths` (blueprint-generated apps do this automatically for
+  with `DenyPaths` (generated apps do this automatically for
   a custom `api_prefix` / auth `base_path`).
 - **Cache names are versioned deterministically.** The name is
   `gofastr-pwa-<slug>.<name-hash>.<fingerprint>`; `<name-hash>` is
@@ -188,11 +188,11 @@ list and deny list, and the registration target are all prefixed, so
 the exported app installs and works offline from the subpath. See
 [Static-site export](/docs/static-export).
 
-## Blueprint support
+## App spec support
 
 `gofastr generate` scaffolds the whole PWA setup described above from an
 `app.pwa` block, including replaceable placeholder icons. See
-[Blueprints](/docs/blueprints).
+[App specs](/docs/app-spec).
 
 ## Common mistakes
 

@@ -7,6 +7,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+- **The blueprint is now the app spec.** GoFastr has one concept for
+  generated code, code generation, and the `gofastr.yml` app description
+  is the app spec it generates from. The CLI, errors and docs say "app
+  spec"; `gofastr docs blueprints` is now `gofastr docs app-spec` and the
+  tutorial is `gofastr docs tutorial-app-spec`, with no alias for the old
+  names. The YAML format and flags are unchanged. Newly generated code
+  behaves the same; its comments say app spec and its toast stack is
+  named `app-toasts`. Apps already generated need no change.
+
 ### Fixed
 - **Affected selection sees tests that read other packages' files.** A
   test file declares what it reads with `//gofastr:test-reads <pattern>`:
@@ -22,7 +32,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   error, as is a directive with no space before its patterns. A file a
   package's `//go:embed` patterns cover now selects that package, even
   inside a nested package and even once deleted:
-  a blueprint template edit under `cmd/gofastr/packages/` used to select
+  an app generator template edit under `cmd/gofastr/packages/` used to select
   neither the generator nor the gates that run it. The tests that read
   outside their package now declare those inputs, found with the new
   `scripts/test-reads-audit.sh`. The script records each file a test

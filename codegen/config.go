@@ -514,7 +514,7 @@ func mapValue(node *coreyaml.Node) map[string]any {
 // scalars pass through, lists decode element-wise, maps become
 // map[string]any. nil for a nil node or an unknown kind.
 //
-// Exported because cmd/gofastr's blueprint decoder carried a byte-identical
+// Exported because cmd/gofastr's app spec decoder carried a byte-identical
 // private copy; that copy is deleted and calls this one.
 func AnyValue(node *coreyaml.Node) any {
 	if node == nil {

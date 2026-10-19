@@ -23,7 +23,7 @@ subpackage needs to back-import the framework root.
 
 ---
 
-## The blueprint is a generator, not a source of truth
+## The app spec is a generator, not a source of truth
 
 > Read this before changing `cmd/gofastr` (`generate`, `migrate`,
 > `pack`), the generated-output layout, or how the project is positioned.
@@ -46,9 +46,9 @@ philosophies:
   *incrementally* to add new things. The escape hatch to plain Go is the
   point, not a failure mode.
 
-**GoFastr is scaffold-and-own.** The blueprint is an on-ramp, not an
+**GoFastr is scaffold-and-own.** The app spec is an on-ramp, not an
 address. After generation the **owned Go is the only source of truth**.
-The blueprint never has standing to be diffed against, synced with, or
+The app spec never has standing to be diffed against, synced with, or
 treated as canonical for a running app.
 
 ### The four moves (and the one that is deleted)
@@ -57,20 +57,20 @@ treated as canonical for a running app.
 |---|---|---|
 | `generate` | YAML → owned Go | one-way on-ramp; scaffold then leave behind |
 | `pack` | owned Go → YAML | one-way, lossy off-ramp; snapshot of *shape* |
-| `migrate generate` | a schema → reviewable versioned SQL | a **separate action**; takes its schema from an opt-in source (blueprint `--from`, owned Go, or a live DB). Emits a migration file you review and commit. It does not treat any source as authoritative-over-the-world. |
-| `migrate diff --from=<blueprint>` | — | **deleted**: it *applied* the blueprint onto a live DB, making the blueprint authoritative over the running database. |
+| `migrate generate` | a schema → reviewable versioned SQL | a **separate action**; takes its schema from an opt-in source (app spec `--from`, owned Go, or a live DB). Emits a migration file you review and commit. It does not treat any source as authoritative-over-the-world. |
+| `migrate diff --from=<spec.yml>` | — | **deleted**: it *applied* the app spec onto a live DB, making the app spec authoritative over the running database. |
 
 `generate` (forward) and `pack` (backward) are **not inverses you sync
 between**. There is no merge-back, no conflict resolution between YAML
 and app. Two independent one-way moves, never a loop.
 
 Note the distinction that keeps `migrate diff` deleted but `migrate
-generate` fine: **code generation** (blueprint → owned Go) and **schema
+generate` fine: **code generation** (app spec → owned Go) and **schema
 migration** (schema → SQL) are *separate concerns*. A migration action
 that merely *reads* a schema to emit a reviewable file claims no
-authority. `migrate diff` was deleted not because it read the blueprint,
+authority. `migrate diff` was deleted not because it read the app spec,
 but because it *applied* it, reconciling the live database to the
-blueprint. Reading is fine; applying-as-source-of-truth is not.
+app spec. Reading is fine; applying-as-source-of-truth is not.
 
 ### The IR is the hub
 
@@ -83,21 +83,21 @@ primitive is a reuse candidate, not net-new. (`migrate generate` is a
 separate concern, covered below, though it could *optionally* take its
 schema from that same IR one day; it is not load-bearing for this hub.)
 
-### Schema migration is a separate action, not part of the blueprint's authority
+### Schema migration is a separate action, not part of the app spec's authority
 
-Code generation (blueprint → owned Go) and schema migration (schema →
+Code generation (app spec → owned Go) and schema migration (schema →
 SQL) are different concerns. The migration *engine* (`framework/migrate`:
 `DiffSchema`, `Registry`, `Load/SaveSnapshot`) already works on entity
 declarations + a committed `schema.snapshot.json`. It never sees YAML.
 At the CLI boundary, `migrate generate` takes its schema from an opt-in
-source; today that source is `--from=<blueprint>`, which is perfectly
+source; today that source is `--from=<spec.yml>`, which is perfectly
 fine. *Reading* a schema to emit a reviewable migration file claims no
 authority over anything. Owned-Go and live-DB sources are equally valid
 inputs and can be added when wanted (e.g. the app's own binary, which has
 its entities compiled in, running `myapp migrate generate <name>`, the
 Ent/Django shape). None of this is a leftover to remove: there
-is no contradiction with "delete the blueprint," because the *running
-app* never needs the blueprint, and schema migration is simply a separate
+is no contradiction with "delete the app spec," because the *running
+app* never needs the app spec, and schema migration is simply a separate
 action you point at whatever schema you have.
 
 ### `pack` is one-way by *policy*, lossy by *maturity*
@@ -110,7 +110,7 @@ one-way rule will not. Even a perfect-fidelity `pack` has no standing to
 sync back, because the owned Go wins **by rule**, not because the YAML is
 too lossy to trust. Lossy-today is a maturity state; one-way is
 permanent. Stating this is the firewall that stops `pack` → edit →
-`generate` from quietly turning the blueprint back into a source of truth.
+`generate` from quietly turning the app spec back into a source of truth.
 
 ### No `gen/`: generated code lands where a hand-written app would put it
 
@@ -135,7 +135,7 @@ gofastr.yml        # the scaffold input: OPTIONAL, deletable once the code is yo
 ```
 
 The emitted app files are a flat `package main` at the root: no
-`blueprint/` subpackage, no importable "generator" namespace. `main.go`
+`appspec/` subpackage, no importable "generator" namespace. `main.go`
 calls `RegisterGenerated(...)` directly.
 
 (`--out=<dir>` / `app.output_dir` scaffolds into a subpackage instead of
@@ -148,7 +148,7 @@ code and edit it in place. Growth after that is **additive, never a
 merge**: `generate --add` (partial yml) and the `generate entity|screen
 <name>` scaffold subcommands write only files that don't exist yet. An
 owned file is never touched, so there is no re-run/merge loop and the
-blueprint never becomes a canonical source you keep regenerating from.
+app spec never becomes a canonical source you keep regenerating from.
 Anything the additive path can't scaffold, you write in the owned Go.
 
 Two rules fall out, and both are load-bearing:
@@ -173,14 +173,14 @@ Two rules fall out, and both are load-bearing:
 The AI-economics claim is two-sided. The README already argues the
 *output* should be inspectable because an agent wrote it; scaffold-and-own adds
 the *input* side: **an agent does not need to learn the framework to
-author an app, only the blueprint schema**, which is small,
+author an app, only the app spec schema**, which is small,
 YAML, and fully documented. Low surface area to author, high surface area
 generated, one tool call → a multi-entity app. Two distinct AI surfaces
-follow: **author-time → blueprint** (write-mostly intent compression) and
+follow: **author-time → app spec** (write-mostly intent compression) and
 **run-time → MCP into the live server** (introspect routes/config/docs,
 drive the entity tools against the running app. The agent does *not*
 crack open the YAML to learn a running app). Kiln is the third, separate
-mode: live IR mutation that graduates to a blueprint, then to Go.
+mode: live IR mutation that graduates to an app spec, then to Go.
 
 ---
 

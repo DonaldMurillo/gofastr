@@ -10,7 +10,7 @@
 #
 # This script is NOT run by CI or the driver — the committed seed.db is the
 # source of truth. Run it by hand only when a fixture's generated source or
-# blueprint changes and the seed must be re-captured:
+# app spec changes and the seed must be re-captured:
 #
 #     ./evals/upgrade-fixtures/regenerate-seed.sh evals/upgrade-fixtures/fixtures/v0.38.0-app
 #     ./evals/upgrade-fixtures/regenerate-seed.sh evals/upgrade-fixtures/fixtures/v0.53.0-app

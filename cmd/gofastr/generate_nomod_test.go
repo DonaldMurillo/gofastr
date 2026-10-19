@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// A blueprint generated outside a Go module used to report plain success and
+// An app spec generated outside a Go module used to report plain success and
 // then recommend `go mod tidy`, which is the one command that cannot work
 // there:
 //
@@ -18,18 +18,18 @@ import (
 // The generated code imports itself by module path (…/entities), so without a
 // go.mod nothing it emitted can build. The adjacent case, a go.mod that
 // declares a DIFFERENT module, already fails with a message naming the exact
-// remedy (resolveBlueprintModule). Only the absent case was unhandled, and it
+// remedy (resolveAppSpecModule). Only the absent case was unhandled, and it
 // is the one a first-time user hits.
 //
 // This is a warning rather than a hard error on purpose: generating into a
-// directory that is about to become a module is legitimate, and the blueprint
+// directory that is about to become a module is legitimate, and the app spec
 // declares app.module, so the exact `go mod init` line can be printed instead
 // of refusing the work.
 func TestGenerateWithoutGoModWarnsAndNamesTheInitCommand(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
 	bp := filepath.Join(dir, "bp.yml")
-	if err := os.WriteFile(bp, []byte(testBlueprintYAML()), 0o644); err != nil {
+	if err := os.WriteFile(bp, []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -40,7 +40,7 @@ func TestGenerateWithoutGoModWarnsAndNamesTheInitCommand(t *testing.T) {
 	}
 	// The remedy must be the runnable command, not a description of it. The
 	// module-mismatch guard sets that bar and this path should meet it.
-	module := blueprintModuleFromYAML(t, testBlueprintYAML())
+	module := appSpecModuleFromYAML(t, testAppSpecYAML())
 	wantInit := "go mod init " + module
 	if !strings.Contains(out, wantInit) {
 		t.Errorf("did not name the exact remedy %q:\n%s", wantInit, out)
@@ -59,12 +59,12 @@ func TestGenerateWithoutGoModWarnsAndNamesTheInitCommand(t *testing.T) {
 func TestGenerateInsideModuleDoesNotWarnAboutGoMod(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
-	module := blueprintModuleFromYAML(t, testBlueprintYAML())
+	module := appSpecModuleFromYAML(t, testAppSpecYAML())
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module "+module+"\n\ngo 1.26\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	bp := filepath.Join(dir, "bp.yml")
-	if err := os.WriteFile(bp, []byte(testBlueprintYAML()), 0o644); err != nil {
+	if err := os.WriteFile(bp, []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -78,10 +78,10 @@ func TestGenerateInsideModuleDoesNotWarnAboutGoMod(t *testing.T) {
 	}
 }
 
-// blueprintModuleFromYAML reads the `module:` line out of a test blueprint so
+// appSpecModuleFromYAML reads the `module:` line out of a test app spec so
 // the assertions above pin the real declared path rather than a copy that can
-// drift from testBlueprintYAML.
-func blueprintModuleFromYAML(t *testing.T, yaml string) string {
+// drift from testAppSpecYAML.
+func appSpecModuleFromYAML(t *testing.T, yaml string) string {
 	t.Helper()
 	for _, line := range strings.Split(yaml, "\n") {
 		_, after, found := strings.Cut(strings.TrimSpace(line), "module:")
@@ -92,7 +92,7 @@ func blueprintModuleFromYAML(t *testing.T, yaml string) string {
 			return v
 		}
 	}
-	t.Fatalf("testBlueprintYAML declares no module: line — update this helper")
+	t.Fatalf("testAppSpecYAML declares no module: line — update this helper")
 	return ""
 }
 
@@ -110,12 +110,12 @@ func TestGeneratePinsFrameworkVersion(t *testing.T) {
 
 	dir := t.TempDir()
 	covT_chdir(t, dir)
-	module := blueprintModuleFromYAML(t, testBlueprintYAML())
+	module := appSpecModuleFromYAML(t, testAppSpecYAML())
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module "+module+"\n\ngo 1.27\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	bp := filepath.Join(dir, "bp.yml")
-	if err := os.WriteFile(bp, []byte(testBlueprintYAML()), 0o644); err != nil {
+	if err := os.WriteFile(bp, []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out := covT_capStdout(t, func() { runGenerate([]string{"--from=" + bp}) })
@@ -138,12 +138,12 @@ func TestGenerateDevBuildNamesGoGet(t *testing.T) {
 
 	dir := t.TempDir()
 	covT_chdir(t, dir)
-	module := blueprintModuleFromYAML(t, testBlueprintYAML())
+	module := appSpecModuleFromYAML(t, testAppSpecYAML())
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module "+module+"\n\ngo 1.27\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	bp := filepath.Join(dir, "bp.yml")
-	if err := os.WriteFile(bp, []byte(testBlueprintYAML()), 0o644); err != nil {
+	if err := os.WriteFile(bp, []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out := covT_capStdout(t, func() { runGenerate([]string{"--from=" + bp}) })

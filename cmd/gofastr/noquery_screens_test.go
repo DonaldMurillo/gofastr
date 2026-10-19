@@ -12,7 +12,7 @@ import (
 // YAML position; a guard that only covers one of them is the shape that
 // shipped three times already.
 
-func r5Blueprint(t *testing.T, block string) error {
+func r5AppSpec(t *testing.T, block string) error {
 	t.Helper()
 	yaml := `
 app:
@@ -39,11 +39,11 @@ screens:
 	if err != nil {
 		t.Fatalf("parse: %v\n%s", err, yaml)
 	}
-	bp, err := decodeBlueprint(node)
+	bp, err := decodeAppSpec(node)
 	if err != nil {
 		return err
 	}
-	return validateBlueprint(bp)
+	return validateAppSpec(bp)
 }
 
 // group_by is the chart's LABEL. groupCounts prints each distinct stored
@@ -52,7 +52,7 @@ screens:
 // whatever route the screen sits on.
 func TestChartGroupByRefusesMaskedColumn(t *testing.T) {
 	for _, kind := range []string{"bar_chart", "pie_chart", "line_chart"} {
-		err := r5Blueprint(t, `      - kind: `+kind+`
+		err := r5AppSpec(t, `      - kind: `+kind+`
         props:
           source:
             entity: cards
@@ -72,7 +72,7 @@ func TestChartGroupByRefusesMaskedColumn(t *testing.T) {
 // group_by was not checked as a COLUMN at all, so a typo produced a chart that
 // silently grouped everything under one empty bucket.
 func TestChartGroupByRefusesUnknownColumn(t *testing.T) {
-	err := r5Blueprint(t, `      - kind: bar_chart
+	err := r5AppSpec(t, `      - kind: bar_chart
         props:
           source:
             entity: cards
@@ -86,7 +86,7 @@ func TestChartGroupByRefusesUnknownColumn(t *testing.T) {
 // agg: sum over a masked numeric renders its total. At one row the total IS
 // the stored value.
 func TestStatCardSumRefusesMaskedColumn(t *testing.T) {
-	err := r5Blueprint(t, `      - kind: stat_card
+	err := r5AppSpec(t, `      - kind: stat_card
         props:
           source:
             entity: cards
@@ -102,7 +102,7 @@ func TestStatCardSumRefusesMaskedColumn(t *testing.T) {
 // anything else renders "—" at runtime, so generation refuses it.
 func TestStatCardAggIsExact(t *testing.T) {
 	stat := func(agg, field string) error {
-		return r5Blueprint(t, `      - kind: stat_card
+		return r5AppSpec(t, `      - kind: stat_card
         props:
           source:
             entity: cards
@@ -124,7 +124,7 @@ func TestStatCardAggIsExact(t *testing.T) {
 
 // A queryable column has to keep working, or the guard is just breakage.
 func TestChartGroupByAcceptsOrdinaryColumn(t *testing.T) {
-	if err := r5Blueprint(t, `      - kind: bar_chart
+	if err := r5AppSpec(t, `      - kind: bar_chart
         props:
           source:
             entity: cards
@@ -160,7 +160,7 @@ entities:
 	if perr != nil {
 		t.Fatalf("parse: %v", perr)
 	}
-	_, err := decodeBlueprint(node)
+	_, err := decodeAppSpec(node)
 	if err == nil {
 		t.Fatal("cursor_field naming a no_query column was accepted at decode; the failure " +
 			"lands as a panic when the generated app boots")
@@ -187,12 +187,12 @@ entities:
 	if perr != nil {
 		t.Fatalf("parse: %v", perr)
 	}
-	if _, err := decodeBlueprint(node); err == nil {
+	if _, err := decodeAppSpec(node); err == nil {
 		t.Fatal("cursor_fields accepted a column that does not exist")
 	}
 }
 
-// blueprintFieldSystem answers "is this a system column NAME"; validating a
+// appSpecFieldSystem answers "is this a system column NAME"; validating a
 // screen needs "does this entity HAVE that column". created_at/updated_at
 // exist only under timestamps:, deleted_at under soft_delete:, tenant_id under
 // multi_tenant:, so accepting the name unconditionally let a screen reference
@@ -248,9 +248,9 @@ screens:
 			if perr != nil {
 				t.Fatalf("parse: %v", perr)
 			}
-			bp, err := decodeBlueprint(node)
+			bp, err := decodeAppSpec(node)
 			if err == nil {
-				err = validateBlueprint(bp)
+				err = validateAppSpec(bp)
 			}
 			if err == nil {
 				t.Fatalf("%s on a hidden column was accepted", name)
@@ -281,13 +281,13 @@ entities:
 	if perr != nil {
 		t.Fatalf("parse: %v", perr)
 	}
-	if _, err := decodeBlueprint(node); err == nil {
+	if _, err := decodeAppSpec(node); err == nil {
 		t.Fatal("cursor_field naming a hidden column was accepted; it is not in the projection, " +
 			"so paging cannot read it")
 	}
 }
 
-// The third framework-managed class blueprintColumn's own comment names: a FK
+// The third framework-managed class appSpecColumn's own comment names: a FK
 // declared by a top-level relations: block rather than a type: relation field.
 
 // deleted_at exists only under soft_delete:, tenant_id only under
@@ -317,7 +317,7 @@ entities:
 	if perr != nil {
 		t.Fatalf("parse: %v", perr)
 	}
-	if _, err := decodeBlueprint(node); err == nil {
+	if _, err := decodeAppSpec(node); err == nil {
 		t.Fatal("search_fields on created_at was accepted for an entity with timestamps: false; " +
 			"the generated app then queries a column that does not exist")
 	} else if !strings.Contains(err.Error(), "created_at") {

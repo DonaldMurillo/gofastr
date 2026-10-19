@@ -13,7 +13,7 @@ import (
 // (family enumeration; tier T3).
 // Family: every outbound probe carries an operative per-attempt deadline.
 // Pinned sibling (green today): TestBootProbeClientTimesOut
-// (cmd/gofastr/examples_blueprint_test.go:601) pins bootProbeClient
+// (cmd/gofastr/examples_appspec_test.go:601) pins bootProbeClient
 // (&http.Client{Timeout: 5s}, :533). The byte-cap arm for these same two
 // helpers landed as TestSemanticRemoteRedBodyCapped
 // (semantic_remote_red_test.go); the time arm is the unpinned half.

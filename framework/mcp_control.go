@@ -20,7 +20,7 @@ import (
 //     sites, staging, local dev.
 //   - Control (mutating) belongs on /mcp endpoints reachable only by
 //     trusted callers: the local dev loop, an authenticated tunnel.
-//     Blueprint-generated apps wire it gated on the dev env for this
+//     Generated apps wire it gated on the dev env for this
 //     reason.
 //
 // Tools registered:

@@ -23,7 +23,7 @@ import (
 // docpage, the packages an app owns when the framework does not ship
 // the surface. The directory is the single source of truth — this
 // embed is how the binary ships it, and `gofastr generate package`
-// plus the blueprint's marketing chrome both copy FROM it, so no
+// plus the app spec's marketing chrome both copy FROM it, so no
 // second copy or template fork can drift.
 //
 //go:embed packages
@@ -482,7 +482,7 @@ func copyCanonicalPackage(name, targetImport string) (files []generatedFile, has
 // package's tokens file (if any) and style sheet, exactly as `gofastr
 // gen styles` and the app's `gofastr verify` will judge the copies: an
 // unwaived finding is an error, so a dirty canonical package fails
-// every copy and the blueprint instead of shipping an app whose verify
+// every copy and the app spec instead of shipping an app whose verify
 // is red by construction.
 func checkCanonicalPackageSheets(name string, files map[string]string) error {
 	builtins := style.ThemeToTokens(style.DefaultTheme())

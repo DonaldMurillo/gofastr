@@ -13,7 +13,7 @@ import (
 
 // TestNoQueryReachesGeneratedField guards the silent-drop failure mode: every
 // schema.Field flag has to be named explicitly in renderFieldLiteral, so a new
-// one that nobody adds there is accepted in the blueprint, validated, and then
+// one that nobody adds there is accepted in the app spec, validated, and then
 // quietly discarded. For NoQuery that would generate an app whose masked
 // column is still filterable: the declaration promises a protection the
 // generated code does not have.
@@ -27,7 +27,7 @@ func TestNoQueryReachesGeneratedField(t *testing.T) {
 		t.Fatalf("renderFieldLiteral: %v", err)
 	}
 	if !strings.Contains(literal, "NoQuery: true") {
-		t.Errorf("generated field literal %s drops NoQuery — the blueprint would declare a "+
+		t.Errorf("generated field literal %s drops NoQuery — the app spec would declare a "+
 			"protection the generated app does not enforce", literal)
 	}
 }
@@ -44,7 +44,7 @@ func TestNoQueryOmittedWhenUnset(t *testing.T) {
 	}
 }
 
-// TestNoQuerySearchFieldRejected pins the blueprint-side half of the Define
+// TestNoQuerySearchFieldRejected pins the app-spec-side half of the Define
 // panic: ?q= search matches on the stored value, so a NoQuery column listed in
 // search_fields would hand back exactly what NoQuery keeps off the query
 // surface.
@@ -69,10 +69,10 @@ entities:
 	}
 }
 
-// TestNoQueryAcceptedInBlueprint pins that the key is in the field allow-list:
+// TestNoQueryAcceptedInAppSpec pins that the key is in the field allow-list:
 // rejectUnknownKeys fails closed, so an unlisted key is a hard error rather
 // than a silent ignore.
-func TestNoQueryAcceptedInBlueprint(t *testing.T) {
+func TestNoQueryAcceptedInAppSpec(t *testing.T) {
 	yaml := `
 app:
   name: cards
@@ -167,11 +167,11 @@ var x = []schema.Field{
 	}
 }
 
-// blueprintWithNoQuery is a minimal app whose one entity has a masked column,
+// appSpecWithNoQuery is a minimal app whose one entity has a masked column,
 // used to drive the generator end to end. No fixture in the repo declares
 // no_query, so without this the whole emission path was covered only by unit
 // tests on individual render functions.
-const blueprintWithNoQuery = `
+const appSpecWithNoQuery = `
 app:
   name: cards
 entities:
@@ -192,7 +192,7 @@ entities:
 // no_query column is entityui's half (pinned against entityui in the
 // framework's own suite).
 func TestNoQueryReachesGeneratedScreens(t *testing.T) {
-	bp, err := covT_decode(t, blueprintWithNoQuery+`
+	bp, err := covT_decode(t, appSpecWithNoQuery+`
 screens:
   - name: cards
     route: /cards
@@ -204,7 +204,7 @@ screens:
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	files := mustRenderBlueprintFiles(t, bp)
+	files := mustRenderAppSpecFiles(t, bp)
 	crud := fileContent(files, "screen_cards_crud.go")
 	if !strings.Contains(crud, `appUI.List("cards").Columns("label", "number")`) {
 		t.Fatalf("the cards screen must render the no_query column through appUI.List:\n%s", crud)
@@ -223,7 +223,7 @@ screens:
 // refuses a no_query column (pinned by TestNoQuerySearchFieldRejected
 // above), so the oracle the old screen key opened stays closed.
 func TestNoQuerySearchBlockRejected(t *testing.T) {
-	yaml := blueprintWithNoQuery + `
+	yaml := appSpecWithNoQuery + `
 screens:
   - name: cards
     route: /cards
@@ -236,7 +236,7 @@ screens:
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gofastr.yml")
 	writeTestFile(t, path, yaml)
-	_, err := loadBlueprint(path)
+	_, err := loadAppSpec(path)
 	if err == nil {
 		t.Fatal("entity_list search: must be refused at decode")
 	}
@@ -248,12 +248,12 @@ screens:
 // TestSearchFieldsAcceptsPlainColumns is the false-positive guard for the
 // replacement: an ordinary string column is a valid search_fields entry.
 func TestSearchFieldsAcceptsPlainColumns(t *testing.T) {
-	bp, err := covT_decode(t, blueprintWithNoQuery)
+	bp, err := covT_decode(t, appSpecWithNoQuery)
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	bp.Entities[0].SearchFields = []string{"label"}
-	if err := validateBlueprint(bp); err != nil {
+	if err := validateAppSpec(bp); err != nil {
 		t.Errorf("search_fields: label must stay valid, got %v", err)
 	}
 }
@@ -265,7 +265,7 @@ func TestSearchFieldsAcceptsPlainColumns(t *testing.T) {
 // to CountAll, bypassing the filter parser, so a masked column there makes
 // the rendered count a one-bit oracle.
 func TestStatCardNoQueryFilterRejected(t *testing.T) {
-	yaml := blueprintWithNoQuery + `
+	yaml := appSpecWithNoQuery + `
 screens:
   - name: dash
     route: /dash
@@ -282,7 +282,7 @@ screens:
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	err = validateBlueprint(bp)
+	err = validateAppSpec(bp)
 	if err == nil {
 		t.Fatal("stat_card source.filter on a no_query column must be rejected")
 	}
@@ -293,7 +293,7 @@ screens:
 
 // TestStatCardPlainFilterAccepted is the false-positive guard.
 func TestStatCardPlainFilterAccepted(t *testing.T) {
-	yaml := blueprintWithNoQuery + `
+	yaml := appSpecWithNoQuery + `
 screens:
   - name: dash
     route: /dash
@@ -310,7 +310,7 @@ screens:
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if err := validateBlueprint(bp); err != nil {
+	if err := validateAppSpec(bp); err != nil {
 		t.Errorf("a plain column filter must stay valid, got %v", err)
 	}
 }
@@ -319,7 +319,7 @@ screens:
 // display: facets: — the entity-level spelling, whose facets run through
 // the entityui list's own query-surface bar.
 func TestEntityListNoQueryFacetRejected(t *testing.T) {
-	yaml := blueprintWithNoQuery + `
+	yaml := appSpecWithNoQuery + `
 screens:
   - name: cards
     route: /cards
@@ -332,7 +332,7 @@ screens:
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gofastr.yml")
 	writeTestFile(t, path, yaml)
-	_, err := loadBlueprint(path)
+	_, err := loadAppSpec(path)
 	if err == nil {
 		t.Fatal("entity_list filters: must be refused at decode")
 	}

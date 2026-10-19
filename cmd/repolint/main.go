@@ -235,7 +235,7 @@ func lintBytes(rel string, body []byte) []finding {
 				Message: "framework/apiversions moved to framework/experimental/apiversions",
 			})
 		}
-		// untyped-fui-wiring: the blueprint generator and admin battery
+		// untyped-fui-wiring: the app generator and admin battery
 		// EMIT island wiring, so they must teach the typed
 		// core-ui/interactive layer (interactive.OnClick/OnSubmit or
 		// Action.Attrs()), never a raw "data-cui-rpc" attribute literal.
@@ -264,7 +264,7 @@ func lintBytes(rel string, body []byte) []finding {
 				File:    rel,
 				Line:    i + 1,
 				Rule:    "stale-codegen-status",
-				Message: "GoFastr ships blueprint code generation; keep the generate target truthful",
+				Message: "GoFastr ships app spec code generation; keep the generate target truthful",
 			})
 		}
 	}
@@ -534,7 +534,7 @@ func isBuildScript(rel string) bool {
 }
 
 // isUntypedFUIWiringScope reports whether rel is a non-test Go file under
-// the blueprint generator or a battery, the code that EMITS island wiring
+// the app generator or a battery, the code that EMITS island wiring
 // and so must use the typed core-ui/interactive layer instead of raw
 // "data-cui-rpc" attribute literals. Examples and docs are deliberately
 // excluded: the showcase renders raw data-cui-* attributes in copy shown

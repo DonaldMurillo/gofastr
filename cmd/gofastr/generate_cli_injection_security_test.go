@@ -23,11 +23,11 @@ import (
 //   - entity mode (reads the app's own entities/ via packReadEntities).
 //     Names land in identifier position (ent.Struct via toCamelCase, which
 //     passes quotes through) and tables land RAW inside "/%s/" Go string
-//     literals. The blueprint path into entities/ is guarded upstream
-//     (validateBlueprint: isGoIdentifier + query.SafeIdent + the
+//     literals. The app spec path into entities/ is guarded upstream
+//     (validateAppSpec: isGoIdentifier + query.SafeIdent + the
 //     parse-backstop), but `generate cli` reads hand-written entity files
 //     too, so the boundary has to hold HERE as well, mirroring the same
-//     guards validateBlueprint applies.
+//     guards validateAppSpec applies.
 
 // TestGenerateCLI_HostileTableCannotBreakOutOfPathLiterals: a table
 // containing a Go string-literal delimiter must be refused, not emitted.
@@ -63,7 +63,7 @@ func TestGenerateCLI_HostileTableCannotBreakOutOfPathLiterals(t *testing.T) {
 // TestGenerateCLI_EntityNameMustDeriveIdentifier: ent.Struct lands in
 // identifier position (run%sList, %sCommands). toCamelCase splits only on
 // _/-/space, so a name with a quote or paren carries it straight into the
-// identifier — refused here, exactly as validateBlueprint refuses it for
+// identifier — refused here, exactly as validateAppSpec refuses it for
 // `gofastr generate`.
 func TestGenerateCLI_EntityNameMustDeriveIdentifier(t *testing.T) {
 	for _, name := range []string{`po"sts`, "po sts()", "2fa_tokens", "日本"} {
@@ -209,12 +209,12 @@ func stripGoDoubleQuoted(src string) string {
 
 // TestScaffoldNameGuardedByValidate: the `gofastr generate entity|screen
 // <name>` argv is the same trust boundary the entity mode above defends —
-// a name typed (or scripted) at the CLI becomes the blueprint fragment's
+// a name typed (or scripted) at the CLI becomes the app spec fragment's
 // entity/screen name, which lands in identifier position and in the emitted
 // file name (entities/<name>.go, screens via screenFileName). The scaffold
-// path must inherit validateBlueprint's identifier guard rather than
-// synthesizing a fragment that bypasses it: generateBlueprint runs the same
-// validateBlueprint, so a literal-breaking or path-shaped name must be
+// path must inherit validateAppSpec's identifier guard rather than
+// synthesizing a fragment that bypasses it: generateAppSpec runs the same
+// validateAppSpec, so a literal-breaking or path-shaped name must be
 // refused there. Pinned green: the guard exists; this keeps a future
 // "scaffold skips validation for convenience" refactor from opening it.
 func TestScaffoldNameGuardedByValidate(t *testing.T) {
@@ -225,11 +225,11 @@ func TestScaffoldNameGuardedByValidate(t *testing.T) {
 		`2fa_tokens`,    // leading digit: no valid Go identifier
 		"x`y",           // backtick: raw struct-tag literal
 	} {
-		bp := Blueprint{Entities: []framework.EntityDeclaration{{
+		bp := AppSpec{Entities: []framework.EntityDeclaration{{
 			Name:   name,
 			Fields: []framework.FieldDeclaration{{Name: "name", Type: "string", Required: true}},
 		}}}
-		err := validateBlueprint(bp)
+		err := validateAppSpec(bp)
 		if err == nil {
 			t.Errorf("scaffold entity name %q: accepted; it must be refused before entities/%s.go is emitted", name, name)
 			continue
@@ -239,11 +239,11 @@ func TestScaffoldNameGuardedByValidate(t *testing.T) {
 		}
 	}
 	// Control: the names the scaffold is FOR still pass.
-	bp := Blueprint{Entities: []framework.EntityDeclaration{{
+	bp := AppSpec{Entities: []framework.EntityDeclaration{{
 		Name:   "two_fa_tokens",
 		Fields: []framework.FieldDeclaration{{Name: "name", Type: "string", Required: true}},
 	}}}
-	if err := validateBlueprint(bp); err != nil {
+	if err := validateAppSpec(bp); err != nil {
 		t.Fatalf("plain scaffold name must validate: %v", err)
 	}
 }

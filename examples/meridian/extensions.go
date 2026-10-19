@@ -13,7 +13,7 @@ import (
 // appExtensions holds the entityui extensions this app adds beside its
 // screens: a view whose filter depends on the caller, a field kind, a
 // record tab, a side panel or an action, keyed by entity. See 'gofastr
-// docs blueprints' ("Extending the screens") and the framework/entityui
+// docs app-spec' ("Extending the screens") and the framework/entityui
 // package doc for each extension point.
 var appExtensions = entityui.Extensions{
 	Entities: map[string]entityui.Extension{

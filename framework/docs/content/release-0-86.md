@@ -288,7 +288,7 @@ shell, list/detail, marketing site and docs site end to end.
 `gofastr generate package <name>` copies a canonical package into the
 app as owned code: the Go, its owned sheet, its tokens and their
 generated Go, and its tests, with imports rewritten to the app's module.
-The copy is the app's to change. A blueprint with marketing screens
+The copy is the app's to change. An app spec with marketing screens
 writes the same packages through the same copy.
 
 ## Owned styles: where an app's CSS lives

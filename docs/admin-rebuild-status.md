@@ -216,7 +216,7 @@ is rewritten and #496 is closed in favour of the stack.
 
 PR #496 (`wip/admin-shell-remote` into main) was red on six checks. Fixed:
 the headless behaviour over its size budget (Copy CSV split into
-`headless-selection-copy`), gofmt, the embedded Meridian blueprint, nine
+`headless-selection-copy`), gofmt, the embedded Meridian app spec, nine
 components missing from the gallery, a racy Copy CSV browser test, the
 upgrade fixtures' sort probe (DataTable's value span), the stdlib
 advisories (Go 1.27.2), the dupl baseline and fourteen `gofastr verify

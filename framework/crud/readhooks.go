@@ -15,7 +15,7 @@ import (
 // values. That is the right default for a Go API whose callers are trusted
 // server code: it reads what is in the database, and read-modify-write works.
 //
-// It is the wrong default for one caller, generated screens. A blueprint
+// It is the wrong default for one caller, generated screens. An app spec
 // app renders its grid and detail page through ListAll/GetOne, to an end
 // user, so `GET /cards` returning "****1111" while the app's own page printed
 // the stored number was a real disclosure.

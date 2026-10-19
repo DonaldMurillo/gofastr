@@ -61,7 +61,7 @@ type SetAppConfigArgs struct {
 	Config world.AppConfig `json:"config"`
 }
 
-// SetScaffoldArgs replaces the current blueprint-owned navigation and Go-stub
+// SetScaffoldArgs replaces the current app-spec-owned navigation and Go-stub
 // declarations. These surfaces are preserved into gofastr.yml at freeze time;
 // only navigation has a live visual representation.
 type SetScaffoldArgs struct {

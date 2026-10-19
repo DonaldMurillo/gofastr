@@ -2,7 +2,7 @@
 
 GoFastr is pre-v1, but public API changes still follow a predictable migration
 path. This policy applies to exported APIs under `framework/`, `core/`,
-`core-ui/`, and `battery/`, plus blueprint keys and documented runtime
+`core-ui/`, and `battery/`, plus app spec keys and documented runtime
 attributes.
 
 ## Before v1.0.0

@@ -43,7 +43,7 @@ use most, so a boot that "hangs" from a worktree is almost always this.
   worktrees.
 - `gofastr dev` resolves isolation before launching the app and passes
   isolated child env values.
-- Generated apps from `gofastr init` and blueprint output use
+- Generated apps from `gofastr init` and app generator output use
   `framework/isolation` to resolve `PORT` and database DSNs.
 - SQLite DSNs move under `.gofastr/isolation/{id}/` (the directory is
   created owner-only, `0700` or a protected owner-only ACL on Windows, so the isolated app's database state is not

@@ -72,7 +72,7 @@ fwApp.RegisterPlugin(log.New(log.Config{
 ```
 
 (`WithMCP()` replaces hand-mounting `/mcp`; doing both panics with a
-route conflict.) `examples/site` and blueprint-generated apps already
+route conflict.) `examples/site` and generated apps already
 have `WithMCP` + `WithMCPIntrospection` + `framework.WithMCPTools(mcptools.Register)` + the log battery wired. Spin
 the site up with the repo's normal dev workflow:
 

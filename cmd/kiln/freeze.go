@@ -22,7 +22,7 @@ import (
 //     agent-driven changes before graduating to source.
 //
 // This is the "graduate from build mode" step. Once frozen, the
-// blueprint can be reviewed, validated, and generated into owned Go.
+// app spec can be reviewed, validated, and generated into owned Go.
 func runFreeze(args []string) int {
 	fs := flag.NewFlagSet("kiln freeze", flag.ExitOnError)
 	journalPath := fs.String("journal", ".kiln.session.jsonl", "JSONL journal to read")

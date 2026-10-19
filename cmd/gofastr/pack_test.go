@@ -21,13 +21,13 @@ const meridianYML = "../../examples/meridian/gofastr.yml"
 // meridianWithEnv returns a copy of the meridian app with the gitignored .env
 // the generator emits beside it. A fresh checkout doesn't have it; the seed
 // password lives ONLY there, by design, so packing the committed tree
-// cannot recover the blueprint's secrets without it. A developer's own .env
+// cannot recover the app spec's secrets without it. A developer's own .env
 // is copied as it is. The copy keeps the write out of the repo: a file
 // created and removed in examples/meridian moves the listing every repo
 // walker hashes, and Go's test cache re-ran them all.
 //
 //gofastr:test-reads examples/meridian/
-func meridianWithEnv(t *testing.T, bp Blueprint) string {
+func meridianWithEnv(t *testing.T, bp AppSpec) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), "meridian")
 	if err := os.CopyFS(dir, os.DirFS(meridianDir)); err != nil {
@@ -37,7 +37,7 @@ func meridianWithEnv(t *testing.T, bp Blueprint) string {
 	if _, err := os.Stat(path); err == nil {
 		return dir
 	}
-	if env := renderBlueprintEnv(bp); env != "" {
+	if env := renderAppSpecEnv(bp); env != "" {
 		if err := os.WriteFile(path, []byte(env), 0o600); err != nil {
 			t.Fatalf("write %s: %v", path, err)
 		}
@@ -49,7 +49,7 @@ func meridianWithEnv(t *testing.T, bp Blueprint) string {
 // meridian app's register.go and asserts they equal the parsed YAML's entities
 // (order, fields, types, access, indices, relations, properties).
 func TestPack_ReadEntities(t *testing.T) {
-	a, err := decodeBlueprintFile(meridianYML)
+	a, err := decodeAppSpecFile(meridianYML)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -58,14 +58,14 @@ func TestPack_ReadEntities(t *testing.T) {
 		t.Fatalf("packReadEntities: %v", err)
 	}
 	if !reflect.DeepEqual(a.Entities, got) {
-		t.Errorf("entities mismatch:\n%s", firstBlueprintDiff(a.Entities, got))
+		t.Errorf("entities mismatch:\n%s", firstAppSpecDiff(a.Entities, got))
 	}
 }
 
-// firstBlueprintDiff walks two values and returns a description of the first
+// firstAppSpecDiff walks two values and returns a description of the first
 // path where they differ, far more useful than a giant DeepEqual dump.
-func firstBlueprintDiff(a, b any) string {
-	if d := diffValue(reflect.ValueOf(a), reflect.ValueOf(b), "blueprint"); d != "" {
+func firstAppSpecDiff(a, b any) string {
+	if d := diffValue(reflect.ValueOf(a), reflect.ValueOf(b), "app spec"); d != "" {
 		return d
 	}
 	return "(values are deep-equal)"
@@ -127,8 +127,8 @@ func diffValue(a, b reflect.Value, path string) string {
 }
 
 // TestPack_SerializerRoundTrip is the core invariant: serializing a parsed
-// blueprint and re-parsing it yields an identical Blueprint. It runs against
-// EVERY committed example blueprint, not a hand-picked one: the test used to
+// app spec and re-parsing it yields an identical App spec. It runs against
+// EVERY committed example app spec, not a hand-picked one: the test used to
 // run Meridian alone, and Meridian happens to be the one example that
 // declares no middleware/plugins/helpers — the fixture guarding the inverse
 // claim was the fixture least able to observe it failing (#318).
@@ -140,25 +140,25 @@ func TestPack_SerializerRoundTrip(t *testing.T) {
 		t.Fatalf("glob examples: %v", err)
 	}
 	if len(matches) == 0 {
-		t.Fatal("no example blueprints found")
+		t.Fatal("no example app specs found")
 	}
 	for _, path := range matches {
 		path := path
 		t.Run(filepath.Base(filepath.Dir(path)), func(t *testing.T) {
-			a, err := decodeBlueprintFile(path)
+			a, err := decodeAppSpecFile(path)
 			if err != nil {
 				t.Fatalf("parse %s: %v", path, err)
 			}
-			yml, err := encodeBlueprintYAML(a)
+			yml, err := encodeAppSpecYAML(a)
 			if err != nil {
 				t.Fatalf("serialize: %v", err)
 			}
-			b, err := decodeBlueprintString(yml)
+			b, err := decodeAppSpecString(yml)
 			if err != nil {
 				t.Fatalf("re-parse serialized yaml: %v\n--- yaml ---\n%s", err, yml)
 			}
 			if !reflect.DeepEqual(a, b) {
-				t.Errorf("round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstBlueprintDiff(a, b), yml)
+				t.Errorf("round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstAppSpecDiff(a, b), yml)
 			}
 		})
 	}
@@ -169,27 +169,27 @@ func TestPack_SerializerRoundTrip(t *testing.T) {
 // equal. No committed example sets a stub description, so the example-driven
 // round-trip above cannot see this path.
 func TestPack_StubDescriptionRoundTrips(t *testing.T) {
-	a := Blueprint{
-		App:        BlueprintApp{Name: "probe"},
-		Middleware: []BlueprintNamedStub{{Name: "logger", Description: "logs each request"}},
-		Plugins:    []BlueprintNamedStub{{Name: "metrics", Description: "counts things"}},
-		Helpers:    []BlueprintNamedStub{{Name: "slugify", Description: "makes slugs"}},
+	a := AppSpec{
+		App:        AppSpecApp{Name: "probe"},
+		Middleware: []AppSpecNamedStub{{Name: "logger", Description: "logs each request"}},
+		Plugins:    []AppSpecNamedStub{{Name: "metrics", Description: "counts things"}},
+		Helpers:    []AppSpecNamedStub{{Name: "slugify", Description: "makes slugs"}},
 	}
-	yml, err := encodeBlueprintYAML(a)
+	yml, err := encodeAppSpecYAML(a)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
-	b, err := decodeBlueprintString(yml)
+	b, err := decodeAppSpecString(yml)
 	if err != nil {
 		t.Fatalf("re-parse serialized yaml: %v\n--- yaml ---\n%s", err, yml)
 	}
 	if !reflect.DeepEqual(a, b) {
-		t.Errorf("stub description round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstBlueprintDiff(a, b), yml)
+		t.Errorf("stub description round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstAppSpecDiff(a, b), yml)
 	}
 }
 
 // TestPack_SeedCountWeightsRoundTrips guards the #330 fix: seed count and
-// weights are decoded into BlueprintSeedEntity (blueprint.go decodeBlueprintSeed)
+// weights are decoded into AppSpecSeedEntity (appspec.go decodeAppSpecSeed)
 // and were then dropped by the serializer — the same decoded-but-never-emitted
 // shape as #318. No committed example uses count/weights, which is exactly how
 // the omission stayed invisible to the example round-trip.
@@ -204,23 +204,23 @@ func TestPack_SeedCountWeightsRoundTrips(t *testing.T) {
     rows:
       - title: first
 `
-	a, err := decodeBlueprintString(yml)
+	a, err := decodeAppSpecString(yml)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	if len(a.Seed) != 1 || a.Seed[0].Count != 7 || a.Seed[0].Weights["status"]["open"] != 5 {
 		t.Fatalf("fixture does not exercise the fix: %+v", a.Seed)
 	}
-	out, err := encodeBlueprintYAML(a)
+	out, err := encodeAppSpecYAML(a)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
-	b, err := decodeBlueprintString(out)
+	b, err := decodeAppSpecString(out)
 	if err != nil {
 		t.Fatalf("re-parse serialized yaml: %v\n--- yaml ---\n%s", err, out)
 	}
 	if !reflect.DeepEqual(a, b) {
-		t.Errorf("seed count/weights round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstBlueprintDiff(a, b), out)
+		t.Errorf("seed count/weights round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstAppSpecDiff(a, b), out)
 	}
 }
 
@@ -236,23 +236,23 @@ func TestPack_EntityRenamesRoundTrip(t *testing.T) {
     renames:
       title: heading
 `
-	a, err := decodeBlueprintString(yml)
+	a, err := decodeAppSpecString(yml)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	if len(a.Entities) != 1 || a.Entities[0].Renames["title"] != "heading" {
 		t.Fatalf("fixture does not exercise the fix: %+v", a.Entities)
 	}
-	out, err := encodeBlueprintYAML(a)
+	out, err := encodeAppSpecYAML(a)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
-	b, err := decodeBlueprintString(out)
+	b, err := decodeAppSpecString(out)
 	if err != nil {
 		t.Fatalf("re-parse serialized yaml: %v\n--- yaml ---\n%s", err, out)
 	}
 	if !reflect.DeepEqual(a, b) {
-		t.Errorf("entity renames round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstBlueprintDiff(a, b), out)
+		t.Errorf("entity renames round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstAppSpecDiff(a, b), out)
 	}
 }
 
@@ -276,8 +276,8 @@ func TestPack_QuotedValuesRoundTripExactBytes(t *testing.T) {
 	for i, v := range values {
 		rows[i] = map[string]any{"note": v}
 	}
-	a := Blueprint{Seed: []BlueprintSeedEntity{{Entity: "notes", Rows: rows}}}
-	yml, err := encodeBlueprintYAML(a)
+	a := AppSpec{Seed: []AppSpecSeedEntity{{Entity: "notes", Rows: rows}}}
+	yml, err := encodeAppSpecYAML(a)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -286,38 +286,38 @@ func TestPack_QuotedValuesRoundTripExactBytes(t *testing.T) {
 			t.Errorf("serialized yaml escaped the printable multi-byte rune %q instead of emitting it literally:\n%s", lit, yml)
 		}
 	}
-	b, err := decodeBlueprintString(yml)
+	b, err := decodeAppSpecString(yml)
 	if err != nil {
 		t.Fatalf("re-parse serialized yaml: %v\n--- yaml ---\n%s", err, yml)
 	}
 	if !reflect.DeepEqual(a, b) {
-		t.Errorf("quoted-value round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstBlueprintDiff(a, b), yml)
+		t.Errorf("quoted-value round-trip mismatch.\n%s\n--- serialized yaml ---\n%s", firstAppSpecDiff(a, b), yml)
 	}
 }
 
-// TestPackSerializerCoversEveryBlueprintField is the durable half of the
+// TestPackSerializerCoversEveryAppSpecField is the durable half of the
 // #318 fix. topLevelOrder listed middleware/plugins/helpers all along while
-// blueprintToMap silently dropped them; nothing compared the two lists. This
+// appSpecToMap silently dropped them; nothing compared the two lists. This
 // derives the comparison from the struct itself, so it needs no hand-kept
-// fixture: every field Blueprint can carry must make the serializer emit its
+// fixture: every field App spec can carry must make the serializer emit its
 // top-level key, and the emitted key set must equal set(topLevelOrder)
 // exactly. A key ordered but never emitted is the #318 regression; a key
 // emitted but not ordered silently ships unsorted.
 //
 // Boundary, stated honestly: this guards struct→serializer→order agreement.
-// It cannot see decodeBlueprint. A construct added to the decoder and the
+// It cannot see decodeAppSpec. A construct added to the decoder and the
 // struct but not the serializer stays invisible here; that side is guarded
 // by TestPack_SerializerRoundTrip, for every construct a committed example
 // actually uses.
-func TestPackSerializerCoversEveryBlueprintField(t *testing.T) {
-	rt := reflect.TypeOf(Blueprint{})
+func TestPackSerializerCoversEveryAppSpecField(t *testing.T) {
+	rt := reflect.TypeOf(AppSpec{})
 	emitted := map[string]bool{}
-	zero := blueprintToMap(Blueprint{})
+	zero := appSpecToMap(AppSpec{})
 	for i := range rt.NumField() {
 		bpv := reflect.New(rt).Elem()
 		probeLeafValue(t, bpv.Field(i))
-		keys := blueprintToMap(bpv.Interface().(Blueprint))
-		assertFieldMovesOutput(t, rt.Field(i).Name, zero, keys, "blueprintToMap")
+		keys := appSpecToMap(bpv.Interface().(AppSpec))
+		assertFieldMovesOutput(t, rt.Field(i).Name, zero, keys, "appSpecToMap")
 		for k := range keys {
 			emitted[k] = true
 		}
@@ -330,13 +330,13 @@ func TestPackSerializerCoversEveryBlueprintField(t *testing.T) {
 // committed example sets them, so the example round-trip cannot see this
 // class either.
 func TestPackSerializerCoversEveryAppField(t *testing.T) {
-	rt := reflect.TypeOf(BlueprintApp{})
+	rt := reflect.TypeOf(AppSpecApp{})
 	emitted := map[string]bool{}
-	zero := appToMap(BlueprintApp{})
+	zero := appToMap(AppSpecApp{})
 	for i := range rt.NumField() {
 		appv := reflect.New(rt).Elem()
 		probeLeafValue(t, appv.Field(i))
-		keys := appToMap(appv.Interface().(BlueprintApp))
+		keys := appToMap(appv.Interface().(AppSpecApp))
 		assertFieldMovesOutput(t, rt.Field(i).Name, zero, keys, "appToMap")
 		for k := range keys {
 			emitted[k] = true
@@ -349,10 +349,10 @@ func TestPackSerializerCoversEveryAppField(t *testing.T) {
 // one level down: into the structs inside each slice-of-struct construct,
 // and (since the pointer/nested-struct extension) into the structs nested
 // inside those. The top-level guards prove a construct KEY appears when the
-// Blueprint field is set; they cannot see fields dropped inside the element,
+// App spec field is set; they cannot see fields dropped inside the element,
 // because the key's mere presence already differs from the zero output. That
 // is the seed.Count/Weights shape exactly (#330): decoded into
-// BlueprintSeedEntity, dropped by blueprintToMap, invisible to every guard
+// AppSpecSeedEntity, dropped by appSpecToMap, invisible to every guard
 // above and to every committed example. Each construct field must move the
 // serializer output — slice elements probed alone, nested structs probed
 // leave-one-out — and the keys emitted must match the construct's order
@@ -380,10 +380,10 @@ func TestPackSerializerCoversEveryConstructField(t *testing.T) {
 			// The zeroed field's absence must be visible in the output; a
 			// dropped emission line makes the probe identical to base,
 			// which is the red.
-			base := blueprintToMap(*zbp)
+			base := appSpecToMap(*zbp)
 			if spec.leaveOneOut {
 				probeLeafValue(t, zeroElem)
-				base = blueprintToMap(*zbp)
+				base = appSpecToMap(*zbp)
 			}
 			emitted := map[string]bool{}
 			rt := zeroElem.Type()
@@ -395,7 +395,7 @@ func TestPackSerializerCoversEveryConstructField(t *testing.T) {
 				} else {
 					probeLeafValue(t, elem.Field(i))
 				}
-				out := blueprintToMap(*bp)
+				out := appSpecToMap(*bp)
 				field := spec.name + "." + rt.Field(i).Name
 				if reason, ok := constructOmissions[field]; ok {
 					// The exemption must be total: the probed field may not
@@ -405,7 +405,7 @@ func TestPackSerializerCoversEveryConstructField(t *testing.T) {
 					}
 					continue
 				}
-				assertFieldMovesOutput(t, field, base, out, "blueprintToMap")
+				assertFieldMovesOutput(t, field, base, out, "appSpecToMap")
 				if !spec.leaveOneOut {
 					if m := spec.at(out); m != nil {
 						for k := range m {
@@ -483,12 +483,12 @@ func TestPackSerializerCoversEveryConstructField(t *testing.T) {
 // the serializer output, with the reason. An omission listed here is part
 // of the contract; an omission not listed here fails the guard above.
 var constructOmissions = map[string]string{
-	"entities.Endpoints": "derived runtime wiring, not an authoring key: the decoder splits entity-level endpoints into decl.Endpoints (Method/Path/Name/Description, MCP hard-false, handler dropped) and a top-level Blueprint.Endpoints stub carrying the full authoring form (entity, handler, mcp). Emitting decl.Endpoints back under the entity would duplicate every endpoint on re-parse.",
-	"indices.Expression": "framework.Index is shared with hand-written Go configs, which support expression indexes; the blueprint grammar's indices allow-list is name/columns/unique only (decodeIndices), so Expression can never be authored in YAML and emitting it would fail rejectUnknownKeys on re-parse.",
+	"entities.Endpoints": "derived runtime wiring, not an authoring key: the decoder splits entity-level endpoints into decl.Endpoints (Method/Path/Name/Description, MCP hard-false, handler dropped) and a top-level App spec.Endpoints stub carrying the full authoring form (entity, handler, mcp). Emitting decl.Endpoints back under the entity would duplicate every endpoint on re-parse.",
+	"indices.Expression": "framework.Index is shared with hand-written Go configs, which support expression indexes; the app spec grammar's indices allow-list is name/columns/unique only (decodeIndices), so Expression can never be authored in YAML and emitting it would fail rejectUnknownKeys on re-parse.",
 }
 
-// constructSpec: how to build a Blueprint holding one zero element of a
-// construct, and where that element's emitted map lands in blueprintToMap's
+// constructSpec: how to build a App spec holding one zero element of a
+// construct, and where that element's emitted map lands in appSpecToMap's
 // output. at returns nil when the element emits a non-map (a bare stub
 // scalar), so key collection skips it.
 type constructSpec struct {
@@ -510,7 +510,7 @@ type constructSpec struct {
 	// (accessOrder spans screen access and entity access): assert only that
 	// every emitted key is ordered, not set equality.
 	orderSubset bool
-	build       func() (*Blueprint, reflect.Value)
+	build       func() (*AppSpec, reflect.Value)
 	at          func(map[string]any) map[string]any
 }
 
@@ -518,56 +518,56 @@ func constructSpecs() []constructSpec {
 	return []constructSpec{
 		{
 			name: "entities", order: entityOrder, orderName: "entityOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Entities: []framework.EntityDeclaration{{}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Entities: []framework.EntityDeclaration{{}}}
 				return bp, reflect.ValueOf(&bp.Entities[0]).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0) },
 		},
 		{
 			name: "fields", order: fieldOrder, orderName: "fieldOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Entities: []framework.EntityDeclaration{{Fields: []framework.FieldDeclaration{{}}}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Entities: []framework.EntityDeclaration{{Fields: []framework.FieldDeclaration{{}}}}}
 				return bp, reflect.ValueOf(&bp.Entities[0].Fields[0]).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "fields", 0) },
 		},
 		{
 			name: "relations", order: relationOrder, orderName: "relationOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Entities: []framework.EntityDeclaration{{Relations: []framework.Relation{{}}}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Entities: []framework.EntityDeclaration{{Relations: []framework.Relation{{}}}}}
 				return bp, reflect.ValueOf(&bp.Entities[0].Relations[0]).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "relations", 0) },
 		},
 		{
 			name: "indices", order: indexOrder, orderName: "indexOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Entities: []framework.EntityDeclaration{{Indices: []framework.Index{{}}}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Entities: []framework.EntityDeclaration{{Indices: []framework.Index{{}}}}}
 				return bp, reflect.ValueOf(&bp.Entities[0].Indices[0]).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "indices", 0) },
 		},
 		{
 			name: "screens", order: screenOrder, orderName: "screenOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Screens: []BlueprintScreen{{}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Screens: []AppSpecScreen{{}}}
 				return bp, reflect.ValueOf(&bp.Screens[0]).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "screens", 0) },
 		},
 		{
 			name: "body", order: blockOrder, orderName: "blockOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Screens: []BlueprintScreen{{Body: []BlueprintBlock{{}}}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Screens: []AppSpecScreen{{Body: []AppSpecBlock{{}}}}}
 				return bp, reflect.ValueOf(&bp.Screens[0].Body[0]).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "screens", 0, "body", 0) },
 		},
 		{
 			name: "children", order: blockOrder, orderName: "blockOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Screens: []BlueprintScreen{{Body: []BlueprintBlock{{Children: []BlueprintBlock{{}}}}}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Screens: []AppSpecScreen{{Body: []AppSpecBlock{{Children: []AppSpecBlock{{}}}}}}}
 				return bp, reflect.ValueOf(&bp.Screens[0].Body[0].Children[0]).Elem()
 			},
 			at: func(out map[string]any) map[string]any {
@@ -576,8 +576,8 @@ func constructSpecs() []constructSpec {
 		},
 		{
 			name: "actions", order: actionOrder, orderName: "actionOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Screens: []BlueprintScreen{{Body: []BlueprintBlock{{Actions: []BlueprintAction{{}}}}}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Screens: []AppSpecScreen{{Body: []AppSpecBlock{{Actions: []AppSpecAction{{}}}}}}}
 				return bp, reflect.ValueOf(&bp.Screens[0].Body[0].Actions[0]).Elem()
 			},
 			at: func(out map[string]any) map[string]any {
@@ -586,40 +586,40 @@ func constructSpecs() []constructSpec {
 		},
 		{
 			name: "nav", order: navOrder, orderName: "navOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Nav: []BlueprintNavItem{{}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Nav: []AppSpecNavItem{{}}}
 				return bp, reflect.ValueOf(&bp.Nav[0]).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "nav", 0) },
 		},
 		{
 			name: "items", order: navOrder, orderName: "navOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Nav: []BlueprintNavItem{{Items: []BlueprintNavItem{{}}}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Nav: []AppSpecNavItem{{Items: []AppSpecNavItem{{}}}}}
 				return bp, reflect.ValueOf(&bp.Nav[0].Items[0]).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "nav", 0, "items", 0) },
 		},
 		{
 			name: "seed", order: seedOrder, orderName: "seedOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Seed: []BlueprintSeedEntity{{}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Seed: []AppSpecSeedEntity{{}}}
 				return bp, reflect.ValueOf(&bp.Seed[0]).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "seed", 0) },
 		},
 		{
 			name: "endpoints", order: endpointOrder, orderName: "endpointOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Endpoints: []BlueprintEndpoint{{}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Endpoints: []AppSpecEndpoint{{}}}
 				return bp, reflect.ValueOf(&bp.Endpoints[0]).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "endpoints", 0) },
 		},
 		{
 			name: "stubs", order: stubOrder, orderName: "stubOrder",
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Middleware: []BlueprintNamedStub{{}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Middleware: []AppSpecNamedStub{{}}}
 				return bp, reflect.ValueOf(&bp.Middleware[0]).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "middleware", 0) },
@@ -627,16 +627,16 @@ func constructSpecs() []constructSpec {
 		// ----- nested structs, probed leave-one-out (see constructSpec) -----
 		{
 			name: "auth", order: authOrder, orderName: "authOrder", key: "auth", leaveOneOut: true,
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{App: BlueprintApp{Auth: BlueprintAuth{}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{App: AppSpecApp{Auth: AppSpecAuth{}}}
 				return bp, reflect.ValueOf(&bp.App.Auth).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "app", "auth") },
 		},
 		{
 			name: "admin", order: adminOrder, orderName: "adminOrder", key: "admin", leaveOneOut: true,
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{App: BlueprintApp{Admin: BlueprintAdmin{}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{App: AppSpecApp{Admin: AppSpecAdmin{}}}
 				return bp, reflect.ValueOf(&bp.App.Admin).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "app", "admin") },
@@ -645,8 +645,8 @@ func constructSpecs() []constructSpec {
 			// No order list exists for pwa: orderFor("pwa") is nil and the
 			// writer sorts its keys alphabetically.
 			name: "pwa", key: "pwa", leaveOneOut: true,
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{App: BlueprintApp{PWA: BlueprintPWA{}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{App: AppSpecApp{PWA: AppSpecPWA{}}}
 				return bp, reflect.ValueOf(&bp.App.PWA).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "app", "pwa") },
@@ -655,32 +655,32 @@ func constructSpecs() []constructSpec {
 			// accessOrder is shared with exposure.access below: subset check.
 			name: "access", order: accessOrder, orderName: "accessOrder", key: "access",
 			leaveOneOut: true, orderSubset: true,
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Screens: []BlueprintScreen{{Access: BlueprintAccess{}}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Screens: []AppSpecScreen{{Access: AppSpecAccess{}}}}
 				return bp, reflect.ValueOf(&bp.Screens[0].Access).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "screens", 0, "access") },
 		},
 		{
 			name: "scope", key: "scope", leaveOneOut: true, // orderFor("scope") is nil: sorted
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Entities: []framework.EntityDeclaration{{Scope: &framework.ScopeDeclaration{}}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Entities: []framework.EntityDeclaration{{Scope: &framework.ScopeDeclaration{}}}}
 				return bp, reflect.ValueOf(bp.Entities[0].Scope).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "scope") },
 		},
 		{
 			name: "pagination", key: "pagination", leaveOneOut: true, // orderFor("pagination") is nil: sorted
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Entities: []framework.EntityDeclaration{{Pagination: &framework.PaginationDeclaration{}}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Entities: []framework.EntityDeclaration{{Pagination: &framework.PaginationDeclaration{}}}}
 				return bp, reflect.ValueOf(bp.Entities[0].Pagination).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "pagination") },
 		},
 		{
 			name: "exposure", key: "exposure", leaveOneOut: true, // orderFor("exposure") is nil: sorted
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Entities: []framework.EntityDeclaration{{Exposure: &framework.ExposureDeclaration{}}}}
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Entities: []framework.EntityDeclaration{{Exposure: &framework.ExposureDeclaration{}}}}
 				return bp, reflect.ValueOf(bp.Entities[0].Exposure).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "entities", 0, "exposure") },
@@ -688,8 +688,8 @@ func constructSpecs() []constructSpec {
 		{
 			name: "exposure.access", order: accessOrder, orderName: "accessOrder", key: "access",
 			leaveOneOut: true, orderSubset: true,
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Entities: []framework.EntityDeclaration{{
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Entities: []framework.EntityDeclaration{{
 					Exposure: &framework.ExposureDeclaration{Access: &framework.AccessDeclaration{}},
 				}}}
 				return bp, reflect.ValueOf(bp.Entities[0].Exposure.Access).Elem()
@@ -700,8 +700,8 @@ func constructSpecs() []constructSpec {
 		},
 		{
 			name: "read_scope", order: readScopeOrder, orderName: "readScopeOrder", key: "read_scope", leaveOneOut: true,
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Entities: []framework.EntityDeclaration{{
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Entities: []framework.EntityDeclaration{{
 					Exposure: &framework.ExposureDeclaration{ReadScope: &framework.ReadScopeDeclaration{}},
 				}}}
 				return bp, reflect.ValueOf(bp.Entities[0].Exposure.ReadScope).Elem()
@@ -712,8 +712,8 @@ func constructSpecs() []constructSpec {
 		},
 		{
 			name: "filter", order: predicateOrder, orderName: "predicateOrder", key: "filter", leaveOneOut: true,
-			build: func() (*Blueprint, reflect.Value) {
-				bp := &Blueprint{Entities: []framework.EntityDeclaration{{
+			build: func() (*AppSpec, reflect.Value) {
+				bp := &AppSpec{Entities: []framework.EntityDeclaration{{
 					Exposure: &framework.ExposureDeclaration{
 						ReadScope: &framework.ReadScopeDeclaration{Filter: []framework.RowPredicateDeclaration{{}}},
 					},
@@ -728,7 +728,7 @@ func constructSpecs() []constructSpec {
 }
 
 // digEmitted follows a path of map keys (string) and list indices (int)
-// into a blueprintToMap result and returns the map at the end, or nil when
+// into an appSpecToMap result and returns the map at the end, or nil when
 // the path is absent or ends at a non-map (a bare stub scalar).
 func digEmitted(v any, path ...any) map[string]any {
 	for _, p := range path {
@@ -763,7 +763,7 @@ func digEmitted(v any, path ...any) map[string]any {
 // any one field must change what the serializer writes.
 //
 // Comparing against the zero-value output rather than checking for a non-empty
-// map is load-bearing: a zero BlueprintApp already emits api_prefix (the
+// map is load-bearing: a zero AppSpecApp already emits api_prefix (the
 // condition is != "api", which "" satisfies), so "emitted something" is true
 // for every field and proves nothing. Watched both forms against a Widgets
 // field that neither the serializer nor topLevelOrder knows about: the
@@ -787,7 +787,7 @@ func probeLeafValue(t *testing.T, v reflect.Value) {
 // probeLeafDepthBound caps probeLeaf's recursion. Slice ELEMENTS are probed
 // as well — a one-element slice holding a zero-valued element is exactly how
 // seed.Count/Weights stayed invisible to the coverage guards — but
-// BlueprintBlock.Children and BlueprintNavItem.Items contain themselves, so
+// AppSpecBlock.Children and AppSpecNavItem.Items contain themselves, so
 // the walk needs a depth bound or it does not terminate.
 const probeLeafDepthBound = 8
 
@@ -859,7 +859,7 @@ func assertOrderMatchesEmitted(t *testing.T, emitted map[string]bool, order []st
 }
 
 func TestPack_ReadSeedAndNav(t *testing.T) {
-	a, err := decodeBlueprintFile(meridianYML)
+	a, err := decodeAppSpecFile(meridianYML)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -868,19 +868,19 @@ func TestPack_ReadSeedAndNav(t *testing.T) {
 		t.Fatalf("packReadSeed: %v", err)
 	}
 	if !reflect.DeepEqual(a.Seed, seed) {
-		t.Errorf("seed mismatch:\n%s", firstBlueprintDiff(a.Seed, seed))
+		t.Errorf("seed mismatch:\n%s", firstAppSpecDiff(a.Seed, seed))
 	}
 	nav, err := packReadNav(meridianDir)
 	if err != nil {
 		t.Fatalf("packReadNav: %v", err)
 	}
 	if !reflect.DeepEqual(a.Nav, nav) {
-		t.Errorf("nav mismatch:\n%s", firstBlueprintDiff(a.Nav, nav))
+		t.Errorf("nav mismatch:\n%s", firstAppSpecDiff(a.Nav, nav))
 	}
 }
 
 func TestPack_ReadApp(t *testing.T) {
-	a, err := decodeBlueprintFile(meridianYML)
+	a, err := decodeAppSpecFile(meridianYML)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -890,37 +890,37 @@ func TestPack_ReadApp(t *testing.T) {
 		t.Fatalf("packReadApp: %v", err)
 	}
 	if !reflect.DeepEqual(a.App, app) {
-		t.Errorf("app mismatch:\n%s", firstBlueprintDiff(a.App, app))
+		t.Errorf("app mismatch:\n%s", firstAppSpecDiff(a.App, app))
 	}
 }
 
 func TestPack_ReadScreens(t *testing.T) {
-	a, _ := decodeBlueprintFile(meridianYML)
+	a, _ := decodeAppSpecFile(meridianYML)
 	got, err := packReadScreens(meridianDir)
 	if err != nil {
 		t.Fatalf("packReadScreens: %v", err)
 	}
 	if !reflect.DeepEqual(a.Screens, got) {
-		t.Errorf("screens mismatch:\n%s", firstBlueprintDiff(a.Screens, got))
+		t.Errorf("screens mismatch:\n%s", firstAppSpecDiff(a.Screens, got))
 	}
 }
 
 // TestPack_MeridianRoundTrip is the acceptance gate: packing the generated
-// Meridian app reconstructs a Blueprint equal to the one parsed from the
+// Meridian app reconstructs a App spec equal to the one parsed from the
 // authored gofastr.yml. As features are added, this catches generator/pack
 // divergence.
 func TestPack_MeridianRoundTrip(t *testing.T) {
-	a, err := decodeBlueprintFile(meridianYML)
+	a, err := decodeAppSpecFile(meridianYML)
 	if err != nil {
 		t.Fatalf("parse meridian.yml: %v", err)
 	}
 	dir := meridianWithEnv(t, a)
-	b, err := packBlueprint(dir)
+	b, err := packAppSpec(dir)
 	if err != nil {
-		t.Fatalf("packBlueprint: %v", err)
+		t.Fatalf("packAppSpec: %v", err)
 	}
 	if !reflect.DeepEqual(a, b) {
-		t.Errorf("round-trip mismatch:\n%s", firstBlueprintDiff(a, b))
+		t.Errorf("round-trip mismatch:\n%s", firstAppSpecDiff(a, b))
 	}
 }
 
@@ -974,13 +974,13 @@ func c() interface{} { return b() }
 	}
 }
 
-// materializeBlueprint renders bp to a temp dir and returns the dir: the
+// materializeAppSpec renders bp to a temp dir and returns the dir: the
 // on-disk shape gofastr pack reads back.
-func materializeBlueprint(t *testing.T, bp Blueprint) string {
+func materializeAppSpec(t *testing.T, bp AppSpec) string {
 	t.Helper()
-	files, err := renderBlueprintFiles(bp)
+	files, err := renderAppSpecFiles(bp)
 	if err != nil {
-		t.Fatalf("renderBlueprintFiles: %v", err)
+		t.Fatalf("renderAppSpecFiles: %v", err)
 	}
 	dir := t.TempDir()
 	for _, f := range files {
@@ -1001,8 +1001,8 @@ func materializeBlueprint(t *testing.T, bp Blueprint) string {
 // wrapper to recover the fields. Otherwise the whole entity config is lost.
 func TestPack_TimestampsEntityRoundTrips(t *testing.T) {
 	ts := true
-	bp := Blueprint{
-		App: BlueprintApp{Name: "TS", Module: "example.com/ts", DBDriver: "sqlite", DBURL: "file:x.db"},
+	bp := AppSpec{
+		App: AppSpecApp{Name: "TS", Module: "example.com/ts", DBDriver: "sqlite", DBURL: "file:x.db"},
 		Entities: []framework.EntityDeclaration{{
 			Name:       "posts",
 			Timestamps: &ts,
@@ -1011,7 +1011,7 @@ func TestPack_TimestampsEntityRoundTrips(t *testing.T) {
 			},
 		}},
 	}
-	dir := materializeBlueprint(t, bp)
+	dir := materializeAppSpec(t, bp)
 	got, err := packReadEntities(dir)
 	if err != nil {
 		t.Fatalf("packReadEntities: %v", err)
@@ -1029,8 +1029,8 @@ func TestPack_TimestampsEntityRoundTrips(t *testing.T) {
 
 func TestPack_GroupedEntityConfigsRoundTrip(t *testing.T) {
 	crud := false
-	bp := Blueprint{
-		App: BlueprintApp{Name: "Grouped", Module: "example.com/grouped", DBDriver: "sqlite", DBURL: "file:x.db"},
+	bp := AppSpec{
+		App: AppSpecApp{Name: "Grouped", Module: "example.com/grouped", DBDriver: "sqlite", DBURL: "file:x.db"},
 		Entities: []framework.EntityDeclaration{{
 			Name: "notes", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
 			Scope:      &framework.ScopeDeclaration{OwnerField: "user_id", SoftDelete: true},
@@ -1038,7 +1038,7 @@ func TestPack_GroupedEntityConfigsRoundTrip(t *testing.T) {
 			Exposure:   &framework.ExposureDeclaration{CRUD: &crud, MCP: true, Access: &framework.AccessDeclaration{Read: "notes:read"}},
 		}},
 	}
-	dir := materializeBlueprint(t, bp)
+	dir := materializeAppSpec(t, bp)
 	got, err := packReadEntities(dir)
 	if err != nil {
 		t.Fatalf("packReadEntities: %v", err)
@@ -1076,11 +1076,11 @@ func TestPack_GroupedEntityConfigsRoundTrip(t *testing.T) {
 // TestPack_PublicEntityRoundTrips guards that a public entity survives
 // generate and pack without moving exposure.public back to a flat key.
 func TestPack_PublicEntityRoundTrips(t *testing.T) {
-	bp := Blueprint{
-		App:      BlueprintApp{Name: "Pub", Module: "example.com/pub", DBDriver: "sqlite", DBURL: "file:x.db"},
+	bp := AppSpec{
+		App:      AppSpecApp{Name: "Pub", Module: "example.com/pub", DBDriver: "sqlite", DBURL: "file:x.db"},
 		Entities: []framework.EntityDeclaration{{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "posts", Exposure: &framework.ExposureDeclaration{Public: true}, Fields: []framework.FieldDeclaration{{Name: "title", Type: "string", Required: true}}}},
 	}
-	dir := materializeBlueprint(t, bp)
+	dir := materializeAppSpec(t, bp)
 	got, err := packReadEntities(dir)
 	if err != nil {
 		t.Fatalf("packReadEntities: %v", err)
@@ -1104,17 +1104,17 @@ func TestPack_PublicEntityRoundTrips(t *testing.T) {
 // TestPack_ScreenlessAppRoundTrips guards that packing a valid generated app
 // with entities but no screens does not error on a missing screens.go.
 func TestPack_ScreenlessAppRoundTrips(t *testing.T) {
-	bp := Blueprint{
-		App: BlueprintApp{Name: "NoScreens", Module: "example.com/noscreens", DBDriver: "sqlite", DBURL: "file:x.db"},
+	bp := AppSpec{
+		App: AppSpecApp{Name: "NoScreens", Module: "example.com/noscreens", DBDriver: "sqlite", DBURL: "file:x.db"},
 		Entities: []framework.EntityDeclaration{{
 			Name:   "posts",
 			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string", Required: true}},
 		}},
 	}
-	dir := materializeBlueprint(t, bp)
-	packed, err := packBlueprint(dir)
+	dir := materializeAppSpec(t, bp)
+	packed, err := packAppSpec(dir)
 	if err != nil {
-		t.Fatalf("packBlueprint on a screenless app errored: %v", err)
+		t.Fatalf("packAppSpec on a screenless app errored: %v", err)
 	}
 	if len(packed.Screens) != 0 {
 		t.Errorf("recovered %d screens, want 0", len(packed.Screens))
@@ -1134,26 +1134,26 @@ func TestPack_ScreenlessAppRoundTrips(t *testing.T) {
 //
 // Meridian is hand-maintained, so its own round-trip test only caught this
 // once meridian was edited to match. This drives the GENERATOR's output
-// directly, which is the shape every blueprint actually ships.
+// directly, which is the shape every app spec actually ships.
 func TestPackReadsNavFromAGeneratedAuthApp(t *testing.T) {
-	bp := Blueprint{
-		App: BlueprintApp{
+	bp := AppSpec{
+		App: AppSpecApp{
 			Name: "Navy", Module: "example.com/navy",
 			DBDriver: "sqlite", DBURL: "file:navy.db",
 			// Auth on is what makes the generator emit the per-request
 			// builder, the shape that broke the reader.
-			Auth: BlueprintAuth{Enabled: true},
+			Auth: AppSpecAuth{Enabled: true},
 		},
 		Entities: []framework.EntityDeclaration{{
 			Name:   "notes",
 			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
 		}},
-		Nav: []BlueprintNavItem{
+		Nav: []AppSpecNavItem{
 			{Label: "Notes", Href: "/notes"},
 			{Label: "Admin Console", Href: "/admin", Role: "admin"},
 		},
 	}
-	dir := materializeBlueprint(t, bp)
+	dir := materializeAppSpec(t, bp)
 
 	nav, err := packReadNav(dir)
 	if err != nil {
@@ -1176,22 +1176,22 @@ func TestPackReadsNavFromAGeneratedAuthApp(t *testing.T) {
 // expression back. It is the only shape pack reads; examples/meridian
 // (the hand-maintained auth screens) emits the same expression.
 func TestPack_RoundTripsAuthNextThroughHtmlInput(t *testing.T) {
-	bp := Blueprint{
-		App: BlueprintApp{Name: "Authy", Module: "example.com/authy", DBDriver: "sqlite", DBURL: "file:authy.db"},
+	bp := AppSpec{
+		App: AppSpecApp{Name: "Authy", Module: "example.com/authy", DBDriver: "sqlite", DBURL: "file:authy.db"},
 		Entities: []framework.EntityDeclaration{{
 			Name:   "notes",
 			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
 		}},
-		Screens: []BlueprintScreen{
-			{Name: "login", Route: "/login", Body: []BlueprintBlock{
+		Screens: []AppSpecScreen{
+			{Name: "login", Route: "/login", Body: []AppSpecBlock{
 				{Kind: "login_form", Props: map[string]any{"action": "/auth/login", "next": "/app", "register_href": "/signup"}},
 			}},
-			{Name: "signup", Route: "/signup", Body: []BlueprintBlock{
+			{Name: "signup", Route: "/signup", Body: []AppSpecBlock{
 				{Kind: "signup_form", Props: map[string]any{"action": "/auth/register", "next": "/app", "login_href": "/login"}},
 			}},
 		},
 	}
-	dir := materializeBlueprint(t, bp)
+	dir := materializeAppSpec(t, bp)
 
 	// Pin the emitted shape first: if the emitter drifts back to a raw
 	// string, the parser's html.Input arm goes dead and this test is
@@ -1207,11 +1207,11 @@ func TestPack_RoundTripsAuthNextThroughHtmlInput(t *testing.T) {
 		t.Fatalf("the auth form still carries raw markup:\n%s", screensSrc)
 	}
 
-	packed, err := packBlueprint(dir)
+	packed, err := packAppSpec(dir)
 	if err != nil {
-		t.Fatalf("packBlueprint: %v", err)
+		t.Fatalf("packAppSpec: %v", err)
 	}
-	var login, signup BlueprintBlock
+	var login, signup AppSpecBlock
 	var haveLogin, haveSignup bool
 	for _, screen := range packed.Screens {
 		for _, b := range screen.Body {

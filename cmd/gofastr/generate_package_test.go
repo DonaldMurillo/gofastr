@@ -461,7 +461,7 @@ func TestCanonicalPackageGenFilesCurrent(t *testing.T) {
 			byName[f.Name] = f.Content
 		}
 		// The copy path's own gate: a dirty sheet fails every copy and
-		// the blueprint, so it fails here first.
+		// the app spec, so it fails here first.
 		if err := checkCanonicalPackageSheets(p.Name, byName); err != nil {
 			t.Errorf("%s: %v", p.Name, err)
 		}

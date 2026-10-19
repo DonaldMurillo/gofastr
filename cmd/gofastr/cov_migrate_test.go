@@ -185,7 +185,7 @@ func TestRunMigrateGenerateInProcess(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
 	bp := filepath.Join(dir, "gofastr.yml")
-	blueprint := `app:
+	appSpec := `app:
   name: testapp
 entities:
   - name: posts
@@ -194,7 +194,7 @@ entities:
       - name: title
         type: string
 `
-	if err := os.WriteFile(bp, []byte(blueprint), 0o644); err != nil {
+	if err := os.WriteFile(bp, []byte(appSpec), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	covT_capStdout(t, func() { runMigrateGenerate([]string{"create_posts", "--from=" + bp}) })
@@ -213,7 +213,7 @@ func TestRunMigrateGenerateBadGroupExits(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
 	bp := filepath.Join(dir, "gofastr.yml")
-	blueprint := `app:
+	appSpec := `app:
   name: testapp
 entities:
   - name: posts
@@ -222,7 +222,7 @@ entities:
       - name: title
         type: string
 `
-	if err := os.WriteFile(bp, []byte(blueprint), 0o644); err != nil {
+	if err := os.WriteFile(bp, []byte(appSpec), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	code := covT_capExit(t, func() {

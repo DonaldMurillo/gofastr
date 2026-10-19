@@ -244,7 +244,7 @@ CREATE TABLE rf_users (
 // whose relation target cannot be resolved in the registry is REFUSED,
 // never eager-loaded with `SELECT *` and served unscrubbed.
 //
-// Attack: the blueprint wires auth.NewEntityUserStore over a self-migrated
+// Attack: the app generator wires auth.NewEntityUserStore over a self-migrated
 // `auth_users` table that is never registered via app.Entity. A generated
 // entity that declares BelongsTo("author", "auth_users", …) plus a writable
 // author FK lets any caller point the FK at another user's row and read it
@@ -285,7 +285,7 @@ CREATE TABLE ur_users (
 
 	ch, db := setupSecurityTestHandler(t, postCfg, ddl)
 	// ur_users is deliberately NOT registered, this is the self-migrated
-	// auth table shape the blueprint emits.
+	// auth table shape the app generator emits.
 	reg := newTestRegistry(t)
 	reg.add(t, ch.Entity)
 	ch.Registry = reg

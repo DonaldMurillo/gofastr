@@ -16,7 +16,7 @@ import (
 // generate_cli.go (printUsage/groupUsage, ~lines 795-830), so no analyzer
 // over THIS repo can see the sink — the summary only becomes live bytes in
 // the customer's emitted main.go/operations.go. The repo's pattern for
-// emitted code is to build it (TestBlueprintHooksCompile type-checks a
+// emitted code is to build it (TestAppSpecHooksCompile type-checks a
 // generated app); this gate vets it:
 //
 //	regenerate a CLI from a fixture spec into a temp module,

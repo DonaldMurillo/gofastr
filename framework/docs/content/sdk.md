@@ -12,7 +12,7 @@ gofastr generate sdk
 ```
 
 Like `generate cli`, the entity set comes from your project source
-(`entities/*.go`), not a blueprint. Unlike the CLI (one-shot owned code),
+(`entities/*.go`), not an app spec. Unlike the CLI (one-shot owned code),
 SDK output is **generator-owned and regenerates in place**: when the docs
 site warns that downloads drifted from the live schema, the fix is
 re-running the command.

@@ -14,7 +14,7 @@ running app: agent live-debugging, not log greps from the user.
 ## Prerequisites
 
 The user's app must be:
-1. Running with the `battery/log` plugin registered (blueprint-generated
+1. Running with the `battery/log` plugin registered (generated
    apps and `examples/site` both do).
 2. In the dev loop (`gofastr dev` sets `GOFASTR_DEV`, which
    auto-enables the tools + the `/mcp` mount; opt-out

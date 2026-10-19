@@ -10,7 +10,7 @@ import (
 
 // This file tests the ThemeToTokens / ApplyTokens contract as properties,
 // not as a case-by-case matrix. The shape follows the brief and
-// cmd/gofastr/blueprint_emitter_injection_test.go: a property is one
+// cmd/gofastr/appspec_emitter_injection_test.go: a property is one
 // sentence, a payload table drives it across every surface, and the
 // assertion is "the payload never reaches the output it is emitted into".
 //
@@ -201,7 +201,7 @@ func TestApplyTokens_ColorGrammar(t *testing.T) {
 
 // --- Injection: no declaration-breaking payload reaches CSS ----------------
 //
-// Modeled on cmd/gofastr/blueprint_emitter_injection_test.go. The property
+// Modeled on cmd/gofastr/appspec_emitter_injection_test.go. The property
 // is one sentence:
 //
 //	No theme-token value may escape the CSS declaration it is emitted into.

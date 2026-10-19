@@ -355,7 +355,7 @@ func TestExemptedRulesAreTestedElsewhere(t *testing.T) {
 			// Hidden directories are tooling state: .claude/worktrees
 			// holds whole copies of the repo, and a test there would
 			// count as testing a rule here. "_" directories hold the
-			// blueprint gates' scratch packages.
+			// app spec gates' scratch packages.
 			if path != root && (strings.HasPrefix(d.Name(), ".") || strings.HasPrefix(d.Name(), "_")) {
 				return filepath.SkipDir
 			}

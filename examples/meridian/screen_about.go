@@ -24,7 +24,7 @@ func (s *AboutScreen) Render() render.HTML {
 	// tag-primitive root; the stack inside owns the rhythm.
 	return html.Div(html.DivConfig{}, ui.Stack(ui.StackConfig{Gap: ui.Gap2XL},
 		ui.PageHeader(ui.PageHeaderConfig{Title: "We think billing should feel calm."}),
-		ui.Markdown(ui.MarkdownConfig{Source: "Meridian is a demonstration product built entirely from a GoFastr blueprint, a single declarative file that generates this marketing site, the authenticated console, auth, roles, and an admin back-office, all server-rendered.\n\nIt exists to show that a framework can generate a real, polished web application, not a CRUD scaffold.", Measure: true}),
+		ui.Markdown(ui.MarkdownConfig{Source: "Meridian is a demonstration product built entirely from a GoFastr app spec, a single declarative file that generates this marketing site, the authenticated console, auth, roles, and an admin back-office, all server-rendered.\n\nIt exists to show that a framework can generate a real, polished web application, not a CRUD scaffold.", Measure: true}),
 	))
 }
 

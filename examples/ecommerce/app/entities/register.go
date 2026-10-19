@@ -10,7 +10,7 @@ import (
 // Each entity file appends one registrar in init(); RegisterAll runs them in
 // declaration order, so the package behaves identically regardless of the
 // lexical order Go runs each file's init() in. The order field is also how
-// gofastr pack recovers the blueprint's authored entity order from source.
+// gofastr pack recovers the app spec's authored entity order from source.
 type registrar struct {
 	order int
 	fn    func(app *framework.App)

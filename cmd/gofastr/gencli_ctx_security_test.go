@@ -16,7 +16,7 @@ import (
 // Pinned sibling (green today, same emitted scaffold): the Watch template
 // (generate_cli.go:1481) wires signal.NotifyContext(g.ctx, os.Interrupt)
 // itself; the repo's operative-deadline convention is
-// TestBootProbeClientTimesOut (cmd/gofastr/examples_blueprint_test.go:601).
+// TestBootProbeClientTimesOut (cmd/gofastr/examples_appspec_test.go:601).
 // Property: every scaffolded verb runs under a cancellable context — the
 // shared parseGlobals must hand verbs a ctx that can be cancelled or
 // deadline-bound, not context.Background().

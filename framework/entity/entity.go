@@ -52,8 +52,8 @@ type EntityConfig struct {
 	// framework tracks completion in the _gofastr_seeded ledger; subsequent
 	// App.Start() calls skip the entity. Errors abort App.Start.
 	//
-	// Go-only: function values cannot be expressed in a blueprint
-	// declaration. Apps whose entities come from a gofastr.yml blueprint
+	// Go-only: function values cannot be expressed in an app spec
+	// declaration. Apps whose entities come from a gofastr.yml app spec
 	// must wire seeding from Go.
 	//
 	// Concurrency: RunSeeds is NOT safe for concurrent invocation across
@@ -117,7 +117,7 @@ type EntityConfig struct {
 	// declaration; auto-detection is unsafe. A rename only fires when the old
 	// column is present in the live schema and the new name is declared on the
 	// entity. Declare it in Go or under an entity's `renames:` key in a
-	// blueprint.
+	// app spec.
 	Renames map[string]string
 }
 
@@ -438,7 +438,7 @@ func Define(name string, config EntityConfig) *Entity {
 
 	// Inject the owner column when an owner scope is configured and no
 	// field with that name is declared, symmetric with tenant_id above
-	// and matching the blueprint generator's owner_field semantics. The
+	// and matching the app generator's owner_field semantics. The
 	// crud layer stamps the owner on writes (InjectOwner) and scopes
 	// reads by it (ApplyOwnerScope), so the column MUST exist in the
 	// table; without this, AutoMigrate would create a table with no
@@ -862,7 +862,7 @@ func (e *Entity) Validate() error {
 //   - Decimal spelled as a Go number. Decimal travels as a string on the wire
 //     so it keeps exact precision, but `{Type: schema.Decimal, Default: 0}` is
 //     what examples/ecommerce writes and what `gofastr generate` emits for a
-//     blueprint `decimal` field with `default: 0`. It renders `DEFAULT 0` in
+//     app spec `decimal` field with `default: 0`. It renders `DEFAULT 0` in
 //     DDL and binds as a number on insert; both dialects accept it.
 //   - Timestamp/Date spelled as a time.Time. time.Time's String() is not
 //     RFC 3339, so schema.Validate's generic fmt.Stringer path would reject a

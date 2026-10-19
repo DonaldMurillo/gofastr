@@ -251,7 +251,7 @@ var fontFaceCSS = style.FontFaceCSS("",
 //
 // Takes a context because the footer's auth action depends on the live
 // session: built once at registration, every visitor got a "Sign out" button
-// whether or not anyone was signed in. Same shape the blueprint generator
+// whether or not anyone was signed in. Same shape the app generator
 // emits, meridian is hand-maintained, so it does not inherit that fix.
 func sidebarConfig(ctx context.Context) ui.SidebarConfig {
 	cfg := ui.SidebarConfig{Title: "Meridian", Items: []ui.SidebarItem{
@@ -290,7 +290,7 @@ var (
 // what goes into it.
 var appUI *entityui.UI
 
-// RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.
+// RegisterGenerated wires generated screens, endpoints, middleware, and plugins.
 func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	if site == nil {
 		site = app.NewApp("Meridian")
@@ -329,7 +329,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	// appUI builders, which resolve each entity at render time.
 	mountGenerated(fwApp, site, db)
 	{
-		stack := preset.ToastStack("blueprint-toasts").Build()
+		stack := preset.ToastStack("app-toasts").Build()
 		widget.Mount(fwApp.Router(), &stack)
 	}
 	{
@@ -341,7 +341,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// Secure flag, plain session_id name) and a per-process JWT
 		// secret minted at startup. Do NOT deploy like this: set
 		// `dev_mode: false` and `jwt_secret` under app.auth in the
-		// blueprint, serve over HTTPS, then regenerate.
+		// app spec, serve over HTTPS, then regenerate.
 		authCfg := auth.AuthConfig{DevMode: true, JWTSecret: os.Getenv("JWT_SECRET")}
 		authCfg.UserStore = auth.NewEntityUserStore(db, "auth_users")
 		authCfg.SessionStore = auth.NewEntitySessionStore(db, "auth_sessions")
@@ -446,7 +446,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// an X-CSRF-Token header, which plain JSON/MCP clients don't.
 		// Session cookies are SameSite=Strict, so cross-site form posts
 		// don't carry the session in modern browsers. If you add browser
-		// HTML forms, mount auth.CSRF. See `gofastr docs blueprints`
+		// HTML forms, mount auth.CSRF. See `gofastr docs app-spec`
 		// (Auth section) and `gofastr docs auth`.
 	}
 	_ = routerMounter{}

@@ -266,7 +266,7 @@ func App() style.Theme {
 }
 
 // The stroke-width note, through the shipped YAML. Its hit is a line of
-// an owned <name>.style.css sheet: the focus rule every blueprint-written
+// an owned <name>.style.css sheet: the focus rule every app-spec-written
 // siteheader sheet carries is an edit hit, since the owned-style check
 // now refuses outline-offset: 2px, and the same rule on the stroke tokens
 // is silent. A width in the kit's own Go-string CSS is not the host's.

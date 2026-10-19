@@ -21,7 +21,7 @@ import (
 // The storefront's catalog reads open and gates every write behind a
 // permission, and a generated app grants permissions to the admin role alone.
 // A self-registered shopper can therefore browse but not write, which is the
-// posture the blueprint declares, so the write half of the thesis check signs
+// posture the app spec declares, so the write half of the thesis check signs
 // in as the seeded admin. These two values mirror `admin:` in gofastr.yml.
 const (
 	shopAdminEmail    = "admin@shop.example"
@@ -35,19 +35,19 @@ const (
 func startShopfront(t *testing.T) string {
 	t.Helper()
 
-	// Regenerate from the blueprint with the current CLI source, this
+	// Regenerate from the app spec with the current CLI source, this
 	// exercises the full declaration → code pipeline against the in-tree
 	// generator. It emits into a gitignored scratch package rather than over
 	// the committed app/ (#176): running the suite used to rewrite tracked
 	// files, which dirtied the tree before a commit and silently reverted if
 	// anyone ran `git checkout -- examples/`. Same arrangement meridian's
-	// blueprint gate already uses, and for the same reason, the scratch
+	// app spec gate already uses, and for the same reason, the scratch
 	// package lives INSIDE the repo module so the generated code's
 	// self-imports resolve with no go.mod, replace directive, or network
 	// fetch.
 	dir, _ := generateShopfront(t)
 
-	// Build the generated app (proves the blueprint → buildable Go path).
+	// Build the generated app (proves the app spec → buildable Go path).
 	bin := filepath.Join(t.TempDir(), "shopfront")
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
@@ -61,14 +61,14 @@ func startShopfront(t *testing.T) string {
 
 	addr := freeAddr(t)
 	// Run from a clean dir so the app does not pick up this directory's
-	// gofastr.yml (which is a blueprint, not an isolation config).
+	// gofastr.yml (which is an app spec, not an isolation config).
 	runDir := t.TempDir()
 	srv := exec.Command(bin)
 	srv.Dir = runDir
 	srv.Env = append(os.Environ(),
 		"PORT="+addr,
 		"DATABASE_URL=file:"+filepath.Join(runDir, "shop.db"),
-		// The blueprint seeds an admin, and the seed reads its password from
+		// The app spec seeds an admin, and the seed reads its password from
 		// the environment on a fresh database. Without it the app refuses to
 		// boot rather than come up with an account nobody can log into.
 		"ADMIN_SEED_PASSWORD="+shopAdminPassword,
@@ -84,12 +84,12 @@ func startShopfront(t *testing.T) string {
 	return base
 }
 
-// TestFlagship_AllSurfacesFromBlueprint builds and runs the generated
+// TestFlagship_AllSurfacesFromAppSpec builds and runs the generated
 // storefront binary and asserts that every surface the thesis promises.
 // REST CRUD, OpenAPI, the MCP tool surface, and the server-rendered UI,
-// is live, all from the single gofastr.yml blueprint with zero hand-written
+// is live, all from the single gofastr.yml app spec with zero hand-written
 // application code. This is the proof-of-thesis check.
-func TestFlagship_AllSurfacesFromBlueprint(t *testing.T) {
+func TestFlagship_AllSurfacesFromAppSpec(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds + runs the generated binary; skipped under -short")
 	}
@@ -161,7 +161,7 @@ func TestFlagship_AllSurfacesFromBlueprint(t *testing.T) {
 // PII (name, email, phone, addresses), is owner-scoped: anonymous REST and
 // MCP access is refused outright, while a logged-in customer can create and
 // read their own orders. This is the CLAUDE.md hard-rule-6 check; the
-// blueprint previously shipped with auth disabled and orders wide open.
+// app spec previously shipped with auth disabled and orders wide open.
 func TestOrdersOwnerScoped(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds + runs the generated binary; skipped under -short")
@@ -185,7 +185,7 @@ func TestOrdersOwnerScoped(t *testing.T) {
 		t.Errorf("anonymous GET /order_items = %d, want 401/403", code)
 	}
 
-	// The authorized path: register + login via the blueprint-enabled auth
+	// The authorized path: register + login via the app-spec-enabled auth
 	// battery, then prove the session is live end-to-end (/auth/me resolves
 	// the logged-in customer from the cookie).
 	client := authedClient(t, base, "ada@shop.example", "str0ng-passphrase")
@@ -231,7 +231,7 @@ func TestOrdersOwnerScoped(t *testing.T) {
 	}
 }
 
-// adminClient logs in as the blueprint's seeded admin. It does not register:
+// adminClient logs in as the app spec's seeded admin. It does not register:
 // the account already exists, and registering would produce a shopper without
 // the catalog permissions.
 func adminClient(t *testing.T, base string) *http.Client {

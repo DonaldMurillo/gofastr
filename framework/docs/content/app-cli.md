@@ -16,7 +16,7 @@ go build ./cmd/myapp
 
 The generator reads the entity set from your project source
 (`entities/*.go`, the same recovery machinery `gofastr pack` trusts).
-No blueprint or YAML is involved. It needs an enclosing `go.mod` to derive
+No app spec or YAML is involved. It needs an enclosing `go.mod` to derive
 the client import path.
 
 The output is pure stdlib Go, so it builds for every platform Go

@@ -115,10 +115,10 @@ func TestRunMigrateDownStatusForceSucceed(t *testing.T) {
 	covT_capStdout(t, func() { runMigrateForce([]string{"1", dbURL}) })
 }
 
-func TestRunMigrateGenerateNoBlueprintExits(t *testing.T) {
+func TestRunMigrateGenerateNoAppSpecExits(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
-	// No --from → blueprint required → exit 1.
+	// No --from → app spec required → exit 1.
 	code := covT_capExit(t, func() {
 		covT_capStdout(t, func() { runMigrateGenerate([]string{"name"}) })
 	})

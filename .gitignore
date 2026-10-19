@@ -29,12 +29,12 @@ bin/
 gen/
 .gofastr/
 
-# Scratch packages the blueprint gates generate into before compiling
+# Scratch packages the app spec gates generate into before compiling
 # (internal/scratchdir). Each gate removes its own before and after the
 # run; this is the backstop so a killed run never offers one up for
 # commit. The README keeps the directory itself in every checkout.
-/_scratch/blueprints/*
-!/_scratch/blueprints/README.md
+/_scratch/appspecs/*
+!/_scratch/appspecs/README.md
 
 # Local Ollama model cache (bind-mount target of docker-compose.yml).
 # Pulled models are ~hundreds of MB; never commit.

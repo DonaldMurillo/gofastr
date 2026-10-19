@@ -147,48 +147,48 @@ func TestColorizeTestLineAllBranches(t *testing.T) {
 	}
 }
 
-// ── blueprint.go pure helpers ─────────────────────────────────────────
+// ── appspec.go pure helpers ─────────────────────────────────────────
 
-func TestBlueprintTitleOrName(t *testing.T) {
-	if (BlueprintScreen{Title: "T", Name: "N"}).TitleOrName() != "T" {
+func TestAppSpecTitleOrName(t *testing.T) {
+	if (AppSpecScreen{Title: "T", Name: "N"}).TitleOrName() != "T" {
 		t.Fatal("title preferred")
 	}
-	if (BlueprintScreen{Name: "N"}).TitleOrName() != "N" {
+	if (AppSpecScreen{Name: "N"}).TitleOrName() != "N" {
 		t.Fatal("name fallback")
 	}
 }
 
-func TestRenderBlueprintBlockTypes(t *testing.T) {
+func TestRenderAppSpecBlockTypes(t *testing.T) {
 	cases := []struct {
-		block BlueprintBlock
+		block AppSpecBlock
 		want  string
 	}{
-		{BlueprintBlock{Type: "p", Text: "hi"}, "html.Paragraph(html.TextConfig{Class: \"\"}, render.Text(\"hi\"))"},
-		{BlueprintBlock{Type: "text", Text: "hi", Class: "lead"}, "html.Paragraph(html.TextConfig{Class: \"lead\"}, render.Text(\"hi\"))"},
-		{BlueprintBlock{Type: "heading", Level: 2, Text: "H"}, "html.Heading"},
-		{BlueprintBlock{Type: "h3", Text: "H"}, "Level: 3"},
-		{BlueprintBlock{Type: "h6", Text: "H"}, "Level: 6"},
-		{BlueprintBlock{Type: "link", Href: "/x", Text: "L"}, "ui.Link"},
-		{BlueprintBlock{Type: "section", Text: "S", Class: "c"}, "section"},
-		{BlueprintBlock{Type: "weird", Text: "D"}, "html.Div(html.DivConfig{Class: \"\"}, render.Text(\"D\"))"},
-		{BlueprintBlock{Type: "weird", Text: "D", Class: "k"}, "html.Div(html.DivConfig{Class: \"k\"}, render.Text(\"D\"))"},
+		{AppSpecBlock{Type: "p", Text: "hi"}, "html.Paragraph(html.TextConfig{Class: \"\"}, render.Text(\"hi\"))"},
+		{AppSpecBlock{Type: "text", Text: "hi", Class: "lead"}, "html.Paragraph(html.TextConfig{Class: \"lead\"}, render.Text(\"hi\"))"},
+		{AppSpecBlock{Type: "heading", Level: 2, Text: "H"}, "html.Heading"},
+		{AppSpecBlock{Type: "h3", Text: "H"}, "Level: 3"},
+		{AppSpecBlock{Type: "h6", Text: "H"}, "Level: 6"},
+		{AppSpecBlock{Type: "link", Href: "/x", Text: "L"}, "ui.Link"},
+		{AppSpecBlock{Type: "section", Text: "S", Class: "c"}, "section"},
+		{AppSpecBlock{Type: "weird", Text: "D"}, "html.Div(html.DivConfig{Class: \"\"}, render.Text(\"D\"))"},
+		{AppSpecBlock{Type: "weird", Text: "D", Class: "k"}, "html.Div(html.DivConfig{Class: \"k\"}, render.Text(\"D\"))"},
 	}
 	for _, c := range cases {
-		got := renderBlueprintBlockForScreen(Blueprint{}, BlueprintScreen{}, c.block, nil, nil, "/api")
+		got := renderAppSpecBlockForScreen(AppSpec{}, AppSpecScreen{}, c.block, nil, nil, "/api")
 		if !strings.Contains(got, c.want) {
 			t.Errorf("block %q → %s, want substring %q", c.block.Type, got, c.want)
 		}
 	}
 }
 
-// TestBlueprintTypedBlockHelpersAreByteIdentical: the p/div emitters
+// TestAppSpecTypedBlockHelpersAreByteIdentical: the p/div emitters
 // switched from render.Tag to html.Paragraph/html.Div on the claim the
 // typed helpers produce the same bytes. Pin it at the exact call shapes
 // emitted, for both the classless and the classed block: writeAttrs
 // renders nil and the empty map identically, and buildAttrs only sets
 // class when non-empty — if either drifts, a generated app's markup
 // changes with no diff in the generator's own tests.
-func TestBlueprintTypedBlockHelpersAreByteIdentical(t *testing.T) {
+func TestAppSpecTypedBlockHelpersAreByteIdentical(t *testing.T) {
 	for _, class := range []string{"", "lead"} {
 		attrs := map[string]string(nil)
 		if class != "" {
@@ -207,42 +207,42 @@ func TestBlueprintTypedBlockHelpersAreByteIdentical(t *testing.T) {
 	}
 }
 
-func TestBlueprintEntityTableAndDefault(t *testing.T) {
-	if blueprintEntityTable(framework.EntityDeclaration{Table: "/users/"}) != "users" {
+func TestAppSpecEntityTableAndDefault(t *testing.T) {
+	if appSpecEntityTable(framework.EntityDeclaration{Table: "/users/"}) != "users" {
 		t.Fatal("explicit table trimmed")
 	}
-	if blueprintEntityTable(framework.EntityDeclaration{Name: "UserProfile"}) != "user_profile" {
-		t.Fatalf("default = %q", blueprintEntityTable(framework.EntityDeclaration{Name: "UserProfile"}))
+	if appSpecEntityTable(framework.EntityDeclaration{Name: "UserProfile"}) != "user_profile" {
+		t.Fatalf("default = %q", appSpecEntityTable(framework.EntityDeclaration{Name: "UserProfile"}))
 	}
-	if blueprintDefaultTableName("already_snake") != "already_snake" {
+	if appSpecDefaultTableName("already_snake") != "already_snake" {
 		t.Fatal("lowercase passthrough")
 	}
 	// Mixed-case with separators: separators normalize to "_" and the
 	// camel-split inserts another "_" before each uppercase letter.
-	if got := blueprintDefaultTableName("With-Dash And Space"); got != "with__dash__and__space" {
+	if got := appSpecDefaultTableName("With-Dash And Space"); got != "with__dash__and__space" {
 		t.Fatalf("got %q", got)
 	}
 	// All-lowercase camel path: PascalCase → snake.
-	if got := blueprintDefaultTableName("OrderItem"); got != "order_item" {
+	if got := appSpecDefaultTableName("OrderItem"); got != "order_item" {
 		t.Fatalf("got %q", got)
 	}
 }
 
-func TestBlueprintActionNameAndEvent(t *testing.T) {
-	if blueprintActionName(BlueprintAction{Name: "Save"}) != "Save" {
+func TestAppSpecActionNameAndEvent(t *testing.T) {
+	if appSpecActionName(AppSpecAction{Name: "Save"}) != "Save" {
 		t.Fatal("explicit name")
 	}
-	if blueprintActionName(BlueprintAction{Event: "Submit"}) != "submit" {
+	if appSpecActionName(AppSpecAction{Event: "Submit"}) != "submit" {
 		t.Fatal("event fallback")
 	}
-	if blueprintActionEvent(BlueprintAction{}) != "click" {
+	if appSpecActionEvent(AppSpecAction{}) != "click" {
 		t.Fatal("default click")
 	}
 	// Empty/only-separator name falls back to the "screen" sentinel id.
-	if got := screenActionComponentID(BlueprintScreen{Name: "/"}); got != "screen-screen" {
+	if got := screenActionComponentID(AppSpecScreen{Name: "/"}); got != "screen-screen" {
 		t.Fatalf("sentinel id = %q", got)
 	}
-	if got := screenActionComponentID(BlueprintScreen{Name: "My Page"}); !strings.HasPrefix(got, "screen-") {
+	if got := screenActionComponentID(AppSpecScreen{Name: "My Page"}); !strings.HasPrefix(got, "screen-") {
 		t.Fatalf("id = %q", got)
 	}
 }

@@ -225,7 +225,7 @@ func TestVersionedSpecDoubleAPIPrefix(t *testing.T) {
 // Property: a documented endpoint path is a literal route, so it must not
 // carry dot segments. EntityEndpointPath joins a relative Endpoint.Path
 // under the entity's table and canonicalizes only trailing slashes, so a
-// "../admin" Path (endpoint declarations are blueprint/agent-authorable
+// "../admin" Path (endpoint declarations are app spec/agent-authorable
 // text, not just hand-written Go) surfaces as "/posts/../admin" in the
 // spec — a path key no client can send literally. Whatever the router
 // does with the pattern, the published contract is wrong, and a router

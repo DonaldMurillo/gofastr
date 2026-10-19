@@ -132,7 +132,7 @@ func TestLowerFirst(t *testing.T) {
 // TestSnakeCamelRoundTrip pins the generator↔pack name invariant:
 // snake_case names survive toCamelCase → toSnakeCase unchanged. This is
 // the path typeNameToScreenName relies on when pack reverses generated
-// type names back into blueprint screen names.
+// type names back into app spec screen names.
 func TestSnakeCamelRoundTrip(t *testing.T) {
 	names := []string{
 		"blog_posts",

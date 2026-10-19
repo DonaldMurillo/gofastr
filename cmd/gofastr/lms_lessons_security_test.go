@@ -7,7 +7,7 @@ package main
 // Surfaces: examples/lms/gofastr.yml:258-261 lessons access block — `read:`
 // blank, `update: catalog:write`, `delete: catalog:admin`, NO `create:` key.
 // Sibling entities courses (:90-94) and modules (:207-211) both gate create
-// with catalog:write. The omitted key decodes to "" (blueprint.go::
+// with catalog:write. The omitted key decodes to "" (appspec.go::
 // decodeEntityAccess :1344-1347) and requirePermission treats "" as ungated
 // (crud/owner.go::permissionForOp :28), so the one write the author forgot
 // is world-open on both surfaces.
@@ -18,7 +18,7 @@ package main
 // creates a published row with no session, while courses_create answers
 // 403 and PATCH/DELETE on lessons answer 403.
 // Fix direction: examples/lms/gofastr.yml lessons access block gains
-// `create: catalog:write`. NOT a blueprint-validator change: intentional
+// `create: catalog:write`. NOT a app-spec-validator change: intentional
 // lead-capture entities omit create too, so omission is a legitimate idiom
 // the validator must keep allowing.
 
@@ -36,7 +36,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-// TestLmsLessonsRedCreateGated boots the real lms blueprint and asserts the
+// TestLmsLessonsRedCreateGated boots the real lms app spec and asserts the
 // lessons entity refuses create without catalog:write on all three arms:
 // anonymous REST, registered role-less REST, and anonymous MCP tools/call.
 // Contrast legs (courses create 403, lessons PATCH/DELETE 403, modules GET
@@ -48,7 +48,7 @@ func TestLmsLessonsRedCreateGated(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, builds, and boots an app")
 	}
-	bin, appDir := generateAndCompileBlueprint(t, "../../examples/lms/gofastr.yml", "lms")
+	bin, appDir := generateAndCompileAppSpec(t, "../../examples/lms/gofastr.yml", "lms")
 	baseURL, appOut := bootGeneratedApp(t, "lms", bin, appDir)
 
 	registerAndLogin := func(email string) *http.Client {
@@ -190,7 +190,7 @@ func TestLmsLessonsRedCreateGated(t *testing.T) {
 	}
 
 	// Contrast legs — the premise this red test is precise about. These
-	// are gated/open exactly as the blueprint says, before AND after the
+	// are gated/open exactly as the app spec says, before AND after the
 	// fix; if one drifts, the premise broke, not the finding.
 	code, raw = api(anon, http.MethodPost, "/api/courses", fmt.Sprintf(`{"title":"red-contrast","topic":"x","level":"beginner","price":0,"status":"published"}`))
 	if code != http.StatusUnauthorized && code != http.StatusForbidden {

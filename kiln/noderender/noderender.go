@@ -1,6 +1,6 @@
 // Package noderender re-exports the first-party node renderer that now
 // lives in core-ui/noderender. The node IR + renderer were moved down
-// into core-ui so first-party consumers (the blueprint codegen) don't
+// into core-ui so first-party consumers (the app spec codegen) don't
 // have to import the Kiln namespace; Kiln consumes them like any other
 // caller. This shim keeps existing kiln-internal imports
 // (kiln/render, examples) working unchanged.

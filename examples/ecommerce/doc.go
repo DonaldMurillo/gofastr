@@ -6,11 +6,11 @@
 //	gofastr generate --from=gofastr.yml
 //
 // The generated app is committed under app/ (output_dir: app in the
-// blueprint) and is the proof of the framework's thesis: one blueprint
+// app spec) and is the proof of the framework's thesis: one app spec
 // produces a SQL schema, REST CRUD, an OpenAPI spec, a typed MCP tool
 // surface, and a server-rendered UI, none of it hand-written.
 // flagship_test.go regenerates app/ with --force on every run and
-// blueprint_gate_test.go fails when the committed files differ from what
+// appspec_gate_test.go fails when the committed files differ from what
 // the in-tree generator emits, so app/ can never drift from the CLI.
 //
 // Run it directly:

@@ -9,7 +9,7 @@ import (
 )
 
 // The journal is replayed at boot (kiln/live.New) and by `kiln freeze`, which
-// turns the replayed world into a blueprint. Replay went straight to the world
+// turns the replayed world into an app spec. Replay went straight to the world
 // mutators, skipping every semantic guard kiln/protocol enforces on the live
 // path, so a hand-authored .kiln.session.jsonl installed world state the API
 // refuses, and `kiln freeze` then generated an app from it.
@@ -257,7 +257,7 @@ func approvePlan(t *testing.T, s *Session, id string, targets ...PlanTarget) {
 // hand-authored .kiln.session.jsonl installs world state the live API
 // refuses, and `kiln freeze` then fails loudly on a world the running
 // server happily booted (the styling-prop ban is re-implemented a third
-// time in freeze's validateNodeGraduation, blueprint.go:50-62).
+// time in freeze's validateNodeGraduation, appspec.go:50-62).
 
 // protocol.AddPage and UpdatePageElement refuse class/style/on* props
 // (kiln/protocol/protocol.go:462-475, validatePageTree); replay's

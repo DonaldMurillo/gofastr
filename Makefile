@@ -29,7 +29,7 @@ build-examples: csp-check embed-check $(DIST_DIR)
 	@# from gofastr.yml into the owned app/ subpackage (output_dir: app — see
 	@# framework/ARCHITECTURE.md).
 	@# --force refreshes the committed scaffold from the current generator.
-	@echo "  scaffolding ecommerce from blueprint"
+	@echo "  scaffolding ecommerce from app spec"
 	@(cd examples/ecommerce && go run github.com/DonaldMurillo/gofastr/cmd/gofastr generate --from=gofastr.yml --force) || exit 1
 	@echo "  building ecommerce → $(DIST_DIR)/examples/ecommerce"
 	@go build -o $(DIST_DIR)/examples/ecommerce ./examples/ecommerce/app || exit 1
@@ -274,7 +274,7 @@ mutate:
 	go run ./cmd/mutate $(PKG)
 
 generate:
-	@echo "Use: go run ./cmd/gofastr generate --from=<blueprint.yml>"
+	@echo "Use: go run ./cmd/gofastr generate --from=<gofastr.yml>"
 
 dev:
 	@echo "Use: gofastr dev"

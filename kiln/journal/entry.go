@@ -180,7 +180,7 @@ type SetAppConfigPayload struct {
 	Prev   *world.AppConfig `json:"prev,omitempty"`
 }
 
-// SetScaffoldPayload replaces the blueprint-only surfaces as one coherent
+// SetScaffoldPayload replaces the app-spec-only surfaces as one coherent
 // snapshot. Prev keeps undo/replay audit data even though undo is implemented
 // by journal truncation today.
 type SetScaffoldPayload struct {

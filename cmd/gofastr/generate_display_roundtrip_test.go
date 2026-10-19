@@ -146,7 +146,7 @@ entities:
 `
 
 func TestDisplayStatesRoundTripThroughGo(t *testing.T) {
-	bp, err := decodeBlueprintString(displayStatesYAML)
+	bp, err := decodeAppSpecString(displayStatesYAML)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestDisplayStatesRoundTripThroughGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	bp.App.OutputDir = "gen"
-	for _, file := range mustRenderBlueprintFiles(t, bp) {
+	for _, file := range mustRenderAppSpecFiles(t, bp) {
 		full := filepath.Join(dir, "gen", file.name)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatal(err)

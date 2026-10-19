@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Copying an in-repo example blueprint out of the repo is the documented way
+// Copying an in-repo example app spec out of the repo is the documented way
 // to start from an example, and every one of them declares an app.module under
 // the framework's own module path. Outside this repo that path is claimed by
 // both the local module and the framework dependency, so `go build` fails with
@@ -19,7 +19,7 @@ func TestModuleCollisionFlagsFrameworkSubpaths(t *testing.T) {
 		"github.com/DonaldMurillo/gofastr/examples/blog",
 		"github.com/DonaldMurillo/gofastr/anything/deeper",
 	} {
-		bp := Blueprint{}
+		bp := AppSpec{}
 		bp.App.Module = module
 		findings := lintModuleCollision(bp)
 		if len(findings) != 1 {
@@ -46,7 +46,7 @@ func TestModuleCollisionIgnoresNonSubpaths(t *testing.T) {
 		"github.com/DonaldMurillo/other/gofastr",
 		"example.com/team/service",
 	} {
-		bp := Blueprint{}
+		bp := AppSpec{}
 		bp.App.Module = module
 		if findings := lintModuleCollision(bp); len(findings) != 0 {
 			t.Errorf("module %q must not be flagged, got: %s", module, findings[0].Message())
@@ -54,7 +54,7 @@ func TestModuleCollisionIgnoresNonSubpaths(t *testing.T) {
 	}
 }
 
-// Every blueprint shipped in examples/ declares an app.module under the
+// Every app spec shipped in examples/ declares an app.module under the
 // framework's own path, so every one of them is a fixture for this rule —
 // asserting against one, or against "at least one", leaves the rest untested
 // and lets a silent change to any of them go unnoticed. Pinning all of them
@@ -63,20 +63,20 @@ func TestModuleCollisionIgnoresNonSubpaths(t *testing.T) {
 // warning no longer covers.
 //
 //gofastr:test-reads examples/*/gofastr.yml
-func TestShippedExampleBlueprintsAreTheCollidingCase(t *testing.T) {
-	// Globbed here rather than through exampleBlueprints, which SKIPS on an
+func TestShippedExampleAppSpecsAreTheCollidingCase(t *testing.T) {
+	// Globbed here rather than through exampleAppSpecs, which SKIPS on an
 	// empty match. A skip reads as a pass, so a broken glob would have retired
-	// this rule's entire fixture set silently. These blueprints are committed;
+	// this rule's entire fixture set silently. These app specs are committed;
 	// finding none of them is a failure, not a reason to stand down.
 	paths, err := filepath.Glob("../../examples/*/gofastr.yml")
 	if err != nil {
 		t.Fatalf("glob: %v", err)
 	}
 	if len(paths) == 0 {
-		t.Fatal("no shipped blueprints found: this rule has no fixtures and proves nothing")
+		t.Fatal("no shipped app specs found: this rule has no fixtures and proves nothing")
 	}
 	for _, path := range paths {
-		bp, lerr := loadBlueprint(path)
+		bp, lerr := loadAppSpec(path)
 		if lerr != nil {
 			t.Fatalf("load %s: %v", path, lerr)
 		}

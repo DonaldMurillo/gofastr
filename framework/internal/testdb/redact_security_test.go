@@ -2,7 +2,7 @@ package testdb
 
 // Pins (2026-09-06 adversarial pass, round 5):
 // password redaction is total, not prefix-deep. In a URL the userinfo ends at
-// the LAST '@' before the path (url.Parse semantics; cmd/gofastr/blueprint.go::redactDSN
+// the LAST '@' before the path (url.Parse semantics; cmd/gofastr/appspec.go::redactDSN
 // :3806-3824 pins the textual last-@ cut for exactly this reason). This twin cuts at the
 // FIRST '@', so an '@' inside the password leaves its tail past the mask.
 // Surfaces: framework/internal/testdb/testdb.go::RedactDSN :350-361 — strings.Index (first
@@ -12,7 +12,7 @@ package testdb
 // "postgres://admin:****@ss@db.example:5432/app" — the "ss" tail of the password
 // survives the mask (verified 2026-09-06).
 // Fix direction: cut the userinfo at the last '@' before the path, or url.Parse first
-// and only fall back to a textual last-@ cut (blueprint.go shape).
+// and only fall back to a textual last-@ cut (appspec.go shape).
 
 import (
 	"strings"
@@ -33,7 +33,7 @@ func TestRedactRedAtInPasswordTotallyMasked(t *testing.T) {
 		t.Errorf("control broken: plain-password URL redaction regressed: %q", out)
 	}
 
-	// CONTRACT-QUESTION sub-arm: key=value form. blueprint.go::redactDSN drops the
+	// CONTRACT-QUESTION sub-arm: key=value form. appspec.go::redactDSN drops the
 	// password pair quote-aware; if the decided contract for THIS helper is instead
 	// "key=value DSNs are developer input, out of scope" (cf. the sqlite/stdlib
 	// compat decision), delete this arm — but then the doc comment must not claim

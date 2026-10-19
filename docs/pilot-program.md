@@ -14,7 +14,7 @@ owner intends to keep using it.
 The pilot owner and a GoFastr maintainer agree on:
 
 - the application, deployment target, and data-sensitivity constraints;
-- the blueprint-owned surface and the hand-written customization;
+- the app-spec-owned surface and the hand-written customization;
 - one representative framework upgrade during the pilot;
 - where defects and design friction will be recorded.
 
@@ -42,7 +42,7 @@ Use this compact format in the tracking issue:
 ```text
 App / owner:
 Pilot dates:
-Blueprint commit:
+App spec commit:
 First deploy duration:
 Surfaces exercised / excluded:
 Upgrade from / to:

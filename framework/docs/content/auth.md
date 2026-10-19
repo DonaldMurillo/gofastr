@@ -718,7 +718,7 @@ columns use the native `BOOLEAN` type, matching the Go `bool` values
 bound by the stores. This includes `auth_users.password_set`, the
 session 2FA flags, and the durable 2FA flags.
 
-Generated blueprint apps register a configured bootstrap admin through
+Apps generated from an app spec register a configured bootstrap admin through
 `App.WithSeed`. The hook runs after auto-migration and before the server
 accepts traffic. A missing `ADMIN_SEED_PASSWORD`, a lookup error other
 than `auth.ErrUserNotFound`, password hashing failure, or insert failure
@@ -771,7 +771,7 @@ if v, ok := authCfg.UserStore.(auth.EmailVerifier); ok {
 }
 ```
 
-The blueprint's generated admin seed does this.
+The app spec's generated admin seed does this.
 
 `AuthManager.Init` also re-registers the right-to-be-forgotten erasers
 against the table names the CONFIGURED stores actually use (the

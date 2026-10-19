@@ -66,7 +66,7 @@ type seedEntity struct {
 	Rows   []map[string]any
 }
 
-// seedData returns the initial seed data in blueprint-declared
+// seedData returns the initial seed data in declared
 // order (so entities that reference others are inserted after them).
 func seedData() []seedEntity {
 	return []seedEntity{

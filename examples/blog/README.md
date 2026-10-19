@@ -111,7 +111,7 @@ User ──< Post ──< Comment
 The entities are declared in Go in [`main.go`](main.go) via
 `app.Entity("posts", framework.EntityConfig{…})`, so `go run ./examples/blog`
 runs with no external files. The same schema is mirrored in
-[`gofastr.yml`](gofastr.yml), the blueprint format the CLI generates from:
+[`gofastr.yml`](gofastr.yml), the app spec format the CLI generates from:
 
 ```yaml
 entities:
@@ -125,7 +125,7 @@ entities:
       - { name: status, type: enum, values: [draft, published] }
 ```
 
-Generate Go from the blueprint:
+Generate Go from the app spec:
 
 ```bash
 cd examples/blog

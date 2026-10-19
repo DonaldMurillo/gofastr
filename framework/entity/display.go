@@ -151,7 +151,7 @@ type FieldDisplay struct {
 }
 
 // UnmarshalJSON decodes the display block strictly: an unknown key is an
-// error, not a silent ignore, matching how the blueprint decoder refuses
+// error, not a silent ignore, matching how the app spec decoder refuses
 // unknown keys in every other entity group.
 func (d *DisplayConfig) UnmarshalJSON(data []byte) error {
 	type plain DisplayConfig // sheds UnmarshalJSON so this does not recurse

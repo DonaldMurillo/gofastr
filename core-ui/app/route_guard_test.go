@@ -68,7 +68,7 @@ func TestGuardDynamicWithSetParamsOK(t *testing.T) {
 	}
 }
 
-// Static path + SetParams is a legitimate shape (blueprint emits it);
+// Static path + SetParams is a legitimate shape (app generator emits it);
 // the guard must NOT flag the inverse.
 func TestGuardStaticWithSetParamsOK(t *testing.T) {
 	r := NewRouter()
