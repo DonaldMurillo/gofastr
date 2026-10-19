@@ -103,7 +103,9 @@ action you point at whatever schema you have.
 ### `pack` is one-way by *policy*, lossy by *maturity*
 
 `pack` captures the declarable surface only: custom handlers, hooks, and
-business logic do not serialize. That is acceptable: `pack` exports
+business logic do not serialize. It says what it lost: after packing it
+regenerates from the spec and names each file the spec does not
+reproduce. That is acceptable: `pack` exports
 *shape* (for sharing, templating, cheap agent-reading, re-scaffolding
 elsewhere), never *state for sync*. Fidelity will improve over time; the
 one-way rule will not. Even a perfect-fidelity `pack` has no standing to

@@ -23,6 +23,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   marked files by generator and version and warns about edited derived
   files. The checked-in `*.gen.go` style files carry the marker now.
   See `gofastr docs codegen`.
+- **`gofastr pack` says what it could not recover.** After packing, it
+  regenerates the app from the packed spec in memory and compares each
+  Go file at the app root and under `entities/` with the file on disk.
+  It lists hand-written files it left out of the spec, and every file
+  the spec generates differently, with the reason the provenance marker
+  gives (edited since generated, untouched but still different, no
+  marker) and the part of the spec the file carries. The notes go to
+  stderr when the spec goes to stdout.
 
 ### Changed
 - **The blueprint is now the app spec.** GoFastr has one concept for
@@ -49,6 +57,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   app spec. `gofastr generate --help` lists the generators by kind.
 
 ### Fixed
+- **`gofastr validate` no longer fetches webfonts.** It rendered the app
+  to catch codegen errors and fetched the theme's fonts from Google on
+  the way; the render it checks now skips the fetch.
 - **Affected selection sees tests that read other packages' files.** A
   test file declares what it reads with `//gofastr:test-reads <pattern>`:
   a `dir/` prefix, a base name such as `*_test.go` or `package.json`, a

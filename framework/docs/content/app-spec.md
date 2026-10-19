@@ -595,6 +595,29 @@ prints to stdout, or to a file with `-o`:
 gofastr pack examples/meridian -o recovered.yml
 ```
 
+Pack then checks its own result. It regenerates the app from the packed
+spec in memory and compares each Go file at the app root and under
+`entities/` with the file on disk, ignoring
+[provenance markers](codegen.md#provenance-markers). It reports two kinds
+of file, on stderr when the spec goes to stdout:
+
+- Go files the spec does not generate and no marker claims: hand-written
+  code, left out of the spec.
+- Files the packed spec generates differently, with the reason the marker
+  gives: edited since it was generated, untouched but still different
+  (pack lost part of it), no marker at all, or marked but no longer
+  generated. Each note names the part of the spec the file carries, such
+  as the screens or the entities.
+
+```
+⚠ pack: 1 hand-written file(s) are not in the spec: helpers.go
+⚠ pack: 1 file(s) generate differently from the packed spec:
+⚠     entities/notes.go: edited since it was generated, and the spec does not capture the edit (entities)
+```
+
+Tests and files another generator marked are skipped. The check writes
+nothing, fetches nothing, and leaves the exit code alone.
+
 The synthesized `/create` screen is dropped (it wasn't authored). Generate and pack are a matched inverse pair for the declarative
 pieces `app`, `entities`, `screens`, `nav`, and `seed`, so the invariant
 `parse(yml)` ≡ `parse(pack(generate(yml)))` holds for an app spec of those

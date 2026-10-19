@@ -3738,7 +3738,7 @@ func appSpecSynthesizeCRUDScreens(bp AppSpec) AppSpec {
 }
 
 func renderAppSpecFiles(bp AppSpec) ([]generatedFile, error) {
-	return renderAppSpecFilesWithOrder(bp, 0, 0)
+	return renderAppSpec(bp, 0, 0, true)
 }
 
 // renderAppSpecFilesWithOrder is the additive variant: entity declaration
@@ -3746,6 +3746,17 @@ func renderAppSpecFiles(bp AppSpec) ([]generatedFile, error) {
 // screenOrderOffset instead of 0, so --add entities/screens continue after
 // the project's existing set.
 func renderAppSpecFilesWithOrder(bp AppSpec, entityOrderOffset, screenOrderOffset int) ([]generatedFile, error) {
+	return renderAppSpec(bp, entityOrderOffset, screenOrderOffset, true)
+}
+
+// renderAppSpecCode renders the app without fetching webfonts: the render
+// is read for its code (validate, pack's check) and never written, so it
+// makes no network call.
+func renderAppSpecCode(bp AppSpec) ([]generatedFile, error) {
+	return renderAppSpec(bp, 0, 0, false)
+}
+
+func renderAppSpec(bp AppSpec, entityOrderOffset, screenOrderOffset int, fonts bool) ([]generatedFile, error) {
 	bp = appSpecSynthesizeCRUDScreens(bp)
 	bp = appSpecExpandSeed(bp)
 	var files []generatedFile
@@ -3850,8 +3861,10 @@ func renderAppSpecFilesWithOrder(bp AppSpec, entityOrderOffset, screenOrderOffse
 	// drops the file (generateFromAppSpec warns with the exact path); the
 	// generated app boot-checks for it too, so no silent /fonts/*.woff2 404
 	// path remains.
-	fontFiles, _ := appSpecFontAssets(bp)
-	files = append(files, fontFiles...)
+	if fonts {
+		fontFiles, _ := appSpecFontAssets(bp)
+		files = append(files, fontFiles...)
+	}
 	// PWA placeholder icons: generated deterministic PNGs so a fresh
 	// app.pwa app spec is installable immediately. Replaceable; swap
 	// the files under <static>/icons/ with real branding.

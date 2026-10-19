@@ -978,9 +978,12 @@ func c() interface{} { return b() }
 // on-disk shape gofastr pack reads back.
 func materializeAppSpec(t *testing.T, bp AppSpec) string {
 	t.Helper()
-	files, err := renderAppSpecFiles(bp)
+	files, err := renderAppSpecCode(bp)
+	if err == nil {
+		files, err = stampGeneratedFiles("app", files)
+	}
 	if err != nil {
-		t.Fatalf("renderAppSpecFiles: %v", err)
+		t.Fatalf("render app spec: %v", err)
 	}
 	dir := t.TempDir()
 	for _, f := range files {

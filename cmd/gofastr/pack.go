@@ -3478,6 +3478,8 @@ func runPack(args []string) {
 			info("(entities, app config, theme, screens, nav, seed). Lossy: not a round-trip")
 			info("inverse of `gofastr generate`; hand-written handlers/hooks/business logic")
 			info("are not recovered. See framework/ARCHITECTURE.md (\"pack is one-way\").")
+			info("Pack then regenerates from the packed spec and names every file it does")
+			info("not reproduce, and every hand-written file it left out.")
 			return
 		default:
 			if !strings.HasPrefix(args[i], "-") {
@@ -3504,15 +3506,16 @@ func runPack(args []string) {
 	// TestAppSpecNeverInlinesSecrets pins, and unlike `.env`, an
 	// arbitrary `-o` path is not covered by the generated .gitignore. Warn
 	// loudly and write 0600 rather than 0644.
+	// The check regenerates from the packed spec and names every file it
+	// does not reproduce, so the loss is reported instead of silent.
+	toStderr := out == ""
+	if c, err := checkPack(dir, bp); err != nil {
+		packNote(toStderr, "pack: could not check the packed spec against %s: %v", dir, err)
+	} else {
+		reportPackCheck(c, toStderr)
+	}
 	if secretsInAppSpec(bp) {
-		// With no -o the YAML is stdout and `pack > gofastr.yml` is the
-		// documented pipe, so the warning goes to stderr: a warning
-		// line ahead of the document is not valid YAML.
-		if out == "" {
-			fmt.Fprintf(os.Stderr, "  %s %s\n", yellow("⚠"), "pack: output contains secrets recovered from .env (jwt_secret, seed_password, db.url): do NOT commit it")
-		} else {
-			warn("pack: output contains secrets recovered from .env (jwt_secret, seed_password, db.url): do NOT commit it")
-		}
+		packNote(toStderr, "pack: output contains secrets recovered from .env (jwt_secret, seed_password, db.url): do NOT commit it")
 	}
 	if out == "" {
 		fmt.Print(yml)
