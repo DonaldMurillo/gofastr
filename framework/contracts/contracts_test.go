@@ -265,6 +265,16 @@ func TestMalformedConfigIsAnError(t *testing.T) {
 	}
 }
 
+// A contracts section that is not a map is refused, not read as defaults:
+// a list where the map belongs would drop every relaxation without a word.
+func TestConfigRefusesNonMapSection(t *testing.T) {
+	dir := t.TempDir()
+	writeTemp(t, dir, "gofastr.settings.yml", "contracts:\n  - strict: true\n")
+	if _, err := LoadConfig(dir, ""); err == nil || !strings.Contains(err.Error(), "contracts must be a map") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
 // ----------------------------------------------------------------------
 // Suppression
 // ----------------------------------------------------------------------

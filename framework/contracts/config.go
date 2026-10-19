@@ -133,8 +133,11 @@ func LoadConfig(root, explicit string) (*Config, error) {
 	cfg := DefaultConfig()
 	cfg.Path = f.Path
 	section := f.Section("contracts")
-	if section == nil || section.Kind != coreyaml.Map {
+	if section == nil {
 		return cfg, nil
+	}
+	if section.Kind != coreyaml.Map {
+		return nil, fmt.Errorf("%s:%d: contracts must be a map", f.Path, section.Line)
 	}
 	if err := cfg.applyNode(f.Path, section); err != nil {
 		return nil, err
