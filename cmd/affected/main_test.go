@@ -54,7 +54,10 @@ func git(t *testing.T, dir string, args ...string) string {
 
 // newRepo writes the fixture module into a fresh git repository with one
 // commit on main and returns its root. GOWORK is disabled so the repo's
-// own workspace, if any, cannot leak into the fixture's go list.
+// own workspace, if any, cannot leak into the fixture's go list, and the
+// variables affected reads in place of flags are cleared, so the CI job's
+// own selection (GOFASTR_TEST_ALL=1 on main, a base SHA on pull requests)
+// does not steer a subprocess of the built binary.
 func newRepo(t *testing.T) string {
 	t.Helper()
 	root, err := filepath.EvalSymlinks(t.TempDir())
@@ -72,6 +75,9 @@ func newRepo(t *testing.T) string {
 	}
 	t.Setenv("GOWORK", "off")
 	t.Setenv("GOFLAGS", "")
+	for _, k := range []string{"GOFASTR_TEST_ALL", "GOFASTR_AFFECTED_BASE", "GOFASTR_AFFECTED_DIFF_BASE"} {
+		t.Setenv(k, "")
+	}
 	git(t, root, "init", "-q", "-b", "main")
 	git(t, root, "add", ".")
 	git(t, root, "commit", "-q", "-m", "base")
