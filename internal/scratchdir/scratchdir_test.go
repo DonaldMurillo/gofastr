@@ -2,8 +2,10 @@ package scratchdir
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -162,5 +164,47 @@ func TestRemoveTreeUnlinksASymlinkRoot(t *testing.T) {
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Fatalf("removeTree emptied the symlink's target: %v", err)
+	}
+}
+
+// fatalTB records Fatalf and stops the goroutine the way testing.T does.
+type fatalTB struct {
+	testing.TB
+	msg string
+}
+
+func (f *fatalTB) Helper() {}
+
+func (f *fatalTB) Fatalf(format string, args ...any) {
+	f.msg = fmt.Sprintf(format, args...)
+	runtime.Goexit()
+}
+
+// A go.mod that cannot be stat'ed is not a missing one: walking past it
+// would hand back the parent module's root.
+func TestModuleRootStopsOnAStatError(t *testing.T) {
+	parent := t.TempDir()
+	if err := fileperm.WriteOwnerOnly(filepath.Join(parent, "go.mod"), []byte("module example.test/parent\n")); err != nil {
+		t.Fatal(err)
+	}
+	child := filepath.Join(parent, "child")
+	if err := os.Mkdir(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A self-referencing symlink: stat fails with ELOOP, not ErrNotExist.
+	if err := os.Symlink("go.mod", filepath.Join(child, "go.mod")); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+	t.Chdir(child)
+	tb := &fatalTB{TB: t}
+	var got string
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		got = ModuleRoot(tb)
+	}()
+	<-done
+	if !strings.Contains(tb.msg, "stat ") {
+		t.Fatalf("ModuleRoot returned %q, want a stat failure (fatal: %q)", got, tb.msg)
 	}
 }

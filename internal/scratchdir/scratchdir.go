@@ -54,6 +54,8 @@ func ModuleRoot(t testing.TB) string {
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			return dir
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("stat %s: %v", filepath.Join(dir, "go.mod"), err)
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
