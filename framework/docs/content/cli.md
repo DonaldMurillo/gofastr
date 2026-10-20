@@ -65,22 +65,36 @@ each command to the doc that covers it.
   No name lists the packages with a one-line summary each. With a name,
   every file of the package lands in `--out=<dir>` (default `./<name>`):
   the Go, the owned `.style.css`, its `.tokens.css` when there is one,
-  the `_style.gen.go` / `_tokens.gen.go`, and the tests. The package's
-  self-import is rewritten to the path of the `go.mod` that encloses
-  the target, so a copy under a nested module (`tools/go.mod`) imports
-  through that module. The command needs an enclosing `go.mod` and
-  refuses a target outside the module. Inside it, `--out` may be
+  the `_style.gen.go` / `_tokens.gen.go`, and the tests. The copy is an
+  [unmount](unmount.md) of the package: its files carry the unmount
+  marker, it gets an `unmounted.gen.go`, and it is recorded in the
+  `unmounted:` section of `gofastr.settings.yml` beside the `go.mod`
+  that encloses the target. The package's self-import is rewritten to
+  that module's path, so a copy under a nested module (`tools/go.mod`)
+  imports through that module. The command needs an enclosing `go.mod`
+  and refuses a target outside the module. Inside it, `--out` may be
   relative to the current directory (`../chrome/hdr` from a
   subdirectory works) or absolute, and `--dry-run` accepts exactly the
   targets the copy can write. The copy is one-shot: a non-empty target
-  is refused, and a file that appears in the target mid-copy is never
-  overwritten. The copy fails instead and removes the files and
-  directories it created, leaving everything else alone, so the command
-  can be re-run. After the copy the package is yours: edit the Go
-  freely, run `gofastr gen styles` after editing a sheet, `go mod tidy`
-  once for the chromium test's chromedp dependencies. An app spec with
-  marketing screens writes the same packages (tests included) through
-  the same copy, so the two cannot drift.
+  is refused, as is a target inside another recorded copy, and a
+  file that appears in the target mid-copy is never overwritten. The
+  copy fails instead and removes the files and directories it created,
+  leaving everything else alone, so the command can be re-run. After
+  the copy the package is yours: edit the Go freely, run `gofastr gen
+  styles` after editing a sheet, `go mod tidy` once for the chromium
+  test's chromedp dependencies. An app spec with marketing screens
+  writes the same packages (tests included) through the same copy, so
+  the two cannot drift; those copies are not recorded.
+- `gofastr unmount [<package>] [--out=<dir>] [--dry-run]`: copy a
+  gofastr package (`battery/auth` or its full import path) and the
+  packages under it into the app, rewire the module's imports to the
+  copy and record it in `gofastr.settings.yml`. It refuses a package
+  that imports gofastr internals or that a package outside the module
+  (another gofastr package, a plugin) imports. No package lists the copies
+  ([unmounting a package](unmount.md)).
+- `gofastr remount <package> [--force] [--dry-run]`: rewire the imports
+  back to the framework's package, delete the copy and its entry.
+  Refuses a copy that changed since unmount unless `--force`.
 - `gofastr pack [app-dir]`: snapshot a generated app into a
   best-effort `gofastr.yml`. Lossy; not an inverse of `generate`.
 
@@ -434,7 +448,7 @@ does not cover: a runtime browser scan, and the dependency report.
   `gofastr verify security data`, which covers the same rules with a
   reason and a fix attached to each.
 - `gofastr audit deps`: list dependencies that perform init-time
-  global registrations.
+  global registrations, then the [unmounted](unmount.md) packages.
 
 ## Extras
 

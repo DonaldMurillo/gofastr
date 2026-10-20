@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/settings"
 )
 
 // The list-mode output comes from the embedded package doc comments,
@@ -172,28 +173,41 @@ func TestGeneratePackageSubdirOutWorks(t *testing.T) {
 	}
 	// The absolute case spells the target the way a shell would (from the
 	// resolved working directory), not through a symlinked alias of it.
-	for _, tc := range []struct{ name, out string }{
-		{"parent-relative", "../chrome/hdr"},
-		{"absolute", filepath.Join(wd, "..", "chrome", "abs-hdr")},
+	// Both cases copy the same package: one copy per binary that owns it
+	// (theming.md's alpha/beta layout), each recorded at its own path.
+	for _, tc := range []struct{ name, pkg, out string }{
+		{"parent-relative", "docpage", "../chrome/hdr"},
+		{"absolute", "docpage", filepath.Join(wd, "..", "chrome", "abs-hdr")},
 	} {
 		dry := covT_capStdout(t, func() {
-			runGeneratePackage([]string{"docpage", "--out=" + tc.out, "--dry-run"})
+			runGeneratePackage([]string{tc.pkg, "--out=" + tc.out, "--dry-run"})
 		})
-		if !strings.Contains(dry, "Would write:") || !strings.Contains(dry, filepath.ToSlash(tc.out)+"/docpage.go") {
+		if !strings.Contains(dry, "Would write:") || !strings.Contains(dry, filepath.ToSlash(tc.out)+"/"+tc.pkg+".go") {
 			t.Errorf("%s: dry run did not approve the in-module target:\n%s", tc.name, dry)
 		}
 		var code int
 		out := covT_capStdout(t, func() {
 			code = covT_capExit(t, func() {
-				runGeneratePackage([]string{"docpage", "--out=" + tc.out})
+				runGeneratePackage([]string{tc.pkg, "--out=" + tc.out})
 			})
 		})
 		if code != -1 {
 			t.Errorf("%s: real copy from a subdirectory exited %d:\n%s", tc.name, code, out)
 		}
-		if _, serr := os.Stat(filepath.Join(dir, "chrome", filepath.Base(tc.out), "docpage.go")); serr != nil {
+		if _, serr := os.Stat(filepath.Join(dir, "chrome", filepath.Base(tc.out), tc.pkg+".go")); serr != nil {
 			t.Errorf("%s: files did not land in the module: %v", tc.name, serr)
 		}
+	}
+	// Each copy is recorded at its path from the module root.
+	f, err := settings.Load(filepath.Join(dir, settings.FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := f.Unmounted()
+	if err != nil || len(entries) != 2 || entries[0].Source != canonicalPackageImport+"docpage" ||
+		entries[1].Source != canonicalPackageImport+"docpage" ||
+		entries[0].Path != "chrome/abs-hdr" || entries[1].Path != "chrome/hdr" {
+		t.Errorf("entries = %+v, %v", entries, err)
 	}
 }
 
@@ -281,8 +295,10 @@ func TestGeneratePackageRacerRolledBack(t *testing.T) {
 	writeTestModule(t, dir)
 	covT_chdir(t, dir)
 	sentinel := []byte("another process wrote here first\n")
+	var raced string
 	packageWriteFiles = func(files *codegen.FileSet, opts codegen.WriteOptions) error {
 		all := files.All()
+		raced = all[len(all)-1].Path
 		target, err := filepath.Abs(opts.OutputRoot)
 		if err != nil {
 			return err
@@ -290,7 +306,7 @@ func TestGeneratePackageRacerRolledBack(t *testing.T) {
 		if err := os.MkdirAll(target, 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(target, all[len(all)-1].Path), sentinel, 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(target, raced), sentinel, 0o644); err != nil {
 			return err
 		}
 		return codegen.WriteFiles(files, opts)
@@ -306,7 +322,7 @@ func TestGeneratePackageRacerRolledBack(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("a racing file must fail the copy, exit = %d:\n%s", code, out)
 	}
-	if !strings.Contains(out, "Failed to write package files") {
+	if !strings.Contains(out, "write the copy") {
 		t.Errorf("failure does not name the write:\n%s", out)
 	}
 	if !strings.Contains(out, "Rolled back the partial copy") {
@@ -316,10 +332,13 @@ func TestGeneratePackageRacerRolledBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Name() != "sitefooter_test.go" {
-		t.Fatalf("target holds %d entries, want only the racing file", len(entries))
+	if len(entries) != 1 || entries[0].Name() != raced {
+		t.Fatalf("target holds %d entries, want only the racing file %s", len(entries), raced)
 	}
-	kept, err := os.ReadFile(filepath.Join(dir, "sitefooter", "sitefooter_test.go"))
+	if _, err := os.Stat(filepath.Join(dir, settings.FileName)); !os.IsNotExist(err) {
+		t.Errorf("a failed copy was recorded in the settings file: %v", err)
+	}
+	kept, err := os.ReadFile(filepath.Join(dir, "sitefooter", raced))
 	if err != nil || string(kept) != string(sentinel) {
 		t.Errorf("the racing file was overwritten: %q %v", kept, err)
 	}
@@ -403,7 +422,9 @@ func TestGeneratePackageCopyBuilds(t *testing.T) {
 	}
 
 	// The import was rewritten to the temp module's path, and no copied
-	// file still names the canonical package location.
+	// file still names the canonical package location outside its
+	// marker, whose source= names it on purpose, and the hook that
+	// registers the copy under that source.
 	test, err := os.ReadFile(filepath.Join(dir, "web", "siteheader", "siteheader_test.go"))
 	if err != nil {
 		t.Fatal(err)
@@ -412,7 +433,8 @@ func TestGeneratePackageCopyBuilds(t *testing.T) {
 		t.Errorf("self-import not rewritten:\n%s", test)
 	}
 	for _, f := range packageCopyFiles(t, filepath.Join(dir, "web", "siteheader")) {
-		if strings.Contains(f.content, "cmd/gofastr/packages") {
+		_, body, _ := codegen.ReadMarker(f.path, f.content)
+		if filepath.Base(f.path) != unmountHookFile && strings.Contains(body, "cmd/gofastr/packages") {
 			t.Errorf("%s still references the canonical location", f.path)
 		}
 	}

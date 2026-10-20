@@ -155,10 +155,17 @@ func writeGeneratedFile(path string, file GeneratedFile) error {
 // writeGeneratedFileExcl writes one file only when nothing exists at its
 // path, failing with fs.ErrExist otherwise: the create is the existence
 // check, so the window a check-then-write leaves between "not there" and
-// "written" does not exist.
+// "written" does not exist. The file is this call's from the create on,
+// so a write that fails after it removes the file: a partial one would
+// match nothing a caller's rollback recognises, and would block the next
+// run's empty-target check.
 func writeGeneratedFileExcl(path string, file GeneratedFile) error {
 	return writeGeneratedFileFlags(path, file, os.O_EXCL)
 }
+
+// writeFileContent writes a generated file's bytes; a test swaps it to
+// fail a write after the create.
+var writeFileContent = (*os.File).WriteString
 
 func writeGeneratedFileFlags(path string, file GeneratedFile, createFlag int) error {
 	mode := fs.FileMode(0o644)
@@ -169,17 +176,28 @@ func writeGeneratedFileFlags(path string, file GeneratedFile, createFlag int) er
 	if err != nil {
 		return err
 	}
-	if file.Mode != 0 {
-		if err := f.Chmod(file.Mode); err != nil {
-			f.Close()
-			return err
+	fail := func(err error) error {
+		_ = f.Close()
+		if createFlag == os.O_EXCL {
+			_ = os.Remove(path)
 		}
-	}
-	if _, err := f.WriteString(file.Content); err != nil {
-		f.Close()
 		return err
 	}
-	return f.Close()
+	if file.Mode != 0 {
+		if err := f.Chmod(file.Mode); err != nil {
+			return fail(err)
+		}
+	}
+	if _, err := writeFileContent(f, file.Content); err != nil {
+		return fail(err)
+	}
+	if err := f.Close(); err != nil {
+		if createFlag == os.O_EXCL {
+			_ = os.Remove(path)
+		}
+		return err
+	}
+	return nil
 }
 
 // WriteFiles writes generated files and records a manifest for future cleans.

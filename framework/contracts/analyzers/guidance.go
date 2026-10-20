@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
@@ -168,6 +169,11 @@ func handrolledBattery(p *contracts.Pass) []contracts.Diagnostic {
 			if importsAny(file, signal.Battery) {
 				continue
 			}
+			// An unmounted copy of the battery is the battery, owned by
+			// the app: telling it to register the battery is backwards.
+			if unmountedCopyOf(p, f.Rel, signal.Battery) {
+				continue
+			}
 			d := diag(p, contracts.RuleHandrolledBattery, f.Rel, file.Pos(), fmt.Sprintf(
 				"this file implements %s directly: %s already provides it", signal.What, signal.Battery))
 			d.Suggestion = fmt.Sprintf("register %s and keep the custom parts in a hook", signal.Battery)
@@ -176,6 +182,19 @@ func handrolledBattery(p *contracts.Pass) []contracts.Diagnostic {
 		}
 	}
 	return out
+}
+
+// unmountedCopyOf reports whether the file carries the marker `gofastr
+// unmount` stamps on a copy of pkg (a path under the gofastr module) or
+// of a package under it.
+func unmountedCopyOf(p *contracts.Pass, rel, pkg string) bool {
+	src, ok := p.Source(rel)
+	if !ok {
+		return false
+	}
+	m, _, ok := codegen.ReadMarker(rel, string(src))
+	root := "github.com/DonaldMurillo/gofastr/" + pkg
+	return ok && m.Generator == "unmount" && (m.Source == root || strings.HasPrefix(m.Source, root+"/"))
 }
 
 // rawSQLOverRepo reports a raw query naming a table that has a declared

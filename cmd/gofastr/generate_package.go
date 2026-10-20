@@ -10,12 +10,13 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	"golang.org/x/mod/module"
 )
 
@@ -114,10 +115,29 @@ func runGeneratePackage(args []string) {
 		return
 	}
 
-	files, hasTokens, hasChromiumTest, err := copyCanonicalPackage(name, tgt.importPath)
+	// The copy is an unmount of the canonical package from the embedded
+	// tree: same markers, same hook, same settings entry, so verify,
+	// upgrade and remount see it like any other copy.
+	source := canonicalPackageImport + name
+	settingsPath, entries, err := unmountedEntries(tgt.anchorDir)
 	if err == nil {
-		// Stamped before the write so the rollback compares what it wrote.
-		files, err = stampGeneratedFiles("package", files)
+		err = checkUnmountOverlap(settings.Unmounted{Source: source, Path: filepath.ToSlash(tgt.root)}, entries, false)
+	}
+	entry := settings.Unmounted{Source: source, Version: markerVersion(cliVersion()), Path: filepath.ToSlash(tgt.root), Date: unmountNow().Format(time.DateOnly)}
+	if err == nil {
+		err = entry.Validate()
+	}
+	var files []generatedFile
+	var hasTokens, hasChromiumTest bool
+	if err == nil {
+		files, hasTokens, hasChromiumTest, err = copyCanonicalPackage(name, tgt.importPath)
+	}
+	if err == nil {
+		tree := unmountTree{source: source, version: entry.Version}
+		for _, f := range files {
+			tree.files = append(tree.files, packageFile{Name: f.name, Content: f.content})
+		}
+		files, err = buildUnmountCopy(tree, tgt.importPath)
 	}
 	if err != nil {
 		fail("%v", err)
@@ -129,40 +149,22 @@ func runGeneratePackage(args []string) {
 		for _, f := range files {
 			fmt.Printf("  %s\n", filepath.ToSlash(filepath.Join(tgt.display, f.name)))
 		}
+		fmt.Printf("Would record it in %s\n", settingsPath)
 		return
 	}
-	fileSet := codegen.NewFileSet()
-	for _, f := range files {
-		if err := fileSet.Add(codegen.GeneratedFile{Path: f.name, Content: f.content}); err != nil {
-			fail("%v", err)
-			osExit(1)
-			return
-		}
-	}
-	// The writer resolves its output root against the working directory
-	// and refuses absolute roots and parent traversal, so the write runs
-	// from the target's own module directory with a root relative to it —
-	// the one spelling every in-module target resolved to above.
-	if err := os.Chdir(tgt.anchorDir); err != nil {
+	undoCopy, err := writePackageCopy(tgt, files)
+	if err != nil {
 		fail("%v", err)
 		osExit(1)
 		return
 	}
-	existed := packageDirChainExisted(tgt)
-	writeErr := packageWriteFiles(fileSet, codegen.WriteOptions{
-		OutputRoot:   tgt.root,
-		SkipManifest: true,
-		Conflict:     codegen.ConflictRefuse,
-	})
-	_ = os.Chdir(wd)
-	if writeErr != nil {
-		filesRemoved, dirsRemoved := rollbackPackageCopy(tgt, files, existed)
-		fail("Failed to write package files: %v", writeErr)
-		info("Rolled back the partial copy: removed %d file(s) and %d dir(s) this run created in %s; anything this run did not write was left untouched", filesRemoved, dirsRemoved, tgt.display)
+	if err := settings.SetUnmounted(settingsPath, append(slices.Clone(entries), entry)); err != nil {
+		undoCopy()
+		fail("record the copy: %v; the copy was removed", err)
 		osExit(1)
 		return
 	}
-	success("Copied %s into %s (%d file(s)); the package is yours now — edit it freely", name, tgt.display, len(files))
+	success("Copied %s into %s (%d file(s)) and recorded it in %s; the package is yours now — edit it freely", name, tgt.display, len(files), settings.FileName)
 	fmt.Println()
 	fmt.Println("  Next steps:")
 	if hasTokens {
@@ -284,7 +286,7 @@ func packageDirChainExisted(tgt packageTarget) map[string]bool {
 // cannot see through).
 func rollbackPackageCopy(tgt packageTarget, files []generatedFile, existed map[string]bool) (filesRemoved, dirsRemoved int) {
 	for _, f := range files {
-		p := filepath.Join(tgt.dir, f.name)
+		p := filepath.Join(tgt.dir, filepath.FromSlash(f.name))
 		if codegen.EnsureNoSymlinkPath(p) != nil {
 			continue
 		}
@@ -294,6 +296,26 @@ func rollbackPackageCopy(tgt packageTarget, files []generatedFile, existed map[s
 		}
 		if err := os.Remove(p); err == nil {
 			filesRemoved++
+		}
+	}
+	// Directories the copy created inside the target, deepest first. The
+	// target was empty, so a directory there is the copy's unless a racer
+	// filled it, and os.Remove refuses a directory that is not empty.
+	var subdirs []string
+	seen := map[string]bool{}
+	for _, f := range files {
+		for d := filepath.Dir(filepath.Join(tgt.dir, filepath.FromSlash(f.name))); d != tgt.dir && !seen[d]; d = filepath.Dir(d) {
+			seen[d] = true
+			subdirs = append(subdirs, d)
+		}
+	}
+	slices.SortFunc(subdirs, func(a, b string) int { return len(b) - len(a) })
+	for _, d := range subdirs {
+		if codegen.EnsureNoSymlinkPath(d) != nil {
+			continue
+		}
+		if err := os.Remove(d); err == nil {
+			dirsRemoved++
 		}
 	}
 	for d := tgt.dir; ; d = filepath.Dir(d) {
@@ -469,7 +491,7 @@ func copyCanonicalPackage(name, targetImport string) (files []generatedFile, has
 		content := f.Content
 		if strings.HasSuffix(f.Name, ".go") {
 			// Rewriting from == to is the identity; no special case.
-			rewritten, _, rerr := rewritePackageImport(content, canonicalPackageImport+name, targetImport)
+			rewritten, _, rerr := rewriteImportPrefix(content, canonicalPackageImport+name, targetImport)
 			if rerr != nil {
 				return nil, false, false, fmt.Errorf("%s/%s: %w", name, f.Name, rerr)
 			}
@@ -534,36 +556,6 @@ func canonicalPackageSheetFinding(rel, src string, d ownstyle.Diagnostic) error 
 		return nil
 	}
 	return fmt.Errorf("%s:%d:%d: %s %s %s", rel, d.Line, d.Col, d.Severity, d.Rule, d.Message)
-}
-
-// rewritePackageImport replaces the import path from with to in a Go
-// source file by splicing the import-spec path token the parser
-// located — an exact import-spec replacement, never a blind substring
-// replace over the whole file (a matching string in a comment, a
-// string literal or a selector would corrupt the copy).
-func rewritePackageImport(src, from, to string) (string, bool, error) {
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, "src.go", src, parser.ImportsOnly|parser.ParseComments)
-	if err != nil {
-		return "", false, fmt.Errorf("parse imports: %w", err)
-	}
-	var out []byte
-	changed := false
-	off := 0
-	for _, spec := range f.Imports {
-		path, uerr := strconv.Unquote(spec.Path.Value)
-		if uerr != nil || path != from {
-			continue
-		}
-		start := fset.Position(spec.Path.Pos()).Offset
-		end := fset.Position(spec.Path.End()).Offset
-		out = append(out, src[off:start]...)
-		out = append(out, strconv.Quote(to)...)
-		off = end
-		changed = true
-	}
-	out = append(out, src[off:]...)
-	return string(out), changed, nil
 }
 
 // packageDocSummary returns the first sentence of the package doc

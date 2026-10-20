@@ -228,15 +228,16 @@ func scanProvenance(root string) ([]provenanceEntry, error) {
 // reportProvenance is verify's account of generated code: how many marked
 // files each generator wrote, at which version, and which derived files
 // were edited since (the next generate discards those edits). Edited
-// scaffold files are counted, not flagged: the user owns them.
-func reportProvenance(root string, note, noteWarn func(string, ...any)) {
+// scaffold files are counted, not flagged: the user owns them. It returns
+// the marked files for the unmounted report.
+func reportProvenance(root string, note, noteWarn func(string, ...any)) []provenanceEntry {
 	entries, err := scanProvenance(root)
 	if err != nil {
 		noteWarn("could not scan for generated files: %v", err)
-		return
+		return nil
 	}
 	if len(entries) == 0 {
-		return
+		return nil
 	}
 	counts := map[string]int{}
 	scaffoldEdited := 0
@@ -264,4 +265,5 @@ func reportProvenance(root string, note, noteWarn func(string, ...any)) {
 		msg += fmt.Sprintf("; %d scaffold file(s) edited since, which is expected: they are yours", scaffoldEdited)
 	}
 	note("%s", msg)
+	return entries
 }

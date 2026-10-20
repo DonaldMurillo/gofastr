@@ -41,7 +41,10 @@ type Marker struct {
 	Generator string
 	Kind      Kind
 	Version   string
-	Sum       string
+	// Source is the upstream import path of a copied package, set by
+	// `gofastr unmount` so a reader of one file can tell it is a copy.
+	Source string
+	Sum    string
 }
 
 // Sum is the content sum a marker records: the first 16 hex digits of the
@@ -229,6 +232,9 @@ func (m Marker) fields() string {
 	if m.Version != "" {
 		parts = append(parts, "version="+m.Version)
 	}
+	if m.Source != "" {
+		parts = append(parts, "source="+m.Source)
+	}
 	parts = append(parts, "sum="+m.Sum)
 	return strings.Join(parts, " ")
 }
@@ -242,6 +248,9 @@ func (m Marker) validate() error {
 	}
 	if m.Version != "" && !isMarkerToken(m.Version, false) {
 		return fmt.Errorf("provenance marker: version %q is not a plain version", m.Version)
+	}
+	if m.Source != "" && !isMarkerToken(m.Source, true) {
+		return fmt.Errorf("provenance marker: source %q is not a plain import path", m.Source)
 	}
 	if len(m.Sum) != 16 || !isLowerHex(m.Sum) {
 		return fmt.Errorf("provenance marker: sum %q is not 16 hex digits", m.Sum)
@@ -265,6 +274,8 @@ func parseMarkerFields(text string) (Marker, bool) {
 			m.Kind = Kind(value)
 		case "version":
 			m.Version = value
+		case "source":
+			m.Source = value
 		case "sum":
 			m.Sum = value
 		}

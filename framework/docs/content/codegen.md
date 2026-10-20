@@ -13,7 +13,8 @@ existing files unless you pass `--force`.
   entities and screens into an existing app.
 - `entity <name>` and `screen <name>`: an editable stub in a generated app.
 - `package [<name>]`: a copy of a canonical chrome package (siteheader,
-  sitefooter, docpage). No name lists them.
+  sitefooter, docpage), recorded as an [unmounted](unmount.md) copy. No
+  name lists them.
 - `cli`: a customer-facing CLI for the app API. See [CLI](cli.md).
 
 **Derived** generators keep a type-safe layer in sync with a source. Their
@@ -243,12 +244,16 @@ the file:
 package main
 ```
 
-- `generator` is the `gofastr generate` subcommand that wrote the file.
+- `generator` is the `gofastr generate` subcommand that wrote the file,
+  or `unmount` for a copy `gofastr unmount` or `gofastr generate package`
+  made.
 - `kind` is `scaffold` or `derived`, as above.
 - `version` is the gofastr release that scaffolded the file, or `dev` for
   a CLI built from a checkout. Derived files carry no version: any CLI
   rebuilds them, and a version there would rewrite every derived file on
   each release with no change to its code.
+- `source` appears on an unmounted copy only: the import path the copy
+  came from. See [Unmounting a package](unmount.md).
 - `sum` is the first 16 hex digits of the SHA-256 of the file without the
   marker line. It detects edits; it is not a signature.
 

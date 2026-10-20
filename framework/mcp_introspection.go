@@ -31,6 +31,7 @@ import (
 //   - app_readiness:  run every registered readiness check and report results.
 //   - app_goroutine_leaks: count + stacks of runtime-proven leaked goroutines.
 //   - app_routines:   every registered stored routine with its ledger state.
+//   - app_unmounted:  gofastr packages compiled in as unmounted copies.
 //
 // The framework's embedded docs (framework_docs_list / framework_docs_get
 // / framework_docs_search) are a separate opt-in,
@@ -97,6 +98,12 @@ func (a *App) registerIntrospectionTools() error {
 			description: "List every registered stored routine (function / procedure / trigger / view-as-routine) with its name, declared dialect (empty = all), sha256 checksum of the Up body, ledger state (present | drifted | missing | skipped_for_dialect | unknown; skipped_for_dialect means the routine's declared dialect doesn't match the active DB engine), and best-effort liveness (does the object exist in pg_proc / pg_views on Postgres, unknown on SQLite). Read-only. Use to verify a routine body change has propagated, or to spot a routine the code still registers but the boot no longer applies.",
 			schema:      map[string]any{"type": "object"},
 			handler:     a.toolRoutines,
+		},
+		{
+			name:        "app_unmounted",
+			description: "List the gofastr packages this binary carries as unmounted copies (made with gofastr unmount): each with source (the upstream import path), version (the gofastr release copied, or dev) and path (the copy's import path in the app). A copy no longer receives framework fixes on upgrade. Read-only.",
+			schema:      map[string]any{"type": "object"},
+			handler:     a.toolUnmounted,
 		},
 	}
 	for _, t := range tools {

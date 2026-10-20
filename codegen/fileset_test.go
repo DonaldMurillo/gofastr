@@ -1,6 +1,7 @@
 package codegen
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -65,5 +66,33 @@ func TestWriteFiles_ConflictRefuse(t *testing.T) {
 	}
 	if got, _ := os.ReadFile("a.go"); string(got) != "content of a.go\n" {
 		t.Errorf("identical-content refusal changed the file: %q", got)
+	}
+}
+
+// A refuse-mode write that fails after creating its file removes the
+// partial file: it is this run's, and left behind it would block the
+// next copy into the same empty target.
+func TestWriteFiles_FailedWriteRemovesFile(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	old := writeFileContent
+	t.Cleanup(func() { writeFileContent = old })
+	writeFileContent = func(f *os.File, s string) (int, error) {
+		n, _ := f.WriteString(s[:len(s)/2])
+		return n, errors.New("disk full")
+	}
+	files := NewFileSet()
+	if err := files.Add(GeneratedFile{Path: "a.go", Content: "package a\n"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFiles(files, WriteOptions{SkipManifest: true, Conflict: ConflictRefuse}); err == nil {
+		t.Fatal("a failed write reported success")
+	}
+	if _, err := os.Stat("a.go"); !os.IsNotExist(err) {
+		t.Errorf("the partial file is still there: %v", err)
 	}
 }

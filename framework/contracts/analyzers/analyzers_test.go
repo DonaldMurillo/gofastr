@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 	"github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
 )
@@ -1291,6 +1292,28 @@ func send(addr string, msg []byte) error {
 	if !strings.Contains(d.Message, "battery/email") {
 		t.Errorf("message does not name the battery: %q", d.Message)
 	}
+}
+
+// A copy `gofastr unmount` made of the battery is the battery: the rule
+// stays quiet on it, and only on a copy of that battery.
+func TestUnmountedBatteryCopyIsNotHandrolled(t *testing.T) {
+	body := `package auth
+
+import "golang.org/x/crypto/bcrypt"
+
+func hash(pw []byte) ([]byte, error) { return bcrypt.GenerateFromPassword(pw, bcrypt.DefaultCost) }
+`
+	stamp := func(source string) string {
+		out, err := codegen.Stamp("auth.go", body, codegen.Marker{Generator: "unmount", Kind: codegen.KindScaffold, Version: "v0.91.0", Source: source})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	ds := fixture(t, map[string]string{"unmounted/battery/auth/auth.go": stamp("github.com/DonaldMurillo/gofastr/battery/auth")})
+	assertNot(t, ds, contracts.RuleHandrolledBattery, "an unmounted copy of battery/auth")
+	ds = fixture(t, map[string]string{"unmounted/battery/email/auth.go": stamp("github.com/DonaldMurillo/gofastr/battery/email")})
+	assertHas(t, ds, contracts.RuleHandrolledBattery)
 }
 
 func TestRawSQLAgainstADeclaredEntityIsReported(t *testing.T) {

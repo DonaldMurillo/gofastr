@@ -64,7 +64,7 @@ func TestFindUnmarkedTreeSearchesStartOnly(t *testing.T) {
 func TestParseRefusesUnknownSection(t *testing.T) {
 	_, err := Parse("s.yml", []byte("codegen:\n  output: gen\nentities:\n  - name: x\n"))
 	if err == nil || !strings.Contains(err.Error(), `unknown section "entities"`) ||
-		!strings.Contains(err.Error(), "codegen, contracts, isolation") {
+		!strings.Contains(err.Error(), "codegen, contracts, isolation, unmounted") {
 		t.Fatalf("err = %v", err)
 	}
 }
