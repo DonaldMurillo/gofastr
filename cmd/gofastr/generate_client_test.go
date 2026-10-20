@@ -456,7 +456,7 @@ entities:
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	generateProject([]string{"--from=gofastr.yml", "--out=gen"})
+	runGenerateApp([]string{"gofastr.yml", "--out=gen"})
 
 	// Drop the integration test file into its own package directory.
 	itDir := filepath.Join(dir, "integration")
@@ -519,7 +519,7 @@ entities:
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	generateProject([]string{"--from=gofastr.yml", "--out=gen"})
+	runGenerateApp([]string{"gofastr.yml", "--out=gen"})
 
 	clientPath := filepath.Join(dir, "gen", "entities", "client", "client.go")
 	if _, err := os.Stat(clientPath); err != nil {

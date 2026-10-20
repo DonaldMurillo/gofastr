@@ -43,7 +43,7 @@ func TestE2E_MCP_AppSpecApp(t *testing.T) {
 	}
 	writeTestFile(t, filepath.Join(dir, "gofastr.yml"), testAppSpecYAML())
 
-	generate := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "--from=gofastr.yml")
+	generate := exec.Command("go", "run", filepath.Join(repoRoot, "cmd", "gofastr"), "generate", "app", "gofastr.yml")
 	generate.Dir = dir
 	if output, err := generate.CombinedOutput(); err != nil {
 		t.Fatalf("gofastr generate failed: %v\n%s", err, output)

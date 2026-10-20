@@ -299,7 +299,7 @@ entities:
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	generateProject([]string{"--from=gofastr.yml"})
+	runGenerateApp([]string{"gofastr.yml"})
 	runGenerateSDK(nil)
 
 	// Regenerating in place must succeed. Drift refresh is the whole point.
@@ -406,7 +406,7 @@ entities:
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	generateProject([]string{"--from=gofastr.yml"})
+	runGenerateApp([]string{"gofastr.yml"})
 	runGenerateSDK(nil)
 
 	// Config-supplied name, target, and base URL took effect.

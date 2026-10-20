@@ -257,7 +257,7 @@ func TestGeneratePIIWarnsNotFatal(t *testing.T) {
 	var code int
 	out := covT_capStdout(t, func() {
 		code = covT_capExit(t, func() {
-			generateFromAppSpec(generateOptions{from: filepath.Join(dir, "bp.yml"), outputDir: "gen", dryRun: true})
+			generateFromAppSpec(generateOptions{spec: filepath.Join(dir, "bp.yml"), outputDir: "gen", dryRun: true})
 		})
 	})
 	if code != -1 {

@@ -174,7 +174,7 @@ When the user wants source, tell them to run:
 kiln freeze --diff
 kiln freeze --dir build
 gofastr validate build/gofastr.yml
-gofastr generate --from=build/gofastr.yml --out=app
+gofastr generate app build/gofastr.yml --out=app
 ```
 
 Freeze emits `gofastr.yml` and the lossless `world.json`; it does not emit the

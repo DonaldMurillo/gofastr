@@ -3784,7 +3784,7 @@ func renderAppSpecFilesWithOrder(bp AppSpec, entityOrderOffset, screenOrderOffse
 	}
 	if bp.App.Admin.Enabled {
 		// Always ship the admin wiring seam when the back-office is on, so a
-		// later `gofastr generate --add` or a hand-added admin_rbac.go can
+		// later `gofastr generate app --add` or a hand-added admin_rbac.go can
 		// wire RBAC into admin.Config without editing generated files.
 		files = append(files, generatedFile{name: "admin_register.go", content: appSpecAdminRegisterGo})
 	}

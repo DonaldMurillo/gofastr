@@ -201,7 +201,7 @@ func TestSafeCleanOutputDirRejectsSymlinkRoot(t *testing.T) {
 
 func TestAppSpecGenerateRejectsSymlinkOutput(t *testing.T) {
 	if os.Getenv("GOFASTR_APPSPEC_SYMLINK_HELPER") == "1" {
-		generateProject([]string{"--from=gofastr.yml", "--out=out", "--no-clean"})
+		runGenerateApp([]string{"gofastr.yml", "--out=out"})
 		return
 	}
 	dir := t.TempDir()

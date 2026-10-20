@@ -221,7 +221,7 @@ and an optional `if_match` version.
 kiln freeze --diff
 kiln freeze --dir build
 gofastr validate build/gofastr.yml
-gofastr generate --from=build/gofastr.yml --out=app
+gofastr generate app build/gofastr.yml --out=app
 cd app
 go test ./...
 ```
@@ -253,7 +253,7 @@ brackets. Reshape the data (or drop the row) and re-run; a freeze that
 succeeded is guaranteed to re-parse into the same values.
 
 `FreezeAndGenerate` performs the freeze and invokes
-`gofastr generate --from=gofastr.yml` when `gofastr` is on `PATH`.
+`gofastr generate app gofastr.yml` when `gofastr` is on `PATH`.
 
 ## Security boundary
 

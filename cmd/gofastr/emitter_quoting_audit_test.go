@@ -905,7 +905,7 @@ func TestAuditParseBackstopFires(t *testing.T) {
 
 // TestAuditUnvalidatedEmitterPath drives hostile NAMES through the emitters
 // with no validator in front (the loadAppSpecPath(path, false) surface that
-// generate --add uses before re-validation, and any struct-level caller).
+// generate app --add uses before re-validation, and any struct-level caller).
 // Every identifier-shaped field must either keep the output parseable AND
 // inert, or make renderAppSpecFiles refuse (fail-closed via
 // assertAppSpecGoParses). Silent executable output is the finding.

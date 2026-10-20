@@ -75,7 +75,7 @@ func TestEnvFileIsOwnerOnly(t *testing.T) {
 // write call is os.WriteFile(..., 0o644): a mode that only applies when the
 // file is CREATED. init's writeEnvFile (pinned above) already solves exactly
 // this class with an open-handle chmod before the write; the generate path
-// must not be the looser sibling, or `gofastr generate --force` over a
+// must not be the looser sibling, or `gofastr generate app --force` over a
 // project whose .env is 0644 rewrites the signing key and DB credentials
 // and leaves them world-readable.
 func TestGeneratedEnvIsOwnerOnly(t *testing.T) {

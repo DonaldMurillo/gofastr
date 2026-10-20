@@ -463,7 +463,7 @@ func cliModuleFromYAML(t *testing.T, yaml string) string {
 	if err := os.Chdir(dir); err != nil {
 		t.Fatal(err)
 	}
-	generateProject([]string{"--from=gofastr.yml"})
+	runGenerateApp([]string{"gofastr.yml"})
 	return dir
 }
 

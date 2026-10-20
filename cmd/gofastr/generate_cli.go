@@ -180,7 +180,7 @@ func runGenerateCLI(args []string) {
 	}
 	if len(decls) == 0 {
 		fail("no entities package found in the current directory")
-		info("Run from your app root (the directory holding entities/), or generate the app first: gofastr generate --from=<spec.yml>.")
+		info("Run from your app root (the directory holding entities/), or generate the app first: gofastr generate app <spec.yml>.")
 		osExit(1)
 		return
 	}

@@ -22,7 +22,7 @@ func covT_writeAppSpec(t *testing.T) (dir, bp string) {
 
 func TestGenerateFromAppSpecWritesFiles(t *testing.T) {
 	dir, bp := covT_writeAppSpec(t)
-	covT_capStdout(t, func() { generateFromAppSpec(generateOptions{from: bp, outputDir: "gen", outputSet: true}) })
+	covT_capStdout(t, func() { generateFromAppSpec(generateOptions{spec: bp, outputDir: "gen", outputSet: true}) })
 	// App generator output lands under the resolved output dir (--out=gen here).
 	matches, _ := filepath.Glob(filepath.Join(dir, "gen", "**", "*.go"))
 	if len(matches) == 0 {
@@ -43,7 +43,7 @@ func TestGenerateFromAppSpecWritesFiles(t *testing.T) {
 func TestGenerateFromAppSpecJSON(t *testing.T) {
 	_, bp := covT_writeAppSpec(t)
 	out := covT_capStdout(t, func() {
-		generateFromAppSpec(generateOptions{from: bp, outputDir: "gen", json: true})
+		generateFromAppSpec(generateOptions{spec: bp, outputDir: "gen", json: true})
 	})
 	if !strings.Contains(out, `"files"`) {
 		t.Fatalf("expected JSON, got %s", out)
@@ -53,7 +53,7 @@ func TestGenerateFromAppSpecJSON(t *testing.T) {
 func TestGenerateFromAppSpecDryRunText(t *testing.T) {
 	_, bp := covT_writeAppSpec(t)
 	out := covT_capStdout(t, func() {
-		generateFromAppSpec(generateOptions{from: bp, outputDir: "gen", dryRun: true})
+		generateFromAppSpec(generateOptions{spec: bp, outputDir: "gen", dryRun: true})
 	})
 	if !strings.Contains(out, "Would generate") {
 		t.Fatalf("expected dry-run text, got %s", out)
@@ -65,7 +65,7 @@ func TestGenerateFromAppSpecLoadErrorJSON(t *testing.T) {
 	covT_chdir(t, dir)
 	code := covT_capExit(t, func() {
 		covT_capStdout(t, func() {
-			generateFromAppSpec(generateOptions{from: filepath.Join(dir, "missing.yml"), outputDir: "gen", dryRun: true, json: true})
+			generateFromAppSpec(generateOptions{spec: filepath.Join(dir, "missing.yml"), outputDir: "gen", dryRun: true, json: true})
 		})
 	})
 	if code != 1 {
@@ -77,7 +77,7 @@ func TestGenerateFromAppSpecBadOutputDirJSON(t *testing.T) {
 	_, bp := covT_writeAppSpec(t)
 	code := covT_capExit(t, func() {
 		covT_capStdout(t, func() {
-			generateFromAppSpec(generateOptions{from: bp, outputDir: "..", outputSet: true, dryRun: true, json: true})
+			generateFromAppSpec(generateOptions{spec: bp, outputDir: "..", outputSet: true, dryRun: true, json: true})
 		})
 	})
 	if code != 1 {

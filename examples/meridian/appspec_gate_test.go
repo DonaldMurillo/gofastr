@@ -81,7 +81,7 @@ func TestAppSpecStillGenerates(t *testing.T) {
 		t.Skip("runs the generator and compiles its output; skipped under -short")
 	}
 	dir, _ := scratchWithAppSpec(t)
-	runGenerator(t, dir, "generate", "--from=gofastr.yml")
+	runGenerator(t, dir, "generate", "app", "gofastr.yml")
 
 	// Compile the result. The binary goes to a temp dir, never the
 	// worktree. Building the main package pulls in the generated
@@ -127,7 +127,7 @@ func TestGeneratedTreesMatchGenerator(t *testing.T) {
 		t.Skip("runs the generator; skipped under -short")
 	}
 	dir, scratchModule := scratchWithAppSpec(t)
-	runGenerator(t, dir, "generate", "--from=gofastr.yml")
+	runGenerator(t, dir, "generate", "app", "gofastr.yml")
 	// The CLI reads the freshly emitted entities/ package, so it must
 	// run after generate, from the scratch root. --binary=meridian is
 	// load-bearing: the default derives the name from the scratch dir
@@ -171,7 +171,7 @@ func TestGeneratedTreesMatchGenerator(t *testing.T) {
 			if normalizeModule(string(gotBytes), scratchModule) != string(wantBytes) {
 				t.Errorf("%s is stale: the generator emits different bytes. Regenerate in a scratch copy from the repo root:\n"+
 					"    d=$(mktemp -d) && cp examples/meridian/gofastr.yml \"$d\" && go build -o \"$d/gofastr\" ./cmd/gofastr &&\n"+
-					"    (cd \"$d\" && echo 'module github.com/DonaldMurillo/gofastr/examples/meridian' > go.mod && ./gofastr generate --from=gofastr.yml && ./gofastr generate cli --binary=meridian)\n"+
+					"    (cd \"$d\" && echo 'module github.com/DonaldMurillo/gofastr/examples/meridian' > go.mod && ./gofastr generate app gofastr.yml && ./gofastr generate cli --binary=meridian)\n"+
 					"and copy entities/ and cmd/meridian/ from $d over the committed trees (keep cmd/meridian/custom.go)",
 					filepath.Join(tree.committed, rel))
 			}

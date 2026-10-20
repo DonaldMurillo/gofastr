@@ -67,7 +67,7 @@ func TestPrintInitNextStepsTeachesPublicEscapeHatch(t *testing.T) {
 // The CLAUDE.md an init app ships tells agents how to add an entity or
 // a screen. Every scaffold command it advises must run against that
 // same init output, and the hand-edit seams it names must exist there.
-// It used to advise generate --add / entity / screen, which refuse the
+// It used to advise generate app --add / entity / screen, which refuse the
 // init layout, and their refusal advised `gofastr pack`, which fails
 // on it too.
 func TestInitAdviceWorksOnInitApp(t *testing.T) {
@@ -86,9 +86,9 @@ func TestInitAdviceWorksOnInitApp(t *testing.T) {
 	}
 	guide := read("CLAUDE.md")
 	for cmd, run := range map[string]func(){
-		"gofastr generate entity": func() { generateScaffoldEntity([]string{"note"}) },
-		"gofastr generate screen": func() { generateScaffoldScreen([]string{"about"}) },
-		"gofastr generate --add":  func() { generateScaffoldScreen([]string{"contact"}) },
+		"gofastr generate entity":    func() { generateScaffoldEntity([]string{"note"}) },
+		"gofastr generate screen":    func() { generateScaffoldScreen([]string{"about"}) },
+		"gofastr generate app --add": func() { generateScaffoldScreen([]string{"contact"}) },
 	} {
 		if !strings.Contains(guide, cmd) {
 			continue

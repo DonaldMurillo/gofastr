@@ -762,10 +762,10 @@ func generateAndCompileAppSpec(t *testing.T, appSpecPath, name string) (string, 
 	if err != nil {
 		t.Fatalf("build gofastr: %v", err)
 	}
-	gen := exec.Command(cli, "generate", "--from=gofastr.yml")
+	gen := exec.Command(cli, "generate", "app", "gofastr.yml")
 	gen.Dir = dir
 	if out, err := gen.CombinedOutput(); err != nil {
-		t.Fatalf("gofastr generate --from=gofastr.yml: %v\n%s", err, out)
+		t.Fatalf("gofastr generate app gofastr.yml: %v\n%s", err, out)
 	}
 
 	// output_dir moves the emitted app one level down (examples/ecommerce uses

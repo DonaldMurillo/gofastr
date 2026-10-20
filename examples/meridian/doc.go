@@ -3,11 +3,11 @@
 //
 // # Maintenance model: two generator-owned trees, the rest hand-maintained
 //
-// Meridian was SEEDED by `gofastr generate --from=gofastr.yml` and then
+// Meridian was SEEDED by `gofastr generate app gofastr.yml` and then
 // hand-evolved. Two of the trees that seed produced are now back under
 // generator ownership, gated for byte drift:
 //
-//   - entities/ (from `gofastr generate --from=gofastr.yml`)
+//   - entities/ (from `gofastr generate app gofastr.yml`)
 //   - cmd/meridian/ (from `gofastr generate cli --binary=meridian`)
 //
 // appspec_gate_test.go regenerates both into a scratch package and

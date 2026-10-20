@@ -27,7 +27,7 @@ func TestCommandSpecificHelp(t *testing.T) {
 		want    string
 	}{
 		{"init", "generated go.mod pins"},
-		{"generate", "Generate a deterministic application"},
+		{"generate", "Scaffold generators write code you own"},
 		{"validate", "validate an app spec without writing files"},
 	} {
 		out := covT_capStdout(t, func() { dispatch([]string{tc.command, "--help"}) })

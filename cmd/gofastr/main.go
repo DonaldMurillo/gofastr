@@ -108,8 +108,8 @@ func printHelp() {
       --db=<driver>    Database driver: sqlite (default) or postgres (aliases: sqlite3, postgresql)
   new handler <n>       Scaffold a new HTTP handler
   new route <path>      Scaffold a route registration
-  generate (gen, g) --from=<yml> Generate an app from a gofastr.yml app spec
-  generate --config=<yml> Run YAML-configured code generators/extensions
+  generate (gen, g)     Run the derived generators in the codegen config (gofastr generate --help lists all)
+  generate app [spec]   Generate an app from a gofastr.yml app spec
   generate cli          Generate a customer-facing CLI for the app's API (docs: gofastr docs app-cli)
   generate styles [patterns] Generate typed Go for app tokens and owned style sheets
   pack [app-dir]        Snapshot a generated app into a best-effort gofastr.yml (lossy; not an inverse of generate)
@@ -173,7 +173,7 @@ func printHelp() {
   gofastr init myapp --module=github.com/me/myapp
   gofastr init myapp --no-entity
   gofastr validate gofastr.yml
-  gofastr generate --from=gofastr.yml --dry-run
+  gofastr generate app gofastr.yml --dry-run
   gofastr generate --config=gofastr.codegen.yml
   gofastr theme init
   gofastr build

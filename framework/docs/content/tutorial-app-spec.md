@@ -92,7 +92,7 @@ Validate, generate, run:
 
 ```bash
 gofastr validate gofastr.yml
-gofastr generate --from=gofastr.yml   # scaffolds owned Go: main.go + app.go + screens_register.go + screen_*.go + entities/
+gofastr generate app gofastr.yml   # scaffolds owned Go: main.go + app.go + screens_register.go + screen_*.go + entities/
 go mod tidy                           # the scaffold pulls new imports; dev builds need this first
 gofastr dev                           # dev server with hot reload; the loop for everything below
 ```
@@ -120,7 +120,7 @@ and commit. `gofastr generate` is one-shot, so from here the owned Go,
 not the app spec, is the source of truth. (Run it again and it refuses to
 overwrite; `--force` regenerates the *entire* set and would discard the
 edits you're about to make, so you won't use it past this first run. To
-scaffold *new* files into an existing app, use `generate --add` /
+scaffold *new* files into an existing app, use `generate app --add` /
 `generate entity <name>`; owned files are never touched.)
 
 Check the UI, the API, and the MCP tools from a second terminal. The

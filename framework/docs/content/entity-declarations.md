@@ -482,7 +482,7 @@ All writes execute inside the parent's database transaction (`inTx`). If any chi
 that holds the row owner's id (e.g. `user_id`) and the declared
 entity gets the same per-user auto-CRUD scoping as a Go-declared one
 (see **Per-user scoping** below). Omit the key to keep pre-existing
-behaviour. `gofastr generate --from=gofastr.yml` emits `OwnerField:` inside a
+behaviour. `gofastr generate app gofastr.yml` emits `OwnerField:` inside a
 `Scope: &framework.ScopeConfig{…}` block in the generated `app.Entity(...)`
 registration, so the scoping survives code generation.
 
@@ -496,8 +496,8 @@ context lacks the permission with **403**: the roles + policy must be in
 the request context first: mount `framework.AccessMiddleware` with a policy
 (`battery/auth` only supplies the authenticated user whose roles you feed
 into it; it does not satisfy the gate by itself; see
-[access-control](access-control.md)). `gofastr generate
---from=gofastr.yml` emits the map as `Access: framework.AccessControl{...}`
+[access-control](access-control.md)). `gofastr generate app
+gofastr.yml` emits the map as `Access: framework.AccessControl{...}`
 inside an `Exposure: &framework.ExposureConfig{…}` block in the generated
 `app.Entity(...)` registration, so declared entities get the same
 fail-closed enforcement as Go-declared ones.
@@ -1461,7 +1461,7 @@ and the `crud.WithStateOverride` escape hatch are on the
 Generate Go from a `gofastr.yml` app spec:
 
 ```bash
-gofastr generate --from=gofastr.yml
+gofastr generate app gofastr.yml
 ```
 
 This scaffolds the owned entity package into `entities/` at the module root:
@@ -1553,9 +1553,9 @@ in-page dynamic behavior to those screens (sort, paginate, mutate without a
   reload), build islands: the cookbook is
 [interactive-patterns](interactive-patterns.md).
 
-Useful flags:
+`gofastr generate app [spec]` reads the app spec named (default
+`gofastr.yml`). Useful flags:
 
-- `--from=<gofastr.yml>` selects the app spec to generate from (required).
 - `--dry-run` lists generated files without writing.
 - `--json` emits machine-readable output.
 - `--out=<dir>` scaffolds into a subpackage instead of the module root (also

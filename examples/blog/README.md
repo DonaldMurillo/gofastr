@@ -129,7 +129,7 @@ Generate Go from the app spec:
 
 ```bash
 cd examples/blog
-gofastr generate --from=gofastr.yml
+gofastr generate app gofastr.yml
 ```
 
 ## Search

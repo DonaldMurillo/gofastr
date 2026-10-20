@@ -18,6 +18,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   named `app-toasts`. Apps already generated need no change.
   **BREAKING**: `kiln/freeze.BlueprintYAML` is renamed `AppSpecYAML`,
   with the same input and output.
+- **BREAKING: every generator runs as `gofastr generate <name>`, and
+  `gofastr generate app [spec]` replaces `--from`.** The spec defaults
+  to `gofastr.yml`; `--out`, `--force`, `--add`, `--dry-run` and `--json`
+  work as before. Generators come in two kinds. Scaffold generators
+  (`app`, `entity`, `screen`, `package`, `cli`) write code you own, once.
+  Derived generators (`sdk`, `styles`) rebuild DO NOT EDIT code on every
+  run. Plain `gofastr generate`, which `gofastr build` and `--watch`
+  call, runs only the codegen config, and the config lists derived
+  generators and extensions: a scaffold entry there is an error naming
+  the command to run instead. A `styles` entry, with optional
+  `config.patterns`, now runs `gofastr generate styles` after the other
+  generators. Plain `gofastr generate` refuses arguments it does not
+  know, where it used to drop them, and `--watch` no longer watches an
+  app spec. `gofastr generate --help` lists the generators by kind.
 
 ### Fixed
 - **Affected selection sees tests that read other packages' files.** A

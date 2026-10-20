@@ -67,10 +67,10 @@ func generateShopfront(t *testing.T) (appDir, scratchModule string) {
 	// replays a cached pass after the generator changes.
 	testinputs.Command(t, "github.com/DonaldMurillo/gofastr/cmd/gofastr")
 	gen := exec.Command("go", "run", "github.com/DonaldMurillo/gofastr/cmd/gofastr",
-		"generate", "--from=gofastr.yml")
+		"generate", "app", "gofastr.yml")
 	gen.Dir = dir
 	if out, err := gen.CombinedOutput(); err != nil {
-		t.Fatalf("gofastr generate --from=gofastr.yml: %v\n%s", err, out)
+		t.Fatalf("gofastr generate app gofastr.yml: %v\n%s", err, out)
 	}
 	// output_dir: app, so the emitted app is one level down, the same layout
 	// as the committed copy, which is what makes a byte comparison possible.
@@ -132,7 +132,7 @@ func TestCommittedAppMatchesGeneratorOutput(t *testing.T) {
 		checked++
 		if normalizeModule(string(gotBytes), scratchModule) != string(wantBytes) {
 			t.Errorf("app/%s is stale: the generator emits different bytes. Regenerate with\n"+
-				"    (cd examples/ecommerce && go run github.com/DonaldMurillo/gofastr/cmd/gofastr generate --from=gofastr.yml --force)",
+				"    (cd examples/ecommerce && go run github.com/DonaldMurillo/gofastr/cmd/gofastr generate app gofastr.yml --force)",
 				rel)
 		}
 		return nil

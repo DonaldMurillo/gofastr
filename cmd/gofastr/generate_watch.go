@@ -12,17 +12,24 @@ import (
 	"time"
 )
 
-// runGenerateWatch polls the app spec (or gofastr.codegen.yml inputs) for
-// changes and re-runs generateProject whenever their content shifts. Polling
-// rather than fsnotify so we stay dependency-free; debounced to ~250ms.
+// runGenerateWatch polls the codegen config and its inputs for changes and
+// re-runs generateProject whenever their content shifts. Polling rather
+// than fsnotify so we stay dependency-free; debounced to ~250ms. It watches
+// derived generators only: re-running a scaffold generator on every save
+// would overwrite code the user owns.
 //
 // Usage:
 //
-//	gofastr generate --watch [--from=gofastr.yml] [--out=...]
+//	gofastr generate --watch [--config=gofastr.codegen.yml] [--out=...]
 //
 // Stop with Ctrl-C.
 func runGenerateWatch(args []string) {
-	options := parseGenerateOptions(args)
+	options, err := parseGenerateOptions(args)
+	if err != nil {
+		fail("%v", err)
+		osExit(1)
+		return
+	}
 	info("Watching generator inputs: Ctrl-C to stop.")
 
 	// Initial pass.
@@ -103,10 +110,6 @@ func hashEntitiesDir(dir string) string {
 
 func hashGenerateInputs(options generateOptions) string {
 	h := sha256.New()
-	if options.from != "" {
-		hashAppSpecInputInto(h, options.from)
-		return fmt.Sprintf("%x", h.Sum(nil))
-	}
 	if options.configPath != "" {
 		hashFileInto(h, options.configPath)
 	}
@@ -135,30 +138,6 @@ func hashGenerateInputs(options generateOptions) string {
 		}
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))
-}
-
-func hashAppSpecInputInto(h interface{ Write([]byte) (int, error) }, path string) {
-	info, err := os.Stat(path)
-	if err != nil {
-		fmt.Fprintln(h, path)
-		return
-	}
-	if !info.IsDir() {
-		hashFileInto(h, path)
-		return
-	}
-	var paths []string
-	_ = filepath.WalkDir(path, func(next string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !isAppSpecFile(next) {
-			return nil
-		}
-		paths = append(paths, next)
-		return nil
-	})
-	sort.Strings(paths)
-	for _, next := range paths {
-		hashFileInto(h, next)
-	}
 }
 
 func hashFileInto(h interface{ Write([]byte) (int, error) }, path string) {

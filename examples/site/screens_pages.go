@@ -598,12 +598,12 @@ func exAppSpecs() render.HTML {
 		LoC:     "0 LoC until you generate",
 		Desc:    "Each is one gofastr.yml with no Go beside it. Generate in the directory to get a runnable app you own; every one is validated by the CLI's app spec test suite.",
 		Points:  points,
-		Command: "cd examples/lms && gofastr generate --from=gofastr.yml",
+		Command: "cd examples/lms && gofastr generate app gofastr.yml",
 		Extra:   ui.Cluster(ui.ClusterConfig{Gap: ui.GapMD}, links...),
 	})
 	code := codeBlock("examples/lms/gofastr.yml", []render.HTML{
 		ln(com("# entities, screens, nav, endpoints, seed: one YAML")),
-		ln(render.Text("$ gofastr generate --from=gofastr.yml")),
+		ln(render.Text("$ gofastr generate app gofastr.yml")),
 		ln(render.Text("$ go run .")),
 	})
 	return exRowShell("14", "app-spec", "examples/…", "Four more app specs", body, code)
