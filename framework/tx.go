@@ -3,9 +3,14 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"fmt"
+	"strconv"
+	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/framework/db"
+	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
 // TxFromContext returns the active *sql.Tx from context when a CRUD handler
@@ -14,6 +19,32 @@ import (
 func TxFromContext(ctx context.Context) (*sql.Tx, bool) {
 	return db.TxFromContext(ctx)
 }
+
+// TxOption configures the transaction App.InTx opens.
+type TxOption func(*sql.TxOptions)
+
+// TxIsolation sets the isolation level of the transaction App.InTx opens.
+// Postgres takes the four ANSI levels and refuses the others with an
+// error. SQLite runs every transaction serializable whatever level is
+// asked, which is at least as strong as any of them.
+func TxIsolation(level sql.IsolationLevel) TxOption {
+	return func(o *sql.TxOptions) { o.Isolation = level }
+}
+
+// TxReadOnly opens a read-only transaction: a write inside it fails.
+func TxReadOnly() TxOption {
+	return func(o *sql.TxOptions) { o.ReadOnly = true }
+}
+
+// ErrTxOptionsNested is returned by a nested App.InTx given options. The
+// transaction is already open, so its isolation level and read-only mode
+// are fixed; running fn anyway would run it under settings it did not ask
+// for.
+var ErrTxOptionsNested = errors.New("app.InTx: transaction options cannot change a transaction that is already open")
+
+// savepointSeq names savepoints. A process-wide counter keeps every name
+// distinct, so nested savepoints on one transaction never shadow each other.
+var savepointSeq atomic.Uint64
 
 // InTx runs fn inside a database transaction opened on the App's DB. The
 // inner context carries the *sql.Tx so any code path that calls
@@ -24,22 +55,48 @@ func TxFromContext(ctx context.Context) (*sql.Tx, bool) {
 // e.g. seeders, batch jobs, multi-entity write paths that need an explicit
 // boundary. If fn returns an error, the tx rolls back and that error is
 // returned unchanged.
-func (a *App) InTx(ctx context.Context, fn func(ctx context.Context, tx *sql.Tx) error) error {
-	// Join an ambient transaction already in the context (e.g. when InTx is
-	// called from inside a CRUD hook). Opening a second independent tx here
-	// would silently break atomicity, the inner work could commit while the
-	// outer rolls back, or deadlock against rows the outer tx holds. Defer the
-	// commit/rollback to the outer owner. Mirrors crud.inTx.
+//
+// Called with a transaction already in ctx (from a CRUD hook, or inside
+// another InTx), InTx runs fn under a savepoint on that transaction instead
+// of opening a second one: an error from fn rolls back fn's own writes and
+// leaves the outer transaction usable, and success releases the savepoint
+// into it, so the writes commit or roll back with the outer owner. Options
+// are refused there with ErrTxOptionsNested.
+func (a *App) InTx(ctx context.Context, fn func(ctx context.Context, tx *sql.Tx) error, opts ...TxOption) error {
 	if tx, ok := db.TxFromContext(ctx); ok {
-		return fn(ctx, tx)
+		if len(opts) > 0 {
+			return ErrTxOptionsNested
+		}
+		return inSavepoint(ctx, tx, fn)
 	}
 	if a.DB == nil {
 		return fmt.Errorf("app.InTx: no DB configured")
 	}
-	tx, err := a.DB.BeginTx(ctx, nil)
+	var txOpts *sql.TxOptions
+	if len(opts) > 0 {
+		txOpts = &sql.TxOptions{}
+		for _, o := range opts {
+			o(txOpts)
+		}
+	}
+	if txOpts != nil && txOpts.ReadOnly {
+		dialect, err := a.txDialect()
+		if err != nil {
+			return fmt.Errorf("app.InTx: %w", err)
+		}
+		if dialect == migrate.DialectSQLite {
+			return a.inSQLiteReadOnlyTx(ctx, txOpts, fn)
+		}
+	}
+	tx, err := a.DB.BeginTx(ctx, txOpts)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
+	return runTx(ctx, tx, fn)
+}
+
+// runTx runs fn on tx and commits, or rolls back on an error or a panic.
+func runTx(ctx context.Context, tx *sql.Tx, fn func(ctx context.Context, tx *sql.Tx) error) error {
 	// committed gates the deferred rollback. The defer guarantees the tx is
 	// closed on EVERY exit path, including when fn panics, so the pooled
 	// connection (and any rows it locked) is released. Without it a panic in
@@ -63,5 +120,111 @@ func (a *App) InTx(ctx context.Context, fn func(ctx context.Context, tx *sql.Tx)
 	// operations that joined this tx) runs only now, on the confirmed-commit
 	// path. Error returns above drop the queue with the rollback.
 	queue.RunAfterCommit()
+	return nil
+}
+
+// txDialect probes the App's database once and remembers the answer. A
+// failed probe is not remembered, so the next call asks again.
+func (a *App) txDialect() (migrate.Dialect, error) {
+	a.txDialectMu.Lock()
+	defer a.txDialectMu.Unlock()
+	if a.txDialectVal != "" {
+		return a.txDialectVal, nil
+	}
+	d, err := migrate.DetectDialectStrict(a.DB)
+	if err != nil {
+		return "", err
+	}
+	a.txDialectVal = d
+	return d, nil
+}
+
+// inSQLiteReadOnlyTx runs fn in a read-only transaction on SQLite. The
+// SQLite driver accepts sql.TxOptions.ReadOnly and ignores it, so the
+// transaction runs on a connection of its own with PRAGMA query_only set,
+// and the pragma is cleared before the connection goes back to the pool. A
+// connection whose pragma cannot be cleared is discarded instead, so a later
+// caller never inherits a read-only connection.
+func (a *App) inSQLiteReadOnlyTx(ctx context.Context, txOpts *sql.TxOptions, fn func(ctx context.Context, tx *sql.Tx) error) error {
+	conn, err := a.DB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "PRAGMA query_only = ON"); err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() {
+		if _, err := conn.ExecContext(context.WithoutCancel(ctx), "PRAGMA query_only = OFF"); err != nil {
+			_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		}
+	}()
+	tx, err := conn.BeginTx(ctx, txOpts)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	return runTx(ctx, tx, fn)
+}
+
+// inSavepoint runs fn under a savepoint on the ambient tx. Work fn stages
+// for after the commit goes to a queue of its own: a rollback to the
+// savepoint drops it, and a release hands it to the outer queue, which
+// runs it only when the outer transaction commits. A tx wrapped with bare
+// db.WithTx carries no queue; fn then stages nothing here, and CRUD falls
+// back to confirming its rows after that tx resolves, which also sees a
+// rolled-back savepoint's rows as absent.
+func inSavepoint(ctx context.Context, tx *sql.Tx, fn func(ctx context.Context, tx *sql.Tx) error) error {
+	name := "gofastr_sp_" + strconv.FormatUint(savepointSeq.Add(1), 10)
+	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+name); err != nil {
+		return fmt.Errorf("savepoint: %w", err)
+	}
+	spCtx := ctx
+	parent, hasParent := db.CommitQueueFromContext(ctx)
+	var queue *db.CommitQueue
+	if hasParent {
+		spCtx, queue = db.WithTxQueue(ctx, tx)
+	}
+	// done gates the deferred rollback, which covers a panic in fn the same
+	// way InTx's does: the savepoint's writes are undone before the panic
+	// reaches the outer owner, which then rolls back the whole transaction.
+	// Rollbacks run without ctx's cancellation so a cancelled request still
+	// undoes its own writes.
+	done := false
+	defer func() {
+		if !done {
+			_ = rollbackToSavepoint(context.WithoutCancel(ctx), tx, name)
+		}
+	}()
+	if err := fn(spCtx, tx); err != nil {
+		done = true
+		if rbErr := rollbackToSavepoint(context.WithoutCancel(ctx), tx, name); rbErr != nil {
+			return errors.Join(err, rbErr)
+		}
+		return err
+	}
+	// done stays false until the release lands: a release that fails (a
+	// cancelled ctx, say) must not leave fn's writes on the transaction
+	// while the caller sees an error, or an outer owner that handles the
+	// error and commits would keep them.
+	if _, err := tx.ExecContext(ctx, "RELEASE SAVEPOINT "+name); err != nil {
+		return fmt.Errorf("release savepoint: %w", err)
+	}
+	done = true
+	if hasParent {
+		parent.Add(queue.RunAfterCommit)
+	}
+	return nil
+}
+
+// rollbackToSavepoint undoes the savepoint's writes and then releases it,
+// so the savepoint does not stay on the transaction's stack. Both Postgres
+// and SQLite keep a savepoint after ROLLBACK TO.
+func rollbackToSavepoint(ctx context.Context, tx *sql.Tx, name string) error {
+	if _, err := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+name); err != nil {
+		return fmt.Errorf("rollback to savepoint: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "RELEASE SAVEPOINT "+name); err != nil {
+		return fmt.Errorf("release savepoint: %w", err)
+	}
 	return nil
 }

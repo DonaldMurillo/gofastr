@@ -194,6 +194,11 @@ type Config struct {
 	// Commands are extra palette entries that go to a URL.
 	Commands []ui.PaletteCommand
 
+	// EmailPreviews are the mails the Emails page renders with sample
+	// data, so a template can be read before anything sends it. Empty
+	// leaves the page out.
+	EmailPreviews []EmailPreview
+
 	// Logger receives what a handler cannot tell its caller, notably an
 	// audit row that failed to write after its mutation committed.
 	// Defaults to slog.Default().
@@ -419,6 +424,9 @@ func (b *Battery) checkConfig() error {
 		if err := checkIcon(l.Icon, "link "+l.Label); err != nil {
 			return err
 		}
+	}
+	if err := checkEmailPreviews(b.cfg.EmailPreviews); err != nil {
+		return err
 	}
 	if err := b.checkFeatureConfig(); err != nil {
 		return err

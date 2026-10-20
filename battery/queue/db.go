@@ -453,7 +453,7 @@ func (q *DBQueue) eligibleTypes() []string {
 	return out
 }
 
-// gateAllows evaluates the queue gate with the same net safeHandle
+// gateAllows evaluates the queue gate with the same net invokeRecovering
 // gives handlers: a panicking gate fails CLOSED — the job type is
 // excluded here, deferred at the worker — instead of tearing down the
 // code path that runs it (recovercallback pins this; eligibleTypes and
@@ -1208,16 +1208,6 @@ func (q *DBQueue) runHandler(ctx context.Context, h Handler, job Job) (err error
 		return fmt.Errorf("queue: handler for %q exceeded its %s budget (context cancelled; job nacked and retried)",
 			job.Type, timeout)
 	}
-}
-
-// handler goroutine rather than around the select.
-func invokeRecovering(ctx context.Context, h Handler, job Job) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("queue: handler for %q panicked: %v", job.Type, r)
-		}
-	}()
-	return h(ctx, job)
 }
 
 func keys(m map[string]Handler) []string {

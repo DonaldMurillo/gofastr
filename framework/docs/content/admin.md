@@ -66,6 +66,7 @@ not register fails boot.
 | `GET /admin/rbac/roles` | Role permissions (needs `Policy` + `GrantStore`) |
 | `GET /admin/rbac/users` | User roles (needs `Auth`) |
 | `GET /admin/modules` | Process modules (needs `ProcessModules`) |
+| `GET /admin/emails?name=` | Email previews, one tab per mail (needs `EmailPreviews`) |
 
 A page whose backing is not wired is not mounted and has no sidebar
 entry. `Config.PathPrefix` moves everything off `/admin`.
@@ -160,8 +161,8 @@ admin.New(admin.Config{
 
 - A **Page** draws in the shell under `<PathPrefix><Path>` with a crumb
   and a palette entry. Its path may not take one of the admin's own
-  (`/`, `/search`, `/queue`, `/audit`, `/rbac`, `/modules`, `/entities`,
-  `/api`, or anything under `/_`); boot fails if it does. `Access`
+  (`/`, `/search`, `/queue`, `/audit`, `/rbac`, `/modules`, `/emails`,
+  `/entities`, `/api`, or anything under `/_`); boot fails if it does. `Access`
   refuses with 403, hides the nav entry and the palette entry, and Build
   never runs for a refused caller. An `Access` that panics refuses too,
   for that page alone; the rest of the admin draws. (A panicking
@@ -523,6 +524,40 @@ caller's roles in `Config.Policy`; without it, or without a policy, the
 page is read-only. Each lever writes an audit row (`module_enable`, ...), and
 a refused one a `*_refused` row. A failed lever answers a generic
 notice and logs the error.
+
+### Email previews
+
+`Config.EmailPreviews` lists the app's mails, each rendered from sample
+data so a template can be read before anything sends it. `Render` builds
+the mail the way the app does before sending, usually `email.Execute`
+over a template (see [email](email.md)):
+
+```go
+welcome := tmpls["welcome"] // from email.LoadFromDir
+admin.New(admin.Config{
+    EmailPreviews: []admin.EmailPreview{
+        {Name: "welcome", Render: func(ctx context.Context) (email.Email, error) {
+            return email.Execute(welcome, map[string]any{"Name": "Ada"})
+        }},
+    },
+})
+```
+
+`/admin/emails` draws a tab per preview (`?name=` picks one; the first
+is the default), the subject, the text body, and the HTML body in a
+frame. The frame loads `/admin/_email/<name>`, which is gated like every
+admin route and answers with its own policy: `Content-Security-Policy:
+sandbox; default-src 'none'` plus inline styles and `https:`/`data:`
+images and fonts, `frame-ancestors 'self'` and `X-Frame-Options:
+SAMEORIGIN`. The `<iframe>` carries an empty `sandbox` attribute too, so
+the mail gets an opaque origin with no scripts, forms or navigation of
+the admin page. Nothing is sent from the page.
+
+`Name` is lowercase letters, digits, `-` and `_`, unique; a bad or
+repeated name, or a preview with no `Render`, fails `Init`. `Render`
+runs with the admin's context, never elevated. An error or a panic draws
+a generic notice on the page, answers the frame with a 500, and logs the
+preview's name and the error's type, not its text.
 
 ### How ops posts answer
 

@@ -377,7 +377,7 @@ func (q *MemoryQueue) awaitHandler(ctx context.Context, handler Handler, job Job
 	// The handler gets its own payload bytes: an edit it makes, or a late
 	// write after the budget expires, must not reach the retry's copy.
 	job.Payload = slices.Clone(job.Payload)
-	go func() { done <- outcome{safeHandle(ctx, handler, job)} }()
+	go func() { done <- outcome{invokeRecovering(ctx, handler, job)} }()
 	timer := time.NewTimer(q.handlerTimeout)
 	defer timer.Stop()
 	select {
@@ -387,20 +387,6 @@ func (q *MemoryQueue) awaitHandler(ctx context.Context, handler Handler, job Job
 		return fmt.Errorf("queue: handler for %q exceeded its %s budget (context cancelled; job retried)",
 			job.Type, q.handlerTimeout)
 	}
-}
-
-// safeHandle invokes a handler, converting a panic into an error so a
-// poison-message job cannot unwind the worker goroutine and crash the whole
-// process. The panicked job follows the normal retry path. It runs on the
-// handler goroutine awaitHandler starts, which is where the recover must
-// sit once the invocation is no longer inline on the worker.
-func safeHandle(ctx context.Context, handler Handler, job Job) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("queue: handler for %q panicked: %v", job.Type, r)
-		}
-	}()
-	return handler(ctx, job)
 }
 
 // Enqueue adds a job to the priority-ordered pending store. If the job has no

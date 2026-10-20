@@ -956,6 +956,13 @@ func aspectRatioCSS(_ style.Theme) string {
   width: 100%;
   height: 100%;
 }
+/* An embed fills the box: the browser's inset iframe border gives way to
+   the kit's hairline. */
+[data-cui-comp="ui-aspect-ratio"] > iframe {
+  box-sizing: border-box;
+  border: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7);
+  border-radius: var(--radii-md, 8px);
+}
 [data-cui-comp="ui-aspect-ratio"].fui-ar--1-1  { aspect-ratio: 1 / 1; }
 [data-cui-comp="ui-aspect-ratio"].fui-ar--4-3  { aspect-ratio: 4 / 3; }
 [data-cui-comp="ui-aspect-ratio"].fui-ar--16-9 { aspect-ratio: 16 / 9; }
