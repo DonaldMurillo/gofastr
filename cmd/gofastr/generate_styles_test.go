@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 )
 
 // The gen-styles fixtures. issuecard.style.css is the full-vocabulary
@@ -76,6 +78,47 @@ func TestGenerateStylesGolden(t *testing.T) {
 	}
 	if string(got) != string(want) {
 		t.Fatalf("generated file drifted from the golden:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+// The app generator stamps a provenance marker on the sheets it copies.
+// gen styles leaves the marker out of what it embeds and hashes, the way
+// GOFASTR1814 reads the pair, so a stamped sheet regenerates to the same
+// bytes as the unmarked one.
+func TestGenerateStylesIgnoresMarker(t *testing.T) {
+	want, err := os.ReadFile(filepath.Join(styleGenFixtureDir, "issuecard_style.gen.go.golden"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sheet, err := os.ReadFile(filepath.Join(styleGenFixtureDir, "issuecard.style.css"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const marker = "/* gofastr:generated generator=app kind=scaffold version=dev sum=0123456789abcdef */\n"
+	dir, code, printed := runStylesCase(t, map[string]string{
+		"issuecard.style.css": marker + string(sheet),
+		"ui.go":               "",
+		"acme.tokens.css":     "/* gofastr:generated generator=app kind=scaffold version=dev sum=0123456789abcdef */\n" + acmeTokensFixture,
+	}, "")
+	if code != -1 && code != 0 {
+		t.Fatalf("exit %d:\n%s", code, printed)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "issuecard_style.gen.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("a marked sheet generated different bytes:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+	tokens, err := os.ReadFile(filepath.Join(dir, "acme_tokens.gen.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(tokens), "gofastr:generated generator=app") {
+		t.Errorf("the sheet's marker leaked into the tokens file:\n%s", tokens)
+	}
+	if hash := "Source hash: sha256:" + ownstyle.SourceHash(acmeTokensFixture); !strings.Contains(string(tokens), hash) {
+		t.Errorf("tokens file does not hash the unmarked sheet (want %s):\n%s", hash, tokens)
 	}
 }
 

@@ -81,6 +81,25 @@ func TestStaleStyleSourceQuietOnFreshPair(t *testing.T) {
 	assertNot(t, ds, contracts.RuleStaleStyleSource, "the generated file's hash matches the CSS bytes")
 }
 
+// The app generator stamps a provenance marker on the sheets it copies.
+// The marker is metadata, so a sibling generated from the unmarked
+// sheet is still fresh; an edit below the marker is still stale.
+func TestStaleStyleSourceIgnoresMarker(t *testing.T) {
+	marked := "/* gofastr:generated generator=app kind=scaffold version=dev sum=0123456789abcdef */\n" + styleGenCSS
+	ds := fixture(t, map[string]string{
+		"ui/board.style.css":    marked,
+		"ui/ui.go":              "package ui\n",
+		"ui/board_style.gen.go": styleGenGolden(styleGenCSS),
+	})
+	assertNot(t, ds, contracts.RuleStaleStyleSource, "only the marker line differs")
+	ds = fixture(t, map[string]string{
+		"ui/board.style.css":    marked + ".extra { color: var(--color-text); }\n",
+		"ui/ui.go":              "package ui\n",
+		"ui/board_style.gen.go": styleGenGolden(styleGenCSS),
+	})
+	assertHas(t, ds, contracts.RuleStaleStyleSource)
+}
+
 // Ordinary stylesheets (not *.style.css) are not this rule's
 // business: they have no generated sibling by design.
 func TestStaleStyleSourceIgnoresPlainCSS(t *testing.T) {
