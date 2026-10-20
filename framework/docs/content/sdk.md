@@ -40,7 +40,9 @@ conceals.
 The same typed client the generated app embeds (`entities/client`),
 packaged as its own module (`module local/<app>-sdk` by default,
 `--module` to override). Per entity: `List/Get/Create/Update/Patch/Delete`,
-the three `_batch` verbs, and `Watch` (SSE), plus the `Do` escape hatch,
+the three `_batch` verbs, `Watch` (SSE), one method per state move and per
+[custom endpoint](endpoints.md) declared in `gofastr.settings.yml`, plus
+the `Do` escape hatch,
 bearer-token auth (`c.Token = "gfsk_…"`), presence-aware write structs
 (an `Input` whose fields are pointers, except a required field with no
 default, so `new(false)` overrides
@@ -235,8 +237,10 @@ Files the export already produced (or the user static dir) always win.
 
 ## Not covered (v1)
 
-Custom entity `Endpoints` get no typed methods: both SDKs expose the
-`Do`/`do` escape hatch and the reference pages list them. Multipart
+Endpoints registered by hand in Go get no typed methods: both SDKs expose
+the `Do`/`do` escape hatch and the reference pages list them. Declare an
+endpoint in `gofastr.settings.yml` to get a typed method
+([Custom endpoints](endpoints.md)). Multipart
 uploads (Image/File fields) aren't available in the generated SDKs,
 matching the CLI. Servers reconfigured to snake_case responses (`WithJSONCase`) should set
 `sdkdocs.Config.SnakeCase` for the docs examples; the generated SDKs

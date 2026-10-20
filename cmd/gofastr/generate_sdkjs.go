@@ -45,6 +45,11 @@ func renderSDKJSFiles(spec sdkSpec) []generatedFile {
 		for _, t := range crud.RoutableTransitions(decl.States) {
 			resourceProps = append(resourceProps, fmt.Sprintf("    this[%q][%q] = (id) => this[%q].transition(id, %q);", jsResourceProp(ent), t.Key, jsResourceProp(ent), t.Key))
 		}
+		// One binding per endpoint gofastr.settings.yml declares on the
+		// table (checkEndpointCalls keeps its name off every member above).
+		for _, ep := range sdkEndpoints(decl) {
+			resourceProps = append(resourceProps, jsEndpointBinding(jsResourceProp(ent), ep))
+		}
 	}
 
 	// Client class last in the .js so Resource is already defined; the d.ts
@@ -74,6 +79,9 @@ func renderSDKJSFiles(spec sdkSpec) []generatedFile {
 		prop := fmt.Sprintf("  readonly %s: Resource<%s, %sInput, %sPatch>", jsResourceProp(ent), ent.Struct, ent.Struct, ent.Struct)
 		if len(crud.RoutableTransitions(spec.Decls[i].States)) > 0 {
 			prop += fmt.Sprintf(" & %sMoves", ent.Struct)
+		}
+		if len(sdkEndpoints(spec.Decls[i])) > 0 {
+			prop += fmt.Sprintf(" & %sEndpoints", ent.Struct)
 		}
 		dts.WriteString(prop + ";\n")
 	}
@@ -207,6 +215,40 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		}
 		dts.WriteString("}\n\n")
 	}
+	writeDTSEndpoints(dts, decl, ent)
+}
+
+// dtsRuntimeTypes are the names client.d.ts declares for every app.
+var dtsRuntimeTypes = []string{"ApiError", "ListParams", "CursorParams", "ListResponse", "CursorPage", "BatchResult", "BatchResponse", "Resource", "Client"}
+
+// checkDTSTypeNames refuses an endpoint whose <Method>Request interface
+// would take a name client.d.ts already declares: TypeScript merges two
+// interfaces of one name, so the clash would compile and type the call
+// with the other declaration's fields. The Go twin needs no check here;
+// refuseDuplicateDecls catches it in client.go.
+func checkDTSTypeNames(spec sdkSpec) error {
+	owner := map[string]string{}
+	for _, n := range dtsRuntimeTypes {
+		owner[n] = "the SDK runtime"
+	}
+	for _, ent := range spec.Entities {
+		for _, suffix := range []string{"", "Input", "Patch", "Moves", "Endpoints"} {
+			owner[ent.Struct+suffix] = "entity " + ent.Table
+		}
+	}
+	for _, d := range spec.Decls {
+		for _, ep := range sdkEndpoints(d) {
+			if _, rest, _ := endpointInput(ep); len(rest) == 0 {
+				continue
+			}
+			name := toCamelCase(ep.Name) + "Request"
+			if prev, dup := owner[name]; dup {
+				return fmt.Errorf("endpoint %q on %q: its request type %s is already declared by %s in client.d.ts; rename the endpoint", ep.Name, d.Name, name, prev)
+			}
+			owner[name] = "endpoint " + ep.Name
+		}
+	}
+	return nil
 }
 
 // stampNote renders a move's stamp for a doc comment; empty when none.
@@ -411,6 +453,26 @@ class Resource {
   async transition(id, key) {
     const out = await this.client.do("POST", this._path("/" + encodeURIComponent(id) + "/transitions/" + encodeURIComponent(key)), {});
     return out && out.data !== undefined ? out.data : out;
+  }
+
+  /**
+   * Calls one endpoint gofastr.settings.yml declares under this table.
+   * GET and DELETE send input as the query string; every other method
+   * sends it as the JSON body, an empty object when there is none (the
+   * route requires the JSON content type). Generated clients bind each
+   * endpoint as a named method (api.posts.featurePost(id, input)).
+   */
+  _endpoint(method, suffix, input) {
+    if (method === "GET" || method === "DELETE") {
+      const q = new URLSearchParams();
+      for (const [key, value] of Object.entries(input || {})) {
+        if (value === undefined || value === null) continue;
+        q.set(key, String(value));
+      }
+      const s = q.toString();
+      return this.client.do(method, this._path(suffix) + (s ? "?" + s : ""));
+    }
+    return this.client.do(method, this._path(suffix), input || {});
   }
 
   /**

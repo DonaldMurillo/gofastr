@@ -21,6 +21,9 @@ files say DO NOT EDIT, and a rerun replaces them.
 
 - `client`: `entities/client/client.go`, the app's typed Go client, from
   `entities/*.go`.
+- `endpoints`: `entities/endpoints.gen.go`, the registration of the custom
+  endpoints declared in `gofastr.settings.yml`. See
+  [Custom endpoints](endpoints.md).
 - `cli`: a customer-facing CLI for the app API. Its `*.gen.go` files are
   rebuilt; `custom.go` is created once and stays yours. See
   [Ship your API as a CLI](app-cli.md).
@@ -44,8 +47,9 @@ The codegen config is the `codegen:` section of
    the project root.
 
 Whether or not a config is found, `gofastr generate` then rebuilds
-`entities/client/client.go` when that file exists; the `client` generator
-needs no config entry. With neither a config nor a client it has nothing to
+`entities/endpoints.gen.go` when the settings file has an `endpoints:`
+section, and `entities/client/client.go` when that file exists; neither
+needs a config entry. With neither a config nor a client it has nothing to
 generate and exits with guidance. To generate an app, run `gofastr generate
 app gofastr.yml`.
 

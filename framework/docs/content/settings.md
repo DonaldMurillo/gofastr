@@ -13,6 +13,13 @@ codegen:        # gofastr generate and gofastr build
     - name: sdk
       output: sdk
 
+endpoints:      # custom entity routes with typed handlers
+  - name: refund_order
+    entity: orders
+    method: POST
+    path: "{id}/refund"
+    handler: entities/refunds.go#RefundOrder
+
 contracts:      # gofastr verify
   performance: warn
   rules:
@@ -33,6 +40,7 @@ unmounted:      # written by gofastr unmount and gofastr remount
 | Section | Read by | Reference |
 | --- | --- | --- |
 | `codegen` | `gofastr generate`, `gofastr build`, `gofastr generate --watch` | [Codegen](codegen.md) |
+| `endpoints` | `gofastr generate`, `gofastr build`, `gofastr generate --watch` | [Custom endpoints](endpoints.md) |
 | `contracts` | `gofastr verify`, `gofastr build`, `gofastr dev`, the MCP contracts tools | [Contracts](contracts.md) |
 | `isolation` | `framework/isolation`: `App.Start`, `gofastr dev`, generated `main.go` | [Worktree isolation](isolation.md) |
 | `unmounted` | `gofastr unmount`, `gofastr remount`, `gofastr verify`, `gofastr upgrade`, `gofastr audit deps` | [Unmounting a package](unmount.md) |
@@ -55,8 +63,8 @@ name a settings file directly instead.
 
 ## What is an error
 
-- A top-level key other than `version`, `codegen`, `contracts`,
-  `isolation` or `unmounted`.
+- A top-level key other than `version`, `codegen`, `endpoints`,
+  `contracts`, `isolation` or `unmounted`.
 - A `version` other than `1`.
 - A file the settings file replaced, found where the reader looks for
   settings: `gofastr.codegen.yml`, `gofastr.contracts.yml` or

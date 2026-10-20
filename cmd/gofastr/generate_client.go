@@ -68,6 +68,8 @@ func clientHasMoves(decls []framework.EntityDeclaration) bool {
 //   - DeletePost(ctx, id) error
 //   - BatchCreatePost / BatchUpdatePost / BatchDeletePost (the _batch routes)
 //   - WatchPost(ctx, fn): blocking SSE loop over GET {path}/_events
+//   - one method per state move and per endpoint gofastr.settings.yml
+//     declares: PublishPost(ctx, id), FeaturePost(ctx, id, in)
 //
 // PostInput is the create/update payload, same shape minus the ID, so
 // callers don't construct a zero-id Post; its optional fields are pointers.
@@ -611,6 +613,11 @@ func (c *Client) %[1]s%[2]s(ctx context.Context, id string) (%[2]s, error) {
 }
 
 `, toCamelCase(t.Key), struct_, t.Key, what, route)
+	}
+
+	// One method per endpoint gofastr.settings.yml declares.
+	for _, ep := range sdkEndpoints(decl) {
+		sb.WriteString(renderClientEndpoint(ep, route))
 	}
 
 	return sb.String()

@@ -57,6 +57,8 @@ func init() {
 			summary: "Add an editable screen stub, or build it from a Playwright aria snapshot", run: generateScaffoldScreen},
 		{name: "package", kind: scaffoldKind, usage: "package [<name>] [--out=<dir>] [--dry-run]",
 			summary: "Copy a canonical chrome package (siteheader, sitefooter, docpage) into the app; no name lists them", run: runGeneratePackage},
+		{name: "endpoints", kind: derivedKind, usage: "endpoints [--dry-run] [--json]",
+			summary: "Rebuild entities/endpoints.gen.go from the endpoints section of gofastr.settings.yml", run: runGenerateEndpoints},
 		{name: "client", kind: derivedKind, usage: "client [--force] [--dry-run] [--json]",
 			summary: "Rebuild entities/client, the app's typed Go client, from entities/", run: runGenerateClient},
 		{name: "cli", kind: derivedKind, usage: "cli [flags]",

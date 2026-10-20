@@ -45,7 +45,7 @@ type appClientPlan struct {
 // planAppClient renders the client for the entities under dir and compares
 // it with the file there now. ok is false when dir has no entities package.
 func planAppClient(dir string) (plan appClientPlan, ok bool, err error) {
-	decls, err := packReadEntities(dir)
+	decls, err := readAppDecls(dir)
 	if err != nil {
 		return plan, false, fmt.Errorf("read entities: %w", err)
 	}

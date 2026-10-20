@@ -286,6 +286,17 @@ type Endpoint struct {
 	// MCPRequireUser. MCPGate, when set, still decides the twin.
 	Public bool `json:"public,omitempty"`
 
+	// SDK marks an endpoint declared under endpoints: in
+	// gofastr.settings.yml. The generated Go client, JS SDK and CLI carry a
+	// typed call for it, and the SDK schema hash covers it. The derived
+	// entities/endpoints.gen.go sets it; a hand-registered endpoint leaves
+	// it false and the generated clients reach it through Do.
+	SDK bool `json:"sdk,omitempty"`
+
+	// Returns names what a successful call answers with, for the generated
+	// clients: an entity name ("orders"), "[]" and an entity name for a
+	// list of them, or "" for an empty object. Set with SDK.
+	Returns string `json:"returns,omitempty"`
 }
 
 // TenantColumn returns the tenant-scoping column name for this entity:

@@ -31,3 +31,7 @@ notes:
       fields:
         - field: gofastr/framework/entity.Endpoint.MCPPublic
     guidance: "Rename MCPPublic to Public. The endpoint's HTTP route then serves anonymous callers too, which an endpoint marked MCPPublic was meant to allow."
+  - change: "custom endpoints can be declared under endpoints: in gofastr.settings.yml with a linked typed handler; gofastr generate writes entities/endpoints.gen.go and the Go client, JS SDK and CLI each gain a typed call"
+    breaking: false
+    nodetect: "a new section; nothing in an existing app uses it"
+    guidance: "Optional. Move a hand-registered endpoint into the settings file to get typed calls in the clients. See gofastr docs endpoints."

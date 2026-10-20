@@ -1831,7 +1831,7 @@ See [plugins](plugins.md) → MCP tool gating.
 config's `Endpoints`, so they pass the same route and MCP checks as
 endpoints written in the config. The generated
 `entities/endpoints.gen.go` uses it to attach the
-endpoints declared in `gofastr.settings.yml` to entity files it does not own:
+[settings endpoints](endpoints.md) to entity files it does not own:
 
 ```go
 app.EntityEndpoints("posts", framework.Endpoint{

@@ -172,7 +172,7 @@ func runGenerateSDK(args []string) {
 		return
 	}
 
-	decls, err := packReadEntities(".")
+	decls, err := readAppDecls(".")
 	if err != nil {
 		fail("read entities: %v", err)
 		osExit(1)
@@ -524,6 +524,12 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *sdkOptions) (sdkSpe
 	if len(spec.Decls) == 0 {
 		return sdkSpec{}, fmt.Errorf("selection matches no entities: nothing to generate")
 	}
+	if err := checkEndpointReturns(spec.Decls); err != nil {
+		return sdkSpec{}, err
+	}
+	if err := checkDTSTypeNames(spec); err != nil {
+		return sdkSpec{}, err
+	}
 	return spec, nil
 }
 
@@ -756,7 +762,7 @@ func (sdkGenerator) Generate(_ context.Context, genCtx *codegen.Context, cfg cod
 	if dir == "" {
 		dir = "."
 	}
-	decls, err := packReadEntities(dir)
+	decls, err := readAppDecls(dir)
 	if err != nil {
 		return nil, err
 	}

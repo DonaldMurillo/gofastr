@@ -8,6 +8,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Custom endpoints in `gofastr.settings.yml`.** An `endpoints:` entry
+  names an entity, a method, a path relative to the entity, and a linked
+  handler (`entities/refunds.go#RefundOrder`). `gofastr generate` reads
+  the handler's input and output types from the Go source and writes
+  `entities/endpoints.gen.go`, which registers the route with typed input
+  and output schemas. The Go client and SDK gain `c.RefundOrder(ctx, id,
+  client.RefundOrderRequest{...})`, the JS SDK `api.orders.refundOrder(id,
+  {...})` typed in `client.d.ts`, and the generated CLI
+  `orders refund-order <id> --flag ...`. OpenAPI documents path, query and
+  body inputs separately and the response as the returned entity schema,
+  the SDK docs site names the typed calls, and the SDK schema hash covers
+  the endpoints. Input fields travel by their
+  `handler.Bind` tags; generation refuses a name that collides with a
+  resource method, a state move or a CLI verb, and a return type the
+  client selection leaves out. `mcp: true` adds the MCP tool and
+  `public: true` serves anonymous callers. New `gofastr generate
+  endpoints` rebuilds only the registration. See `gofastr docs endpoints`.
 - **`App.EntityEndpoints` queues endpoints for an entity registered
   later.** The next `App.Entity` or `TryEntity` call for that name merges
   them into its config, so they pass the same route and MCP checks.

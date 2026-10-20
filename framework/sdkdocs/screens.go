@@ -601,7 +601,14 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity) render.HTML {
 		if desc == "" {
 			desc = "Custom endpoint" + map[bool]string{true: " (" + ep.Name + ")", false: ""}[ep.Name != ""]
 		}
-		ops = append(ops, op{strings.ToUpper(ep.Method), path, desc + ": use the SDK's Do escape hatch"})
+		// A settings-declared endpoint has a typed call in both SDKs;
+		// a hand-registered one is reached through Do.
+		if ep.SDK && ep.Name != "" {
+			desc += ": Go c." + upperFirst(casing.ToCamel(ep.Name)) + ", TypeScript api." + casing.ToCamel(cfg.Table) + "." + casing.ToCamel(ep.Name)
+		} else {
+			desc += ": use the SDK's Do escape hatch"
+		}
+		ops = append(ops, op{strings.ToUpper(ep.Method), path, desc})
 	}
 	var rows []ui.Row
 	for _, o := range ops {
