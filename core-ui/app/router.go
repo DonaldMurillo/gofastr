@@ -14,7 +14,7 @@ import (
 // Router maps paths to screens and layouts.
 // Supports both exact paths ("/about") and dynamic patterns
 // ("/products/:slug"). The "{slug}" brace syntax, used by the
-// blueprint, the REST/entity routers, and the entity docs, is also
+// app spec, the REST/entity routers, and the entity docs, is also
 // accepted and normalized to ":slug" at registration (see
 // normalizeRoutePath). Both forms match identically.
 type Router struct {
@@ -46,7 +46,7 @@ func NewRouter() *Router {
 // If layout is nil, the screen will use the default layout (if set).
 //
 // Both ":param" (the core-ui historical form) and "{param}" (the
-// blueprint / REST / entity-doc form) are accepted; the path is
+// app spec / REST / entity-doc form) are accepted; the path is
 // normalized to ":param" once here so Resolve, Paths, and llm.md
 // generation all see one shape (issue #71). A trailing catch-all
 // segment ("{path...}" or ":path*") captures one or more remaining

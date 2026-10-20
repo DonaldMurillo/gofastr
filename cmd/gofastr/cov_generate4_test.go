@@ -67,16 +67,16 @@ func TestGenerateFromCodegenConfigEnterDirErrorJSON(t *testing.T) {
 	}
 }
 
-func TestGenerateFromBlueprintCleanWriteHappy(t *testing.T) {
+func TestGenerateFromAppSpecCleanWriteHappy(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
 	bp := filepath.Join(dir, "bp.yml")
-	if err := os.WriteFile(bp, []byte(testBlueprintYAML()), 0o644); err != nil {
+	if err := os.WriteFile(bp, []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// Non-dry-run, explicit --out subdir, json output → exercises write + json.
 	covT_capStdout(t, func() {
-		generateFromBlueprint(generateOptions{from: bp, outputDir: ".gen", outputSet: true, json: true})
+		generateFromAppSpec(generateOptions{from: bp, outputDir: ".gen", outputSet: true, json: true})
 	})
 	found := false
 	_ = filepath.Walk(filepath.Join(dir, ".gen"), func(p string, info os.FileInfo, err error) error {
@@ -86,6 +86,6 @@ func TestGenerateFromBlueprintCleanWriteHappy(t *testing.T) {
 		return nil
 	})
 	if !found {
-		t.Fatal("blueprint clean+write produced no files")
+		t.Fatal("app spec clean+write produced no files")
 	}
 }

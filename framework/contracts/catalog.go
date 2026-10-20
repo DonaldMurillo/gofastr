@@ -1351,7 +1351,7 @@ func permissionRules() []Rule {
 			"sessions) or `auth.RequireAuth` (bearer tokens) in the chain, no request ever carries a " +
 			"user, so every signed-in caller is treated as anonymous and gets 401, identically to a " +
 			"real intruder. The app looks configured and the login form works; everything behind it is " +
-			"unreachable. This shipped once from the blueprint generator, which enabled the battery and " +
+			"unreachable. This shipped once from the app generator, which enabled the battery and " +
 			"never mounted the middleware. In a module with several binaries each is checked " +
 			"separately, by import reachability: one app's mount says nothing about another app's " +
 			"manager, which its binary never links.",

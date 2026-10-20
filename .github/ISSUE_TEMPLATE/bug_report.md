@@ -16,5 +16,5 @@ labels: bug
 
 **Minimal repro**
 
-<!-- The smallest gofastr.yml blueprint, code snippet, or command sequence
+<!-- The smallest gofastr.yml app spec, code snippet, or command sequence
      that triggers it. A failing test is gold. -->

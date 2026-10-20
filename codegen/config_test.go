@@ -238,7 +238,7 @@ func TestDiscoverConfigPrefersDedicatedFile(t *testing.T) {
 	}
 }
 
-func TestDiscoverConfigIgnoresBlueprintWithoutCodegen(t *testing.T) {
+func TestDiscoverConfigIgnoresAppSpecWithoutCodegen(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(`
 app:
@@ -255,7 +255,7 @@ app:
 	}
 }
 
-func TestDiscoverConfigReadsCodegenSectionAlongsideBlueprintKeys(t *testing.T) {
+func TestDiscoverConfigReadsCodegenSectionAlongsideAppSpecKeys(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(`
 app:

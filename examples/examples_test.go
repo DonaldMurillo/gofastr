@@ -308,7 +308,7 @@ func TestSPAEntityAPI(t *testing.T) {
 	})
 }
 func TestBlogEntityDeclarationsLoad(t *testing.T) {
-	// Blog entities are now declared in gofastr.yml (blueprint YAML).
+	// Blog entities are now declared in gofastr.yml (app spec YAML).
 	// Verify the framework can register these entity schemas programmatically.
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {

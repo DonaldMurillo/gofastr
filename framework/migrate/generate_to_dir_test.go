@@ -12,7 +12,7 @@ import (
 // These tests cover GenerateMigrationFile, the registry→versioned-files
 // entrypoint a host binary calls from its own main() to emit versioned
 // migrations from its compiled entity registry (the Ent/Django shape). They
-// assert (a) first-run output matches the blueprint generator's format
+// assert (a) first-run output matches the app generator's format
 // byte-for-byte, (b) an added column produces an incremental up/down,
 // (c) an EntityConfig.Renames declaration flows through as a rename,
 // (d) generation is deterministic, plus the Group directive and up-to-date
@@ -38,7 +38,7 @@ func blogReg(extraField *schema.Field) testReg {
 
 // TestGenerateMigrationFileFirstRun proves the first generation from a
 // registry writes migrations/0001_<name>.sql + schema.snapshot.json whose
-// bytes are byte-identical to what the blueprint generator's primitives
+// bytes are byte-identical to what the app generator's primitives
 // (GenerateMigration + RenderMigrationFile + SaveSnapshot) produce, i.e. the
 // new entrypoint is format-compatible with the standalone CLI, not a parallel
 // scheme.
@@ -68,7 +68,7 @@ func TestGenerateMigrationFileFirstRun(t *testing.T) {
 		t.Fatalf("snapshot not written: %v", err)
 	}
 
-	// Parity: independently compute what the blueprint path would emit for the
+	// Parity: independently compute what the app spec path would emit for the
 	// same registry + empty snapshot, and require the file matches exactly.
 	up, down, _, gerr := GenerateMigration(reg,
 		SchemaSnapshot{Tables: map[string]map[string]string{}}, DialectSQLite)
@@ -80,7 +80,7 @@ func TestGenerateMigrationFileFirstRun(t *testing.T) {
 	}
 	want := RenderMigrationFile(1, "initial", up, down)
 	if string(got) != want {
-		t.Errorf("generated file does not match blueprint format:\n--- want ---\n%s\n--- got ---\n%s", want, got)
+		t.Errorf("generated file does not match app spec format:\n--- want ---\n%s\n--- got ---\n%s", want, got)
 	}
 
 	// Snapshot must now describe both tables (no remaining diff).

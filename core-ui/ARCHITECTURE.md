@@ -139,7 +139,7 @@ The framework primitives live in:
 - `core-ui/widget`: the builder API (`widget.New(name).Mount(...).Slot(...).Signal(...).RPC(...).RPCWithSignal(...)`)
 - `core-ui/node`: the JSON-clean UI element tree (`Node`, `Action`, tree
   helpers). A dependency-free, serializable description of a screen. Both the
-  blueprint codegen (`cmd/gofastr`) and Kiln's World IR (`kiln/world`, which
+  app spec codegen (`cmd/gofastr`) and Kiln's World IR (`kiln/world`, which
   type-aliases `node.Node`/`node.Action`) compose it; neither owns it. The IR
   used to live under `kiln/`, which forced first-party callers to import the
   Kiln namespace. It was moved down into `core-ui` so the dependency points the
@@ -158,7 +158,7 @@ The framework primitives live in:
   refused outright: it is the SSE swap target,
   so naming it lets an element impersonate a registered island.
   `RenderTrustedNode` and `RenderTrustedKind` are the first-party pair.
-  They keep the action attributes and are what the blueprint generator
+  They keep the action attributes and are what the app generator
   emits. The attribute name alone cannot tell a trusted tree from an
   untrusted one, so the caller picks the entry point; picking `RenderNode`
   for first-party IR silently drops every action attribute.
@@ -1263,7 +1263,7 @@ larger than first paint it just breaks. Use an island RPC and let the
 server do the math.
 
 ### Failure 4: "Ship CSS from the app / generator to make it look right"
-> Symptom: a `BlueprintBaseCSS` string (or an app `theme.go`, or a page)
+> Symptom: an `AppSpecBaseCSS` string (or an app `theme.go`, or a page)
 > accreting `.mrd-hero`, `.gofastr-entity-form`, `.layout-marketing`
 > rules; hand-rolled `<div class="…">` structure; overriding a component's
 > internals from outside via a CSS var or descendant selector.
@@ -1286,7 +1286,7 @@ class, a raw property where a `var(--*)` token belongs.
 
 The fix is **One styling surface**, described below. Treat a surface that needs
 CSS the components don't provide as a *design-system gap to fill upstream*,
-not a patch. The blueprint composing the design system is the system's
+not a patch. The app generator composing the design system is the system's
 completeness test: when it can't, you found the gap.
 
 ---
@@ -1694,15 +1694,15 @@ owned sheets.
 | Global resets, base typography, tabular figures, landmark-focus | `framework/uihost` | `frameworkBuiltinCSS` |
 | Colors / fonts / dark scheme | `core-ui/style` | theme tokens (`--color-*`, `--font-*`, `Theme.DarkColors`) |
 
-**The blueprint generator and every app ship ZERO unscoped CSS.** They
+**The app generator and every app ship ZERO unscoped CSS.** They
 *compose* the design system and inherit all styling from it: `ui.Hero`,
 `ui.Grid`, `ui.DetailList`, `ui.AuthCard`, `ui.Form`. A generated app's
-`BlueprintBaseCSS()` returns `""`. What the kit does not ship, the
+`AppSpecBaseCSS()` returns `""`. What the kit does not ship, the
 site's own chrome above all, is the app's own package with an owned
 sheet: the framework has no site header, footer or docs-page component,
 because a preset frame steers every site into one look.
 `examples/acme-site/{siteheader,sitefooter,helpdocs}` are the
-references, and the blueprint writes the same header and footer
+references, and the app generator writes the same header and footer
 packages into a generated app as its own code. An owned sheet never
 reaches into a kit component (`[data-cui-*]` and `.fui-*` selectors
 are refused, and `data-cui-internal` bounds its `@scope`), and every
@@ -2264,7 +2264,7 @@ core-ui/
   interactive/ : declarative data-cui-* attribute builders (RPC, signal
                  bindings, widget chaining) that wrap render.HTML with no JS
   node/        : the JSON-clean serializable UI element tree (first-party IR;
-                 dependency-free, composed by blueprint codegen and Kiln)
+                 dependency-free, composed by app spec codegen and Kiln)
   noderender/  : walks a node.Node tree and emits HTML via core-ui/html
                  (treats the IR as untrusted; see RenderTrustedNode)
   uinodev1/    : the closed ui.node.v1 wire type + validator for

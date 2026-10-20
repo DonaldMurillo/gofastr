@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// runGenerateWatch polls the blueprint (or gofastr.codegen.yml inputs) for
+// runGenerateWatch polls the app spec (or gofastr.codegen.yml inputs) for
 // changes and re-runs generateProject whenever their content shifts. Polling
 // rather than fsnotify so we stay dependency-free; debounced to ~250ms.
 //
@@ -104,7 +104,7 @@ func hashEntitiesDir(dir string) string {
 func hashGenerateInputs(options generateOptions) string {
 	h := sha256.New()
 	if options.from != "" {
-		hashBlueprintInputInto(h, options.from)
+		hashAppSpecInputInto(h, options.from)
 		return fmt.Sprintf("%x", h.Sum(nil))
 	}
 	if options.configPath != "" {
@@ -137,7 +137,7 @@ func hashGenerateInputs(options generateOptions) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-func hashBlueprintInputInto(h interface{ Write([]byte) (int, error) }, path string) {
+func hashAppSpecInputInto(h interface{ Write([]byte) (int, error) }, path string) {
 	info, err := os.Stat(path)
 	if err != nil {
 		fmt.Fprintln(h, path)
@@ -149,7 +149,7 @@ func hashBlueprintInputInto(h interface{ Write([]byte) (int, error) }, path stri
 	}
 	var paths []string
 	_ = filepath.WalkDir(path, func(next string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !isBlueprintFile(next) {
+		if err != nil || d.IsDir() || !isAppSpecFile(next) {
 			return nil
 		}
 		paths = append(paths, next)

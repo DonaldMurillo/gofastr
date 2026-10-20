@@ -13,7 +13,7 @@ import (
 )
 
 // Property: entity metadata is data, not markup. Field names, enum values,
-// and endpoint descriptions are developer/blueprint-authored strings that
+// and endpoint descriptions are developer/app-spec-authored strings that
 // land in a publicly served HTML page; every one of them must arrive
 // escaped so a crafted declaration cannot inject elements into the SDK
 // docs site. Surfaces asserted: the fields table (name column, enum

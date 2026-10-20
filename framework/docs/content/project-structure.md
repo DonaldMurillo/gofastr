@@ -34,18 +34,18 @@ GoFastr leans on the two layouts Go developers already reach for, in order:
 
 **1. Declarations + scaffolded code.** Entities are the canonical
 description: written in Go (`entities/entities.go`, the `gofastr init`
-default) or declared in a [`gofastr.yml` blueprint](blueprints.md). When you
-generate from a blueprint (`gofastr generate --from=gofastr.yml`), it scaffolds
+default) or declared in a [`gofastr.yml` app spec](app-spec.md). When you
+generate from an app spec (`gofastr generate --from=gofastr.yml`), it scaffolds
 owned Go straight into this root layout: a flat `package main` (`main.go`,
 `app.go`, `screens_register.go` plus one `screen_<name>.go` per screen, …) plus
 the `entities/` package; you read, edit, and commit it.
-The blueprint is optional and one-time, not a source of truth:
+The app spec is optional and one-time, not a source of truth:
 `generate` is one-shot (it refuses to overwrite an existing project unless you
 pass `--force`), so once the code is yours you own and edit it directly, and
 you can delete `gofastr.yml` entirely; the running app does not need it. Most
 small apps never need more than this.
 
-**`--out=<dir>` (or `output_dir:` in the blueprint's `app:` block) scaffolds into
+**`--out=<dir>` (or `output_dir:` in the app spec's `app:` block) scaffolds into
 a subpackage** instead of the module root, useful when the repo is a monorepo or
 an example that also hosts its own Go test package and you want the app to live
 under, say, `app/`. The [`examples/ecommerce`](https://github.com/DonaldMurillo/gofastr/tree/main/examples/ecommerce)
@@ -112,5 +112,5 @@ A domain package under `internal/` can mix framework entities and hand-written
   one feature across many directories. Organize by domain instead.
 - **Keeping `gofastr.yml` around as a source of truth.** It's an optional,
   one-time input to the scaffold; the app never reads it again. After
-  scaffolding, the owned Go is canonical; you can delete the blueprint and
+  scaffolding, the owned Go is canonical; you can delete the app spec and
   the app still runs.

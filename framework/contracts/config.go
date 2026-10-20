@@ -14,7 +14,7 @@ import (
 )
 
 // ConfigFileNames are the files [LoadConfig] looks for, in order. The
-// first two are dedicated; the third is the blueprint, which may carry a
+// first two are dedicated; the third is the app spec, which may carry a
 // top-level `contracts:` block so a small project needs one file rather
 // than two.
 var ConfigFileNames = []string{
@@ -141,7 +141,7 @@ func LoadConfig(root, explicit string) (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
-		// A gofastr.yml without a `contracts:` block is a blueprint, not a
+		// A gofastr.yml without a `contracts:` block is an app spec, not a
 		// contracts config. Keep looking rather than claiming it.
 		if cfg == nil {
 			continue
@@ -152,7 +152,7 @@ func LoadConfig(root, explicit string) (*Config, error) {
 }
 
 // parseConfig returns (nil, nil) when the document parses but holds no
-// contracts block, the "this is a blueprint, not my config" case.
+// contracts block, the "this is an app spec, not my config" case.
 func parseConfig(path string, body []byte) (*Config, error) {
 	doc, err := coreyaml.Parse(string(body))
 	if err != nil {
@@ -162,7 +162,7 @@ func parseConfig(path string, body []byte) (*Config, error) {
 	if doc != nil && doc.Kind == coreyaml.Map {
 		if block, ok := doc.Map["contracts"]; ok {
 			root = block
-		} else if isBlueprintName(path) {
+		} else if isAppSpecName(path) {
 			return nil, nil
 		}
 	}
@@ -177,7 +177,7 @@ func parseConfig(path string, body []byte) (*Config, error) {
 	return cfg, nil
 }
 
-func isBlueprintName(path string) bool {
+func isAppSpecName(path string) bool {
 	base := filepath.Base(path)
 	return base == "gofastr.yml" || base == "gofastr.yaml"
 }

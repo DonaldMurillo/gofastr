@@ -1,6 +1,6 @@
 package main
 
-// Property: the lms example blueprint gates every student-record entity
+// Property: the lms example app spec gates every student-record entity
 // (enrollments, progress, certificates) the way it gates the student
 // roster itself: RBAC on every operation, so an unrelated registered
 // account is refused on read and write — the generated app must not
@@ -19,7 +19,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-// TestLmsGatesStudentRecords boots the real lms blueprint, seeds one of
+// TestLmsGatesStudentRecords boots the real lms app spec, seeds one of
 // each student record through the API a staff registrar would use, then
 // registers a SECOND, unrelated account and asserts that stranger is refused
 // on read and write of all three record families. RED today: the default
@@ -30,7 +30,7 @@ func TestLmsGatesStudentRecords(t *testing.T) {
 	if testing.Short() {
 		t.Skip("generates, builds, and boots an app")
 	}
-	bin, appDir := generateAndCompileBlueprint(t, "../../examples/lms/gofastr.yml", "lms")
+	bin, appDir := generateAndCompileAppSpec(t, "../../examples/lms/gofastr.yml", "lms")
 
 	// registerAndLogin mints a fresh account exactly the way the portfolio
 	baseURL, appOut := bootGeneratedApp(t, "lms", bin, appDir)
@@ -84,7 +84,7 @@ func TestLmsGatesStudentRecords(t *testing.T) {
 	// can do what it does, which is half the finding.
 	registrar := registerAndLogin("registrar@learnhub.test")
 
-	// Seed one row per record family, keyed off the blueprint's own seeded
+	// Seed one row per record family, keyed off the app spec's own seeded
 	// rows. students is RBAC-gated so the roster (and therefore the ids the
 	// FK columns demand) is read straight from the boot DB the harness
 	// assigns — DATABASE_URL=file:<appDir>/boot-gate.db.

@@ -48,16 +48,16 @@ each command to the doc that covers it.
 - `gofastr theme init`: scaffold a typed `theme/theme.go` you own
   (`--out=<path>` writes elsewhere; `--force` overwrites).
 
-## Blueprints
+## App specs
 
-- `gofastr validate <yml>`: validate a blueprint without generating
+- `gofastr validate <yml>`: validate an app spec without generating
   (exit 0 = valid; includes the unscoped-PII lint).
 - `gofastr generate --from=<yml>`: one-shot scaffold of the whole app
-  as owned Go ([tutorial](tutorial-blueprint-app.md)). `generate --add`
+  as owned Go ([tutorial](tutorial-app-spec.md)). `generate --add`
   / `generate entity <name>` / `generate screen <name>` scaffold *new*
   files into an existing app; owned files are never touched.
   `generate screen <name> --from-a11y=<file>` builds the screen from a
-  Playwright aria snapshot ([blueprints](blueprints.md)).
+  Playwright aria snapshot ([app specs](app-spec.md)).
   `generate --config=<codegen.yml>` runs the configurable codegen engine
   ([codegen](codegen.md)); `generate --watch` re-runs on every change.
   `generate all` is the full-project path (same engine as `--from`).
@@ -79,7 +79,7 @@ each command to the doc that covers it.
   directories it created, leaving everything else alone, so the command
   can be re-run. After the copy the package is yours: edit the Go
   freely, run `gofastr gen styles` after editing a sheet, `go mod tidy`
-  once for the chromium test's chromedp dependencies. A blueprint with
+  once for the chromium test's chromedp dependencies. An app spec with
   marketing screens writes the same packages (tests included) through
   the same copy, so the two cannot drift.
 - `gofastr pack [app-dir]`: snapshot a generated app into a

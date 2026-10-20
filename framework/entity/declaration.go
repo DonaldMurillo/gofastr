@@ -9,7 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// EntityDeclaration is the grouped JSON/YAML shape used after blueprint
+// EntityDeclaration is the grouped JSON/YAML shape used after app spec
 // decoding. The decoder also accepts flat shorthand keys and moves them into
 // Scope, Pagination, or Exposure before returning the declaration.
 type EntityDeclaration struct {
@@ -230,7 +230,7 @@ type ExposureDeclaration struct {
 }
 
 // AccessDeclaration is the JSON/YAML-friendly mirror of AccessControl,
-// the per-operation RBAC permissions for a blueprint-declared entity.
+// the per-operation RBAC permissions for a declared entity.
 // "read" covers both List and Get. The CRUD layer enforces these via
 // access.Can against the policy + roles in the request context (403 on
 // missing permission), exactly like a Go-declared EntityConfig.Access.

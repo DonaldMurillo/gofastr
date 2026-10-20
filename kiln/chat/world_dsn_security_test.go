@@ -19,7 +19,7 @@ import (
 // Pins: no credential value appears in any world the chat server hands
 // out. redactedWorld is the single masking chokepoint for the world-bearing
 // GET surfaces, and a credentialed DSN is a credential by the framework's
-// own freeze contract: kiln/freeze/blueprint.go dbURLRef/dsnHasSecret
+// own freeze contract: kiln/freeze/appspec.go dbURLRef/dsnHasSecret
 // replace exactly this shape (postgres://user:pass@host) with a
 // ${DATABASE_URL} reference before anything durable is written, because the
 // password embedded in the URL is a live database credential.

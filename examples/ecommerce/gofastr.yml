@@ -46,7 +46,7 @@ entities:
     # example should be teaching.
     #
     # The shape this example actually wants is "anonymous read, any signed-in
-    # user writes", and the blueprint still cannot express it: an `access:`
+    # user writes", and the app spec still cannot express it: an `access:`
     # block needs a named permission, and a generated app grants permissions
     # only to the admin role, so a self-registered user could never satisfy
     # one. Admin-gated writes are the closest expressible posture, and the

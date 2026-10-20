@@ -7,28 +7,28 @@ package main
 // but writeYAMLEntry writes `pad + key + ": "` with no escaping, and three maps
 // in the pack path carry keys chosen by whoever controls the packed directory:
 //
-//   - seed row keys        (packReadSeed -> astAny -> blueprintToMap -> rows)
+//   - seed row keys        (packReadSeed -> astAny -> appSpecToMap -> rows)
 //   - entity properties    (packEntityDeclFromCall -> astAny -> m["properties"])
 //   - theme dark overrides (packReadTheme -> appToMap -> theme.dark)
 //
 // A key containing newlines detonates at pack time: `gofastr pack` writes a
-// gofastr.yml that re-parses to a DIFFERENT blueprint than the app being
+// gofastr.yml that re-parses to a DIFFERENT app spec than the app being
 // packed — below, a second seed entity carrying credentials the source never
 // declared. That forges the snapshot pack is trusted to produce (pack.go's
-// banner claims encodeBlueprintYAML is the exact inverse of decodeBlueprint).
+// banner claims encodeAppSpecYAML is the exact inverse of decodeAppSpec).
 //
 // Threat model, after refuting the obvious stronger one: core/yaml NEVER
 // unquotes map keys (parseMap stores the raw bytes before the first ":"),
-// so a hostile *blueprint* cannot author a newline-bearing key, and the
+// so a hostile *app spec* cannot author a newline-bearing key, and the
 // generate -> pack laundering chain is dead — TestYAMLCannotAuthorNewlineKeys
 // pins that. The reachable input is the packed Go source itself: a
 // hand-written or third-party app dir whose stubs.go/entities/app.go carry
 // hostile string-literal keys. `gofastr pack` output is then reviewed or
 // committed as "what the app declares" and regenerated; the forged YAML lies
-// about the app. No validation bypass: regeneration runs validateBlueprint
+// about the app. No validation bypass: regeneration runs validateAppSpec
 // on the forged file like any other.
 //
-// Mitigations that do NOT stop it (checked): assertBlueprintGoParses (only
+// Mitigations that do NOT stop it (checked): assertAppSpecGoParses (only
 // gates generate's own output); the serializer round-trip test (friendly
 // fixture only); core/yaml's depth cap (nesting is shallow here).
 //
@@ -37,7 +37,7 @@ package main
 // (`"a: b": v` re-parses as the key `"a`); writeYAMLEntry instead rejects
 // any key that would re-parse changed — empty, edge whitespace, ':', '#',
 // line breaks, tabs, flow indicators, a leading "- " — and
-// encodeBlueprintYAML returns an error naming the key and its map. Tests 1-2
+// encodeAppSpecYAML returns an error naming the key and its map. Tests 1-2
 // pin the refusal (and FAIL if the guard is removed), test 3 is the value
 // control (hostile values still round-trip verbatim), test 4 pins the
 // laundering refutation.
@@ -89,7 +89,7 @@ func TestPackSeedRowKeyInjection(t *testing.T) {
 	// app never declared; quoting it mangles the key instead (core/yaml
 	// never unquotes keys). A loud failure naming the key is the honest
 	// snapshot.
-	_, err = encodeBlueprintYAML(Blueprint{Seed: seeds})
+	_, err = encodeAppSpecYAML(AppSpec{Seed: seeds})
 	if err == nil {
 		t.Fatal("SECURITY: [yaml-key-injection] pack emitted a hostile seed-row key instead of refusing")
 	}
@@ -105,14 +105,14 @@ func TestPackSeedRowKeyInjection(t *testing.T) {
 // `properties:`. The hostile key closes the entity's map and injects a
 // sibling entity into the packed snapshot; pack must refuse it too.
 func TestPackEntityPropertiesKeyInjection(t *testing.T) {
-	hostile := Blueprint{
+	hostile := AppSpec{
 		Entities: []framework.EntityDeclaration{{
 			Name:       "posts",
 			Properties: map[string]any{"name: x\n  - name: forged\n    fields:\n      - name": "v"},
 		}},
 	}
 
-	_, err := encodeBlueprintYAML(hostile)
+	_, err := encodeAppSpecYAML(hostile)
 	if err == nil {
 		t.Fatal("SECURITY: [yaml-key-injection] pack emitted a hostile properties key instead of refusing")
 	}
@@ -131,50 +131,50 @@ func TestPackEntityPropertiesKeyInjection(t *testing.T) {
 // name, description, nav labels, screen titles) so a future putStr caller
 // that forgets quoteYAMLString cannot reintroduce the asymmetry silently.
 func TestPackHostileValueRoundTrips(t *testing.T) {
-	build := func(mutate func(bp *Blueprint)) Blueprint {
-		bp := Blueprint{
-			App:      BlueprintApp{Name: "probe"},
+	build := func(mutate func(bp *AppSpec)) AppSpec {
+		bp := AppSpec{
+			App:      AppSpecApp{Name: "probe"},
 			Entities: []framework.EntityDeclaration{{Name: "posts", Table: "posts"}},
-			Nav:      []BlueprintNavItem{{Label: "Home", Href: "/"}},
-			Screens:  []BlueprintScreen{{Name: "home", Route: "/", Type: "page"}},
-			Seed:     []BlueprintSeedEntity{{Entity: "posts"}},
+			Nav:      []AppSpecNavItem{{Label: "Home", Href: "/"}},
+			Screens:  []AppSpecScreen{{Name: "home", Route: "/", Type: "page"}},
+			Seed:     []AppSpecSeedEntity{{Entity: "posts"}},
 		}
 		mutate(&bp)
 		return bp
 	}
 	surfaces := map[string]struct {
-		bp       Blueprint
-		extract  func(bp Blueprint) string
+		bp       AppSpec
+		extract  func(bp AppSpec) string
 		leakLine string
 	}{
 		"seed row value": {
-			build(func(bp *Blueprint) { bp.Seed[0].Rows = []map[string]any{{"status": hostileSeedKey}} }),
-			func(bp Blueprint) string { return bp.Seed[0].Rows[0]["status"].(string) },
+			build(func(bp *AppSpec) { bp.Seed[0].Rows = []map[string]any{{"status": hostileSeedKey}} }),
+			func(bp AppSpec) string { return bp.Seed[0].Rows[0]["status"].(string) },
 			"  - entity: admins",
 		},
 		"app name value": {
-			build(func(bp *Blueprint) { bp.App.Name = hostileSeedKey }),
-			func(bp Blueprint) string { return bp.App.Name },
+			build(func(bp *AppSpec) { bp.App.Name = hostileSeedKey }),
+			func(bp AppSpec) string { return bp.App.Name },
 			"- name: forged",
 		},
 		"nav label value": {
-			build(func(bp *Blueprint) { bp.Nav[0].Label = hostileSeedKey }),
-			func(bp Blueprint) string { return bp.Nav[0].Label },
+			build(func(bp *AppSpec) { bp.Nav[0].Label = hostileSeedKey }),
+			func(bp AppSpec) string { return bp.Nav[0].Label },
 			"- name: forged",
 		},
 		"screen title value": {
-			build(func(bp *Blueprint) { bp.Screens[0].Title = hostileSeedKey }),
-			func(bp Blueprint) string { return bp.Screens[0].Title },
+			build(func(bp *AppSpec) { bp.Screens[0].Title = hostileSeedKey }),
+			func(bp AppSpec) string { return bp.Screens[0].Title },
 			"- name: forged",
 		},
 	}
 	for surface, tc := range surfaces {
-		yml, err := encodeBlueprintYAML(tc.bp)
+		yml, err := encodeAppSpecYAML(tc.bp)
 		if err != nil {
-			t.Errorf("%s: encode refused a VALUE-only hostile blueprint (keys here are benign): %v", surface, err)
+			t.Errorf("%s: encode refused a VALUE-only hostile app spec (keys here are benign): %v", surface, err)
 			continue
 		}
-		back, err := decodeBlueprintString(yml)
+		back, err := decodeAppSpecString(yml)
 		if err != nil {
 			t.Errorf("%s: re-parse failed: %v\n%s", surface, err, yml)
 			continue
@@ -199,17 +199,17 @@ func TestYAMLCannotAuthorNewlineKeys(t *testing.T) {
 	src := "app:\n  name: Demo\n" +
 		"entities:\n  - name: posts\n    fields:\n      - name: title\n        type: string\n" +
 		"seed:\n  - entity: posts\n    rows:\n      - \"" + escapeYAMLDoubleQuoted(hostileSeedKey) + "\": open\n"
-	bp, err := decodeBlueprintString(src)
+	bp, err := decodeAppSpecString(src)
 	if err != nil {
 		// Rejected at the boundary is also fine; the point is no raw
-		// newline key can enter the Blueprint from YAML.
+		// newline key can enter the App spec from YAML.
 		return
 	}
 	for _, s := range bp.Seed {
 		for _, row := range s.Rows {
 			for k := range row {
 				if strings.ContainsAny(k, "\n\r") {
-					t.Fatalf("core/yaml decoded a raw-newline map key %q from YAML — the blueprint laundering path is live, re-rate the finding", k)
+					t.Fatalf("core/yaml decoded a raw-newline map key %q from YAML — the app spec laundering path is live, re-rate the finding", k)
 				}
 			}
 		}

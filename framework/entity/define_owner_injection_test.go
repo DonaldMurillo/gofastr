@@ -14,7 +14,7 @@ import (
 // AutoMigrate never created the column, the first scoped read then
 // failed with "no such column: user_id". Define injects the missing
 // owner column, same contract as the tenant_id and deleted_at
-// injections above, and matching what the blueprint generator emits for
+// injections above, and matching what the app generator emits for
 // an `owner_field:` entity.
 func TestDefine_InjectsUndeclaredOwnerField(t *testing.T) {
 	e := Define("logs", EntityConfig{

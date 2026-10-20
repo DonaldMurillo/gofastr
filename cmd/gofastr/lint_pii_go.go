@@ -8,25 +8,25 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// Go-source PII lint: the Go-declared counterpart of lintBlueprintPIIRoot.
+// Go-source PII lint: the Go-declared counterpart of lintAppSpecPIIRoot.
 // CLAUDE.md hard rule #6 is a property of the declared entity, not of the
 // authoring format: an `app.Entity("members", framework.EntityConfig{
 // Fields: []schema.Field{{Name: "email", Type: schema.String}}})` with
 // auto-CRUD on and no owner_field/multi_tenant/access exposes every row to
-// every OTHER authenticated user exactly as a blueprint entity would, so it
+// every OTHER authenticated user exactly as an app spec entity would, so it
 // must surface the SAME rule "unscoped-pii"; it's the same defect class.
 //
 // The declaration is rebuilt from the AST via pack.go's entity-config
 // readers (packEntityDeclFromCall, the exact reverse `gofastr pack` uses to
-// recover a blueprint), then judged through the identical exposure/scope/
-// field-name logic by wrapping it in a throwaway Blueprint and calling
+// recover an app spec), then judged through the identical exposure/scope/
+// field-name logic by wrapping it in a throwaway App spec and calling
 // lintUnscopedPII. One yardstick for both declaration styles.
 //
 // Limitation: only a literal `[]schema.Field{...}` is inspectable. When Fields
 // is supplied by a helper call (e.g. `Fields: auth.UserEntityFields()`), the
 // field list is not statically resolvable, so the lint sees no fields and emits
 // no finding; review such entities by hand (the helper may carry PII-shaped
-// columns like email). This mirrors the blueprint lint, which only sees fields
+// columns like email). This mirrors the app spec lint, which only sees fields
 // declared in gofastr.yml.
 //
 // Like the pack reader this is best-effort over the AST: a config bound to a
@@ -46,7 +46,7 @@ func lintGoSourcePII(rel string, body []byte) []LintFinding {
 		if decl.Name == "" {
 			continue // not an entity registration we can read
 		}
-		bp := Blueprint{Entities: []framework.EntityDeclaration{decl}}
+		bp := AppSpec{Entities: []framework.EntityDeclaration{decl}}
 		for _, f := range lintUnscopedPII(bp) {
 			out = append(out, LintFinding{
 				File:    rel,

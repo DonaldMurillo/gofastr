@@ -1,5 +1,5 @@
 // Package inflect holds the repo's one English singularizer for entity
-// display names, shared by the blueprint generator and the admin battery.
+// display names, shared by the app generator and the admin battery.
 package inflect
 
 import "strings"

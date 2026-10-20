@@ -610,7 +610,7 @@ func TestRouteParamsNotMutatedOnSecondResolve(t *testing.T) {
 }
 
 // --- F14: {param} brace syntax must be accepted alongside :param ---
-// core-ui screen routes historically use ":param"; the blueprint / REST
+// core-ui screen routes historically use ":param"; the app spec / REST
 // routers and entity docs use "{param}". A screen registered with the
 // brace form must still match (issue #71), previously it landed in the
 // exact-match map and silently 404'd.

@@ -1688,7 +1688,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		return ui.StepRail(ui.StepRailConfig{
 			Title: "Setup",
 			Items: []ui.StepRailItem{
-				{Number: "1", Label: "Create blueprint", Anchor: "a"},
+				{Number: "1", Label: "Create app spec", Anchor: "a"},
 				{Number: "2", Label: "Generate app", Anchor: "b"},
 				{Number: "3", Label: "Own the Go", Anchor: "c"},
 			},

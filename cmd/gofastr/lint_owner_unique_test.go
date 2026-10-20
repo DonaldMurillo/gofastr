@@ -28,7 +28,7 @@ func ownerUniqueEntity() framework.EntityDeclaration {
 func TestOwnerScopedUniqueFieldWarns(t *testing.T) {
 	decl := ownerUniqueEntity()
 	decl.Fields[0].Unique = true
-	got := lintOwnerScopedUnique(Blueprint{Entities: []framework.EntityDeclaration{decl}})
+	got := lintOwnerScopedUnique(AppSpec{Entities: []framework.EntityDeclaration{decl}})
 	if len(got) != 1 {
 		t.Fatalf("want 1 finding, got %d: %+v", len(got), got)
 	}
@@ -43,7 +43,7 @@ func TestOwnerScopedUniqueFieldWarns(t *testing.T) {
 func TestOwnerScopedUniqueIndexWarns(t *testing.T) {
 	decl := ownerUniqueEntity()
 	decl.Indices = []framework.Index{{Name: "idx_email", Columns: []string{"email"}, Unique: true}}
-	got := lintOwnerScopedUnique(Blueprint{Entities: []framework.EntityDeclaration{decl}})
+	got := lintOwnerScopedUnique(AppSpec{Entities: []framework.EntityDeclaration{decl}})
 	if len(got) != 1 || !strings.Contains(got[0].Message(), "idx_email") {
 		t.Fatalf("want 1 finding naming idx_email, got %+v", got)
 	}
@@ -78,7 +78,7 @@ func TestOwnerScopedUniqueQuietCases(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			decl := ownerUniqueEntity()
 			mutate(&decl)
-			if got := lintOwnerScopedUnique(Blueprint{Entities: []framework.EntityDeclaration{decl}}); len(got) != 0 {
+			if got := lintOwnerScopedUnique(AppSpec{Entities: []framework.EntityDeclaration{decl}}); len(got) != 0 {
 				t.Fatalf("want no findings, got %+v", got)
 			}
 		})
@@ -119,7 +119,7 @@ func TestGenerateWarnsOwnerScopedUnique(t *testing.T) {
 	writeValidateFile(t, filepath.Join(dir, "bp.yml"), ownerUniqueYML)
 	out := covT_capStdout(t, func() {
 		covT_capExit(t, func() {
-			generateFromBlueprint(generateOptions{from: filepath.Join(dir, "bp.yml"), outputDir: "gen", dryRun: true})
+			generateFromAppSpec(generateOptions{from: filepath.Join(dir, "bp.yml"), outputDir: "gen", dryRun: true})
 		})
 	})
 	if !strings.Contains(out, `"customers"`) || !strings.Contains(out, "409") {
@@ -127,20 +127,20 @@ func TestGenerateWarnsOwnerScopedUnique(t *testing.T) {
 	}
 }
 
-// The shipped blueprints are what readers copy; none of them may carry
+// The shipped app specs are what readers copy; none of them may carry
 // the shape this lint warns about.
 //
 //gofastr:test-reads examples/*/gofastr.yml
-func TestShippedBlueprintsScopeUnique(t *testing.T) {
+func TestShippedAppSpecsScopeUnique(t *testing.T) {
 	paths, err := filepath.Glob("../../examples/*/gofastr.yml")
 	if err != nil {
 		t.Fatalf("glob: %v", err)
 	}
 	if len(paths) == 0 {
-		t.Fatal("no shipped blueprints found")
+		t.Fatal("no shipped app specs found")
 	}
 	for _, path := range paths {
-		bp, lerr := loadBlueprint(path)
+		bp, lerr := loadAppSpec(path)
 		if lerr != nil {
 			t.Fatalf("load %s: %v", path, lerr)
 		}

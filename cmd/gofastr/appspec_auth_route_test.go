@@ -1,0 +1,200 @@
+package main
+
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// The auth gate redirects unauthenticated visitors to a login path baked into
+// the generated code. Hardcoding "/login" is the same defect class as #312's
+// nav links, but worse: a footer link to a missing page is a dead link, while
+// a gate pointing at a route the app never registers means EVERY auth-gated
+// page redirects to a 404 — the app has no working sign-in path at all.
+//
+// The fixture deliberately puts the login screen at /signin. An app spec that
+// happens to use /login cannot observe this, which is exactly why the literal
+// survived: meridian routes /login, "which is luck, not design" (the comment
+// already in appspec.go).
+func TestAuthGateRedirectsToTheAppSpecsLoginRoute(t *testing.T) {
+	const fixture = `
+app:
+  name: Chroma
+  module: github.com/example/chroma
+  auth:
+    enabled: true
+    dev_mode: true
+entities:
+  - name: notes
+    crud: true
+    fields:
+      - name: title
+        type: string
+        required: true
+screens:
+  - name: signin
+    route: /signin
+    layout: marketing
+    title: Sign in
+    body:
+      - kind: login_form
+  - name: dashboard
+    route: /dashboard
+    layout: app
+    title: Dashboard
+    access:
+      auth: true
+    body:
+      - kind: entity_list
+        entity: notes
+        text: Recent notes
+        fields: [title]
+        limit: 5
+  - name: archive
+    route: /archive
+    layout: app
+    title: Archive
+    access:
+      auth: true
+    body:
+      - kind: section
+        props:
+          heading: Archive
+        children:
+          - kind: entity_list
+            entity: notes
+            text: Older notes
+            fields: [title]
+            limit: 5
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gofastr.yml")
+	writeTestFile(t, path, fixture)
+	bp, err := loadAppSpec(path)
+	if err != nil {
+		t.Fatalf("loadAppSpec: %v", err)
+	}
+
+	if got := appSpecLoginRoute(bp); got != "/signin" {
+		t.Fatalf("fixture is wrong: appSpecLoginRoute = %q, want /signin", got)
+	}
+
+	var all strings.Builder
+	for _, f := range mustRenderAppSpecFiles(t, bp) {
+		all.WriteString(f.content)
+	}
+	out := all.String()
+
+	if !strings.Contains(out, "authPolicy(") {
+		t.Fatalf("fixture generated no auth gate; the test would pass vacuously")
+	}
+	// Both gated screens must carry the policy in their mount statement:
+	// the dashboard (list flat in its body) and the archive (list nested in
+	// a section). A list renders inside its screen, so the screen's own
+	// policy is the only gate its reads pass besides the entity's — the
+	// island that used to duplicate it is gone.
+	for _, gated := range []string{`"/dashboard"`, `"/archive"`} {
+		if !strings.Contains(out, gated) {
+			t.Fatalf("fixture generated no registration for %s; the guard would be untested:\n%s", gated, gateLines(out))
+		}
+	}
+	if strings.Count(out, "authPolicy(") < 2 {
+		t.Fatalf("both gated screens must register their own policy; the per-screen half of the "+
+			"guard would be untested:\n%s", gateLines(out))
+	}
+	if strings.Contains(out, `authPolicy("/login"`) {
+		t.Errorf("auth gate redirects to a hardcoded /login, but this app spec's login "+
+			"screen is at /signin — every gated page would 404:\n%s", gateLines(out))
+	}
+	if !strings.Contains(out, `authPolicy("/signin"`) {
+		t.Errorf("auth gate does not redirect to the app spec's login route /signin:\n%s", gateLines(out))
+	}
+}
+
+// The scanners behind the gate walk the screen body tree, not its top level.
+// A login form nested in a section's children renders fine (screenNeedsCtx
+// already recurses), but appSpecLoginRoute and screenHasAuthForm scanned
+// s.Body flat: the gate fell back to "/login" — an unregistered route for a
+// app spec whose sign-in lives at /signin — and the form screen lost its
+// guest policy, so signed-in users were shown a sign-in form they're past.
+// Same class as #312: a literal standing in for a route the app spec knows.
+func TestAuthGateSeesNestedAuthForms(t *testing.T) {
+	const fixture = `
+app:
+  name: Chroma
+  module: github.com/example/chroma
+  auth:
+    enabled: true
+    dev_mode: true
+entities:
+  - name: notes
+    crud: true
+    fields:
+      - name: title
+        type: string
+        required: true
+screens:
+  - name: signin
+    route: /signin
+    layout: marketing
+    title: Sign in
+    body:
+      - kind: section
+        props:
+          heading: Welcome back
+        children:
+          - kind: login_form
+  - name: dashboard
+    route: /dashboard
+    layout: app
+    title: Dashboard
+    access:
+      auth: true
+    body:
+      - kind: entity_list
+        entity: notes
+        text: Recent notes
+        fields: [title]
+        limit: 5
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gofastr.yml")
+	writeTestFile(t, path, fixture)
+	bp, err := loadAppSpec(path)
+	if err != nil {
+		t.Fatalf("loadAppSpec: %v", err)
+	}
+
+	if got := appSpecLoginRoute(bp); got != "/signin" {
+		t.Fatalf("appSpecLoginRoute does not see the section-nested login form: got %q, want /signin", got)
+	}
+
+	var all strings.Builder
+	for _, f := range mustRenderAppSpecFiles(t, bp) {
+		all.WriteString(f.content)
+	}
+	out := all.String()
+
+	// The guest policy is the screenHasAuthForm half: without it the nested
+	// form is shown to signed-in users. Its absence would also make this
+	// assertion's guard vacuous.
+	if !strings.Contains(out, ".WithPolicy(guestPolicy(") {
+		t.Fatalf("nested form screen got no guest policy; the screenHasAuthForm half of the guard would be untested:\n%s", gateLines(out))
+	}
+	if strings.Contains(out, `authPolicy("/login"`) {
+		t.Errorf("auth gate redirects to a hardcoded /login, but this app spec's login form is nested in a section at /signin:\n%s", gateLines(out))
+	}
+	if !strings.Contains(out, `authPolicy("/signin"`) {
+		t.Errorf("auth gate does not redirect to /signin for a section-nested login form:\n%s", gateLines(out))
+	}
+}
+
+func gateLines(out string) string {
+	var keep []string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.Contains(l, "authPolicy(") {
+			keep = append(keep, strings.TrimSpace(l))
+		}
+	}
+	return strings.Join(keep, "\n")
+}

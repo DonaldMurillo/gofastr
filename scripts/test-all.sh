@@ -84,7 +84,7 @@ HEAVY_RE='gofastr/(examples/site|examples/meridian|examples/tracker|examples/lay
 # gofastr-cli shard: three drive a real Chrome over the dev livereload
 # websocket, one builds and boots every example. Skipped in the parallel
 # pass, run alone at -p 1 in the serialized pass.
-CLI_BROWSER_TESTS='TestBlueprintCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
+CLI_BROWSER_TESTS='TestAppSpecCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples'
 
 FLAGS=(-count=1 -timeout=20m)
 [ "${RACE:-0}" = "1" ] && FLAGS+=(-race)

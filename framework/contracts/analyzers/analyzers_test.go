@@ -1553,7 +1553,7 @@ func wire(fwApp *framework.App) {
 }
 
 func TestAuthConfiguredButNeverMounted(t *testing.T) {
-	// A real shipped bug: the blueprint generator enabled the auth
+	// A real shipped bug: the app generator enabled the auth
 	// battery and never mounted the session middleware, so every
 	// authenticated request got 401 exactly like an anonymous one.
 	ds := fixture(t, map[string]string{"main.go": authSource("")})

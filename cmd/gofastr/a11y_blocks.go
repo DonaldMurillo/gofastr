@@ -18,7 +18,7 @@ const a11ySnapshotMaxBytes = 4 << 20
 // a11yScreenBody reads an aria snapshot (path "-" is stdin) and maps it to
 // a screen body whose forms post to route. Mapping warnings go to stdout,
 // or to stderr in --json mode so stdout stays machine-readable.
-func a11yScreenBody(path, route string, jsonMode bool) ([]BlueprintBlock, error) {
+func a11yScreenBody(path, route string, jsonMode bool) ([]AppSpecBlock, error) {
 	var r io.Reader = os.Stdin
 	if path != "-" {
 		f, err := os.Open(path)
@@ -53,7 +53,7 @@ func a11yScreenBody(path, route string, jsonMode bool) ([]BlueprintBlock, error)
 	return blocks, nil
 }
 
-// a11yMapper turns an aria snapshot into blueprint screen blocks, each a
+// a11yMapper turns an aria snapshot into app spec screen blocks, each a
 // framework/ui catalog component. It never emits markup or CSS of its own:
 // a role with no catalog counterpart is inlined or skipped, and the skip is
 // reported so the author can finish that part by hand.
@@ -74,7 +74,7 @@ func newA11yMapper(action string) *a11yMapper {
 // mapA11yToBlocks maps a parsed snapshot to screen body blocks. action is
 // the route generated forms post to. Warnings name every node the mapping
 // dropped or flattened.
-func mapA11yToBlocks(nodes []*ariaNode, action string) ([]BlueprintBlock, []string) {
+func mapA11yToBlocks(nodes []*ariaNode, action string) ([]AppSpecBlock, []string) {
 	m := newA11yMapper(action)
 	blocks := m.siblings(nodes)
 	return blocks, m.warnings
@@ -145,9 +145,9 @@ func (m *a11yMapper) flatten(nodes []*ariaNode) []*ariaNode {
 // siblings maps one sibling list. Outside a form, a run of controls holding
 // at least one input becomes a form block; inside one, the controls are its
 // fields directly.
-func (m *a11yMapper) siblings(nodes []*ariaNode) []BlueprintBlock {
+func (m *a11yMapper) siblings(nodes []*ariaNode) []AppSpecBlock {
 	nodes = dropRedundantLabels(m.flatten(nodes))
-	var out []BlueprintBlock
+	var out []AppSpecBlock
 	for i := 0; i < len(nodes); {
 		n := nodes[i]
 		if m.formDepth == 0 {
@@ -173,7 +173,7 @@ func (m *a11yMapper) siblings(nodes []*ariaNode) []BlueprintBlock {
 		// A table right under a heading with the same text keeps its
 		// caption for assistive technology but stops repeating it on screen.
 		if last := len(out) - 1; last >= 1 && out[last].Kind == "data_table" && out[last-1].Type == "heading" &&
-			strings.EqualFold(out[last-1].Text, blueprintProp(out[last], "caption")) {
+			strings.EqualFold(out[last-1].Text, appSpecProp(out[last], "caption")) {
 			out[last].Props["caption_hidden"] = true
 		}
 		// A paragraph right under the page title is its subtitle.
@@ -252,7 +252,7 @@ func dropRedundantLabels(nodes []*ariaNode) []*ariaNode {
 	return out
 }
 
-func (m *a11yMapper) node(n *ariaNode) []BlueprintBlock {
+func (m *a11yMapper) node(n *ariaNode) []AppSpecBlock {
 	switch {
 	case n.Role == "banner" || n.Role == "contentinfo":
 		m.warn("role:"+n.Role, "skipped %s (line %d): the app layout renders the site header and footer", n.Role, n.Line)
@@ -265,42 +265,42 @@ func (m *a11yMapper) node(n *ariaNode) []BlueprintBlock {
 			// its pieces together.
 			parts := m.siblings(n.Children)
 			if n.Text != "" {
-				parts = append([]BlueprintBlock{{Type: "text", Text: n.Text}}, parts...)
+				parts = append([]AppSpecBlock{{Type: "text", Text: n.Text}}, parts...)
 			}
 			return a11yGroup(parts)
 		}
 		if n.Label() == "" {
 			return nil
 		}
-		return []BlueprintBlock{{Type: "text", Text: n.Label()}}
+		return []AppSpecBlock{{Type: "text", Text: n.Label()}}
 	case n.Role == "alert":
-		return []BlueprintBlock{m.alert(n)}
+		return []AppSpecBlock{m.alert(n)}
 	case n.Role == "link":
-		return []BlueprintBlock{m.link(n)}
+		return []AppSpecBlock{m.link(n)}
 	case n.Role == "button":
-		return []BlueprintBlock{m.button(n, "button")}
+		return []AppSpecBlock{m.button(n, "button")}
 	case n.Role == "form":
 		if m.formDepth > 0 {
 			m.warn(fmt.Sprintf("form:%d", n.Line), "form (line %d) sits inside another form: its fields joined the outer one, since HTML forms do not nest", n.Line)
 			return m.siblings(n.Children)
 		}
-		return []BlueprintBlock{m.form(n.Children)}
+		return []AppSpecBlock{m.form(n.Children)}
 	case n.Role == "radiogroup":
 		m.warnDropped(n, "radios", "radio")
 		return m.radioGroup(n.Name, n.Line, a11yDescendants(n, "radio"))
 	case a11yFieldRoles[n.Role]:
-		return []BlueprintBlock{m.field(n)}
+		return []AppSpecBlock{m.field(n)}
 	case n.Role == "navigation":
-		return []BlueprintBlock{m.navigation(n)}
+		return []AppSpecBlock{m.navigation(n)}
 	case n.Role == "list" || n.Role == "directory":
-		return []BlueprintBlock{m.list(n)}
+		return []AppSpecBlock{m.list(n)}
 	case n.Role == "table" || n.Role == "grid" || n.Role == "treegrid":
 		if b, ok := m.table(n); ok {
-			return []BlueprintBlock{b}
+			return []AppSpecBlock{b}
 		}
 		return nil
 	case n.Role == "separator":
-		return []BlueprintBlock{{Kind: "divider"}}
+		return []AppSpecBlock{{Kind: "divider"}}
 	case a11yLandmarkRoles[n.Role] || n.Role == "dialog" || n.Role == "alertdialog":
 		// A fieldset of radios is the radio group, its legend the name.
 		if radios, ok := a11yOnlyRadios(n); ok {
@@ -315,7 +315,7 @@ func (m *a11yMapper) node(n *ariaNode) []BlueprintBlock {
 		return m.siblings(n.Children)
 	case n.Label() != "":
 		m.warn("role:"+n.Role, "%s %q (line %d) has no catalog component: kept as text", n.Role, n.Label(), n.Line)
-		return []BlueprintBlock{{Type: "text", Text: n.Label()}}
+		return []AppSpecBlock{{Type: "text", Text: n.Label()}}
 	}
 	m.warn("role:"+n.Role, "skipped %s (line %d): no catalog component and no text", n.Role, n.Line)
 	return nil
@@ -340,20 +340,20 @@ func a11yOnlyRadios(n *ariaNode) ([]*ariaNode, bool) {
 // a11yGroup keeps several pieces together: inline ones (text, links,
 // buttons) on one line, anything block-level stacked. One piece needs no
 // wrapper.
-func a11yGroup(parts []BlueprintBlock) []BlueprintBlock {
+func a11yGroup(parts []AppSpecBlock) []AppSpecBlock {
 	if len(parts) <= 1 {
 		return parts
 	}
 	for _, p := range parts {
 		inline := p.Kind == "action_button" || (p.Kind == "" && (p.Type == "text" || p.Type == "link"))
 		if !inline {
-			return []BlueprintBlock{{Kind: "stack", Props: map[string]any{"gap": "xs"}, Children: parts}}
+			return []AppSpecBlock{{Kind: "stack", Props: map[string]any{"gap": "xs"}, Children: parts}}
 		}
 	}
-	return []BlueprintBlock{{Kind: "cluster", Props: map[string]any{"gap": "xs", "align": "baseline"}, Children: parts}}
+	return []AppSpecBlock{{Kind: "cluster", Props: map[string]any{"gap": "xs", "align": "baseline"}, Children: parts}}
 }
 
-func (m *a11yMapper) heading(n *ariaNode) []BlueprintBlock {
+func (m *a11yMapper) heading(n *ariaNode) []AppSpecBlock {
 	if n.Label() == "" {
 		m.warn(fmt.Sprintf("heading:%d", n.Line), "skipped heading (line %d): it has no text", n.Line)
 		return nil
@@ -365,18 +365,18 @@ func (m *a11yMapper) heading(n *ariaNode) []BlueprintBlock {
 	if level == 1 {
 		if !m.titled {
 			m.titled = true
-			return []BlueprintBlock{{Kind: "page_header", Props: map[string]any{"title": n.Label()}}}
+			return []AppSpecBlock{{Kind: "page_header", Props: map[string]any{"title": n.Label()}}}
 		}
 		// The page header is the page's one h1.
 		m.warn(fmt.Sprintf("h1:%d", n.Line), "heading %q (line %d) is a second level-1 heading: made level 2", n.Label(), n.Line)
 		level = 2
 	}
-	return []BlueprintBlock{{Type: "heading", Level: level, Text: n.Label()}}
+	return []AppSpecBlock{{Type: "heading", Level: level, Text: n.Label()}}
 }
 
 // alert maps to a callout: the alert's name is its title, its text the
 // body. An alert with only a name shows the name as the body.
-func (m *a11yMapper) alert(n *ariaNode) BlueprintBlock {
+func (m *a11yMapper) alert(n *ariaNode) AppSpecBlock {
 	body := n.Text
 	if body == "" {
 		var parts []string
@@ -391,10 +391,10 @@ func (m *a11yMapper) alert(n *ariaNode) BlueprintBlock {
 	if body == "" {
 		body, title = title, ""
 	}
-	return BlueprintBlock{Kind: "callout", Text: body, Props: map[string]any{"title": title}}
+	return AppSpecBlock{Kind: "callout", Text: body, Props: map[string]any{"title": title}}
 }
 
-func (m *a11yMapper) link(n *ariaNode) BlueprintBlock {
+func (m *a11yMapper) link(n *ariaNode) AppSpecBlock {
 	href := n.Props["url"]
 	switch {
 	case href == "":
@@ -410,10 +410,10 @@ func (m *a11yMapper) link(n *ariaNode) BlueprintBlock {
 	if text == "" {
 		text = href
 	}
-	return BlueprintBlock{Type: "link", Text: text, Href: href}
+	return AppSpecBlock{Type: "link", Text: text, Href: href}
 }
 
-func (m *a11yMapper) button(n *ariaNode, typ string) BlueprintBlock {
+func (m *a11yMapper) button(n *ariaNode, typ string) AppSpecBlock {
 	label := n.Label()
 	if label == "" {
 		label = a11yTextOf(n)
@@ -429,12 +429,12 @@ func (m *a11yMapper) button(n *ariaNode, typ string) BlueprintBlock {
 	if a11yAttrOn(n, "disabled") {
 		props["disabled"] = true
 	}
-	return BlueprintBlock{Kind: "action_button", Props: props}
+	return AppSpecBlock{Kind: "action_button", Props: props}
 }
 
 // form groups controls into a ui.Form posting to the screen's route. The
 // last button becomes the form's submit; earlier ones stay plain buttons.
-func (m *a11yMapper) form(nodes []*ariaNode) BlueprintBlock {
+func (m *a11yMapper) form(nodes []*ariaNode) AppSpecBlock {
 	m.formDepth++
 	children := m.siblings(nodes)
 	m.formDepth--
@@ -449,10 +449,10 @@ func (m *a11yMapper) form(nodes []*ariaNode) BlueprintBlock {
 	if _, ok := props["submit"]; !ok {
 		props["hide_submit"] = true
 	}
-	return BlueprintBlock{Kind: "custom_form", Props: props, Children: children}
+	return AppSpecBlock{Kind: "custom_form", Props: props, Children: children}
 }
 
-func (m *a11yMapper) field(n *ariaNode) BlueprintBlock {
+func (m *a11yMapper) field(n *ariaNode) AppSpecBlock {
 	label := m.fieldLabel(n)
 	props := map[string]any{"label": label, "name": m.fieldName(label)}
 	if a11yAttrOn(n, "disabled") {
@@ -463,9 +463,9 @@ func (m *a11yMapper) field(n *ariaNode) BlueprintBlock {
 		if a11yAttrOn(n, "checked") {
 			props["checked"] = true
 		}
-		return BlueprintBlock{Kind: n.Role, Props: props}
+		return AppSpecBlock{Kind: n.Role, Props: props}
 	case "spinbutton":
-		return BlueprintBlock{Kind: "number_field", Props: props}
+		return AppSpecBlock{Kind: "number_field", Props: props}
 	case "combobox", "listbox":
 		var options []any
 		for _, o := range a11yDescendants(n, "option") {
@@ -481,7 +481,7 @@ func (m *a11yMapper) field(n *ariaNode) BlueprintBlock {
 		if len(options) > 0 {
 			m.warnDropped(n, "options", "option")
 			props["options"] = options
-			return BlueprintBlock{Kind: "select_field", Props: props}
+			return AppSpecBlock{Kind: "select_field", Props: props}
 		}
 		// A combobox with no listed options is a typeahead input.
 	case "textbox", "searchbox":
@@ -492,7 +492,7 @@ func (m *a11yMapper) field(n *ariaNode) BlueprintBlock {
 	if p := n.Props["placeholder"]; p != "" {
 		props["placeholder"] = p
 	}
-	return BlueprintBlock{Kind: "text_field", Props: props}
+	return AppSpecBlock{Kind: "text_field", Props: props}
 }
 
 func (m *a11yMapper) fieldLabel(n *ariaNode) string {
@@ -541,7 +541,7 @@ func a11ySlug(s string, sep byte) string {
 
 // radioGroup maps radios to a ui.RadioGroup. Two radios with the same
 // label get distinct values, which keeps their ids distinct.
-func (m *a11yMapper) radioGroup(legend string, line int, radios []*ariaNode) []BlueprintBlock {
+func (m *a11yMapper) radioGroup(legend string, line int, radios []*ariaNode) []AppSpecBlock {
 	var options []any
 	seen := map[string]bool{}
 	for _, r := range radios {
@@ -571,14 +571,14 @@ func (m *a11yMapper) radioGroup(legend string, line int, radios []*ariaNode) []B
 		legend = "Choose one"
 		m.warn(fmt.Sprintf("legend:%d", line), "radio group (line %d) has no accessible name: legend set to %q", line, legend)
 	}
-	return []BlueprintBlock{{Kind: "radio_group", Props: map[string]any{"legend": legend, "name": m.fieldName(legend), "options": options}}}
+	return []AppSpecBlock{{Kind: "radio_group", Props: map[string]any{"legend": legend, "name": m.fieldName(legend), "options": options}}}
 }
 
 // navigation becomes a labelled nav of its links. Page-level navigation
 // usually belongs in the app layout; an in-page one (a table of contents,
 // a pager) keeps its links here.
-func (m *a11yMapper) navigation(n *ariaNode) BlueprintBlock {
-	var links []BlueprintBlock
+func (m *a11yMapper) navigation(n *ariaNode) AppSpecBlock {
+	var links []AppSpecBlock
 	for _, l := range a11yDescendants(n, "link") {
 		links = append(links, m.link(l))
 	}
@@ -587,7 +587,7 @@ func (m *a11yMapper) navigation(n *ariaNode) BlueprintBlock {
 	if label == "" {
 		label = "Page links"
 	}
-	return BlueprintBlock{Kind: "nav_links", Props: map[string]any{"label": label}, Children: links}
+	return AppSpecBlock{Kind: "nav_links", Props: map[string]any{"label": label}, Children: links}
 }
 
 // warnDropped reports the text inside n that a mapping keeping only the
@@ -624,8 +624,8 @@ func (m *a11yMapper) warnDropped(n *ariaNode, what string, kept ...string) {
 	m.warn(fmt.Sprintf("dropped:%d", n.Line), "%s (line %d) keeps only its %s: dropped %s", n.Role, n.Line, what, strings.Join(lost, ", "))
 }
 
-func (m *a11yMapper) list(n *ariaNode) BlueprintBlock {
-	var items []BlueprintBlock
+func (m *a11yMapper) list(n *ariaNode) AppSpecBlock {
+	var items []AppSpecBlock
 	for _, c := range n.Children {
 		if c.Role != "listitem" {
 			items = append(items, m.node(c)...)
@@ -633,19 +633,19 @@ func (m *a11yMapper) list(n *ariaNode) BlueprintBlock {
 		}
 		parts := m.siblings(c.Children)
 		if c.Text != "" {
-			parts = append([]BlueprintBlock{{Type: "text", Text: c.Text}}, parts...)
+			parts = append([]AppSpecBlock{{Type: "text", Text: c.Text}}, parts...)
 		}
 		if c.Name != "" && len(parts) == 0 {
-			parts = []BlueprintBlock{{Type: "text", Text: c.Name}}
+			parts = []AppSpecBlock{{Type: "text", Text: c.Name}}
 		}
 		items = append(items, a11yGroup(parts)...)
 	}
-	return BlueprintBlock{Kind: "item_list", Children: items}
+	return AppSpecBlock{Kind: "item_list", Children: items}
 }
 
 // table reads header and body rows (directly or inside rowgroups) into a
 // static ui.DataTable. Cells become text.
-func (m *a11yMapper) table(n *ariaNode) (BlueprintBlock, bool) {
+func (m *a11yMapper) table(n *ariaNode) (AppSpecBlock, bool) {
 	var header []string
 	var rows []any
 	for _, row := range a11yDescendants(n, "row") {
@@ -684,7 +684,7 @@ func (m *a11yMapper) table(n *ariaNode) (BlueprintBlock, bool) {
 	}
 	if width == 0 {
 		m.warn(fmt.Sprintf("table:%d", n.Line), "skipped table (line %d): no rows or cells", n.Line)
-		return BlueprintBlock{}, false
+		return AppSpecBlock{}, false
 	}
 	columns := make([]any, width)
 	for i := range columns {
@@ -709,16 +709,16 @@ func (m *a11yMapper) table(n *ariaNode) (BlueprintBlock, bool) {
 	if c := m.tables[key]; c > 1 {
 		props["id"] = fmt.Sprintf("table-%s-%d", a11ySlug(caption, '-'), c)
 	}
-	return BlueprintBlock{Kind: "data_table", Props: props}, true
+	return AppSpecBlock{Kind: "data_table", Props: props}, true
 }
 
 // section maps a named landmark (or a dialog's content) to a ui.Section,
 // lifting a leading heading into the section heading. A leading level-1
 // heading on a page with no title yet becomes the page header instead.
-func (m *a11yMapper) section(n *ariaNode) []BlueprintBlock {
+func (m *a11yMapper) section(n *ariaNode) []AppSpecBlock {
 	children := n.Children
 	props := map[string]any{"label": n.Name}
-	var out []BlueprintBlock
+	var out []AppSpecBlock
 	if len(children) > 0 && children[0].Role == "heading" && children[0].Label() != "" {
 		if children[0].Attrs["level"] == "1" && !m.titled {
 			out = m.heading(children[0])
@@ -728,7 +728,7 @@ func (m *a11yMapper) section(n *ariaNode) []BlueprintBlock {
 		}
 		children = children[1:]
 	}
-	return append(out, BlueprintBlock{Kind: "section", Props: props, Children: m.siblings(children)})
+	return append(out, AppSpecBlock{Kind: "section", Props: props, Children: m.siblings(children)})
 }
 
 // a11yDescendants collects every descendant with the given role, in order,

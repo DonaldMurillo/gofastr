@@ -43,17 +43,17 @@ RPC handler + an e2e test proving the interaction round-trips.
 external adoption is open.
 
 GoFastr makes a falsifiable bet: *an AI agent (or a human) can describe
-a real CRUD-heavy app once, in a `gofastr.yml` blueprint, and get a
+a real CRUD-heavy app once, in a `gofastr.yml` app spec, and get a
 correct, inspectable, runnable app, SQL + REST + OpenAPI + MCP + UI,
 without hand-writing the glue.*
 
 1. **Framework stability → the `v1.0.0` gate.** The API may change until
    v1.0. Drop `v0.x` only when the gate below is green.
 2. **Declaration-first proof.** ✓ Shipped: `examples/ecommerce`, a
-   five-entity blueprint generated, built, and surface-tested end-to-end
+   five-entity app spec generated, built, and surface-tested end-to-end
    (`flagship_test.go`, zero hand-written app code).
 3. **Dogfooding.** ✓ Kiln and `examples/site` are built on the framework.
-   Deepen by porting more internal tooling onto blueprints.
+   Deepen by porting more internal tooling onto app specs.
 4. **External adoption, the genuinely open item.** No outside
    production users yet. Recruit and evaluate one through the
    [external pilot program](docs/pilot-program.md); this is the part the code

@@ -18,12 +18,12 @@ import (
 // rendered to anonymous visitors, and "Sign out" offered to someone with no
 // session) shipped with no guard at all.
 //
-// examples/meridian's blueprint does declare a role-gated nav item, but its app
+// examples/meridian's app spec does declare a role-gated nav item, but its app
 // is hand-written (examples/meridian/app.go builds its own sidebar), so nothing
 // in the tree exercises the GENERATED emission with one. This test therefore
-// writes its own minimal blueprint, generates it, builds it, boots it, and
+// writes its own minimal app spec, generates it, builds it, boots it, and
 // reads what an anonymous caller and a signed-in one actually receive.
-const sidebarGateBlueprint = `app:
+const sidebarGateAppSpec = `app:
   name: SidebarGate
   module: local/sidebargate
   db:
@@ -83,7 +83,7 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 	}
 
 	work := t.TempDir()
-	writeTestFile(t, filepath.Join(work, "gofastr.yml"), sidebarGateBlueprint)
+	writeTestFile(t, filepath.Join(work, "gofastr.yml"), sidebarGateAppSpec)
 	gen := exec.Command(binPath, "generate", "--from=gofastr.yml")
 	gen.Dir = work
 	if out, err := gen.CombinedOutput(); err != nil {
@@ -159,8 +159,8 @@ func TestGeneratedSidebarIsResolvedPerRequest(t *testing.T) {
 		t.Fatalf("the sidebar rendered no ordinary nav entry:\n%s", html)
 	}
 
-	// This blueprint enables auth but routes no login screen, the shape six
-	// of the seven shipped blueprints have. The sidebar is the app shell's
+	// This app spec enables auth but routes no login screen, the shape six
+	// of the seven shipped app specs have. The sidebar is the app shell's
 	// only auth affordance, so offering "Sign in" here would send a
 	// first-time visitor to a route nothing serves. Nothing else in this file
 	// pins that branch: without this check the guard around the Sign-in

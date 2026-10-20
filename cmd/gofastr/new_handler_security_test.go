@@ -14,7 +14,7 @@ import (
 // Property: a CLI-supplied string interpolated into scaffolded Go source never
 // leaves its identifier or comment slot. Every sibling scaffolding surface
 // enforces this — generate entity|screen (TestScaffoldNameGuardedByValidate),
-// blueprint hook handlers (blueprint_hooks_security_test.go
+// app spec hook handlers (appspec_hooks_security_test.go
 // TestHookHandlerMustDeriveIdentifier), generate cli
 // (TestGenerateCLI_EntityNameMustDeriveIdentifier) — and `gofastr new handler`
 // is the divergent surface: validateScaffoldName checks path shape only.
@@ -34,7 +34,7 @@ func TestNewHandlerRedNameIdentifier(t *testing.T) {
 	// Hostile-name leg: the name lands in `func %s(...)` (identifier
 	// position) and in the file name + leading comment. All three are
 	// Go-source slots, so a name that is not a bare Go identifier must be
-	// refused — exactly as validateBlueprint refuses the same shape for
+	// refused — exactly as validateAppSpec refuses the same shape for
 	// every generate-side sibling.
 	for _, name := range []string{
 		`x") {PWN()`,

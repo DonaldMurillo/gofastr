@@ -27,7 +27,7 @@ import (
 //
 // Map KEYS are drawn from a known-good set; key-side refusal accuracy is
 // pack_yaml_roundtrip_security_test.go's job. Here every encode must SUCCEED
-// and every decode must read back the exact blueprint.
+// and every decode must read back the exact app spec.
 
 var propSafeKeys = []string{
 	"name", "title", "status", "data-label", "a-b", "a.b", "a b", "café", "日本語", "x1",
@@ -178,8 +178,8 @@ func randPropsYAML(r *rand.Rand, indent int, depth int) (string, map[string]any)
 	return sb.String(), out
 }
 
-// randomBlueprintYAML authors a hostile but decodable gofastr.yml.
-func randomBlueprintYAML(r *rand.Rand) string {
+// randomAppSpecYAML authors a hostile but decodable gofastr.yml.
+func randomAppSpecYAML(r *rand.Rand) string {
 	var sb strings.Builder
 	sb.WriteString("app:\n")
 	sb.WriteString("  name: Demo\n  module: example.com/demo\n")
@@ -255,16 +255,16 @@ func TestPackEncodeDecodeRoundTripProperty(t *testing.T) {
 	r := rand.New(rand.NewPCG(20260901, 1))
 	const iterations = 400
 	for i := range iterations {
-		yml := randomBlueprintYAML(r)
-		b0, err := decodeBlueprintString(yml)
+		yml := randomAppSpecYAML(r)
+		b0, err := decodeAppSpecString(yml)
 		if err != nil {
 			t.Fatalf("iter %d: authored fixture failed to decode (generator bug): %v\n%s", i, err, yml)
 		}
-		out, err := encodeBlueprintYAML(b0)
+		out, err := encodeAppSpecYAML(b0)
 		if err != nil {
-			t.Fatalf("iter %d: encode refused a decodable blueprint: %v\n%s", i, err, yml)
+			t.Fatalf("iter %d: encode refused a decodable app spec: %v\n%s", i, err, yml)
 		}
-		b1, err := decodeBlueprintString(out)
+		b1, err := decodeAppSpecString(out)
 		if err != nil {
 			t.Fatalf("iter %d: pack emitted an unreadable file: %v\n--- authored ---\n%s--- packed ---\n%s", i, err, yml, out)
 		}
@@ -274,14 +274,14 @@ func TestPackEncodeDecodeRoundTripProperty(t *testing.T) {
 	}
 }
 
-// TestPackEmptyMapEmissionRoundTrips pins Finding A: a blueprint holding an
+// TestPackEmptyMapEmissionRoundTrips pins Finding A: an app spec holding an
 // empty map (which a bare authored `scope:` produces — decodeEntityScope
 // returns a non-nil zero struct for a present-but-empty node) must serialize
 // to something the decoder can read back. It used to emit `scope: {}`, and
 // core/yaml rejects flow maps outright.
 func TestPackEmptyMapEmissionRoundTrips(t *testing.T) {
-	bp := Blueprint{
-		App: BlueprintApp{Name: "probe"},
+	bp := AppSpec{
+		App: AppSpecApp{Name: "probe"},
 		Entities: []framework.EntityDeclaration{{
 			Name:  "posts",
 			Scope: &framework.ScopeDeclaration{}, // bare `scope:` decodes to exactly this
@@ -290,14 +290,14 @@ func TestPackEmptyMapEmissionRoundTrips(t *testing.T) {
 			},
 		}},
 	}
-	out, err := encodeBlueprintYAML(bp)
+	out, err := encodeAppSpecYAML(bp)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
 	if strings.Contains(out, "{}") {
 		t.Errorf("packed YAML contains a flow map, which core/yaml cannot re-read:\n%s", out)
 	}
-	b, err := decodeBlueprintString(out)
+	b, err := decodeAppSpecString(out)
 	if err != nil {
 		t.Fatalf("pack emitted an unreadable file: %v\n%s", err, out)
 	}
@@ -327,7 +327,7 @@ entities:
       - name: title
         type: string
 `
-	b0, err := decodeBlueprintString(authored)
+	b0, err := decodeAppSpecString(authored)
 	if err != nil {
 		t.Fatalf("authored fixture failed to decode: %v", err)
 	}
@@ -338,11 +338,11 @@ entities:
 	if s, ok := list[1].(string); !ok || s != "a:b" {
 		t.Fatalf("authored second item is not the string a:b: %#v", list[1])
 	}
-	out, err := encodeBlueprintYAML(b0)
+	out, err := encodeAppSpecYAML(b0)
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
-	b1, err := decodeBlueprintString(out)
+	b1, err := decodeAppSpecString(out)
 	if err != nil {
 		t.Fatalf("re-decode failed: %v\n%s", err, out)
 	}

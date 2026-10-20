@@ -303,7 +303,7 @@ shape it serves, exactly as the entity's own routes do, so a mask that
 exists on only one surface has a gap on the paths that use the other. The
 in-process Go API still returns stored values unless the caller passes
 `crud.WithReadHooks(ctx)`; that is what makes read-modify-write, seed
-lookups and aggregates correct, and generated blueprint screens opt in.
+lookups and aggregates correct, and generated screens opt in.
 The same opt-in applies a `BeforeList`/`BeforeGet` scope, so a row the
 HTTP route hides is hidden from a rendered screen too.
 

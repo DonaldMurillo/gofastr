@@ -16,7 +16,7 @@ func TestLookForGofastrReports(t *testing.T) {
 	}
 }
 
-func TestFreezeAndGenerateAlwaysWritesBlueprintBeforeCommand(t *testing.T) {
+func TestFreezeAndGenerateAlwaysWritesAppSpecBeforeCommand(t *testing.T) {
 	w := world.New()
 	w.App.Name = "demo"
 	w.Entities["posts"] = &world.Entity{Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}}}

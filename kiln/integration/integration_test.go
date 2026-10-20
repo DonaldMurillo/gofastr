@@ -297,14 +297,14 @@ func TestFreezeRoundTripWithRichWorld(t *testing.T) {
 
 	// Current graduation emits a generator-ready gofastr.yml plus the
 	// lossless world.json snapshot; the pre-v0.1 entities/*.json path is gone.
-	blueprint, err := os.ReadFile(filepath.Join(dir, "gofastr.yml"))
+	appSpec, err := os.ReadFile(filepath.Join(dir, "gofastr.yml"))
 	if err != nil {
 		t.Fatalf("gofastr.yml missing after freeze: %v", err)
 	}
-	text := string(blueprint)
+	text := string(appSpec)
 	for _, want := range []string{"name: posts", "name: users", "name: title", "name: email"} {
 		if !strings.Contains(text, want) {
-			t.Errorf("blueprint missing %q:\n%s", want, text)
+			t.Errorf("app spec missing %q:\n%s", want, text)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(dir, "world.json")); err != nil {

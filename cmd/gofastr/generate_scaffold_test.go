@@ -91,7 +91,7 @@ func buildGenerated(t *testing.T, dir string) {
 	}
 }
 
-// scaffoldEmptyDir sets up a temp dir with a go.mod (no blueprint) and chdirs
+// scaffoldEmptyDir sets up a temp dir with a go.mod (no app spec) and chdirs
 // into it, the starting point for scaffolding into an empty project.
 func scaffoldEmptyDir(t *testing.T) string {
 	t.Helper()
@@ -124,12 +124,12 @@ entities:
 `, module)
 }
 
-// generateBaseProject writes baseYml as a blueprint, generates the full base
-// project from it, and returns the temp dir + blueprint path.
+// generateBaseProject writes baseYml as an app spec, generates the full base
+// project from it, and returns the temp dir + app spec path.
 func generateBaseProject(t *testing.T, baseYml string) (dir, bp string) {
 	t.Helper()
 	dir, bp = addSetup(t, baseYml)
-	covT_capStdout(t, func() { generateFromBlueprint(generateOptions{from: bp}) })
+	covT_capStdout(t, func() { generateFromAppSpec(generateOptions{from: bp}) })
 	return dir, bp
 }
 
@@ -160,7 +160,7 @@ func TestScaffoldEntityIntoProjectNextOrder(t *testing.T) {
 // ---- Test 2: `generate screen contact` into a project → next screen order ----
 
 func TestScaffoldScreenIntoProjectNextOrder(t *testing.T) {
-	dir, _ := generateBaseProject(t, addScreenBaseBlueprint("example.com/addtest"))
+	dir, _ := generateBaseProject(t, addScreenBaseAppSpec("example.com/addtest"))
 	covT_capStdout(t, func() { generateScaffoldScreen([]string{"contact"}) })
 	contact := readFile(t, dir, "screen_contact.go")
 	// about is the base's only screen at order 0; contact must continue at 1.
@@ -187,7 +187,7 @@ func TestScaffoldEntityIntoEmptyDirEmitsShell(t *testing.T) {
 // ---- Test 4: name collision → exit 0, file skipped and unchanged ----
 
 func TestScaffoldEntityCollisionSkipped(t *testing.T) {
-	dir, _ := generateBaseProject(t, addTestBlueprint("example.com/addtest"))
+	dir, _ := generateBaseProject(t, addTestAppSpec("example.com/addtest"))
 	postsBefore := readFile(t, dir, "entities/posts.go")
 	out := covT_capStdout(t, func() {
 		generateScaffoldEntity([]string{"posts"})
@@ -203,7 +203,7 @@ func TestScaffoldEntityCollisionSkipped(t *testing.T) {
 // ---- Test 6: `--json` carries written files + skipped_existing ----
 
 func TestScaffoldEntityJSONShape(t *testing.T) {
-	dir, _ := generateBaseProject(t, addTestBlueprint("example.com/addtest"))
+	dir, _ := generateBaseProject(t, addTestAppSpec("example.com/addtest"))
 	js := covT_capStdout(t, func() {
 		generateScaffoldEntity([]string{"comments", "--json"})
 	})
@@ -230,7 +230,7 @@ func TestScaffoldEntityJSONShape(t *testing.T) {
 // ---- Test 7: legacy aggregated entities layout → refused ----
 
 func TestScaffoldEntityRefusesLegacyLayout(t *testing.T) {
-	dir, _ := addSetup(t, addTestBlueprint("example.com/addtest"))
+	dir, _ := addSetup(t, addTestAppSpec("example.com/addtest"))
 	if err := os.MkdirAll(filepath.Join(dir, "entities"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -253,10 +253,10 @@ func TestScaffoldEntityRefusesLegacyLayout(t *testing.T) {
 // ---- `gofastr init`: the emitted app must compile ----
 
 // TestRunInitGeneratesBuildableApp: init's main.go template is the file
-// users compile first, and it shared no build proof with the blueprint
+// users compile first, and it shared no build proof with the app spec
 // path (cov_init_test.go asserts the file set and main.go strings
 // only). Run the real generation, pin the module to this repo with a
-// replace (the harness the blueprint build test uses), and build every
+// replace (the harness the app spec build test uses), and build every
 // package it emitted.
 func TestRunInitGeneratesBuildableApp(t *testing.T) {
 	dir := t.TempDir()

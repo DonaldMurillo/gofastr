@@ -16,7 +16,7 @@ func TestForceNamesHandEditedFiles(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
 	bp := filepath.Join(dir, "bp.yml")
-	if err := os.WriteFile(bp, []byte(testBlueprintYAML()), 0o644); err != nil {
+	if err := os.WriteFile(bp, []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -51,7 +51,7 @@ func TestForceQuietWhenNothingEdited(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
 	bp := filepath.Join(dir, "bp.yml")
-	if err := os.WriteFile(bp, []byte(testBlueprintYAML()), 0o644); err != nil {
+	if err := os.WriteFile(bp, []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -67,7 +67,7 @@ func TestForceRemovesRetiredGeneratedResourceTest(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
 	bp := filepath.Join(dir, "bp.yml")
-	if err := os.WriteFile(bp, []byte(testBlueprintYAML()), 0o644); err != nil {
+	if err := os.WriteFile(bp, []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

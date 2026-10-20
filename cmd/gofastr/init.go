@@ -527,8 +527,8 @@ func getEnv(key, fallback string) string {
 			migrateDialect = "migrate.DialectPostgres"
 			sqlDriver = "postgres"
 		}
-		// Secrets never land in committed source (the blueprint
-		// generator's own contract, TestBlueprintNeverInlinesSecrets).
+		// Secrets never land in committed source (the app spec
+		// generator's own contract, TestAppSpecNeverInlinesSecrets).
 		// dsnredact.HasSecret is the same classifier the generate path
 		// uses: a credentialed DSN — the postgres placeholder included —
 		// has its only home in the 0600, gitignored .env this scaffold
@@ -1105,8 +1105,8 @@ built in: no internet needed, always matches your installed version.
 - **Add a screen**: add a type with a ` + "`" + `Render() render.HTML` + "`" + ` method
   next to ` + "`" + `HomeScreen` + "`" + ` in ` + "`" + `screens.go` + "`" + ` (or its own file) and register it
   in ` + "`" + `main.go` + "`" + ` with ` + "`" + `site.Register("/about", &AboutScreen{}, nil)` + "`" + `.
-- The blueprint scaffolds (` + "`" + `gofastr docs blueprints` + "`" + `) extend apps made by
-  ` + "`" + `gofastr generate --from=<blueprint>` + "`" + `, not this layout.
+- The app generator scaffolds (` + "`" + `gofastr docs app-spec` + "`" + `) extend apps made by
+  ` + "`" + `gofastr generate --from=<spec.yml>` + "`" + `, not this layout.
 - **UI: prefer the typed ` + "`" + `core-ui/html` + "`" + ` config structs**
   (` + "`" + `html.Div(html.DivConfig{...})` + "`" + `, ` + "`" + `html.Heading(...)` + "`" + `, …) over raw
   ` + "`" + `render.Tag(...)` + "`" + ` calls. ` + "`" + `render.Tag` + "`" + ` is the escape hatch for

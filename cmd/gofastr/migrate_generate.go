@@ -12,21 +12,21 @@ import (
 // runMigrateGenerate turns a change to the entity declarations into a reviewable,
 // reversible, versioned migration file: the offline declarative workflow.
 //
-//	gofastr migrate generate <name> --from=<blueprint.yml> [--migrations=dir]
+//	gofastr migrate generate <name> --from=<gofastr.yml> [--migrations=dir]
 //	                                [--snapshot=path] [--driver=name]
 //
-// It diffs the blueprint's entities against a committed schema snapshot (no
+// It diffs the app spec's entities against a committed schema snapshot (no
 // database needed), writes `migrations/NNNN_<name>.sql` with Up and Down
 // sections, and updates the snapshot. Review the file, commit it, then
 // `gofastr migrate up`.
 func runMigrateGenerate(args []string) {
 	opts := parseMigrateGenOptions(args)
 	if opts.name == "" {
-		fail("Usage: gofastr migrate generate <name> --from=<blueprint.yml> [--migrations=dir] [--snapshot=path] [--driver=name]")
+		fail("Usage: gofastr migrate generate <name> --from=<gofastr.yml> [--migrations=dir] [--snapshot=path] [--driver=name]")
 		osExit(1)
 	}
 	if opts.from == "" {
-		fail("A blueprint is required: pass --from=<blueprint.yml>.")
+		fail("An app spec is required: pass --from=<gofastr.yml>.")
 		osExit(1)
 	}
 	if opts.group != "" {
@@ -41,14 +41,14 @@ func runMigrateGenerate(args []string) {
 		dialect = framework.DialectPostgres
 	}
 
-	bp, err := loadBlueprint(opts.from)
+	bp, err := loadAppSpec(opts.from)
 	if err != nil {
-		fail("Failed to load blueprint %s: %v", opts.from, err)
+		fail("Failed to load app spec %s: %v", opts.from, err)
 		osExit(1)
 	}
 	decls := bp.Entities
 	if len(decls) == 0 {
-		fail("Blueprint %s declares no entities.", opts.from)
+		fail("App spec %s declares no entities.", opts.from)
 		osExit(1)
 	}
 	reg := framework.NewRegistry()

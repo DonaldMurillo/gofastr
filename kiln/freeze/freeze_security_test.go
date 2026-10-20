@@ -22,7 +22,7 @@ func TestFreezeOmitsDSNPassword(t *testing.T) {
 	w.App.DBDriver = "postgres"
 	w.App.DBURL = "postgres://kiln:S3CRET-DB-PASSWORD@db.internal:5432/prod"
 	// Satisfy the production-auth gate the same way the pinned test does so
-	// the run reaches the blueprint emitter.
+	// the run reaches the app generator.
 	w.App.Auth.Enabled = true
 	w.App.Auth.JWTSecret = "SUPER-SECRET-JWT-VALUE" // nosecret: test fixture
 	w.Entities["posts"] = &world.Entity{
@@ -54,7 +54,7 @@ func TestFreezeOmitsDSNPassword(t *testing.T) {
 }
 
 // Property: a DSN without credentials (a SQLite file path) stays verbatim
-// in the frozen blueprint, so local frozen apps keep booting; only
+// in the frozen app spec, so local frozen apps keep booting; only
 // credential-bearing DSNs become env references.
 func TestFreezeKeepsCredentialFreeDSNVerbatim(t *testing.T) {
 	w := world.New()
@@ -67,9 +67,9 @@ func TestFreezeKeepsCredentialFreeDSNVerbatim(t *testing.T) {
 		Name: "posts", Fields: []world.Field{{Name: "title", Type: "string"}},
 	}
 
-	buf, err := freeze.BlueprintYAML(w)
+	buf, err := freeze.AppSpecYAML(w)
 	if err != nil {
-		t.Fatalf("BlueprintYAML: %v", err)
+		t.Fatalf("AppSpecYAML: %v", err)
 	}
 	if !strings.Contains(string(buf), "file:blog.db") {
 		t.Errorf("credential-free DSN was substituted away:\n%s", buf)

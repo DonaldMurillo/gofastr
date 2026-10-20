@@ -162,7 +162,7 @@ func getEnv(key, fallback string) string {
 }
 
 // appIconPNG generates the app's icon source at startup: a diagonal
-// gradient in the blueprint's primary color. uihost.WithAppIcon derives
+// gradient in the app spec's primary color. uihost.WithAppIcon derives
 // /favicon.ico, the sized PNGs, and the head links from this one image.
 // Have a real logo? Embed it and return those bytes instead:
 //
@@ -225,7 +225,7 @@ func resolveSeedRefs(ctx context.Context, fwApp *framework.App, row map[string]a
 // Fields(), so a plain %w would abort the boot with zero actionable
 // information. Unwrap, print every field message (sorted, so the output
 // is stable), and name the row by its one-based position in the
-// blueprint's seed: block. The position, never a row value, is the
+// app spec's seed: block. The position, never a row value, is the
 // label: this error aborts boot through log.Fatal, so its text lands
 // in application logs, and seed rows carry admin emails and passwords.
 func seedCreateError(entity string, index int, err error) error {

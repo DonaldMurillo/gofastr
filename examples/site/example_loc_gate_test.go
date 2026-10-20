@@ -4,7 +4,7 @@ package main
 // exampleLoC; this test measures the non-test Go lines under
 // examples/<slug> and fails when a badge is more than 20% off, so the
 // badges get re-measured instead of remembered. It also pins that every
-// badge slug has a row and that the blueprint-only list stays linked.
+// badge slug has a row and that the app-spec-only list stays linked.
 
 import (
 	"bufio"
@@ -96,7 +96,7 @@ func TestExampleLoCBadgesMatchTree(t *testing.T) {
 	}
 	for _, slug := range []string{"lms", "portfolio", "project-manager", "real-estate"} {
 		if !strings.Contains(page, "tree/main/examples/"+slug) {
-			t.Errorf("/examples blueprint list is missing a source link for %q", slug)
+			t.Errorf("/examples app spec list is missing a source link for %q", slug)
 		}
 		if _, err := os.Stat(filepath.Join("..", slug, "gofastr.yml")); err != nil {
 			t.Errorf("examples/%s/gofastr.yml: %v", slug, err)

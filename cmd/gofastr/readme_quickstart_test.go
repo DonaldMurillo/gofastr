@@ -3,10 +3,10 @@ package main
 // Executable-docs gate.
 //
 // The README's three quickstart programs (core / one entity / screens)
-// and the blueprint tutorial's quickstart are contracts: each fenced
+// and the app spec tutorial's quickstart are contracts: each fenced
 // block must compile (or load+generate), build, boot, and serve. These
 // tests extract the actual fences from README.md and
-// framework/docs/content/tutorial-blueprint-app.md and execute them, so
+// framework/docs/content/tutorial-app-spec.md and execute them, so
 // any edit that breaks a quickstart fails CI loudly. The extraction is
 // anchored on purpose. If a section heading, the `# gofastr.yml` yaml
 // block, or the documented command sequence moves or changes shape, the
@@ -28,13 +28,13 @@ import (
 	"time"
 )
 
-// The blueprint quickstart lives in the tutorial doc, not the README.
+// The app spec quickstart lives in the tutorial doc, not the README.
 // The README points at the CLI and the tutorial carries the executable
 // path. The gate follows the content: it extracts the tutorial's own
 // fences and runs them.
-const blueprintTutorialPath = "framework/docs/content/tutorial-blueprint-app.md"
+const appSpecTutorialPath = "framework/docs/content/tutorial-app-spec.md"
 
-const readmeBlueprintHeading = "## 1. Blueprint → running app"
+const readmeAppSpecHeading = "## 1. App spec → running app"
 
 // mcpTrueRe matches the entity-config `MCP:  true,` line without pinning the
 // exact gofmt column alignment: `MCP:` followed by ≥1 whitespace then `true`.
@@ -98,24 +98,24 @@ func fencedBlock(section, lang, mustContain string) (string, error) {
 			body = append(body, line)
 		}
 	}
-	return "", fmt.Errorf("README anchor missing: no ```%s fence containing %q under %q — the quickstart must keep this block; README edits that drop or rename it break the executable-README gate", lang, mustContain, readmeBlueprintHeading)
+	return "", fmt.Errorf("README anchor missing: no ```%s fence containing %q under %q — the quickstart must keep this block; README edits that drop or rename it break the executable-README gate", lang, mustContain, readmeAppSpecHeading)
 }
 
-func blueprintTutorialContent(t *testing.T) string {
+func appSpecTutorialContent(t *testing.T) string {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(repoRootDir(t), blueprintTutorialPath))
+	raw, err := os.ReadFile(filepath.Join(repoRootDir(t), appSpecTutorialPath))
 	if err != nil {
-		t.Fatalf("read %s: %v", blueprintTutorialPath, err)
+		t.Fatalf("read %s: %v", appSpecTutorialPath, err)
 	}
 	return string(raw)
 }
 
-// readmeQuickstartBlocks extracts the tutorial's blueprint quickstart:
+// readmeQuickstartBlocks extracts the tutorial's app spec quickstart:
 // the gofastr.yml fence, the generate/dev command fence, and the
 // separate mkdir/go-mod-init fence that names the module.
 func readmeQuickstartBlocks(t *testing.T) (yamlBlock, bashBlock, initBlock string) {
 	t.Helper()
-	section, err := readmeSection(blueprintTutorialContent(t), readmeBlueprintHeading)
+	section, err := readmeSection(appSpecTutorialContent(t), readmeAppSpecHeading)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,10 +149,10 @@ func quickstartModule(t *testing.T, bashBlock string) string {
 }
 
 func TestReadmeAnchorMissingFails(t *testing.T) {
-	if _, err := readmeSection("# Other\n\nNo quickstart here.\n", readmeBlueprintHeading); err == nil {
+	if _, err := readmeSection("# Other\n\nNo quickstart here.\n", readmeAppSpecHeading); err == nil {
 		t.Fatal("missing heading did not error")
 	}
-	if _, err := fencedBlock("### Declare an app (blueprint)\n\n```yaml\nfoo: bar\n```\n", "yaml", "# gofastr.yml"); err == nil {
+	if _, err := fencedBlock("### Declare an app (app spec)\n\n```yaml\nfoo: bar\n```\n", "yaml", "# gofastr.yml"); err == nil {
 		t.Fatal("missing anchored fence did not error")
 	}
 }
@@ -161,11 +161,11 @@ func TestReadmeQuickstartShapeIsStable(t *testing.T) {
 	yamlBlock, bashBlock, initBlock := readmeQuickstartBlocks(t)
 	for _, want := range []string{"entities:", "screens:"} {
 		if !strings.Contains(yamlBlock, want) {
-			t.Fatalf("tutorial blueprint block lost %q — the quickstart yaml must keep both halves (entities AND screens):\n%s", want, yamlBlock)
+			t.Fatalf("tutorial app spec block lost %q — the quickstart yaml must keep both halves (entities AND screens):\n%s", want, yamlBlock)
 		}
 	}
 	// `gofastr dev`, not `go run .`: only the dev server hot-reloads, and the
-	// quickstart is the development on-ramp. TestReadmeQuickstartBlueprintRuns
+	// quickstart is the development on-ramp. TestReadmeQuickstartAppSpecRuns
 	// keeps the sequence executable by building and booting the same app.
 	for _, want := range []string{"gofastr validate", "gofastr generate --from=gofastr.yml", "go mod tidy", "gofastr dev"} {
 		if !strings.Contains(bashBlock, want) {
@@ -177,21 +177,21 @@ func TestReadmeQuickstartShapeIsStable(t *testing.T) {
 	}
 }
 
-// Drift gate (b): every relation field in the README blueprint must
-// target a declared entity. loadBlueprint runs full blueprint
+// Drift gate (b): every relation field in the README app spec must
+// target a declared entity. loadAppSpec runs full app spec
 // validation, and the explicit loop keeps the gate meaningful even if
 // that validation ever loosens.
-func TestReadmeBlueprintRelationsResolve(t *testing.T) {
+func TestReadmeAppSpecRelationsResolve(t *testing.T) {
 	yamlBlock, _, initBlock := readmeQuickstartBlocks(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gofastr.yml")
 	writeTestFile(t, path, yamlBlock)
-	bp, err := loadBlueprint(path)
+	bp, err := loadAppSpec(path)
 	if err != nil {
-		t.Fatalf("tutorial blueprint does not validate: %v", err)
+		t.Fatalf("tutorial app spec does not validate: %v", err)
 	}
 	if module := quickstartModule(t, initBlock); bp.App.Module != module {
-		t.Fatalf("tutorial blueprint module %q != quickstart `go mod init %s`", bp.App.Module, module)
+		t.Fatalf("tutorial app spec module %q != quickstart `go mod init %s`", bp.App.Module, module)
 	}
 	declared := map[string]bool{}
 	for _, decl := range bp.Entities {
@@ -203,36 +203,36 @@ func TestReadmeBlueprintRelationsResolve(t *testing.T) {
 				continue
 			}
 			if !declared[field.To] {
-				t.Fatalf("README blueprint: %s.%s relates to undeclared entity %q", decl.Name, field.Name, field.To)
+				t.Fatalf("README app spec: %s.%s relates to undeclared entity %q", decl.Name, field.Name, field.To)
 			}
 		}
 	}
 }
 
-// Drift gate (c): the tutorial blueprint must pass the repo's own
-// validator end to end: full blueprint validation (loadBlueprint) plus
+// Drift gate (c): the tutorial app spec must pass the repo's own
+// validator end to end: full app spec validation (loadAppSpec) plus
 // the unscoped-PII lint that `gofastr validate` enforces. The tutorial
 // can never again ship a quickstart that the validator rejects.
-func TestReadmeBlueprintPassesValidator(t *testing.T) {
+func TestReadmeAppSpecPassesValidator(t *testing.T) {
 	yamlBlock, _, _ := readmeQuickstartBlocks(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gofastr.yml")
 	writeTestFile(t, path, yamlBlock)
-	bp, err := loadBlueprint(path)
+	bp, err := loadAppSpec(path)
 	if err != nil {
-		t.Fatalf("tutorial quickstart blueprint fails validateBlueprint: %v", err)
+		t.Fatalf("tutorial quickstart app spec fails validateAppSpec: %v", err)
 	}
 	for _, f := range lintUnscopedPII(bp) {
-		t.Errorf("tutorial quickstart blueprint fails `gofastr validate` (unscoped-pii): %s", f.Message())
+		t.Errorf("tutorial quickstart app spec fails `gofastr validate` (unscoped-pii): %s", f.Message())
 	}
 }
 
-// The executable quickstart: write the tutorial's blueprint, run the
+// The executable quickstart: write the tutorial's app spec, run the
 // generate pipeline in-process, build the generated app against the
 // working tree, boot it, and assert the three claims the tutorial's own
 // curl block makes: the entity API answers, the screen renders, and the
 // MCP tools are listed.
-func TestReadmeQuickstartBlueprintRuns(t *testing.T) {
+func TestReadmeQuickstartAppSpecRuns(t *testing.T) {
 	yamlBlock, _, initBlock := readmeQuickstartBlocks(t)
 	repoRoot := repoRootDir(t)
 	dir := t.TempDir()
@@ -249,13 +249,13 @@ func TestReadmeQuickstartBlueprintRuns(t *testing.T) {
 	}
 	writeTestFile(t, filepath.Join(dir, "gofastr.yml"), yamlBlock)
 
-	bp, err := loadBlueprint(filepath.Join(dir, "gofastr.yml"))
+	bp, err := loadAppSpec(filepath.Join(dir, "gofastr.yml"))
 	if err != nil {
-		t.Fatalf("README blueprint failed to load: %v", err)
+		t.Fatalf("README app spec failed to load: %v", err)
 	}
-	files, err := renderBlueprintFiles(bp)
+	files, err := renderAppSpecFiles(bp)
 	if err != nil {
-		t.Fatalf("README blueprint failed to generate: %v", err)
+		t.Fatalf("README app spec failed to generate: %v", err)
 	}
 	for _, file := range files {
 		full := filepath.Join(dir, file.name)
@@ -296,7 +296,7 @@ func TestReadmeQuickstartBlueprintRuns(t *testing.T) {
 	}()
 
 	baseURL := "http://" + addr
-	// Blueprint apps mount entity JSON under /api by default (app.api_prefix),
+	// App spec apps mount entity JSON under /api by default (app.api_prefix),
 	// leaving bare paths free for HTML screens.
 	waitForHTTP(t, baseURL+"/api/notes", &output)
 	resp, err := http.Get(baseURL + "/api/notes")
@@ -308,7 +308,7 @@ func TestReadmeQuickstartBlueprintRuns(t *testing.T) {
 		t.Fatalf("GET /api/notes = %d, want 200 (public: true)\n%s", resp.StatusCode, output.String())
 	}
 
-	// The server-rendered screen from the blueprint's `screens:` half.
+	// The server-rendered screen from the app spec's `screens:` half.
 	screenResp, err := http.Get(baseURL + "/")
 	if err != nil {
 		t.Fatal(err)
@@ -495,7 +495,7 @@ func TestReadmeDonaldsWayQuickstartRuns(t *testing.T) {
 // TestReadmeGoQuickstartRuns is the executable gate for the smallest-app Go
 // snippet. It extracts the exact program, swaps only the hard-coded listen
 // address for a free port (the one transform, mirroring the go.mod injection
-// the blueprint gate does), compiles it against the working tree, boots it,
+// the app spec gate does), compiles it against the working tree, boots it,
 // and asserts the runtime claims the README's comments make:
 //   - GET /posts == 200 (anonymous read): Public: true opts out of
 //     secure-by-default (crud requireAuthenticated) so the documented

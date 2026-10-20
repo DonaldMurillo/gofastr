@@ -9,21 +9,21 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-func covT_writeBlueprint(t *testing.T) (dir, bp string) {
+func covT_writeAppSpec(t *testing.T) (dir, bp string) {
 	t.Helper()
 	dir = t.TempDir()
 	covT_chdir(t, dir)
 	bp = filepath.Join(dir, "bp.yml")
-	if err := os.WriteFile(bp, []byte(testBlueprintYAML()), 0o644); err != nil {
+	if err := os.WriteFile(bp, []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return dir, bp
 }
 
-func TestGenerateFromBlueprintWritesFiles(t *testing.T) {
-	dir, bp := covT_writeBlueprint(t)
-	covT_capStdout(t, func() { generateFromBlueprint(generateOptions{from: bp, outputDir: "gen", outputSet: true}) })
-	// Blueprint output lands under the resolved output dir (--out=gen here).
+func TestGenerateFromAppSpecWritesFiles(t *testing.T) {
+	dir, bp := covT_writeAppSpec(t)
+	covT_capStdout(t, func() { generateFromAppSpec(generateOptions{from: bp, outputDir: "gen", outputSet: true}) })
+	// App generator output lands under the resolved output dir (--out=gen here).
 	matches, _ := filepath.Glob(filepath.Join(dir, "gen", "**", "*.go"))
 	if len(matches) == 0 {
 		// Fall back to a recursive walk; layout may nest deeper.
@@ -35,37 +35,37 @@ func TestGenerateFromBlueprintWritesFiles(t *testing.T) {
 			return nil
 		})
 		if !found {
-			t.Fatal("no .go files generated from blueprint")
+			t.Fatal("no .go files generated from app spec")
 		}
 	}
 }
 
-func TestGenerateFromBlueprintJSON(t *testing.T) {
-	_, bp := covT_writeBlueprint(t)
+func TestGenerateFromAppSpecJSON(t *testing.T) {
+	_, bp := covT_writeAppSpec(t)
 	out := covT_capStdout(t, func() {
-		generateFromBlueprint(generateOptions{from: bp, outputDir: "gen", json: true})
+		generateFromAppSpec(generateOptions{from: bp, outputDir: "gen", json: true})
 	})
 	if !strings.Contains(out, `"files"`) {
 		t.Fatalf("expected JSON, got %s", out)
 	}
 }
 
-func TestGenerateFromBlueprintDryRunText(t *testing.T) {
-	_, bp := covT_writeBlueprint(t)
+func TestGenerateFromAppSpecDryRunText(t *testing.T) {
+	_, bp := covT_writeAppSpec(t)
 	out := covT_capStdout(t, func() {
-		generateFromBlueprint(generateOptions{from: bp, outputDir: "gen", dryRun: true})
+		generateFromAppSpec(generateOptions{from: bp, outputDir: "gen", dryRun: true})
 	})
 	if !strings.Contains(out, "Would generate") {
 		t.Fatalf("expected dry-run text, got %s", out)
 	}
 }
 
-func TestGenerateFromBlueprintLoadErrorJSON(t *testing.T) {
+func TestGenerateFromAppSpecLoadErrorJSON(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
 	code := covT_capExit(t, func() {
 		covT_capStdout(t, func() {
-			generateFromBlueprint(generateOptions{from: filepath.Join(dir, "missing.yml"), outputDir: "gen", dryRun: true, json: true})
+			generateFromAppSpec(generateOptions{from: filepath.Join(dir, "missing.yml"), outputDir: "gen", dryRun: true, json: true})
 		})
 	})
 	if code != 1 {
@@ -73,11 +73,11 @@ func TestGenerateFromBlueprintLoadErrorJSON(t *testing.T) {
 	}
 }
 
-func TestGenerateFromBlueprintBadOutputDirJSON(t *testing.T) {
-	_, bp := covT_writeBlueprint(t)
+func TestGenerateFromAppSpecBadOutputDirJSON(t *testing.T) {
+	_, bp := covT_writeAppSpec(t)
 	code := covT_capExit(t, func() {
 		covT_capStdout(t, func() {
-			generateFromBlueprint(generateOptions{from: bp, outputDir: "..", outputSet: true, dryRun: true, json: true})
+			generateFromAppSpec(generateOptions{from: bp, outputDir: "..", outputSet: true, dryRun: true, json: true})
 		})
 	})
 	if code != 1 {

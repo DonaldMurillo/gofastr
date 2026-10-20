@@ -11,7 +11,7 @@
 //     that is not itself a package (testdata, embedded assets, fixtures);
 //   - one of the package's //go:embed patterns covers a changed file,
 //     deleted ones included, which can sit inside a nested package: cmd/gofastr
-//     embeds the blueprint's packages/ trees, each its own package, so
+//     embeds the app spec's packages/ trees, each its own package, so
 //     editing a template never selected the generator or the gates that
 //     run it;
 //   - the package imports an affected package, transitively (go list's

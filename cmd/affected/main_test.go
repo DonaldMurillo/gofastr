@@ -160,7 +160,7 @@ func TestGoRunOfACommandIsATestEdge(t *testing.T) {
 }
 
 // A package that embeds a nested package's files depends on them with no
-// import edge: cmd/gofastr embeds the blueprint's packages/ trees, each
+// import edge: cmd/gofastr embeds the app spec's packages/ trees, each
 // its own package, and a template edit selected neither the generator
 // nor the gates that go run it.
 func TestEmbeddedNestedPackageSelectsTheEmbedder(t *testing.T) {

@@ -50,10 +50,10 @@ app.Entity("tickets", framework.EntityConfig{
 })
 ```
 
-Blueprint entities accept the same `scope:`, `pagination:`, and `exposure:`
+App spec entities accept the same `scope:`, `pagination:`, and `exposure:`
 maps. In Go, the grouped sub-configs (`ScopeConfig`, `PaginationConfig`,
 `ExposureConfig`) are the only form; the historical flat `EntityConfig`
-fields were removed. In a blueprint YAML you may still use the flat
+fields were removed. In an app spec YAML you may still use the flat
 shorthand keys, but declaring a flat key and its grouped key with
 *different* values is a hard decode error, not a silent precedence rule.
 This is the primary, fully-supported way to declare an entity:
@@ -149,12 +149,12 @@ called out in the banner at the top of this page: a session requirement is
 not row scoping. Without `OwnerField`, every authenticated user reads and can
 overwrite every other user's rows.
 
-The same entity shape can also be **declared in a `gofastr.yml` blueprint**
-and emitted as Go by the CLI; see [Blueprints](blueprints.md), the single
+The same entity shape can also be **declared in a `gofastr.yml` app spec**
+and emitted as Go by the CLI; see [App specs](app-spec.md), the single
 declaration format the `gofastr generate` codegen pipeline reads. The
 `EntityDeclaration` / `FieldDeclaration` types documented below
-(`framework/entity/declaration.go`) are the in-memory shape the blueprint
-loader decodes a blueprint's `entities:` list into before converting each to
+(`framework/entity/declaration.go`) are the in-memory shape the app spec
+loader decodes an app spec's `entities:` list into before converting each to
 an `EntityConfig` via `.Config()`. They are not loaded from standalone files.
 
 For Go-defined configs, `RegisterEntities` is sugar over multiple
@@ -295,11 +295,11 @@ done` (with elapsed duration), `seed skip` (when the ledger already
 records the entity), `seed failed` (on error). When no logger is
 attached, events go to a discard handler.
 
-## Blueprint entity shape
+## App spec entity shape
 
-Inside a `gofastr.yml` blueprint, each entry in the `entities:` list maps
+Inside a `gofastr.yml` app spec, each entry in the `entities:` list maps
 onto the `EntityDeclaration` fields below. The same field-type vocabulary
-applies whether you write the entity in Go (`EntityConfig`) or in a blueprint:
+applies whether you write the entity in Go (`EntityConfig`) or in an app spec:
 
 ```yaml
 entities:
@@ -479,7 +479,7 @@ All writes execute inside the parent's database transaction (`inTx`). If any chi
 - **Attach-Only Semantics**: Cascade updates are additive (upsert/attach). Omitted children or omitted ManyToMany links are not deleted or unlinked on update; explicit deletion or detaching must be handled via child endpoints.
 
 `owner_field` mirrors `Scope.OwnerField`: set it to the column
-that holds the row owner's id (e.g. `user_id`) and the blueprint-declared
+that holds the row owner's id (e.g. `user_id`) and the declared
 entity gets the same per-user auto-CRUD scoping as a Go-declared one
 (see **Per-user scoping** below). Omit the key to keep pre-existing
 behaviour. `gofastr generate --from=gofastr.yml` emits `OwnerField:` inside a
@@ -499,7 +499,7 @@ into it; it does not satisfy the gate by itself; see
 [access-control](access-control.md)). `gofastr generate
 --from=gofastr.yml` emits the map as `Access: framework.AccessControl{...}`
 inside an `Exposure: &framework.ExposureConfig{…}` block in the generated
-`app.Entity(...)` registration, so blueprint-declared entities get the same
+`app.Entity(...)` registration, so declared entities get the same
 fail-closed enforcement as Go-declared ones.
 
 ### Default CRUD authentication
@@ -675,12 +675,12 @@ app.Use(auth.SessionMiddleware(mgr))
 JWT-authenticated requests (via `auth.RequireAuth`) already populate
 the User in context.
 
-For blueprint-declared entities this rule is lint-enforced: an
+For declared entities this rule is lint-enforced: an
 auto-exposed entity (`crud` defaults on, or `mcp: true`) with PII-shaped
 field names and no `owner_field` / `access` / `multi_tenant` while
 `app.auth` is disabled is an **error** from `gofastr validate`, a
 prominent warning from `gofastr generate`, and an `unscoped-pii` finding
-from `gofastr audit lint`. See [blueprints](blueprints.md) → "Unscoped
+from `gofastr audit lint`. See [app specs](app-spec.md) → "Unscoped
 PII".
 
 ### Letting a role read every owner's rows (`CrossOwnerRead`)
@@ -759,7 +759,7 @@ preserved: a granted context in tenant A never sees tenant B rows.
 
 Requires `OwnerField` (it only makes sense on an owner-scoped entity);
 `entity.Define` panics when `CrossOwnerRead` is set without it, and the
-blueprint decoder returns a validation error for the same mismatch.
+app spec decoder returns a validation error for the same mismatch.
 
 ### Reading across owners (`owner.AllowCrossOwner`): in-process escape hatch
 
@@ -927,9 +927,9 @@ silently serve every row.
 An entity with no `ReadScope` (or an empty `Filter`) is untouched: a
 true no-op for every existing entity.
 
-### Blueprint spelling (`read_scope:`)
+### App spec spelling (`read_scope:`)
 
-In a `gofastr.yml` blueprint the same scope is declared under the entity,
+In a `gofastr.yml` app spec the same scope is declared under the entity,
 beside `access:` (or nested under `exposure:`; the two spellings must
 agree if both appear). This is the `posts` entity of
 `examples/portfolio/gofastr.yml`, trimmed to the relevant keys:
@@ -974,7 +974,7 @@ A boolean predicate takes the string `"true"` or `"false"`; the framework
 binds it as the column's bool type, exactly as `?approved=true` would.
 Quote it in YAML so it stays a string.
 
-The blueprint decoder validates the block where a typo matters, and fails
+The app spec decoder validates the block where a typo matters, and fails
 the generate with the YAML location: unknown keys at any level, an `op`
 outside `eq`/`neq`/`in`/`not_in`, `value` and `values` together, a
 predicate with no `field`, an undeclared or `Hidden` `field`, and a
@@ -1038,7 +1038,7 @@ OpEq filter on the `q` column is dropped). Suffixed ops (`?q_like=`,
 `?q_gt=`, …) still filter the column normally.
 
 Column names must be known, non-Hidden, and String/Text-typed;
-`entity.Define` panics otherwise (the blueprint decoder returns a
+`entity.Define` panics otherwise (the app spec decoder returns a
 validation error). A Hidden column would turn `?q=` into a
 value-disclosure oracle: the same rationale as ParseFilters' hidden
 stripping.
@@ -1458,7 +1458,7 @@ and the `crud.WithStateOverride` escape hatch are on the
 
 ## Code Generation
 
-Generate Go from a `gofastr.yml` blueprint:
+Generate Go from a `gofastr.yml` app spec:
 
 ```bash
 gofastr generate --from=gofastr.yml
@@ -1543,23 +1543,23 @@ field named `input`, `patch` or `move`, or a field `status_value` next
 to the enum `status`, fails `gofastr generate` with the name the two
 meet in. Rename the field.
 
-A blueprint that declares `app.module` also emits a flat `package main` at the
+An app spec that declares `app.module` also emits a flat `package main` at the
 root (`main.go` plus `app.go`, `screens_register.go`, one `screen_<name>.go`
 per screen, and `stubs.go` for endpoint/seed stubs). These are owned Go you
   read, edit, and commit; no `DO NOT EDIT` header. See
-[Blueprints](blueprints.md) for the full blueprint shape, including the
-[generated screen file layout](blueprints.md#generated-screen-files). To add
+[App specs](app-spec.md) for the full app spec shape, including the
+[generated screen file layout](app-spec.md#generated-screen-files). To add
 in-page dynamic behavior to those screens (sort, paginate, mutate without a
   reload), build islands: the cookbook is
 [interactive-patterns](interactive-patterns.md).
 
 Useful flags:
 
-- `--from=<blueprint.yml>` selects the blueprint to generate from (required).
+- `--from=<gofastr.yml>` selects the app spec to generate from (required).
 - `--dry-run` lists generated files without writing.
 - `--json` emits machine-readable output.
 - `--out=<dir>` scaffolds into a subpackage instead of the module root (also
-  settable as `app.output_dir` in the blueprint); useful for monorepos and
+  settable as `app.output_dir` in the app spec); useful for monorepos and
   examples that host their own Go test package.
 - `--force` overwrites existing files. `generate` is one-shot: with no
   `--force` it refuses to write into a directory that already holds any target
@@ -1567,7 +1567,7 @@ Useful flags:
 - `--add` writes only the files that don't already exist, never overwriting.
   Pass a partial yml (e.g. just new entities) to add pieces to an existing
   project. Entity declaration orders continue after the existing set. See
-  [Additive generation](blueprints.md#additive-generation---add).
+  [Additive generation](app-spec.md#additive-generation---add).
 
 ### Scaffold subcommands
 
@@ -1582,10 +1582,10 @@ work as above. `--force` and `--add` are rejected (scaffolding is additive):
 * `gofastr generate screen contact`: `screen_contact.go` at `/contact` with
   a heading + stub paragraph whose `Render` you replace.
 
-See [Quick scaffolds](blueprints.md#quick-scaffolds-generate-entityscreen) in
-the Blueprints guide for the relationship between stubs and full yml.
+See [Quick scaffolds](app-spec.md#quick-scaffolds-generate-entityscreen) in
+the App specs guide for the relationship between stubs and full yml.
 
-For arbitrary configured generators (not a full app blueprint), use a
+For arbitrary configured generators (not a full app spec), use a
 `gofastr.codegen.yml` extension config. See [Codegen](codegen.md) for
 config discovery, the extension protocol, and manifest-based cleaning.
 

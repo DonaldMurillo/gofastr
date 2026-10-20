@@ -653,7 +653,7 @@ follow whichever root is emitted.
 
 Two documented exceptions forward more than the contract's default.
 `FormConfig` forwards raw: its ExtraAttrs may override the form's own
-attributes, which the blueprint generator's `data-entity-form` +
+attributes, which the app generator's `data-entity-form` +
 RPC-wiring pattern relies on. `ButtonConfig` and `LinkConfig` are
 *wiring carriers*: they drop their owned keys like any component but
 keep `data-cui-*` — except `data-cui-comp`, the style-scope marker,

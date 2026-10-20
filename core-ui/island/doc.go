@@ -1,7 +1,7 @@
 // Package island is the runtime-side manager for server-driven SSE updates.
 //
 // Islands themselves are server-rendered HTML fragments produced elsewhere
-// (e.g. via core-ui/component and the blueprint generator's
+// (e.g. via core-ui/component and the app generator's
 // island.NewIsland(...).Render()). This package owns the LIVE side: the
 // per-session update streams that carry fresh island HTML to the browser over
 // Server-Sent Events, plus the cross-replica fanout and presence roster that

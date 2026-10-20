@@ -13,7 +13,7 @@ import (
 
 // RenderNode walks a node.Node tree and emits HTML by dispatching to
 // the core-ui/html package. The IR (node.Node) is the JSON shape an
-// author (blueprint codegen or Kiln) declares; the actual element
+// author (app spec codegen or Kiln) declares; the actual element
 // vocabulary, ARIA rules, attribute escaping, and accessibility defaults
 // all live in core-ui/html, this renderer does not reimplement them.
 //
@@ -32,7 +32,7 @@ func RenderNode(n node.Node) render.HTML {
 //
 // The only difference is that a trusted tree may name the action
 // attributes actionAttrs strips: data-action, data-action-* and
-// data-param-*. cmd/gofastr's blueprint generator is the caller this
+// data-param-*. cmd/gofastr's app generator is the caller this
 // exists for, it compiles a developer's own YAML into IR and wires
 // button actions through exactly those attributes.
 //
@@ -74,7 +74,7 @@ func RenderTrustedKind(kind string, props map[string]any, children []render.HTML
 
 // actionAttrs are the runtime-privileged attributes that only a
 // first-party IR may name. They are stripped at the untrusted entry
-// point rather than inside attrAllowed because the blueprint generator
+// point rather than inside attrAllowed because the app generator
 // legitimately emits all three through the SAME renderer that Kiln uses
 // for agent-authored IR, the attribute name alone cannot tell the two
 // apart, so the caller has to.
@@ -511,7 +511,7 @@ var allowedAttrs = map[string]bool{
 //     navigation
 //
 // Everything else in the data- namespace is an inert marker read only by
-// the host's own code (the blueprint's data-field / data-entity-list-*,
+// the host's own code (the app spec's data-field / data-entity-list-*,
 // kiln's data-kiln-tool, test hooks), so it passes. That split is the
 // point: the IR may describe UI, it may not reach the runtime.
 //
@@ -537,7 +537,7 @@ var privilegedDataAttrs = map[string]bool{
 // data-action-* and data-param-* are deliberately NOT here: they are
 // stripped a layer earlier, by withoutActionAttrs at the untrusted entry
 // point. They cannot be handled by name alone, because this renderer
-// serves two callers with different trust, cmd/gofastr's blueprint
+// serves two callers with different trust, cmd/gofastr's app spec
 // compiles developer-authored YAML and legitimately emits them, while
 // kiln renders agent-authored IR through the same code. The trust split
 // (RenderNode vs RenderTrustedNode) is what tells the two apart. See

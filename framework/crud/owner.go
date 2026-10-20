@@ -414,7 +414,7 @@ func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id 
 // anonymous-CRUD hole tracked in issue #65: RequireOwner only fires for
 // OwnerField entities and requirePermission only fires when the entity
 // opts into an Access block, an entity declaring NEITHER got zero
-// enforcement, so a plain blueprint entity's List/Get/Create/Update/Delete
+// enforcement, so a plain app spec entity's List/Get/Create/Update/Delete
 // were all reachable by an anonymous caller (POST returning 201 and
 // persisting the row). Unless an explicit mechanism already governs the
 // entity (OwnerField or a declared Access block, either "takes over as

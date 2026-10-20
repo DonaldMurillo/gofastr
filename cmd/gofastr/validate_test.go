@@ -14,14 +14,14 @@ import (
 // entity".
 
 func TestRelationFieldUnknownEntity(t *testing.T) {
-	bp := Blueprint{Entities: []framework.EntityDeclaration{{
+	bp := AppSpec{Entities: []framework.EntityDeclaration{{
 		Name: "posts",
 		Fields: []framework.FieldDeclaration{
 			{Name: "title", Type: "string"},
 			{Name: "author_id", Type: "relation", To: "users"},
 		},
 	}}}
-	err := validateBlueprint(bp)
+	err := validateAppSpec(bp)
 	if err == nil {
 		t.Fatal("relation field to undeclared entity must fail validation")
 	}
@@ -33,13 +33,13 @@ func TestRelationFieldUnknownEntity(t *testing.T) {
 }
 
 func TestRelationFieldMissingTo(t *testing.T) {
-	bp := Blueprint{Entities: []framework.EntityDeclaration{{
+	bp := AppSpec{Entities: []framework.EntityDeclaration{{
 		Name: "posts",
 		Fields: []framework.FieldDeclaration{
 			{Name: "author_id", Type: "relation"},
 		},
 	}}}
-	err := validateBlueprint(bp)
+	err := validateAppSpec(bp)
 	if err == nil {
 		t.Fatal("relation field without to: must fail validation")
 	}
@@ -51,13 +51,13 @@ func TestRelationFieldMissingTo(t *testing.T) {
 }
 
 func TestRelationFieldKnownEntityOK(t *testing.T) {
-	bp := Blueprint{Entities: []framework.EntityDeclaration{
+	bp := AppSpec{Entities: []framework.EntityDeclaration{
 		{Name: "users", Fields: []framework.FieldDeclaration{{Name: "email", Type: "string"}}},
 		{Name: "posts", Fields: []framework.FieldDeclaration{
 			{Name: "author_id", Type: "relation", To: "users"},
 		}},
 	}}
-	if err := validateBlueprint(bp); err != nil {
+	if err := validateAppSpec(bp); err != nil {
 		t.Fatalf("relation field to declared entity should pass: %v", err)
 	}
 }
@@ -67,13 +67,13 @@ func TestRelationFieldKnownEntityOK(t *testing.T) {
 // exit 1. The banner belongs in an OnReady hook fired after the port bound.
 
 func TestMainBannerAfterBind(t *testing.T) {
-	bp := Blueprint{
-		App: BlueprintApp{Name: "Demo", Module: "example.com/demo"},
+	bp := AppSpec{
+		App: AppSpecApp{Name: "Demo", Module: "example.com/demo"},
 		Entities: []framework.EntityDeclaration{
 			{Name: "posts", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}},
 		},
 	}
-	out := renderBlueprintMain(bp)
+	out := renderAppSpecMain(bp)
 	if strings.Contains(out, `fmt.Printf("Server starting at http://%s\n", addr)`) {
 		t.Fatal("generated main still prints the banner before fwApp.Start")
 	}
@@ -102,8 +102,8 @@ func writeValidateFile(t *testing.T, path, content string) {
 func TestModuleMismatchErrors(t *testing.T) {
 	dir := t.TempDir()
 	writeValidateFile(t, filepath.Join(dir, "go.mod"), "module example.com/app\n\ngo 1.24\n")
-	bp := Blueprint{App: BlueprintApp{Module: "example.com/other"}}
-	err := resolveBlueprintModule(&bp, dir)
+	bp := AppSpec{App: AppSpecApp{Module: "example.com/other"}}
+	err := resolveAppSpecModule(&bp, dir)
 	if err == nil {
 		t.Fatal("conflicting app.module must error")
 	}
@@ -117,8 +117,8 @@ func TestModuleMismatchErrors(t *testing.T) {
 func TestModuleDerivedFromGoMod(t *testing.T) {
 	dir := t.TempDir()
 	writeValidateFile(t, filepath.Join(dir, "go.mod"), "module example.com/app\n\ngo 1.24\n")
-	bp := Blueprint{}
-	if err := resolveBlueprintModule(&bp, dir); err != nil {
+	bp := AppSpec{}
+	if err := resolveAppSpecModule(&bp, dir); err != nil {
 		t.Fatal(err)
 	}
 	if bp.App.Module != "example.com/app" {
@@ -129,8 +129,8 @@ func TestModuleDerivedFromGoMod(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	bp = Blueprint{}
-	if err := resolveBlueprintModule(&bp, sub); err != nil {
+	bp = AppSpec{}
+	if err := resolveAppSpecModule(&bp, sub); err != nil {
 		t.Fatal(err)
 	}
 	if bp.App.Module != "example.com/app/svc/api" {
@@ -139,8 +139,8 @@ func TestModuleDerivedFromGoMod(t *testing.T) {
 }
 
 func TestModuleKeptWithoutGoMod(t *testing.T) {
-	bp := Blueprint{App: BlueprintApp{Module: "example.com/standalone"}}
-	if err := resolveBlueprintModule(&bp, t.TempDir()); err != nil {
+	bp := AppSpec{App: AppSpecApp{Module: "example.com/standalone"}}
+	if err := resolveAppSpecModule(&bp, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	if bp.App.Module != "example.com/standalone" {
@@ -156,7 +156,7 @@ func TestGenerateModuleMismatchExits1(t *testing.T) {
 	var code int
 	out := covT_capStdout(t, func() {
 		code = covT_capExit(t, func() {
-			generateFromBlueprint(generateOptions{from: filepath.Join(dir, "bp.yml"), outputDir: "gen", dryRun: true})
+			generateFromAppSpec(generateOptions{from: filepath.Join(dir, "bp.yml"), outputDir: "gen", dryRun: true})
 		})
 	})
 	if code != 1 {
@@ -167,7 +167,7 @@ func TestGenerateModuleMismatchExits1(t *testing.T) {
 	}
 }
 
-// --- Bug 4: gofastr validate <blueprint.yml>.
+// --- Bug 4: gofastr validate <gofastr.yml>.
 
 func TestValidateCmdValidExitsZero(t *testing.T) {
 	dir := t.TempDir()
@@ -193,7 +193,7 @@ entities:
 		code = covT_capExit(t, func() { dispatch([]string{"validate", path}) })
 	})
 	if code != -1 {
-		t.Fatalf("valid blueprint should not exit, got %d\n%s", code, out)
+		t.Fatalf("valid app spec should not exit, got %d\n%s", code, out)
 	}
 	if !strings.Contains(out, "valid") {
 		t.Fatalf("expected success message, got:\n%s", out)

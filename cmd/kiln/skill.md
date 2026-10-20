@@ -91,7 +91,7 @@ Example:
           "subtitle": "Live first, plain Go when you freeze."
         }},
         {"kind": "section", "props": {
-          "heading": "What ships", "description": "One current blueprint"
+          "heading": "What ships", "description": "One current app spec"
         }, "children": [
           {"kind": "grid", "props": {"min": "16rem", "gap": "lg"},
            "children": [

@@ -20,7 +20,7 @@ import (
 // (yaml.v3 "already defined", Go's sigs.k8s.io/yaml via JSON semantics)
 // rejects duplicate mapping keys precisely because silent last-wins lets a
 // stale or hostile copy-paste line override the value a reviewer believes
-// is in force. For this parser's consumers — gofastr blueprints, codegen
+// is in force. For this parser's consumers — gofastr app specs, codegen
 // configs, kiln freeze output, contracts config — the parsed file is the
 // security config (auth.enabled is access-gating, cf. protectiveBool), so
 // ambiguity must fail closed at the parser, not be adjudicated by map
@@ -110,7 +110,7 @@ func TestYAML_DuplicateKeyErrorNamesKeyAndLines(t *testing.T) {
 }
 
 // TestYAML_YAML11BooleansStayStrings pins the YAML 1.2 core-schema rule the
-// blueprint layer relies on: yes/no/on/off/y/n are STRINGS, not booleans.
+// app spec layer relies on: yes/no/on/off/y/n are STRINGS, not booleans.
 // Strict consumers (strictBoolValue, protectiveBool, requiredBoolValue)
 // reject them loudly instead of coercing; a lax reader that defaults
 // non-bool to false would turn `auth: yes` fail-open. This test holds the

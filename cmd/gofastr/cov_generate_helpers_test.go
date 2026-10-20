@@ -262,7 +262,7 @@ func TestSafeCleanOutputDir(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// main.go is part of the blueprint generator's output root; the cleaner
+	// main.go is part of the app generator's output root; the cleaner
 	// must own it so re-running `gofastr generate --from` over an existing
 	// gen/ succeeds.
 	for _, n := range []string{"main.go", "register.go", "models.go", ".gitkeep"} {

@@ -209,5 +209,5 @@ a `featureflag.Store` adapter for server-side boolean gates.
 4. Use the live `/mcp` introspection tools (`app_routes`,
    `app_batteries`, etc.) if the app is running locally with
    `framework.WithMCPIntrospection()`, and `framework_docs_search` when
-   it also has `framework.WithMCPTools(mcptools.Register)`; blueprint-generated apps wire
+   it also has `framework.WithMCPTools(mcptools.Register)`; generated apps wire
    both (plus `framework.WithMCP()`) by default.

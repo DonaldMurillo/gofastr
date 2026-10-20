@@ -8,7 +8,7 @@
 // validated as an identifier or quoted for that grammar, a name carrying
 // quotes, operators, or keywords changes what the emitted code DOES.
 // Found by the 2026-09-01 adversarial probes:
-// TestHookHandlerMustDeriveIdentifier (blueprint hook handlers accepted
+// TestHookHandlerMustDeriveIdentifier (app spec hook handlers accepted
 // `x"); PWN() //` straight into `func %s(...)`), TestCLIFieldPayloadBecomesStatements
 // (CLI flag names flowed through toCamelCase into `fld%s :=` declarations
 // — toCamelCase changes case, it does not validate), TestSDKSpecRefusesHostileDeclarations
@@ -180,8 +180,8 @@ func run(pass *analysis.Pass) (any, error) {
 
 	// Package field memo: struct fields that some ident/quote/safe-named
 	// call in this package checks or quotes. The gate may live in the
-	// validator while the emitter only renders (validateBlueprint vs
-	// renderBlueprintStubs), so the memo is package-scoped on the field
+	// validator while the emitter only renders (validateAppSpec vs
+	// renderAppSpecStubs), so the memo is package-scoped on the field
 	// name. It only ever silences, never fires.
 	memo := map[string]bool{}
 	for _, f := range pass.Files {
@@ -1183,7 +1183,7 @@ func numericOnlyVerbs(f string) bool {
 // helperReturnsGated reports whether every return expression of a local
 // helper is itself gated. The returns are resolved against the HELPER'S
 // own local bindings, not the caller's: a helper whose source local is
-// bound to a strings result (blueprintEndpointHandlerName's
+// bound to a strings result (appSpecEndpointHandlerName's
 // strings.TrimSpace(endpoint.Handler)) is gated even though the caller
 // has never heard of that local.
 func helperReturnsGated(pass *analysis.Pass, decl *ast.FuncDecl, bound map[types.Object]ast.Expr, helperDecls map[*types.Func]*ast.FuncDecl, guarded map[types.Object]bool, memo map[string]bool, paramGate map[*types.Var]bool, depth int) bool {
@@ -1263,7 +1263,7 @@ func allInMemo(fields map[string]bool, memo map[string]bool) bool {
 // fieldKey names a derivation root for the package memo as
 // TypeName.Field: a check on one struct's Table field says nothing
 // about a DIFFERENT struct's Table field (the sdkjsident probe slipped
-// through exactly that conflation: blueprint's query.SafeIdent on
+// through exactly that conflation: app spec's query.SafeIdent on
 // EntityDeclaration.Table silenced cliEntity.Table in the SDK emitter).
 // Unnamed struct types fall back to the bare field name.
 func fieldKey(pass *analysis.Pass, sel *ast.SelectorExpr) string {

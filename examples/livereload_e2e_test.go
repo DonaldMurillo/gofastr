@@ -60,7 +60,7 @@ func TestExamplesAreHMRReady(t *testing.T) {
 		{name: "desktop-notes", pkg: "./examples/desktop-notes", page: "/"},
 		{name: "desktop-focus", pkg: "./examples/desktop-focus", page: "/"},
 		{name: "ecommerce", pkg: "./examples/ecommerce/app", page: "/",
-			// The storefront's blueprint seeds an admin, and a generated app
+			// The storefront's app spec seeds an admin, and a generated app
 			// refuses to boot on a fresh database when the seed password is
 			// missing rather than coming up with an account nobody can log
 			// into. Every DATABASE_URL here is a fresh temp file, so the seed

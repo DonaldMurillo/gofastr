@@ -152,7 +152,7 @@ lists what a page theme does not reach.
 The owned-style check (`gofastr gen styles`, `gofastr verify`) now
 compares more properties against tokens. A matching literal in a
 `.style.css` is a GOFASTR1807 error, and that sheet's Go is not
-generated. The siteheader, sitefooter and docpage sheets the blueprint
+generated. The siteheader, sitefooter and docpage sheets the app spec
 wrote carry several of these.
 
 | Property | Write instead |
@@ -412,7 +412,7 @@ binary.
 | `framework_docs_*` tools from `WithMCPIntrospection` | `framework.WithMCPTools(mcptools.Register)` |
 | a `ShadowSet` without `XS` | add `XS: style.Shadow{Name: "xs", Value: "0 1px 2px 0 rgba(0,0,0,0.05)"}` |
 
-### Blueprint
+### App spec
 
 | Removed | Use instead |
 | --- | --- |

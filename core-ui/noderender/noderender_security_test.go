@@ -70,7 +70,7 @@ func TestIRDropsScriptAndURLGadgets(t *testing.T) {
 		"id": "card", "class": "row", "role": "region",
 		"aria-label": "Card", "data-testid": "card", "title": "hi",
 		// Inert host markers: read only by the host's own generated code
-		// (the blueprint's screens, kiln's tool delegator), never by the
+		// (the app spec's screens, kiln's tool delegator), never by the
 		// runtime. Blocking these would break every generator that renders
 		// through this IR without closing any of the gadgets above.
 		//
@@ -124,7 +124,7 @@ func TestIRCannotFireActions(t *testing.T) {
 	}
 }
 
-// The blueprint compiles a developer's own YAML and wires button actions
+// The app spec compiles a developer's own YAML and wires button actions
 // through exactly the attributes the untrusted path strips. If the
 // trusted variant ever stops passing them, every generated action goes
 // silently dead, no error, just a button that does nothing.
@@ -142,7 +142,7 @@ func TestTrustedIRKeepsActions(t *testing.T) {
 	}
 }
 
-// Stripping must not mutate the caller's map, the blueprint reuses prop
+// Stripping must not mutate the caller's map, the app spec reuses prop
 // maps across renders, and a silent delete would break the second use.
 func TestUntrustedRenderLeavesPropsIntact(t *testing.T) {
 	props := map[string]any{"data-action": "save", "class": "row"}

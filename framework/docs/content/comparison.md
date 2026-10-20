@@ -3,7 +3,7 @@
 GoFastr is a full-stack Go framework: server-rendered screens, a REST
 API, MCP tools, and migrations, written as plain Go against
 `framework/` and `framework/ui/`, which sit on stdlib-first primitives
-in `core/` and `core-ui/`. An optional `gofastr.yml` blueprint
+in `core/` and `core-ui/`. An optional `gofastr.yml` app spec
 scaffolds a whole app, UI and API with scoped permissions, as Go you
 read, commit, and own. Several tools cover parts of that job; no Go
 tool we know of covers all of it. This page maps the neighbours
@@ -27,13 +27,13 @@ by writing hooks (Go or JS) that run *inside* PocketBase's lifecycle.
 
 **The difference in kind:** PocketBase is a host you configure.
 GoFastr is Go source you own, written by hand against the framework
-or scaffolded by the optional blueprint as a flat `package main`
+or scaffolded by the optional app spec as a flat `package main`
 (`main.go`, `app.go`, `screens_register.go` + `screen_*.go`, `entities/`). You commit it,
 diff it in code review, debug it with a debugger, and refactor it like
 any other package. There's no runtime
 schema store and no canonical file you have to keep living inside: you
 generate once, then edit the Go directly, and you can delete the
-blueprint once the code is yours. If you want to drop below the
+app spec once the code is yours. If you want to drop below the
 framework, you write `net/http`. There's no plugin API to route
 around.
 
@@ -61,7 +61,7 @@ distributed tracing for you; GoFastr doesn't couple you to a platform
 and keeps a plain `go.mod`.
 
 **Also a scope difference:** Encore is backend-first; GoFastr generates
-the server-rendered UI (screens, nav, islands) from the same blueprint
+the server-rendered UI (screens, nav, islands) from the same app spec
 as the API. **Choose Encore when** you want managed infrastructure and
 a mature toolchain. **Choose GoFastr when** you want nothing between
 your binary and your VPS.
@@ -78,9 +78,9 @@ model. Wasp (like Encore and Amplify) is a *canonical-declaration*
 tool: `main.wasp` *is* the program; you live in it and regenerate
 from it, and the emitted code belongs to the tool, not to you to
 hand-edit. GoFastr scaffolds once: the
-blueprint emits idiomatic Go you then own and edit directly; `generate`
+app generator emits idiomatic Go you then own and edit directly; `generate`
 is one-shot and refuses to overwrite an existing project (pass
-`--force` to regenerate), and you can delete the blueprint entirely
+`--force` to regenerate), and you can delete the app spec entirely
 once the code is yours. The trade-off is real: a canonical
 declaration promises "no drift" because there's one source; GoFastr's
 approach trades that for a plain Go codebase with no second language to
@@ -135,15 +135,15 @@ would dominate the diff.
 If those trade-offs are disqualifying for your context, the tools
 above are good. Use them. If they're acceptable for a v0.x bet on Go
 you own, start with the
-[blueprint tutorial](tutorial-blueprint-app.md).
+[app spec tutorial](tutorial-app-spec.md).
 
 ## Common mistakes
 
 - **Evaluating GoFastr as a BaaS.** There's no runtime collection
-  editor; the blueprint is a compile-time scaffold input, not a live
+  editor; the app spec is a compile-time scaffold input, not a live
   schema store. And it isn't something you keep regenerating from
   either. Once it scaffolds the Go, that Go is what you edit and
-  redeploy directly (you can delete the blueprint).
+  redeploy directly (you can delete the app spec).
 - **Assuming MCP support is the differentiator.** It isn't anymore;
   most schema-bearing platforms expose MCP. Compare the codegen
   pipeline and the fact that you own the output instead.

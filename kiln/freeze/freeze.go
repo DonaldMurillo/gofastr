@@ -3,7 +3,7 @@
 //
 // Freeze emits two artifacts:
 //
-//	<dir>/gofastr.yml: current one-shot blueprint for owned-Go generation.
+//	<dir>/gofastr.yml: current one-shot app spec for owned-Go generation.
 //	<dir>/world.json: lossless authoring snapshot, including declarative
 //	                    actions that graduate as owned-Go handler stubs.
 package freeze
@@ -31,8 +31,8 @@ func Freeze(w *world.World, dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("freeze: mkdir: %w", err)
 	}
-	if err := writeBlueprint(w, dir); err != nil {
-		return fmt.Errorf("freeze: blueprint: %w", err)
+	if err := writeAppSpec(w, dir); err != nil {
+		return fmt.Errorf("freeze: app spec: %w", err)
 	}
 	if err := writeWorldSnapshot(w, dir); err != nil {
 		return fmt.Errorf("freeze: world snapshot: %w", err)
@@ -40,8 +40,8 @@ func Freeze(w *world.World, dir string) error {
 	return nil
 }
 
-func writeBlueprint(w *world.World, dir string) error {
-	buf, err := BlueprintYAML(w)
+func writeAppSpec(w *world.World, dir string) error {
+	buf, err := AppSpecYAML(w)
 	if err != nil {
 		return err
 	}

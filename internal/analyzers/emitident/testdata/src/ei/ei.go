@@ -35,7 +35,7 @@ type hook struct {
 	Handler string
 }
 
-// renderHookStub is the blueprint hook-stub shape the fix added WITH its
+// renderHookStub is the app spec hook-stub shape the fix added WITH its
 // gate; ungated is the bug (TestHookHandlerMustDeriveIdentifier).
 func renderHookStub(sb *strings.Builder, h hook) {
 	fmt.Sprintf("func %s(ctx context.Context, data any) error {\n", h.Handler) // want `identifier slot "func %s"`
@@ -254,7 +254,7 @@ func c2(name string, sb *strings.Builder) {
 }
 
 // e15/e16: type/var declarations whose declared-name run continues
-// after the verb — the renderBlueprintStubs / typed-repo spelling.
+// after the verb — the renderAppSpecStubs / typed-repo spelling.
 func e15(name string) string {
 	return fmt.Sprintf("type %sRepo struct {\n\tID string\n}\n", name) // want `identifier slot "type %s"`
 }

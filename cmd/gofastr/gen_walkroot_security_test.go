@@ -27,7 +27,7 @@ import (
 // as a symlink to a file outside the project made `gofastr generate
 // --add` / `gofastr pack` parse that outside file and merge its entity
 // declaration, registrar order, and site.Register routes into the
-// blueprint the CLI writes back. The assertions below observe exactly
+// app spec the CLI writes back. The assertions below observe exactly
 // that: routes and orders derived from a file outside writeRoot.
 func TestDirWalksRefuseSymlinkedLeaves(t *testing.T) {
 	outside := t.TempDir()

@@ -177,7 +177,7 @@ func TestOpenReadGatedWrite_AnonymousCreateDeniedWithPolicyInstalled(t *testing.
 // screens, island fragments, reports) uses to decide whether the caller may see
 // an entity's rows. It has to answer the WHOLE read posture, not just RBAC:
 // gating on CanRead alone let a default-posture entity, the shape `gofastr
-// init` and most blueprints produce, render every row to an anonymous caller
+// init` and most app specs produce, render every row to an anonymous caller
 // while its JSON route answered 401.
 func TestCanReadScoped_PostureMatrix(t *testing.T) {
 	newHandler := func(t *testing.T, cfg entity.EntityConfig) *CrudHandler {

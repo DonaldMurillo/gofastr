@@ -3,7 +3,7 @@
 GoFastr code generation is configured through a general YAML format.
 Generators are project extensions that consume structured sources and emit any
 generated code files under a safe output root. This is distinct from the
-[blueprint](blueprints.md) pipeline (`gofastr generate --from=gofastr.yml`),
+[app spec](app-spec.md) pipeline (`gofastr generate --from=gofastr.yml`),
 which generates the framework's own entity/screen Go from a `gofastr.yml`.
 
 ## Config discovery
@@ -16,7 +16,7 @@ which generates the framework's own entity/screen Go from a `gofastr.yml`.
 4. `gofastr.yml` / `gofastr.yaml` only when the file has a top-level `codegen:`
    section.
 
-With no codegen config and no `--from` blueprint, `gofastr generate` has
+With no codegen config and no `--from` app spec, `gofastr generate` has
 nothing to generate and exits with guidance.
 
 CLI flags override config values where they overlap:
@@ -24,8 +24,8 @@ CLI flags override config values where they overlap:
 - `--out=<dir>` overrides `codegen.output`.
 - `--clean` and `--no-clean` override `codegen.clean`.
 
-`--from=<path>` selects blueprint mode instead. Blueprint generation is
-separate from this general codegen config. See [Blueprints](blueprints.md).
+`--from=<path>` selects app spec mode instead. App spec generation is
+separate from this general codegen config. See [App specs](app-spec.md).
 
 ## Config shape
 

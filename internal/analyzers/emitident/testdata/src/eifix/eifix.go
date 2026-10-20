@@ -44,7 +44,7 @@ func isGoIdentifier(value string) bool {
 	return value != ""
 }
 
-// renderHookStubFixed is the blueprint fix's own shape: an isGoIdentifier
+// renderHookStubFixed is the app spec fix's own shape: an isGoIdentifier
 // guard on the very local the emitter prints.
 func renderHookStubFixed(sb *strings.Builder, h hook) {
 	handler := strings.TrimSpace(h.Handler)

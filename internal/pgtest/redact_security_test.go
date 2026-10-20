@@ -3,7 +3,7 @@ package pgtest
 // Pins (2026-09-06 adversarial pass, round 5):
 // a DSN handed to a helper documented "for safe logging" (RedactDSN's own doc
 // comment) never carries its password into the logged value. The canonical redactor
-// cmd/gofastr/blueprint.go::redactDSN pins the property for BOTH shapes — URL userinfo
+// cmd/gofastr/appspec.go::redactDSN pins the property for BOTH shapes — URL userinfo
 // masked, and key=value pairs dropped quote-aware (splitDSNFields handles
 // password='a b'); this internal twin drifted to a url.Parse-with-userinfo arm only.
 // Surfaces: internal/pgtest/pgtest.go::RedactDSN :225-234 — the key=value arm falls
@@ -11,7 +11,7 @@ package pgtest
 // FreshDatabaseDSN :176, and UnusedDSN :209.
 // Finding: RedactDSN("host=localhost user=admin password=hunter2 dbname=app") returns
 // the input unchanged, password included (verified 2026-09-06).
-// Fix direction: mirror blueprint.go::redactDSN's key=value arm (quote-aware
+// Fix direction: mirror appspec.go::redactDSN's key=value arm (quote-aware
 // password-pair drop), or delegate to it.
 
 import (

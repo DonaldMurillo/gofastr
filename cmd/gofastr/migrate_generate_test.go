@@ -20,9 +20,9 @@ func TestMigrateGenerate_EndToEnd(t *testing.T) {
 	dir := t.TempDir()
 	migDir := filepath.Join(dir, "migrations")
 
-	// writeBlueprint writes a gofastr.yml with a posts entity carrying the
+	// writeAppSpec writes a gofastr.yml with a posts entity carrying the
 	// given fields YAML (indented under the entity's `fields:`).
-	writeBlueprint := func(fields string) {
+	writeAppSpec := func(fields string) {
 		bp := "app:\n  name: testapp\nentities:\n  - name: posts\n    table: posts\n    fields:\n" + fields
 		if err := os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte(bp), 0o644); err != nil {
 			t.Fatal(err)
@@ -39,7 +39,7 @@ func TestMigrateGenerate_EndToEnd(t *testing.T) {
 	}
 
 	// 1) Initial schema → create migration.
-	writeBlueprint("      - name: title\n        type: string\n        required: true\n")
+	writeAppSpec("      - name: title\n        type: string\n        required: true\n")
 	gen("create_posts")
 	first := filepath.Join(migDir, "0001_create_posts.sql")
 	body, err := os.ReadFile(first)
@@ -57,7 +57,7 @@ func TestMigrateGenerate_EndToEnd(t *testing.T) {
 	}
 
 	// 2) Add a column → incremental migration.
-	writeBlueprint("      - name: title\n        type: string\n        required: true\n      - name: views\n        type: int\n")
+	writeAppSpec("      - name: title\n        type: string\n        required: true\n      - name: views\n        type: int\n")
 	gen("add_views")
 	second := filepath.Join(migDir, "0002_add_views.sql")
 	body2, err := os.ReadFile(second)

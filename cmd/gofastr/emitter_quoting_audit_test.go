@@ -1,23 +1,23 @@
 package main
 
-// Exhaustive audit of every IR-derived string's quoting in the blueprint Go
+// Exhaustive audit of every IR-derived string's quoting in the app spec Go
 // emitters (issue #136 tail: "the entity/screen emitters' quoting of
 // IR-derived strings was not audited").
 //
 // Method (see the brief): do NOT eyeball the emitters. Enumerate every field
-// of the blueprint IR, drive a hostile value through the REAL declaration
-// path (YAML -> loadBlueprint -> validateBlueprint -> renderBlueprintFiles),
+// of the app spec IR, drive a hostile value through the REAL declaration
+// path (YAML -> loadAppSpec -> validateAppSpec -> renderAppSpecFiles),
 // and use go/parser on the emitted bytes as the oracle. The audit table below
-// is derived from the IR structs (Blueprint, BlueprintApp, BlueprintScreen,
-// BlueprintBlock, BlueprintTransition, BlueprintAction, BlueprintEndpoint,
-// BlueprintNamedStub, BlueprintNavItem, BlueprintSeedEntity,
+// is derived from the IR structs (App spec, AppSpecApp, AppSpecScreen,
+// AppSpecBlock, AppSpecTransition, AppSpecAction, AppSpecEndpoint,
+// AppSpecNamedStub, AppSpecNavItem, AppSpecSeedEntity,
 // framework.EntityDeclaration) — every string field, not a sample.
 //
 // Re-derive the enumeration with:
 //
-//	grep -n 'type Blueprint' cmd/gofastr/blueprint.go
-//	sed -n '33,201p' cmd/gofastr/blueprint.go        # the IR structs
-//	grep -n 'Sprintf\|WriteString' cmd/gofastr/blueprint.go cmd/gofastr/generate.go \
+//	grep -n 'type App spec' cmd/gofastr/appspec.go
+//	sed -n '33,201p' cmd/gofastr/appspec.go        # the IR structs
+//	grep -n 'Sprintf\|WriteString' cmd/gofastr/appspec.go cmd/gofastr/generate.go \
 //	  cmd/gofastr/generate_typed.go | grep -v '%q\|%d\|%t\|%w'
 //
 // Anti-vacuity (the repo's #1 defect class is a test that cannot fail):
@@ -92,7 +92,7 @@ func yamlQ(s string) string {
 	return b.String()
 }
 
-// auditYAML is a blueprint exercising every IR section at once. Markers
+// auditYAML is an app spec exercising every IR section at once. Markers
 // (__NAME__) are scalar placeholders; each audit site owns exactly one.
 const auditYAML = `app:
   name: __APP_NAME__
@@ -671,7 +671,7 @@ func siteMarker(name string) string {
 	return pairs[name]
 }
 
-// buildAuditYAML returns the base blueprint with the given marker replaced by
+// buildAuditYAML returns the base app spec with the given marker replaced by
 // value (as a YAML scalar) and every other marker set to its control value.
 func buildAuditYAML(marker, value string) string {
 	y := auditYAML
@@ -685,22 +685,22 @@ func buildAuditYAML(marker, value string) string {
 	return y
 }
 
-// loadAudit renders the audit blueprint with marker set to value through the
-// real declaration path: temp file -> loadBlueprint (validate) ->
-// renderBlueprintFiles.
+// loadAudit renders the audit app spec with marker set to value through the
+// real declaration path: temp file -> loadAppSpec (validate) ->
+// renderAppSpecFiles.
 func loadAudit(t *testing.T, marker, value string) (files []generatedFile, rejected error) {
 	t.Helper()
 	y := buildAuditYAML(marker, value)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "gofastr.yml")
 	if err := os.WriteFile(path, []byte(y), 0o600); err != nil {
-		t.Fatalf("write blueprint: %v", err)
+		t.Fatalf("write app spec: %v", err)
 	}
-	bp, err := loadBlueprint(path)
+	bp, err := loadAppSpec(path)
 	if err != nil {
 		return nil, err
 	}
-	fs, rerr := renderBlueprintFiles(bp)
+	fs, rerr := renderAppSpecFiles(bp)
 	if rerr != nil {
 		return nil, fmt.Errorf("render refused (fail-closed): %w", rerr)
 	}
@@ -746,7 +746,7 @@ func markerInFiles(files []generatedFile, marker string) bool {
 	return false
 }
 
-func TestAuditBlueprintEmitterQuotingExhaustive(t *testing.T) {
+func TestAuditAppSpecEmitterQuotingExhaustive(t *testing.T) {
 	// No network in the audit: font woff2 fetching is stubbed out.
 	prev := fontFetcher
 	fontFetcher = func(string) ([]byte, error) { return nil, fmt.Errorf("offline") }
@@ -761,7 +761,7 @@ func TestAuditBlueprintEmitterQuotingExhaustive(t *testing.T) {
 			ctrl := auditControlFor(marker)
 			files, err := loadAudit(t, marker, ctrl)
 			if err != nil {
-				t.Fatalf("CONTROL FAILED for %s: the audit blueprint does not pass the real pipeline with a benign value (%q): %v.\n"+
+				t.Fatalf("CONTROL FAILED for %s: the audit app spec does not pass the real pipeline with a benign value (%q): %v.\n"+
 					`Every hostile result for this site would be vacuous; fix the fixture.`, site.name, ctrl, err)
 			}
 			emits[site.name] = markerInFiles(files, ctrl)
@@ -888,15 +888,15 @@ func TestAuditOracleDetectsSyntheticInjection(t *testing.T) {
 }
 
 // TestAuditParseBackstopFires proves the emitter-side backstop
-// (assertBlueprintGoParses) actually fires on a broken file rather than
+// (assertAppSpecGoParses) actually fires on a broken file rather than
 // silently passing everything.
 func TestAuditParseBackstopFires(t *testing.T) {
-	err := assertBlueprintGoParses([]generatedFile{
+	err := assertAppSpecGoParses([]generatedFile{
 		{name: "broken.go", content: "package main\nfunc ( {\n"},
 		{name: "fine.go", content: "package main\n"},
 	})
 	if err == nil {
-		t.Fatal("BACKSTOP IS VACUOUS: assertBlueprintGoParses accepted unparseable Go")
+		t.Fatal("BACKSTOP IS VACUOUS: assertAppSpecGoParses accepted unparseable Go")
 	}
 	if !strings.Contains(err.Error(), "broken.go") {
 		t.Fatalf("backstop error does not name the offending file: %v", err)
@@ -904,11 +904,11 @@ func TestAuditParseBackstopFires(t *testing.T) {
 }
 
 // TestAuditUnvalidatedEmitterPath drives hostile NAMES through the emitters
-// with no validator in front (the loadBlueprintPath(path, false) surface that
+// with no validator in front (the loadAppSpecPath(path, false) surface that
 // generate --add uses before re-validation, and any struct-level caller).
 // Every identifier-shaped field must either keep the output parseable AND
-// inert, or make renderBlueprintFiles refuse (fail-closed via
-// assertBlueprintGoParses). Silent executable output is the finding.
+// inert, or make renderAppSpecFiles refuse (fail-closed via
+// assertAppSpecGoParses). Silent executable output is the finding.
 func TestAuditUnvalidatedEmitterPath(t *testing.T) {
 	prev := fontFetcher
 	fontFetcher = func(string) ([]byte, error) { return nil, fmt.Errorf("offline") }
@@ -919,14 +919,14 @@ func TestAuditUnvalidatedEmitterPath(t *testing.T) {
 		`x"+PWNX()+"y`,
 		"x\nfunc PWNX() {}\nvar z = \"",
 	}
-	base := func() Blueprint {
-		return Blueprint{
-			App: BlueprintApp{Name: "app", Module: "m"},
+	base := func() AppSpec {
+		return AppSpec{
+			App: AppSpecApp{Name: "app", Module: "m"},
 			Entities: []framework.EntityDeclaration{{
 				Name:   "tickets",
 				Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
 			}},
-			Screens: []BlueprintScreen{
+			Screens: []AppSpecScreen{
 				{Name: "home", Route: "/", Type: "page"},
 			},
 		}
@@ -934,11 +934,11 @@ func TestAuditUnvalidatedEmitterPath(t *testing.T) {
 	for _, hn := range hostileNames {
 		for _, mutate := range []struct {
 			what string
-			mut  func(*Blueprint, string)
+			mut  func(*AppSpec, string)
 		}{
-			{"entity.name", func(b *Blueprint, v string) { b.Entities[0].Name = v }},
-			{"field.name", func(b *Blueprint, v string) { b.Entities[0].Fields[0].Name = v }},
-			{"relation.name", func(b *Blueprint, v string) {
+			{"entity.name", func(b *AppSpec, v string) { b.Entities[0].Name = v }},
+			{"field.name", func(b *AppSpec, v string) { b.Entities[0].Fields[0].Name = v }},
+			{"relation.name", func(b *AppSpec, v string) {
 				b.Entities = append(b.Entities, framework.EntityDeclaration{
 					Name:   "targets",
 					Fields: []framework.FieldDeclaration{{Name: "label", Type: "string"}},
@@ -947,16 +947,16 @@ func TestAuditUnvalidatedEmitterPath(t *testing.T) {
 					Type: framework.RelManyToOne, Name: v, Entity: "targets",
 				}}
 			}},
-			{"screen.name", func(b *Blueprint, v string) { b.Screens[0].Name = v }},
-			{"endpoint.handler", func(b *Blueprint, v string) {
-				b.Endpoints = []BlueprintEndpoint{{Name: "e", Method: "GET", Path: "/x", Handler: v}}
+			{"screen.name", func(b *AppSpec, v string) { b.Screens[0].Name = v }},
+			{"endpoint.handler", func(b *AppSpec, v string) {
+				b.Endpoints = []AppSpecEndpoint{{Name: "e", Method: "GET", Path: "/x", Handler: v}}
 			}},
 		} {
 			label := strings.NewReplacer("\n", "N", "`", "BT", `"`, "Q").Replace(mutate.what + "/" + hn)
 			t.Run(label, func(t *testing.T) {
 				bp := base()
 				mutate.mut(&bp, hn)
-				files, err := renderBlueprintFiles(bp)
+				files, err := renderAppSpecFiles(bp)
 				if err != nil {
 					return // refused, fail-closed: acceptable
 				}

@@ -77,7 +77,7 @@ func exportedSymbolsByPackage(t *testing.T, root string) map[string]map[string]b
 			// Hidden directories are tooling state: .claude/worktrees
 			// holds whole copies of the repo, whose symbols would let a
 			// doc name one this checkout no longer declares. "_"
-			// directories hold the blueprint gates' scratch packages.
+			// directories hold the app spec gates' scratch packages.
 			if skip[d.Name()] || path != root && (strings.HasPrefix(d.Name(), ".") || strings.HasPrefix(d.Name(), "_")) {
 				return filepath.SkipDir
 			}

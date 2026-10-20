@@ -14,12 +14,12 @@ import (
 // committed Go source — the scaffold routes DATABASE_URL through the
 // owner-only, gitignored .env and the generated main.go carries only an
 // env read with no secret fallback (the contract
-// TestBlueprintNeverInlinesSecrets + TestDSNRedactionFailsClosed pin for
-// the blueprint generator: "Secrets never land in committed source").
+// TestAppSpecNeverInlinesSecrets + TestDSNRedactionFailsClosed pin for
+// the app generator: "Secrets never land in committed source").
 // Surfaces: cmd/gofastr/init.go::runInit (--db=postgres sets dbURL),
 // cmd/gofastr/init.go::writeMainGo (emits getEnv("DATABASE_URL", "") with
 // a fail-closed fatal when unset; sqlite file DSNs stay inline per the
-// documented exception), versus blueprint.go::renderBlueprintEnv.
+// documented exception), versus appspec.go::renderAppSpecEnv.
 func TestInitMainGoNeverInlinesDSN(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
@@ -35,7 +35,7 @@ func TestInitMainGoNeverInlinesDSN(t *testing.T) {
 		t.Fatalf("read scaffolded main.go: %v", err)
 	}
 	if strings.Contains(string(mainGo), "postgres://user:password@") {
-		t.Fatalf("SECURITY: [init-dsn] scaffolded main.go inlines the credential-bearing DATABASE_URL literal %q — the committed, safe-to-edit file the blueprint generator's own contract (TestBlueprintNeverInlinesSecrets: \"Secrets never land in committed source\") keeps DSN-free; the DSN belongs in the 0600 gitignored .env alone:\n%s", "postgres://user:password@…", trimForReport(string(mainGo)))
+		t.Fatalf("SECURITY: [init-dsn] scaffolded main.go inlines the credential-bearing DATABASE_URL literal %q — the committed, safe-to-edit file the app generator's own contract (TestAppSpecNeverInlinesSecrets: \"Secrets never land in committed source\") keeps DSN-free; the DSN belongs in the 0600 gitignored .env alone:\n%s", "postgres://user:password@…", trimForReport(string(mainGo)))
 	}
 	// False-positive guard: the runtime must still read DATABASE_URL from
 	// the environment, and fail closed with a pointer at the .env when it

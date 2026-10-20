@@ -3,7 +3,7 @@
 //
 // It is the ordinary, safe, fully-analysable app shape: an embeddable surface
 // whose root component wraps a SAME-PACKAGE, action-free child in an
-// island.Island inside Render(). This is the shape the blueprint emits for
+// island.Island inside Render(). This is the shape the app generator emits for
 // every island block.
 //
 // Everything here is statically resolvable: the child's type is in this

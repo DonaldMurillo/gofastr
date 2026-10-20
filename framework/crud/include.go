@@ -24,7 +24,7 @@ const (
 	// pays ~8 bytes per level for: `include=up.down.up.down.up.down` on a
 	// self-referencing entity turned 23 request bytes into 13.7 MB, and two
 	// more levels exhausted memory. Four hops covers every include the docs
-	// show and every one the blueprint emits.
+	// show and every one the app generator emits.
 	maxIncludeDepth = 4
 
 	// maxIncludePaths bounds how many comma-separated ?include= paths

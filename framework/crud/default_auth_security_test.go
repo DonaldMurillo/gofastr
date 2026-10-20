@@ -19,7 +19,7 @@ import (
 
 // setupPlainHandler builds a CrudHandler over a "notes" table whose
 // EntityConfig declares NEITHER OwnerField NOR Access, the exact shape
-// issue #65 was filed against: a blueprint entity with no `access:` block
+// issue #65 was filed against: an app spec entity with no `access:` block
 // and no per-user scoping.
 func setupPlainHandler(t *testing.T) (*CrudHandler, *sql.DB) {
 	t.Helper()

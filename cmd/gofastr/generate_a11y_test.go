@@ -249,7 +249,7 @@ const a11ySignupSnapshot = `- main:
 `
 
 func TestGenerateScreenFromA11yBuilds(t *testing.T) {
-	dir, _ := generateBaseProject(t, addScreenBaseBlueprint("example.com/addtest"))
+	dir, _ := generateBaseProject(t, addScreenBaseAppSpec("example.com/addtest"))
 	snap := filepath.Join(dir, "signup.aria.yml")
 	if err := os.WriteFile(snap, []byte(a11ySignupSnapshot), 0o600); err != nil {
 		t.Fatal(err)
@@ -312,8 +312,8 @@ func TestGenerateScreenFromA11yErrors(t *testing.T) {
 	}
 }
 
-func TestBlueprintControlBlocksNeedLabels(t *testing.T) {
-	cases := []BlueprintBlock{
+func TestAppSpecControlBlocksNeedLabels(t *testing.T) {
+	cases := []AppSpecBlock{
 		{Kind: "action_button"},
 		{Kind: "text_field", Props: map[string]any{"label": "Email"}},
 		{Kind: "checkbox", Props: map[string]any{"name": "x"}},
@@ -330,33 +330,33 @@ func TestBlueprintControlBlocksNeedLabels(t *testing.T) {
 		{Kind: "select_field", Props: map[string]any{"label": "A", "name": "a", "options": []any{map[string]any{"label": "A", "value": 1}}}},
 		{Kind: "select_field", Props: map[string]any{"label": "A", "name": "a", "options": []any{map[string]any{"label": "A", "selected": "yes"}}}},
 		{Kind: "nav_links"},
-		{Kind: "custom_form", Props: map[string]any{"action": "/a"}, Children: []BlueprintBlock{{Kind: "custom_form", Props: map[string]any{"action": "/b"}}}},
-		{Type: "div", Children: []BlueprintBlock{{Kind: "custom_form", Props: map[string]any{"action": "/b"}}}},
-		{Type: "div", Children: []BlueprintBlock{{Kind: "section", Children: []BlueprintBlock{{Kind: "card"}}}}},
+		{Kind: "custom_form", Props: map[string]any{"action": "/a"}, Children: []AppSpecBlock{{Kind: "custom_form", Props: map[string]any{"action": "/b"}}}},
+		{Type: "div", Children: []AppSpecBlock{{Kind: "custom_form", Props: map[string]any{"action": "/b"}}}},
+		{Type: "div", Children: []AppSpecBlock{{Kind: "section", Children: []AppSpecBlock{{Kind: "card"}}}}},
 		{Type: "link", Href: "javascript:alert(1)", Text: "x"},
 		{Type: "link", Href: "//evil.example", Text: "x"},
 	}
 	for _, b := range cases {
-		if err := validateBlueprintBlock("s", nil, b); err == nil {
+		if err := validateAppSpecBlock("s", nil, b); err == nil {
 			t.Errorf("%s %v validated", b.Kind, b.Props)
 		}
 	}
-	ok := BlueprintBlock{Kind: "custom_form", Props: map[string]any{"action": "/s"}, Children: []BlueprintBlock{
+	ok := AppSpecBlock{Kind: "custom_form", Props: map[string]any{"action": "/s"}, Children: []AppSpecBlock{
 		{Kind: "text_field", Props: map[string]any{"label": "Email", "name": "email"}},
 		{Kind: "select_field", Props: map[string]any{"label": "A", "name": "a", "options": []any{"x", map[string]any{"label": "Y", "value": "y"}}}},
 	}}
-	if err := validateBlueprintBlock("s", nil, ok); err != nil {
+	if err := validateAppSpecBlock("s", nil, ok); err != nil {
 		t.Errorf("valid form rejected: %v", err)
 	}
 	// section is a node kind too: the node renderer draws it.
-	nodeSection := BlueprintBlock{Type: "div", Children: []BlueprintBlock{{Kind: "section", Children: []BlueprintBlock{{Type: "text", Text: "x"}}}}}
-	if err := validateBlueprintBlock("s", nil, nodeSection); err != nil {
+	nodeSection := AppSpecBlock{Type: "div", Children: []AppSpecBlock{{Kind: "section", Children: []AppSpecBlock{{Type: "text", Text: "x"}}}}}
+	if err := validateAppSpecBlock("s", nil, nodeSection); err != nil {
 		t.Errorf("section under a div rejected: %v", err)
 	}
 }
 
-func TestBlueprintYAMLControlBlocksBuild(t *testing.T) {
-	yml := addScreenBaseBlueprint("example.com/addtest") + `    body:
+func TestAppSpecYAMLControlBlocksBuild(t *testing.T) {
+	yml := addScreenBaseAppSpec("example.com/addtest") + `    body:
       - kind: custom_form
         props:
           action: /contact
@@ -470,7 +470,7 @@ func a11yRun(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	return code, read(outF), read(errF)
 }
 
-func a11yMap(t *testing.T, src string) ([]BlueprintBlock, string) {
+func a11yMap(t *testing.T, src string) ([]AppSpecBlock, string) {
 	t.Helper()
 	nodes, err := parseAriaSnapshot(src)
 	if err != nil {
@@ -481,8 +481,8 @@ func a11yMap(t *testing.T, src string) ([]BlueprintBlock, string) {
 }
 
 // a11yFind collects every block of a kind, at any depth.
-func a11yFind(blocks []BlueprintBlock, kind string) []BlueprintBlock {
-	var out []BlueprintBlock
+func a11yFind(blocks []AppSpecBlock, kind string) []AppSpecBlock {
+	var out []AppSpecBlock
 	for _, b := range blocks {
 		if b.Kind == kind {
 			out = append(out, b)
@@ -595,7 +595,7 @@ func TestA11yDuplicateRadioValues(t *testing.T) {
 	if len(rg) != 1 {
 		t.Fatalf("blocks = %+v", blocks)
 	}
-	choices, err := blueprintChoices(rg[0])
+	choices, err := appSpecChoices(rg[0])
 	if err != nil || len(choices) != 2 || choices[0].Value == choices[1].Value {
 		t.Errorf("choices = %+v, %v; want distinct values", choices, err)
 	}
@@ -636,9 +636,9 @@ func TestA11yTablesGetDistinctIDs(t *testing.T) {
 	}
 	ids := map[string]bool{}
 	for _, tb := range tables {
-		id := blueprintProp(tb, "id")
+		id := appSpecProp(tb, "id")
 		if id == "" {
-			id = "caption:" + strings.ToLower(blueprintProp(tb, "caption"))
+			id = "caption:" + strings.ToLower(appSpecProp(tb, "caption"))
 		}
 		if ids[id] {
 			t.Errorf("two tables share %q", id)

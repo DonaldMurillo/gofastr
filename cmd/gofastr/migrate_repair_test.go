@@ -10,7 +10,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-// repairT_setup scaffolds the blueprint the repair subcommand reads (one
+// repairT_setup scaffolds the app spec the repair subcommand reads (one
 // owner-scoped entity) and returns it plus the path of a not-yet-created
 // database, chdir'd into a scratch dir.
 func repairT_setup(t *testing.T) (bp string, dbPath string) {
@@ -157,7 +157,7 @@ func TestMigrateRepairAppliesAndIsClean(t *testing.T) {
 	}
 }
 
-func TestMigrateRepairNeedsBlueprint(t *testing.T) {
+func TestMigrateRepairNeedsAppSpec(t *testing.T) {
 	_, dbPath := repairT_setup(t) // also chdirs into the scratch dir
 	out, code := repairT_run(t, "repair", "--db-url="+dbPath)
 	if code != 1 {

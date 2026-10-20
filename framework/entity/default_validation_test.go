@@ -112,7 +112,7 @@ func TestValidateAcceptsWorkingDefaults(t *testing.T) {
 		{"float", schema.Field{Name: "ratio", Type: schema.Float, Min: new(float64(0)), Default: 0}},
 		// examples/meridian spells its Decimal defaults as wire-form strings…
 		{"decimal as string", schema.Field{Name: "mrr", Type: schema.Decimal, Min: new(float64(0)), Default: "0"}},
-		// …examples/ecommerce and every `decimal` blueprint field spell them
+		// …examples/ecommerce and every `decimal` app spec field spell them
 		// as Go numbers. Both reach the driver and both render valid DDL.
 		{"decimal as int", schema.Field{Name: "tax", Type: schema.Decimal, Min: new(float64(0)), Default: 0}},
 		{"decimal as float", schema.Field{Name: "tax", Type: schema.Decimal, Min: new(float64(0)), Default: 1.5}},

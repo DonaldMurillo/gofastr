@@ -10,7 +10,7 @@
 //   - entities/ (from `gofastr generate --from=gofastr.yml`)
 //   - cmd/meridian/ (from `gofastr generate cli --binary=meridian`)
 //
-// blueprint_gate_test.go regenerates both into a scratch package and
+// appspec_gate_test.go regenerates both into a scratch package and
 // asserts the committed files match the fresh output byte for byte
 // (TestGeneratedTreesMatchGenerator), so a template change that is not
 // followed by a regeneration is a red test, not silent drift. The one
@@ -39,9 +39,9 @@
 // The two example apps therefore play different roles, and it is worth
 // keeping them straight:
 //
-//   - examples/ecommerce is the GENERATOR fixture. Its blueprint sets
+//   - examples/ecommerce is the GENERATOR fixture. Its app spec sets
 //     output_dir: app, so the generator owns app/ outright, and
-//     blueprint_gate_test.go asserts the committed app/ matches fresh
+//     appspec_gate_test.go asserts the committed app/ matches fresh
 //     generator output. If the generator regresses, that test fails.
 //
 //   - examples/meridian (this app) is the DESIGN-SYSTEM fixture. It
@@ -52,25 +52,25 @@
 //     the components don't provide is an upstream gap to fix, never a
 //     local patch.
 //
-// # What still gates the blueprint
+// # What still gates the app spec
 //
 // gofastr.yml is not decoration, and it is gated from both directions.
 //
-// Forward (blueprint → code), by blueprint_gate_test.go in this
-// package: it copies the blueprint into a scratch package, generates
+// Forward (app spec → code), by appspec_gate_test.go in this
+// package: it copies the app spec into a scratch package, generates
 // the app and the CLI with the in-tree generator, compiles the app
-// (TestBlueprintStillGenerates), and compares the two owned trees
+// (TestAppSpecStillGenerates), and compares the two owned trees
 // against the committed files (TestGeneratedTreesMatchGenerator). The
-// blueprint can therefore never rot into something that no longer
+// app spec can therefore never rot into something that no longer
 // produces a buildable app, and the owned trees can never drift from
 // the templates. The rot gate is the lesson of #131; the drift gate is
 // the lesson of #416.
 //
-// Backward (code → blueprint), by cmd/gofastr/pack_test.go: it runs
+// Backward (code → app spec), by cmd/gofastr/pack_test.go: it runs
 // `gofastr pack` over THIS directory and asserts the recovered
 // declarations equal the parsed gofastr.yml. So the app's declarative
 // surfaces, entities, screens, nav, seed, must still match the
-// blueprint even though the hand-written Go around them does not.
+// app spec even though the hand-written Go around them does not.
 //
 // Notes that explain WHY a declaration is shaped the way it is live in
 // gofastr.yml next to the declaration (for example, why plans has no

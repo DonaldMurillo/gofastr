@@ -338,20 +338,20 @@ func GenerateInto(opts genOptions) error {
 
 // ---------- silent posture: directory whose reachable content is public ----------
 
-// freeze reduces kiln/freeze freeze.go: the blueprint dir is 0755 but
+// freeze reduces kiln/freeze freeze.go: the app spec dir is 0755 but
 // everything written into it (through the helpers it passes dir to) is
 // either committed generated YAML or owner-only.
 func Freeze(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	if err := writeBlueprint(dir); err != nil {
+	if err := writeAppSpec(dir); err != nil {
 		return err
 	}
 	return writeWorldSnapshot(dir)
 }
 
-func writeBlueprint(dir string) error {
+func writeAppSpec(dir string) error {
 	return os.WriteFile(filepath.Join(dir, "gofastr.yml"), []byte("app: {}\n"), 0o644)
 }
 

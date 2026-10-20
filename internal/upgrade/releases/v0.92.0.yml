@@ -1,0 +1,10 @@
+version: v0.92.0
+title: The blueprint is now the app spec
+notes:
+  - change: "kiln/freeze.BlueprintYAML is renamed AppSpecYAML; the output is unchanged"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/kiln/freeze.BlueprintYAML
+    guidance: "Rename the call to freeze.AppSpecYAML. It takes the same world and returns the same gofastr.yml bytes."

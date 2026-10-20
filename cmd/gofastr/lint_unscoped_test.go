@@ -43,9 +43,9 @@ entities:
       - name: body
         type: text
 `)
-	bp, err := loadBlueprint(path)
+	bp, err := loadAppSpec(path)
 	if err != nil {
-		t.Fatalf("loadBlueprint: %v", err)
+		t.Fatalf("loadAppSpec: %v", err)
 	}
 	got := lintUnscopedEntities(bp)
 	if len(got) != 1 || got[0].Entity != "journal_entries" {
@@ -78,9 +78,9 @@ entities:
       - name: notes
         type: text
 `)
-	bp, err := loadBlueprint(path)
+	bp, err := loadAppSpec(path)
 	if err != nil {
-		t.Fatalf("loadBlueprint: %v", err)
+		t.Fatalf("loadAppSpec: %v", err)
 	}
 	got := lintPublicEntities(bp)
 	if len(got) != 1 || got[0].Entity != "announcements" {

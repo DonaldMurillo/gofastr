@@ -67,9 +67,9 @@ func TestWriteRootSymlinkReadRefused(t *testing.T) {
 	if err := os.Symlink(retiredOutside, retired); err != nil {
 		t.Fatal(err)
 	}
-	if err := removeRetiredBlueprintFiles(writeRoot); err == nil {
+	if err := removeRetiredAppSpecFiles(writeRoot); err == nil {
 		if _, lerr := os.Lstat(retired); lerr != nil {
-			t.Error("SECURITY: [generate-rootread] removeRetiredBlueprintFiles acted on a symlinked file out of writeRoot")
+			t.Error("SECURITY: [generate-rootread] removeRetiredAppSpecFiles acted on a symlinked file out of writeRoot")
 		}
 	}
 	if missingCallSite(writeRoot, "real.go", "entities.RegisterAll(") {

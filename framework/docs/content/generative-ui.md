@@ -42,7 +42,7 @@ inspecting generated CSS, because there is none.
 [Kiln](kiln.md) (experimental) is the same rule at runtime during
 development: agents mutate a typed world model over HTTP and pages
 render through the normal SSR pipeline. The agent edits declarations,
-not markup. Freezing produces a blueprint and then owned Go code.
+not markup. Freezing produces an app spec and then owned Go code.
 
 ## 3. Widgets inside chat hosts — MCP Apps
 

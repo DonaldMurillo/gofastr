@@ -201,7 +201,7 @@ func TestCursorPathRunsAfterList(t *testing.T) {
 //
 // ListAll/GetOne used to skip AfterList/AfterGet entirely, which made a
 // redaction hook a property of the HTTP handler rather than of the entity: a
-// generated blueprint app renders its grid, detail page, and edit form
+// generated app spec app renders its grid, detail page, and edit form
 // through these calls, so `GET /cards` returned "****1111" while the app's
 // own screens printed the stored number to the same user.
 func TestInProcessReadsRunReadHooks(t *testing.T) {

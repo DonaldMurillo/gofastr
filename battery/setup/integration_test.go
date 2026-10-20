@@ -16,7 +16,7 @@ import (
 
 // setupSQLite builds an in-memory SQLite DB with the auth users table.
 // Uses the canonical "auth_users" table name (matching the convention
-// in blueprint.go and all examples), NOT "users". The table name is
+// in appspec.go and all examples), NOT "users". The table name is
 // host-configurable via auth.NewEntityUserStore, so tests must exercise
 // the real convention to catch the exact bug that was masked by a
 // hardcoded "users" default.

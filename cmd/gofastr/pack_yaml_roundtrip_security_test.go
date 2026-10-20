@@ -135,9 +135,9 @@ func rowKeyNames(m map[string]*coreyaml.Node) []string {
 }
 
 func encodeKeyValue(key, val string) (string, error) {
-	return encodeBlueprintYAML(Blueprint{
-		App: BlueprintApp{Name: "probe", Module: "example.com/probe"},
-		Seed: []BlueprintSeedEntity{{
+	return encodeAppSpecYAML(AppSpec{
+		App: AppSpecApp{Name: "probe", Module: "example.com/probe"},
+		Seed: []AppSpecSeedEntity{{
 			Entity: "notes",
 			Rows:   []map[string]any{{key: val}},
 		}},
@@ -270,8 +270,8 @@ var mustRoundTripEnumValues = []string{
 }
 
 func TestPackEnumValuesRoundTripThroughFlowList(t *testing.T) {
-	bp := Blueprint{
-		App: BlueprintApp{Name: "probe"},
+	bp := AppSpec{
+		App: AppSpecApp{Name: "probe"},
 		Entities: []framework.EntityDeclaration{{
 			Name: "windows",
 			Fields: []framework.FieldDeclaration{{
@@ -281,7 +281,7 @@ func TestPackEnumValuesRoundTripThroughFlowList(t *testing.T) {
 			}},
 		}},
 	}
-	yml, err := encodeBlueprintYAML(bp)
+	yml, err := encodeAppSpecYAML(bp)
 	if err != nil {
 		t.Fatalf("serialize: %v", err)
 	}
@@ -303,7 +303,7 @@ func TestPackEnumValuesRoundTripThroughFlowList(t *testing.T) {
 	if flowLine == "" || !strings.Contains(flowLine, "]") {
 		t.Errorf("enum values are not emitted as a single-line flow list; the merge hazard this test pins lives only there:\n%s", yml)
 	}
-	b, err := decodeBlueprintString(yml)
+	b, err := decodeAppSpecString(yml)
 	if err != nil {
 		t.Fatalf("re-parse serialized yaml: %v\n--- yaml ---\n%s", err, yml)
 	}

@@ -26,7 +26,7 @@ import (
 // entities/client package. It is the terminal twin of the typed client: every selected
 // entity gets list/get/create/update/patch/delete, the _batch verbs, and a
 // live `watch` (SSE), plus login/logout commands that store a scoped API
-// token. Like the blueprint, generation is one-shot owned code: it refuses
+// token. Like the app spec, generation is one-shot owned code: it refuses
 // to overwrite (--force escapes), except custom.go, the dev-owned extension
 // seam, which is only ever created when absent.
 
@@ -180,7 +180,7 @@ func runGenerateCLI(args []string) {
 	}
 	if len(decls) == 0 {
 		fail("no entities package found in the current directory")
-		info("Run from your app root (the directory holding entities/), or generate the app first: gofastr generate --from=<blueprint>.")
+		info("Run from your app root (the directory holding entities/), or generate the app first: gofastr generate --from=<spec.yml>.")
 		osExit(1)
 		return
 	}
@@ -669,12 +669,12 @@ func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity
 	// identifier position (run%sList, %sCommands) and ent.Table inside
 	// "/%s/" route literals — table slots go through url.PathEscape at
 	// the emitter, so path-shaping bytes (?, #, spaces) survive as data
-	// even past the literal gate below. The blueprint path into
+	// even past the literal gate below. The app spec path into
 	// entities/ is guarded
-	// upstream (validateBlueprint: isGoIdentifier + query.SafeIdent), but
+	// upstream (validateAppSpec: isGoIdentifier + query.SafeIdent), but
 	// packReadEntities also reads hand-written entity files, so the guard
 	// belongs at this emitter too: refuse what would break out of the
-	// emitted code rather than munge it, mirroring validateBlueprint.
+	// emitted code rather than munge it, mirroring validateAppSpec.
 	if !isGoIdentifier(ent.Struct) {
 		return cliEntity{}, fmt.Errorf("entity %q does not produce a valid Go identifier (%q); it is emitted as generated function names. Rename it to letters, digits and underscores starting with a letter", decl.Name, ent.Struct)
 	}

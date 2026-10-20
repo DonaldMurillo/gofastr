@@ -12,7 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
 
-func TestFreezeWritesBlueprintAndWorldSnapshot(t *testing.T) {
+func TestFreezeWritesAppSpecAndWorldSnapshot(t *testing.T) {
 	w := world.New()
 	w.App.Name = "blog"
 	w.App.Module = "example.com/blog"
@@ -90,7 +90,7 @@ func TestFreezeRejectsNilWorld(t *testing.T) {
 	}
 }
 
-func TestFreezeRejectsBlueprintThatCannotGraduate(t *testing.T) {
+func TestFreezeRejectsAppSpecThatCannotGraduate(t *testing.T) {
 	w := world.New()
 	w.Entities["records"] = &world.Entity{Name: "records", MultiTenant: true}
 	if err := freeze.Freeze(w, t.TempDir()); err == nil || !strings.Contains(err.Error(), "tenant resolver") {
@@ -98,19 +98,19 @@ func TestFreezeRejectsBlueprintThatCannotGraduate(t *testing.T) {
 	}
 }
 
-func TestBlueprintKeepsLegacyRelationTarget(t *testing.T) {
+func TestAppSpecKeepsLegacyRelationTarget(t *testing.T) {
 	w := world.New()
 	w.Entities["posts"] = &world.Entity{
 		Name:      "posts",
 		Relations: []world.Relation{{Name: "author", To: "users", Type: "belongs_to", ForeignKey: "user_id"}},
 	}
-	buf, err := freeze.BlueprintYAML(w)
+	buf, err := freeze.AppSpecYAML(w)
 	if err != nil {
 		t.Fatal(err)
 	}
 	yml := string(buf)
 	if !strings.Contains(yml, "entity: users") || strings.Contains(yml, "to: users") {
-		t.Fatalf("legacy relation target did not normalize to current blueprint shape:\n%s", yml)
+		t.Fatalf("legacy relation target did not normalize to current app spec shape:\n%s", yml)
 	}
 }
 

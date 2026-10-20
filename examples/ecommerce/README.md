@@ -9,16 +9,16 @@ single command. Nothing under `app/` is hand-written.
 
 ## What it proves
 
-One blueprint fans out into every surface: auto-migrated SQL schema,
+One app spec fans out into every surface: auto-migrated SQL schema,
 REST CRUD with validation and cursor pagination, OpenAPI, 25 MCP tools
 for agents, and a server-rendered themed storefront. All of it is
 asserted live by [`flagship_test.go`](flagship_test.go), which
-regenerates `app/` from the blueprint, builds the binary, boots it, and
+regenerates `app/` from the app spec, builds the binary, boots it, and
 hits each surface, so the proof never depends on a stale checkout.
 
 ## Secure by default
 
-The blueprint ships with auth enabled (`app.auth.enabled: true`) and the
+The app generator ships with auth enabled (`app.auth.enabled: true`) and the
 customer-PII entities, `orders` and `order_items`, owner-scoped via
 `owner_field: user_id`. The framework stamps the owner on create and
 scopes every list/get/update/delete (REST *and* MCP) to the requesting
@@ -30,11 +30,11 @@ git history has the full story of the fix.)
 
 ```sh
 cd examples/ecommerce
-gofastr generate --from=gofastr.yml --force   # re-emits app/ from the blueprint (output_dir: app)
+gofastr generate --from=gofastr.yml --force   # re-emits app/ from the app spec (output_dir: app)
 gofastr dev --dir app                         # hot-reload dev server on localhost:8080
 ```
 
-`app/` is committed, owned Go. `output_dir: app` in the blueprint puts the
+`app/` is committed, owned Go. `output_dir: app` in the app spec puts the
 app in a subpackage so the example also hosts its own test files.
 
 ## Read next

@@ -9,9 +9,9 @@ import (
 // ApplyTokens validates every config-borne value (validateFreeFormCSS
 // / validateColorValue), and kiln's world.SafeThemeValue validates
 // agent-authored values before they reach a Theme. FontFaceCSS is the
-// remaining ingestion path with no validator: the blueprint generator
+// remaining ingestion path with no validator: the app generator
 // feeds it font family names straight out of the host app's gofastr.yml
-// theme map (cmd/gofastr/blueprint.go: blueprintFontFaceCSS(theme)),
+// theme map (cmd/gofastr/appspec.go: appSpecFontFaceCSS(theme)),
 // so the strings arrive file-borne, not developer-typed.
 
 // TestFontFaceCSSRejectsDeclarationBreakers asserts a WebFont field

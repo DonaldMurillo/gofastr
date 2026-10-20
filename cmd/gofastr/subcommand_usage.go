@@ -41,7 +41,7 @@ Run database migrations. The subcommand defaults to 'up'.
   up       apply pending migrations (default)
   down N   roll back the last N migrations (default 1)
   status   show applied/pending migrations
-  generate <name>  emit a reviewable migration from a blueprint (--from=<yml>)
+  generate <name>  emit a reviewable migration from an app spec (--from=<yml>)
   force <V>        mark version V applied without running its SQL (--not-applied removes it)
   repair           report stale owner-column foreign keys on SQLite (--from=<yml>, --apply rebuilds)
 

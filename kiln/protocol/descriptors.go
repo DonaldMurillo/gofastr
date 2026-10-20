@@ -38,7 +38,7 @@ var descriptors = map[string]Descriptor{
 	},
 	"set_app_config": {
 		Name:        "set_app_config",
-		Description: "Replace the app-level configuration. This is the same app surface accepted by the current gofastr.yml blueprint; include api_prefix (normally api) so UI and CRUD routes stay separate.",
+		Description: "Replace the app-level configuration. This is the same app surface accepted by the current gofastr.yml app spec; include api_prefix (normally api) so UI and CRUD routes stay separate.",
 		Schema: object(map[string]any{
 			"config": object(map[string]any{
 				"name":            str(""),
@@ -69,7 +69,7 @@ var descriptors = map[string]Descriptor{
 	},
 	"set_scaffold": {
 		Name:        "set_scaffold",
-		Description: "Replace navigation and the owned-Go endpoint, middleware, plugin, and helper stubs preserved by freeze into the current gofastr.yml blueprint. Navigation is rendered live; stubs become editable Go in the generated scaffold.",
+		Description: "Replace navigation and the owned-Go endpoint, middleware, plugin, and helper stubs preserved by freeze into the current gofastr.yml app spec. Navigation is rendered live; stubs become editable Go in the generated scaffold.",
 		Schema: object(map[string]any{
 			"nav": list(navItemSchema()),
 			"endpoints": list(object(map[string]any{

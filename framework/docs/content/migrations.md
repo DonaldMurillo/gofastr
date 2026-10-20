@@ -163,7 +163,7 @@ Flags & inputs:
   yet; a no-op when it already exists.
 - `--not-applied` (`force` only): remove the version from the tracking
   table (treat as pending) instead of marking it applied.
-- `--from=<yml>` (`generate`/`repair`): the blueprint holding the entity
+- `--from=<yml>` (`generate`/`repair`): the app spec holding the entity
   declarations; `repair` needs it to know each table's owner column.
 - `--apply` (`repair` only): rebuild the reported tables instead of only
   reporting them. The rebuild keeps every row, column, default, index, and
@@ -238,7 +238,7 @@ increments, not implicit applies. `migrate generate` produces them
 gofastr migrate generate add_published --from=gofastr.yml --driver=postgres
 ```
 
-It diffs the **entity declarations** in the `gofastr.yml` blueprint against a
+It diffs the **entity declarations** in the `gofastr.yml` app spec against a
 committed **schema snapshot** (`migrations/schema.snapshot.json`) and
 writes the next numbered file, e.g. `migrations/0002_add_published.sql`,
 with `Up` plus a `Down` section when a safe inverse exists:
@@ -253,8 +253,8 @@ ALTER TABLE "posts" DROP COLUMN "published";
 ```
 
 > **Scope.** The standalone `gofastr migrate generate` CLI reads schema
-> **only from the `--from=<blueprint.yml>` blueprint's entities** (see
-> [blueprints](blueprints.md)). That is the pre-graduation bootstrap path. It does
+> **only from the `--from=<gofastr.yml>` app spec's entities** (see
+> [app specs](app-spec.md)). That is the pre-graduation bootstrap path. It does
 > **not** see anything registered in Go: neither `app.Entity(...)` entities
 > nor `App.View` / `App.Routine` / `App.Table`. For Go-defined schema, use
 > auto-migrate (`App.Start` applies it on boot), or emit versioned migrations
@@ -269,7 +269,7 @@ ALTER TABLE "posts" DROP COLUMN "published";
 
 It then updates the snapshot. The typical loop:
 
-1. Edit an entity in the blueprint (add a field, add an entity, …).
+1. Edit an entity in the app spec (add a field, add an entity, …).
 2. `gofastr migrate generate <name> --from=gofastr.yml` → review the generated `.sql`.
 3. Commit the migration **and** the updated `schema.snapshot.json`.
 4. `gofastr migrate up` applies it through the tracked, locked,
@@ -312,7 +312,7 @@ so a SQLite retype is forward-only. Renames: declare
 `RENAME COLUMN` instead of a data-losing drop+add. A rename is otherwise
 indistinguishable from a drop plus an add, so it has to be declared.
 
-In a blueprint, the same declaration is an entity's `renames:` key:
+In an app spec, the same declaration is an entity's `renames:` key:
 
 ```yaml
 entities:
@@ -383,19 +383,19 @@ The schema snapshot file records the declarative state migrations have been gene
 - `views`: Map of view names to `RoutineDef` objects (`up` and `down` DDL strings), tracking view definitions so modified or dropped views can be migrated and rolled back cleanly.
 - `routines`: Map of routine/stored procedure names to `RoutineDef` objects (`up` and `down` DDL strings), tracking stored routines across migration lifecycles.
 
-Flags: `--from=<blueprint.yml>` (required), `--migrations=<dir>`
+Flags: `--from=<gofastr.yml>` (required), `--migrations=<dir>`
 (default `migrations`), `--snapshot=<path>` (default
 `<migrations>/schema.snapshot.json`), `--driver=<name>`.
 
 ## Generating from a host binary (owned-Go path)
 
-Once an app graduates from the blueprint, its schema lives in **owned Go**:
+Once an app graduates from the app spec, its schema lives in **owned Go**:
 `app.Entity(...)`, `App.Table`, `App.View`, `App.Routine` registrations the
 `gofastr migrate generate` CLI cannot see. `migrate.GenerateMigrationFile` is
 the supported entrypoint for that case: it diffs a full migration Plan (the
 registry + views + routines a host binary has compiled in) against the
 committed snapshot and writes the next numbered migration file, updating the
-snapshot. It is the same loop the blueprint CLI runs, byte-for-byte (same
+snapshot. It is the same loop the app spec CLI runs, byte-for-byte (same
 `NNNN_<slug>.sql` naming, same `-- +migrate` directives, same
 `schema.snapshot.json`), because both paths share `GeneratePlan` +
 `RenderMigrationFile` + `SaveSnapshot`.
@@ -450,7 +450,7 @@ means the schema already matches the snapshot (nothing written). Pass
 `MigrationFileOptions.Group` to stamp a `-- +migrate Group <name>` directive,
 matching the CLI's `--group`. Renames declared via `EntityConfig.Renames`
 flow through as a non-destructive `RENAME COLUMN` (not a drop+add), exactly as
-they do from the blueprint path. Generation is deterministic: the same Plan
+they do from the app spec path. Generation is deterministic: the same Plan
 always produces byte-identical files, so diffs and checksums stay stable.
 
 ## Non-entity tables (raw tables)

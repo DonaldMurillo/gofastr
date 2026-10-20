@@ -472,7 +472,7 @@ func AutoMigratePlanContext(ctx context.Context, db *sql.DB, plan Plan) error {
 				"table", s.Table,
 				"column", s.Column,
 				"references", s.References,
-				"fix", "gofastr migrate repair --from=<blueprint.yml> --db-url=<url> --apply",
+				"fix", "gofastr migrate repair --from=<gofastr.yml> --db-url=<url> --apply",
 			)
 		}
 	}
@@ -573,7 +573,7 @@ func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, al
 // diffEntityFromLive path, so boot and the diff can never disagree).
 // Boot never drops, renames, or retypes: destructive changes are filtered out
 // here and remain behind ApplySchemaDiffWithOptions with AllowDestructive set.
-// (The old `migrate diff --apply` CLI path is gone. It applied a blueprint
+// (The old `migrate diff --apply` CLI path is gone. It applied an app spec
 // straight onto a live DB; `gofastr migrate generate` emits a reviewable
 // migration instead.)
 //

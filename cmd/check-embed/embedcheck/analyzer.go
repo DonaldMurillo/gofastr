@@ -69,7 +69,7 @@
 // `gofastr build` stops.
 //
 // Failing on EVERY note was tried and reverted. It rejected clean island
-// surfaces, the shape the blueprint emits for every island block, plus
+// surfaces, the shape the app generator emits for every island block, plus
 // interface-typed fields the analyzer had already resolved and the fixture
 // named for false positives, and the advertised remedy ("hold the child in a
 // field") is impossible for a wrapper.
@@ -457,7 +457,7 @@ func (r *resolver) componentsInRenderBodies(cur *types.Named, blockingNote func(
 			// neither reachStopPackages nor this list), so the child is
 			// covered at Mount and there is nothing to warn about. Noting
 			// them turned every island-rendering surface, the shape the
-			// blueprint emits for every island block, into a build failure.
+			// app generator emits for every island block, into a build failure.
 			if renderWrapperPackages[named.Obj().Pkg().Path()] {
 				return true
 			}

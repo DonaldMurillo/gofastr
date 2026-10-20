@@ -166,7 +166,7 @@ func TestNoQueryCursorFieldRejectedAtDefine(t *testing.T) {
 	}, Pagination: &entity.PaginationConfig{
 
 		// TestNoQuerySearchFieldRejectedAtDefine covers the Go-API half of the ?q=
-		// guard; the blueprint half is pinned in cmd/gofastr.
+		// guard; the app spec half is pinned in cmd/gofastr.
 		CursorField: "body"},
 	})
 }

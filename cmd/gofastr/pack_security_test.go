@@ -30,13 +30,13 @@ func TestPackOutOwnerOnlyOnOverwrite(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix permission bits")
 	}
-	bp := Blueprint{
-		App: BlueprintApp{
+	bp := AppSpec{
+		App: AppSpecApp{
 			Name:     "Packperm",
 			Module:   "example.com/packperm",
 			DBDriver: "postgres",
 			DBURL:    "postgres://user:pw@db:5432/packperm",
-			Auth:     BlueprintAuth{Enabled: true, JWTSecret: "shhh"},
+			Auth:     AppSpecAuth{Enabled: true, JWTSecret: "shhh"},
 		},
 		Entities: []framework.EntityDeclaration{{
 			Name:   "notes",
@@ -45,7 +45,7 @@ func TestPackOutOwnerOnlyOnOverwrite(t *testing.T) {
 	}
 	// The on-disk shape `gofastr pack` reads back: a generated app whose
 	// .env carries DATABASE_URL and JWT_SECRET.
-	dir := materializeBlueprint(t, bp)
+	dir := materializeAppSpec(t, bp)
 	if _, err := os.Stat(filepath.Join(dir, ".env")); err != nil {
 		t.Fatalf("generated app has no .env — pack would recover no secrets and the property is untested: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestPackOutOwnerOnlyOnOverwrite(t *testing.T) {
 	}
 }
 
-// TestPackDetectsKeywordDSNSecret: secretsInBlueprint must flag every DSN
+// TestPackDetectsKeywordDSNSecret: secretsInAppSpec must flag every DSN
 // class the generator's own dsnredact.HasSecret hides. generate routes a
 // keyword/value DSN (`host=db user=app password=hunter2 dbname=app`) into
 // the gitignored .env precisely because the predicate sees the `password=`
@@ -105,15 +105,15 @@ func TestPackDetectsKeywordDSNSecret(t *testing.T) {
 		{"sqlite file DSN", "file:app.db", false},
 		{"unparseable URL DSN with userinfo", "postgres://user:pw%zz@db:5432/app", true},
 	} {
-		bp := Blueprint{App: BlueprintApp{DBURL: tc.dsn}}
-		got := secretsInBlueprint(bp)
+		bp := AppSpec{App: AppSpecApp{DBURL: tc.dsn}}
+		got := secretsInAppSpec(bp)
 		if got != tc.want {
-			t.Errorf("%s: secretsInBlueprint(%q) = %v, want %v", tc.name, tc.dsn, got, tc.want)
+			t.Errorf("%s: secretsInAppSpec(%q) = %v, want %v", tc.name, tc.dsn, got, tc.want)
 		}
 		// Parity with the generator's detector: any DSN generate hides
 		// from committed source, pack must warn on.
 		if gen := dsnredact.HasSecret(tc.dsn); gen && !got {
-			t.Errorf("%s: dsnredact.HasSecret(%q) = true but secretsInBlueprint = false — pack's do-NOT-commit warning silently disappears for a DSN class the generator itself hides", tc.name, tc.dsn)
+			t.Errorf("%s: dsnredact.HasSecret(%q) = true but secretsInAppSpec = false — pack's do-NOT-commit warning silently disappears for a DSN class the generator itself hides", tc.name, tc.dsn)
 		}
 	}
 }

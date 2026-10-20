@@ -42,7 +42,7 @@ func TestAddEntityHappyPath(t *testing.T) {
 	}
 }
 
-func TestSetScaffoldPreservesCurrentBlueprintSurfaces(t *testing.T) {
+func TestSetScaffoldPreservesCurrentAppSpecSurfaces(t *testing.T) {
 	tools := newTools(t)
 	res := tools.SetScaffold(context.Background(), protocol.SetScaffoldArgs{
 		Nav:        []world.NavItem{{Label: "Home", Href: "/"}},

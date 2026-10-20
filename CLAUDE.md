@@ -2,7 +2,7 @@
 
 **Before writing any UI, runtime, `framework/uihost`, OR code that *emits*
 UI, read [`core-ui/ARCHITECTURE.md`](core-ui/ARCHITECTURE.md). Emitting UI
-covers the blueprint generator (`cmd/gofastr`), batteries, and anything
+covers the app generator (`cmd/gofastr`), batteries, and anything
 that produces markup or CSS. This is mandatory.
 Emitting a styled `<div>` is writing UI. A generator that ships CSS is a
 generator writing UI badly.**
@@ -17,12 +17,12 @@ caught the hard way so they don't repeat:
 - **Navigation**: three wrong attempts before the SSR/island/SSE model
   was written down.
 - **Styling/structure ownership**: caught 2026-06 building the Meridian
-  flagship. The blueprint generator accreted ~70 bespoke CSS rules
-  (`.mrd-*`, `.gofastr-*`, a `BlueprintBaseCSS` string) and hand-rolled
+  flagship. The app generator accreted ~70 bespoke CSS rules
+  (`.mrd-*`, `.gofastr-*`, an `AppSpecBaseCSS` string) and hand-rolled
   markup that duplicated, or worked around, components that already
   existed (`ui.Grid`, `ui.Stack`, `ui.ThemeToggle`, the `--font-heading`
   token). The fix was to delete all of it and compose/extend the design
-  system. The blueprint now ships **zero** CSS. See Hard rules 7–9.
+  system. The app generator now ships **zero** CSS. See Hard rules 7–9.
 
 **Before adding, renaming, or removing any exported API, route, CLI
 subcommand, JSON field, or auto-generated artifact, the `gofastr-docs`
@@ -90,7 +90,7 @@ expose them to agents connected to a live app.**
    + `gofastr gen styles`): scoped to its own markup, tokens only, and
    barred from kit internals. It is how an app draws what the kit
    deliberately does not ship: its site header, footer and docs page
-   (`examples/acme-site/{siteheader,sitefooter,helpdocs}`; the blueprint
+   (`examples/acme-site/{siteheader,sitefooter,helpdocs}`; the app spec
    writes the same packages into generated apps). It is never a patch
    for a component that should have a variant.
 8. **Survey before you build.** Before hand-rolling any UI markup or CSS,
@@ -398,7 +398,7 @@ expose them to agents connected to a live app.**
   cookie attrs, the referer-redirect shape) over the assembled
   compile-marked snippets in framework/docs, and the emitted-code
   gate runs the repo vettool over the --from-openapi CLI render and
-  the blueprint e2e_test.go template. The `//gofastr:allow` marker
+  the app spec e2e_test.go template. The `//gofastr:allow` marker
   and the check-csp ignore directive are anchored comment-initial
   now: prose that merely mentions either no longer silences anything.
 

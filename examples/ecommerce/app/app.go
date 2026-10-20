@@ -94,7 +94,7 @@ var (
 
 var appUI *entityui.UI
 
-// RegisterGenerated wires blueprint-generated screens, endpoints, middleware, and plugins.
+// RegisterGenerated wires generated screens, endpoints, middleware, and plugins.
 func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	if site == nil {
 		site = app.NewApp("ShopFront")
@@ -112,7 +112,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	site.SetDefaultLayout(appLayout)
 	ui.MountSidebarFunc(routerMounter{fwApp.Router()}, sidebarConfig)
 	{
-		stack := preset.ToastStack("blueprint-toasts").Build()
+		stack := preset.ToastStack("app-toasts").Build()
 		widget.Mount(fwApp.Router(), &stack)
 	}
 	{
@@ -120,7 +120,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// Secure flag, plain session_id name) and a per-process JWT
 		// secret minted at startup. Do NOT deploy like this: set
 		// `dev_mode: false` and `jwt_secret` under app.auth in the
-		// blueprint, serve over HTTPS, then regenerate.
+		// app spec, serve over HTTPS, then regenerate.
 		authCfg := auth.AuthConfig{DevMode: true, JWTSecret: os.Getenv("JWT_SECRET")}
 		authCfg.UserStore = auth.NewEntityUserStore(db, "auth_users")
 		authCfg.SessionStore = auth.NewEntitySessionStore(db, "auth_sessions")
@@ -199,7 +199,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// an X-CSRF-Token header, which plain JSON/MCP clients don't.
 		// Session cookies are SameSite=Strict, so cross-site form posts
 		// don't carry the session in modern browsers. If you add browser
-		// HTML forms, mount auth.CSRF: see `gofastr docs blueprints`
+		// HTML forms, mount auth.CSRF: see `gofastr docs app-spec`
 		// (Auth section) and `gofastr docs auth`.
 	}
 	appUI = fwApp.EntityUI(appExtensions)

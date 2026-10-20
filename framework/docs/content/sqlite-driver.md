@@ -157,7 +157,7 @@ added while cleaning up.
 **Reaching for the pragma when an upgraded database rejects every create.**
 A pre-foreign-keys release may have left a key on an entity's owner
 column, and the resulting error names the constraint, not the cause. Run
-`gofastr migrate repair --from=<blueprint> --apply` to rebuild the table
+`gofastr migrate repair --from=<spec.yml> --apply` to rebuild the table
 without it. Disabling foreign keys would only hide the problem, and it
 turns off the keys that belong there too.
 

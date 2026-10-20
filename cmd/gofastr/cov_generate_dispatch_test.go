@@ -35,11 +35,11 @@ func TestRunGenerateEntityRemovedExits(t *testing.T) {
 	}
 }
 
-func TestRunGenerateBlueprintDryRunJSON(t *testing.T) {
+func TestRunGenerateAppSpecDryRunJSON(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
 	bp := filepath.Join(dir, "bp.yml")
-	if err := os.WriteFile(bp, []byte(testBlueprintYAML()), 0o644); err != nil {
+	if err := os.WriteFile(bp, []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out := covT_capStdout(t, func() {
@@ -50,34 +50,34 @@ func TestRunGenerateBlueprintDryRunJSON(t *testing.T) {
 	}
 }
 
-func TestHashBlueprintInputInto(t *testing.T) {
+func TestHashAppSpecInputInto(t *testing.T) {
 	dir := t.TempDir()
 	// Missing path → hashes the path string only (no panic).
 	h := sha256.New()
-	hashBlueprintInputInto(h, filepath.Join(dir, "nope.yml"))
+	hashAppSpecInputInto(h, filepath.Join(dir, "nope.yml"))
 	// Single file.
 	f := filepath.Join(dir, "bp.yml")
-	if err := os.WriteFile(f, []byte(testBlueprintYAML()), 0o644); err != nil {
+	if err := os.WriteFile(f, []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	h2 := sha256.New()
-	hashBlueprintInputInto(h2, f)
-	// Directory of blueprint files.
+	hashAppSpecInputInto(h2, f)
+	// Directory of app spec files.
 	bpDir := filepath.Join(dir, "bps")
 	if err := os.MkdirAll(bpDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(bpDir, "a.gofastr.yml"), []byte(testBlueprintYAML()), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(bpDir, "a.gofastr.yml"), []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	h3 := sha256.New()
-	hashBlueprintInputInto(h3, bpDir)
+	hashAppSpecInputInto(h3, bpDir)
 }
 
-func TestHashGenerateInputsBlueprint(t *testing.T) {
+func TestHashGenerateInputsAppSpec(t *testing.T) {
 	dir := t.TempDir()
 	f := filepath.Join(dir, "bp.yml")
-	if err := os.WriteFile(f, []byte(testBlueprintYAML()), 0o644); err != nil {
+	if err := os.WriteFile(f, []byte(testAppSpecYAML()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got := hashGenerateInputs(generateOptions{from: f})

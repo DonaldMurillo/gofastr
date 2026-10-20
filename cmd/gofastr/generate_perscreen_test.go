@@ -12,27 +12,27 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
-// perscreenBP is a blueprint with a standalone screen, a CRUD entity (list +
+// perscreenBP is an app spec with a standalone screen, a CRUD entity (list +
 // detail screens → synthesized new/edit), and nav so appLayout is wired.
-func perscreenBP() Blueprint {
+func perscreenBP() AppSpec {
 	crud := true
-	return Blueprint{
-		App: BlueprintApp{Name: "Test", Module: "example.com/test", DBDriver: "sqlite"},
+	return AppSpec{
+		App: AppSpecApp{Name: "Test", Module: "example.com/test", DBDriver: "sqlite"},
 		Entities: []framework.EntityDeclaration{
 			{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "customers", Table: "customers", Exposure: &framework.ExposureDeclaration{CRUD: &crud}, Fields: []framework.FieldDeclaration{
 				{Name: "name", Type: "string"},
 			}},
 		},
-		Screens: []BlueprintScreen{
+		Screens: []AppSpecScreen{
 			{Name: "home", Route: "/", Title: "Home", Layout: "marketing"},
-			{Name: "customers", Route: "/customers", Title: "Customers", Layout: "app", Body: []BlueprintBlock{
+			{Name: "customers", Route: "/customers", Title: "Customers", Layout: "app", Body: []AppSpecBlock{
 				{Kind: "entity_list", Entity: "customers", Create: true},
 			}},
-			{Name: "customer_detail", Route: "/customers/{id}", Title: "Customer", Layout: "app", Body: []BlueprintBlock{
+			{Name: "customer_detail", Route: "/customers/{id}", Title: "Customer", Layout: "app", Body: []AppSpecBlock{
 				{Kind: "entity_detail", Entity: "customers"},
 			}},
 		},
-		Nav: []BlueprintNavItem{{Label: "Customers", Href: "/customers"}},
+		Nav: []AppSpecNavItem{{Label: "Customers", Href: "/customers"}},
 	}
 }
 
@@ -58,14 +58,14 @@ func sortedFileNames(files []generatedFile) []string {
 // screens_register.go is byte-identical whether the project declares one
 // screen or many. Adding a screen is a new file, never an edit to the seam.
 func TestScreenSeamIdenticalForAnyCount(t *testing.T) {
-	one := Blueprint{App: BlueprintApp{Name: "T", Module: "m"}, Screens: []BlueprintScreen{
+	one := AppSpec{App: AppSpecApp{Name: "T", Module: "m"}, Screens: []AppSpecScreen{
 		{Name: "solo", Route: "/", Title: "Solo"},
 	}}
-	oneFiles, err := renderBlueprintFiles(one)
+	oneFiles, err := renderAppSpecFiles(one)
 	if err != nil {
 		t.Fatal(err)
 	}
-	manyFiles, err := renderBlueprintFiles(perscreenBP())
+	manyFiles, err := renderAppSpecFiles(perscreenBP())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestScreenSeamIdenticalForAnyCount(t *testing.T) {
 // CRUD screens grouped per entity into one file, and app.go naming no screen
 // type at all.
 func TestPerScreenFileLayout(t *testing.T) {
-	files, err := renderBlueprintFiles(perscreenBP())
+	files, err := renderAppSpecFiles(perscreenBP())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestPerScreenFileLayout(t *testing.T) {
 // entity's screens live in its per-entity crud screen file, never in
 // app.go, and render through the appUI builders.
 func TestCrudScreensLiveInCrudFile(t *testing.T) {
-	files, err := renderBlueprintFiles(perscreenBP())
+	files, err := renderAppSpecFiles(perscreenBP())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestPerScreenFilesCompile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repoGoVersion: %v", err)
 	}
-	files, err := renderBlueprintFiles(perscreenBP())
+	files, err := renderAppSpecFiles(perscreenBP())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,18 +192,18 @@ func TestPerScreenFilesCompile(t *testing.T) {
 // exact authored set in authored order.
 func TestPackRoundTripPerScreenFiles(t *testing.T) {
 	crud := true
-	bp := Blueprint{
-		App: BlueprintApp{Name: "T", Module: "example.com/rt", DBDriver: "sqlite"},
+	bp := AppSpec{
+		App: AppSpecApp{Name: "T", Module: "example.com/rt", DBDriver: "sqlite"},
 		Entities: []framework.EntityDeclaration{
 			{Scope: &framework.ScopeDeclaration{}, Pagination: &framework.PaginationDeclaration{}, Name: "zebra", Exposure: &framework.ExposureDeclaration{CRUD: &crud}, Fields: []framework.FieldDeclaration{{Name: "name", Type: "string"}}},
 		},
-		Screens: []BlueprintScreen{
-			{Name: "zebra", Route: "/zebra", Title: "Zebras", Body: []BlueprintBlock{{Kind: "entity_list", Entity: "zebra", Create: true}}},
+		Screens: []AppSpecScreen{
+			{Name: "zebra", Route: "/zebra", Title: "Zebras", Body: []AppSpecBlock{{Kind: "entity_list", Entity: "zebra", Create: true}}},
 			{Name: "alpha", Route: "/alpha", Title: "Alpha"},
-			{Name: "zebra_detail", Route: "/zebra/{id}", Title: "Zebra", Body: []BlueprintBlock{{Kind: "entity_detail", Entity: "zebra"}}},
+			{Name: "zebra_detail", Route: "/zebra/{id}", Title: "Zebra", Body: []AppSpecBlock{{Kind: "entity_detail", Entity: "zebra"}}},
 		},
 	}
-	files, err := renderBlueprintFiles(bp)
+	files, err := renderAppSpecFiles(bp)
 	if err != nil {
 		t.Fatal(err)
 	}
