@@ -139,7 +139,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: git fetch --no-tags --depth=1 origin "$GOFASTR_AFFECTED_BASE"
 
-      - name: Go module + build/test cache (per-SHA)
+      - name: Go module + build/test cache + coverage manifests (per-SHA)
         id: go-cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
@@ -158,6 +158,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
+            ~/.cache/gofastr-coverage
           # Keyed on the commit, and restore-keys hands the run the newest
           # prior snapshot. That is what lets Go's content-addressed test
           # cache skip every package whose sources + transitive deps are
@@ -190,23 +191,17 @@ jobs:
         # checkout, because a manifest the sweep rewrites inside the module
         # is an input that moves on every run. A fixed path, because the
         # variable's value is part of every test's cache key.
+        #
+        # The manifests ride in the Go cache entry above. A package Go
+        # replays from the test cache runs nothing and records nothing, so
+        # the manifests its earlier run wrote come back with the test
+        # results, the way nx restores a cached task's outputs. Without
+        # them gofastr verify reads a manifest missing every replayed
+        # package. One entry, because two saves can half-succeed and pair
+        # new test results with old manifests. The manifests merge, so a
+        # record outlives a test that is later deleted; the coverage rules
+        # report at info.
         run: echo "GOFASTR_AXE_COVERAGE_DIR=$HOME/.cache/gofastr-coverage" >> "$GITHUB_ENV"
-
-      - name: Coverage manifests (per-SHA, restored with the test cache)
-        # A package Go replays from the test cache runs nothing and records
-        # nothing, so the manifests its earlier run wrote come back from
-        # here, the way nx restores a cached task's outputs. Without them
-        # gofastr verify reads a manifest missing every replayed package.
-        # The manifests merge, so a record outlives a test that is later
-        # deleted; the coverage rules report at info. Saved from main only,
-        # with the test cache, so the two always come from one snapshot.
-        id: coverage-cache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ~/.cache/gofastr-coverage
-          key: gofastr-coverage-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            gofastr-coverage-${{ runner.os }}-
 
       - name: Install Chrome (stable chromedp suites run here too)
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
@@ -483,21 +478,15 @@ jobs:
         run: |
           go run ./cmd/gofastr verify --no-vet --strict
 
-      - name: Save the Go cache (main only)
+      - name: Save the Go cache and coverage manifests (main only)
         if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
+            ~/.cache/gofastr-coverage
           key: go-test-${{ runner.os }}-${{ github.sha }}
-
-      - name: Save the coverage manifests (main only)
-        if: github.ref == 'refs/heads/main' && steps.coverage-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ~/.cache/gofastr-coverage
-          key: gofastr-coverage-${{ runner.os }}-${{ github.sha }}
 
   security:
     name: "vulncheck · secrets · mod-verify (blocking)"
@@ -690,6 +679,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
+            ~/.cache/gofastr-coverage
           # Restore-only: every suite here runs -count=1, so the cache buys
           # compile time, not test skips, and saving this job's
           # near-duplicate GOCACHE would crowd the repo's 10 GB cache LRU
@@ -837,6 +827,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
+            ~/.cache/gofastr-coverage
           key: go-test-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
             go-test-${{ runner.os }}-

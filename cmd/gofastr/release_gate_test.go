@@ -521,7 +521,8 @@ func TestWorkflowsHaveNoEmptyExpressions(t *testing.T) {
 // paths, and every restore runs before Set up Go: setup-go's `go env`
 // downloads the go.mod toolchain into the module cache as read-only files,
 // and a snapshot restored on top of them fails tar. Only main saves, since
-// pull request entries evict main's from the repo's 10 GB cache.
+// pull request entries evict main's from the repo's 10 GB cache. The
+// coverage manifests share the entry, so the two are saved together.
 func TestGoCachePathsMatch(t *testing.T) {
 	var wf struct {
 		Jobs map[string]struct {
@@ -563,6 +564,11 @@ func TestGoCachePathsMatch(t *testing.T) {
 				}
 			}
 			got := step.With["path"]
+			// One entry, so a half-failed pair of saves cannot match new
+			// test results with old coverage manifests.
+			if !strings.Contains(got, "~/.cache/gofastr-coverage") {
+				t.Errorf("%s leaves out the coverage manifests; replayed packages write none", at)
+			}
 			if want == "" {
 				want, wantAt = got, at
 			} else if got != want {
