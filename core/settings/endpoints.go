@@ -6,6 +6,7 @@ import (
 	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
@@ -81,14 +82,22 @@ func (f File) Endpoints() ([]Endpoint, error) {
 	if section == nil {
 		return nil, nil
 	}
+	return DecodeEndpoints(section, f.Path+": endpoints")
+}
+
+// DecodeEndpoints decodes an endpoints list, checking it the way the
+// settings file's section is checked. at names the list in errors. The
+// app spec's endpoints: key decodes through it, so an app spec holds
+// exactly what the settings section holds.
+func DecodeEndpoints(section *coreyaml.Node, at string) ([]Endpoint, error) {
 	if section.Kind != coreyaml.List {
-		return nil, fmt.Errorf("%s: endpoints must be a list of endpoints", f.Path)
+		return nil, fmt.Errorf("%s must be a list of endpoints", at)
 	}
 	var out []Endpoint
 	names := map[string]bool{}
 	routes := map[string]string{}
 	for i, item := range section.List {
-		at := fmt.Sprintf("%s: endpoints[%d]", f.Path, i)
+		at := fmt.Sprintf("%s[%d]", at, i)
 		if item == nil || item.Kind != coreyaml.Map {
 			return nil, fmt.Errorf("%s must be a map with %s", at, strings.Join(endpointKeys, ", "))
 		}
@@ -124,21 +133,43 @@ func (f File) Endpoints() ([]Endpoint, error) {
 		if e.Name != "" {
 			at = fmt.Sprintf("%s (%s)", at, e.Name)
 		}
-		if err := e.Validate(); err != nil {
+		if err := checkEndpoint(e, names, routes); err != nil {
 			return nil, fmt.Errorf("%s: %w", at, err)
 		}
-		if names[e.Name] {
-			return nil, fmt.Errorf("%s: the name %s is taken by an earlier endpoint", at, e.Name)
-		}
-		names[e.Name] = true
-		route := e.Method + " " + e.Entity + "/" + routeShape(e.Path)
-		if prev, ok := routes[route]; ok {
-			return nil, fmt.Errorf("%s: %s %s on %s is endpoint %s's route already", at, e.Method, e.Path, e.Entity, prev)
-		}
-		routes[route] = e.Name
 		out = append(out, e)
 	}
 	return out, nil
+}
+
+// CheckEndpoints checks entries the way DecodeEndpoints checks a decoded
+// list: each entry's shape, then that no two share a name or a route.
+func CheckEndpoints(entries []Endpoint) error {
+	names := map[string]bool{}
+	routes := map[string]string{}
+	for _, e := range entries {
+		if err := checkEndpoint(e, names, routes); err != nil {
+			return fmt.Errorf("endpoint %s: %w", e.Name, err)
+		}
+	}
+	return nil
+}
+
+// checkEndpoint checks e against the endpoints before it, recording its
+// name and route in names and routes.
+func checkEndpoint(e Endpoint, names map[string]bool, routes map[string]string) error {
+	if err := e.Validate(); err != nil {
+		return err
+	}
+	if names[e.Name] {
+		return fmt.Errorf("the name %s is taken by an earlier endpoint", e.Name)
+	}
+	names[e.Name] = true
+	route := e.Method + " " + e.Entity + "/" + routeShape(e.Path)
+	if prev, ok := routes[route]; ok {
+		return fmt.Errorf("%s %s on %s is endpoint %s's route already", e.Method, e.Path, e.Entity, prev)
+	}
+	routes[route] = e.Name
+	return nil
 }
 
 // routeShape erases parameter names, so {id}/x and {order}/x compare
@@ -215,4 +246,65 @@ func checkEndpointPath(p string) error {
 		return fmt.Errorf("path %q is the entity's state-move route", p)
 	}
 	return nil
+}
+
+// endpointsHeader is the comment gofastr writes above the endpoints
+// section.
+const endpointsHeader = "# Written by gofastr generate app. Each entry links a typed handler in entities/."
+
+// FormatEndpoints renders entries as the endpoints section, the bytes
+// SetEndpoints writes.
+func FormatEndpoints(entries []Endpoint) string {
+	if len(entries) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(endpointsHeader + "\n")
+	b.WriteString(formatEndpointsBody(entries))
+	return b.String()
+}
+
+func formatEndpointsBody(entries []Endpoint) string {
+	var b strings.Builder
+	b.WriteString("endpoints:\n")
+	for _, e := range entries {
+		// Every string is quoted: a plain true, false or null reads back
+		// as a bool or nil, and true is a valid endpoint or entity name.
+		fmt.Fprintf(&b, "  - name: %s\n    entity: %s\n    method: %s\n    path: %s\n    handler: %s\n",
+			strconv.Quote(e.Name), strconv.Quote(e.Entity), e.Method, strconv.Quote(e.Path), strconv.Quote(e.Handler))
+		if e.Description != "" {
+			fmt.Fprintf(&b, "    description: %s\n", strconv.Quote(e.Description))
+		}
+		if e.MCP {
+			b.WriteString("    mcp: true\n")
+		}
+		if e.Public {
+			b.WriteString("    public: true\n")
+		}
+	}
+	return b.String()
+}
+
+// SetEndpoints writes entries as the endpoints section of the settings
+// file at p, the way SetUnmounted writes its section: the rest of the file
+// keeps its bytes, the section is replaced whole, and the result must read
+// back as exactly entries before it is written.
+func SetEndpoints(p string, entries []Endpoint) error {
+	if err := CheckEndpoints(entries); err != nil {
+		return err
+	}
+	body := ""
+	if len(entries) > 0 {
+		body = formatEndpointsBody(entries)
+	}
+	return setSection(p, "endpoints", endpointsHeader, body, func(f File) error {
+		got, err := f.Endpoints()
+		if err != nil {
+			return err
+		}
+		if !slices.Equal(got, entries) {
+			return fmt.Errorf("%s: could not rewrite its endpoints section; write the key as a plain `endpoints:` at the start of a line", p)
+		}
+		return nil
+	})
 }

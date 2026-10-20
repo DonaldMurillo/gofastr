@@ -1,6 +1,10 @@
 package settings
 
 import (
+	"os"
+	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -129,5 +133,78 @@ func TestEndpointsRefuseDuplicates(t *testing.T) {
 	otherMethod := strings.Replace(sameRoute, "POST", "DELETE", 1)
 	if _, err := parseEndpoints(t, refundEntry+otherMethod); err != nil {
 		t.Fatalf("same path, other method: %v", err)
+	}
+}
+
+func refundEndpoint() Endpoint {
+	return Endpoint{
+		Name: "refund_order", Entity: "orders", Method: "POST", Path: "{id}/refund",
+		Handler: "entities/refunds.go#RefundOrder", Description: `Refund "in full" or in part.`, MCP: true, Public: true,
+	}
+}
+
+func TestSetEndpointsKeepsTheRestOfTheFile(t *testing.T) {
+	p := filepath.Join(t.TempDir(), FileName)
+	head := "version: 1\n\nunmounted:\n  - source: \"github.com/DonaldMurillo/gofastr/battery/auth\"\n    path: \"internal/auth\"\n"
+	writeFile(t, p, head+"\n"+refundEntry)
+	want := []Endpoint{refundEndpoint(), {Name: "ping", Entity: "orders", Method: "GET", Path: "ping", Handler: "entities/refunds.go#Ping"}}
+	if err := SetEndpoints(p, want); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(p)
+	if !strings.HasPrefix(string(data), head) {
+		t.Fatalf("other sections changed:\n%s", data)
+	}
+	f, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := f.Endpoints(); err != nil || !slices.Equal(got, want) {
+		t.Fatalf("endpoints = %+v, err = %v", got, err)
+	}
+
+	// An empty list removes the section; the file keeps the rest.
+	if err := SetEndpoints(p, nil); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(p)
+	if strings.Contains(string(data), "endpoints") || !strings.HasPrefix(string(data), head) {
+		t.Fatalf("after removal:\n%s", data)
+	}
+}
+
+func TestSetEndpointsRefusesBadEntry(t *testing.T) {
+	p := filepath.Join(t.TempDir(), FileName)
+	bad := refundEndpoint()
+	bad.Path = "/orders/{id}/refund"
+	if err := SetEndpoints(p, []Endpoint{bad}); err == nil {
+		t.Fatal("an absolute path was written")
+	}
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Fatalf("a refused write left a file: %v", err)
+	}
+}
+
+func TestFormatEndpointsQuotesKeywords(t *testing.T) {
+	var want []Endpoint
+	for i, word := range []string{"true", "false", "null"} {
+		want = append(want, Endpoint{Name: word, Entity: word, Method: "GET", Path: "ping", Handler: "entities/k.go#K" + strconv.Itoa(i)})
+	}
+	f, err := Parse(FileName, []byte("version: 1\n\n"+FormatEndpoints(want)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := f.Endpoints(); err != nil || !slices.Equal(got, want) {
+		t.Fatalf("endpoints = %+v, err = %v", got, err)
+	}
+}
+
+func TestSetEndpointsRefusesOneRouteTwice(t *testing.T) {
+	p := filepath.Join(t.TempDir(), FileName)
+	again := refundEndpoint()
+	again.Name, again.Path, again.Handler = "refund_again", "{order_id}/refund", "entities/refunds.go#RefundAgain"
+	err := SetEndpoints(p, []Endpoint{refundEndpoint(), again})
+	if err == nil || !strings.Contains(err.Error(), "route already") {
+		t.Fatalf("err = %v, want the route refusal", err)
 	}
 }
