@@ -32,6 +32,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `Unsandboxed` is the named opt-out. `ExtraAttrs` cannot set `src`,
   `srcdoc`, `sandbox` or `title`. An iframe inside `ui.AspectRatio`
   now draws the kit's hairline border instead of the browser's inset one.
+- **The app can serve HTTPS.** `framework.WithTLS` takes certificate
+  files (read again when they change, so a renewal needs no restart),
+  `AutoCert` for Let's Encrypt over TLS-ALPN-01, or a caller-built
+  `*tls.Config`. TLS 1.2 is the minimum and HTTP/2 is offered over TLS;
+  a config returned by `GetConfigForClient` below TLS 1.2 is raised to
+  it. The startup banner, the first-run setup link and the local run
+  record use `https://` URLs.
+- **`framework.WithHTTPProtocols`** passes an `http.Protocols` to the
+  server, for HTTP/2 without TLS (h2c with prior knowledge) behind a
+  proxy. Unset, the server keeps net/http's default.
 
 ### Changed
 - **A nested `App.InTx` runs under a savepoint.** Called inside another
@@ -42,6 +52,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   savepoint is released and the writes commit with the outer owner.
   Events from CRUD writes inside a rolled-back savepoint are dropped.
   A savepoint whose release fails is rolled back too.
+- **`framework.SetupRunner.SetupURL` takes the scheme.** It is now
+  `SetupURL(scheme, addr string)`, so the setup link the app prints is
+  `https://` when the app serves TLS. A custom runner adds the argument.
 
 ### Fixed
 - **`ui.CodeBlock` with `Wrap` breaks long tokens.** A URL or hash longer
