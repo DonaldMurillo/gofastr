@@ -20,7 +20,7 @@ layer is one package per platform, each compiling on every GOOS:
 | `battery/desktop` | Contract (`Shell`, `Window`, `NativeDriver`) + capabilities, grants, handshake, app state, preferences, deep links, updates, the unsupported shell |
 | `battery/desktop/macos` | Real shell on darwin/arm64 (AppKit + WKWebView via `internal/objc`); unsupported elsewhere |
 | `battery/desktop/windows` | Windows/amd64 Win32 shell with WebView2, native menus and dialogs, clipboard, tray notifications, secondary windows, snapshots, and DWM Mica/Acrylic; other targets are unsupported |
-| `battery/desktop/linux` | Unsupported today; WebKitGTK when it lands |
+| `battery/desktop/linux` | GTK 3 / WebKitGTK 4.1 on linux/amd64 and linux/arm64; CGO-free windows, menus, clipboard, dialogs and snapshots |
 | `battery/desktop/native` | `Shell()` picks by GOOS; `New(cfg)` is `desktop.New` with that shell as the nil-`Shell` default |
 | `battery/desktop/desktoptest` | Fake shell + app-shell harness |
 | `battery/desktop/internal/*` | `objc`, `ffi`, `fakecgo`, `gtk`, `win32`, `update` |
