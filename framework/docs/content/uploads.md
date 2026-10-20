@@ -54,7 +54,9 @@ The framework:
    array. Two file parts under one `Image`/`File` key are refused too;
    those columns hold a single URL.
 3. Streams each file part matching an `Image`/`File` field through
-   `Storage`, scoped by entity name and field name.
+   `Storage`, scoped by entity name and field name. A part for a
+   read-only or hidden field is ignored, as the write ignores a value
+   for it, so no stored object goes unreferenced.
 4. Stores the returned URL string on the record.
 
 The record persisted to the database looks like:

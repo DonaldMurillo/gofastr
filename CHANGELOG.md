@@ -174,6 +174,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   every read there answered `12.5`. The Go client could not decode such
   a row at all. Every CRUD read, included relation rows and
   `GroupCountAll` groups among them, now answers `"12.5"`.
+- **A multipart write stores no file for a column it cannot set.** A
+  file part named after a read-only or hidden Image or File field was
+  saved to storage, and then the write skipped the column, so nothing
+  referenced the object; a caller could repeat it to fill the disk. The
+  part is ignored now, as the write ignores a value for that column.
 - **`App.Shutdown` during boot always stops the server.** A `Shutdown`
   that ran while `Start` was still booting could miss the server `Start`
   was about to adopt, and `Start` then served forever. `Start` now sees
