@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
@@ -289,7 +290,19 @@ func TestMarketingChromeOwnedSheetsAreClean(t *testing.T) {
 // sheet's source hash is stale the moment it lands, and `gofastr verify`
 // in the generated app fails on it.
 func TestMarketingChromeGeneratedFilesAreCurrent(t *testing.T) {
-	files := chromeFixture(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gofastr.yml")
+	writeTestFile(t, path, chromeAppSpecYAML())
+	bp, err := loadAppSpec(path)
+	if err != nil {
+		t.Fatalf("loadAppSpec: %v", err)
+	}
+	// Stamped the way generate app writes them: the sheets carry a marker.
+	stamped, err := stampGeneratedFiles("app", mustRenderAppSpecFiles(t, bp))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := filesByName(stamped)
 	for _, tc := range []struct{ sheet, gen string }{
 		{"siteheader/siteheader.style.css", "siteheader/siteheader_style.gen.go"},
 		{"siteheader/siteheader.tokens.css", "siteheader/siteheader_tokens.gen.go"},
@@ -299,7 +312,10 @@ func TestMarketingChromeGeneratedFilesAreCurrent(t *testing.T) {
 		if sheet == "" || gen == "" {
 			t.Fatalf("missing %s or %s", tc.sheet, tc.gen)
 		}
-		want := "Source hash: sha256:" + ownstyle.SourceHash(sheet)
+		if _, _, ok := codegen.ReadMarker(tc.sheet, sheet); !ok {
+			t.Errorf("%s carries no marker", tc.sheet)
+		}
+		want := "Source hash: sha256:" + ownstyle.SourceHash(codegen.StripMarker(tc.sheet, sheet))
 		if !strings.Contains(gen, want) {
 			t.Errorf("%s is not current for %s (want %q): the generated app's gofastr verify (GOFASTR1814) would fail on it", tc.gen, tc.sheet, want)
 		}
