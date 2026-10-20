@@ -23,6 +23,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   manifest records a sum per file for this. `gofastr verify` counts
   marked files by generator and version and warns about edited derived
   files. The checked-in `*.gen.go` style files carry the marker now.
+  An owned style sheet's marker is not style: `gofastr gen styles`
+  embeds and hashes the sheet without it, and GOFASTR1814 compares the
+  same bytes, so a sheet the app generator stamps stays current.
   See `gofastr docs codegen`.
 - **`gofastr pack` says what it could not recover.** After packing, it
   regenerates the app from the packed spec in memory and compares each
