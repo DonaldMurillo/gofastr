@@ -2,7 +2,7 @@
 
 `battery/desktop` runs a GoFastr app as a local-first desktop
 application inside the operating system's own WebView: WKWebView on
-macOS and WebView2 on Windows. The shell builds with `CGO_ENABLED=0`.
+macOS, WebView2 on Windows, and WebKitGTK on Linux. The shell builds with `CGO_ENABLED=0`.
 The web rendering path is
 reused untouched: the same `framework/ui` screens, the same SSR +
 island model, the same `main.go` wiring minus `app.Start`.
@@ -11,7 +11,8 @@ island model, the same `main.go` wiring minus `app.Start`.
 set, the `Shell`/`Window` contracts, and the generated bridge may
 change or be removed without a deprecation window. Pin a version if you
 depend on it. Native shells ship for darwin/arm64 (AppKit + WKWebView)
-and windows/amd64 (Win32 + WebView2); other targets get a named
+windows/amd64 (Win32 + WebView2), and linux/amd64 or linux/arm64
+(GTK 3 + WebKitGTK 4.1); other targets get a named
 `unsupported` error from `Run`.
 
 ## Package layout
@@ -26,7 +27,7 @@ its own.
 | `battery/desktop` | The contract (`Shell`, `Window`, `NativeDriver`) and the OS-neutral half: capabilities, grants, handshake, app state, preferences, deep links, updates, and the unsupported shell. |
 | `battery/desktop/macos` | The real shell on darwin/arm64 (AppKit + WKWebView through `internal/objc`); the unsupported shell elsewhere. |
 | `battery/desktop/windows` | The Windows/amd64 shell: Win32, WebView2, native capabilities, custom titlebar support, and DWM Mica/Mica Alt/Acrylic. |
-| `battery/desktop/linux` | The unsupported shell today; WebKitGTK when its phase lands. |
+| `battery/desktop/linux` | GTK 3 / WebKitGTK 4.1 shell on linux/amd64 and linux/arm64; unsupported elsewhere. |
 | `battery/desktop/native` | `Shell()` picks the platform package by GOOS; `New(cfg)` is `desktop.New` with that shell as the nil-`Shell` default. |
 | `battery/desktop/desktoptest` | The fake shell and the app-shell test harness. |
 | `battery/desktop/internal/*` | `objc`, `ffi`, `fakecgo`, `gtk`, `win32`, `update`: one package per OS seam. |
@@ -531,8 +532,10 @@ window it lives in.
 ### Host support
 
 The style contracts are OS-neutral. macOS/arm64 and Windows/amd64
-implement native chrome (see the platform package layout); Linux remains
-unsupported. On Windows 11 the shell asks DWM for dark frame colors,
+implement native chrome (see the platform package layout). Linux supports
+standard GTK decorations, borderless windows, resizability and window-manager
+placement/keep-above hints. Unified/hidden title bars and transparent materials
+fall back to ordinary opaque GTK windows. On Windows 11 the shell asks DWM for dark frame colors,
 rounded corners, and system materials. `MaterialWindow` maps to Mica,
 `MaterialSidebar` maps to whole-window Mica Alt, and `MaterialGlass`
 maps to whole-window Desktop Acrylic. DWM materials require Windows 11
@@ -1885,9 +1888,63 @@ WKWebView through `desktoptest.NativeMain`.
 printable with no path separator and at most 64 characters, and every
 plist value is XML-escaped.
 
+## Linux runtime and native tests
+
+On Linux, `gofastr desktop build --id=dev.example.app --name=MyApp`
+writes `dist/MyApp`, a plain ELF executable. It uses the current architecture;
+set `GOARCH=amd64` or `GOARCH=arm64` to select the other supported target.
+No installer or `.desktop` launcher is generated. Linux rejects `--icon`,
+`--scheme` and macOS signing/notarization options rather than ignoring them.
+`--version` is accepted but does not add Linux executable metadata.
+
+Linux builds require no C compiler or GTK development headers:
+
+```sh
+CGO_ENABLED=0 go build -o dist/my-app ./cmd/my-app
+```
+
+Install GTK 3 and WebKitGTK 4.1 runtime libraries on the machine running the
+app. Debian/Ubuntu package names are `libgtk-3-0` (or `libgtk-3-0t64`) and
+`libwebkit2gtk-4.1-0`; Fedora uses `gtk3` and `webkit2gtk4.1`. WebKitGTK 2.40
+or newer and glibc 2.34 or newer are required. Run from an X11 or Wayland
+desktop session; missing libraries and missing displays produce actionable
+errors from `Run`. System notifications also need optional `libnotify` and a
+notification daemon. Existing GTK window-manager limits apply under Wayland,
+including requests to place a window at an absolute screen position.
+
+The shell supports native menus (Command accelerators map to Control), file
+and folder pickers, permission dialogs, clipboard text, secondary windows,
+JavaScript evaluation and PNG snapshots. It uses the same document-start
+bootstrap and authenticated loopback bridge as the other native shells.
+
+An opt-in test exercises real GTK and WebKit, including shared window cookies,
+async JavaScript, native permission dialogs, clipboard, cancellation and PNG
+capture. A separate-process test covers the real battery boot/session gate
+and authenticated clipboard bridge. Neither requires an external browser:
+
+```sh
+CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 go test ./battery/desktop/linux -run '^TestNativeGTKWebKit$' -count=1 -v
+CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 go test ./battery/desktop/linux -run '^TestNativeGoFastrBridge$' -count=1 -v
+```
+
+For a headless CI worker with GTK/WebKitGTK, Xvfb and a session bus installed:
+
+```sh
+dbus-run-session -- xvfb-run -a env CGO_ENABLED=0 GOFASTR_LINUX_NATIVE=1 go test ./battery/desktop/linux -run TestNativeGTKWebKit -count=1 -v
+```
+
+Do not disable WebKit's process sandbox to run the test. Ordinary `go test`
+runs the no-display tests and skips this opt-in graphical test. Set
+`GOFASTR_LINUX_TEST_OUTPUT` to a writable directory to retain its PNG capture.
+
 ## What does not work yet
 
-Linux and darwin/amd64 have no native shell yet. Windows currently
+darwin/amd64 has no native shell yet. Linux does not yet support tray icons,
+OS deep-link registration, transparent/compositor materials, custom title bars
+or native drag regions. A configured Linux tray returns an explicit unsupported
+error rather than silently hiding the app. Linux uses an ephemeral WebKit
+store shared by all windows in the process; cookies are not retained across
+launches. The Linux shell runs once per process. Windows currently
 supports amd64 and needs the Evergreen WebView2 Runtime. Windows builds
 do not include code signing or an installer. The updater is macOS-only.
 macOS notifications need a signed `.app` bundle (ad-hoc is
