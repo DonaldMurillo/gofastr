@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -236,7 +237,7 @@ func randomAppSpecYAML(r *rand.Rand) string {
 
 	// Endpoints, nav, stubs.
 	if r.IntN(2) == 0 {
-		sb.WriteString("endpoints:\n  - name: ping\n    method: " + q(randHostileString(r)) + "\n    path: " + q(randHostileString(r)) + "\n")
+		sb.WriteString("endpoints:\n  - name: ping\n    entity: posts\n    method: POST\n    path: \"{id}/ping\"\n    handler: entities/posts_endpoints.go#Ping\n    description: " + q(oneLine(randHostileString(r))) + "\n")
 	}
 	if r.IntN(2) == 0 {
 		sb.WriteString("nav:\n  - label: " + q(randHostileString(r)) + "\n    href: /\n")
@@ -245,6 +246,17 @@ func randomAppSpecYAML(r *rand.Rand) string {
 		sb.WriteString("middleware:\n  - name: logger\n    description: " + q(randHostileString(r)) + "\n")
 	}
 	return sb.String()
+}
+
+// oneLine keeps the printable runes of s: an endpoint description is one
+// line of text, so the settings decoder refuses the rest.
+func oneLine(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) || r == '\u2028' || r == '\u2029' || r == utf8.RuneError {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // TestPackEncodeDecodeRoundTripProperty is the randomized statement of the

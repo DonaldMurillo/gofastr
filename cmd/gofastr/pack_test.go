@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -611,7 +612,7 @@ func constructSpecs() []constructSpec {
 		{
 			name: "endpoints", order: endpointOrder, orderName: "endpointOrder",
 			build: func() (*AppSpec, reflect.Value) {
-				bp := &AppSpec{Endpoints: []AppSpecEndpoint{{}}}
+				bp := &AppSpec{Endpoints: []settings.Endpoint{{}}}
 				return bp, reflect.ValueOf(&bp.Endpoints[0]).Elem()
 			},
 			at: func(out map[string]any) map[string]any { return digEmitted(out, "endpoints", 0) },

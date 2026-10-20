@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -26,6 +27,11 @@ func covT_entity(name string) framework.EntityDeclaration {
 	return framework.EntityDeclaration{Name: name, Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}}
 }
 
+// covT_endpoint is a valid endpoint on posts named name.
+func covT_endpoint(name string) settings.Endpoint {
+	return settings.Endpoint{Name: name, Entity: "posts", Method: "POST", Path: "{id}/" + name, Handler: "entities/posts_endpoints.go#" + toCamelCase(name)}
+}
+
 func TestValidateAppSpecErrors(t *testing.T) {
 	cases := []struct {
 		name string
@@ -41,15 +47,13 @@ func TestValidateAppSpecErrors(t *testing.T) {
 		{"screen missing route", AppSpec{Screens: []AppSpecScreen{{Name: "home"}}}},
 		{"duplicate route", AppSpec{Screens: []AppSpecScreen{{Name: "a", Route: "/"}, {Name: "b", Route: "/"}}}},
 		{"bad screen type", AppSpec{Screens: []AppSpecScreen{{Name: "a", Route: "/", Type: "bogus"}}}},
-		{"endpoint missing name", AppSpec{Endpoints: []AppSpecEndpoint{{Handler: "H", Path: "/x", Method: "GET"}}}},
-		{"duplicate endpoint", AppSpec{Endpoints: []AppSpecEndpoint{{Name: "e", Handler: "H1", Path: "/a", Method: "GET"}, {Name: "e", Handler: "H2", Path: "/b", Method: "GET"}}}},
-		{"endpoint missing handler", AppSpec{Endpoints: []AppSpecEndpoint{{Name: "e", Path: "/x", Method: "GET"}}}},
-		{"endpoint bad handler ident", AppSpec{Endpoints: []AppSpecEndpoint{{Name: "e", Handler: "9bad", Path: "/x", Method: "GET"}}}},
-		{"endpoint missing path", AppSpec{Endpoints: []AppSpecEndpoint{{Name: "e", Handler: "H", Method: "GET"}}}},
-		{"endpoint missing method", AppSpec{Endpoints: []AppSpecEndpoint{{Name: "e", Handler: "H", Path: "/x"}}}},
-		{"endpoint bad method", AppSpec{Endpoints: []AppSpecEndpoint{{Name: "e", Handler: "H", Path: "/x", Method: "FLY"}}}},
-		{"endpoint unknown entity", AppSpec{Endpoints: []AppSpecEndpoint{{Name: "e", Handler: "H", Path: "/x", Method: "GET", Entity: "ghost"}}}},
-		{"endpoint mcp", AppSpec{Endpoints: []AppSpecEndpoint{{Name: "e", Handler: "H", Path: "/x", Method: "GET", MCP: true}}}},
+		{"endpoint missing name", AppSpec{Entities: []framework.EntityDeclaration{covT_entity("posts")}, Endpoints: []settings.Endpoint{covT_endpoint("")}}},
+		{"duplicate endpoint", AppSpec{Entities: []framework.EntityDeclaration{covT_entity("posts")}, Endpoints: []settings.Endpoint{covT_endpoint("e"), covT_endpoint("e")}}},
+		{"endpoint shared handler", AppSpec{Entities: []framework.EntityDeclaration{covT_entity("posts")}, Endpoints: []settings.Endpoint{covT_endpoint("a"), func() settings.Endpoint { e := covT_endpoint("b"); e.Handler = covT_endpoint("a").Handler; return e }()}}},
+		{"endpoint bad handler link", AppSpec{Entities: []framework.EntityDeclaration{covT_entity("posts")}, Endpoints: []settings.Endpoint{func() settings.Endpoint { e := covT_endpoint("e"); e.Handler = "9bad"; return e }()}}},
+		{"endpoint absolute path", AppSpec{Entities: []framework.EntityDeclaration{covT_entity("posts")}, Endpoints: []settings.Endpoint{func() settings.Endpoint { e := covT_endpoint("e"); e.Path = "/x"; return e }()}}},
+		{"endpoint bad method", AppSpec{Entities: []framework.EntityDeclaration{covT_entity("posts")}, Endpoints: []settings.Endpoint{func() settings.Endpoint { e := covT_endpoint("e"); e.Method = "FLY"; return e }()}}},
+		{"endpoint unknown entity", AppSpec{Entities: []framework.EntityDeclaration{covT_entity("posts")}, Endpoints: []settings.Endpoint{func() settings.Endpoint { e := covT_endpoint("e"); e.Entity = "ghost"; return e }()}}},
 		{"middleware empty name", AppSpec{Middleware: []AppSpecNamedStub{{}}}},
 		{"middleware bad ident", AppSpec{Middleware: []AppSpecNamedStub{{Name: "9x"}}}},
 		{"duplicate middleware", AppSpec{Middleware: []AppSpecNamedStub{{Name: "log"}, {Name: "log"}}}},
@@ -107,7 +111,7 @@ func TestValidateAppSpecHappy(t *testing.T) {
 	bp := AppSpec{
 		Entities:   []framework.EntityDeclaration{covT_entity("posts")},
 		Screens:    []AppSpecScreen{{Name: "home", Route: "/", Type: "page"}},
-		Endpoints:  []AppSpecEndpoint{{Name: "health", Handler: "Health", Path: "/health", Method: "GET"}},
+		Endpoints:  []settings.Endpoint{covT_endpoint("archive")},
 		Middleware: []AppSpecNamedStub{{Name: "logging"}},
 	}
 	if err := validateAppSpec(bp); err != nil {

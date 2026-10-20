@@ -448,9 +448,7 @@ screens:
         level: 1
         text: Product Details
       - kind: entity_detail
-        text: Product
         entity: products
-        fields: [name, slug, sku, description, price, stock, status, featured]
 
   - name: order_detail
     route: /orders/{id}
@@ -461,22 +459,7 @@ screens:
         level: 1
         text: Order Details
       - kind: entity_detail
-        text: Order
         entity: orders
-        fields: [order_number, customer_name, customer_email, status, total, notes]
-endpoints:
-  - name: confirm_order
-    method: POST
-    path: /orders/{id}/confirm
-    entity: orders
-    handler: confirmOrder
-    description: Confirm a pending order
-  - name: ship_order
-    method: POST
-    path: /orders/{id}/ship
-    entity: orders
-    handler: shipOrder
-    description: Mark an order as shipped
 
 middleware:
   - request_logger

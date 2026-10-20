@@ -22,9 +22,6 @@ import (
 // type/mount declarations sit between those two gates with none of their
 // own — divergence, not decision.
 //
-// Pinned sibling (green today): TestAppSpecEndpointStubRefusesNonIdentifiers
-// (emitter_quoting_security_test.go) pins the endpoint arm's isGoIdentifier
-// skip at both the stub emitter and the app.go registration.
 // Property: every app spec string emitted into Go identifier position is
 // gated (skipped) at the emitter whenever render is reachable without
 // validateAppSpec — toCamelCase transforms, it does not validate.
@@ -49,7 +46,7 @@ import (
 // isGoIdentifier exactly as the endpoint, hook, and resource-only-mount arms
 // already do: skip, never emit.
 
-func TestStubIdentRedSkipsLikeEndpoints(t *testing.T) {
+func TestStubIdentSkipsBadMiddleware(t *testing.T) {
 	// Deterministic: no network in the render path (font fetch is stubbed
 	// out the way the audit tests stub it).
 	prev := fontFetcher
@@ -74,28 +71,12 @@ func TestStubIdentRedSkipsLikeEndpoints(t *testing.T) {
 	bp.Middleware = []AppSpecNamedStub{{Name: "2bad"}}
 	files, err := renderAppSpecFiles(bp)
 	if err != nil {
-		t.Errorf("SECURITY: [stub-ident-guard-asymmetry] Middleware{Name:%q} fails the WHOLE generate: %v — the endpoint stub loop in the same function is isGoIdentifier-gated and skips (assertAppSpecGoParses is the backstop, not the guard, appspec.go:7333), but the middleware loop at :7345 emits `func 2badMiddleware(...)` into identifier position. Skip like the endpoint arm, never emit.", "2bad", err)
+		t.Errorf("SECURITY: [stub-ident-guard-asymmetry] Middleware{Name:%q} fails the WHOLE generate: %v — the hook stub loop in the same function is isGoIdentifier-gated and skips (assertAppSpecGoParses is the backstop, not the guard), but the middleware loop emits `func 2badMiddleware(...)` into identifier position. Skip like the hook arm, never emit.", "2bad", err)
 	} else {
 		for _, f := range files {
 			if strings.Contains(f.content, "2badMiddleware") {
-				t.Errorf("SECURITY: [stub-ident-guard-asymmetry] %s carries the ungated identifier `2badMiddleware` — the endpoint convention skips the same shape at this exact emitter", f.name)
+				t.Errorf("SECURITY: [stub-ident-guard-asymmetry] %s carries the ungated identifier `2badMiddleware` — the hook convention skips the same shape at this exact emitter", f.name)
 			}
-		}
-	}
-
-	// Leg 2 (control, green today): the endpoint convention this test pins.
-	// The same non-identifier shape as an endpoint Handler is skipped at
-	// both the stub emitter and the app.go registration, and the render
-	// succeeds. If this leg breaks, the convention moved, not the bug.
-	ctrl := base()
-	ctrl.Endpoints = []AppSpecEndpoint{{Name: "probe", Method: "GET", Path: "/probe", Handler: "2bad"}}
-	cfiles, cerr := renderAppSpecFiles(ctrl)
-	if cerr != nil {
-		t.Fatalf("setup broken: endpoint Handler %q no longer renders (the pinned skip convention regressed): %v", "2bad", cerr)
-	}
-	for _, f := range cfiles {
-		if strings.Contains(f.content, "2bad") {
-			t.Fatalf("setup broken: endpoint control render emitted %q into %s (the pinned skip convention regressed)", "2bad", f.name)
 		}
 	}
 }

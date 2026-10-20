@@ -35,3 +35,17 @@ notes:
     breaking: false
     nodetect: "a new section; nothing in an existing app uses it"
     guidance: "Optional. Move a hand-registered endpoint into the settings file to get typed calls in the clients. See gofastr docs endpoints."
+  - change: "an app spec's endpoints: entries take the gofastr.settings.yml shape: entity is required, path is relative to the entity's route, and handler links entities/<file>.go#<Name>; generate app writes them into the settings file with a typed stub per handler, and an entity's own endpoints: list is refused"
+    breaking: true
+    hits: review
+    find:
+      text:
+        - glob: "**/gofastr.yml"
+          match: '^\s+path:\s*"?/'
+        - glob: "**/gofastr.yml"
+          match: '^\s{4,}endpoints:'
+    guidance: "Only an app spec you still generate from needs this. Move each entity's endpoints: entries to the top-level endpoints: list with entity: <name>; drop the leading /<entity>/ from path (/orders/{id}/confirm becomes {id}/confirm); set handler to entities/<entity>_endpoints.go#<ExportedName>. A path: hit outside endpoints: belongs to another construct; leave it. An endpoint with no entity is a hand-registered route: write it in owned Go with fwApp.Router().Handle. See gofastr docs app-spec."
+  - change: "kiln freeze refuses a world route, a scaffold endpoint with no entity, and an endpoint whose path sits outside its entity's route"
+    breaking: true
+    nodetect: "a Kiln world lives in the running Kiln session, not in the source tree; the freeze names each refused surface"
+    guidance: "Delete the route or endpoint from the world (delete_route, or set_scaffold without it), freeze, and register the route by hand in owned Go after generation. Give a scaffold endpoint an entity and a path under that entity's route to keep it in the app spec."

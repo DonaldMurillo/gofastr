@@ -222,11 +222,6 @@ entities:
         name: author
         entity: users
         foreign_key: author_id
-    endpoints:
-      - name: publish_post
-        method: POST
-        path: "{id}/publish"
-        handler: publishPost
 
 screens:
   - name: home
@@ -273,10 +268,12 @@ screens:
           data-action-result: true
 
 endpoints:
-  - name: health_check
-    method: GET
-    path: /health
-    handler: healthCheck
+  - name: publish_post
+    entity: posts
+    method: POST
+    path: "{id}/publish"
+    handler: entities/posts_endpoints.go#PublishPost
+    description: Publish a draft post.
 
 hooks:
   - id: posts_before_create_validate
@@ -294,6 +291,35 @@ plugins:
 helpers:
   - name: normalize_slug
 ```
+
+### Custom endpoints (`endpoints`)
+
+Each entry is exactly an entry of the `endpoints:` section of
+[`gofastr.settings.yml`](settings.md), the same keys with the same rules:
+`name`, `entity` (required), `method`, `path` (relative to the entity's
+route, so `{id}/publish` serves `POST /api/posts/{id}/publish`), `handler`
+(a link, `entities/<file>.go#<Name>`), `description`, `mcp`, and `public`.
+[Endpoints](endpoints.md) has the full contract.
+
+`generate app` writes, for each endpoint:
+
+- the entry in the `endpoints:` section of `gofastr.settings.yml`, merged
+  into the file so its other sections stay as they are;
+- the linked handler file, with an input struct holding the route's path
+  values and a typed handler that answers 501 Not Implemented until you
+  write it;
+- `entities/endpoints.gen.go`, which registers every endpoint, and a typed
+  call for each in the generated client.
+
+From then on the settings file is where the endpoints live: add, change or
+remove one there and run `gofastr generate`. Two endpoints cannot link the
+same handler, and a handler cannot live in a file `generate app` writes for
+an entity (`entities/posts.go`); link a file of its own.
+
+An entity does not list `endpoints:` under itself, and a path does not
+start with `/`. A route that hangs under no entity (a health check, a
+webhook) is not an app spec endpoint: register it in owned Go with
+`fwApp.Router().Handle`.
 
 ### Lifecycle hooks (`hooks`)
 
@@ -333,13 +359,14 @@ The `access` map (keys `read`, `create`, `update`, `delete`;
 each value a permission string) is emitted as `Access:
 framework.AccessControl{...}` in the generated registration; see
 [entity-declarations](entity-declarations.md) for the semantics and
-[access-control](access-control.md) for wiring roles + policy. Entity-owned endpoints and top-level
-endpoints generate Go handler stubs (in `stubs.go`) plus router registration.
+[access-control](access-control.md) for wiring roles + policy. Custom
+endpoints generate the files listed in
+[Custom endpoints](#custom-endpoints-endpoints).
 
 When `app.module` is present, app spec generation also emits a
 `main.go`: a runnable app entrypoint that opens the configured SQLite
 database, registers generated entities, wires generated
-screens/endpoints/middleware/plugins through `RegisterGenerated` (in
+screens/middleware/plugins through `RegisterGenerated` (in
 `app.go`, same `package main`), mounts the UI host, and serves
 `app.static_dir` through the generated UI host.
 
@@ -410,6 +437,14 @@ as plain `generate`.
 # Add two entities to an existing project from a partial yml.
 gofastr generate app additions.yml --add
 ```
+
+A fragment's `endpoints:` merge into the project's `gofastr.settings.yml`;
+an endpoint whose name the project already has keeps the project's entry.
+The derived files `entities/endpoints.gen.go` and `entities/client/client.go`
+are rebuilt from the tree after the merge, not skipped. With `--json` the
+report lists the written files under `files`, the files left alone under
+`skipped_existing`, and the files already there that the run changed (the
+settings file and the rebuilt derived files) under `updated`.
 
 Partial ymls are legal: an entities-only (or screens-only) fragment omits
 `app.module`, so the module is derived from the enclosing `go.mod` exactly as
@@ -637,12 +672,8 @@ fails.
 
 The serializer half of that invariant is stronger: `parse(yml)` ≡
 `parse(encode(parse(yml)))` holds for every construct the grammar can
-declare — including `endpoints`, `middleware`, `plugins`, and `helpers` —
-with one deliberate, tested exception: entity-level `endpoints` re-serialize
-through the top-level `endpoints` stubs that carry their authoring form
-(entity, handler, `mcp`); the derived per-entity runtime copy does not
-re-materialize on re-parse, and emitting it back under the entity would
-duplicate every endpoint. For the list constructs (entities, screens,
+declare, including `endpoints`, `middleware`, `plugins`, and `helpers`. For
+the list constructs (entities, screens,
 blocks, nav, seed, endpoints, stubs, and their nested lists), the guards
 also cover every field *inside* each element — the omission class this
 catches (`seed.count`, `seed.weights`, entity `renames`) hides one level
@@ -673,12 +704,14 @@ excluded). `examples/ecommerce` regenerates in place as a whole, because its
 app spec sets `output_dir: app` and the generator owns that directory
 outright.
 
-`endpoints`, `middleware`, `plugins`, and `helpers` are **not** recovered by
-pack: the generator emits them as `stubs.go` signatures you fill with your own
-Go, and pack cannot reverse a hand-written handler body back into an app spec
-declaration. If your `gofastr.yml` declares any of these, keep the YAML; pack
-reconstructs the rest of the app around your owned stub code but will not
-re-emit their declarations.
+Pack recovers `hooks`, `middleware`, `plugins`, and `helpers` from their
+wiring (the `Use`, `RegisterPlugin` and `RegisterHook` calls) and the names
+and descriptions in `stubs.go`, so a stub whose body you have since written
+still packs. It reads `endpoints` back from the `endpoints:` section of
+`gofastr.settings.yml`. A linked handler file is yours once you write its
+body, so the check counts it as hand-written rather than comparing it.
+`examples/ecommerce/app` packs with nothing unrecovered, and a test holds it
+there.
 
 ### Data blocks (`entity_list`, `entity_form`, `entity_detail`)
 
@@ -1428,7 +1461,10 @@ The generator rejects:
 - unsupported HTTP methods or screen types
 - unsupported UI action events, duplicate action names, duplicate action events
   on one block, unreachable combined click actions, or missing `client_js`
-- custom endpoint MCP declarations without Go MCP handlers
+- endpoints whose `entity` the app spec does not declare, two endpoints
+  linking one handler, or a handler in a file `generate app` writes
+- an entity that lists `endpoints:` under itself (move each to the
+  top-level list)
 - scalar posture fields given a list or map shape: `access:`
   permissions, `owner_field`, `tenant_field`, `cross_owner_read`,
   `screens[].access.role`, and `app.admin.role` each name one value;

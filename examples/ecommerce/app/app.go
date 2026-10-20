@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=e647597434ffd0a5
+//gofastr:generated generator=app kind=scaffold version=dev sum=845525a0954939a6
 
 package main
 
@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/http"
 	"os"
 	"slices"
 
@@ -206,8 +205,6 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	}
 	appUI = fwApp.EntityUI(appExtensions)
 	mountGenerated(fwApp, site, db)
-	fwApp.Router().Handle("POST", "/orders/{id}/confirm", http.HandlerFunc(ConfirmOrder))
-	fwApp.Router().Handle("POST", "/orders/{id}/ship", http.HandlerFunc(ShipOrder))
 	fwApp.Use(RequestLoggerMiddleware)
 	fwApp.RegisterPlugin(AnalyticsPlugin{})
 	_ = routerMounter{}

@@ -528,28 +528,26 @@ screens:
         level: 1
         text: Task Details
       - kind: entity_detail
-        text: Task
         entity: tasks
-        fields: [title, description, priority, task_type, status, assignee_email, due_date, blocked]
 
 endpoints:
   - name: move_task
-    method: POST
-    path: /tasks/{id}/move
     entity: tasks
-    handler: moveTask
+    method: POST
+    path: "{id}/move"
+    handler: entities/tasks_endpoints.go#MoveTask
     description: Move a task to a different column
   - name: assign_task
-    method: POST
-    path: /tasks/{id}/assign
     entity: tasks
-    handler: assignTask
+    method: POST
+    path: "{id}/assign"
+    handler: entities/tasks_endpoints.go#AssignTask
     description: Assign a task to a user
   - name: log_hours
-    method: POST
-    path: /tasks/{id}/log-hours
     entity: tasks
-    handler: logHours
+    method: POST
+    path: "{id}/log-hours"
+    handler: entities/tasks_endpoints.go#LogHours
     description: Log hours against a task
 
 middleware:

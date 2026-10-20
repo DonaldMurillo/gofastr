@@ -40,7 +40,7 @@ unmounted:      # written by gofastr unmount and gofastr remount
 | Section | Read by | Reference |
 | --- | --- | --- |
 | `codegen` | `gofastr generate`, `gofastr build`, `gofastr generate --watch` | [Codegen](codegen.md) |
-| `endpoints` | `gofastr generate`, `gofastr build`, `gofastr generate --watch` | [Custom endpoints](endpoints.md) |
+| `endpoints` | `gofastr generate`, `gofastr build`, `gofastr generate --watch`, `gofastr pack`; `gofastr generate app` writes it from an app spec | [Custom endpoints](endpoints.md) |
 | `contracts` | `gofastr verify`, `gofastr build`, `gofastr dev`, the MCP contracts tools | [Contracts](contracts.md) |
 | `isolation` | `framework/isolation`: `App.Start`, `gofastr dev`, generated `main.go` | [Worktree isolation](isolation.md) |
 | `unmounted` | `gofastr unmount`, `gofastr remount`, `gofastr verify`, `gofastr upgrade`, `gofastr audit deps` | [Unmounting a package](unmount.md) |

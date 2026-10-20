@@ -32,8 +32,10 @@ screens:
   - name: about
 endpoints:
   - name: broken
-    method: GET
-    path: /broken
+    entity: ghosts
+    method: POST
+    path: "{id}/broken"
+    handler: entities/ghosts.go#Broken
 `)
 	_, err := loadAppSpec(path)
 	if err == nil {
@@ -41,9 +43,9 @@ endpoints:
 	}
 	msg := err.Error()
 	for _, want := range []string{
-		`duplicate entity "posts"`,              // entities section
-		`screen "about" route is required`,      // screens section
-		`endpoint "broken" handler is required`, // endpoints section
+		`duplicate entity "posts"`,                    // entities section
+		`screen "about" route is required`,            // screens section
+		`endpoint broken hangs under entity "ghosts"`, // endpoints section
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("one-pass validation missed %q:\n%s", want, msg)

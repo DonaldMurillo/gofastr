@@ -112,6 +112,14 @@ and `sdk` generators, which read the endpoints from the settings file.
 `gofastr build` and `gofastr generate --watch` do the same.
 `gofastr generate endpoints` rebuilds only `endpoints.gen.go`.
 
+## Starting from an app spec
+
+An app spec's top-level `endpoints:` list takes the same entries. `gofastr
+generate app` writes them into this settings section, writes each linked
+handler as a stub that answers 501 Not Implemented, and writes
+`endpoints.gen.go` and the client calls with it. `gofastr pack` reads the
+section back. See [App specs](app-spec.md#custom-endpoints-endpoints).
+
 ## Common mistakes
 
 - A `name` that an entity resource already uses: `list`, `get`, `create`,

@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -46,7 +47,7 @@ type AppSpec struct {
 	Screens    []AppSpecScreen
 	Nav        []AppSpecNavItem
 	Seed       []AppSpecSeedEntity
-	Endpoints  []AppSpecEndpoint
+	Endpoints  []settings.Endpoint
 	Hooks      []AppSpecHook
 	Middleware []AppSpecNamedStub
 	Plugins    []AppSpecNamedStub
@@ -184,19 +185,9 @@ type AppSpecAction struct {
 	ClientJS string
 }
 
-type AppSpecEndpoint struct {
-	Name        string
-	Method      string
-	Path        string
-	Entity      string
-	Handler     string
-	Description string
-	MCP         bool
-}
-
 // AppSpecHook is one entity lifecycle hook carried through
-// graduation. Like AppSpecEndpoint it declares a surface the generated
-// app must implement in owned Go: the app spec records WHICH hook runs
+// graduation. It declares a surface the generated app must implement in
+// owned Go: the app spec records WHICH hook runs
 // WHERE, and Handler names the func to write.
 //
 // It exists because kiln's freeze dropped hooks entirely. A world's hooks
@@ -444,12 +435,11 @@ func decodeAppSpec(node *coreyaml.Node) (AppSpec, error) {
 		bp.App = app
 	}
 	if child := m["entities"]; child != nil {
-		entities, endpoints, err := decodeAppSpecEntities(child)
+		entities, err := decodeAppSpecEntities(child)
 		if err != nil {
 			return AppSpec{}, err
 		}
 		bp.Entities = entities
-		bp.Endpoints = append(bp.Endpoints, endpoints...)
 	}
 	if child := m["screens"]; child != nil {
 		screens, err := decodeAppSpecScreens(child)
@@ -473,11 +463,11 @@ func decodeAppSpec(node *coreyaml.Node) (AppSpec, error) {
 		bp.Seed = seed
 	}
 	if child := m["endpoints"]; child != nil {
-		endpoints, err := decodeAppSpecEndpoints(child)
+		endpoints, err := settings.DecodeEndpoints(child, "app spec: endpoints")
 		if err != nil {
 			return AppSpec{}, err
 		}
-		bp.Endpoints = append(bp.Endpoints, endpoints...)
+		bp.Endpoints = endpoints
 	}
 	if child := m["hooks"]; child != nil {
 		hooks, err := decodeAppSpecHooks(child)
@@ -770,18 +760,17 @@ func decodeappTheme(node *coreyaml.Node) (light, dark map[string]string, err err
 	return light, dark, nil
 }
 
-func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, []AppSpecEndpoint, error) {
+func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, error) {
 	list, err := expectList(node, "entities")
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	out := make([]framework.EntityDeclaration, 0, len(list))
-	var endpointStubs []AppSpecEndpoint
 	for i, item := range list {
 		context := fmt.Sprintf("entities[%d]", i)
 		m, err := expectMap(item, context)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		allowed := map[string]bool{
 			"name": true, "table": true, "fields": true, "relations": true,
@@ -795,7 +784,7 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 			"display": true, "states": true,
 		}
 		if err := rejectUnknownKeys(m, allowed, context); err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl := framework.EntityDeclaration{
 			Name:         stringValue(m["name"]),
@@ -811,40 +800,40 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 
 		scope, err := decodeEntityScope(m["scope"], context+".scope")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.Scope, err = mergeEntityScopeDeclaration(decl.Name, m, scope, context)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		pagination, err := decodeEntityPagination(m["pagination"], context+".pagination")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.Pagination, err = mergeEntityPaginationDeclaration(decl.Name, m, pagination, context)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		flatAccess, err := decodeEntityAccess(m["access"], context+".access")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		flatReadScope, err := decodeEntityReadScope(m["read_scope"], context+".read_scope")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		exposure, err := decodeEntityExposure(m["exposure"], context+".exposure")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.Exposure, err = mergeEntityExposureDeclaration(decl.Name, m, exposure, flatAccess, flatReadScope, context)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
 		fields, err := decodeFields(m["fields"])
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.Fields = fields
 		// owner_field names a per-row owner column. Auto-inject it as a hidden
@@ -861,7 +850,7 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 		}
 		// cross_owner_read only applies to an owner-scoped entity.
 		if decl.Scope != nil && decl.Scope.CrossOwnerRead != "" && decl.Scope.OwnerField == "" {
-			return nil, nil, fmt.Errorf(
+			return nil, fmt.Errorf(
 				"app spec: entity %q sets cross_owner_read %q but has no owner_field (cross-owner read only applies to owner-scoped entities)",
 				decl.Name, decl.Scope.CrossOwnerRead,
 			)
@@ -875,16 +864,16 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 				}
 			}
 			if found == nil {
-				return nil, nil, fmt.Errorf("app spec: entity %q search_fields entry %q is not a declared field", decl.Name, sf)
+				return nil, fmt.Errorf("app spec: entity %q search_fields entry %q is not a declared field", decl.Name, sf)
 			}
 			if found.Hidden {
-				return nil, nil, fmt.Errorf("app spec: entity %q search_fields entry %q is Hidden (search would disclose its values)", decl.Name, sf)
+				return nil, fmt.Errorf("app spec: entity %q search_fields entry %q is Hidden (search would disclose its values)", decl.Name, sf)
 			}
 			if found.NoQuery {
-				return nil, nil, fmt.Errorf("app spec: entity %q search_fields entry %q is no_query (?q= would match on the stored value)", decl.Name, sf)
+				return nil, fmt.Errorf("app spec: entity %q search_fields entry %q is no_query (?q= would match on the stored value)", decl.Name, sf)
 			}
 			if found.Type != "string" && found.Type != "text" {
-				return nil, nil, fmt.Errorf("app spec: entity %q search_fields entry %q must be string or text, got %q", decl.Name, sf, found.Type)
+				return nil, fmt.Errorf("app spec: entity %q search_fields entry %q must be string or text, got %q", decl.Name, sf, found.Type)
 			}
 		}
 		// read_scope fields are checked here for the same reason search_fields
@@ -901,10 +890,10 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 					}
 				}
 				if found == nil {
-					return nil, nil, fmt.Errorf("app spec: entity %q read_scope field %q is not a declared field", decl.Name, p.Field)
+					return nil, fmt.Errorf("app spec: entity %q read_scope field %q is not a declared field", decl.Name, p.Field)
 				}
 				if found.Hidden {
-					return nil, nil, fmt.Errorf("app spec: entity %q read_scope field %q is Hidden (a predicate on a masked column leaks its values through the row set)", decl.Name, p.Field)
+					return nil, fmt.Errorf("app spec: entity %q read_scope field %q is Hidden (a predicate on a masked column leaks its values through the row set)", decl.Name, p.Field)
 				}
 			}
 		}
@@ -919,47 +908,44 @@ func decodeAppSpecEntities(node *coreyaml.Node) ([]framework.EntityDeclaration, 
 			}
 			found, ok := appSpecColumn(decl, cf)
 			if !ok {
-				return nil, nil, fmt.Errorf("app spec: entity %q cursor field %q is not a declared field", decl.Name, cf)
+				return nil, fmt.Errorf("app spec: entity %q cursor field %q is not a declared field", decl.Name, cf)
 			}
 			if found == nil {
 				continue
 			}
 			if found.Hidden {
-				return nil, nil, fmt.Errorf("app spec: entity %q cursor field %q is Hidden (it is not in the projection, so paging cannot read it)", decl.Name, cf)
+				return nil, fmt.Errorf("app spec: entity %q cursor field %q is Hidden (it is not in the projection, so paging cannot read it)", decl.Name, cf)
 			}
 			if found.NoQuery {
-				return nil, nil, fmt.Errorf("app spec: entity %q cursor field %q is no_query (the cursor token would carry its stored value)", decl.Name, cf)
+				return nil, fmt.Errorf("app spec: entity %q cursor field %q is no_query (the cursor token would carry its stored value)", decl.Name, cf)
 			}
 		}
 		relations, err := decodeRelations(m["relations"])
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.Relations = relations
 		indices, err := decodeIndices(m["indices"])
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.Indices = indices
 		display, err := decodeDisplayDeclaration(m["display"], context+".display")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.Display = display
 		states, err := decodeStatesDeclaration(m["states"], context+".states")
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		decl.States = states
-		endpoints, stubs, err := decodeEntityEndpoints(decl.Name, m["endpoints"])
-		if err != nil {
-			return nil, nil, err
+		if m["endpoints"] != nil {
+			return nil, fmt.Errorf("%s: an entity no longer lists endpoints; move each to the top-level endpoints: list with entity: %s and a handler link (entities/<file>.go#<Name>)", context, decl.Name)
 		}
-		decl.Endpoints = endpoints
-		endpointStubs = append(endpointStubs, stubs...)
 		out = append(out, decl)
 	}
-	return out, endpointStubs, nil
+	return out, nil
 }
 
 // decodeDisplayDeclaration decodes an entity's display: group through the
@@ -1758,46 +1744,6 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 	return out, nil
 }
 
-func decodeEntityEndpoints(entityName string, node *coreyaml.Node) ([]framework.Endpoint, []AppSpecEndpoint, error) {
-	if node == nil {
-		return nil, nil, nil
-	}
-	list, err := expectList(node, "endpoints")
-	if err != nil {
-		return nil, nil, err
-	}
-	out := make([]framework.Endpoint, 0, len(list))
-	stubs := make([]AppSpecEndpoint, 0, len(list))
-	for i, item := range list {
-		m, err := expectMap(item, fmt.Sprintf("endpoints[%d]", i))
-		if err != nil {
-			return nil, nil, err
-		}
-		allowed := map[string]bool{"method": true, "path": true, "name": true, "description": true, "mcp": true, "handler": true}
-		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("endpoints[%d]", i)); err != nil {
-			return nil, nil, err
-		}
-		handler := stringValue(m["handler"])
-		out = append(out, framework.Endpoint{
-			Method:      stringValue(m["method"]),
-			Path:        stringValue(m["path"]),
-			Name:        stringValue(m["name"]),
-			Description: stringValue(m["description"]),
-			MCP:         false,
-		})
-		stubs = append(stubs, AppSpecEndpoint{
-			Name:        stringValue(m["name"]),
-			Method:      stringValue(m["method"]),
-			Path:        stringValue(m["path"]),
-			Entity:      entityName,
-			Handler:     handler,
-			Description: stringValue(m["description"]),
-			MCP:         boolValue(m["mcp"]),
-		})
-	}
-	return out, stubs, nil
-}
-
 func decodeAppSpecScreens(node *coreyaml.Node) ([]AppSpecScreen, error) {
 	list, err := expectList(node, "screens")
 	if err != nil {
@@ -2326,34 +2272,6 @@ func decodeActions(node *coreyaml.Node) ([]AppSpecAction, error) {
 	return out, nil
 }
 
-func decodeAppSpecEndpoints(node *coreyaml.Node) ([]AppSpecEndpoint, error) {
-	list, err := expectList(node, "endpoints")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]AppSpecEndpoint, 0, len(list))
-	for i, item := range list {
-		m, err := expectMap(item, fmt.Sprintf("endpoints[%d]", i))
-		if err != nil {
-			return nil, err
-		}
-		allowed := map[string]bool{"name": true, "method": true, "path": true, "entity": true, "handler": true, "description": true, "mcp": true}
-		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("endpoints[%d]", i)); err != nil {
-			return nil, err
-		}
-		out = append(out, AppSpecEndpoint{
-			Name:        stringValue(m["name"]),
-			Method:      stringValue(m["method"]),
-			Path:        stringValue(m["path"]),
-			Entity:      stringValue(m["entity"]),
-			Handler:     stringValue(m["handler"]),
-			Description: stringValue(m["description"]),
-			MCP:         boolValue(m["mcp"]),
-		})
-	}
-	return out, nil
-}
-
 func decodeAppSpecHooks(node *coreyaml.Node) ([]AppSpecHook, error) {
 	list, err := expectList(node, "hooks")
 	if err != nil {
@@ -2609,11 +2527,6 @@ func validateAppSpec(bp AppSpec) error {
 		if _, err := decl.Config(); err != nil {
 			errs.add(fmt.Errorf("app spec: entity %q: %w", decl.Name, err))
 		}
-		for _, endpoint := range decl.Endpoints {
-			if endpoint.MCP {
-				errs.add(fmt.Errorf("app spec: entity %q endpoint %q cannot set mcp=true without Go MCP handler", decl.Name, endpoint.Path))
-			}
-		}
 	}
 	for _, decl := range bp.Entities {
 		// Relation-TYPED FIELDS (`type: relation, to: X`) become BelongsTo
@@ -2761,63 +2674,7 @@ func validateAppSpec(bp AppSpec) error {
 		}
 		errs.add(validateAppSpecActions(screen.Name, screen.Body))
 	}
-	endpointNames := map[string]bool{}
-	endpointHandlers := map[string]bool{}
-	endpointRoutes := map[string]bool{}
-	crudRoutes := appSpecCRUDRoutes(bp.Entities)
-	for _, endpoint := range bp.Endpoints {
-		if endpoint.Name == "" {
-			errs.add(fmt.Errorf("app spec: endpoint name is required"))
-			continue
-		}
-		if endpointNames[endpoint.Name] {
-			errs.add(fmt.Errorf("app spec: duplicate endpoint %q", endpoint.Name))
-			continue
-		}
-		endpointNames[endpoint.Name] = true
-		if endpoint.Handler == "" {
-			errs.add(fmt.Errorf("app spec: endpoint %q handler is required", endpoint.Name))
-			continue
-		}
-		handlerName := toCamelCase(endpoint.Handler)
-		if !isGoIdentifier(handlerName) {
-			errs.add(fmt.Errorf("app spec: endpoint %q handler %q does not produce a valid Go identifier", endpoint.Name, endpoint.Handler))
-			continue
-		}
-		if endpointHandlers[handlerName] {
-			errs.add(fmt.Errorf("app spec: duplicate endpoint handler %q", endpoint.Handler))
-			continue
-		}
-		endpointHandlers[handlerName] = true
-		if endpoint.Path == "" {
-			errs.add(fmt.Errorf("app spec: endpoint %q path is required", endpoint.Name))
-			continue
-		}
-		method := strings.ToUpper(endpoint.Method)
-		if method == "" {
-			errs.add(fmt.Errorf("app spec: endpoint %q method is required", endpoint.Name))
-			continue
-		}
-		if _, ok := validHTTPMethods[method]; !ok {
-			errs.add(fmt.Errorf("app spec: endpoint %q method %q is not supported", endpoint.Name, endpoint.Method))
-			continue
-		}
-		if endpoint.Entity != "" && !entityNames[endpoint.Entity] {
-			errs.add(fmt.Errorf("app spec: endpoint %q targets unknown entity %q", endpoint.Name, endpoint.Entity))
-		}
-		routeKey := method + " " + appSpecEndpointPath(endpoint)
-		if endpointRoutes[routeKey] {
-			errs.add(fmt.Errorf("app spec: duplicate endpoint route %q", routeKey))
-			continue
-		}
-		endpointRoutes[routeKey] = true
-		if crudRoutes[routeKey] {
-			errs.add(fmt.Errorf("app spec: endpoint %q collides with generated CRUD route %q", endpoint.Name, routeKey))
-		}
-		if endpoint.MCP {
-			errs.add(fmt.Errorf("app spec: endpoint %q cannot set mcp=true without Go MCP handler", endpoint.Name))
-		}
-	}
+	errs.add(validateAppSpecEndpoints(bp))
 	// Hooks are the sibling construct of endpoints: a surface the generated
 	// app must implement in owned Go (the handler stub) and the registry
 	// wiring. They get the same boundary checks endpoints get: a handler
@@ -3240,34 +3097,6 @@ func seedValueInFinalForm(f schema.Field, value any) bool {
 	}
 }
 
-func appSpecCRUDRoutes(entities []framework.EntityDeclaration) map[string]bool {
-	out := map[string]bool{}
-	for _, decl := range entities {
-		if !entityDeclarationCRUDEnabled(decl) {
-			continue
-		}
-		root := "/" + appSpecEntityTable(decl)
-		for _, route := range []struct {
-			method string
-			path   string
-		}{
-			{http.MethodGet, root},
-			{http.MethodGet, root + "/{id}"},
-			{http.MethodPost, root},
-			{http.MethodPut, root + "/{id}"},
-			{http.MethodPatch, root + "/{id}"},
-			{http.MethodDelete, root + "/{id}"},
-			{http.MethodPost, root + "/_batch"},
-			{http.MethodPatch, root + "/_batch"},
-			{http.MethodDelete, root + "/_batch"},
-			{http.MethodGet, root + "/_events"},
-		} {
-			out[route.method+" "+route.path] = true
-		}
-	}
-	return out
-}
-
 func appSpecEntityTable(decl framework.EntityDeclaration) string {
 	if decl.Table != "" {
 		return strings.Trim(decl.Table, "/")
@@ -3381,6 +3210,11 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		}
 		if !entityDeclarationCRUDEnabled(decl) {
 			return fmt.Errorf("app spec: screen %q entity_detail target %q must enable crud", screenName, block.Entity)
+		}
+		// The record page draws from the entity's own display: block, so
+		// a text: or fields: here would be accepted and then never render.
+		if block.Text != "" || len(block.Fields) > 0 {
+			return fmt.Errorf("app spec: screen %q entity_detail takes no text or fields: the record page draws the entity's display: block, so name the record with display.title_fields and lay out its fields with display.form", screenName)
 		}
 	case "entity_create":
 		return fmt.Errorf("app spec: screen %q uses entity_create, which is no longer a block kind: the list's create: synthesizes the create screen at <list>/create", screenName)
@@ -3689,11 +3523,6 @@ func isGoIdentifier(value string) bool {
 	return true
 }
 
-var validHTTPMethods = map[string]bool{
-	http.MethodGet: true, http.MethodHead: true, http.MethodPost: true, http.MethodPut: true,
-	http.MethodPatch: true, http.MethodDelete: true, http.MethodOptions: true,
-}
-
 // appSpecSynthesizeCRUDScreens appends the create screen that makes an
 // app-side list writable: <home list>/create for every entity with an
 // entity_list flagged `create: true`, where the home list is the one every
@@ -3774,9 +3603,28 @@ func renderAppSpec(bp AppSpec, entityOrderOffset, screenOrderOffset int, fonts b
 		if err != nil {
 			return nil, err
 		}
+		endpointFiles, client, err := renderAppSpecEndpoints(bp, decls, entityFiles)
+		if err != nil {
+			return nil, err
+		}
 		for _, file := range entityFiles {
+			if client != "" && filepath.ToSlash(file.name) == "client/client.go" {
+				file.content = client
+			}
 			files = append(files, generatedFile{name: filepath.Join("entities", file.name), content: file.content})
 		}
+		if len(endpointFiles) > 0 {
+			files = append(files, endpointFiles...)
+			// An input type a stub declares meets the entities' own names
+			// in one package.
+			if err := refuseDuplicateDecls(slices.DeleteFunc(slices.Clone(files), func(f generatedFile) bool {
+				return path.Dir(filepath.ToSlash(f.name)) != "entities"
+			})); err != nil {
+				return nil, fmt.Errorf("app spec: %w", err)
+			}
+		}
+	} else if len(bp.Endpoints) > 0 {
+		return nil, fmt.Errorf("app spec: endpoints hang under entities, and the app spec declares none")
 	} else if bp.App.Module != "" {
 		// No entities yet, but main.go imports the entities package and
 		// calls entities.RegisterAll unconditionally. Emit the empty seam
@@ -3785,7 +3633,7 @@ func renderAppSpec(bp AppSpec, entityOrderOffset, screenOrderOffset int, fonts b
 		// no edit to any owned file.
 		files = append(files, generatedFile{name: filepath.Join("entities", "register.go"), content: renderRegisterSeam()})
 	}
-	emitsApp := bp.App.Name != "" || bp.App.Module != "" || bp.App.DBDriver != "" || bp.App.DBURL != "" || bp.App.StaticDir != "" || bp.App.OutputDir != "" || appSpecHasTheme(bp.App) || len(bp.Screens) > 0 || len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0
+	emitsApp := bp.App.Name != "" || bp.App.Module != "" || bp.App.DBDriver != "" || bp.App.DBURL != "" || bp.App.StaticDir != "" || bp.App.OutputDir != "" || appSpecHasTheme(bp.App) || len(bp.Screens) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0
 	// Per-screen layout: the fixed screens_register.go seam + one file per
 	// authored screen + one per-entity crud file (list/record/create screens).
 	files = append(files, appSpecScreenFiles(bp, screenOrderOffset)...)
@@ -3800,7 +3648,7 @@ func renderAppSpec(bp AppSpec, entityOrderOffset, screenOrderOffset int, fonts b
 		// wire RBAC into admin.Config without editing generated files.
 		files = append(files, generatedFile{name: "admin_register.go", content: appSpecAdminRegisterGo})
 	}
-	if len(bp.Endpoints) > 0 || len(bp.Middleware) > 0 || len(bp.Plugins) > 0 || len(bp.Helpers) > 0 || len(bp.Seed) > 0 || len(bp.Hooks) > 0 {
+	if len(bp.Middleware) > 0 || len(bp.Plugins) > 0 || len(bp.Helpers) > 0 || len(bp.Seed) > 0 || len(bp.Hooks) > 0 {
 		files = append(files, generatedFile{name: "stubs.go", content: renderAppSpecStubs(bp)})
 	}
 	if emitsApp {
@@ -7354,22 +7202,6 @@ func toDisplayName(s string) string {
 	return strings.Join(words, " ")
 }
 
-// appSpecEndpointHandlerName returns the Go identifier for an
-// endpoint's handler. It prefers the explicit Handler, falling back to
-// the endpoint Name when Handler is empty. When both are empty it
-// returns "". There is no identifier to emit, and callers skip the
-// endpoint entirely (no stub, no route registration).
-func appSpecEndpointHandlerName(endpoint AppSpecEndpoint) string {
-	source := strings.TrimSpace(endpoint.Handler)
-	if source == "" {
-		source = strings.TrimSpace(endpoint.Name)
-	}
-	if source == "" {
-		return ""
-	}
-	return toCamelCase(source)
-}
-
 // appSpecSeedFieldIsDecimal reports whether the named field on the given
 // entity is a decimal-typed column (which CRUD validates as a decimal string).
 func appSpecSeedFieldIsDecimal(bp AppSpec, entity, field string) bool {
@@ -7407,7 +7239,7 @@ func appSpecDecimalLiteral(v any) string {
 func renderAppSpecStubs(bp AppSpec) string {
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
-	needsHTTP := len(bp.Endpoints) > 0 || len(bp.Middleware) > 0
+	needsHTTP := len(bp.Middleware) > 0
 	needsFramework := len(bp.Plugins) > 0
 	needsJSON := false
 	// Hook stubs take framework.HookFunc's signature (context.Context, any).
@@ -7427,31 +7259,6 @@ func renderAppSpecStubs(bp AppSpec) string {
 			sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework\"\n")
 		}
 		sb.WriteString(")\n\n")
-	}
-	for _, endpoint := range bp.Endpoints {
-		handler := appSpecEndpointHandlerName(endpoint)
-		if handler == "" {
-			// No Handler and no Name: nothing to derive a Go identifier
-			// from. Skip emitting a stub; registration skips it too.
-			continue
-		}
-		if !isGoIdentifier(handler) {
-			// validateAppSpec refuses a Handler that does not derive
-			// an identifier, but the Name FALLBACK root has no validator
-			// of its own (toCamelCase transforms, it does not validate),
-			// and renderAppSpecStubs also serves unvalidated renders
-			// (tests, --add fragments). Never emit a non-identifier:
-			// mirroring the hook stubs below. assertAppSpecGoParses is
-			// the backstop, not the guard.
-			continue
-		}
-		label := strings.TrimSpace(endpoint.Handler)
-		if label == "" {
-			label = strings.TrimSpace(endpoint.Name)
-		}
-		sb.WriteString(fmt.Sprintf("func %s(w http.ResponseWriter, r *http.Request) {\n", handler))
-		sb.WriteString(fmt.Sprintf("\thttp.Error(w, %q, http.StatusNotImplemented)\n", "TODO: implement "+label))
-		sb.WriteString("}\n\n")
 	}
 	for _, item := range bp.Middleware {
 		// Same gate as the endpoint arm above: toCamelCase transforms, it
@@ -7649,9 +7456,6 @@ func renderAppSpecApp(bp AppSpec) string {
 	sb.WriteString("\t\"database/sql\"\n")
 	if adminSeed {
 		sb.WriteString("\t\"fmt\"\n")
-	}
-	if len(bp.Endpoints) > 0 {
-		sb.WriteString("\t\"net/http\"\n")
 	}
 	if hasAccess {
 		sb.WriteString("\t\"net/url\"\n")
@@ -8246,16 +8050,6 @@ func renderAppSpecApp(bp AppSpec) string {
 	// appExtensions, the way App.Entity refuses a bad declaration.
 	sb.WriteString("\tappUI = fwApp.EntityUI(appExtensions)\n")
 	sb.WriteString("\tmountGenerated(fwApp, site, db)\n")
-	for _, endpoint := range bp.Endpoints {
-		handler := appSpecEndpointHandlerName(endpoint)
-		if handler == "" {
-			continue
-		}
-		if !isGoIdentifier(handler) {
-			continue // same gate as the stub emitter: never reference a non-identifier
-		}
-		sb.WriteString(fmt.Sprintf("\tfwApp.Router().Handle(%q, %q, http.HandlerFunc(%s))\n", strings.ToUpper(endpoint.Method), appSpecEndpointPath(endpoint), handler))
-	}
 	for _, item := range bp.Middleware {
 		// Same gate as the stub emitter: never reference a name that is
 		// not a Go identifier (the stub was skipped, so referencing it
@@ -8911,14 +8705,6 @@ func appSpecThemeColorPath(key string) (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-func appSpecEndpointPath(endpoint AppSpecEndpoint) string {
-	path := strings.TrimSpace(endpoint.Path)
-	if path == "" || strings.HasPrefix(path, "/") || endpoint.Entity == "" {
-		return path
-	}
-	return "/" + strings.Trim(strings.TrimSpace(endpoint.Entity), "/") + "/" + strings.TrimLeft(path, "/")
 }
 
 func relationTypeFromString(value string) (framework.RelationType, error) {
