@@ -113,6 +113,20 @@ throws instead of buffering. The exported
 `<entity>Fields` constants map camelCase names to the snake_case column
 names query params require.
 
+A `Blob` (a `File` is one) as the value of an Image or File field sends
+that create, update or patch as multipart/form-data, every part named
+by its column; `client.d.ts` types those fields `string | Blob`. A
+multipart body cannot carry `null`, so clear a field in a separate JSON
+patch. A file over 32 MiB, or a body over 64 MiB, throws before
+anything is sent. A batch goes as JSON, so `batchCreate` and
+`batchUpdate` reject a `Blob` value and their item types leave it out:
+upload one row at a time.
+
+```js
+const logo = document.querySelector("input[type=file]").files[0];
+const created = await api.customers.create({ name: "Acme", logo });
+```
+
 ## The casing contract both SDKs encode
 
 Responses are camelCase (the server default). Request bodies accept snake
