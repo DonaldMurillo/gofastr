@@ -110,7 +110,7 @@ func (m *mockSetupRunner) Handler(_ func(), _, _ http.HandlerFunc) http.Handler 
 	})
 }
 
-func (m *mockSetupRunner) SetupURL(_ string) string {
+func (m *mockSetupRunner) SetupURL(_, _ string) string {
 	return m.setupURL
 }
 

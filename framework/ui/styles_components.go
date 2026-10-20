@@ -401,10 +401,13 @@ func codeBlockCSS(_ style.Theme) string {
   border-radius: var(--radii-sm, 6px);
 }
 /* Wrap variant: soft-wrap long lines instead of horizontal scrolling.
-   The bare <pre> IS the root; the framed variant's body is the <pre>. */
+   The bare <pre> IS the root; the framed variant's body is the <pre>.
+   overflow-wrap breaks a token longer than the line (a URL, a hash),
+   which pre-wrap alone leaves running past the edge. */
 [data-cui-comp="ui-code-block"].fui-code-block--wrap,
 [data-cui-comp="ui-code-block"].fui-code-block--wrap .fui-code-block__body {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 `
 }

@@ -182,7 +182,7 @@ func TestToken_DisableTokenNoTokenInURL(t *testing.T) {
 	done := false
 	r := buildTestRunner(t, true, &done)
 	_ = r.Handler(func() {}, nil, nil)
-	url := r.SetupURL("localhost:8080")
+	url := r.SetupURL("http", "localhost:8080")
 	if strings.Contains(url, "token=") {
 		t.Fatalf("DisableToken must not include token in URL, got %s", url)
 	}
@@ -193,7 +193,7 @@ func TestToken_URLIncludesToken(t *testing.T) {
 	done := false
 	r := buildTestRunner(t, false, &done)
 	_ = r.Handler(func() {}, nil, nil)
-	url := r.SetupURL("localhost:8080")
+	url := r.SetupURL("http", "localhost:8080")
 	if !strings.Contains(url, "token="+r.token) {
 		t.Fatalf("expected token in URL, got %s", url)
 	}
@@ -319,7 +319,7 @@ func TestCookie_HTTPExchangeFlowWithJar(t *testing.T) {
 	done := false
 	r := buildTestRunner(t, false, &done)
 	h := r.Handler(func() {}, nil, nil)
-	tok := extractTokenFromURL(t, r.SetupURL("127.0.0.1:8080"))
+	tok := extractTokenFromURL(t, r.SetupURL("http", "127.0.0.1:8080"))
 
 	server := httptest.NewServer(h)
 	defer server.Close()
@@ -364,7 +364,7 @@ func TestToken_SingleUse_SecondExchangeForbidden(t *testing.T) {
 	done := false
 	r := buildTestRunner(t, false, &done)
 	h := r.Handler(func() {}, nil, nil)
-	tok := extractTokenFromURL(t, r.SetupURL("127.0.0.1:8080"))
+	tok := extractTokenFromURL(t, r.SetupURL("http", "127.0.0.1:8080"))
 
 	// First exchange succeeds.
 	w := doGet(h, "/setup?token="+tok)

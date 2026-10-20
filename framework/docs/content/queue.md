@@ -579,6 +579,11 @@ A handler panic is recovered and treated as an error; the job follows the
 normal retry path and the worker goroutine is respawned, so a poison
 message cannot drain the worker pool.
 
+Each handler call on `MemoryQueue` and `DBQueue` runs under an
+OpenTelemetry consumer span named `process <job type>`, carried by the
+handler's `ctx`. It is dropped unless the app installs a TracerProvider;
+see [observability](observability.md#spans-for-sql-jobs-and-outbound-calls).
+
 ## RedisClient interface
 
 `RedisQueue` accepts any client that implements `queue.RedisClient`:
