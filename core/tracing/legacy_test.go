@@ -2,6 +2,7 @@ package tracing
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"errors"
 	"testing"
@@ -12,7 +13,7 @@ type legacyConn struct{ calls int }
 
 func (c *legacyConn) Prepare(string) (driver.Stmt, error) { return &legacyStmt{c}, nil }
 func (c *legacyConn) Close() error                        { return nil }
-func (c *legacyConn) Begin() (driver.Tx, error)           { return nil, errors.New("unused") }
+func (c *legacyConn) Begin() (driver.Tx, error)           { return legacyTx{}, nil }
 func (c *legacyConn) Exec(string, []driver.Value) (driver.Result, error) {
 	c.calls++
 	return driver.RowsAffected(1), nil
@@ -21,6 +22,11 @@ func (c *legacyConn) Query(string, []driver.Value) (driver.Rows, error) {
 	c.calls++
 	return nil, nil
 }
+
+type legacyTx struct{}
+
+func (legacyTx) Commit() error   { return nil }
+func (legacyTx) Rollback() error { return nil }
 
 type legacyStmt struct{ c *legacyConn }
 
@@ -88,5 +94,22 @@ func TestColumnConverterForwarded(t *testing.T) {
 	}
 	if _, ok := conv.(driver.ColumnConverter); !ok {
 		t.Error("the statement's ColumnConverter was hidden")
+	}
+}
+
+// A legacy driver's Begin takes no options, so BeginTx refuses the ones it
+// would silently drop, and still opens a plain transaction.
+func TestLegacyDriverRejectsTxOptions(t *testing.T) {
+	c := &tracedConn{inner: &legacyConn{}}
+	for _, opts := range []driver.TxOptions{
+		{Isolation: driver.IsolationLevel(sql.LevelSerializable)},
+		{ReadOnly: true},
+	} {
+		if _, err := c.BeginTx(context.Background(), opts); err == nil {
+			t.Errorf("BeginTx(%+v) on a legacy driver succeeded", opts)
+		}
+	}
+	if _, err := c.BeginTx(context.Background(), driver.TxOptions{}); err != nil {
+		t.Errorf("BeginTx with default options: %v", err)
 	}
 }
