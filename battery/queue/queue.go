@@ -44,6 +44,15 @@ type Job struct {
 	// backends hold no erasable table.
 	UserID string `json:"user_id,omitempty"`
 
+	// UniqueKey, when set, makes the job unique among the live jobs of its
+	// Type: while one job with this Type and key is pending, claimed, or
+	// waiting on a retry, Enqueue refuses another with ErrDuplicateJob.
+	// The key is free again once that job succeeds or is dead-lettered.
+	// Use it for work where a second copy is wasted or harmful, such as a
+	// per-user digest or a reindex of one record. RedisQueue refuses it
+	// with ErrUniqueUnsupported.
+	UniqueKey string `json:"unique_key,omitempty"`
+
 	// Status, UpdatedAt and LastError are what a browsing backend
 	// (DBQueue's ListJobs) reports about a stored job: its state
 	// ("pending", "claimed", "failed", or "done" under
@@ -113,4 +122,14 @@ type Replayable interface {
 var (
 	ErrQueueClosed = errors.New("queue is closed")
 	ErrNoJob       = errors.New("no job available")
+
+	// ErrDuplicateJob is returned by Enqueue (and Replay) when a live job
+	// of the same Type already holds the job's UniqueKey. Nothing was
+	// enqueued; callers that only need the work to be queued can treat it
+	// as success.
+	ErrDuplicateJob = errors.New("queue: a job with this unique key is already queued")
+
+	// ErrUniqueUnsupported is returned by a backend that cannot hold a
+	// UniqueKey (RedisQueue). The job is not enqueued.
+	ErrUniqueUnsupported = errors.New("queue: this backend does not support unique keys")
 )

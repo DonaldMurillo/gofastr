@@ -32,6 +32,7 @@ func init() {
 			"status",
 			"claimed_at",
 			"user_id",
+			"unique_key",
 		},
 	})
 	// The erase-plane mirror. A job's payload routinely carries the very

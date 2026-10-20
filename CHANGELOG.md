@@ -8,6 +8,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Unique jobs.** A job with `Job.UniqueKey` set is refused with
+  `queue.ErrDuplicateJob` while another job of the same type holds the
+  key, and nothing is enqueued. The key is free again once that job
+  succeeds or is dead-lettered. `DBQueue` holds it with a partial unique
+  index, so it holds across replicas and does not abort the caller's
+  transaction; existing tables gain the `unique_key` column on start.
+  `Replay` of a dead job whose key a newer job holds returns
+  `ErrDuplicateJob`. `RedisQueue` refuses a keyed job with
+  `queue.ErrUniqueUnsupported`.
 - **`App.InTx` takes transaction options.** `framework.TxIsolation(level)`
   sets the isolation level and `framework.TxReadOnly()` makes writes
   fail. The SQLite driver ignores the read-only flag, so on SQLite the

@@ -16,6 +16,7 @@ replay, and pairs with a `Scheduler` for recurring jobs.
 | Worker loop built in | Yes | Yes | No (bring your own, or use `Start`) |
 | Auto-reclaim crashed workers | — | Yes (lease expiry in SQL) | Yes (visibility timeout + `Start`) |
 | Dead-letter capture | Yes (bounded, 1 000 jobs) | Yes (status `failed`) | Yes (Redis list) |
+| Unique jobs (`UniqueKey`) | Yes | Yes (partial unique index) | No (`ErrUniqueUnsupported`) |
 | `Browsable` | Yes | Yes | Yes (dead-letter only) |
 | `Replayable` | Yes | Yes | Yes |
 | Scheduler integration | Yes | Yes | Yes |
@@ -124,6 +125,7 @@ type Job struct {
     ScheduledAt time.Time       // auto-filled to now; set to delay execution
     ClaimToken  string          // minted by Dequeue; fences this claim's Ack/Nack
     UserID      string          // who the payload is about; makes the row erasable
+    UniqueKey   string          // at most one live job per (Type, UniqueKey); see Unique jobs
 }
 ```
 
@@ -149,6 +151,46 @@ every later export.
 Leave it empty for infrastructure work — cache warms, sweeps, index
 rebuilds — where there is no subject to erase. Only `DBQueue` persists
 it; the in-memory and Redis backends own no erasable table.
+## Unique jobs
+
+Set `Job.UniqueKey` when a second copy of a job is wasted or harmful: a
+per-user digest, a reindex of one record, a sync for one account. While
+a job with the same `Type` and key is live (pending, claimed, or waiting
+on a retry), `Enqueue` refuses another with `queue.ErrDuplicateJob` and
+enqueues nothing:
+
+```go
+err := q.Enqueue(ctx, queue.Job{
+    Type:      "digest",
+    UniqueKey: "user:" + userID,
+    Payload:   payload,
+})
+if err != nil && !errors.Is(err, queue.ErrDuplicateJob) {
+    return err
+}
+```
+
+The key is free again once the job succeeds or is dead-lettered, so the
+next `Enqueue` with that key goes through. A dead-lettered job keeps its
+key on the row, and `Replay` returns `ErrDuplicateJob` instead of
+reviving it while a newer job holds the key. An empty key never
+deduplicates, and the same key under two types is two keys.
+
+On `DBQueue` a partial unique index on `(type, unique_key)` over pending
+and claimed rows holds the key, so it holds across replicas and inside a
+transaction. A duplicate skips the insert with `ON CONFLICT DO NOTHING`
+instead of raising, which keeps the caller's Postgres transaction
+usable. Tables created before the column existed gain it, and the index,
+when `NewDBQueue` runs.
+
+`RedisQueue` returns `queue.ErrUniqueUnsupported` for a job with a key.
+`RedisClient` has no atomic set-if-absent to hold the key with, and a
+job enqueued without one would run as a duplicate.
+
+Uniqueness is about enqueueing. A job still runs at least once, and a
+handler that a lease expiry re-runs is the duplicate the at-least-once
+contract already covers.
+
 ## Lanes
 
 A **lane** is a capacity-reservation tag on a job (`Job.Lane`; empty string
@@ -251,7 +293,8 @@ if r, ok := q.(queue.Replayable); ok {
 ```
 
 `Replay` is idempotent: replaying an unknown ID or a non-failed job is a
-no-op (returns nil, no side effect).
+no-op (returns nil, no side effect). Replaying a job whose `UniqueKey` a
+newer live job holds returns `ErrDuplicateJob` and leaves it failed.
 
 ## Inspecting jobs (Browsable)
 
@@ -649,6 +692,8 @@ a zero-valued `Job`.
 ```go
 queue.ErrNoJob       // Dequeue: nothing ready right now
 queue.ErrQueueClosed // Enqueue: queue was already closed
+queue.ErrDuplicateJob // Enqueue, Replay: a live job of the same type holds the UniqueKey
+queue.ErrUniqueUnsupported // Enqueue: the backend cannot hold a UniqueKey (RedisQueue)
 queue.ErrRedisEmpty  // RedisClient.RPop: the list is empty (adapters MUST
                      // map their driver's nil-sentinel onto this)
 ```
