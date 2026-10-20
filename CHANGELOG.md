@@ -15,9 +15,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `custom.go`, the one file that is yours. `customCommands` there can
   replace `login` and `logout` too. A second run no longer needs
   `--force`. A `cli` entry in `gofastr.settings.yml` (keys `binary`,
-  `api_prefix`, `only`, `exclude`, `verbs`, `from_openapi`) makes plain
+  `api_prefix`, `from_openapi`, the lists `only` and `exclude`, and
+  `verbs`, one list or a map from entity to its list) makes plain
   `gofastr generate` and `gofastr build` rebuild the CLI; such a run
   rewrites only changed files and prints nothing when the CLI is current.
+  `gofastr generate cli` reads the same entry, flags winning key by key,
+  and a run no entry drove prints the entry to paste. The `main.gen.go`
+  header no longer repeats the flags.
   New `gofastr generate client` rebuilds `entities/client/client.go`, and
   `gofastr generate`, `gofastr build`, `--watch` and `generate app --add`
   run it whenever that file exists, so the client follows a new entity or
@@ -27,6 +31,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `custom.go` or another file of package `client`, then run the generator
   once with `--force`. `gofastr upgrade` lists both. See `gofastr docs
   app-cli` and `gofastr docs codegen`.
+- **BREAKING: the `sdk` entry in `gofastr.settings.yml` reads `only`,
+  `exclude` and `targets` as YAML lists.** A comma string such as
+  `only: posts,comments` is refused with the list spelling
+  (`only: [posts, comments]`); before, `targets` as a string was dropped
+  without a word. An unknown key or a value of the wrong type fails
+  `gofastr generate`, `gofastr build` and `gofastr generate sdk` with the
+  entry named, where it used to be ignored. `gofastr upgrade` finds the
+  comma strings. See `gofastr docs sdk`.
 
 ## [0.92.0] - 2026-10-19
 
