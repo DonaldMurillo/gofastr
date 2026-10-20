@@ -1801,12 +1801,17 @@ path: `WithAPIPrefix("/api")` mounts `{id}/publish` on entity `posts` at
 absolute path bypasses the prefix; use it to mount outside the entity's API
 namespace.
 
-Note the auth asymmetry: the HTTP `Handler` runs behind the route
-middleware chain, but the `MCPHandler` twin is invoked directly: no route
-middleware, so no per-caller auth of its own. **The twin therefore defaults
-to requiring an authenticated caller.** Declare something stricter with
-`MCPGate`, or opt out with `MCPPublic` for an endpoint that really is
-anonymous over HTTP too:
+**Both doors require a signed-in caller by default.** The HTTP route
+answers 401 when the request carries no user, sends
+`Cache-Control: no-store` on every response, and refuses a cross-site
+write that a plain HTML form could send (no `Content-Type`, urlencoded,
+multipart or `text/plain`) with 403. A JSON body from another origin
+passes; the browser's CORS preflight already stands in front of it. The
+`MCPHandler` twin is invoked directly, with no route middleware, so it
+carries the same default as its own gate: an authenticated caller.
+Declare something stricter for the twin with `MCPGate`, or set
+`Public: true` for an endpoint that really is anonymous; `Public` opens
+both doors:
 
 ```go
 entity.Endpoint{

@@ -1583,7 +1583,7 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 		}
 		path := groupEndpointPath(ent, endpoint)
 		if endpoint.Handler != nil {
-			g.Handle(method, path, endpoint.Handler)
+			g.Handle(method, path, endpointRoute(endpoint))
 		}
 		if endpoint.MCP {
 			if endpoint.MCPHandler == nil {
@@ -2550,7 +2550,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 		path := openapi.EntityEndpointRoutePath(ent, endpoint.Path, a.apiPrefix())
 		specPath := openapi.EntityEndpointPath(ent, endpoint.Path)
 		if endpoint.Handler != nil {
-			a.router.Handle(method, path, endpoint.Handler)
+			a.router.Handle(method, path, endpointRoute(endpoint))
 		}
 		if endpoint.MCP {
 			if endpoint.MCPHandler == nil {
@@ -2572,17 +2572,41 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 	return nil
 }
 
+// endpointRoute is an Endpoint's Handler behind the gates every endpoint
+// route carries, the ones the CRUD routes apply to their own: a forgeable
+// cross-site request answers 403 on every method but GET and HEAD, and an
+// anonymous caller answers 401 unless the endpoint is Public. Before this,
+// Handler ran with whatever the app's middleware chain happened to hold,
+// so an endpoint on an entity whose CRUD answered 401 served anyone.
+func endpointRoute(ep entity.Endpoint) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead &&
+			handler.IsForgeableRequest(r) && handler.IsCrossSiteRequest(r) {
+			handler.WriteError(w, handler.Errorf(http.StatusForbidden, "cross-site request refused"))
+			return
+		}
+		if !ep.Public {
+			w.Header().Set("Cache-Control", "no-store")
+			if _, ok := handler.GetUser(r.Context()); !ok {
+				handler.WriteError(w, handler.Errorf(http.StatusUnauthorized, "authentication required"))
+				return
+			}
+		}
+		ep.Handler.ServeHTTP(w, r)
+	})
+}
+
 // endpointMCPOptions returns the registration options for an Endpoint's MCP
 // twin. An Endpoint's two front doors do not get the same protection for
-// free: Handler inherits the route's middleware chain, MCPHandler is
-// registered straight onto the MCP server and sees none of it. So the twin
-// defaults to requiring an authenticated caller, and an endpoint that really
-// is anonymous says so with MCPPublic.
+// free: endpointRoute gates the HTTP route, MCPHandler is registered
+// straight onto the MCP server and sees none of it. So the twin defaults to
+// requiring an authenticated caller, and an endpoint that really is
+// anonymous says so with Public.
 func endpointMCPOptions(ep entity.Endpoint) []mcp.ToolOption {
 	switch {
 	case ep.MCPGate != nil:
 		return []mcp.ToolOption{mcp.WithToolGate(ep.MCPGate)}
-	case ep.MCPPublic:
+	case ep.Public:
 		return nil
 	default:
 		return []mcp.ToolOption{mcp.WithToolGate(MCPRequireUser())}

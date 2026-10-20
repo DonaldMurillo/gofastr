@@ -238,7 +238,9 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			if hasCustomEndpoints(ent) {
 				s.AddTag(tagName, entityName+" operations")
 			}
-			addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix)
+			if addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix) {
+				anyGated = true
+			}
 			continue
 		}
 
@@ -662,7 +664,9 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			addBulkPaths(s, path, entityName, schemaName, tagName, gated, errorRef)
 		}
 
-		addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix)
+		if addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix) {
+			anyGated = true
+		}
 	}
 
 	// When at least one entity is auth-gated, advertise how callers
@@ -912,8 +916,10 @@ func hasCustomEndpoints(ent *entity.Entity) bool {
 // addCustomEndpoints emits an entity's hand-written Endpoints. Split out
 // of the main loop because it runs on both sides of the auto-CRUD
 // opt-out: the router mounts these endpoints regardless of
-// Exposure.CRUD, so the spec advertises them regardless too.
-func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName, apiPrefix string) {
+// Exposure.CRUD, so the spec advertises them regardless too. It reports
+// whether any operation it emitted requires a caller.
+func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName, apiPrefix string) bool {
+	gated := false
 	for _, endpoint := range ent.Config.Endpoints {
 		if endpoint.Method == "" || endpoint.Path == "" {
 			continue
@@ -931,7 +937,15 @@ func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName
 		if len(endpoint.InputSchema) > 0 && endpoint.Method != "GET" && endpoint.Method != "HEAD" {
 			customOp.SetRequestBody("application/json", EndpointInputSchema(endpoint), true)
 		}
+		// The route answers 401 without a user unless the endpoint is
+		// Public (App.endpointRoute), so the operation says so.
+		if !endpoint.Public {
+			customOp.AddSecurity("bearerAuth", nil)
+			customOp.AddSecurity("cookieAuth", nil)
+			gated = true
+		}
 		customOp.AddResponse(200, "OK", EndpointOutputSchema(endpoint))
 		s.AddPath(endpoint.Method, EntityEndpointRoutePath(ent, endpoint.Path, apiPrefix), *customOp)
 	}
+	return gated
 }

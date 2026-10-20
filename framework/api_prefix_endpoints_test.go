@@ -70,8 +70,8 @@ func newPrefixEndpointApp(t *testing.T, prefix string) *App {
 	app.Entity("licenses", entity.EntityConfig{
 		Fields: []schema.Field{{Name: "name", Type: schema.String}},
 		Endpoints: []entity.Endpoint{
-			{Method: "POST", Path: "{id}/revoke", Name: "licenses_revoke", Handler: http.HandlerFunc(ok)},
-			{Method: "GET", Path: "/health/licenses", Name: "licenses_health", Handler: http.HandlerFunc(ok)},
+			{Method: "POST", Path: "{id}/revoke", Name: "licenses_revoke", Public: true, Handler: http.HandlerFunc(ok)},
+			{Method: "GET", Path: "/health/licenses", Name: "licenses_health", Public: true, Handler: http.HandlerFunc(ok)},
 		},
 	})
 	return app

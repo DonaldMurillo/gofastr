@@ -8,6 +8,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Changed
+- **BREAKING: `Endpoint` routes require a signed-in caller unless the
+  endpoint sets `Public`.** The HTTP route answers 401 with no user on the
+  request and sends `Cache-Control: no-store` when gated. Public or not,
+  it refuses with 403 a cross-site write a plain HTML form could send (no
+  `Content-Type`, urlencoded, multipart or `text/plain`). Before, an
+  endpoint's HTTP route had only the middleware the app put in front of
+  it, while its MCP twin already required a user. OpenAPI marks every
+  endpoint operation but a `Public` one with the security schemes.
+  `Endpoint.MCPPublic` is
+  renamed `Public` and now opens both doors. `gofastr upgrade` lists every
+  endpoint and each `MCPPublic`. See `gofastr docs entity-declarations`.
 - **BREAKING: the generated CLI and `entities/client` are rebuilt from
   `entities/`.** `gofastr generate cli` writes `*.gen.go` files that say
   DO NOT EDIT; every run rebuilds them, removes the ones the entities no

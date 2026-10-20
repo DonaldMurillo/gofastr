@@ -17,3 +17,17 @@ notes:
         - glob: "**/gofastr.settings.yml"
           match: '^\s+(only|exclude|targets|verbs):\s*[^\s\[#]'
     guidance: "A hit under an extension's config is that extension's own key; leave it. Under an sdk or cli entry, write each list as a YAML list: only: [posts, comments] instead of only: posts,comments. The refusal prints the list spelling for the value it read. See gofastr docs sdk and gofastr docs app-cli."
+  - change: "Endpoint routes answer 401 to a caller with no user unless the endpoint sets Public, send Cache-Control: no-store when gated, and refuse a form-shaped cross-site write with 403; before, an Endpoint's HTTP route had only the middleware the app put in front of it"
+    breaking: true
+    hits: review
+    find:
+      fields:
+        - field: gofastr/framework/entity.Endpoint.Handler
+    guidance: "An endpoint that anonymous callers must reach (a webhook receiver, a health probe, a public search) sets Public: true. One that already sat behind auth middleware needs nothing. A browser form that posted to an endpoint from another origin now gets 403; send JSON instead. See gofastr docs entity-declarations."
+  - change: "Endpoint.MCPPublic is renamed Public, and it opens the HTTP route as well as the MCP tool"
+    breaking: true
+    hits: edit
+    find:
+      fields:
+        - field: gofastr/framework/entity.Endpoint.MCPPublic
+    guidance: "Rename MCPPublic to Public. The endpoint's HTTP route then serves anonymous callers too, which an endpoint marked MCPPublic was meant to allow."

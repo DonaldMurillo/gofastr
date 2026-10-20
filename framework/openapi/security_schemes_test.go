@@ -152,13 +152,36 @@ func TestUngatedEntityHasNoSecurity(t *testing.T) {
 	}
 }
 
-// Custom (ent.Config.Endpoints) operations are not gated today and must not
-// gain a spurious security block.
-func TestCustomEndpointCarriesNoSecurity(t *testing.T) {
-	doc := EntityOpenAPI(reg(postsWithTypedEndpoint()), "Test", "1.0.0", nil).Build()
-	paths := getMap(t, doc, "paths")
-	op := getMap(t, getMap(t, paths, "/posts/{id}/publish"), "post")
+// A custom endpoint's route answers 401 without a user unless it is
+// Public, so its operation carries security exactly then, and the
+// schemes are registered for it.
+func TestCustomEndpointSecurityFollowsPublic(t *testing.T) {
+	ent := postsWithTypedEndpoint()
+	ent.Config.Exposure.Public = true // the CRUD side registers no schemes
+	doc := EntityOpenAPI(reg(ent), "Test", "1.0.0", nil).Build()
+	op := getMap(t, getMap(t, getMap(t, doc, "paths"), "/posts/{id}/publish"), "post")
+	if _, ok := op["security"]; !ok {
+		t.Error("a gated custom endpoint advertises anonymous access")
+	}
+	if _, ok := getMap(t, getMap(t, doc, "components"), "securitySchemes")["bearerAuth"]; !ok {
+		t.Error("a gated custom endpoint left the security schemes unregistered")
+	}
+
+	// An entity that opted out of auto-CRUD emits only its endpoints.
+	ent = postsWithTypedEndpoint()
+	noCRUD := false
+	ent.Config.Exposure.CRUD = &noCRUD
+	doc = EntityOpenAPI(reg(ent), "Test", "1.0.0", nil).Build()
+	if _, ok := getMap(t, getMap(t, doc, "components"), "securitySchemes")["bearerAuth"]; !ok {
+		t.Error("a gated endpoint on a CRUD-less entity left the security schemes unregistered")
+	}
+
+	ent = postsWithTypedEndpoint()
+	ent.Config.Exposure.Public = true
+	ent.Config.Endpoints[0].Public = true
+	doc = EntityOpenAPI(reg(ent), "Test", "1.0.0", nil).Build()
+	op = getMap(t, getMap(t, getMap(t, doc, "paths"), "/posts/{id}/publish"), "post")
 	if _, ok := op["security"]; ok {
-		t.Error("custom endpoint should not carry per-operation security")
+		t.Error("a Public custom endpoint carries security")
 	}
 }
