@@ -115,6 +115,7 @@ func TestAssetURLReadsStaticFS(t *testing.T) {
 }
 
 func TestReplacedFileNotCertified(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "0")
 	ds, _, dir := newAssetDirHost(t)
 	path := filepath.Join(dir, "logo.svg")
 	old, err := os.Open(path)
@@ -137,5 +138,18 @@ func TestReplacedFileNotCertified(t *testing.T) {
 	ds.markVersionedStatic(w, httptest.NewRequest("GET", newURL, nil), assetKey{rel: "logo.svg"}, old)
 	if got := w.Header().Get("Cache-Control"); got != "" {
 		t.Fatalf("old bytes served under the new hash with Cache-Control %q", got)
+	}
+
+	// The same request served from the new file is certified, so the
+	// refusal above came from the hash check, not an early return.
+	cur, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cur.Close()
+	w = httptest.NewRecorder()
+	ds.markVersionedStatic(w, httptest.NewRequest("GET", newURL, nil), assetKey{rel: "logo.svg"}, cur)
+	if got := w.Header().Get("Cache-Control"); !strings.Contains(got, "immutable") {
+		t.Fatalf("new bytes under the new hash: Cache-Control %q, want immutable", got)
 	}
 }

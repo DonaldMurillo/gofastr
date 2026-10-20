@@ -255,26 +255,38 @@ func TestTLSConfigRefused(t *testing.T) {
 	dir := t.TempDir()
 	certFile, keyFile := filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
 	testCert(t, 1, certFile, keyFile)
-	for name, cfg := range map[string]TLSConfig{
-		"nothing":            {},
-		"cert without key":   {CertFile: certFile},
-		"files and autocert": {CertFile: certFile, KeyFile: keyFile, AutoCert: &AutoCertConfig{Domains: []string{"example.com"}, CacheDir: dir}},
-		"files and config":   {CertFile: certFile, KeyFile: keyFile, Config: &tls.Config{}},
-		"autocert no domain": {AutoCert: &AutoCertConfig{CacheDir: dir}},
-		"autocert no cache":  {AutoCert: &AutoCertConfig{Domains: []string{"example.com"}}},
-		"config tls 1.0":     {Config: &tls.Config{MinVersion: tls.VersionTLS10}},
-		"missing cert file":  {CertFile: filepath.Join(dir, "nope.pem"), KeyFile: keyFile},
+	pair, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certs := []tls.Certificate{pair}
+	// Each case names the refusal it expects, so a case cannot pass on a
+	// different check that happens to run first.
+	for name, tc := range map[string]struct {
+		cfg  TLSConfig
+		want string
+	}{
+		"nothing":               {TLSConfig{}, "exactly one"},
+		"cert without key":      {TLSConfig{CertFile: certFile}, "both CertFile and KeyFile"},
+		"files and autocert":    {TLSConfig{CertFile: certFile, KeyFile: keyFile, AutoCert: &AutoCertConfig{Domains: []string{"example.com"}, CacheDir: dir}}, "exactly one"},
+		"files and config":      {TLSConfig{CertFile: certFile, KeyFile: keyFile, Config: &tls.Config{}}, "exactly one"},
+		"autocert no domain":    {TLSConfig{AutoCert: &AutoCertConfig{CacheDir: dir}}, "needs Domains"},
+		"autocert empty domain": {TLSConfig{AutoCert: &AutoCertConfig{Domains: []string{"example.com", ""}, CacheDir: dir}}, "empty domain"},
+		"autocert no cache":     {TLSConfig{AutoCert: &AutoCertConfig{Domains: []string{"example.com"}}}, "needs CacheDir"},
+		"config tls 1.0":        {TLSConfig{Config: &tls.Config{MinVersion: tls.VersionTLS10, Certificates: certs}}, "below TLS 1.2"},
+		"config no cert":        {TLSConfig{Config: &tls.Config{}}, "no certificate"},
+		"missing cert file":     {TLSConfig{CertFile: filepath.Join(dir, "nope.pem"), KeyFile: keyFile}, "TLS certificate"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			app := NewApp(WithTLS(cfg))
+			app := NewApp(WithTLS(tc.cfg))
 			app.startupOutput = io.Discard
 			app.Config.DisableSignalHandling = true
 			done := make(chan error, 1)
 			go func() { done <- app.Start("127.0.0.1:0") }()
 			select {
 			case err := <-done:
-				if err == nil || !strings.Contains(err.Error(), "TLS") {
-					t.Errorf("Start = %v, want a TLS config error", err)
+				if err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Errorf("Start = %v, want an error containing %q", err, tc.want)
 				}
 			case <-time.After(5 * time.Second):
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
