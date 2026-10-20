@@ -115,15 +115,16 @@ func checkPack(dir string, bp AppSpec) (packCheck, error) {
 }
 
 // untouchedNote says why an untouched marked file differs from what the
-// packed spec generates. Pack lost part of it, unless another release of
-// the generator wrote it: then the template may have changed instead.
+// packed spec generates. Pack lost part of it when this release wrote the
+// file; when another release wrote it, the template may have changed
+// instead. A dev build cannot tell, so the note says either may hold.
 func untouchedNote(version string) string {
 	current := markerVersion(cliVersion())
 	switch {
-	case isReleaseTag(version) && version != current:
-		return "untouched since gofastr " + version + " generated it; this gofastr (" + current + ") generates it differently from the packed spec: the template changed, or pack lost part of it"
-	case isReleaseTag(current):
+	case version == current && isReleaseTag(current):
 		return "untouched since it was generated, yet the packed spec generates it differently: pack lost part of it"
+	case isReleaseTag(version):
+		return "untouched since gofastr " + version + " generated it; this gofastr (" + current + ") generates it differently from the packed spec: the template changed, or pack lost part of it"
 	}
 	return "untouched since it was generated, yet the packed spec generates it differently: pack lost part of it, or the template changed since"
 }

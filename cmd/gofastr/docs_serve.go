@@ -194,10 +194,11 @@ func docsSiteTag(flagVersion string) (string, error) {
 var docsSiteInstalledVersion = installedFrameworkVersion
 
 // isReleaseTag reports whether v names a tag that can carry a release
-// archive: a pseudo-version (an untagged commit, `go install ...@main`) or
-// a version with build metadata (a `+dirty` local build) cannot.
+// archive: a pseudo-version (an untagged commit, `go install ...@main`), a
+// version with build metadata (a `+dirty` local build) or a word such as
+// the `dev` marker version cannot.
 func isReleaseTag(v string) bool {
-	return v != "" && !strings.Contains(v, "+") && !module.IsPseudoVersion(v)
+	return semver.IsValid(v) && !strings.Contains(v, "+") && !module.IsPseudoVersion(v)
 }
 
 // ensureDocsSite returns the extracted export for tag, downloading it on
