@@ -21,6 +21,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   stale URL keeps the old behavior, and `gofastr dev` still serves
   static files `no-store`. A path with no file behind it comes back
   unchanged.
+- **Email previews in the admin.** `admin.Config.EmailPreviews` lists
+  the app's mails, each with a `Render` func that builds it from sample
+  data. `/admin/emails` shows a tab per mail with its subject, text body
+  and HTML body; the HTML loads in a frame from `/admin/_email/<name>`,
+  served under a `sandbox` CSP with no scripts. A render error or panic
+  draws a generic notice and logs the error's type.
+- **`html.IFrame`.** An `<iframe>` with a required `Src` and `Title`,
+  sandboxed by default: an empty `Sandbox` applies every restriction, and
+  `Unsandboxed` is the named opt-out. `ExtraAttrs` cannot set `src`,
+  `srcdoc`, `sandbox` or `title`. An iframe inside `ui.AspectRatio`
+  now draws the kit's hairline border instead of the browser's inset one.
 
 ### Changed
 - **A nested `App.InTx` runs under a savepoint.** Called inside another
@@ -31,6 +42,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   savepoint is released and the writes commit with the outer owner.
   Events from CRUD writes inside a rolled-back savepoint are dropped.
   A savepoint whose release fails is rolled back too.
+
+### Fixed
+- **`ui.CodeBlock` with `Wrap` breaks long tokens.** A URL or hash longer
+  than the line ran past the block's edge; it now wraps.
 
 ## [0.92.0] - 2026-10-19
 
