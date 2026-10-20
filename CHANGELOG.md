@@ -23,15 +23,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   manifest records a sum per file for this. `gofastr verify` counts
   marked files by generator and version and warns about edited derived
   files. The checked-in `*.gen.go` style files carry the marker now.
+  An owned style sheet's marker is not style: `gofastr gen styles`
+  embeds and hashes the sheet without it, and GOFASTR1814 compares the
+  same bytes, so a sheet the app generator stamps stays current.
   See `gofastr docs codegen`.
 - **`gofastr pack` says what it could not recover.** After packing, it
   regenerates the app from the packed spec in memory and compares each
-  Go file at the app root and under `entities/` with the file on disk.
-  It lists hand-written files it left out of the spec, and every file
-  the spec generates differently, with the reason the provenance marker
-  gives (edited since generated, untouched but still different, no
-  marker) and the part of the spec the file carries. The notes go to
-  stderr when the spec goes to stdout.
+  Go file at the app root and directly under `entities/` with the file
+  on disk, ignoring CRLF line endings and a byte order mark. It lists
+  hand-written files it left out of the spec, files it could not read
+  (a symlink, no read permission), and every file the spec generates
+  differently or that is missing from the app, with the reason the
+  provenance marker gives (edited since generated, untouched but still
+  different, no marker) and the part of the spec the file carries. A
+  file an older gofastr release wrote is not blamed on pack alone. The
+  notes and pack's errors go to stderr when the spec goes to stdout.
 - **`gofastr unmount <package>` copies a gofastr package into the app;
   `gofastr remount <package>` goes back.** Unmount copies the package
   and the packages under it from the gofastr version go.mod requires

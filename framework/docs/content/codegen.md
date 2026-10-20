@@ -270,6 +270,9 @@ lines, below anything that has to come first:
 | `.sql` | `-- gofastr:generated …` |
 
 JSON, `go.sum` and other files with no comment syntax carry no marker.
+An owned style sheet's marker is left out of what `gofastr gen styles`
+embeds and of its `Source hash`, so stamping a sheet does not make its
+generated Go stale.
 
 Each generator reads the markers before it writes:
 

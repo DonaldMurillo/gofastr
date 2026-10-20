@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 
@@ -380,7 +381,9 @@ func checkStyleGenFreshness(p *contracts.Pass) []contracts.Diagnostic {
 			})
 			continue
 		}
-		if got, hasHash := generatedSourceHash(gen); !hasHash || got != ownstyle.SourceHash(string(css)) {
+		// A provenance marker on the sheet is not part of what the Go
+		// embeds: gen styles hashes the sheet without it.
+		if got, hasHash := generatedSourceHash(gen); !hasHash || got != ownstyle.SourceHash(codegen.StripMarker(f.Rel, string(css))) {
 			out = append(out, contracts.Diagnostic{
 				RuleID: contracts.RuleStaleStyleSource,
 				File:   f.Rel,

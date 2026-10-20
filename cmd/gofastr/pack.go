@@ -3478,8 +3478,9 @@ func runPack(args []string) {
 			info("(entities, app config, theme, screens, nav, seed). Lossy: not a round-trip")
 			info("inverse of `gofastr generate`; hand-written handlers/hooks/business logic")
 			info("are not recovered. See framework/ARCHITECTURE.md (\"pack is one-way\").")
-			info("Pack then regenerates from the packed spec and names every file it does")
-			info("not reproduce, and every hand-written file it left out.")
+			info("Pack then regenerates from the packed spec and checks the Go files at the")
+			info("app root and directly under entities/ (tests aside): it names each one it")
+			info("does not reproduce, could not read, or left out as hand-written.")
 			return
 		default:
 			if !strings.HasPrefix(args[i], "-") {
@@ -3487,17 +3488,24 @@ func runPack(args []string) {
 			}
 		}
 	}
+	// With no -o the YAML is stdout, so everything else goes to stderr.
+	toStderr := out == ""
 	bp, err := packAppSpec(dir)
 	if err != nil {
-		fail("pack: %v", err)
-		osExit(1)
+		packFail(toStderr, "pack: %v", err)
 		return
 	}
 	yml, err := encodeAppSpecYAML(bp)
 	if err != nil {
-		fail("pack: %v", err)
-		osExit(1)
+		packFail(toStderr, "pack: %v", err)
 		return
+	}
+	// The check regenerates from the packed spec and names every file it
+	// does not reproduce, so the loss is reported instead of silent.
+	if c, err := checkPack(dir, bp); err != nil {
+		packNote(toStderr, "pack: could not check the packed spec against %s: %v", dir, err)
+	} else {
+		reportPackCheck(c, toStderr)
 	}
 	// packReadDotEnv rehydrates JWT_SECRET / ADMIN_SEED_PASSWORD /
 	// DATABASE_URL from the app's .env so the packed app spec round-trips
@@ -3506,14 +3514,6 @@ func runPack(args []string) {
 	// TestAppSpecNeverInlinesSecrets pins, and unlike `.env`, an
 	// arbitrary `-o` path is not covered by the generated .gitignore. Warn
 	// loudly and write 0600 rather than 0644.
-	// The check regenerates from the packed spec and names every file it
-	// does not reproduce, so the loss is reported instead of silent.
-	toStderr := out == ""
-	if c, err := checkPack(dir, bp); err != nil {
-		packNote(toStderr, "pack: could not check the packed spec against %s: %v", dir, err)
-	} else {
-		reportPackCheck(c, toStderr)
-	}
 	if secretsInAppSpec(bp) {
 		packNote(toStderr, "pack: output contains secrets recovered from .env (jwt_secret, seed_password, db.url): do NOT commit it")
 	}

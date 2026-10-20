@@ -206,6 +206,17 @@ func ReadMarker(path, content string) (Marker, string, bool) {
 	return Marker{}, "", false
 }
 
+// StripMarker returns content without its marker line, or content as it
+// is when it carries none. A hash that should not change when a
+// generator stamps a file (the Source hash of an owned style sheet)
+// covers this.
+func StripMarker(path, content string) string {
+	if _, body, ok := ReadMarker(path, content); ok {
+		return body
+	}
+	return content
+}
+
 // Edited reports whether a marked file changed since it was generated.
 // ok is false when the file has no marker, so nothing can be said.
 func Edited(path, content string) (edited, ok bool) {
