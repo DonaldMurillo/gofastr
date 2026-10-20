@@ -43,6 +43,7 @@ myapp posts create --title "Hello" --views 3
 myapp posts create --json @post.json
 myapp posts patch 42 --published=false     # explicit zeros survive
 myapp posts update 42 --json '{"title":"Edited"}'
+myapp customers patch 42 --logo ./acme.png    # an Image or File field takes a path
 myapp posts batch-create --json @rows.json # atomic, up to 100
 myapp posts batch-delete id1 id2 id3
 myapp posts watch                          # live SSE feed, one JSON line/event
@@ -71,6 +72,14 @@ Per verb:
   the body (via `flag.FlagSet.Visit`), so `--published=false` really
   sends `false`. The payload is built as a raw map, never squeezed
   through a struct with `omitempty`.
+  An Image or File field gets a file flag that takes a path, or `-`
+  for stdin (one flag per run can read stdin). A set file flag sends
+  the write as multipart/form-data, every part named by its column. A
+  file over the server's 32 MiB per-file limit, or a request over its
+  64 MiB body limit, fails before anything is sent, and so does a
+  JSON field flag set to `null` beside a file. `--json` sends
+  JSON, which can carry the stored key of a file already uploaded but
+  never a new file.
 - **batch-create / batch-update**: `--json` with an array, sent
   through the atomic `_batch` routes; the `{committed, results[]}`
   envelope prints verbatim and a rollback exits 1.
@@ -274,8 +283,8 @@ move the edit into `custom.go`, then re-run once with `--force` to
 remove the old files. `--force` matters only for that one migration.
 
 Fields with `hidden: true` never appear; `read_only` fields appear as
-list filters but not as mutation flags. Image/file fields are excluded
-entirely. The generated client doesn't speak multipart yet. A field
+list filters but not as mutation flags. Writable image and file fields
+appear only as file flags on create, update and patch. A field
 whose name collides with a reserved flag (`sort`, `page`, `json`,
 `url`, …) fails generation with the entity and field named: rename the
 field or exclude the entity.
