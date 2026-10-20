@@ -7,6 +7,21 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.92.0] - 2026-10-19
+
+**BREAKING** for the CLI and project files. GoFastr has one concept for
+generated code, code generation, and `gofastr.yml` is the app spec it
+generates from. Every generator runs as `gofastr generate <name>`:
+`gofastr generate app [spec]` replaces `--from`. One
+`gofastr.settings.yml` replaces `gofastr.codegen.yml`,
+`gofastr.contracts.yml` and `gofastr.isolation.yml`, and an old file
+makes its reader refuse and name the section to move it to.
+`kiln/freeze.BlueprintYAML` is renamed `AppSpecYAML`. `gofastr upgrade`
+lists each change. v0.92.0 also stamps a provenance marker on generated
+files, makes `gofastr pack` name what it could not recover, and adds
+`gofastr unmount` and `gofastr remount` to copy a gofastr package into
+the app and back.
+
 ### Added
 - **Generated files say who made them and whether you edited them.**
   The built-in generators stamp a provenance marker at the top of each
