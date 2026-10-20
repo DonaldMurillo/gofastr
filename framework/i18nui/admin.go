@@ -232,6 +232,19 @@ const (
 	KeyAdminLeaseFailing   Key = "ui.admin.leaseFailing"   // "Lease failing"
 )
 
+// Email previews.
+const (
+	KeyAdminEmails         Key = "ui.admin.emails"         // "Emails"
+	KeyAdminEmailsSub      Key = "ui.admin.emailsSub"      // "Email templates rendered with sample data. Nothing is sent."
+	KeyAdminEmailTemplates Key = "ui.admin.emailTemplates" // "Email templates"
+	KeyAdminEmailSubject   Key = "ui.admin.emailSubject"   // "Subject"
+	KeyAdminEmailHTML      Key = "ui.admin.emailHTML"      // "HTML body"
+	KeyAdminEmailText      Key = "ui.admin.emailText"      // "Text body"
+	KeyAdminEmailNoHTML    Key = "ui.admin.emailNoHTML"    // "This template has no HTML body."
+	KeyAdminEmailNoText    Key = "ui.admin.emailNoText"    // "This template has no text body."
+	KeyAdminEmailFailed    Key = "ui.admin.emailFailed"    // "This template did not render with its sample data. Check the server logs for details."
+)
+
 var adminDefaults = map[Key]string{
 	KeyAdminTitle:              "Admin",
 	KeyAdminBrandSub:           "Back office",
@@ -419,4 +432,13 @@ var adminDefaults = map[Key]string{
 	KeyAdminServes503:          "Serves 503",
 	KeyAdminCircuitOpen:        "Circuit open",
 	KeyAdminLeaseFailing:       "Lease failing",
+	KeyAdminEmails:             "Emails",
+	KeyAdminEmailsSub:          "Email templates rendered with sample data. Nothing is sent.",
+	KeyAdminEmailTemplates:     "Email templates",
+	KeyAdminEmailSubject:       "Subject",
+	KeyAdminEmailHTML:          "HTML body",
+	KeyAdminEmailText:          "Text body",
+	KeyAdminEmailNoHTML:        "This template has no HTML body.",
+	KeyAdminEmailNoText:        "This template has no text body.",
+	KeyAdminEmailFailed:        "This template did not render with its sample data. Check the server logs for details.",
 }

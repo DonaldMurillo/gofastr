@@ -65,7 +65,14 @@ minted secret, not the URL token, so replaying the leaked value as a
 cookie does not work either. Lost the session? Restart the
 app: setup re-enters and a fresh token is printed.
 `Config.DisableToken` opts out for trusted networks; wizard POSTs are
-still origin-guarded either way.
+still origin-guarded either way. Under `framework.WithTLS` the setup URL
+is `https://`.
+
+A runner other than `battery/setup` implements `framework.SetupRunner`.
+Its `SetupURL(scheme, addr string) string` builds the banner's setup
+link: `scheme` is `"https"` when the app serves TLS and `"http"`
+otherwise, and `addr` is the bound listen address. It returns `""` when
+there is no link to print.
 
 When the final step succeeds, the serving handler swaps atomically to
 the real router, with no restart. Background consumers (cron, queues, the

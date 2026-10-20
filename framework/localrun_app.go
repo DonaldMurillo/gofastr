@@ -45,7 +45,7 @@ func (a *App) registerLocalRun(bound string) func() {
 	}
 	rec := localrun.Record{
 		Name:       a.Config.Name,
-		URL:        "http://" + net.JoinHostPort(host, port),
+		URL:        a.urlScheme() + "://" + net.JoinHostPort(host, port),
 		Service:    a.localRunInfo.Service,
 		MCPCommand: a.localRunInfo.MCPCommand,
 		Dev:        dev.Enabled() || a.localRunInfo.Dev,

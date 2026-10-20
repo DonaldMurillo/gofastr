@@ -144,6 +144,18 @@ type AppConfig struct {
 	// guide's "HTTP server timeouts" section.
 	HTTPServerTimeouts HTTPServerTimeoutsConfig
 
+	// TLS serves HTTPS on the listen address. Nil (the default) serves
+	// plain HTTP, the shape behind a proxy that terminates TLS. See
+	// [TLSConfig] and [WithTLS].
+	TLS *TLSConfig
+
+	// HTTPProtocols sets the HTTP versions the server speaks, passed to
+	// http.Server.Protocols. Nil keeps net/http's default: HTTP/1.1, plus
+	// HTTP/2 when TLS is on. SetUnencryptedHTTP2 turns on HTTP/2 without
+	// TLS (h2c with prior knowledge, no Upgrade), for a proxy that speaks
+	// h2c to the app. HTTP/3 is not offered. See [WithHTTPProtocols].
+	HTTPProtocols *http.Protocols
+
 	// SecurityHeaders configures the defensive HTTP response headers
 	// (Content-Security-Policy, Referrer-Policy, X-Frame-Options,
 	// Permissions-Policy, CORP, COOP, HSTS) emitted by the SecurityHeaders
@@ -519,6 +531,11 @@ type App struct {
 	// serverWrapped latches once Start has applied serverWrappers; a
 	// later WrapServer panics even after Shutdown clears a.server.
 	serverWrapped bool
+
+	// txDialectVal caches the DB's dialect for InTx's read-only path;
+	// txDialectMu guards it. Empty until a probe succeeds.
+	txDialectMu  sync.Mutex
+	txDialectVal migrate.Dialect
 }
 
 // servingHandler wraps an http.Handler so it can be stored in an
@@ -3687,17 +3704,29 @@ func (a *App) Start(addr string) error {
 			srv.WriteTimeout = 0
 		}
 	}
+	if p := a.Config.HTTPProtocols; p != nil {
+		protos := *p
+		srv.Protocols = &protos
+	}
+	tlsCfg, err := a.serverTLSConfig()
+	if err != nil {
+		a.serverMu.Unlock()
+		return abort(err)
+	}
+	srv.TLSConfig = tlsCfg
 	// A concurrent Shutdown may have run while the pre-listen phases
 	// were still executing (a host tearing down mid-boot, or a test that
 	// observed a seeded row before the server existed). It found no
 	// server to stop and drained what was started; adopting a server NOW
-	// would serve forever with nobody left to stop it. The cancelled
-	// lifecycle context is the durable record of that Shutdown — checked
-	// under the same lock Shutdown holds, so the window is closed, not
-	// narrowed. abort re-drains whatever started after that Shutdown's
-	// sweep (Shutdown is idempotent) and nil keeps the graceful-shutdown
-	// contract: Start reports no error when told to stop.
-	if a.appCtx != nil && a.appCtx.Err() != nil {
+	// would serve forever with nobody left to stop it. The record of that
+	// Shutdown is appCancel cleared beside a live appCtx (the context is
+	// never recreated), written under the lock checked here, so the window
+	// is closed, not narrowed. The cancelled context alone is not enough:
+	// Shutdown cancels it after unlocking. abort re-drains whatever started
+	// after that Shutdown's sweep (Shutdown is idempotent) and nil keeps
+	// the graceful-shutdown contract: Start reports no error when told to
+	// stop.
+	if a.appCtx != nil && (a.appCancel == nil || a.appCtx.Err() != nil) {
 		a.serverMu.Unlock()
 		return abort(nil)
 	}
@@ -3760,7 +3789,7 @@ func (a *App) Start(addr string) error {
 	defer a.registerLocalRun(ln.Addr().String())()
 
 	if setupInteractive {
-		setupURL = a.setup.SetupURL(ln.Addr().String())
+		setupURL = a.setup.SetupURL(a.urlScheme(), ln.Addr().String())
 	}
 	a.printStartupBanner(ln.Addr().String(), name, hasAPI, hasLLMMD, setupURL)
 	for _, fn := range a.readyHooks {
@@ -3768,7 +3797,13 @@ func (a *App) Start(addr string) error {
 			return abort(rerr)
 		}
 	}
-	if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
+	serve := srv.Serve
+	if srv.TLSConfig != nil {
+		// ServeTLS adds h2 to the offered protocols and wraps ln; the
+		// certificate comes from TLSConfig, so no files are named here.
+		serve = func(ln net.Listener) error { return srv.ServeTLS(ln, "", "") }
+	}
+	if err := serve(ln); err != nil && err != http.ErrServerClosed {
 		return abort(fmt.Errorf("listen and serve: %w", err))
 	}
 	return nil
@@ -3793,6 +3828,7 @@ func (a *App) runReadyHookSafe(fn func(addr string), addr string) (err error) {
 // boundAddr is the resolved listener address, so Start("127.0.0.1:0") prints
 // the actual port and a bind failure prints nothing.
 func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, setupURL string) {
+	base := a.urlScheme() + "://" + boundAddr
 	w := a.startupOutput
 	if w == nil {
 		w = os.Stdout
@@ -3802,18 +3838,18 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		// API routes here would advertise 404s.
 		fmt.Fprintf(w, "\n  %s %s worker ready\n", bold("GoFastr"), name)
 		fmt.Fprintf(w, "  %s PID: %d\n", arrow(), os.Getpid())
-		fmt.Fprintf(w, "  %s Health: http://%s/healthz http://%s/readyz\n", arrow(), boundAddr, boundAddr)
+		fmt.Fprintf(w, "  %s Health: %s/healthz %s/readyz\n", arrow(), base, base)
 		_, _ = fmt.Fprintln(w)
 		return
 	}
 	fmt.Fprintf(w, "\n  %s %s server ready\n", bold("GoFastr"), name)
 	fmt.Fprintf(w, "  %s PID: %d\n", arrow(), os.Getpid())
-	fmt.Fprintf(w, "  %s Listening: http://%s\n", arrow(), boundAddr)
+	fmt.Fprintf(w, "  %s Listening: %s\n", arrow(), base)
 	if setupURL != "" {
 		fmt.Fprintf(w, "  %s Setup: %s\n", arrow(), setupURL)
 	}
 	if a.Config.DebugEndpoints {
-		fmt.Fprintf(w, "  %s Stats: http://%s/.debug/stats\n", arrow(), boundAddr)
+		fmt.Fprintf(w, "  %s Stats: %s/.debug/stats\n", arrow(), base)
 	}
 
 	skipped, gated := 0, 0
@@ -3844,7 +3880,7 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		} else {
 			gated++
 		}
-		fmt.Fprintf(w, "  %s %-12s http://%s%s%s\n", arrow(), label, boundAddr, mountPath, gate)
+		fmt.Fprintf(w, "  %s %-12s %s%s%s\n", arrow(), label, base, mountPath, gate)
 	}
 	if skipped > 0 {
 		noun := "entities"
@@ -3866,10 +3902,10 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		if a.Config.PublicOpenAPI {
 			apiGate = ""
 		}
-		fmt.Fprintf(w, "  %s OpenAPI:     http://%s/openapi.json%s\n", arrow(), boundAddr, apiGate)
-		fmt.Fprintf(w, "  %s API docs:    http://%s/api/docs/%s\n", arrow(), boundAddr, apiGate)
+		fmt.Fprintf(w, "  %s OpenAPI:     %s/openapi.json%s\n", arrow(), base, apiGate)
+		fmt.Fprintf(w, "  %s API docs:    %s/api/docs/%s\n", arrow(), base, apiGate)
 		if hasLLMMD {
-			fmt.Fprintf(w, "  %s LLM Docs:    http://%s/api/llm.md%s\n", arrow(), boundAddr, apiGate)
+			fmt.Fprintf(w, "  %s LLM Docs:    %s/api/llm.md%s\n", arrow(), base, apiGate)
 		}
 	}
 
@@ -3891,7 +3927,7 @@ func (a *App) printStartupBanner(boundAddr, name string, hasAPI, hasLLMMD bool, 
 		if n := len(a.MCP.ListTools()); n > 0 {
 			mcpNote = fmt.Sprintf("  (%d tools, your app's permissions)", n)
 		}
-		fmt.Fprintf(w, "  %s MCP:         http://%s/mcp%s\n", arrow(), boundAddr, mcpNote)
+		fmt.Fprintf(w, "  %s MCP:         %s/mcp%s\n", arrow(), base, mcpNote)
 	}
 	_, _ = fmt.Fprintln(w)
 }

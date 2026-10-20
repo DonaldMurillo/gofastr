@@ -174,6 +174,19 @@ func (a *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 > layer up in [`framework/ui`](../../../framework/ui); see
 > [ui-composition-recipes](ui-composition-recipes.md).
 
+`html.IFrame` is sandboxed unless told otherwise. `Src` and `Title` are
+required, and the constructor panics without them. An empty `Sandbox`
+renders `sandbox=""`, which applies every restriction (no scripts, no
+forms, a unique origin); name the tokens to lift, such as
+`Sandbox: "allow-scripts"`, or set `Unsandboxed` for a frame of the
+app's own trusted pages. `Src` goes through the resource URL policy, so
+a `javascript:` or other refused URL renders the frame with no `src`.
+`ExtraAttrs` cannot set `src`, `srcdoc`, `sandbox` or `title`.
+
+```go
+html.IFrame(html.IFrameConfig{Src: "/admin/_email/welcome", Title: "Welcome email"})
+```
+
 Register it in `main.go`:
 
 ```go
