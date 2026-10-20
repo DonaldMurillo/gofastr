@@ -76,21 +76,17 @@ func clientHasMoves(decls []framework.EntityDeclaration) bool {
 // PostPatch is the patch payload, every field a pointer.
 func renderClient(decls []framework.EntityDeclaration) string {
 	var sb strings.Builder
-	sb.WriteString(`package client
-
-import (
-	"bufio"
-	"bytes"
-	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"strings"
-)
-
+	uploads := clientHasUploads(decls)
+	sb.WriteString("package client\n\nimport (\n\t\"bufio\"\n\t\"bytes\"\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"io\"\n")
+	if uploads {
+		sb.WriteString("\t\"mime/multipart\"\n")
+	}
+	sb.WriteString("\t\"net/http\"\n\t\"net/url\"\n")
+	if uploads {
+		sb.WriteString("\t\"sort\"\n")
+	}
+	sb.WriteString("\t\"strings\"\n)\n")
+	sb.WriteString(`
 // maxBodyBytes caps the bytes buffered from any one response body: the
 // 2xx JSON decode and the non-2xx error snapshot alike. A response bigger
 // than 1 MiB is a misbehaving or hostile endpoint, not a payload to read
@@ -147,19 +143,28 @@ func (e *APIError) Error() string {
 // pass through.
 func (c *Client) doJSON(ctx context.Context, method, path string, body, out any) error {
 	var reqBody io.Reader
+	contentType := ""
 	if body != nil {
 		buf, err := json.Marshal(body)
 		if err != nil {
 			return fmt.Errorf("marshal: %w", err)
 		}
 		reqBody = bytes.NewReader(buf)
+		contentType = "application/json"
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, reqBody)
+	return c.send(ctx, method, path, reqBody, contentType, out)
+}
+
+// send sends method+path with body (when non-nil) under contentType and
+// decodes the 2xx JSON response into out. Non-2xx returns an *APIError;
+// transport errors pass through.
+func (c *Client) send(ctx context.Context, method, path string, body io.Reader, contentType string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
 	if err != nil {
 		return err
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	req.Header.Set("Accept", "application/json")
 	if c.Token != "" {
@@ -203,6 +208,9 @@ func (c *Client) Do(ctx context.Context, method, path string, body, out any) err
 }
 
 `)
+	if uploads {
+		sb.WriteString(clientUploadHelpers())
+	}
 	if clientHasMoves(decls) {
 		sb.WriteString(`// moveBody is the empty JSON body every transition POST sends: a move
 // carries no payload, but its route requires the JSON content type (its
@@ -620,5 +628,6 @@ func (c *Client) %[1]s%[2]s(ctx context.Context, id string) (%[2]s, error) {
 		sb.WriteString(renderClientEndpoint(ep, route))
 	}
 
+	sb.WriteString(renderClientUploads(decl, route))
 	return sb.String()
 }
