@@ -257,6 +257,32 @@ func TestPackCheckNotesGoToStderr(t *testing.T) {
 	}
 }
 
+// The untouched note blames pack only when this release wrote the file.
+// A file another release or a dev build wrote may differ because the
+// template changed, and a dev build cannot rule that out either.
+func TestUntouchedNoteNamesTemplateDrift(t *testing.T) {
+	cases := []struct {
+		cli, file string
+		want      string
+		not       string
+	}{
+		{"v0.92.0", "v0.92.0", "pack lost part of it", "template"},
+		{"v0.92.0", "v0.91.0", "since gofastr v0.91.0 generated it; this gofastr (v0.92.0)", ""},
+		{"v0.92.0", "dev", "or the template changed since", "gofastr dev"},
+		{"dev", "dev", "or the template changed since", "gofastr dev"},
+		{"dev", "v0.91.0", "since gofastr v0.91.0 generated it; this gofastr (dev)", ""},
+	}
+	old := version
+	t.Cleanup(func() { version = old })
+	for _, tc := range cases {
+		version = tc.cli
+		got := untouchedNote(tc.file)
+		if !strings.Contains(got, tc.want) || (tc.not != "" && strings.Contains(got, tc.not)) {
+			t.Errorf("cli %s, file %s: %q; want %q and not %q", tc.cli, tc.file, got, tc.want, tc.not)
+		}
+	}
+}
+
 func mustOpenRoot(t *testing.T, dir string) *os.Root {
 	t.Helper()
 	root, err := os.OpenRoot(dir)
