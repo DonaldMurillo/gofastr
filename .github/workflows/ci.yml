@@ -139,6 +139,38 @@ jobs:
         if: github.event_name == 'pull_request'
         run: git fetch --no-tags --depth=1 origin "$GOFASTR_AFFECTED_BASE"
 
+      - name: Go module + build/test cache (per-SHA)
+        id: go-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          # Restored BEFORE Set up Go, here and in the two restore-only
+          # steps below. setup-go installs the go.mod `go` version, and its
+          # `go env` then downloads the `toolchain` version into the module
+          # cache as read-only files. A snapshot restored on top of them
+          # (it holds the same toolchain) fails tar on every one ("Cannot
+          # open: File exists", exit 2). Restored first, the toolchain comes
+          # from the snapshot and nothing is downloaded. An exclusion
+          # pattern cannot leave it out: actions/cache globs without
+          # descendants, so tar archives ~/go/pkg/mod whole. All three
+          # steps list the same paths, because the path list is part of
+          # the cache version and a drifted list never hits.
+          # TestGoCachePathsMatch holds the order and the paths.
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          # Keyed on the commit, and restore-keys hands the run the newest
+          # prior snapshot. That is what lets Go's content-addressed test
+          # cache skip every package whose sources + transitive deps are
+          # unchanged since the last run, which is most of a main push.
+          # Only main saves (the step at the end of this job): an entry is
+          # 2 GB or more, the repo's cache LRU holds 10 GB, main cannot
+          # read a pull request's entries, and PR saves were evicting
+          # main's, so main runs started cold. A pull request restores
+          # main's newest snapshot instead of its own previous push.
+          key: go-test-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            go-test-${{ runner.os }}-
+
       - name: Set up Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
@@ -149,26 +181,8 @@ jobs:
           # persisted, so the test step re-executed every package on every
           # run (observed: the v0.62.0 tag run re-ran 7.5 min of tests on a
           # SHA whose main-push twin was concurrently running the identical
-          # suite). The explicit per-SHA cache below replaces it.
+          # suite). The explicit per-SHA cache above replaces it.
           cache: false
-
-      - name: Go module + build/test cache (per-SHA)
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          # Keyed on the commit so every run SAVES a fresh snapshot (cache
-          # entries are immutable, an existing key is never updated), and
-          # restore-keys hands the next run the newest prior snapshot. That
-          # is what lets Go's content-addressed test cache skip every
-          # package whose sources + transitive deps are unchanged since the
-          # last run, the affected-tests mechanism the Test step's comment
-          # relies on. GOCACHE self-trims stale entries; GitHub's 10 GB
-          # per-repo LRU evicts old SHAs.
-          key: go-test-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            go-test-${{ runner.os }}-
 
       - name: Coverage manifest directory
         # One directory for the axe and semantic-coverage manifests, shared
@@ -184,8 +198,10 @@ jobs:
         # here, the way nx restores a cached task's outputs. Without them
         # gofastr verify reads a manifest missing every replayed package.
         # The manifests merge, so a record outlives a test that is later
-        # deleted; the coverage rules report at info.
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        # deleted; the coverage rules report at info. Saved from main only,
+        # with the test cache, so the two always come from one snapshot.
+        id: coverage-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/gofastr-coverage
           key: gofastr-coverage-${{ runner.os }}-${{ github.sha }}
@@ -467,6 +483,22 @@ jobs:
         run: |
           go run ./cmd/gofastr verify --no-vet --strict
 
+      - name: Save the Go cache (main only)
+        if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-test-${{ runner.os }}-${{ github.sha }}
+
+      - name: Save the coverage manifests (main only)
+        if: github.ref == 'refs/heads/main' && steps.coverage-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/gofastr-coverage
+          key: gofastr-coverage-${{ runner.os }}-${{ github.sha }}
+
   security:
     name: "vulncheck · secrets · mod-verify (blocking)"
     runs-on: ubuntu-latest
@@ -652,15 +684,6 @@ jobs:
         if: github.event_name == 'pull_request'
         run: git fetch --no-tags --depth=1 origin "$GOFASTR_AFFECTED_BASE"
 
-      - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version-file: go.mod
-          # See the test job: setup-go's go.sum-keyed cache goes stale
-          # between dependency bumps. This job restores the test job's
-          # per-SHA cache instead.
-          cache: false
-
       - name: Go module + build cache (restore only)
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
@@ -674,6 +697,15 @@ jobs:
           key: go-test-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
             go-test-${{ runner.os }}-
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          # See the test job: setup-go's go.sum-keyed cache goes stale
+          # between dependency bumps. This job restores the test job's
+          # per-SHA cache instead.
+          cache: false
 
       - name: Install Chrome
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
@@ -794,14 +826,9 @@ jobs:
           # rather than skipping when tags are absent.
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version-file: go.mod
-          cache: false
-
       - name: Go module + build cache (restore only)
-        # Reuses the per-SHA snapshot the `test` job writes. The fixtures
+        # Reuses the per-SHA snapshot the `test` job writes on main (on a
+        # pull request, main's newest snapshot). The fixtures
         # compile this repo's framework sources (the replace points at the
         # checkout), so the GOCACHE entries from `test`'s `go build ./...`
         # hit and the cold build is far smaller.
@@ -813,6 +840,12 @@ jobs:
           key: go-test-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
             go-test-${{ runner.os }}-
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: false
 
       - name: Run upgrade fixtures + negative proof
         env:

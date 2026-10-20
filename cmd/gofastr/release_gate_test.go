@@ -2,10 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -510,5 +512,65 @@ func TestWorkflowsHaveNoEmptyExpressions(t *testing.T) {
 					e.Name(), i+1, strings.TrimSpace(line))
 			}
 		}
+	}
+}
+
+// The Go cache's path list is part of its cache version, so a restore step
+// whose list drifts from the saving step's never hits, and nothing fails:
+// the job just runs cold. Every step on the go-test key lists the same
+// paths, and every restore runs before Set up Go: setup-go's `go env`
+// downloads the go.mod toolchain into the module cache as read-only files,
+// and a snapshot restored on top of them fails tar. Only main saves, since
+// pull request entries evict main's from the repo's 10 GB cache.
+func TestGoCachePathsMatch(t *testing.T) {
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Name string            `yaml:"name"`
+				If   string            `yaml:"if"`
+				Uses string            `yaml:"uses"`
+				With map[string]string `yaml:"with"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(workflowSource(t, "ci.yml")), &wf); err != nil {
+		t.Fatal(err)
+	}
+	var want, wantAt string
+	saves, restores := 0, 0
+	for _, job := range slices.Sorted(maps.Keys(wf.Jobs)) {
+		setupGo := false
+		for _, step := range wf.Jobs[job].Steps {
+			if strings.Contains(step.Uses, "actions/setup-go@") {
+				setupGo = true
+			}
+			if !strings.HasPrefix(step.With["key"], "go-test-") {
+				continue
+			}
+			at := job + ": " + step.Name
+			// actions/cache (no suffix) restores, and saves in its post step.
+			plain := strings.Contains(step.Uses, "actions/cache@")
+			if plain || strings.Contains(step.Uses, "actions/cache/save@") {
+				saves++
+				if !strings.Contains(step.If, "github.ref == 'refs/heads/main'") {
+					t.Errorf("%s saves outside main; pull request entries evict main's from the 10 GB cache", at)
+				}
+			}
+			if plain || strings.Contains(step.Uses, "actions/cache/restore@") {
+				restores++
+				if setupGo {
+					t.Errorf("%s restores after Set up Go; tar fails on the toolchain setup-go already downloaded", at)
+				}
+			}
+			got := step.With["path"]
+			if want == "" {
+				want, wantAt = got, at
+			} else if got != want {
+				t.Errorf("%s lists cache paths\n%s\nbut %s lists\n%s", at, got, wantAt, want)
+			}
+		}
+	}
+	if restores == 0 || saves != 1 {
+		t.Fatalf("want go-test cache restores and exactly one save, found %d restores and %d saves", restores, saves)
 	}
 }
