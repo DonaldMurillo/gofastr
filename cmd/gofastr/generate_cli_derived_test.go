@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -212,12 +213,12 @@ func TestSettingsCLIEmptyAPIPrefix(t *testing.T) {
 	dir := cliTempModule(t)
 	writeSettings(t, dir, "codegen:\n  generators:\n    - name: cli\n      config:\n        binary: shop\n        api_prefix: \"\"\n")
 	out := covT_capStdout(t, func() { generateProject(nil) })
-	cfg, err := os.ReadFile(filepath.Join(dir, "cmd", "shop", "config.gen.go"))
+	main, err := os.ReadFile(filepath.Join(dir, "cmd", "shop", "main.gen.go"))
 	if err != nil {
 		t.Fatalf("no CLI written:\n%s", out)
 	}
-	if strings.Contains(string(cfg), `"/api"`) {
-		t.Fatal("api_prefix \"\" still baked in /api")
+	if !regexp.MustCompile(`apiPrefix\s+= ""`).Match(main) {
+		t.Fatalf("api_prefix \"\" not baked in as an empty prefix:\n%s", main)
 	}
 }
 
