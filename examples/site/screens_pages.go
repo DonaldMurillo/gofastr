@@ -175,10 +175,10 @@ func gsBody() render.HTML {
 	)
 
 	step2 := step(2, "~45s",
-		p(t("Scaffold a new project. It writes main.go, a sample posts entity in entities/entities.go, a home screen in screens.go at the root, sign-in screens in screens_auth.go, a versioned migration, DESIGN.md, gofastr.isolation.yml, and the agent onboarding files (AGENTS.md + .agents/, CLAUDE.md), then initializes git.")),
+		p(t("Scaffold a new project. It writes main.go, a sample posts entity in entities/entities.go, a home screen in screens.go at the root, sign-in screens in screens_auth.go, a versioned migration, DESIGN.md, gofastr.settings.yml, and the agent onboarding files (AGENTS.md + .agents/, CLAUDE.md), then initializes git.")),
 		termBlock("$ scaffold",
 			render.Text("$ gofastr init blog\n"),
-			ok("✓ Created project blog in ./blog/: main.go, screens.go, screens_auth.go, entities/entities.go, gofastr.isolation.yml, DESIGN.md, CLAUDE.md, AGENTS.md\n"),
+			ok("✓ Created project blog in ./blog/: main.go, screens.go, screens_auth.go, entities/entities.go, gofastr.settings.yml, DESIGN.md, CLAUDE.md, AGENTS.md\n"),
 			ok("→ next: cd blog && go mod tidy && gofastr dev\n"),
 		),
 		p(t("Open the scaffolded "), codeText("main.go"), t(". It's short, it's yours, and every registration in it is plain Go. Read it.")),

@@ -32,7 +32,7 @@ func runBuild(args []string) {
 		osExit(1)
 	}
 
-	// Step 1: run the codegen extension protocol when a gofastr.codegen.yml
+	// Step 1: run the codegen extension protocol when a gofastr.settings.yml
 	// is present. App generation (gofastr generate app) is an
 	// explicit, separate step: `gofastr build` does not guess an app spec.
 	if !opts.noGenerate {

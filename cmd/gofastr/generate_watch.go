@@ -20,7 +20,7 @@ import (
 //
 // Usage:
 //
-//	gofastr generate --watch [--config=gofastr.codegen.yml] [--out=...]
+//	gofastr generate --watch [--config=gofastr.settings.yml] [--out=...]
 //
 // Stop with Ctrl-C.
 func runGenerateWatch(args []string) {
@@ -125,7 +125,7 @@ func hashGenerateInputs(options generateOptions) string {
 				hashFileInto(h, projectRelativePath(projectDir, ext.Command[0]))
 			}
 		}
-		// A gofastr.codegen.yml extension generator may still feed itself a
+		// A gofastr.settings.yml extension generator may still feed itself a
 		// json_file/json_dir source via the general codegen framework; hash
 		// those inputs so --watch reacts to them.
 		for _, gen := range discovery.Config.Codegen.Generators {

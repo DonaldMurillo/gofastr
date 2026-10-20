@@ -75,7 +75,7 @@ func (s sdkSpec) Header() string {
 
 // sdkCommentSafe makes a value inert inside every comment syntax the SDK
 // emitters use. `name` and `sdk_version` come from --name/--sdk-version or from
-// the project's own gofastr.codegen.yml (applySDKConfigDefaults), the same
+// the project's own gofastr.settings.yml (applySDKConfigDefaults), the same
 // provenance the codegen exec gate already treats as potentially hostile,
 // because a config committed to a repo you cloned is not a config you wrote.
 //
@@ -311,7 +311,7 @@ func parseSDKOptions(args []string) (sdkOptions, error) {
 
 // applySDKConfigDefaults fills unset options from a discovered codegen
 // config's generator entry named "sdk" (flags always win), so projects can
-// pin their SDK settings in gofastr.codegen.yml:
+// pin their SDK settings in gofastr.settings.yml:
 //
 //	codegen:
 //	  generators:
@@ -440,7 +440,7 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *sdkOptions) (sdkSpe
 		apiPrefix = "/" + apiPrefix
 	}
 
-	// App is config-provenance (--name / gofastr.codegen.yml, the same
+	// App is config-provenance (--name / gofastr.settings.yml, the same
 	// provenance the exec gate and sdkCommentSafe treat as hostile) and
 	// lands raw in both READMEs' H1/prose and (as the -sdk directory) in
 	// the install fence. Scrub it once here; renderSDKGoReadme applies
@@ -752,7 +752,7 @@ func cliFieldAcceptsGte(f cliField) bool {
 }
 
 // sdkGenerator adapts `generate sdk` to the codegen registry so a generator
-// entry named "sdk" in gofastr.codegen.yml also runs under
+// entry named "sdk" in gofastr.settings.yml also runs under
 // `gofastr generate --config` (the runner errors on unregistered names).
 type sdkGenerator struct{}
 

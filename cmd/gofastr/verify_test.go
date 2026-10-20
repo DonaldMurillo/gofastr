@@ -269,8 +269,8 @@ func TestVerifyListCoversEveryRule(t *testing.T) {
 
 func TestVerifyBadConfigExitsTwo(t *testing.T) {
 	dir := writeModule(t, map[string]string{
-		"main.go":               "package main\n\nfunc main() {}\n",
-		"gofastr.contracts.yml": "contracts:\n  rules:\n    GOFASTR9999: off\n",
+		"main.go":              "package main\n\nfunc main() {}\n",
+		"gofastr.settings.yml": "contracts:\n  rules:\n    GOFASTR9999: off\n",
 	})
 	out, code := captureVerify(t, []string{"--root", dir, "--no-vet"})
 	if code != 2 {
@@ -502,8 +502,8 @@ func TestVerifyBaselineWriteRejectsNarrowedRuns(t *testing.T) {
 // `{"error": "..."}`, still exit 2.
 func TestVerifyJSONFailurePathsStayParseable(t *testing.T) {
 	dir := writeModule(t, map[string]string{
-		"main.go":               "package main\n\nfunc main() {}\n",
-		"gofastr.contracts.yml": "rules:\n  - this is not\n   valid: yaml: at all\n",
+		"main.go":              "package main\n\nfunc main() {}\n",
+		"gofastr.settings.yml": "rules:\n  - this is not\n   valid: yaml: at all\n",
 	})
 	out, code := captureVerify(t, []string{"--root", dir, "--no-vet", "--json"})
 	if code != 2 {
@@ -698,7 +698,7 @@ func TestVerifyWithoutABaselineIsNotNagged(t *testing.T) {
 
 // TestAuditLintPointsAtVerify pins the pointer between the two overlapping
 // commands. `audit lint` predates the contract system and knows nothing
-// about gofastr.contracts.yml or //gofastr:allow, so it reports findings
+// about gofastr.settings.yml or //gofastr:allow, so it reports findings
 // verify deliberately exempts. A project running both gets two answers
 // to the same question, and nothing said which one is authoritative.
 func TestAuditLintPointsAtVerify(t *testing.T) {
@@ -742,7 +742,7 @@ func f(db *sql.DB, id string) {
 	if !strings.Contains(out, "gofastr verify") {
 		t.Errorf("audit lint does not point at its replacement:\n%s", out)
 	}
-	if !strings.Contains(out, "gofastr.contracts.yml") {
+	if !strings.Contains(out, "gofastr.settings.yml") {
 		t.Errorf("audit lint does not say WHY verify is authoritative (it honours config):\n%s", out)
 	}
 	// The findings must still print. This is a pointer, not a removal.

@@ -15,7 +15,7 @@ import (
 //     /docs/api/sdk/client.js): a declaration name cannot be quoted the
 //     way object keys can, so the table-derived property must BE a plain
 //     JS identifier before it reaches the slot.
-//   - config-provenance strings (gofastr.codegen.yml / --name) in the
+//   - config-provenance strings (gofastr.settings.yml / --name) in the
 //     generated READMEs: the markdown must not gain lines, fences, or
 //     fence content from the name.
 

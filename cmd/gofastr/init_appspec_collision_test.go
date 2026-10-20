@@ -18,15 +18,15 @@ func TestInitDoesNotCollideWithAppSpecFilename(t *testing.T) {
 	covT_chdir(t, dir)
 	covT_capStdout(t, func() { runInit([]string{"myapp"}) })
 
-	isoPath := filepath.Join(dir, "myapp", "gofastr.isolation.yml")
+	settingsPath := filepath.Join(dir, "myapp", "gofastr.settings.yml")
 	bpPath := filepath.Join(dir, "myapp", "gofastr.yml")
 
 	if _, err := os.Stat(bpPath); err == nil {
 		t.Fatalf("init wrote gofastr.yml — that filename belongs to the app spec; " +
 			"`gofastr validate gofastr.yml` then fails with unknown key \"version\"")
 	}
-	if _, err := os.Stat(isoPath); err != nil {
-		t.Fatalf("init did not write gofastr.isolation.yml: %v", err)
+	if _, err := os.Stat(settingsPath); err != nil {
+		t.Fatalf("init did not write gofastr.settings.yml: %v", err)
 	}
 
 	// A user-authored app spec at gofastr.yml must validate cleanly once init

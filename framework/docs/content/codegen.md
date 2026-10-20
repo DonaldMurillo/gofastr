@@ -31,13 +31,12 @@ is an error: a build would re-run it on code you own.
 
 ## Config discovery
 
-`gofastr generate` resolves configuration in this order:
+The codegen config is the `codegen:` section of
+[`gofastr.settings.yml`](settings.md). `gofastr generate` reads it from:
 
-1. `--config=<path>` when supplied.
-2. `gofastr.codegen.yml`
-3. `gofastr.codegen.yaml`
-4. `gofastr.yml` / `gofastr.yaml` only when the file has a top-level `codegen:`
-   section.
+1. `--config=<path>` when supplied: a settings file.
+2. Otherwise `gofastr.settings.yml`, looked up from the current directory to
+   the project root.
 
 With no codegen config, `gofastr generate` has nothing to generate and exits
 with guidance. To generate an app, run `gofastr generate app gofastr.yml`.
@@ -53,6 +52,7 @@ Any other argument is an error.
 ## Config shape
 
 ```yaml
+# gofastr.settings.yml
 version: 1
 codegen:
   output: gen
@@ -123,7 +123,7 @@ External extensions let projects add arbitrary code generation without linking
 that code into the `gofastr` CLI.
 
 A command extension is an arbitrary binary named by whichever
-`gofastr.codegen.yml` is in the project, so it runs with a deliberately narrow
+`gofastr.settings.yml` is in the project, so it runs with a deliberately narrow
 contract:
 
 - **The environment is an allowlist, not an inheritance.** The child gets what a
@@ -295,7 +295,7 @@ Generated files: derived styles: 4, scaffold app v0.92.0: 31; 6 scaffold file(s)
 
 ## Common mistakes
 
-- Using `--config=/path/to/gofastr.codegen.yml` and expecting sources to be
+- Using `--config=/path/to/gofastr.settings.yml` and expecting sources to be
   relative to the shell directory. Config paths define the project root.
 - Pointing `--out` at `.` or `..`. Codegen refuses to write or clean outside a
   project subdirectory.

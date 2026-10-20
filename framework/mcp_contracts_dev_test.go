@@ -320,8 +320,8 @@ func TestContractsVerifyCarriesAnalyzerErrors(t *testing.T) {
 
 func TestContractsVerifyReportsABrokenConfig(t *testing.T) {
 	writeTreeAndChdir(t, map[string]string{
-		"main.go":               "package main\n\nfunc main() {}\n",
-		"gofastr.contracts.yml": "rules:\n  - this is not\n   valid: yaml: at all\n",
+		"main.go":              "package main\n\nfunc main() {}\n",
+		"gofastr.settings.yml": "rules:\n  - this is not\n   valid: yaml: at all\n",
 	})
 	app := NewApp()
 	if _, err := app.toolContractsVerify(context.Background(), map[string]any{}); err == nil {

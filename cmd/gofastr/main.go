@@ -151,7 +151,7 @@ func printHelp() {
   verify [capability]   Check the app against the GoFastr contract: routing, permissions,
                         security, data, entities, architecture, rendering, accessibility,
                         performance, testing, ai. Strict by default; relax in
-                        gofastr.contracts.yml or waive a line with //gofastr:allow(RULE).
+                        gofastr.settings.yml or waive a line with //gofastr:allow(RULE).
                         --list catalog · --explain <rule> · --json · --sarif <file> · --fix
   audit <sub>           Inspect the project for security- and accessibility-relevant patterns
                         deps  list packages that perform init-time global registrations
@@ -174,7 +174,7 @@ func printHelp() {
   gofastr init myapp --no-entity
   gofastr validate gofastr.yml
   gofastr generate app gofastr.yml --dry-run
-  gofastr generate --config=gofastr.codegen.yml
+  gofastr generate --config=gofastr.settings.yml
   gofastr theme init
   gofastr build
   gofastr dev

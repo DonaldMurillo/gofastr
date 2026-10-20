@@ -50,7 +50,7 @@ func runGenerate(args []string) {
 	case "all":
 		generateProject(args[1:])
 	case "ts", "typescript":
-		fail("TypeScript codegen has been removed. Use `gofastr generate sdk` for the typed JS/TS client, or gofastr.codegen.yml with a project extension for custom frontend artifacts.")
+		fail("TypeScript codegen has been removed. Use `gofastr generate sdk` for the typed JS/TS client, or gofastr.settings.yml with a project extension for custom frontend artifacts.")
 		info("See framework/docs/content/sdk.md and codegen.md.")
 		osExit(1)
 	default:
@@ -64,7 +64,7 @@ func printGenerateHelp() {
 	fmt.Print(`gofastr generate: run code generators
 
 Usage:
-  gofastr generate [--config=<gofastr.codegen.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch]
+  gofastr generate [--config=<gofastr.settings.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch]
       Run the derived generators and extensions listed in the codegen
       config (gofastr build does this too)
   gofastr generate <generator> [args]
@@ -225,8 +225,8 @@ func parseScaffoldArgs(args []string, kind string) (name string, opts generateOp
 }
 
 // generateProject is plain `gofastr generate`: it runs the derived
-// generators and extensions the codegen config lists (gofastr.codegen.yml,
-// or a `codegen:` section). `gofastr build` calls it on every build, which
+// generators and extensions the `codegen:` section of gofastr.settings.yml
+// lists. `gofastr build` calls it on every build, which
 // is why the config may not list a scaffold generator (see
 // checkConfigGenerators). Generating an app from an app spec is the
 // explicit `gofastr generate app`, never discovered: a project may hold a
@@ -235,7 +235,7 @@ func generateProject(args []string) {
 	options, err := parseGenerateOptions(args)
 	if err != nil {
 		fail("%v", err)
-		info("Usage: gofastr generate [--config=<gofastr.codegen.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch], or gofastr generate <generator>. See `gofastr generate --help`.")
+		info("Usage: gofastr generate [--config=<gofastr.settings.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch], or gofastr generate <generator>. See `gofastr generate --help`.")
 		osExit(1)
 		return
 	}
@@ -253,7 +253,7 @@ func generateProject(args []string) {
 		return
 	}
 	fail("Nothing to generate: no codegen config found.")
-	info("Derived generators (%s) run from gofastr.codegen.yml. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
+	info("Derived generators (%s) run from gofastr.settings.yml. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
 	osExit(1)
 }
 

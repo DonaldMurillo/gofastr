@@ -10,8 +10,8 @@ import "fmt"
 func printBuildUsage() {
 	fmt.Println(`Usage: gofastr build [--no-a11y] [--no-embed-check] [--allow-unverified-embeds] [--pkg=<path>] [-o=<output>]
 
-Runs the project-root codegen extension protocol (if gofastr.codegen.yml is
-present), go vet, the static accessibility + .ui.go hydration-sandbox lints,
+Runs the project-root codegen extension protocol (if gofastr.settings.yml has
+a codegen: section), go vet, the static accessibility + .ui.go hydration-sandbox lints,
 the embed-surface server-action gate, then go build.
 
 --no-a11y                 skip the accessibility gate (the .ui.go sandbox gate still runs)

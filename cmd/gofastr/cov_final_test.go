@@ -102,7 +102,7 @@ func TestRunBuildWithCodegenConfig(t *testing.T) {
 	}
 	// A discovered config triggers the discovery.Found branch in runBuild.
 	cfg := "version: 1\ncodegen:\n  output: .gen\n  generators:\n    - name: go/entities\n      source:\n        type: json_dir\n        path: entities\n"
-	if err := os.WriteFile(filepath.Join(dir, "gofastr.codegen.yml"), []byte(cfg), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "gofastr.settings.yml"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out := covT_capStdout(t, func() {

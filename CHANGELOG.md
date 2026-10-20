@@ -64,6 +64,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   generators. Plain `gofastr generate` refuses arguments it does not
   know, where it used to drop them, and `--watch` no longer watches an
   app spec. `gofastr generate --help` lists the generators by kind.
+- **BREAKING: one settings file, `gofastr.settings.yml`, replaces
+  `gofastr.codegen.yml`, `gofastr.contracts.yml` and
+  `gofastr.isolation.yml`.** It sits at the project root with one
+  top-level section per reader: `codegen`, `contracts`, `isolation`.
+  Each reader looks for it from its start directory up to the project
+  root (`go.work`, `go.mod` or `.git`) and never past it. The app spec no
+  longer carries these sections: a `codegen:`, `contracts:` or
+  `isolation:` key in `gofastr.yml` is an error that names the settings
+  file. An old file found where a reader looks makes that reader refuse
+  and name the section to move it to, so a relaxation or a disabled
+  setting never drops away unnoticed. `gofastr generate --config` and
+  `gofastr verify --config` take a settings file, and `gofastr init`
+  writes `gofastr.settings.yml`. `gofastr upgrade` reports each old file.
+  `codegen.HasCodegenSection` and `contracts.ConfigFileNames` are gone;
+  `core/settings` (`settings.Find`, `File.Section`) reads the file.
+  See `gofastr docs settings`.
 
 ### Fixed
 - **`gofastr validate` no longer fetches webfonts.** It rendered the app

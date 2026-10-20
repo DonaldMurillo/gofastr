@@ -38,7 +38,7 @@ func TestWriteMainGoWriteFailureExits(t *testing.T) {
 
 func TestWriteIsolationConfigWriteFailureExits(t *testing.T) {
 	code := covT_capExit(t, func() {
-		covT_capStdout(t, func() { writeIsolationConfig(covT_missingDir(t), "sqlite") })
+		covT_capStdout(t, func() { writeSettingsFile(covT_missingDir(t), "sqlite") })
 	})
 	if code != 1 {
 		t.Fatalf("want 1 got %d", code)

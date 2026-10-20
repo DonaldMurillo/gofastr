@@ -31,6 +31,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
@@ -430,7 +431,7 @@ func decodeAppSpec(node *coreyaml.Node) (AppSpec, error) {
 	if err != nil {
 		return AppSpec{}, err
 	}
-	allowed := map[string]bool{"app": true, "entities": true, "screens": true, "nav": true, "seed": true, "endpoints": true, "hooks": true, "middleware": true, "plugins": true, "helpers": true, "isolation": true}
+	allowed := map[string]bool{"app": true, "entities": true, "screens": true, "nav": true, "seed": true, "endpoints": true, "hooks": true, "middleware": true, "plugins": true, "helpers": true}
 	if err := rejectUnknownKeys(m, allowed, "app spec"); err != nil {
 		return AppSpec{}, err
 	}
@@ -8985,7 +8986,6 @@ var appLevelKeys = map[string]bool{
 var topLevelKeys = map[string]bool{
 	"entities": true, "screens": true, "nav": true, "seed": true,
 	"endpoints": true, "middleware": true, "plugins": true, "helpers": true,
-	"isolation": true,
 }
 
 // unknownKeyLocationHint names the correct nesting for a known key found
@@ -8993,6 +8993,9 @@ var topLevelKeys = map[string]bool{
 func unknownKeyLocationHint(key, label string) string {
 	switch label {
 	case "app spec":
+		if settings.IsSection(key) {
+			return fmt.Sprintf("%s is project configuration, not part of the app: move it under \"%s:\" in %s", key, key, settings.FileName)
+		}
 		if appLevelKeys[key] {
 			return fmt.Sprintf("did you mean \"app.%s:\"? %s is an app-level setting and has no effect at the app spec root", key, key)
 		}

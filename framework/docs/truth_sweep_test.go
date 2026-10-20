@@ -175,16 +175,16 @@ func TestQueueDocDocumentsTheEmptySentinel(t *testing.T) {
 	}
 }
 
-// isolation.md told you to configure isolation in gofastr.yml. The file was
-// renamed to gofastr.isolation.yml, which WINS the discovery order, so
-// following the doc silently configured nothing.
+// isolation.md once told you to configure isolation in a file the
+// resolver no longer read, so following the doc silently configured
+// nothing. Isolation is the isolation section of gofastr.settings.yml now.
 func TestIsolationDocNamesTheRealConfigFile(t *testing.T) {
 	doc := readDoc(t, "isolation.md")
-	if strings.Contains(doc, "configured in `gofastr.yml`") {
-		t.Error("isolation.md still points at gofastr.yml; gofastr.isolation.yml wins the discovery order")
+	if !strings.Contains(doc, "`gofastr.settings.yml`") {
+		t.Error("isolation.md does not name gofastr.settings.yml, the file isolation is read from")
 	}
-	if !strings.Contains(readRepo(t, "framework/isolation/isolation.go"), "gofastr.isolation.yml") {
-		t.Error("the isolation config filename changed again — update isolation.md with it")
+	if !strings.Contains(readRepo(t, "core/settings/settings.go"), `FileName = "gofastr.settings.yml"`) {
+		t.Error("the settings filename changed: update isolation.md with it")
 	}
 }
 

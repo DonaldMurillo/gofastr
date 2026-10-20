@@ -164,6 +164,8 @@ results, the harness contract) are exempt. The exemption list lives in
 
 ## Operations
 
+- [Project settings](settings.md): `gofastr.settings.yml`, the one file
+  that holds codegen, contracts and isolation configuration.
 - [Worktree isolation](isolation.md): automatic local port, DB, and
   service-env isolation for linked Git worktrees.
 - [Migrations](migrations.md): SQL files, CLI subcommands,

@@ -143,7 +143,7 @@ func (a *App) toolContractsList(_ context.Context, params map[string]any) (any, 
 		"count": len(out),
 		"rules": out,
 		"note": "Strict by default: every rule is enforced at its declared severity unless " +
-			"gofastr.contracts.yml relaxes it. Call contracts_explain for the reasoning and fix.",
+			"gofastr.settings.yml relaxes it. Call contracts_explain for the reasoning and fix.",
 	}, nil
 }
 

@@ -58,7 +58,7 @@ each command to the doc that covers it.
   files into an existing app; owned files are never touched.
   `generate screen <name> --from-a11y=<file>` builds the screen from a
   Playwright aria snapshot ([app specs](app-spec.md)).
-  `generate --config=<codegen.yml>` runs the configurable codegen engine
+  `generate [--config=<settings file>]` runs the configurable codegen engine
   ([codegen](codegen.md)); `generate --watch` re-runs on every change.
 - `gofastr generate package [<name>]`: copy a canonical chrome package
   (`siteheader`, `sitefooter`, `docpage`) into the app as owned code.
@@ -399,7 +399,7 @@ the registry — the check has no serving cost and no link on
 - `gofastr verify [capability...]`: the contract analyzers. Covers routing,
   permissions, security, data, entities, architecture, rendering,
   accessibility, performance, testing, ai. Strict by default; relax in
-  `gofastr.contracts.yml` or waive one instance with
+  `gofastr.settings.yml` or waive one instance with
   `//gofastr:allow(RULE) reason` ([contracts](contracts.md)).
 - `gofastr verify --list` / `--explain <rule>`: the rule catalog, and
   any one rule in full: why it matters, how to fix it, a worked example.

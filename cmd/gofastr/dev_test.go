@@ -20,7 +20,7 @@ func TestResolveDevIsolationRemapsAddrAndChildEnv(t *testing.T) {
 	}
 	dir := t.TempDir()
 	writeDevFile(t, filepath.Join(dir, ".git"), "gitdir: "+filepath.Join(t.TempDir(), ".git", "worktrees", "feature")+"\n")
-	writeDevFile(t, filepath.Join(dir, "gofastr.yml"), `
+	writeDevFile(t, filepath.Join(dir, "gofastr.settings.yml"), `
 isolation:
   enabled: true
   port:
@@ -257,8 +257,8 @@ func TestInitIsolationConfigOmitsDecorativeStrategy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	writeIsolationConfig("demo", "sqlite")
-	data, err := os.ReadFile(filepath.Join("demo", "gofastr.isolation.yml"))
+	writeSettingsFile("demo", "sqlite")
+	data, err := os.ReadFile(filepath.Join("demo", "gofastr.settings.yml"))
 	if err != nil {
 		t.Fatal(err)
 	}

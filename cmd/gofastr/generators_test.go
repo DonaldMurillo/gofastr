@@ -133,7 +133,7 @@ func TestGeneratorHelpListsEveryGenerator(t *testing.T) {
 func writeCodegenConfig(t *testing.T, dir, generatorsYAML string) {
 	t.Helper()
 	body := "version: 1\ncodegen:\n  output: gen\n  generators:\n" + generatorsYAML
-	if err := os.WriteFile(filepath.Join(dir, "gofastr.codegen.yml"), []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "gofastr.settings.yml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

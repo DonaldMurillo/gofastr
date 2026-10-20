@@ -34,7 +34,7 @@ func writeF(t *testing.T, path, body string) {
 func TestGenerateConfigSearchStopsAtRepoRoot(t *testing.T) {
 	root := t.TempDir()
 	// A config the attacker planted above the project.
-	writeF(t, filepath.Join(root, "gofastr.codegen.yml"), "version: 1\ncodegen:\n  output: gen\n")
+	writeF(t, filepath.Join(root, "gofastr.settings.yml"), "version: 1\ncodegen:\n  output: gen\n")
 	// The project: a module root two levels down.
 	project := filepath.Join(root, "workspace", "app")
 	writeF(t, filepath.Join(project, "go.mod"), "module example.com/app\n\ngo 1.26\n")
@@ -52,7 +52,7 @@ func TestGenerateConfigSearchStopsAtRepoRoot(t *testing.T) {
 	}
 
 	// A config INSIDE the project must still be found from a subdirectory.
-	writeF(t, filepath.Join(project, "gofastr.codegen.yml"), "version: 1\ncodegen:\n  output: gen\n")
+	writeF(t, filepath.Join(project, "gofastr.settings.yml"), "version: 1\ncodegen:\n  output: gen\n")
 	got, err := DiscoverConfig(filepath.Join(project, "internal", "pkg"))
 	if err != nil {
 		t.Fatalf("DiscoverConfig: %v", err)
@@ -68,7 +68,7 @@ func TestGenerateConfigSearchStopsAtRepoRoot(t *testing.T) {
 // A repo root marked by .git (no go.mod) bounds the walk the same way.
 func TestGenerateConfigSearchStopsAtGitRoot(t *testing.T) {
 	root := t.TempDir()
-	writeF(t, filepath.Join(root, "gofastr.codegen.yml"), "version: 1\ncodegen:\n  output: gen\n")
+	writeF(t, filepath.Join(root, "gofastr.settings.yml"), "version: 1\ncodegen:\n  output: gen\n")
 	project := filepath.Join(root, "repo")
 	writeF(t, filepath.Join(project, ".git", "HEAD"), "ref: refs/heads/main\n")
 
@@ -91,7 +91,7 @@ func TestGenerateConfigSearchStopsAtGitRoot(t *testing.T) {
 func TestDiscoveredCommandExtNeedsOptIn(t *testing.T) {
 	project := t.TempDir()
 	writeF(t, filepath.Join(project, "go.mod"), "module example.com/app\n\ngo 1.26\n")
-	writeF(t, filepath.Join(project, "gofastr.codegen.yml"), `version: 1
+	writeF(t, filepath.Join(project, "gofastr.settings.yml"), `version: 1
 codegen:
   output: gen
   extensions:
@@ -128,18 +128,18 @@ codegen:
 // extensions run without a second gate.
 func TestExplicitConfigRunsCommandExtensions(t *testing.T) {
 	project := t.TempDir()
-	writeF(t, filepath.Join(project, "gofastr.codegen.yml"), `version: 1
+	writeF(t, filepath.Join(project, "gofastr.settings.yml"), `version: 1
 codegen:
   output: gen
   extensions:
     - name: local
       command: ["echo", "hi"]
 `)
-	cfg, err := LoadConfig(filepath.Join(project, "gofastr.codegen.yml"))
+	cfg, err := LoadConfig(filepath.Join(project, "gofastr.settings.yml"))
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	explicit := Discovery{Path: filepath.Join(project, "gofastr.codegen.yml"), ProjectDir: project, Config: cfg, Found: true}
+	explicit := Discovery{Path: filepath.Join(project, "gofastr.settings.yml"), ProjectDir: project, Config: cfg, Found: true}
 	if err := CheckCommandExtensions(explicit); err != nil {
 		t.Errorf("an explicitly-named config must run its own command extensions: %v", err)
 	}

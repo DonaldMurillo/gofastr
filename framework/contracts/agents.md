@@ -41,7 +41,7 @@ and both leave a written trace:
 r.Handle("POST", "/hooks/stripe", stripeWebhook)
 ```
 
-...or a `gofastr.contracts.yml` entry, which is printed in the report
+...or a `contracts:` entry in `gofastr.settings.yml`, which is printed in the report
 footer so a run that passes because half of it was switched off says so.
 A directive with no reason is itself a finding.
 

@@ -413,7 +413,7 @@ entities:
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "gofastr.codegen.yml"), []byte(`codegen:
+	if err := os.WriteFile(filepath.Join(dir, "gofastr.settings.yml"), []byte(`codegen:
   output: gen
   generators:
     - name: sdk
@@ -465,7 +465,7 @@ entities:
 	if err := os.RemoveAll(filepath.Join(dir, "gen", "sdk")); err != nil {
 		t.Fatal(err)
 	}
-	generateProject([]string{"--config=gofastr.codegen.yml"})
+	generateProject([]string{"--config=gofastr.settings.yml"})
 	if _, err := os.Stat(filepath.Join(dir, "gen", "sdk", "js", "client.js")); err != nil {
 		t.Fatalf("registry path did not emit client.js: %v", err)
 	}

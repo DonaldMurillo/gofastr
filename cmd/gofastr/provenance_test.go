@@ -321,13 +321,13 @@ func TestGenerateConfigRunWarnsEdited(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeCodegenConfig(t, dir, "    - name: custom/report\n      extension: report\n      source:\n        type: json_file\n        path: input.json\n  extensions:\n    - name: report\n      command: [\"./tools/ext.sh\"]\n")
-	if out := covT_capStdout(t, func() { covT_capExit(t, func() { generateProject([]string{"--config=gofastr.codegen.yml"}) }) }); !strings.Contains(out, "Generated 1 file(s)") {
+	if out := covT_capStdout(t, func() { covT_capExit(t, func() { generateProject([]string{"--config=gofastr.settings.yml"}) }) }); !strings.Contains(out, "Generated 1 file(s)") {
 		t.Fatalf("first run:\n%s", out)
 	}
 	if err := os.WriteFile(filepath.Join("gen", "out.txt"), []byte("edited\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out := covT_capStdout(t, func() { covT_capExit(t, func() { generateProject([]string{"--config=gofastr.codegen.yml"}) }) })
+	out := covT_capStdout(t, func() { covT_capExit(t, func() { generateProject([]string{"--config=gofastr.settings.yml"}) }) })
 	if !strings.Contains(out, filepath.Join("gen", "out.txt")+" was edited since the last `gofastr generate`") {
 		t.Fatalf("second run did not warn:\n%s", out)
 	}
