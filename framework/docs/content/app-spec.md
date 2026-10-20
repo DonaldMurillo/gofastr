@@ -663,6 +663,13 @@ reports three kinds of file, on stderr when the spec goes to stdout:
 Tests and files another generator marked are skipped. The check writes
 nothing, fetches nothing, and leaves the exit code alone.
 
+The JWT secret, the database URL and the admin seed password live in the
+app's `.env`, not its source, and pack reads them back from there. A
+checkout without that `.env` packs a spec with no `seed_password`, so the
+spec seeds no admin. Pack says so before the check names `app.go` and
+`main.go`; add `seed_password` under `app.admin` before generating from
+it.
+
 The synthesized `/create` screen is dropped (it wasn't authored). Generate and pack are a matched inverse pair for the declarative
 pieces `app`, `entities`, `screens`, `nav`, and `seed`, so the invariant
 `parse(yml)` ≡ `parse(pack(generate(yml)))` holds for an app spec of those

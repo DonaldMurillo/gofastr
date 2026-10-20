@@ -338,7 +338,20 @@ func TestValidateFetchesNoFonts(t *testing.T) {
 //
 //gofastr:test-reads /examples/ecommerce/
 func TestPackRecoversEcommerce(t *testing.T) {
-	dir := filepath.Join("..", "..", "examples", "ecommerce", "app")
+	// The seed password lives in the app's .env, which a checkout does not
+	// carry: copy the app and write the .env generate would.
+	spec, err := loadAppSpec(filepath.Join("..", "..", "examples", "ecommerce", "gofastr.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "..", "examples", "ecommerce", "app"))); err != nil {
+		t.Fatal(err)
+	}
+	env := "ADMIN_SEED_PASSWORD=" + spec.App.Admin.SeedPassword + "\n" // not-a-secret: the example spec's published placeholder
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(env), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	bp, err := packAppSpec(dir)
 	if err != nil {
 		t.Fatalf("packAppSpec: %v", err)
@@ -480,5 +493,24 @@ func TestPackChecksEndpointsFromHandlers(t *testing.T) {
 	}
 	if len(c.Unrecovered) != 0 {
 		t.Errorf("unrecovered: %+v", c.Unrecovered)
+	}
+}
+
+// A checkout carries no .env, so pack cannot recover the seed password; it
+// says so before the check names app.go and main.go.
+func TestPackNamesMissingSeedPassword(t *testing.T) {
+	bp := packCheckFixture()
+	bp.App.Auth.Enabled = true
+	bp.App.Admin = AppSpecAdmin{SeedEmail: "admin@example.com", SeedPassword: "change-me-now-123"} // not-a-secret: test fixture
+	dir := materializeAppSpec(t, bp)
+	if err := os.Remove(filepath.Join(dir, ".env")); err != nil {
+		t.Fatal(err)
+	}
+	origExit := osExit
+	osExit = func(int) {}
+	defer func() { osExit = origExit }()
+	out := captureStdout(t, func() { runPack([]string{"-o", filepath.Join(t.TempDir(), "out.yml"), dir}) })
+	if !strings.Contains(out, "holds no ADMIN_SEED_PASSWORD") {
+		t.Fatalf("pack did not name the missing seed password:\n%s", out)
 	}
 }

@@ -38,8 +38,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `endpoints:` section of `gofastr.settings.yml`, and the check counts a
   linked handler file as hand-written. Pack also recovers nav icons,
   `app.output_dir`, `paragraph` blocks and `entity_form` blocks.
-  `examples/ecommerce/app` packs with nothing unrecovered. See `gofastr
-  docs app-spec` → Packing.
+  `examples/ecommerce/app` packs with nothing unrecovered. When the
+  app's `.env` is missing, pack says the spec has no admin seed password
+  instead of leaving the check to report `app.go` and `main.go` as
+  changed. See `gofastr docs app-spec` → Packing.
 - **`App.InTx` takes transaction options.** `framework.TxIsolation(level)`
   sets the isolation level and `framework.TxReadOnly()` makes writes
   fail. The SQLite driver ignores the read-only flag, so on SQLite the

@@ -3773,6 +3773,12 @@ func runPack(args []string) {
 		packFail(toStderr, "pack: %v", err)
 		return
 	}
+	// The seed password lives only in .env. Without it the packed spec
+	// seeds no admin, and the check below then names app.go and main.go;
+	// say why first.
+	if bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword == "" {
+		packNote(toStderr, "pack: the app seeds admin %s, but %s holds no ADMIN_SEED_PASSWORD, so the packed spec seeds no admin; add seed_password under app.admin before generating from it", bp.App.Admin.SeedEmail, filepath.Join(dir, ".env"))
+	}
 	// The check regenerates from the packed spec and names every file it
 	// does not reproduce, so the loss is reported instead of silent.
 	if c, err := checkPack(dir, bp); err != nil {
