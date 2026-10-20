@@ -182,49 +182,37 @@ func (c *tracedConn) BeginTx(ctx context.Context, opts driver.TxOptions) (driver
 }
 
 func (c *tracedConn) ExecContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
-	start := time.Now()
-	var res driver.Result
-	var err error
 	switch e := c.inner.(type) {
 	case driver.ExecerContext:
-		res, err = e.ExecContext(ctx, query, args)
+		return traced(c, ctx, query, args, e.ExecContext)
 	case driver.Execer: // a legacy driver
-		vals, verr := legacyArgs(ctx, args)
-		if verr != nil {
-			return nil, verr
-		}
-		res, err = e.Exec(query, vals)
-	default:
-		return nil, driver.ErrSkip
+		return traced(c, ctx, query, args, withoutCtx(e.Exec))
 	}
-	if errors.Is(err, driver.ErrSkip) {
-		return nil, err
-	}
-	c.end(ctx, query, start, err)
-	return res, err
+	return nil, driver.ErrSkip
 }
 
 func (c *tracedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	start := time.Now()
-	var rows driver.Rows
-	var err error
 	switch q := c.inner.(type) {
 	case driver.QueryerContext:
-		rows, err = q.QueryContext(ctx, query, args)
+		return traced(c, ctx, query, args, q.QueryContext)
 	case driver.Queryer: // a legacy driver
-		vals, verr := legacyArgs(ctx, args)
-		if verr != nil {
-			return nil, verr
-		}
-		rows, err = q.Query(query, vals)
-	default:
-		return nil, driver.ErrSkip
+		return traced(c, ctx, query, args, withoutCtx(q.Query))
 	}
+	return nil, driver.ErrSkip
+}
+
+// traced runs one statement and records its span. A driver.ErrSkip answer
+// records nothing: database/sql takes its fallback and traces that.
+func traced[T any](c *tracedConn, ctx context.Context, query string, args []driver.NamedValue,
+	run func(context.Context, string, []driver.NamedValue) (T, error)) (T, error) {
+	start := time.Now()
+	out, err := run(ctx, query, args)
 	if errors.Is(err, driver.ErrSkip) {
-		return nil, err
+		var zero T
+		return zero, err
 	}
 	c.end(ctx, query, start, err)
-	return rows, err
+	return out, err
 }
 
 func (c *tracedConn) Ping(ctx context.Context) error {
@@ -293,37 +281,27 @@ func (s *tracedStmt) Query(args []driver.Value) (driver.Rows, error) {
 }
 
 func (s *tracedStmt) ExecContext(ctx context.Context, args []driver.NamedValue) (driver.Result, error) {
-	start := time.Now()
-	var res driver.Result
-	var err error
 	if e, ok := s.inner.(driver.StmtExecContext); ok {
-		res, err = e.ExecContext(ctx, args)
-	} else {
-		vals, verr := legacyArgs(ctx, args)
-		if verr != nil {
-			return nil, verr
-		}
-		res, err = s.inner.Exec(vals)
+		return traced(s.conn, ctx, s.query, args, stmtCtx(e.ExecContext))
 	}
-	s.conn.end(ctx, s.query, start, err)
-	return res, err
+	return traced(s.conn, ctx, s.query, args, withoutCtx(stmtLegacy(s.inner.Exec)))
 }
 
 func (s *tracedStmt) QueryContext(ctx context.Context, args []driver.NamedValue) (driver.Rows, error) {
-	start := time.Now()
-	var rows driver.Rows
-	var err error
 	if q, ok := s.inner.(driver.StmtQueryContext); ok {
-		rows, err = q.QueryContext(ctx, args)
-	} else {
-		vals, verr := legacyArgs(ctx, args)
-		if verr != nil {
-			return nil, verr
-		}
-		rows, err = s.inner.Query(vals)
+		return traced(s.conn, ctx, s.query, args, stmtCtx(q.QueryContext))
 	}
-	s.conn.end(ctx, s.query, start, err)
-	return rows, err
+	return traced(s.conn, ctx, s.query, args, withoutCtx(stmtLegacy(s.inner.Query)))
+}
+
+// stmtCtx and stmtLegacy fit a prepared statement's methods, which
+// already hold their query, to the shapes that take one.
+func stmtCtx[T any](f func(context.Context, []driver.NamedValue) (T, error)) func(context.Context, string, []driver.NamedValue) (T, error) {
+	return func(ctx context.Context, _ string, args []driver.NamedValue) (T, error) { return f(ctx, args) }
+}
+
+func stmtLegacy[T any](f func([]driver.Value) (T, error)) func(string, []driver.Value) (T, error) {
+	return func(_ string, vals []driver.Value) (T, error) { return f(vals) }
 }
 
 func (s *tracedStmt) CheckNamedValue(nv *driver.NamedValue) error {
@@ -333,14 +311,22 @@ func (s *tracedStmt) CheckNamedValue(nv *driver.NamedValue) error {
 	return s.conn.CheckNamedValue(nv)
 }
 
-// legacyArgs prepares a call to a legacy driver method, which takes no
-// context: a context already done fails the call before it runs, as
-// database/sql does for those drivers itself.
-func legacyArgs(ctx context.Context, named []driver.NamedValue) ([]driver.Value, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
+// withoutCtx adapts a legacy driver method, which takes no context and
+// positional values only. A context already done fails the call before
+// it runs, as database/sql does for those drivers itself.
+func withoutCtx[T any](f func(string, []driver.Value) (T, error)) func(context.Context, string, []driver.NamedValue) (T, error) {
+	return func(ctx context.Context, query string, named []driver.NamedValue) (T, error) {
+		if err := ctx.Err(); err != nil {
+			var zero T
+			return zero, err
+		}
+		vals, err := namedToValues(named)
+		if err != nil {
+			var zero T
+			return zero, err
+		}
+		return f(query, vals)
 	}
-	return namedToValues(named)
 }
 
 // namedToValues is database/sql's own conversion for legacy drivers,
