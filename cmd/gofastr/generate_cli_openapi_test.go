@@ -284,7 +284,7 @@ func TestOpenAPICLI_BuildsCleanly(t *testing.T) {
 	dir := oaTempModule(t)
 	runGenerateCLI([]string{"--from-openapi=openapi.json", "--binary=oapp"})
 
-	for _, f := range []string{"main.go", "config.go", "auth.go", "output.go", "custom.go", "operations.go", "internal/client/client.go"} {
+	for _, f := range []string{"main.gen.go", "config.gen.go", "auth.gen.go", "output.gen.go", "custom.go", "operations.gen.go", "internal/client/client.gen.go"} {
 		if _, err := os.Stat(filepath.Join(dir, "cmd", "oapp", f)); err != nil {
 			t.Fatalf("cmd/oapp/%s not written: %v", f, err)
 		}

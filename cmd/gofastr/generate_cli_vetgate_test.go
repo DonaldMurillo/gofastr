@@ -80,7 +80,7 @@ func TestGeneratedCLIPassesRepoVettool(t *testing.T) {
 	files := renderCLIFiles(spec)
 	selfClient := false
 	for _, f := range files {
-		if f.name == "internal/client/client.go" {
+		if f.name == "internal/client/client.gen.go" {
 			selfClient = true
 		}
 	}

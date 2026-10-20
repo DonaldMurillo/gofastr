@@ -12,10 +12,9 @@ gofastr generate sdk
 ```
 
 Like `generate cli`, the entity set comes from your project source
-(`entities/*.go`), not an app spec. Unlike the CLI (one-shot owned code),
-SDK output is **generator-owned and regenerates in place**: when the docs
-site warns that downloads drifted from the live schema, the fix is
-re-running the command.
+(`entities/*.go`), not an app spec. SDK output is **generator-owned and
+regenerates in place**: when the docs site warns that downloads drifted
+from the live schema, the fix is re-running the command.
 
 ## What gets generated
 
@@ -221,10 +220,9 @@ Files the export already produced (or the user static dir) always win.
   filter/sort query params and validation-error `fields` keys are the
   snake_case column names. The JS SDK exports `<entity>Fields`
   constants; the Go README shows the same rule.
-- **Hand-editing `gen/sdk/` output.** Unlike `generate cli`'s
-  `custom.go` seam, SDK output has no owned files: every regeneration
-  overwrites in place. Wrap the generated client from your own package
-  instead.
+- **Hand-editing `gen/sdk/` output.** The CLI has a `custom.go` seam;
+  SDK output has no owned files: every regeneration overwrites in place.
+  Wrap the generated client from your own package instead.
 
 ## Not covered (v1)
 

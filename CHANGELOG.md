@@ -7,6 +7,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING: the generated CLI and `entities/client` are rebuilt from
+  `entities/`.** `gofastr generate cli` writes `*.gen.go` files that say
+  DO NOT EDIT; every run rebuilds them, removes the ones the entities no
+  longer produce (a dropped entity, a deselected verb) and keeps
+  `custom.go`, the one file that is yours. `customCommands` there can
+  replace `login` and `logout` too. A second run no longer needs
+  `--force`. A `cli` entry in `gofastr.settings.yml` (keys `binary`,
+  `api_prefix`, `only`, `exclude`, `verbs`, `from_openapi`) makes plain
+  `gofastr generate` and `gofastr build` rebuild the CLI; such a run
+  rewrites only changed files and prints nothing when the CLI is current.
+  New `gofastr generate client` rebuilds `entities/client/client.go`, and
+  `gofastr generate`, `gofastr build`, `--watch` and `generate app --add`
+  run it whenever that file exists, so the client follows a new entity or
+  field. The first run on a CLI from an earlier release removes its old
+  `.go` files and stops on any you edited; an edited `client.go` from an
+  earlier release is left alone with a warning. Move the edits into
+  `custom.go` or another file of package `client`, then run the generator
+  once with `--force`. `gofastr upgrade` lists both. See `gofastr docs
+  app-cli` and `gofastr docs codegen`.
+
 ## [0.92.0] - 2026-10-19
 
 **BREAKING** for the CLI and project files. GoFastr has one concept for

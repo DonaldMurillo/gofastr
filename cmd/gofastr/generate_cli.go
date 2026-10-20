@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"go/token"
 	"net/url"
-	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -26,9 +24,9 @@ import (
 // entities/client package. It is the terminal twin of the typed client: every selected
 // entity gets list/get/create/update/patch/delete, the _batch verbs, and a
 // live `watch` (SSE), plus login/logout commands that store a scoped API
-// token. Like the app spec, generation is one-shot owned code: it refuses
-// to overwrite (--force escapes), except custom.go, the dev-owned extension
-// seam, which is only ever created when absent.
+// token. The output is derived: every run rebuilds the *.gen.go files from
+// the source and removes the ones it no longer produces. custom.go, the
+// dev-owned extension seam, is only ever created when absent.
 
 // cliVerbs is the full verb set, in help order.
 var cliVerbs = []string{
@@ -57,6 +55,10 @@ type cliOptions struct {
 	dryRun      bool
 	json        bool
 	fromOpenAPI string // spec file or URL; switches off the entity path
+	// fromSettings: run from a gofastr.settings.yml cli entry by `gofastr
+	// generate` or `gofastr build`. Unchanged files are not rewritten, and
+	// the run says nothing when the CLI is already current.
+	fromSettings bool
 }
 
 // cliField is the derived per-field model the renderers consume.
@@ -163,10 +165,16 @@ func runGenerateCLI(args []string) {
 	if err != nil {
 		fail("%v", err)
 		info("Usage: gofastr generate cli [--from-openapi=<spec.json|url>] [--out=cmd/<binary>] [--binary=<name>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--verbs=list,get | --verbs='posts=list,get;users=*'] [--force] [--dry-run] [--json]")
+		info("--force only matters once, to replace an edited CLI written before the CLI became derived.")
 		osExit(1)
 		return
 	}
+	generateCLI(opts)
+}
 
+// generateCLI generates the CLI from parsed options, from entities/ or from
+// an OpenAPI document.
+func generateCLI(opts cliOptions) {
 	if opts.fromOpenAPI != "" {
 		runGenerateCLIFromOpenAPI(opts)
 		return
@@ -225,25 +233,29 @@ func runGenerateCLI(args []string) {
 	emitCLIFiles(opts, spec)
 }
 
-// emitCLIFiles is the shared write tail for both generation sources:
-// render, preserve custom.go, honor --force/--dry-run/--json, write.
+// emitCLIFiles is the shared write tail for both generation sources. The
+// CLI is derived: every run rebuilds the *.gen.go files, removes the ones
+// the source no longer produces (an entity dropped, a verb deselected),
+// and creates custom.go only when it is absent.
 func emitCLIFiles(opts cliOptions, spec cliSpec) {
-	files, err := stampGeneratedFiles("cli", renderCLIFiles(spec))
-	if err == nil {
-		err = refuseDuplicateDecls(files)
-	}
-	if err != nil {
+	failWith := func(err error) {
 		if opts.json {
 			printGeneratedErrorsJSON(err)
 		} else {
 			fail("%v", err)
 		}
 		osExit(1)
+	}
+	files, err := stampCLIFiles(renderCLIFiles(spec))
+	if err == nil {
+		err = refuseDuplicateDecls(files)
+	}
+	if err != nil {
+		failWith(err)
 		return
 	}
 	if err := validateOutputDir(opts.outDir); err != nil {
-		fail("%v", err)
-		osExit(1)
+		failWith(err)
 		return
 	}
 
@@ -251,39 +263,35 @@ func emitCLIFiles(opts cliOptions, spec cliSpec) {
 	// overwritten, not even under --force.
 	kept := files[:0]
 	for _, f := range files {
-		if f.name == "custom.go" {
-			if _, statErr := os.Stat(filepath.Join(opts.outDir, f.name)); statErr == nil {
-				continue
-			}
+		if f.name == cliCustomFile && fileExistsUnder(opts.outDir, f.name) {
+			continue
 		}
 		kept = append(kept, f)
 	}
 	files = kept
 
-	if !opts.force {
-		var conflicts []string
-		for _, f := range files {
-			if _, statErr := os.Stat(filepath.Join(opts.outDir, f.name)); statErr == nil {
-				conflicts = append(conflicts, filepath.Join(opts.outDir, f.name))
-			}
-		}
-		if len(conflicts) > 0 {
-			sort.Strings(conflicts)
-			cerr := fmt.Errorf("generate cli is one-shot and would overwrite existing files: %s. Re-run with --force to regenerate (custom.go is always preserved)", strings.Join(conflicts, ", "))
-			if opts.json {
-				printGeneratedErrorsJSON(cerr)
-				osExit(1)
-				return
-			}
-			fail("%v", cerr)
-			if d := describeExisting(opts.outDir, existingNames(files, opts.outDir)); d != "" {
-				info("%s", d)
-			}
-			osExit(1)
+	removals, err := planCLIRemovals(opts.outDir, files)
+	if err != nil {
+		failWith(err)
+		return
+	}
+	if opts.fromSettings {
+		// After planCLIRemovals: an unchanged file is still produced and
+		// must not read as stale.
+		files = dropUnchangedFiles(opts.outDir, files)
+		if len(files) == 0 && len(removals) == 0 {
 			return
 		}
-	} else {
-		warnForceOverwrite(editedTargets(files, opts.outDir, opts.outDir))
+	}
+	var editedLegacy []string
+	for _, r := range removals {
+		if r.legacy && r.edited {
+			editedLegacy = append(editedLegacy, filepath.Join(opts.outDir, r.name))
+		}
+	}
+	if len(editedLegacy) > 0 && !opts.force {
+		failWith(fmt.Errorf("%s: written by an earlier `gofastr generate cli`, and edited since or too old to carry the marker that would show it was not. The CLI is derived now: *.gen.go files replace these and every run rebuilds them. Move the edits into custom.go (customCommands can replace any command, login and logout included), then re-run with --force to remove the old files", strings.Join(editedLegacy, ", ")))
+		return
 	}
 
 	if opts.dryRun {
@@ -295,13 +303,32 @@ func emitCLIFiles(opts cliOptions, spec cliSpec) {
 		for _, f := range files {
 			fmt.Printf("    %s\n", filepath.Join(opts.outDir, f.name))
 		}
+		if len(removals) > 0 {
+			info("Would remove %d file(s) the CLI no longer produces:", len(removals))
+			for _, r := range removals {
+				fmt.Printf("    %s\n", filepath.Join(opts.outDir, r.name))
+			}
+		}
 		return
+	}
+
+	if !opts.json {
+		warnForceOverwrite(editedLegacy)
+		for _, f := range files {
+			if existing, rerr := readFileUnder(opts.outDir, f.name); rerr == nil {
+				warnDerivedEdit("cli", filepath.Join(opts.outDir, f.name), string(existing), cliSourceName(spec))
+			}
+		}
+		for _, r := range removals {
+			if !r.legacy && r.edited {
+				warn("%s was edited since `gofastr generate cli` wrote it; the CLI no longer produces it, so this run removes it and the edit is lost", filepath.Join(opts.outDir, r.name))
+			}
+		}
 	}
 
 	fileSet, err := fileSetFromGeneratedFiles(files, "cli")
 	if err != nil {
-		fail("CLI code generation failed: %v", err)
-		osExit(1)
+		failWith(fmt.Errorf("CLI code generation failed: %w", err))
 		return
 	}
 	writeOpts := codegen.WriteOptions{
@@ -310,20 +337,34 @@ func emitCLIFiles(opts cliOptions, spec cliSpec) {
 		Conflict:     codegen.ConflictOverwrite,
 	}
 	if err := codegen.WriteFiles(fileSet, writeOpts); err != nil {
-		fail("Failed to write generated files: %v", err)
-		osExit(1)
+		failWith(fmt.Errorf("failed to write generated files: %w", err))
+		return
+	}
+	if err := removeCLIFiles(opts.outDir, removals); err != nil {
+		failWith(err)
 		return
 	}
 	if opts.json {
 		printGeneratedFilesJSON(files)
 		return
 	}
-	success("Generated %d file(s) in %s", len(files), opts.outDir)
+	if opts.fromSettings {
+		success("Rebuilt %d file(s) in %s", len(files), opts.outDir)
+	} else {
+		success("Generated %d file(s) in %s", len(files), opts.outDir)
+	}
+	if len(removals) > 0 {
+		info("Removed %d file(s) the CLI no longer produces", len(removals))
+	}
+	if opts.fromSettings {
+		return
+	}
 	fmt.Println()
 	fmt.Println("  Next steps:")
 	fmt.Printf("    go build -o %s ./%s   : build the CLI\n", spec.Binary, opts.outDir)
 	fmt.Printf("    ./%s login --url https://your-app.example.com --with-token   : store a scoped API token\n", spec.Binary)
-	fmt.Println("    custom.go is yours: add or override commands there; regens never touch it")
+	fmt.Println("    custom.go is yours: add or override commands there. The *.gen.go files are rebuilt on every run")
+	fmt.Println("    list a cli entry in gofastr.settings.yml and gofastr build keeps this CLI current (gofastr docs app-cli)")
 }
 
 // splitCommaList splits a comma-separated flag value, trimming whitespace
@@ -795,13 +836,15 @@ func cliSelectionNote(opts cliOptions) string {
 	return " " + strings.Join(parts, " ")
 }
 
+// renderCLIFiles renders the CLI tree. Every file but custom.go is
+// derived and named *.gen.go, so `ls` shows which files a run rebuilds.
 func renderCLIFiles(spec cliSpec) []generatedFile {
 	files := []generatedFile{
-		{name: "main.go", content: renderCLIMain(spec)},
-		{name: "config.go", content: renderCLIConfig(spec)},
-		{name: "auth.go", content: renderCLIAuth(spec)},
-		{name: "output.go", content: renderCLIOutput(spec)},
-		{name: "custom.go", content: renderCLICustom(spec)},
+		{name: "main.gen.go", content: renderCLIMain(spec)},
+		{name: "config.gen.go", content: renderCLIConfig(spec)},
+		{name: "auth.gen.go", content: renderCLIAuth(spec)},
+		{name: "output.gen.go", content: renderCLIOutput(spec)},
+		{name: cliCustomFile, content: renderCLICustom(spec)},
 	}
 	// One shared verb-body file per CLI (pruned to the selected verbs);
 	// the per-entity files keep one-line run wrappers and per-entity
@@ -811,7 +854,7 @@ func renderCLIFiles(spec cliSpec) []generatedFile {
 		cliAnyVerb(spec, "batch-create") || cliAnyVerb(spec, "batch-update") ||
 		cliAnyVerb(spec, "batch-delete") || cliAnyVerb(spec, "watch") || cliAnyTransition(spec) {
 		files = append(files, generatedFile{
-			name:    "verbs.go",
+			name:    "verbs.gen.go",
 			content: renderCLIVerbsFile(spec),
 		})
 	}
@@ -820,21 +863,26 @@ func renderCLIFiles(spec cliSpec) []generatedFile {
 			continue
 		}
 		files = append(files, generatedFile{
-			name:    ent.Command + ".go",
+			name:    ent.Command + ".gen.go",
 			content: renderCLIEntityFile(spec, ent),
 		})
 	}
 	if spec.SelfClient {
 		files = append(files, generatedFile{
-			name:    "internal/client/client.go",
+			name:    "internal/client/client.gen.go",
 			content: renderCLISelfClient(spec),
 		})
 	}
 	if len(spec.Ops) > 0 {
 		files = append(files, generatedFile{
-			name:    "operations.go",
+			name:    "operations.gen.go",
 			content: renderCLIOpsFile(spec),
 		})
+	}
+	for i, f := range files {
+		if f.name != cliCustomFile {
+			files[i].content = cliGeneratedLine + f.content
+		}
 	}
 	return files
 }
@@ -846,9 +894,8 @@ func renderCLIMain(spec cliSpec) string {
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, `// %s is a terminal client for your app's HTTP API, generated by
-// `+"`gofastr generate cli%s`"+`. The code is yours to own and edit; to
-// regenerate from `+source+`, re-run that command with --force
-// (custom.go, your extension seam, is never overwritten).
+// `+"`gofastr generate cli%s`"+` from `+source+`. Every run rebuilds
+// the *.gen.go files; custom.go, your extension seam, is never overwritten.
 package main
 
 import (
@@ -1445,12 +1492,14 @@ import (
 	client "` + spec.ClientImport + `"
 )
 
-// This file is yours: ` + "`gofastr generate cli --force`" + ` never overwrites it.
+// This file is yours: ` + "`gofastr generate cli`" + ` creates it once and never
+// overwrites it. The *.gen.go files beside it are rebuilt on every run.
 
 // customCommands is merged OVER the generated command set: an entry whose
 // name matches a generated command ("` + exampleCommandName(spec) + `") replaces it, and new
-// names become new commands. To wrap rather than replace a generated verb,
-// call its run function (runPostsList-style) from your own.
+// names become new commands. The built-in login and logout can be replaced
+// the same way. To wrap rather than replace a generated verb, call its run
+// function (runPostsList-style) from your own.
 func customCommands() []command {
 	return nil
 }

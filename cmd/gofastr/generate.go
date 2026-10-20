@@ -66,7 +66,8 @@ func printGenerateHelp() {
 Usage:
   gofastr generate [--config=<gofastr.settings.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch]
       Run the derived generators and extensions listed in the codegen
-      config (gofastr build does this too)
+      config, then rebuild entities/client when it exists (gofastr build
+      does this too)
   gofastr generate <generator> [args]
       Run one generator
 
@@ -250,11 +251,47 @@ func generateProject(args []string) {
 	}
 	if discovered.Found {
 		generateFromCodegenConfig(options, discovered)
+		// Discovery's project dir is absolute and the writer takes only a
+		// root relative to the working directory, so rebuild from inside it.
+		restore, err := enterCodegenProjectDir(discovered)
+		if err != nil {
+			fail("Failed to enter codegen project: %v", err)
+			osExit(1)
+			return
+		}
+		defer restore()
+		rebuildAppClient(options, false)
+		return
+	}
+	// entities/client needs no config entry: an app that has one gets it
+	// rebuilt by every plain generate and build.
+	if appClientPresent(".") {
+		rebuildAppClient(options, true)
 		return
 	}
 	fail("Nothing to generate: no codegen config found.")
-	info("Derived generators (%s) run from gofastr.settings.yml. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
+	info("Derived generators (%s) run from gofastr.settings.yml, and entities/client is rebuilt whenever it exists. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
 	osExit(1)
+}
+
+// rebuildAppClient runs refreshAppClient in the working directory for a
+// plain generate and exits on failure the way the other generators of that
+// run do. report: under --json, the client is the whole run, so its files
+// are the document; with a codegen config the engine already printed one.
+func rebuildAppClient(options generateOptions, report bool) {
+	files, err := refreshAppClient(".", options.dryRun, options.json)
+	if err != nil {
+		if options.json {
+			printGeneratedErrorsJSON(err)
+		} else {
+			fail("%v", err)
+		}
+		osExit(1)
+		return
+	}
+	if report && options.json {
+		printGeneratedFilesJSON(files)
+	}
 }
 
 type generateOptions struct {
@@ -461,11 +498,39 @@ func generateFromCodegenConfig(options generateOptions, discovery codegen.Discov
 		failConfig(fmt.Errorf("the styles generator has no dry run, so --dry-run --json cannot report it; run `gofastr generate --dry-run --json` from a config without it, or drop --json"))
 		return
 	}
+	engineGens, cliRuns, err := splitCLIEntries(engineGens)
+	if err != nil {
+		failConfig(err)
+		return
+	}
+	if len(cliRuns) > 0 && options.json {
+		err := fmt.Errorf("a cli entry writes its own --json document, so the codegen config cannot report it in one; run `gofastr generate cli --json` for it, or drop --json")
+		if !options.dryRun {
+			printGeneratedErrorsJSON(err)
+			osExit(1)
+			return
+		}
+		failConfig(err)
+		return
+	}
 	cfg.Codegen.Generators = engineGens
-	// With nothing left for the engine (a styles-only config), skip it:
-	// a clean would otherwise wipe codegen.output for no generator.
+	// With nothing left for the engine (a styles- or cli-only config), skip
+	// it: a clean would otherwise wipe codegen.output for no generator.
 	if len(engineGens) > 0 {
 		runCodegenEngine(options, cfg, discovery)
+	}
+	for _, args := range cliRuns {
+		if options.dryRun {
+			args = append(args, "--dry-run")
+		}
+		cliOpts, err := parseCLIOptions(args)
+		if err != nil {
+			fail("codegen.generators cli entry: %v", err)
+			osExit(1)
+			return
+		}
+		cliOpts.fromSettings = true
+		generateCLI(cliOpts)
 	}
 	if stylePatterns == nil {
 		return
@@ -586,6 +651,60 @@ func splitStylesEntries(gens []codegen.GeneratorConfig) (engine []codegen.Genera
 		stylePatterns = append(stylePatterns, patterns)
 	}
 	return engine, stylePatterns, nil
+}
+
+// cliConfigFlags maps a cli entry's config keys to the flags they stand
+// for. Values are strings, the spelling the sdk entry uses.
+var cliConfigFlags = map[string]string{
+	"binary":       "--binary",
+	"api_prefix":   "--api-prefix",
+	"only":         "--only",
+	"exclude":      "--exclude",
+	"verbs":        "--verbs",
+	"from_openapi": "--from-openapi",
+}
+
+// splitCLIEntries pulls the `cli` entries out of a config's generator list
+// and turns each into the `gofastr generate cli` arguments it stands for.
+// The CLI writes to its own directory (output, default cmd/<binary>,
+// relative to the project), not under codegen.output, so it runs after the
+// engine instead of inside its file set. A `client` entry is refused: the
+// app client needs none, every plain generate rebuilds it.
+func splitCLIEntries(gens []codegen.GeneratorConfig) (engine []codegen.GeneratorConfig, runs [][]string, err error) {
+	for i, gen := range gens {
+		if gen.Extension != "" || (gen.Name != "cli" && gen.Name != "client") {
+			engine = append(engine, gen)
+			continue
+		}
+		if gen.Name == "client" {
+			return nil, nil, fmt.Errorf("codegen.generators[%d]: client needs no entry; every plain gofastr generate and gofastr build rebuilds entities/client/client.go when it exists. Remove the entry", i)
+		}
+		if gen.Source.Type != "" {
+			return nil, nil, fmt.Errorf("codegen.generators[%d] (cli): source does not apply; the CLI reads entities/, or the document named by config.from_openapi", i)
+		}
+		args := []string{}
+		if gen.Output != "" {
+			args = append(args, "--out="+gen.Output)
+		}
+		for _, key := range slices.Sorted(maps.Keys(gen.Config)) {
+			flag, ok := cliConfigFlags[key]
+			if !ok {
+				return nil, nil, fmt.Errorf("codegen.generators[%d] (cli): unknown config key %q (one of %s)", i, key, strings.Join(slices.Sorted(maps.Keys(cliConfigFlags)), ", "))
+			}
+			v, ok := gen.Config[key].(string)
+			v = strings.TrimSpace(v)
+			// api_prefix may be empty: an app with no API prefix needs it.
+			if !ok || (v == "" && key != "api_prefix") {
+				return nil, nil, fmt.Errorf("codegen.generators[%d] (cli): config.%s must be a non-empty string", i, key)
+			}
+			if key == "from_openapi" && strings.Contains(v, "://") {
+				return nil, nil, fmt.Errorf("codegen.generators[%d] (cli): config.from_openapi must be a file in the project, not a URL: every build would fetch it. Save the document and name the file", i)
+			}
+			args = append(args, flag+"="+v)
+		}
+		runs = append(runs, args)
+	}
+	return engine, runs, nil
 }
 
 func enterCodegenProjectDir(discovery codegen.Discovery) (func(), error) {
@@ -928,29 +1047,30 @@ func generateAppSpec(bp AppSpec, options generateOptions) {
 				osExit(1)
 			}
 		}
-		// Warn about stale client.go: a silently-stale generated API surface
-		// is a trap the other aggregates aren't.
+		hasNewEntities := false
+		for _, f := range written {
+			name := filepath.ToSlash(f.name)
+			// events.go is a fixed seam file like register.go (the
+			// per-entity event wrappers delegate to it), not a new
+			// entity: writing it alone must not rebuild the client.
+			if strings.HasPrefix(name, "entities/") && name != "entities/register.go" && name != "entities/events.go" && !strings.HasPrefix(name, "entities/client/") {
+				hasNewEntities = true
+				break
+			}
+		}
+		// The client is derived: rebuild it over the whole entity set, old
+		// entities and new, instead of leaving it stale.
+		if hasNewEntities {
+			if _, err := refreshAppClient(writeRoot, false, options.json); err != nil {
+				// stderr under --json: stdout is the document.
+				if options.json {
+					fmt.Fprintf(os.Stderr, "warning: could not rebuild %s: %v\n", appClientPath, err)
+				} else {
+					warn("could not rebuild %s: %v", appClientPath, err)
+				}
+			}
+		}
 		if !options.json {
-			hasNewEntities := false
-			for _, f := range written {
-				name := filepath.ToSlash(f.name)
-				// events.go is a fixed seam file like register.go (the
-				// per-entity event wrappers delegate to it), not a new
-				// entity: writing it alone must not trigger the stale
-				// client.go warning below.
-				if strings.HasPrefix(name, "entities/") && name != "entities/register.go" && name != "entities/events.go" && !strings.HasPrefix(name, "entities/client/") {
-					hasNewEntities = true
-					break
-				}
-			}
-			if hasNewEntities {
-				for _, f := range skipped {
-					if filepath.ToSlash(f.name) == "entities/client/client.go" {
-						warn("entities/client/client.go already exists and was not updated: it does not include the new entities. Regenerate it from a full app spec with --force, or extend it by hand.")
-						break
-					}
-				}
-			}
 			// The added pieces self-register against their seam, but the seam
 			// only runs if the owned shell calls it. Fresh generates always
 			// emit both call sites; if this project's owned file lost (or
@@ -1362,6 +1482,12 @@ func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderO
 			return nil, fmt.Errorf("entity %q: %w", decl.Name, err)
 		}
 	}
+	// The client is the client generator's derived output, stamped as
+	// such here, so the first copy matches every later rebuild.
+	clientSrc, err := renderAppClient(decls)
+	if err != nil {
+		return nil, err
+	}
 	files := []generatedFile{
 		{name: "register.go", content: renderRegisterSeam()},
 		// Event helpers are entity-independent: one fixed seam file instead
@@ -1370,7 +1496,7 @@ func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderO
 		{name: "events.go", content: renderEventHelpers()},
 		// Generated client lives in its own package so consumers can import
 		// it without dragging the server-side schema/framework deps along.
-		{name: "client/client.go", content: renderClient(decls)},
+		{name: "client/client.go", content: clientSrc},
 	}
 	// Preserve the caller's entity order (the app spec's authored order) so
 	// scaffolds are reproducible byte-for-byte and gofastr pack round-trips.
