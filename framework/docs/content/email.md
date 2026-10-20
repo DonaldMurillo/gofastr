@@ -131,6 +131,11 @@ named `welcome`; the subject comes from a leading `Subject: ` line in
 the `.txt` file, or a sibling `.subject` file. `LoadFromFS` does the
 same against an `fs.FS`, so an embedded template tree works.
 
+To read a template before it sends, list it in the admin's
+`Config.EmailPreviews`: the Emails page renders each one with sample
+data, the HTML body in a sandboxed frame (see
+[admin → Email previews](admin.md#email-previews)).
+
 ## Common mistakes
 
 - **Leaving `AllowCleartext` off and pointing at a host that strips STARTTLS.** That is the intended failure: the message does not go out in plaintext. Fix the relay (use a TLS-capable host, or port 465 with `UseTLS`), not the flag.

@@ -152,12 +152,57 @@ err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
 A non-nil error from `fn` rolls back. A panic from `fn` rolls back
 via the `Recovery` middleware higher up the stack.
 
-`App.InTx` also **joins an ambient transaction** already in the
-context instead of opening a second, independent one. So calling
-`App.InTx` from inside a CRUD hook (or any code already running under a
-transaction) reuses that transaction and leaves the commit/rollback to
-the outer owner: your `fn` runs but does not commit on its own. This
-keeps nested boundaries atomic rather than silently splitting them.
+`App.InTx` does not open a second transaction when one is already in
+the context. Called from inside a CRUD hook, or inside another
+`App.InTx`, it runs `fn` under a **savepoint** on the ambient
+transaction:
+
+- If `fn` returns an error, its own writes roll back to the savepoint
+  and the error comes back to you. The outer transaction keeps its
+  earlier writes and stays usable, so the outer code can handle the
+  error and still commit. On Postgres this also clears the "current
+  transaction is aborted" state a failed statement leaves behind.
+- If `fn` succeeds, the savepoint is released into the outer
+  transaction. Its writes commit or roll back with the outer owner;
+  nothing commits on its own.
+
+Events from CRUD writes inside the savepoint follow the same rule:
+they publish when the outer transaction commits, and a rollback to the
+savepoint drops them.
+
+```go
+err := app.InTx(ctx, func(ctx context.Context, tx *sql.Tx) error {
+    if _, err := ordersCH.CreateOne(ctx, order); err != nil { return err }
+    // A failed coupon leaves the order in place.
+    if err := app.InTx(ctx, applyCoupon); err != nil {
+        log.Printf("coupon skipped: %v", err)
+    }
+    return nil
+})
+```
+
+### Isolation level and read-only transactions
+
+Pass options after `fn` to set how the transaction opens:
+
+```go
+err := app.InTx(ctx, transfer, framework.TxIsolation(sql.LevelSerializable))
+err = app.InTx(ctx, report, framework.TxReadOnly())
+```
+
+- `TxIsolation(level)` passes the level to `BeginTx`. Postgres takes
+  `LevelReadUncommitted`, `LevelReadCommitted`, `LevelRepeatableRead` and
+  `LevelSerializable`, and `InTx` returns an error for the others before
+  `fn` runs. SQLite runs every transaction serializable whatever level is
+  asked, which is at least as strong as any of them.
+- `TxReadOnly()` makes writes inside the transaction fail. The SQLite
+  driver ignores the read-only flag, so on SQLite the framework runs the
+  transaction on a connection of its own with `PRAGMA query_only` set,
+  and clears it before the connection goes back to the pool.
+
+A transaction's settings are fixed once it is open, so a nested
+`App.InTx` given options returns `framework.ErrTxOptionsNested` without
+running `fn`.
 
 ### Composing CRUD operations in one transaction
 

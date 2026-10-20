@@ -120,6 +120,7 @@ type UIHost struct {
 	staticFS            fs.FS                                // embedded filesystem for static files
 	staticRootOnce      sync.Once                            // guards staticRoot init; staticDir reads are kernel-contained
 	staticRoot          *rootfs.Root                         // os.Root over staticDir: static reads refuse symlinked escapes out of the static tree
+	versions            assetVersions                        // content hashes of static files, for AssetURL and immutable serving
 	llmMDPublic         bool                                 // when true, mount per-screen /llm.md + /llm-pages.md; default disabled (schema disclosure)
 	headHTML            string                               // raw HTML to inject into <head> (escape hatch)
 	lang                string                               // WithLang document language for host-built shells; EffectiveLang resolves it
@@ -4181,6 +4182,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 				if info, statErr := root.Stat(filepath.FromSlash(rel)); statErr == nil && !info.IsDir() {
 					if f, openErr := root.Open(filepath.FromSlash(rel)); openErr == nil {
 						devStaticNoStore(w)
+						ds.markVersionedStatic(w, r, assetKey{rel: rel}, f)
 						http.ServeContent(w, r, path, info.ModTime(), f)
 						_ = f.Close()
 						return
@@ -4193,8 +4195,18 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 			if cleanPath != "" {
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 				if f, err := ds.staticFS.Open(cleanPath); err == nil {
-					f.Close()
 					devStaticNoStore(w)
+					// A versioned URL is served from the handle it was
+					// hashed from; see markVersionedStatic.
+					if rs, ok := f.(io.ReadSeeker); ok && wantsVersion(r) {
+						if info, err := f.Stat(); err == nil && !info.IsDir() {
+							ds.markVersionedStatic(w, r, assetKey{fromFS: true, rel: cleanPath}, f)
+							http.ServeContent(w, r, path, info.ModTime(), rs)
+							_ = f.Close()
+							return
+						}
+					}
+					_ = f.Close()
 					http.ServeFileFS(w, r, ds.staticFS, cleanPath)
 					return
 				}

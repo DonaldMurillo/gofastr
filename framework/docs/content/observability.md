@@ -193,6 +193,83 @@ Like `WithMetrics`, `WithTracing` panics when combined with
 r.Use(framework.Tracing())
 ```
 
+### Spans for SQL, jobs and outbound calls
+
+A request span shows how long the request took, not where the time went.
+`core/tracing` adds child spans for the calls the app makes outward.
+
+Open the database with `tracing.OpenDB` in place of `sql.Open`:
+
+<!-- gofastr:compile
+stmt: _ = app
+-->
+```go
+import (
+    "log"
+
+    "github.com/DonaldMurillo/gofastr/core/tracing"
+    "github.com/DonaldMurillo/gofastr/framework"
+    _ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
+)
+
+db, err := tracing.OpenDB("sqlite3", "file:app.db")
+if err != nil {
+    log.Fatal(err)
+}
+app := framework.NewApp(framework.WithDB(db), framework.WithTracing())
+```
+
+Every Exec and Query, prepared or not, then gets a client span named by
+the statement's first keyword (`SELECT`, `INSERT`), and each
+transaction's `BEGIN`, `COMMIT` and `ROLLBACK` gets one too. A driver you
+reach through its own connector (pgx's `stdlib.GetConnector`) wraps with
+`tracing.WrapConnector(c, "postgresql")` and `sql.OpenDB`. A Query span
+covers the driver call, not the reading of its rows.
+
+For outbound HTTP, wrap the client's transport:
+
+<!-- gofastr:compile
+stmt: _ = client
+-->
+```go
+import (
+    "net/http"
+
+    "github.com/DonaldMurillo/gofastr/core/tracing"
+)
+
+client := &http.Client{Transport: tracing.Transport(nil)}
+```
+
+Each request gets a client span named `HTTP <method>`, ending when the
+response headers arrive. A transport error or a 4xx or 5xx status marks
+it an error. No `traceparent` header goes out unless you pass
+`tracing.PropagateTraceContext()`: the header hands your trace and span
+ids to whatever host the request reaches, so turn it on only for calls
+between your own services. The webhook battery's default delivery client
+already uses this transport, without propagation.
+
+Queue jobs need no wiring. Every handler call on the memory and database
+queues runs under a consumer span named `process <job type>`, which the
+handler's `ctx` carries, so SQL and HTTP spans inside the handler nest
+under it. A job span is a root span: a job does not carry the trace
+context of the request that enqueued it.
+
+| Span | Attributes |
+|---|---|
+| SQL | `db.system.name`, `db.query.text` |
+| Outbound HTTP | `http.request.method`, `url.full`, `server.address`, `http.response.status_code` |
+| Queue job | `messaging.system` (`gofastr`), `messaging.destination.name` (job type), `messaging.message.id`, `gofastr.queue.lane`, `gofastr.queue.attempts` |
+
+None of these spans carry data values. `db.query.text` has every string
+and number literal replaced by `?` (placeholders such as `$1` stay). On
+SQLite and MySQL, `"double-quoted"` text is replaced too: MySQL reads it
+as a string, and SQLite does when no column has that name, so a quoted
+identifier shows as `?` there. `url.full` drops the query string, fragment and user info. A failure sets
+the span status to `codes.Error` with `error.type` holding the error's Go
+type (or the HTTP status code, or `panic`), never its message, since
+driver and handler errors routinely quote row values.
+
 ### Exporting traces to a collector (OTLP)
 
 `WithTracing()` creates spans but drops them until you install an exporter.

@@ -106,6 +106,12 @@ window so a leaked delivery cannot replay forever.
 The body is whatever you passed to `Publish`; `application/json`
 isn't required, but the header advertises it.
 
+No `traceparent` header is sent. The default delivery client records an
+OpenTelemetry client span per attempt (`HTTP POST`, URL without its query
+string) but does not pass trace context to the subscriber, whose server
+is not yours; see
+[observability](observability.md#spans-for-sql-jobs-and-outbound-calls).
+
 ## Verifying inbound webhooks (receiver side)
 
 ```go

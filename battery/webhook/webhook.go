@@ -19,6 +19,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/backoff"
 	"github.com/DonaldMurillo/gofastr/core/netguard"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/core/tracing"
 )
 
 // MaxPayloadBytes caps webhook payload size. Larger payloads are
@@ -317,7 +318,7 @@ func New(s Store, opts Options) *Manager {
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
-			Transport: netguard.GuardedTransport(opts.AllowPrivateNetworks, "webhook"),
+			Transport: tracing.Transport(netguard.GuardedTransport(opts.AllowPrivateNetworks, "webhook")),
 		}
 	} else if !opts.AllowPrivateNetworks {
 		// A caller-supplied client (proxy, tracing, custom timeout) must

@@ -58,11 +58,15 @@ func (b *Battery) mount() {
 	if b.cfg.ProcessModules != nil {
 		b.screen(group, "/modules", i18nui.KeyAdminModules, false, b.renderModules)
 	}
+	if len(b.cfg.EmailPreviews) > 0 {
+		b.screen(group, "/emails", i18nui.KeyAdminEmails, false, b.renderEmails)
+	}
 	b.mountEntities(group, r)
 	b.mountPages(group)
 	b.host.App.Router.ScreenGroup(group)
 
 	b.mountOps(r)
+	b.mountEmails(r)
 	r.Post(b.cfg.PathPrefix+"/_palette", http.HandlerFunc(b.handlePalette))
 
 	// The drawer and the palette are widgets: each registers its own
@@ -400,6 +404,7 @@ func (b *Battery) opsItems(ctx context.Context) []ui.SidebarItem {
 	add(b.cfg.Policy != nil, i18nui.KeyAdminRoles, "/rbac/roles", "shield")
 	add(b.cfg.Auth != nil, i18nui.KeyAdminUserRoles, "/rbac/users", "users")
 	add(b.cfg.ProcessModules != nil, i18nui.KeyAdminModules, "/modules", "cpu")
+	add(len(b.cfg.EmailPreviews) > 0, i18nui.KeyAdminEmails, "/emails", "mail")
 	return out
 }
 
@@ -559,6 +564,8 @@ func (b *Battery) trail(ctx context.Context, path string) []ui.Crumb {
 		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminUserRoles)}}
 	case "/modules":
 		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminModules)}}
+	case "/emails":
+		return []ui.Crumb{{Text: i18nui.T(ctx, i18nui.KeyAdminEmails)}}
 	}
 	for _, p := range b.cfg.Pages {
 		if rest == p.Path {

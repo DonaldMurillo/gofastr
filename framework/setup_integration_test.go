@@ -69,11 +69,11 @@ func (m *mockSetupRunnerSwappable) Handler(swap func(), healthz, readyz http.Han
 	})
 }
 
-func (m *mockSetupRunnerSwappable) SetupURL(addr string) string {
+func (m *mockSetupRunnerSwappable) SetupURL(scheme, addr string) string {
 	if m.setupURLStr != "" {
 		return m.setupURLStr
 	}
-	return "http://" + addr + "/setup"
+	return scheme + "://" + addr + "/setup"
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────
