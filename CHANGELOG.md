@@ -67,6 +67,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `https://` when the app serves TLS. A custom runner adds the argument.
 
 ### Fixed
+- **`App.Shutdown` during boot always stops the server.** A `Shutdown`
+  that ran while `Start` was still booting could miss the server `Start`
+  was about to adopt, and `Start` then served forever. `Start` now sees
+  any earlier `Shutdown` and returns.
 - **`ui.CodeBlock` with `Wrap` breaks long tokens.** A URL or hash longer
   than the line ran past the block's edge; it now wraps.
 

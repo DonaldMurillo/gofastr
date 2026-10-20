@@ -3658,13 +3658,15 @@ func (a *App) Start(addr string) error {
 	// were still executing (a host tearing down mid-boot, or a test that
 	// observed a seeded row before the server existed). It found no
 	// server to stop and drained what was started; adopting a server NOW
-	// would serve forever with nobody left to stop it. The cancelled
-	// lifecycle context is the durable record of that Shutdown — checked
-	// under the same lock Shutdown holds, so the window is closed, not
-	// narrowed. abort re-drains whatever started after that Shutdown's
-	// sweep (Shutdown is idempotent) and nil keeps the graceful-shutdown
-	// contract: Start reports no error when told to stop.
-	if a.appCtx != nil && a.appCtx.Err() != nil {
+	// would serve forever with nobody left to stop it. The record of that
+	// Shutdown is appCancel cleared beside a live appCtx (the context is
+	// never recreated), written under the lock checked here, so the window
+	// is closed, not narrowed. The cancelled context alone is not enough:
+	// Shutdown cancels it after unlocking. abort re-drains whatever started
+	// after that Shutdown's sweep (Shutdown is idempotent) and nil keeps
+	// the graceful-shutdown contract: Start reports no error when told to
+	// stop.
+	if a.appCtx != nil && (a.appCancel == nil || a.appCtx.Err() != nil) {
 		a.serverMu.Unlock()
 		return abort(nil)
 	}
