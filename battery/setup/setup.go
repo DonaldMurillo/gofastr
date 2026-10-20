@@ -201,15 +201,17 @@ func (r *Runner) RunSteps(ctx context.Context) error {
 }
 
 // SetupURL returns the operator-facing setup URL for the startup banner.
-func (r *Runner) SetupURL(addr string) string {
+// scheme is the one the app serves ("https" under TLS), so the token
+// never rides a link that sends it in the clear.
+func (r *Runner) SetupURL(scheme, addr string) string {
 	host := r.cfg.HostName
 	if host == "" {
 		host = addr
 	}
 	if !r.tokenEnabled || r.token == "" {
-		return "http://" + host + "/setup"
+		return scheme + "://" + host + "/setup"
 	}
-	return "http://" + host + "/setup?token=" + r.token
+	return scheme + "://" + host + "/setup?token=" + r.token
 }
 
 // ─── env resolution helpers ─────────────────────────────────────────

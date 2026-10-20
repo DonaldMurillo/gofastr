@@ -40,6 +40,50 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `app.output_dir`, `paragraph` blocks and `entity_form` blocks.
   `examples/ecommerce/app` packs with nothing unrecovered. See `gofastr
   docs app-spec` → Packing.
+- **`App.InTx` takes transaction options.** `framework.TxIsolation(level)`
+  sets the isolation level and `framework.TxReadOnly()` makes writes
+  fail. The SQLite driver ignores the read-only flag, so on SQLite the
+  transaction runs on its own connection with `PRAGMA query_only` set,
+  cleared before the connection goes back to the pool. A nested `InTx`
+  given options returns `framework.ErrTxOptionsNested` without running.
+- **Content-hash URLs for static files.** `host.AssetURL("/logo.svg")`
+  returns `/logo.svg?v=<hash>` for a file in the static directory or
+  static FS, and the host serves a request at the file's current hash
+  with `Cache-Control: public, max-age=31536000, immutable`. A plain or
+  stale URL keeps the old behavior, and `gofastr dev` still serves
+  static files `no-store`. A path with no file behind it comes back
+  unchanged.
+- **Email previews in the admin.** `admin.Config.EmailPreviews` lists
+  the app's mails, each with a `Render` func that builds it from sample
+  data. `/admin/emails` shows a tab per mail with its subject, text body
+  and HTML body; the HTML loads in a frame from `/admin/_email/<name>`,
+  served under a `sandbox` CSP with no scripts. A render error or panic
+  draws a generic notice and logs the error's type.
+- **`html.IFrame`.** An `<iframe>` with a required `Src` and `Title`,
+  sandboxed by default: an empty `Sandbox` applies every restriction, and
+  `Unsandboxed` is the named opt-out. `ExtraAttrs` cannot set `src`,
+  `srcdoc`, `sandbox` or `title`. An iframe inside `ui.AspectRatio`
+  now draws the kit's hairline border instead of the browser's inset one.
+- **The app can serve HTTPS.** `framework.WithTLS` takes certificate
+  files (read again when they change, so a renewal needs no restart),
+  `AutoCert` for Let's Encrypt over TLS-ALPN-01, or a caller-built
+  `*tls.Config`. TLS 1.2 is the minimum and HTTP/2 is offered over TLS;
+  a config returned by `GetConfigForClient` below TLS 1.2 is raised to
+  it. The startup banner, the first-run setup link and the local run
+  record use `https://` URLs.
+- **`framework.WithHTTPProtocols`** passes an `http.Protocols` to the
+  server, for HTTP/2 without TLS (h2c with prior knowledge) behind a
+  proxy. Unset, the server keeps net/http's default.
+- **Spans for SQL, queue jobs and outbound HTTP.** `tracing.OpenDB`
+  (package `core/tracing`) opens a database whose statements and
+  transactions each get a client span, with literals in `db.query.text`
+  replaced by `?` (backslash escapes in Postgres `E'...'` strings and in
+  MySQL strings included, and double-quoted text on SQLite and MySQL). `tracing.Transport` wraps an `http.RoundTripper` with a
+  client span per request; it sends no `traceparent` unless given
+  `tracing.PropagateTraceContext()`. Handler calls on `MemoryQueue` and
+  `DBQueue` run under a `process <job type>` consumer span, and the
+  webhook battery's default delivery client uses the tracing transport.
+  A failed call's span records the error's type, never its message.
 
 ### Changed
 - **BREAKING: an app spec's `endpoints:` entries are `gofastr.settings.yml`
@@ -109,6 +153,25 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `gofastr generate`, `gofastr build` and `gofastr generate sdk` with the
   entry named, where it used to be ignored. `gofastr upgrade` finds the
   comma strings. See `gofastr docs sdk`.
+- **A nested `App.InTx` runs under a savepoint.** Called inside another
+  transaction, `InTx` used to join it outright, so an error it returned
+  left its writes in place and, on Postgres, a failed statement aborted
+  the whole transaction. It now rolls its own writes back to a savepoint
+  on error and leaves the outer transaction usable; on success the
+  savepoint is released and the writes commit with the outer owner.
+  Events from CRUD writes inside a rolled-back savepoint are dropped.
+  A savepoint whose release fails is rolled back too.
+- **`framework.SetupRunner.SetupURL` takes the scheme.** It is now
+  `SetupURL(scheme, addr string)`, so the setup link the app prints is
+  `https://` when the app serves TLS. A custom runner adds the argument.
+
+### Fixed
+- **`App.Shutdown` during boot always stops the server.** A `Shutdown`
+  that ran while `Start` was still booting could miss the server `Start`
+  was about to adopt, and `Start` then served forever. `Start` now sees
+  any earlier `Shutdown` and returns.
+- **`ui.CodeBlock` with `Wrap` breaks long tokens.** A URL or hash longer
+  than the line ran past the block's edge; it now wraps.
 
 ## [0.92.0] - 2026-10-19
 

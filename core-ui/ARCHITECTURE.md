@@ -5,6 +5,8 @@ The directive must still occupy its whole comment line.
 Disk-backed UI host static files use operation-scoped `os.Root` handles.
 Each read verifies the original directory identity and retains kernel path
 containment. An idle host does not hold directory handles open on Windows.
+`UIHost.AssetURL` gives a static file a content-hash URL (`?v=<hash>`); the
+host serves a request at the file's current hash with immutable caching.
 RPC success toasts finish before navigation, including the feedback module's
 first lazy load.
 

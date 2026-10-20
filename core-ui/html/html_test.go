@@ -790,6 +790,60 @@ func TestImage(t *testing.T) {
 	})
 }
 
+func TestIFrame(t *testing.T) {
+	t.Run("sandboxed by default", func(t *testing.T) {
+		f := IFrame(IFrameConfig{Src: "/preview", Title: "Preview"})
+		assertContains(t, f, "<iframe")
+		assertContains(t, f, `src="/preview"`)
+		assertContains(t, f, `title="Preview"`)
+		assertContains(t, f, `sandbox=""`)
+		assertContains(t, f, "</iframe>")
+	})
+
+	t.Run("sandbox tokens", func(t *testing.T) {
+		f := IFrame(IFrameConfig{Src: "/p", Title: "P", Sandbox: "allow-popups"})
+		assertContains(t, f, `sandbox="allow-popups"`)
+	})
+
+	t.Run("unsandboxed opt-out", func(t *testing.T) {
+		f := IFrame(IFrameConfig{Src: "/p", Title: "P", Unsandboxed: true})
+		assertNotContains(t, f, "sandbox")
+	})
+
+	t.Run("extra attrs cannot lift sandbox", func(t *testing.T) {
+		f := IFrame(IFrameConfig{Src: "/p", Title: "P", ExtraAttrs: Attrs{
+			"SANDBOX": "allow-scripts allow-same-origin",
+			"Src":     "https://evil.example/",
+			"srcdoc":  "<script>alert(1)</script>",
+			"Title":   "x",
+			"loading": "lazy",
+		}})
+		assertNotContains(t, f, "allow-scripts")
+		assertNotContains(t, f, "evil.example")
+		assertNotContains(t, f, "srcdoc")
+		assertContains(t, f, `loading="lazy"`)
+	})
+
+	t.Run("refused scheme omits src", func(t *testing.T) {
+		f := IFrame(IFrameConfig{Src: "javascript:alert(1)", Title: "P"})
+		assertNotContains(t, f, "src=")
+	})
+
+	for name, cfg := range map[string]IFrameConfig{
+		"requires Src":   {Title: "P"},
+		"requires Title": {Src: "/p"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("expected panic for %+v", cfg)
+				}
+			}()
+			IFrame(cfg)
+		})
+	}
+}
+
 func TestAudio(t *testing.T) {
 	a := Audio(AudioConfig{ExtraAttrs: Attrs{"controls": "controls"}}, render.Text("fallback"))
 	assertContains(t, a, "<audio")

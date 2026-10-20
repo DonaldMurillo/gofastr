@@ -43,9 +43,10 @@ type SetupRunner interface {
 	Handler(swap func(), healthz, readyz http.HandlerFunc) http.Handler
 
 	// SetupURL returns the operator-facing URL (with token) for the
-	// startup banner. addr is the bound listen address. Returns ""
+	// startup banner. scheme is "https" when the app serves TLS and
+	// "http" otherwise; addr is the bound listen address. Returns ""
 	// when not applicable (headless path or token disabled).
-	SetupURL(addr string) string
+	SetupURL(scheme, addr string) string
 }
 
 // WithSetup wires a first-run setup runner. When the runner reports

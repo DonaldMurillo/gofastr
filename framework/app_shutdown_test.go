@@ -168,3 +168,31 @@ func TestShutdownClosesConnsThatNeverSentARequest(t *testing.T) {
 		t.Fatal("the idle connection is still open after Shutdown")
 	}
 }
+
+// Shutdown detaches the server and clears appCancel under serverMu, then
+// cancels the lifecycle context after unlocking. A Start that reaches its
+// adopt check inside that gap sees an uncancelled context; it must still
+// see the Shutdown, or it serves forever with nobody left to stop it.
+func TestStartSeesShutdownBeforeCancel(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware())
+	app.Config.DisableSignalHandling = true
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// The state Shutdown leaves between its unlock and its cancel().
+	app.appCtx = ctx
+
+	done := make(chan error, 1)
+	go func() { done <- app.Start("127.0.0.1:0") }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		sd, sdCancel := context.WithTimeout(context.Background(), time.Second)
+		defer sdCancel()
+		_ = app.Shutdown(sd)
+		<-done
+		t.Fatal("Start adopted a server after Shutdown had already detached it")
+	}
+}
