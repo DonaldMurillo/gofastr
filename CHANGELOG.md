@@ -46,7 +46,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   (package `core/tracing`) opens a database whose statements and
   transactions each get a client span, with literals in `db.query.text`
   replaced by `?` (backslash escapes in Postgres `E'...'` strings and in
-  MySQL strings included). `tracing.Transport` wraps an `http.RoundTripper` with a
+  MySQL strings included, and double-quoted text on SQLite and MySQL). `tracing.Transport` wraps an `http.RoundTripper` with a
   client span per request; it sends no `traceparent` unless given
   `tracing.PropagateTraceContext()`. Handler calls on `MemoryQueue` and
   `DBQueue` run under a `process <job type>` consumer span, and the

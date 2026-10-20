@@ -262,8 +262,10 @@ context of the request that enqueued it.
 | Queue job | `messaging.system` (`gofastr`), `messaging.destination.name` (job type), `messaging.message.id`, `gofastr.queue.lane`, `gofastr.queue.attempts` |
 
 None of these spans carry data values. `db.query.text` has every string
-and number literal replaced by `?` (placeholders such as `$1` stay), and
-`url.full` drops the query string, fragment and user info. A failure sets
+and number literal replaced by `?` (placeholders such as `$1` stay). On
+SQLite and MySQL, `"double-quoted"` text is replaced too: MySQL reads it
+as a string, and SQLite does when no column has that name, so a quoted
+identifier shows as `?` there. `url.full` drops the query string, fragment and user info. A failure sets
 the span status to `codes.Error` with `error.type` holding the error's Go
 type (or the HTTP status code, or `panic`), never its message, since
 driver and handler errors routinely quote row values.

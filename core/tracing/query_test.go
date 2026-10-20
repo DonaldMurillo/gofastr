@@ -18,33 +18,36 @@ func TestQueryTextStripsLiterals(t *testing.T) {
 		{"SELECT 'a\x1b[2J'", `SELECT ?`},
 		{"SELECT \"a\x1b\"", `SELECT "a%1b"`},
 	} {
-		if got := queryText(tc.in, false); got != tc.want {
+		if got := queryText(tc.in, quoting{}); got != tc.want {
 			t.Errorf("queryText(%q)\n got %q\nwant %q", tc.in, got, tc.want)
 		}
 	}
 }
 
-func TestQueryTextBackslashEscapes(t *testing.T) {
+func TestQueryTextPerSystemQuoting(t *testing.T) {
 	for _, tc := range []struct {
-		in    string
-		mysql bool
-		want  string
+		in     string
+		system string
+		want   string
 	}{
-		{`SELECT E'prefix\'TOPSECRET' FROM t`, false, `SELECT E? FROM t`},
-		{`SELECT e'a\\' , 'b' FROM t`, false, `SELECT e? , ? FROM t`},
-		{`SELECT 'C:\' FROM t WHERE x LIKE'y'`, false, `SELECT ? FROM t WHERE x LIKE?`},
-		{`SELECT 'a\'TOPSECRET' FROM t`, true, `SELECT ? FROM t`},
-		{`SELECT "TOPSECRET", 'b' FROM t`, true, `SELECT ?, ? FROM t`},
+		{`SELECT E'prefix\'TOPSECRET' FROM t`, "postgresql", `SELECT E? FROM t`},
+		{`SELECT e'a\\' , 'b' FROM t`, "postgresql", `SELECT e? , ? FROM t`},
+		{`SELECT 'C:\' FROM t WHERE x LIKE'y'`, "postgresql", `SELECT ? FROM t WHERE x LIKE?`},
+		{`SELECT "col" FROM t`, "postgresql", `SELECT "col" FROM t`},
+		{`SELECT 'a\'TOPSECRET' FROM t`, "mysql", `SELECT ? FROM t`},
+		{`SELECT "TOPSECRET", 'b' FROM t`, "mysql", `SELECT ?, ? FROM t`},
+		{`SELECT * FROM t WHERE email = "a@b.c"`, "sqlite", `SELECT * FROM t WHERE email = ?`},
+		{`SELECT 'C:\' FROM t WHERE x LIKE'y'`, "sqlite", `SELECT ? FROM t WHERE x LIKE?`},
 	} {
-		if got := queryText(tc.in, tc.mysql); got != tc.want {
-			t.Errorf("queryText(%q, mysql=%v)\n got %q\nwant %q", tc.in, tc.mysql, got, tc.want)
+		if got := queryText(tc.in, quotingFor(tc.system)); got != tc.want {
+			t.Errorf("queryText(%q) on %s\n got %q\nwant %q", tc.in, tc.system, got, tc.want)
 		}
 	}
 }
 
 func TestQueryTextCapsLength(t *testing.T) {
 	q := "INSERT INTO t (a) VALUES " + strings.Repeat("(?), ", 5000)
-	if got := queryText(q, false); len(got) > maxQueryText {
+	if got := queryText(q, quoting{}); len(got) > maxQueryText {
 		t.Errorf("len = %d, want at most %d", len(got), maxQueryText)
 	}
 }

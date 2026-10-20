@@ -49,7 +49,29 @@ func OpenDB(driverName, dsn string) (*sql.DB, error) {
 // a registered name. system is the db.system.name attribute:
 // "postgresql", "sqlite", "mysql".
 func WrapConnector(c driver.Connector, system string) driver.Connector {
-	return &connector{inner: c, system: attribute.String("db.system.name", system), mysql: system == "mysql" || system == "mariadb"}
+	return &connector{inner: c, system: attribute.String("db.system.name", system), quoting: quotingFor(system)}
+}
+
+// quoting is how a database reads quoted text, which decides what
+// queryText redacts.
+type quoting struct {
+	// dqString: "double-quoted" text may be a string. MySQL reads it as
+	// one by default, and SQLite falls back to one when no column has that
+	// name, which the statement alone cannot rule out.
+	dqString bool
+	// backslash: a backslash escapes the next character in every string,
+	// as MySQL reads them by default.
+	backslash bool
+}
+
+func quotingFor(system string) quoting {
+	switch system {
+	case "mysql", "mariadb":
+		return quoting{dqString: true, backslash: true}
+	case "sqlite":
+		return quoting{dqString: true}
+	}
+	return quoting{}
 }
 
 // dbSystem maps a database/sql driver name to its db.system.name value.
@@ -74,9 +96,9 @@ func (c dsnConnector) Connect(context.Context) (driver.Conn, error) { return c.d
 func (c dsnConnector) Driver() driver.Driver                        { return c.driver }
 
 type connector struct {
-	inner  driver.Connector
-	system attribute.KeyValue
-	mysql  bool // MySQL quoting: see queryText
+	inner   driver.Connector
+	system  attribute.KeyValue
+	quoting quoting
 }
 
 func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
@@ -84,7 +106,7 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &tracedConn{inner: conn, system: c.system, mysql: c.mysql}, nil
+	return &tracedConn{inner: conn, system: c.system, quoting: c.quoting}, nil
 }
 
 func (c *connector) Driver() driver.Driver { return c.inner.Driver() }
@@ -103,9 +125,9 @@ func (c *connector) Close() error {
 // connection lacks one so database/sql takes the path it would have taken
 // without the wrapper.
 type tracedConn struct {
-	inner  driver.Conn
-	system attribute.KeyValue
-	mysql  bool
+	inner   driver.Conn
+	system  attribute.KeyValue
+	quoting quoting
 }
 
 // end records the span for one call that started at start. The query text
@@ -117,7 +139,7 @@ func (c *tracedConn) end(ctx context.Context, query string, start time.Time, err
 	if !span.IsRecording() {
 		return
 	}
-	span.SetAttributes(attribute.String("db.query.text", queryText(query, c.mysql)))
+	span.SetAttributes(attribute.String("db.query.text", queryText(query, c.quoting)))
 	if err != nil {
 		markError(span, err)
 	}
@@ -392,11 +414,11 @@ func skipComments(q string) string {
 // dropped and whitespace collapsed: 'single-quoted' strings,
 // PostgreSQL $tag$dollar-quoted$tag$ strings, and numbers that do not
 // continue an identifier or a placeholder ($1, ?2, :n stay as written).
-// Double-quoted names are identifiers and stay. A backslash escapes the
-// next character inside a PostgreSQL E'...' string. With mysql set, it
-// does so in every string, and "double-quoted" text is a string too, as
-// MySQL reads both by default.
-func queryText(query string, mysql bool) string {
+// Double-quoted names are identifiers and stay, unless q.dqString makes
+// "double-quoted" text a string too. A backslash escapes the next
+// character inside a PostgreSQL E'...' string, and in every string with
+// q.backslash set.
+func queryText(query string, q quoting) string {
 	var b strings.Builder
 	b.Grow(len(query))
 	space := false
@@ -429,8 +451,8 @@ func queryText(query string, mysql bool) string {
 				i += j + 4
 			}
 			space = true
-		case c == '\'' || (mysql && c == '"'):
-			escapes := mysql || (i > 0 && query[i-1]|0x20 == 'e' && (i == 1 || !continuesName(query[i-2])))
+		case c == '\'' || (q.dqString && c == '"'):
+			escapes := q.backslash || (i > 0 && query[i-1]|0x20 == 'e' && (i == 1 || !continuesName(query[i-2])))
 			i = skipQuoted(query, i, escapes)
 			emit("?")
 		case c == '"' || c == '`':
