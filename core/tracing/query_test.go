@@ -1,0 +1,78 @@
+package tracing
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+)
+
+func TestQueryTextStripsLiterals(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{`SELECT * FROM t WHERE a = $1 AND b = ?2 AND c = :name`, `SELECT * FROM t WHERE a = $1 AND b = ?2 AND c = :name`},
+		{`SELECT * FROM t WHERE x = 'a''b' AND y = 3.5e+2`, `SELECT * FROM t WHERE x = ? AND y = ?`},
+		{`SELECT $$secret$$, $tag$more$tag$ FROM t`, `SELECT ?, ? FROM t`},
+		{"SELECT a -- 'secret'\nFROM t /* 99 */ WHERE b = -1", `SELECT a FROM t WHERE b = -?`},
+		{`SELECT "col 42", t1.c2 FROM t1 LIMIT 10 OFFSET 0x1F`, `SELECT "col 42", t1.c2 FROM t1 LIMIT ? OFFSET ?`},
+		{"INSERT INTO t\n\t(a)\n VALUES ('unterminated", `INSERT INTO t (a) VALUES (?`},
+		{"SELECT 'a\x1b[2J'", `SELECT ?`},
+		{"SELECT \"a\x1b\"", `SELECT "a%1b"`},
+	} {
+		if got := queryText(tc.in, false); got != tc.want {
+			t.Errorf("queryText(%q)\n got %q\nwant %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestQueryTextBackslashEscapes(t *testing.T) {
+	for _, tc := range []struct {
+		in    string
+		mysql bool
+		want  string
+	}{
+		{`SELECT E'prefix\'TOPSECRET' FROM t`, false, `SELECT E? FROM t`},
+		{`SELECT e'a\\' , 'b' FROM t`, false, `SELECT e? , ? FROM t`},
+		{`SELECT 'C:\' FROM t WHERE x LIKE'y'`, false, `SELECT ? FROM t WHERE x LIKE?`},
+		{`SELECT 'a\'TOPSECRET' FROM t`, true, `SELECT ? FROM t`},
+		{`SELECT "TOPSECRET", 'b' FROM t`, true, `SELECT ?, ? FROM t`},
+	} {
+		if got := queryText(tc.in, tc.mysql); got != tc.want {
+			t.Errorf("queryText(%q, mysql=%v)\n got %q\nwant %q", tc.in, tc.mysql, got, tc.want)
+		}
+	}
+}
+
+func TestQueryTextCapsLength(t *testing.T) {
+	q := "INSERT INTO t (a) VALUES " + strings.Repeat("(?), ", 5000)
+	if got := queryText(q, false); len(got) > maxQueryText {
+		t.Errorf("len = %d, want at most %d", len(got), maxQueryText)
+	}
+}
+
+func TestSpanNameIsFirstKeyword(t *testing.T) {
+	for in, want := range map[string]string{
+		"select 1":                       "SELECT",
+		"  /* app:x */ -- note\n with q": "WITH",
+		"(SELECT 1)":                     "SQL",
+		"":                               "SQL",
+		"PRAGMA foreign_keys=on":         "PRAGMA",
+	} {
+		if got := spanName(in); got != want {
+			t.Errorf("spanName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestErrorTypeSeesThroughWrapping(t *testing.T) {
+	err := fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", &customErr{}))
+	if got := errorType(err); got != "*tracing.customErr" {
+		t.Errorf("errorType = %q", got)
+	}
+	if got := errorType(errors.New("plain")); got != "*errors.errorString" {
+		t.Errorf("errorType = %q", got)
+	}
+}
+
+type customErr struct{}
+
+func (*customErr) Error() string { return "boom" }

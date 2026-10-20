@@ -145,7 +145,7 @@ func TestSSRF_DialTimeRejectsInternalIP(t *testing.T) {
 	// The default delivery client (no caller-supplied HTTPClient) must
 	// carry a Dialer.Control hook that re-checks the resolved address.
 	mgr := New(NewMemoryStore(), Options{})
-	tr, ok := mgr.opts.HTTPClient.Transport.(*http.Transport)
+	tr, ok := deliveryTransport(mgr)
 	if !ok || tr == nil {
 		t.Fatalf("SECURITY: [ssrf] delivery client has no *http.Transport (cannot install dial-time SSRF guard): %T", mgr.opts.HTTPClient.Transport)
 	}
@@ -177,7 +177,7 @@ func TestSSRF_DialTimeRejectsInternalIP(t *testing.T) {
 // guard must NOT block legitimate public addresses.
 func TestSSRF_DialTimeAllowsPublicIP(t *testing.T) {
 	mgr := New(NewMemoryStore(), Options{})
-	tr := mgr.opts.HTTPClient.Transport.(*http.Transport)
+	tr, _ := deliveryTransport(mgr)
 
 	// Don't actually open a socket to the internet; assert the Control
 	// callback accepts a public resolved address and rejects an internal
@@ -198,7 +198,7 @@ func TestSSRF_DialTimeAllowsPublicIP(t *testing.T) {
 // posture), so loopback receivers work.
 func TestSSRF_DialTimeHonorsAllowPrivate(t *testing.T) {
 	mgr := New(NewMemoryStore(), Options{AllowPrivateNetworks: true})
-	tr := mgr.opts.HTTPClient.Transport.(*http.Transport)
+	tr, _ := deliveryTransport(mgr)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

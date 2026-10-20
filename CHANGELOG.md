@@ -42,6 +42,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`framework.WithHTTPProtocols`** passes an `http.Protocols` to the
   server, for HTTP/2 without TLS (h2c with prior knowledge) behind a
   proxy. Unset, the server keeps net/http's default.
+- **Spans for SQL, queue jobs and outbound HTTP.** `tracing.OpenDB`
+  (package `core/tracing`) opens a database whose statements and
+  transactions each get a client span, with literals in `db.query.text`
+  replaced by `?` (backslash escapes in Postgres `E'...'` strings and in
+  MySQL strings included). `tracing.Transport` wraps an `http.RoundTripper` with a
+  client span per request; it sends no `traceparent` unless given
+  `tracing.PropagateTraceContext()`. Handler calls on `MemoryQueue` and
+  `DBQueue` run under a `process <job type>` consumer span, and the
+  webhook battery's default delivery client uses the tracing transport.
+  A failed call's span records the error's type, never its message.
 
 ### Changed
 - **A nested `App.InTx` runs under a savepoint.** Called inside another
