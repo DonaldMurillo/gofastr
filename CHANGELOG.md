@@ -14,6 +14,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   transaction runs on its own connection with `PRAGMA query_only` set,
   cleared before the connection goes back to the pool. A nested `InTx`
   given options returns `framework.ErrTxOptionsNested` without running.
+- **Content-hash URLs for static files.** `host.AssetURL("/logo.svg")`
+  returns `/logo.svg?v=<hash>` for a file in the static directory or
+  static FS, and the host serves a request at the file's current hash
+  with `Cache-Control: public, max-age=31536000, immutable`. A plain or
+  stale URL keeps the old behavior, and `gofastr dev` still serves
+  static files `no-store`. A path with no file behind it comes back
+  unchanged.
 
 ### Changed
 - **A nested `App.InTx` runs under a savepoint.** Called inside another
