@@ -7,6 +7,24 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+- **`App.InTx` takes transaction options.** `framework.TxIsolation(level)`
+  sets the isolation level and `framework.TxReadOnly()` makes writes
+  fail. The SQLite driver ignores the read-only flag, so on SQLite the
+  transaction runs on its own connection with `PRAGMA query_only` set,
+  cleared before the connection goes back to the pool. A nested `InTx`
+  given options returns `framework.ErrTxOptionsNested` without running.
+
+### Changed
+- **A nested `App.InTx` runs under a savepoint.** Called inside another
+  transaction, `InTx` used to join it outright, so an error it returned
+  left its writes in place and, on Postgres, a failed statement aborted
+  the whole transaction. It now rolls its own writes back to a savepoint
+  on error and leaves the outer transaction usable; on success the
+  savepoint is released and the writes commit with the outer owner.
+  Events from CRUD writes inside a rolled-back savepoint are dropped.
+  A savepoint whose release fails is rolled back too.
+
 ## [0.92.0] - 2026-10-19
 
 **BREAKING** for the CLI and project files. GoFastr has one concept for

@@ -515,6 +515,11 @@ type App struct {
 	// serverWrapped latches once Start has applied serverWrappers; a
 	// later WrapServer panics even after Shutdown clears a.server.
 	serverWrapped bool
+
+	// txDialectVal caches the DB's dialect for InTx's read-only path;
+	// txDialectMu guards it. Empty until a probe succeeds.
+	txDialectMu  sync.Mutex
+	txDialectVal migrate.Dialect
 }
 
 // servingHandler wraps an http.Handler so it can be stored in an
