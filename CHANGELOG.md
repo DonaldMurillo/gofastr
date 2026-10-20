@@ -7,6 +7,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+- **Generated files say who made them and whether you edited them.**
+  The built-in generators stamp a provenance marker at the top of each
+  file with a comment syntax (not JSON or binary files), in that syntax:
+  `//gofastr:generated generator=app kind=scaffold version=v0.92.0 sum=…`.
+  The sum covers the rest of the file, so an edit shows. A scaffold
+  generator that finds files in its way says which generator and version
+  wrote them and how many were edited before it refuses. `--force` lists
+  only the marked files edited since they were generated, so an untouched
+  file from an older template no longer counts as an edit; a file with no
+  marker is still listed when it differs from its replacement. A derived generator
+  (`sdk`, `styles`, the codegen config) warns before it rebuilds an
+  edited file and names the source to change instead; the codegen
+  manifest records a sum per file for this. `gofastr verify` counts
+  marked files by generator and version and warns about edited derived
+  files. The checked-in `*.gen.go` style files carry the marker now.
+  An owned style sheet's marker is not style: `gofastr gen styles`
+  embeds and hashes the sheet without it, and GOFASTR1814 compares the
+  same bytes, so a sheet the app generator stamps stays current.
+  See `gofastr docs codegen`.
+
 ### Changed
 - **The blueprint is now the app spec.** GoFastr has one concept for
   generated code, code generation, and the `gofastr.yml` app description

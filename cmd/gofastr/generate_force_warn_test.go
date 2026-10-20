@@ -33,7 +33,7 @@ func TestForceNamesHandEditedFiles(t *testing.T) {
 
 	out := covT_capStdout(t, func() { runGenerate([]string{"app", bp, "--force"}) })
 
-	if !strings.Contains(out, "hand edits") {
+	if !strings.Contains(out, "edited since they were generated") {
 		t.Errorf("--force did not warn about discarded hand edits:\n%s", out)
 	}
 	if !strings.Contains(out, "app.go") {
@@ -58,7 +58,7 @@ func TestForceQuietWhenNothingEdited(t *testing.T) {
 	covT_capStdout(t, func() { runGenerate([]string{"app", bp}) })
 	out := covT_capStdout(t, func() { runGenerate([]string{"app", bp, "--force"}) })
 
-	if strings.Contains(out, "hand edits") {
+	if strings.Contains(out, "edited since they were generated") {
 		t.Errorf("--force warned on an unmodified tree:\n%s", out)
 	}
 }

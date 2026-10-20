@@ -218,6 +218,11 @@ func runGenerateSDK(args []string) {
 		return
 	}
 
+	for _, f := range files {
+		if existing, rerr := readFileUnder(opts.outDir, f.name); rerr == nil {
+			warnDerivedEdit("sdk", filepath.Join(opts.outDir, f.name), string(existing), "the entity declarations")
+		}
+	}
 	fileSet, err := fileSetFromGeneratedFiles(files, "sdk")
 	if err != nil {
 		fail("SDK generation failed: %v", err)
@@ -531,7 +536,9 @@ func buildSDKSpec(decls []framework.EntityDeclaration, opts *sdkOptions) (sdkSpe
 
 // renderSDKFiles produces every generated file, out-dir-relative: the go/
 // and js/ source trees for the requested targets, plus dist/ (archives +
-// manifest) unless archives are disabled.
+// manifest) unless archives are disabled. It stamps the provenance marker
+// on the sources before it zips or hashes them, so the manifest describes
+// the bytes the app serves.
 func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]generatedFile, error) {
 	want := map[string]bool{}
 	for _, t := range targets {
@@ -550,6 +557,9 @@ func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]generatedFile,
 
 	if want["go"] {
 		goFiles, err := renderSDKGoFiles(spec)
+		if err == nil {
+			goFiles, err = stampGeneratedFiles("sdk", goFiles)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -570,7 +580,10 @@ func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]generatedFile,
 	}
 
 	if want["js"] {
-		jsFiles := renderSDKJSFiles(spec)
+		jsFiles, err := stampGeneratedFiles("sdk", renderSDKJSFiles(spec))
+		if err != nil {
+			return nil, err
+		}
 		for _, f := range jsFiles {
 			files = append(files, generatedFile{name: "js/" + f.name, content: f.content})
 			if !dist {
@@ -792,13 +805,7 @@ func (sdkGenerator) Generate(_ context.Context, genCtx *codegen.Context, cfg cod
 	}
 	out := make([]codegen.GeneratedFile, 0, len(files))
 	for _, f := range files {
-		content := f.content
-		if strings.HasSuffix(f.name, ".go") {
-			if formatted, err := format.Source([]byte(content)); err == nil {
-				content = string(formatted)
-			}
-		}
-		out = append(out, codegen.GeneratedFile{Path: f.name, Content: content})
+		out = append(out, codegen.GeneratedFile{Path: f.name, Content: f.content})
 	}
 	return out, nil
 }

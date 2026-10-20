@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/codegen"
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
@@ -88,7 +89,13 @@ func runGenerateStyles(args []string) {
 	// one implementation, so the layout the docs promise (two binaries
 	// in one module, each with its own copy of a siteheader package)
 	// passes here because it passes there.
+	// A sheet the app generator copied carries a provenance marker, which
+	// is not style. srcOf holds the sheet with the marker's line left
+	// blank, so checks and parses keep the file's line numbers and no doc
+	// comment comes from it; bodyOf holds it without the marker, the bytes
+	// the Go embeds and hashes, the way GOFASTR1814 reads the pair.
 	srcOf := map[string]string{}
+	bodyOf := map[string]string{}
 	readAll := func(fs []styleFile) []analyzers.SheetInput {
 		inputs := make([]analyzers.SheetInput, 0, len(fs))
 		for _, f := range fs {
@@ -98,8 +105,9 @@ func runGenerateStyles(args []string) {
 				failed = true
 				continue
 			}
-			srcOf[f.rel] = string(body)
-			inputs = append(inputs, analyzers.SheetInput{Path: f.rel, Src: string(body)})
+			bodyOf[f.rel] = codegen.StripMarker(f.path, string(body))
+			srcOf[f.rel] = blankMarker(string(body), bodyOf[f.rel])
+			inputs = append(inputs, analyzers.SheetInput{Path: f.rel, Src: srcOf[f.rel]})
 		}
 		return inputs
 	}
@@ -113,7 +121,7 @@ func runGenerateStyles(args []string) {
 	}
 	checks := analyzers.CheckStylePrograms(pass, sheetInputs, tokenInputs)
 
-	appTokens, tokensFailed := generateTokenFiles(wd, tokenFiles, srcOf, checks)
+	appTokens, tokensFailed := generateTokenFiles(wd, tokenFiles, srcOf, bodyOf, checks)
 	failed = failed || tokensFailed
 
 	// Names are unique within one program (GOFASTR1816's generator
@@ -143,7 +151,7 @@ func runGenerateStyles(args []string) {
 		if dup[f.rel] {
 			continue
 		}
-		if err := generateStyleFile(wd, f, srcOf[f.rel], checks.SheetFindings[f.rel], perDir[filepath.Dir(f.path)] > 1); err != nil {
+		if err := generateStyleFile(wd, f, srcOf[f.rel], bodyOf[f.rel], checks.SheetFindings[f.rel], perDir[filepath.Dir(f.path)] > 1); err != nil {
 			failed = true
 			if err != errSilent { // diagnostics were already printed
 				fail("%s: %v", f.rel, err)
@@ -236,7 +244,7 @@ var styleNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 // grouping already computed (deduplicated across the file's programs);
 // only the model diagnostics are added here. It returns errSilent
 // when the failure was already reported as printed diagnostics.
-func generateStyleFile(wd *os.Root, f styleFile, src string, checkDiags []ownstyle.Diagnostic, sharedPkg bool) error {
+func generateStyleFile(wd *os.Root, f styleFile, src, body string, checkDiags []ownstyle.Diagnostic, sharedPkg bool) error {
 	css := src
 	kind := ownstyle.KindScoped
 	if f.name == "app" {
@@ -259,11 +267,17 @@ func generateStyleFile(wd *os.Root, f styleFile, src string, checkDiags []ownsty
 	if err != nil {
 		return err
 	}
-	out, err := ownstyle.GenerateFile(f.name, kind, css, model, pkg, sharedPkg)
+	out, err := ownstyle.GenerateFile(f.name, kind, body, model, pkg, sharedPkg)
+	if err == nil {
+		out, err = stampFile("styles", ownstyle.GeneratedFileName(f.name), out)
+	}
 	if err != nil {
 		return err
 	}
 	dst := filepath.Join(filepath.Dir(f.path), ownstyle.GeneratedFileName(f.name))
+	if existing, rerr := wd.ReadFile(dst); rerr == nil {
+		warnDerivedEdit("styles", filepath.ToSlash(dst), string(existing), filepath.ToSlash(f.rel))
+	}
 	//gofastr:allow(worldreadable) the file is generated Go source (ownstyle.GeneratedFileName ends in .go), a public build artifact like every other generated file; 0644 is the repo's mode for generated code
 	if err := wd.WriteFile(dst, []byte(out), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", dst, err)
@@ -526,7 +540,7 @@ func printDiagnostics(rel, src string, diags []ownstyle.Diagnostic) (hasErr bool
 // nothing else reads it — and whether any file failed. A file whose
 // tokens parsed is in that union even when its Go was not written, so
 // one typo does not cascade into GOFASTR1806 across the program.
-func generateTokenFiles(wd *os.Root, files []styleFile, srcOf map[string]string, checks analyzers.StyleProgramChecks) ([]ownstyle.AppTokenAt, bool) {
+func generateTokenFiles(wd *os.Root, files []styleFile, srcOf, bodyOf map[string]string, checks analyzers.StyleProgramChecks) ([]ownstyle.AppTokenAt, bool) {
 	failed := false
 	diagsOf := map[string][]ownstyle.Diagnostic{}
 	seen := map[ownstyle.FileDiagnostic]bool{}
@@ -571,13 +585,19 @@ func generateTokenFiles(wd *os.Root, files []styleFile, srcOf map[string]string,
 			failed = true
 			continue
 		}
-		out, err := ownstyle.GenerateTokensFile(f.name, src, parsedOf[f.rel], pkg, perDir[filepath.Dir(f.path)] > 1)
+		out, err := ownstyle.GenerateTokensFile(f.name, bodyOf[f.rel], parsedOf[f.rel], pkg, perDir[filepath.Dir(f.path)] > 1)
+		if err == nil {
+			out, err = stampFile("styles", ownstyle.GeneratedTokensFileName(f.name), out)
+		}
 		if err != nil {
 			fail("%s: %v", f.rel, err)
 			failed = true
 			continue
 		}
 		dst := filepath.Join(filepath.Dir(f.path), ownstyle.GeneratedTokensFileName(f.name))
+		if existing, rerr := wd.ReadFile(dst); rerr == nil {
+			warnDerivedEdit("styles", filepath.ToSlash(dst), string(existing), filepath.ToSlash(f.rel))
+		}
 		//gofastr:allow(worldreadable) the file is generated Go source (ownstyle.GeneratedTokensFileName ends in .go), a public build artifact like every other generated file; 0644 is the repo's mode for generated code
 		if err := wd.WriteFile(dst, []byte(out), 0o644); err != nil {
 			fail("write %s: %v", dst, err)
@@ -603,4 +623,10 @@ func printRepeatedLiterals(srcOf map[string]string, found []ownstyle.FileDiagnos
 		}
 		fmt.Printf("%s:%d:%d: %s %s %s\n", d.File, d.Diag.Line, d.Diag.Col, d.Diag.Severity, d.Diag.Rule, d.Diag.Message)
 	}
+}
+
+// blankMarker returns content with the lines StripMarker removed to make
+// body left empty, so line numbers into content still hold.
+func blankMarker(content, body string) string {
+	return strings.Repeat("\n", strings.Count(content, "\n")-strings.Count(body, "\n")) + body
 }

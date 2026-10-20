@@ -1,3 +1,5 @@
+//gofastr:generated generator=app kind=scaffold version=dev sum=5811e6db21c57f65
+
 package main
 
 import "github.com/DonaldMurillo/gofastr/framework/entityui"

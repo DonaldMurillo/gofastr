@@ -1,3 +1,5 @@
+//gofastr:generated generator=cli kind=scaffold version=dev sum=78f1db8d9534537d
+
 package main
 
 import (

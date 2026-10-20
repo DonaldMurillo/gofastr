@@ -228,8 +228,11 @@ func runGenerateCLI(args []string) {
 // emitCLIFiles is the shared write tail for both generation sources:
 // render, preserve custom.go, honor --force/--dry-run/--json, write.
 func emitCLIFiles(opts cliOptions, spec cliSpec) {
-	files := renderCLIFiles(spec)
-	if err := refuseDuplicateDecls(files); err != nil {
+	files, err := stampGeneratedFiles("cli", renderCLIFiles(spec))
+	if err == nil {
+		err = refuseDuplicateDecls(files)
+	}
+	if err != nil {
 		if opts.json {
 			printGeneratedErrorsJSON(err)
 		} else {
@@ -273,9 +276,14 @@ func emitCLIFiles(opts cliOptions, spec cliSpec) {
 				return
 			}
 			fail("%v", cerr)
+			if d := describeExisting(opts.outDir, existingNames(files, opts.outDir)); d != "" {
+				info("%s", d)
+			}
 			osExit(1)
 			return
 		}
+	} else {
+		warnForceOverwrite(editedTargets(files, opts.outDir, opts.outDir))
 	}
 
 	if opts.dryRun {

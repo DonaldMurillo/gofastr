@@ -1,3 +1,5 @@
+//gofastr:generated generator=app kind=scaffold version=dev sum=142a440e8698d605
+
 package entities
 
 import (

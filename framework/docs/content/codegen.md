@@ -223,6 +223,76 @@ Configured codegen writes `.codegen-manifest.json` in the output root. Clean
 mode removes only paths listed in that manifest before writing new output.
 Unowned files are left alone.
 
+The manifest also records a sum of every file it lists. Before a run
+replaces a listed file whose content no longer matches its sum, it warns
+that the file was edited and the edit is about to be lost. A clean run
+checks every listed file; an unclean run checks only the files it writes
+again.
+
+## Provenance markers
+
+The built-in generators stamp a marker at the top of each file they write
+in a format with comments; the table below lists them.
+It says which generator made the file, its kind, and a sum of the rest of
+the file:
+
+```go
+//gofastr:generated generator=app kind=scaffold version=v0.92.0 sum=3f9a0c51d2e87b14
+
+// Package main is the app.
+package main
+```
+
+- `generator` is the `gofastr generate` subcommand that wrote the file.
+- `kind` is `scaffold` or `derived`, as above.
+- `version` is the gofastr release that scaffolded the file, or `dev` for
+  a CLI built from a checkout. Derived files carry no version: any CLI
+  rebuilds them, and a version there would rewrite every derived file on
+  each release with no change to its code.
+- `sum` is the first 16 hex digits of the SHA-256 of the file without the
+  marker line. It detects edits; it is not a signature.
+
+The marker uses the file's own comment syntax and sits in its first eight
+lines, below anything that has to come first:
+
+| File | Marker |
+|------|--------|
+| `.go`, `go.mod`, `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts` | `//gofastr:generated …` and a blank line, so gofmt never folds it into a doc comment |
+| `.css` | `/* gofastr:generated … */` |
+| `.md`, `.html` | `<!-- gofastr:generated … -->`, after a doctype |
+| `.yml`, `.yaml`, `.toml`, `.sh`, `Makefile`, `.gitignore`, `.dockerignore`, `.env*` | `# gofastr:generated …`, after a shebang |
+| `Dockerfile` | `# gofastr:generated …`, after `# syntax=`, `# escape=` and `# check=` directives |
+| `.sql` | `-- gofastr:generated …` |
+
+JSON, `go.sum` and other files with no comment syntax carry no marker.
+An owned style sheet's marker is left out of what `gofastr gen styles`
+embeds and of its `Source hash`, so stamping a sheet does not make its
+generated Go stale.
+
+Each generator reads the markers before it writes:
+
+- A scaffold generator that finds files in its way says what is there
+  before it refuses: how many each generator and version wrote, how many
+  have no marker, and how many marked files were edited since.
+- `--force` names every target whose content no longer matches its sum.
+  A marked file you never touched is not listed, even when today's
+  template differs. See [App specs](app-spec.md).
+- A derived generator that is about to rebuild an edited file warns that
+  the edit is lost and names the source to change instead: the style
+  sheet for `styles`, the entity declarations for `sdk`.
+
+Editing a scaffold file is expected: the marker stays and its sum stops
+matching, which only tells the next `--force` that the file holds your
+work. Delete the marker line if you would rather the file carry no trace
+of the generator.
+
+`gofastr verify` counts the marked files by kind, generator and version,
+and warns about each derived file edited since it was generated:
+
+```
+Generated files: derived styles: 4, scaffold app v0.92.0: 31; 6 scaffold file(s) edited since, which is expected: they are yours
+```
+
 ## Common mistakes
 
 - Using `--config=/path/to/gofastr.codegen.yml` and expecting sources to be

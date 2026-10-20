@@ -470,6 +470,9 @@ func TestCanonicalPackageGenFilesCurrent(t *testing.T) {
 			src := ownstyle.SheetSource{File: p.Name + "/" + p.Name + ".tokens.css", Src: tokensSrc}
 			parsed, _, _ := ownstyle.CheckTokenFiles([]ownstyle.SheetSource{src}, builtins)
 			want, err := ownstyle.GenerateTokensFile(p.Name, src.Src, parsed[src.File], p.Name, false)
+			if err == nil {
+				want, err = stampFile("styles", ownstyle.GeneratedTokensFileName(p.Name), want)
+			}
 			if err != nil {
 				t.Fatalf("%s: %v", p.Name, err)
 			}
@@ -489,6 +492,9 @@ func TestCanonicalPackageGenFilesCurrent(t *testing.T) {
 			model, _ = ownstyle.Model(sheet)
 		}
 		want, err := ownstyle.GenerateFile(p.Name, ownstyle.KindScoped, css, model, p.Name, false)
+		if err == nil {
+			want, err = stampFile("styles", ownstyle.GeneratedFileName(p.Name), want)
+		}
 		if err != nil {
 			t.Fatalf("%s: %v", p.Name, err)
 		}
