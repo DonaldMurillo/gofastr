@@ -45,7 +45,7 @@ func runValidate(args []string) {
 	}
 	// Render without writing: catches codegen-only failures (bad field
 	// literals, unsupported defaults) that pure validation does not reach.
-	if _, err := renderAppSpecFiles(bp); err != nil {
+	if _, err := renderAppSpecCode(bp); err != nil {
 		failAppSpecValidation(path, err)
 		osExit(1)
 		return
