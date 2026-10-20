@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -237,6 +238,9 @@ type App struct {
 	auditActor func(context.Context) string
 	// entityUI is the UI EntityUI built; a second call is refused.
 	entityUI *entityui.UI
+	// pendingEndpoints holds EntityEndpoints calls until App.Entity
+	// registers the entity they name.
+	pendingEndpoints map[string][]entity.Endpoint
 	// crudMounts records where each entity's write routes mounted: the
 	// router that carries them (a group's sub-router, with its
 	// middleware) and the path on it. EntityUI mounts the bulk and export
@@ -2024,6 +2028,24 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 	return a
 }
 
+// EntityEndpoints queues endpoints for the entity that a later App.Entity
+// or TryEntity call registers under name. That call merges them into its
+// config's Endpoints, so they pass the same route and MCP checks as
+// endpoints written in the config. It is how a generated
+// entities/endpoints.gen.go attaches endpoints to entity files it does not
+// own. Calling it for an entity already registered panics, and Start fails
+// while endpoints are still queued for a name nothing registered.
+func (a *App) EntityEndpoints(name string, endpoints ...entity.Endpoint) *App {
+	if _, err := a.Registry.Get(name); err == nil {
+		panic(fmt.Sprintf("framework: EntityEndpoints(%q) after the entity was registered; queue endpoints before App.Entity", name))
+	}
+	if a.pendingEndpoints == nil {
+		a.pendingEndpoints = map[string][]entity.Endpoint{}
+	}
+	a.pendingEndpoints[name] = append(a.pendingEndpoints[name], endpoints...)
+	return a
+}
+
 // TryEntity is the error-returning variant of Entity: it registers an entity
 // and returns an error on any misconfiguration instead of panicking. It also
 // recovers panics from deeper validation (e.g. an invalid TenantField) and
@@ -2051,6 +2073,15 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	// silently mark the entity as seeded with empty data on first run.
 	if config.SeedFS != nil && config.SeedPath == "" {
 		return fmt.Errorf("entity %q has SeedFS set but SeedPath empty: point SeedPath at a file within the FS or unset SeedFS", name)
+	}
+
+	// Endpoints queued by EntityEndpoints join the config here, before
+	// Define, so every check below sees them. They leave the queue only
+	// once registration commits: a rejected declaration keeps them for
+	// the corrected retry.
+	queued := a.pendingEndpoints[name]
+	if len(queued) > 0 {
+		config.Endpoints = append(slices.Clip(config.Endpoints), queued...)
 	}
 
 	e := entity.Define(name, config)
@@ -2140,6 +2171,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 			return fmt.Errorf("failed to register endpoints for entity %q: %w", name, err)
 		}
 	}
+	delete(a.pendingEndpoints, name)
 
 	return nil
 }
@@ -3187,6 +3219,10 @@ func (a *App) Start(addr string) error {
 	// drives the real binary over HTTP still records what it exercised.
 	// No-op in every other process.
 	a.enableSemanticCoverageFromEnv()
+
+	if len(a.pendingEndpoints) > 0 {
+		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity call registered", strings.Join(slices.Sorted(maps.Keys(a.pendingEndpoints)), ", "))
+	}
 
 	runtimeIsolation, err := isolation.Resolve(".")
 	if err != nil {

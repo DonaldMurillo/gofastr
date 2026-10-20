@@ -7,6 +7,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+- **`App.EntityEndpoints` queues endpoints for an entity registered
+  later.** The next `App.Entity` or `TryEntity` call for that name merges
+  them into its config, so they pass the same route and MCP checks.
+  Calling it after registration panics, and `Start` fails while endpoints
+  wait on a name nothing registered. See `gofastr docs
+  entity-declarations` → Endpoints from another file.
+
 ### Changed
 - **BREAKING: `Endpoint` routes require a signed-in caller unless the
   endpoint sets `Public`.** The HTTP route answers 401 with no user on the
