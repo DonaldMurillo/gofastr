@@ -15,8 +15,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   index, so it holds across replicas and does not abort the caller's
   transaction; existing tables gain the `unique_key` column on start.
   `Replay` of a dead job whose key a newer job holds returns
-  `ErrDuplicateJob`. `RedisQueue` refuses a keyed job with
-  `queue.ErrUniqueUnsupported`.
+  `ErrDuplicateJob`; the admin's replay answers 409 for it, and "Replay
+  N failed" skips it and replays the rest. `RedisQueue` refuses a keyed
+  job with `queue.ErrUniqueUnsupported`.
 - **`App.InTx` takes transaction options.** `framework.TxIsolation(level)`
   sets the isolation level and `framework.TxReadOnly()` makes writes
   fail. The SQLite driver ignores the read-only flag, so on SQLite the
@@ -76,6 +77,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `https://` when the app serves TLS. A custom runner adds the argument.
 
 ### Fixed
+- **`DBQueue` index names on long table names.** Postgres cuts
+  identifiers at 63 bytes, so with a table name of 62 or 63 bytes the
+  dequeue and lane indexes got the same name and the second was never
+  created. A name over the limit now ends in a hash of the table name.
 - **`App.Shutdown` during boot always stops the server.** A `Shutdown`
   that ran while `Start` was still booting could miss the server `Start`
   was about to adopt, and `Start` then served forever. `Start` now sees

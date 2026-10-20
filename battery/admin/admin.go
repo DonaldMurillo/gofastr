@@ -684,6 +684,7 @@ var results = map[string]result{
 	"done":               {i18nui.KeyAdminDone, true},
 	"replayed":           {i18nui.KeyAdminReplayed, true},
 	"replayed-all":       {i18nui.KeyAdminReplayedAll, true},
+	"replayed-some":      {i18nui.KeyAdminReplayedSome, true},
 	"granted":            {i18nui.KeyAdminGranted, true},
 	"permissions-saved":  {i18nui.KeyAdminPermissionsSaved, true},
 	"roles-saved":        {i18nui.KeyAdminRolesSaved, true},
@@ -703,6 +704,7 @@ var results = map[string]result{
 	"module-refused":     {i18nui.KeyAdminModuleRefused, false},
 	"queue-load-failed":  {i18nui.KeyAdminQueueLoadFailed, false},
 	"replay-unsupported": {i18nui.KeyAdminFailed, false},
+	"replay-duplicate":   {i18nui.KeyAdminReplayDuplicate, false},
 }
 
 // done answers a successful ops post. A form RPC gets 204 and a toast;

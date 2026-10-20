@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -142,6 +143,33 @@ func TestDBUniqueKeyKeepsTxUsable(t *testing.T) {
 				t.Errorf("rows = %d, want 2", n)
 			}
 		})
+	}
+}
+
+// A table name near Postgres's 63-byte cap still gets three distinct
+// indexes, so the unique index is not skipped as an existing name.
+func TestDBUniqueKeyLongTableName(t *testing.T) {
+	db := pgtest.DB(t)
+	table := strings.Repeat("q", 62)
+	q, err := NewDBQueue(db, WithTable(table))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := q.Enqueue(ctx, Job{Type: "digest", UniqueKey: "k"}); err != nil {
+		t.Fatalf("first enqueue: %v", err)
+	}
+	if err := q.Enqueue(ctx, Job{Type: "digest", UniqueKey: "k"}); !errors.Is(err, ErrDuplicateJob) {
+		t.Fatalf("second enqueue: err = %v, want ErrDuplicateJob", err)
+	}
+	var n int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM pg_indexes
+		 WHERE schemaname = current_schema() AND tablename = $1 AND indexname LIKE '%\_idx'`, table).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 {
+		t.Errorf("indexes = %d, want 3", n)
 	}
 }
 

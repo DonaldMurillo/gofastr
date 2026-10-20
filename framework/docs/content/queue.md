@@ -71,7 +71,9 @@ defer q.Close()
 ```
 
 `NewDBQueue` creates the `queue_jobs` table and its index if they do not
-exist. Pass `WithTable("my_jobs")` to use a custom table name.
+exist. Pass `WithTable("my_jobs")` to use a custom table name. An
+index name longer than Postgres's 63-byte limit ends in a hash of the
+table name, so a long table name still gets each of its indexes.
 
 ## Quickstart: RedisQueue
 
