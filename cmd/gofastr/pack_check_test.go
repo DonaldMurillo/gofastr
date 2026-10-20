@@ -46,7 +46,8 @@ func TestPackCheckSilentOnUntouchedApp(t *testing.T) {
 	if len(c.HandWritten) != 0 || len(c.Unrecovered) != 0 {
 		t.Fatalf("untouched app reported: %+v", c)
 	}
-	if n := len(packCheckFiles(mustOpenRoot(t, dir))); n < 3 {
+	files, _ := packCheckFiles(mustOpenRoot(t, dir))
+	if n := len(files); n < 3 {
 		t.Fatalf("check covered %d files; the fixture should give it several", n)
 	}
 }
@@ -96,8 +97,17 @@ func TestPackCheckClassifiesFiles(t *testing.T) {
 	// Unmarked and the same: an app from before markers.
 	_, extBody, _ := codegen.ReadMarker("extensions.go", read("extensions.go"))
 	write("extensions.go", extBody)
-	// Marked by the app generator, but the spec no longer generates it.
-	write("ghost.go", stamp("ghost.go", "package main\n"))
+	// Marked by the app generator, but the spec no longer generates it,
+	// and edited since.
+	write("ghost.go", stamp("ghost.go", "package main\n")+"\n// hand edit\n")
+	// Untouched since an older release wrote it: the template may have
+	// changed, so the note does not blame pack alone.
+	_, regBody, _ := codegen.ReadMarker("screens_register.go", read("screens_register.go"))
+	old, err := codegen.Stamp("screens_register.go", regBody+"\n// older template\n", codegen.Marker{Generator: "app", Kind: codegen.KindScaffold, Version: "v0.1.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	write("screens_register.go", old)
 	// Another generator's output is not the app generator's to recover.
 	styles, err := codegen.Stamp("theme_style.gen.go", "package main\n", codegen.Marker{Generator: "styles", Kind: codegen.KindDerived})
 	if err != nil {
@@ -110,10 +120,11 @@ func TestPackCheckClassifiesFiles(t *testing.T) {
 		t.Errorf("hand-written = %v, want [helpers.go]", c.HandWritten)
 	}
 	want := map[string]string{
-		"app.go":            "has no gofastr marker and differs",
-		"entities/notes.go": "edited since it was generated",
-		"ghost.go":          "the packed spec no longer produces it",
-		"main.go":           "untouched since it was generated, yet the packed spec generates it differently",
+		"app.go":              "has no gofastr marker and differs",
+		"entities/notes.go":   "edited since it was generated, and differs from what the packed spec generates",
+		"ghost.go":            "the packed spec no longer produces it; edited since it was generated",
+		"main.go":             "untouched since it was generated, yet the packed spec generates it differently",
+		"screens_register.go": "untouched since gofastr v0.1.0 generated it",
 	}
 	got := map[string]string{}
 	for _, n := range c.Unrecovered {
@@ -129,6 +140,87 @@ func TestPackCheckClassifiesFiles(t *testing.T) {
 	}
 	if !strings.Contains(got["entities/notes.go"], "(entities)") {
 		t.Errorf("entities/notes.go note names no spec section: %q", got["entities/notes.go"])
+	}
+}
+
+// A checkout with CRLF line endings (git's core.autocrlf on Windows) or a
+// UTF-8 byte order mark holds the same code: nothing to report.
+func TestPackCheckIgnoresCRLFAndBOM(t *testing.T) {
+	dir := materializeAppSpec(t, packCheckFixture())
+	root := mustOpenRoot(t, dir)
+	files, _ := packCheckFiles(root)
+	for _, rel := range files {
+		full := filepath.Join(dir, filepath.FromSlash(rel))
+		data, err := os.ReadFile(full)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := strings.ReplaceAll(string(data), "\n", "\r\n")
+		if rel == "main.go" {
+			out = "\uFEFF" + out
+		}
+		if err := os.WriteFile(full, []byte(out), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := packAndCheck(t, dir)
+	if len(c.HandWritten) != 0 || len(c.Unrecovered) != 0 || len(c.Unread) != 0 {
+		t.Fatalf("CRLF app reported: %+v", c)
+	}
+}
+
+// Files the check cannot read, a symlink among them, are files pack left
+// out too: the check names them. A generated file the app no longer has
+// is named as well.
+func TestPackCheckNamesUnreadAndMissing(t *testing.T) {
+	dir := materializeAppSpec(t, packCheckFixture())
+	ext := filepath.Join(dir, "extensions.go")
+	outside := filepath.Join(t.TempDir(), "extensions.go")
+	if err := os.Rename(ext, outside); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, ext); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "screens_register.go")); err != nil {
+		t.Fatal(err)
+	}
+	unreadable := os.Geteuid() != 0
+	if unreadable {
+		if err := os.Chmod(filepath.Join(dir, "main.go"), 0); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(filepath.Join(dir, "main.go"), 0o600) })
+	}
+	bp, err := packAppSpec(dir)
+	if err != nil {
+		t.Fatalf("packAppSpec: %v", err)
+	}
+	c, err := checkPack(dir, bp)
+	if err != nil {
+		t.Fatalf("checkPack: %v", err)
+	}
+	unread := map[string]string{}
+	for _, n := range c.Unread {
+		unread[n.Path] = n.Note
+	}
+	if !strings.Contains(unread["extensions.go"], "symlink") {
+		t.Errorf("extensions.go: unread note = %q, want it named as a symlink (all: %v)", unread["extensions.go"], unread)
+	}
+	if unreadable && unread["main.go"] == "" {
+		t.Errorf("main.go is unreadable and not named (all: %v)", unread)
+	}
+	notes := map[string]string{}
+	for _, n := range c.Unrecovered {
+		notes[n.Path] = n.Note
+	}
+	if !strings.Contains(notes["screens_register.go"], "not in the app") {
+		t.Errorf("screens_register.go: note = %q, want the deletion named", notes["screens_register.go"])
+	}
+	for _, rel := range []string{"extensions.go", "main.go"} {
+		if notes[rel] != "" {
+			t.Errorf("%s is reported missing as well as unread: %q", rel, notes[rel])
+		}
 	}
 }
 
