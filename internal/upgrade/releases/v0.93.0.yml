@@ -49,3 +49,7 @@ notes:
     breaking: true
     nodetect: "a Kiln world lives in the running Kiln session, not in the source tree; the freeze names each refused surface"
     guidance: "Delete the route or endpoint from the world (delete_route, or set_scaffold without it), freeze, and register the route by hand in owned Go after generation. Give a scaffold endpoint an entity and a path under that entity's route to keep it in the app spec."
+  - change: "on SQLite, CRUD responses carry a schema.Decimal column as a JSON string (\"12.5\"), as they already did on Postgres and as OpenAPI documents; before, SQLite answered a number"
+    breaking: true
+    nodetect: "the change is in what a running app answers; code that reads the JSON lives in the app's consumers, not in its source"
+    guidance: "A consumer that read a decimal from an SQLite-backed app as a JSON number parses the string now: strconv.ParseFloat or a decimal type in Go, Number() or a decimal library in JS. The generated Go client and SDKs already typed the field as a string, and the Go client failed to decode the number before."

@@ -168,6 +168,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `https://` when the app serves TLS. A custom runner adds the argument.
 
 ### Fixed
+- **A decimal column reads back as a string on SQLite.** OpenAPI and the
+  generated clients type `schema.Decimal` as a string, and Postgres
+  returns one, but SQLite gives a `DECIMAL` column numeric affinity, so
+  every read there answered `12.5`. The Go client could not decode such
+  a row at all. Every CRUD read, included relation rows and
+  `GroupCountAll` groups among them, now answers `"12.5"`.
 - **`App.Shutdown` during boot always stops the server.** A `Shutdown`
   that ran while `Start` was still booting could miss the server `Start`
   was about to adopt, and `Start` then served forever. `Start` now sees
