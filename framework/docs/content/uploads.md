@@ -59,6 +59,9 @@ The framework:
    for it, so no stored object goes unreferenced.
 4. Stores the returned URL string on the record.
 
+The generated Go client, JS SDK and CLI send this request for you: see
+[SDKs](sdk.md) and [App CLI](app-cli.md).
+
 The record persisted to the database looks like:
 
 ```json

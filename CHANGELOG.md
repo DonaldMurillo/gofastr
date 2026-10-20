@@ -25,6 +25,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   client selection leaves out. `mcp: true` adds the MCP tool and
   `public: true` serves anonymous callers. New `gofastr generate
   endpoints` rebuilds only the registration. See `gofastr docs endpoints`.
+- **The generated clients upload files.** For an entity with an Image
+  or File field, the Go client and SDK gain `Create<Entity>WithFiles`,
+  `Update<Entity>WithFiles` and `Patch<Entity>WithFiles`, which take an
+  `<Entity>Files` struct of `*FilePart{Name, Body}` beside the write
+  struct, plus `DoMultipart` for any other multipart route. The JS SDK
+  sends a create, update or patch whose Image or File value is a `Blob`
+  as multipart, and `client.d.ts` types those fields `string | Blob`.
+  The generated CLI gains a file flag per such field, `--logo
+  ./acme.png` or `--logo -` for stdin. Every part goes by its column
+  name, which is what the server matches. Each client refuses, before
+  sending, a file over the server's 32 MiB per-file limit, a body over
+  its 64 MiB limit, and a `null`, which a multipart body cannot carry;
+  the Go client also refuses a field set in the body and sent as a
+  file. A JS batch refuses a `Blob`, since a batch sends JSON. Read-only
+  file fields get no upload slot or flag. See `gofastr docs sdk` and
+  `gofastr docs app-cli`.
 - **`App.EntityEndpoints` queues endpoints for an entity registered
   later.** The next `App.Entity` or `TryEntity` call for that name merges
   them into its config, so they pass the same route and MCP checks.
