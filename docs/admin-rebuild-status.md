@@ -239,6 +239,6 @@ Before #495 is ready:
 - Code: `wip/admin-shell-remote`, to land on `feat/admin-shell`.
 - Demo: `examples/meridian`, with its own SQLite database and the admin at
   `/admin`. Sign in with the account seeded from `ADMIN_SEED_PASSWORD`.
-  `MERIDIAN_PSEUDO_LOCALE=1` adds the en-XA pseudo locale; a Spanish browser
+  `GOFASTR_PSEUDO_LOCALE=1` adds the en-XA pseudo locale; a Spanish browser
   gets the Spanish catalog.
 - Prototype: https://claude.ai/artifact/5xg22eTGdiZbUYaRraijYL ("D · Hybrid").

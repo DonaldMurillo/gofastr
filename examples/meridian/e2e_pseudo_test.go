@@ -1,7 +1,7 @@
 package main
 
 // Pseudo-locale overflow gate for the admin. The app boots with
-// MERIDIAN_PSEUDO_LOCALE=1, the browser asks for en-XA, and every
+// GOFASTR_PSEUDO_LOCALE=1, the browser asks for en-XA, and every
 // framework string arrives accented and at least a third longer: about
 // what German or Spanish adds to English. The same screens are then
 // browsed in Spanish, whose real words are longest in other places. Each admin screen the sidebar
@@ -116,7 +116,7 @@ func TestE2E_AdminPseudoLocaleOverflow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds + boots the binary")
 	}
-	t.Setenv("MERIDIAN_PSEUDO_LOCALE", "1")
+	t.Setenv("GOFASTR_PSEUDO_LOCALE", "1")
 	base := e2eBootApp(t)
 	ctx := chromedptest.Context(t, chromedptest.WindowSize(1280, 800), chromedptest.Timeout(5*time.Minute))
 	if err := chromedp.Run(ctx, network.Enable(),

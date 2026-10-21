@@ -2327,8 +2327,14 @@ func relationTypeConst(t framework.RelationType) string {
 	return relationKindFor(t).constName
 }
 
+// goExpr is Go source renderGoLiteral writes as is: a phrase read
+// inside a literal the app spec otherwise spells out.
+type goExpr string
+
 func renderGoLiteral(value any) (string, error) {
 	switch v := value.(type) {
+	case goExpr:
+		return string(v), nil
 	case nil:
 		return "nil", nil
 	case bool:

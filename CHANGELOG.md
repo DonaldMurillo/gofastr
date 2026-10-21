@@ -193,6 +193,19 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   arm reports a constant passed to `objc.NSString` or used as the title
   or text of a Win32 menu row, window or message box: the shell speaks
   the OS language, so it passes a phrase's text.
+- **Generated apps translate.** Every word an app spec writes for a
+  reader is an `i18n.Phrase` declared at the top of the file that says
+  it, keyed `<app>.screens.<screen>.<slug>`, `<app>.chrome.<slug>` or
+  `<app>.auth.<code>`; field labels and enum values read the `entity.*`
+  keys through `i18nui`. Screens render with `RenderCtx(ctx)`, and the
+  header, footer and sidebar take the request context. The generator
+  writes `i18n.go`, whose `translatorOption()` loads `locales/<tag>.json`
+  and adds the `en-XA` pseudo-locale under `GOFASTR_PSEUDO_LOCALE=1`,
+  and `locales/README.md`. It never writes a `<tag>.json`, so
+  `generate --force` keeps translations. `gofastr pack` reads each
+  phrase back as its English. Meridian's pseudo-locale switch is
+  `GOFASTR_PSEUDO_LOCALE` too. See `gofastr docs app-spec` →
+  "Translations".
 
 ### Changed
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,

@@ -242,7 +242,7 @@ func TestListFirstKeepsPageHeading(t *testing.T) {
 	}
 	var all strings.Builder
 	for _, src := range filesByName(mustRenderAppSpecFiles(t, bp)) {
-		all.WriteString(src)
+		all.WriteString(inlinePhrases(src))
 	}
 	src := all.String()
 	// The level is part of the heading call: presence of the exact string

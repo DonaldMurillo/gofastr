@@ -40,7 +40,7 @@ func TestDashboardCardTitlesAreH2(t *testing.T) {
 			},
 		}},
 	}
-	screen := filesByName(mustRenderAppSpecFiles(t, bp))["screen_dashboard.go"]
+	screen := inlinePhrases(filesByName(mustRenderAppSpecFiles(t, bp))["screen_dashboard.go"])
 	if screen == "" {
 		t.Fatal("no screen_dashboard.go rendered")
 	}

@@ -1058,7 +1058,11 @@ func orderFor(key string) []string {
 
 func packParseFile(path string) (*ast.File, error) {
 	fset := token.NewFileSet()
-	return parser.ParseFile(fset, path, nil, 0)
+	file, err := parser.ParseFile(fset, path, nil, 0)
+	if err != nil {
+		return nil, err
+	}
+	return packResolvePhrases(file), nil
 }
 
 // rootReadDirEntries lists the entries of rel (a slash path relative to
@@ -2429,7 +2433,11 @@ func packReadPerScreenFiles(dir string) ([]AppSpecScreen, error) {
 		if rerr != nil {
 			return nil, rerr
 		}
-		return parser.ParseFile(token.NewFileSet(), rel, src, 0)
+		file, err := parser.ParseFile(token.NewFileSet(), rel, src, 0)
+		if err != nil {
+			return nil, err
+		}
+		return packResolvePhrases(file), nil
 	}
 	var screenNames []string
 	for _, e := range entries {
