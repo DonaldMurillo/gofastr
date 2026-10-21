@@ -9,7 +9,7 @@ package main
 // path (YAML -> loadAppSpec -> validateAppSpec -> renderAppSpecFiles),
 // and use go/parser on the emitted bytes as the oracle. The audit table below
 // is derived from the IR structs (App spec, AppSpecApp, AppSpecScreen,
-// AppSpecBlock, AppSpecTransition, AppSpecAction, AppSpecEndpoint,
+// AppSpecBlock, AppSpecTransition, AppSpecAction, settings.Endpoint,
 // AppSpecNamedStub, AppSpecNavItem, AppSpecSeedEntity,
 // framework.EntityDeclaration) — every string field, not a sample.
 //
@@ -47,6 +47,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -352,9 +353,9 @@ screens:
 
 endpoints:
   - name: tickets_feed
+    entity: tickets
     method: __EP_METHOD__
     path: __EP_PATH__
-    entity: tickets
     handler: __EP_HANDLER__
     description: __EP_DESC__
 
@@ -483,8 +484,8 @@ var auditControlValues = map[string]string{
 	"__DASH_TITLE__":        "DashCtrl",
 	"__BLOCK_ENTITY__":      "tickets",
 	"__EP_METHOD__":         "GET",
-	"__EP_PATH__":           "/feed",
-	"__EP_HANDLER__":        "ticketsFeed",
+	"__EP_PATH__":           "feedpathctl",
+	"__EP_HANDLER__":        "entities/tickets_endpoints.go#TicketsFeedCtl",
 	"__NAV_HREF__":          "/dash",
 }
 
@@ -949,7 +950,7 @@ func TestAuditUnvalidatedEmitterPath(t *testing.T) {
 			}},
 			{"screen.name", func(b *AppSpec, v string) { b.Screens[0].Name = v }},
 			{"endpoint.handler", func(b *AppSpec, v string) {
-				b.Endpoints = []AppSpecEndpoint{{Name: "e", Method: "GET", Path: "/x", Handler: v}}
+				b.Endpoints = []settings.Endpoint{{Name: "e", Entity: b.Entities[0].Name, Method: "POST", Path: "{id}/e", Handler: "entities/x_endpoints.go#" + v}}
 			}},
 		} {
 			label := strings.NewReplacer("\n", "N", "`", "BT", `"`, "Q").Replace(mutate.what + "/" + hn)

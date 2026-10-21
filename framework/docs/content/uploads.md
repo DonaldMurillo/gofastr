@@ -54,8 +54,13 @@ The framework:
    array. Two file parts under one `Image`/`File` key are refused too;
    those columns hold a single URL.
 3. Streams each file part matching an `Image`/`File` field through
-   `Storage`, scoped by entity name and field name.
+   `Storage`, scoped by entity name and field name. A part for a
+   read-only or hidden field is ignored, as the write ignores a value
+   for it, so no stored object goes unreferenced.
 4. Stores the returned URL string on the record.
+
+The generated Go client, JS SDK and CLI send this request for you: see
+[SDKs](sdk.md) and [App CLI](app-cli.md).
 
 The record persisted to the database looks like:
 

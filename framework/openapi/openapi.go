@@ -162,6 +162,14 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 	// Track whether any entity is auth-gated so the shared security
 	// schemes are registered once after the loop, not per entity.
 	anyGated := false
+	// components names every unversioned entity this document emits a
+	// schema for, so an endpoint's Returns can reference it.
+	components := map[string]bool{}
+	for _, ent := range registry.AllSorted() {
+		if (keep == nil || keep(ent)) && ent.Version == "" {
+			components[ent.GetName()] = true
+		}
+	}
 	// Generate schema + paths for each entity. Use AllSorted so the
 	// emitted /openapi.json bytes are stable across restarts,
 	// otherwise the tag array order tracks Go's randomised map
@@ -238,7 +246,9 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			if hasCustomEndpoints(ent) {
 				s.AddTag(tagName, entityName+" operations")
 			}
-			addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix)
+			if addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix, components) {
+				anyGated = true
+			}
 			continue
 		}
 
@@ -662,7 +672,9 @@ func entityOpenAPI(registry entity.Registry, title, version string, crudMounted,
 			addBulkPaths(s, path, entityName, schemaName, tagName, gated, errorRef)
 		}
 
-		addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix)
+		if addCustomEndpoints(s, ent, schemaName, tagName, apiPrefix, components) {
+			anyGated = true
+		}
 	}
 
 	// When at least one entity is auth-gated, advertise how callers
@@ -912,8 +924,10 @@ func hasCustomEndpoints(ent *entity.Entity) bool {
 // addCustomEndpoints emits an entity's hand-written Endpoints. Split out
 // of the main loop because it runs on both sides of the auto-CRUD
 // opt-out: the router mounts these endpoints regardless of
-// Exposure.CRUD, so the spec advertises them regardless too.
-func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName, apiPrefix string) {
+// Exposure.CRUD, so the spec advertises them regardless too. It reports
+// whether any operation it emitted requires a caller.
+func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName, apiPrefix string, components map[string]bool) bool {
+	gated := false
 	for _, endpoint := range ent.Config.Endpoints {
 		if endpoint.Method == "" || endpoint.Path == "" {
 			continue
@@ -925,13 +939,53 @@ func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName
 		}
 		customOp.OperationID = DefaultEndpointToolName(schemaName, endpoint.Method, EntityEndpointPath(ent, endpoint.Path))
 		customOp.Tags = []string{tagName}
-		// A typed InputSchema becomes the JSON request body, but only for
-		// methods that carry one (GET/HEAD never do). Unset schemas fall
-		// back to today's shapeless {type:object} response and no body.
-		if len(endpoint.InputSchema) > 0 && endpoint.Method != "GET" && endpoint.Method != "HEAD" {
-			customOp.SetRequestBody("application/json", EndpointInputSchema(endpoint), true)
+		// A typed InputSchema splits by where each field travels. A field
+		// named by a {param} segment is a path parameter, typed from its
+		// field. A settings-declared endpoint (SDK) on GET or DELETE reads
+		// the rest from the query string, as its generated clients send
+		// it. Everything else is the JSON body, for methods that carry one
+		// (GET/HEAD never do). Unset schemas fall back to the shapeless
+		// {type:object} response and no body.
+		pathParams := map[string]bool{}
+		for seg := range strings.SplitSeq(endpoint.Path, "/") {
+			if strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}") {
+				pathParams[seg[1:len(seg)-1]] = true
+			}
 		}
-		customOp.AddResponse(200, "OK", EndpointOutputSchema(endpoint))
+		inQuery := endpoint.SDK && (endpoint.Method == "GET" || endpoint.Method == "DELETE")
+		var body []schema.Field
+		for _, f := range endpoint.InputSchema {
+			switch {
+			case pathParams[f.Name]:
+				customOp.AddParameter(f.Name, "path", "", true, openapi.FieldToSchema(f))
+			case inQuery:
+				customOp.AddParameter(f.Name, "query", "", f.Required, openapi.FieldToSchema(f))
+			default:
+				body = append(body, f)
+			}
+		}
+		if len(body) > 0 && endpoint.Method != "GET" && endpoint.Method != "HEAD" {
+			customOp.SetRequestBody("application/json", openapi.FieldsToSchema(body), true)
+		}
+		// The route answers 401 without a user unless the endpoint is
+		// Public (App.endpointRoute), so the operation says so.
+		if !endpoint.Public {
+			customOp.AddSecurity("bearerAuth", nil)
+			customOp.AddSecurity("cookieAuth", nil)
+			gated = true
+		}
+		out := EndpointOutputSchema(endpoint)
+		if len(endpoint.OutputSchema) == 0 {
+			name, list := strings.CutPrefix(endpoint.Returns, "[]")
+			if components[name] {
+				out = map[string]any{"$ref": "#/components/schemas/" + name}
+				if list {
+					out = map[string]any{"type": "array", "items": out}
+				}
+			}
+		}
+		customOp.AddResponse(200, "OK", out)
 		s.AddPath(endpoint.Method, EntityEndpointRoutePath(ent, endpoint.Path, apiPrefix), *customOp)
 	}
+	return gated
 }

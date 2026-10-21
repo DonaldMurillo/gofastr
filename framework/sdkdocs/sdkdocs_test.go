@@ -324,3 +324,26 @@ func TestMenuMarksOnlyTheCurrentPage(t *testing.T) {
 		t.Errorf("errors menu marks %v; want [Errors]", got)
 	}
 }
+
+// A settings-declared endpoint names its typed SDK calls; a
+// hand-registered one points at Do.
+func TestEndpointRowsNameTypedCalls(t *testing.T) {
+	reg := &fakeRegistry{entities: []*entity.Entity{
+		entity.Define("posts", entity.EntityConfig{
+			Table:    "blog_posts",
+			Exposure: &entity.ExposureConfig{Public: true},
+			Fields:   []schema.Field{{Name: "title", Type: schema.String}},
+			Endpoints: []entity.Endpoint{
+				{Method: "POST", Path: "{id}/feature", Name: "feature_post", SDK: true},
+				{Method: "GET", Path: "stats", Name: "post_stats"},
+			},
+		}),
+	}}
+	srv := mountedServer(t, Config{Registry: reg})
+	_, body := get(t, srv, "/docs/api/entities/posts")
+	for _, want := range []string{"Go c.FeaturePost, TypeScript api.blogPosts.featurePost", "Custom endpoint (post_stats): use the SDK&#39;s Do escape hatch"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("entity page lacks %q", want)
+		}
+	}
+}

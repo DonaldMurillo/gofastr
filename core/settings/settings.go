@@ -1,10 +1,10 @@
 // Package settings reads gofastr.settings.yml, the one committed file that
 // holds a project's gofastr configuration. Each top-level section belongs
-// to one reader: codegen to `gofastr generate`, contracts to `gofastr
-// verify`, isolation to the running app, unmounted to the CLI's record of
-// copied packages. This package finds the file and checks its top level;
-// each reader decodes its own section. The unmounted section is decoded
-// and written here, since several commands share it.
+// to one reader: codegen and endpoints to `gofastr generate`, contracts
+// to `gofastr verify`, isolation to the running app, unmounted to the
+// CLI's record of copied packages. This package finds the file and checks
+// its top level; each reader decodes its own section. The unmounted and
+// endpoints sections are decoded here, since several commands share each.
 package settings
 
 import (
@@ -27,6 +27,7 @@ var sections = map[string]bool{
 	"version":   true,
 	"codegen":   true,
 	"contracts": true,
+	"endpoints": true,
 	"isolation": true,
 	"unmounted": true,
 }

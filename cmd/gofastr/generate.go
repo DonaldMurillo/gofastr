@@ -19,6 +19,7 @@ import (
 	"syscall"
 
 	"github.com/DonaldMurillo/gofastr/codegen"
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
@@ -66,7 +67,8 @@ func printGenerateHelp() {
 Usage:
   gofastr generate [--config=<gofastr.settings.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch]
       Run the derived generators and extensions listed in the codegen
-      config (gofastr build does this too)
+      config, then rebuild entities/client when it exists (gofastr build
+      does this too)
   gofastr generate <generator> [args]
       Run one generator
 
@@ -250,11 +252,54 @@ func generateProject(args []string) {
 	}
 	if discovered.Found {
 		generateFromCodegenConfig(options, discovered)
+		// Discovery's project dir is absolute and the writer takes only a
+		// root relative to the working directory, so rebuild from inside it.
+		restore, err := enterCodegenProjectDir(discovered)
+		if err != nil {
+			fail("Failed to enter codegen project: %v", err)
+			osExit(1)
+			return
+		}
+		defer restore()
+		rebuildAppClient(options, false)
+		return
+	}
+	// entities/endpoints.gen.go and entities/client need no config entry:
+	// an app with settings endpoints or a client gets them rebuilt by
+	// every plain generate and build.
+	if appEndpointsWanted(".") || appClientPresent(".") {
+		rebuildAppClient(options, true)
 		return
 	}
 	fail("Nothing to generate: no codegen config found.")
-	info("Derived generators (%s) run from gofastr.settings.yml. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
+	info("Derived generators (%s) run from gofastr.settings.yml, entities/endpoints.gen.go is rebuilt from its endpoints section, and entities/client whenever it exists. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
 	osExit(1)
+}
+
+// rebuildAppClient runs refreshAppEndpoints and then refreshAppClient,
+// whose typed calls cover those endpoints, in the working directory for a
+// plain generate. It exits on failure the way the other generators of that
+// run do. report: under --json, these files are the whole run, so they are
+// the document; with a codegen config the engine already printed one.
+func rebuildAppClient(options generateOptions, report bool) {
+	files, err := refreshAppEndpoints(".", options.dryRun, options.json)
+	if err == nil {
+		var client []generatedFile
+		client, err = refreshAppClient(".", options.dryRun, options.json)
+		files = append(files, client...)
+	}
+	if err != nil {
+		if options.json {
+			printGeneratedErrorsJSON(err)
+		} else {
+			fail("%v", err)
+		}
+		osExit(1)
+		return
+	}
+	if report && options.json {
+		printGeneratedFilesJSON(files)
+	}
 }
 
 type generateOptions struct {
@@ -461,11 +506,35 @@ func generateFromCodegenConfig(options generateOptions, discovery codegen.Discov
 		failConfig(fmt.Errorf("the styles generator has no dry run, so --dry-run --json cannot report it; run `gofastr generate --dry-run --json` from a config without it, or drop --json"))
 		return
 	}
+	// Decode against the full list so an error names the entry's own index.
+	_, cliRuns, err := splitCLIEntries(cfg.Codegen.Generators)
+	if err != nil {
+		failConfig(err)
+		return
+	}
+	engineGens = slices.DeleteFunc(engineGens, func(gen codegen.GeneratorConfig) bool {
+		return gen.Extension == "" && gen.Name == "cli"
+	})
+	if len(cliRuns) > 0 && options.json {
+		err := fmt.Errorf("a cli entry writes its own --json document, so the codegen config cannot report it in one; run `gofastr generate cli --json` for it, or drop --json")
+		if !options.dryRun {
+			printGeneratedErrorsJSON(err)
+			osExit(1)
+			return
+		}
+		failConfig(err)
+		return
+	}
 	cfg.Codegen.Generators = engineGens
-	// With nothing left for the engine (a styles-only config), skip it:
-	// a clean would otherwise wipe codegen.output for no generator.
+	// With nothing left for the engine (a styles- or cli-only config), skip
+	// it: a clean would otherwise wipe codegen.output for no generator.
 	if len(engineGens) > 0 {
 		runCodegenEngine(options, cfg, discovery)
+	}
+	for _, cliOpts := range cliRuns {
+		cliOpts.dryRun = options.dryRun
+		cliOpts.fromSettings = true
+		generateCLI(cliOpts)
 	}
 	if stylePatterns == nil {
 		return
@@ -586,6 +655,37 @@ func splitStylesEntries(gens []codegen.GeneratorConfig) (engine []codegen.Genera
 		stylePatterns = append(stylePatterns, patterns)
 	}
 	return engine, stylePatterns, nil
+}
+
+// splitCLIEntries pulls the `cli` entries out of a config's generator list
+// and decodes each into the options the `gofastr generate cli` flags would
+// set. The CLI writes to its own directory (output, default cmd/<binary>,
+// relative to the project), not under codegen.output, so it runs after the
+// engine instead of inside its file set. A `client` entry is refused: the
+// app client needs none, every plain generate rebuilds it. An `sdk` entry
+// stays with the engine but is decoded here too, so a bad key fails with
+// its index before any generator writes.
+func splitCLIEntries(gens []codegen.GeneratorConfig) (engine []codegen.GeneratorConfig, runs []cliOptions, err error) {
+	for i, gen := range gens {
+		if gen.Extension == "" && gen.Name == "sdk" {
+			if _, err := decodeSDKEntry(i, gen); err != nil {
+				return nil, nil, err
+			}
+		}
+		if gen.Extension != "" || (gen.Name != "cli" && gen.Name != "client") {
+			engine = append(engine, gen)
+			continue
+		}
+		if gen.Name == "client" {
+			return nil, nil, fmt.Errorf("codegen.generators[%d]: client needs no entry; every plain gofastr generate and gofastr build rebuilds entities/client/client.go when it exists. Remove the entry", i)
+		}
+		opts, err := decodeCLIEntry(i, gen)
+		if err != nil {
+			return nil, nil, err
+		}
+		runs = append(runs, opts)
+	}
+	return engine, runs, nil
 }
 
 func enterCodegenProjectDir(discovery codegen.Discovery) (func(), error) {
@@ -736,6 +836,7 @@ func generateAppSpec(bp AppSpec, options generateOptions) {
 	// Additive mode: entity orders must continue after the project's existing
 	// set so RegisterAll's declaration order and pack recovery stay coherent.
 	entityOffset, screenOffset := 0, 0
+	addsEndpoints := false
 	if options.add {
 		// A pre-0.15 aggregated entities/register.go holds the app.Entity
 		// calls inline and has no registrar seam: a per-entity file dropped
@@ -799,6 +900,19 @@ func generateAppSpec(bp AppSpec, options generateOptions) {
 			}
 		}
 		bp.Entities = merged
+		// The project's endpoints join the fragment's the same way: the
+		// settings section is rewritten whole, so it must hold both.
+		projectEndpoints, eerr := existingEndpoints(writeRoot)
+		if eerr != nil {
+			if options.dryRun && options.json {
+				printGeneratedErrorsJSON(eerr)
+				osExit(1)
+			}
+			fail("Failed to load app spec: %v", eerr)
+			osExit(1)
+		}
+		addsEndpoints = len(mergeEndpoints(projectEndpoints, bp.Endpoints)) > len(projectEndpoints)
+		bp.Endpoints = mergeEndpoints(projectEndpoints, bp.Endpoints)
 		// Screens aren't rendered from the union (only entities are), so
 		// validateAppSpec can't see the project's existing screen routes.
 		// Reject a fragment screen whose route collides with one already
@@ -881,6 +995,7 @@ func generateAppSpec(bp AppSpec, options generateOptions) {
 	// and skipped (exists), write only the new files, and report loudly.
 	if options.add {
 		var written, skipped []generatedFile
+		files, _ = splitSettingsFile(files)
 		for _, file := range files {
 			if fileExistsUnder(writeRoot, file.name) {
 				skipped = append(skipped, file)
@@ -893,18 +1008,56 @@ func generateAppSpec(bp AppSpec, options generateOptions) {
 			skipNames[i] = f.name
 		}
 		sort.Strings(skipNames)
+		if addsEndpoints {
+			if err := checkAddEndpoints(writeRoot, bp, written); err != nil {
+				if options.json {
+					printGeneratedErrorsJSON(err)
+					osExit(1)
+				}
+				fail("%v", err)
+				osExit(1)
+			}
+		}
+
+		hasNewEntities := addsEndpoints
+		for _, f := range written {
+			name := filepath.ToSlash(f.name)
+			// events.go is a fixed seam file like register.go (the
+			// per-entity event wrappers delegate to it), not a new
+			// entity: writing it alone must not rebuild the client.
+			if strings.HasPrefix(name, "entities/") && name != "entities/register.go" && name != "entities/events.go" && !strings.HasPrefix(name, "entities/client/") {
+				hasNewEntities = true
+				break
+			}
+		}
 
 		if options.dryRun {
+			// The settings file takes the merged section, and the derived
+			// files already there are rebuilt from the tree, not skipped.
+			var updated []string
+			if addsEndpoints {
+				updated = append(updated, settings.FileName)
+				if fileExistsUnder(writeRoot, appEndpointsPath) {
+					updated = append(updated, filepath.FromSlash(appEndpointsPath))
+				}
+			}
+			if hasNewEntities && appClientPresent(writeRoot) {
+				updated = append(updated, filepath.FromSlash(appClientPath))
+			}
+			skipNames = withoutNames(skipNames, updated)
 			if options.json {
-				printAdditiveFilesJSON(written, skipNames)
+				printAdditiveFilesJSON(written, skipNames, updated)
 				return
+			}
+			for _, name := range updated {
+				info("Would update %s", filepath.Join(outDir, name))
 			}
 			info("Would add %d file(s) in %s:", len(written), displayDir)
 			for _, file := range written {
 				fmt.Printf("    %s\n", filepath.Join(outDir, file.name))
 			}
-			if len(skipped) > 0 {
-				info("Would skip %d existing:", len(skipped))
+			if len(skipNames) > 0 {
+				info("Would skip %d existing:", len(skipNames))
 				for _, name := range skipNames {
 					fmt.Printf("    %s\n", filepath.Join(outDir, name))
 				}
@@ -928,29 +1081,40 @@ func generateAppSpec(bp AppSpec, options generateOptions) {
 				osExit(1)
 			}
 		}
-		// Warn about stale client.go: a silently-stale generated API surface
-		// is a trap the other aggregates aren't.
+		var updated []string
+		if addsEndpoints {
+			if err := settings.SetEndpoints(filepath.Join(writeRoot, settings.FileName), bp.Endpoints); err != nil {
+				fail("Failed to write the endpoints: %v", err)
+				osExit(1)
+			}
+			updated = append(updated, settings.FileName)
+			// A handler file already in the project keeps its types, so
+			// the registration is rebuilt from the source on disk.
+			rebuilt, err := refreshAppEndpoints(writeRoot, false, options.json)
+			if err != nil {
+				fail("Failed to rebuild %s: %v", appEndpointsPath, err)
+				osExit(1)
+			}
+			if len(rebuilt) > 0 {
+				updated = append(updated, filepath.FromSlash(appEndpointsPath))
+			}
+		}
+		// The client is derived: rebuild it over the whole entity set, old
+		// entities and new, instead of leaving it stale.
+		if hasNewEntities {
+			if rebuilt, err := refreshAppClient(writeRoot, false, options.json); err != nil {
+				// stderr under --json: stdout is the document.
+				if options.json {
+					fmt.Fprintf(os.Stderr, "warning: could not rebuild %s: %v\n", appClientPath, err)
+				} else {
+					warn("could not rebuild %s: %v", appClientPath, err)
+				}
+			} else if len(rebuilt) > 0 {
+				updated = append(updated, filepath.FromSlash(appClientPath))
+			}
+		}
+		skipNames = withoutNames(skipNames, updated)
 		if !options.json {
-			hasNewEntities := false
-			for _, f := range written {
-				name := filepath.ToSlash(f.name)
-				// events.go is a fixed seam file like register.go (the
-				// per-entity event wrappers delegate to it), not a new
-				// entity: writing it alone must not trigger the stale
-				// client.go warning below.
-				if strings.HasPrefix(name, "entities/") && name != "entities/register.go" && name != "entities/events.go" && !strings.HasPrefix(name, "entities/client/") {
-					hasNewEntities = true
-					break
-				}
-			}
-			if hasNewEntities {
-				for _, f := range skipped {
-					if filepath.ToSlash(f.name) == "entities/client/client.go" {
-						warn("entities/client/client.go already exists and was not updated: it does not include the new entities. Regenerate it from a full app spec with --force, or extend it by hand.")
-						break
-					}
-				}
-			}
 			// The added pieces self-register against their seam, but the seam
 			// only runs if the owned shell calls it. Fresh generates always
 			// emit both call sites; if this project's owned file lost (or
@@ -971,11 +1135,15 @@ func generateAppSpec(bp AppSpec, options generateOptions) {
 			}
 		}
 		if options.json {
-			printAdditiveFilesJSON(written, skipNames)
+			printAdditiveFilesJSON(written, skipNames, updated)
 			return
 		}
-		if len(skipped) > 0 {
-			success("Added %d file(s) in %s (skipped %d existing)", len(written), displayDir, len(skipped))
+		// The rebuilds said so themselves.
+		if addsEndpoints {
+			info("Added the fragment's endpoints to %s", filepath.Join(outDir, settings.FileName))
+		}
+		if len(skipNames) > 0 {
+			success("Added %d file(s) in %s (skipped %d existing)", len(written), displayDir, len(skipNames))
 			info("Skipped existing files:")
 			for _, name := range skipNames {
 				fmt.Printf("    %s\n", filepath.Join(outDir, name))
@@ -996,7 +1164,10 @@ func generateAppSpec(bp AppSpec, options generateOptions) {
 		}
 		return
 	}
-	fileSet, err := fileSetFromGeneratedFiles(files, "app")
+	// The endpoints section is merged into a settings file already there,
+	// so the rest of the file survives a generate.
+	toWrite, writesEndpoints := splitSettingsFile(files)
+	fileSet, err := fileSetFromGeneratedFiles(toWrite, "app")
 	if err != nil {
 		fail("App spec code generation failed: %v", err)
 		osExit(1)
@@ -1007,10 +1178,13 @@ func generateAppSpec(bp AppSpec, options generateOptions) {
 	// explicit overwrite escape.
 	if !options.force {
 		var conflicts []string
-		for _, file := range files {
+		for _, file := range toWrite {
 			if fileExistsUnder(writeRoot, file.name) {
 				conflicts = append(conflicts, filepath.Join(outDir, file.name))
 			}
+		}
+		if writesEndpoints && endpointsConflict(writeRoot, bp.Endpoints) {
+			conflicts = append(conflicts, filepath.Join(outDir, settings.FileName)+" (its endpoints section)")
 		}
 		if len(conflicts) > 0 {
 			sort.Strings(conflicts)
@@ -1029,7 +1203,7 @@ func generateAppSpec(bp AppSpec, options generateOptions) {
 		// --force skips the conflict check by design, but silently
 		// discarding hand edits is how a scaffolded app drifts into an
 		// unregenerable one without anyone noticing (issue #131).
-		warnForceOverwrite(editedTargets(files, writeRoot, outDir))
+		warnForceOverwrite(editedTargets(toWrite, writeRoot, outDir))
 	}
 	writeOpts := codegen.WriteOptions{
 		OutputRoot:   writeRoot,
@@ -1039,6 +1213,12 @@ func generateAppSpec(bp AppSpec, options generateOptions) {
 	if err := codegen.WriteFiles(fileSet, writeOpts); err != nil {
 		fail("Failed to write generated files: %v", err)
 		osExit(1)
+	}
+	if writesEndpoints {
+		if err := settings.SetEndpoints(filepath.Join(writeRoot, settings.FileName), bp.Endpoints); err != nil {
+			fail("Failed to write the endpoints: %v", err)
+			osExit(1)
+		}
 	}
 	if options.force {
 		if err := removeRetiredAppSpecFiles(writeRoot); err != nil {
@@ -1362,6 +1542,12 @@ func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderO
 			return nil, fmt.Errorf("entity %q: %w", decl.Name, err)
 		}
 	}
+	// The client is the client generator's derived output, stamped as
+	// such here, so the first copy matches every later rebuild.
+	clientSrc, err := renderAppClient(decls)
+	if err != nil {
+		return nil, err
+	}
 	files := []generatedFile{
 		{name: "register.go", content: renderRegisterSeam()},
 		// Event helpers are entity-independent: one fixed seam file instead
@@ -1370,7 +1556,7 @@ func renderGeneratedProjectWithOrder(decls []framework.EntityDeclaration, orderO
 		{name: "events.go", content: renderEventHelpers()},
 		// Generated client lives in its own package so consumers can import
 		// it without dragging the server-side schema/framework deps along.
-		{name: "client/client.go", content: renderClient(decls)},
+		{name: "client/client.go", content: clientSrc},
 	}
 	// Preserve the caller's entity order (the app spec's authored order) so
 	// scaffolds are reproducible byte-for-byte and gofastr pack round-trips.
@@ -2376,10 +2562,12 @@ func printGeneratedFilesJSON(files []generatedFile) {
 }
 
 // printAdditiveFilesJSON emits the --add success shape: the written files in
-// the same {"path","size"} format as printGeneratedFilesJSON, plus a sorted
+// the same {"path","size"} format as printGeneratedFilesJSON, a sorted
 // "skipped_existing" array of file names that were not written because they
-// already existed. The key is always present in --add mode.
-func printAdditiveFilesJSON(written []generatedFile, skipped []string) {
+// already existed, and an "updated" array of files already there that the
+// run changed: the settings file's merged endpoints and the rebuilt derived
+// files. Both keys are always present in --add mode.
+func printAdditiveFilesJSON(written []generatedFile, skipped, updated []string) {
 	fmt.Println(`{"files":[`)
 	for i, file := range written {
 		comma := ","
@@ -2388,19 +2576,32 @@ func printAdditiveFilesJSON(written []generatedFile, skipped []string) {
 		}
 		fmt.Printf("  {\"path\":%q,\"size\":%d}%s\n", file.name, len(file.content), comma)
 	}
-	if len(skipped) == 0 {
-		fmt.Println(`],"skipped_existing":[]}`)
+	fmt.Print("]")
+	printJSONNames("skipped_existing", skipped)
+	printJSONNames("updated", updated)
+	fmt.Println("}")
+}
+
+// printJSONNames continues a JSON object with key holding names.
+func printJSONNames(key string, names []string) {
+	if len(names) == 0 {
+		fmt.Printf(",%q:[]", key)
 		return
 	}
-	fmt.Println(`],"skipped_existing":[`)
-	for i, name := range skipped {
+	fmt.Printf(",%q:[\n", key)
+	for i, name := range names {
 		comma := ","
-		if i == len(skipped)-1 {
+		if i == len(names)-1 {
 			comma = ""
 		}
 		fmt.Printf("  %q%s\n", name, comma)
 	}
-	fmt.Println(`]}`)
+	fmt.Print("]")
+}
+
+// withoutNames returns names less those in drop.
+func withoutNames(names, drop []string) []string {
+	return slices.DeleteFunc(names, func(n string) bool { return slices.Contains(drop, n) })
 }
 
 func printCodegenFilesJSON(files []codegen.GeneratedFile) {

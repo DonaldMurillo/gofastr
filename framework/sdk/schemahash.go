@@ -48,7 +48,8 @@ type NamedConfig struct {
 // The projection covers exactly what changes a generated client's surface:
 // name, table (route path), Public, SoftDelete (trashed listing), sorted
 // SearchFields (?q=), relations (?include=), the states block (guarded
-// columns and one call per move), and every non-Hidden field's
+// columns and one call per move), the endpoints gofastr.settings.yml
+// declares (one typed call each), and every non-Hidden field's
 // name, type, required/unique/readonly/auto flags, enum values, and
 // default. Hidden fields never appear on the wire, so flipping one is
 // invisible to SDKs and deliberately does not change the hash. Field order
@@ -94,6 +95,18 @@ func SchemaHash(named []NamedConfig) string {
 		Transitions []hashTransition `json:"transitions,omitempty"`
 		Advisory    bool             `json:"advisory,omitempty"`
 	}
+	type hashParam struct {
+		Name     string `json:"name"`
+		Type     int    `json:"type"`
+		Required bool   `json:"required"`
+	}
+	type hashEndpoint struct {
+		Name    string      `json:"name"`
+		Method  string      `json:"method"`
+		Path    string      `json:"path"`
+		Input   []hashParam `json:"input,omitempty"`
+		Returns string      `json:"returns,omitempty"`
+	}
 	type hashEntity struct {
 		Name         string         `json:"name"`
 		Table        string         `json:"table"`
@@ -108,6 +121,11 @@ func SchemaHash(named []NamedConfig) string {
 		// config participates, Advisory included (an Advisory flip
 		// reopens the field to direct writes).
 		States *hashStates `json:"states,omitempty"`
+		// Endpoints holds the settings-declared endpoints (SDK set): each
+		// is a typed call in the generated clients. Hand-registered
+		// endpoints stay out, since the generator never sees them and a
+		// client reaches them through Do.
+		Endpoints []hashEndpoint `json:"endpoints,omitempty"`
 	}
 
 	entities := make([]hashEntity, 0, len(named))
@@ -195,6 +213,18 @@ func SchemaHash(named []NamedConfig) string {
 			}
 			he.States = &hs
 		}
+
+		for _, ep := range cfg.Endpoints {
+			if !ep.SDK {
+				continue
+			}
+			hp := hashEndpoint{Name: ep.Name, Method: ep.Method, Path: ep.Path, Returns: ep.Returns}
+			for _, f := range ep.InputSchema {
+				hp.Input = append(hp.Input, hashParam{Name: f.Name, Type: int(f.Type), Required: f.Required})
+			}
+			he.Endpoints = append(he.Endpoints, hp)
+		}
+		sort.Slice(he.Endpoints, func(i, j int) bool { return he.Endpoints[i].Name < he.Endpoints[j].Name })
 
 		entities = append(entities, he)
 	}

@@ -4,10 +4,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/codegen"
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -325,5 +327,190 @@ func TestValidateFetchesNoFonts(t *testing.T) {
 	})
 	if code != -1 && code != 0 {
 		t.Fatalf("exit %d:\n%s", code, out)
+	}
+}
+
+// examples/ecommerce/app is generated from its gofastr.yml with hooks,
+// middleware, a plugin and state moves, so pack has to read all of them
+// back and write them out: the check runs on the spec decoded from the
+// packed YAML, and a regression in any recovery or in the serializer shows
+// up as an unrecovered file.
+//
+//gofastr:test-reads /examples/ecommerce/
+func TestPackRecoversEcommerce(t *testing.T) {
+	// The seed password lives in the app's .env, which a checkout does not
+	// carry: copy the app and write the .env generate would.
+	spec, err := loadAppSpec(filepath.Join("..", "..", "examples", "ecommerce", "gofastr.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(filepath.Join("..", "..", "examples", "ecommerce", "app"))); err != nil {
+		t.Fatal(err)
+	}
+	env := "ADMIN_SEED_PASSWORD=" + spec.App.Admin.SeedPassword + "\n" // not-a-secret: the example spec's published placeholder
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(env), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bp, err := packAppSpec(dir)
+	if err != nil {
+		t.Fatalf("packAppSpec: %v", err)
+	}
+	yml, err := encodeAppSpecYAML(bp)
+	if err != nil {
+		t.Fatalf("encodeAppSpecYAML: %v", err)
+	}
+	back, err := decodeAppSpecString(yml)
+	if err != nil {
+		t.Fatalf("packed spec does not decode: %v\n%s", err, yml)
+	}
+	c, err := checkPack(dir, back)
+	if err != nil {
+		t.Fatalf("checkPack: %v", err)
+	}
+	if len(c.Unrecovered) != 0 || len(c.Unread) != 0 {
+		t.Fatalf("ecommerce did not pack whole:\nunrecovered: %+v\nunread: %+v", c.Unrecovered, c.Unread)
+	}
+}
+
+// Pack reads an app's endpoints back from its settings file, and the
+// linked handler file is the developer's: once its body is written, the
+// check names it hand-written instead of unrecovered.
+func TestPackReadsEndpointsBack(t *testing.T) {
+	bp := packCheckFixture()
+	bp.Endpoints = []settings.Endpoint{{
+		Name: "pin_note", Entity: "notes", Method: "POST", Path: "{id}/pin",
+		Handler: "entities/notes_endpoints.go#PinNote", Description: "Pin a note.", MCP: true,
+	}}
+	dir := materializeAppSpec(t, bp)
+	handler := filepath.Join(dir, "entities", "notes_endpoints.go")
+	src, err := os.ReadFile(handler)
+	if err != nil {
+		t.Fatal(err)
+	}
+	written := strings.Replace(string(src), "return nil, handler.Errorf(http.StatusNotImplemented", "_ = in\n\treturn nil, handler.Errorf(http.StatusConflict", 1)
+	if err := os.WriteFile(handler, []byte(written), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	packed, err := packAppSpec(dir)
+	if err != nil {
+		t.Fatalf("packAppSpec: %v", err)
+	}
+	if !slices.Equal(packed.Endpoints, bp.Endpoints) {
+		t.Fatalf("packed endpoints = %+v, want %+v", packed.Endpoints, bp.Endpoints)
+	}
+	c, err := checkPack(dir, packed)
+	if err != nil {
+		t.Fatalf("checkPack: %v", err)
+	}
+	if len(c.Unrecovered) != 0 {
+		t.Errorf("unrecovered: %+v", c.Unrecovered)
+	}
+	if !slices.Contains(c.HandWritten, "entities/notes_endpoints.go") {
+		t.Errorf("hand-written = %v, want the handler file named", c.HandWritten)
+	}
+}
+
+// A handler registered on a second lifecycle by hand is one stub, and an
+// app spec hook owns its stub: pack keeps the first registration and the
+// check names main.go, instead of writing two hooks generate refuses.
+func TestPackHookHandlerOnce(t *testing.T) {
+	bp := packCheckFixture()
+	bp.Hooks = []AppSpecHook{{ID: "validate_note", Entity: "notes", When: "before_create", Handler: "ValidateNote"}}
+	dir := materializeAppSpec(t, bp)
+	main := filepath.Join(dir, "main.go")
+	src, err := os.ReadFile(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const line = `fwApp.HookRegistry("notes").RegisterHook(framework.BeforeCreate, ValidateNote)`
+	if !strings.Contains(string(src), line) {
+		t.Fatalf("main.go does not register the hook as %s:\n%s", line, src)
+	}
+	edited := strings.Replace(string(src), line, line+"\n\tfwApp.HookRegistry(\"notes\").RegisterHook(framework.BeforeUpdate, ValidateNote)", 1)
+	if err := os.WriteFile(main, []byte(edited), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	packed, err := packAppSpec(dir)
+	if err != nil {
+		t.Fatalf("packAppSpec: %v", err)
+	}
+	if len(packed.Hooks) != 1 || packed.Hooks[0].When != "before_create" {
+		t.Fatalf("hooks = %+v, want the before_create registration alone", packed.Hooks)
+	}
+	if err := validateAppSpec(packed); err != nil {
+		t.Fatalf("the packed spec does not validate: %v", err)
+	}
+	c, err := checkPack(dir, packed)
+	if err != nil {
+		t.Fatalf("checkPack: %v", err)
+	}
+	if !slices.ContainsFunc(c.Unrecovered, func(n packFileNote) bool { return n.Path == "main.go" }) {
+		t.Errorf("unrecovered = %+v, want main.go named", c.Unrecovered)
+	}
+}
+
+// A handler whose types the developer changed rebuilds endpoints.gen.go and
+// the client from those types. Both are another generator's files, so the
+// check leaves them out instead of comparing them with the 501 stub's.
+func TestPackChecksEndpointsFromHandlers(t *testing.T) {
+	bp := packCheckFixture()
+	bp.Endpoints = []settings.Endpoint{{
+		Name: "pin_note", Entity: "notes", Method: "GET", Path: "{id}/pin",
+		Handler: "entities/notes_endpoints.go#PinNote",
+	}}
+	dir := materializeAppSpec(t, bp)
+	handler := filepath.Join(dir, "entities", "notes_endpoints.go")
+	src, err := os.ReadFile(handler)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const field = "\tID string `path:\"id\" json:\"-\"`\n"
+	if !strings.Contains(string(src), field) {
+		t.Fatalf("stub has no ID field:\n%s", src)
+	}
+	edited := strings.Replace(string(src), field, field+"\tReason string `query:\"reason\" json:\"-\"`\n", 1)
+	if err := os.WriteFile(handler, []byte(edited), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	if _, err := refreshAppEndpoints(".", false, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := refreshAppClient(".", false, true); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(readFile(t, dir, "entities/client/client.go"), "Reason") || !strings.Contains(readFile(t, dir, "entities/endpoints.gen.go"), `"reason"`) {
+		t.Fatal("the derived files did not pick up the new input field")
+	}
+	packed, err := packAppSpec(dir)
+	if err != nil {
+		t.Fatalf("packAppSpec: %v", err)
+	}
+	c, err := checkPack(dir, packed)
+	if err != nil {
+		t.Fatalf("checkPack: %v", err)
+	}
+	if len(c.Unrecovered) != 0 {
+		t.Errorf("unrecovered: %+v", c.Unrecovered)
+	}
+}
+
+// A checkout carries no .env, so pack cannot recover the seed password; it
+// says so before the check names app.go and main.go.
+func TestPackNamesMissingSeedPassword(t *testing.T) {
+	bp := packCheckFixture()
+	bp.App.Auth.Enabled = true
+	bp.App.Admin = AppSpecAdmin{SeedEmail: "admin@example.com", SeedPassword: "change-me-now-123"} // not-a-secret: test fixture
+	dir := materializeAppSpec(t, bp)
+	if err := os.Remove(filepath.Join(dir, ".env")); err != nil {
+		t.Fatal(err)
+	}
+	origExit := osExit
+	osExit = func(int) {}
+	defer func() { osExit = origExit }()
+	out := captureStdout(t, func() { runPack([]string{"-o", filepath.Join(t.TempDir(), "out.yml"), dir}) })
+	if !strings.Contains(out, "holds no ADMIN_SEED_PASSWORD") {
+		t.Fatalf("pack did not name the missing seed password:\n%s", out)
 	}
 }

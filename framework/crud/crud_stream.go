@@ -154,7 +154,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 			// and let the client parse what we sent.
 			break
 		}
-		ch.decodeJSONFields(row)
+		ch.decodeReadFields(row)
 		if !first {
 			if _, err := w.Write([]byte(",")); err != nil {
 				return

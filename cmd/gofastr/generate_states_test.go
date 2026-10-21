@@ -54,7 +54,7 @@ func TestCLIRendersTransitionCommands(t *testing.T) {
 		joined[f.name] = f.content
 	}
 
-	invoices := joined["invoices.go"]
+	invoices := joined["invoices.gen.go"]
 	if invoices == "" {
 		t.Fatalf("no invoices.go emitted; files: %v", fileNames(files))
 	}
@@ -72,7 +72,7 @@ func TestCLIRendersTransitionCommands(t *testing.T) {
 		t.Error("invoices.go mentions the System move; system moves appear nowhere")
 	}
 
-	verbs := joined["verbs.go"]
+	verbs := joined["verbs.gen.go"]
 	if verbs == "" {
 		t.Fatal("verbs.go not emitted for a transitions-only surface")
 	}

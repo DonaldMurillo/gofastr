@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/file"
 )
 
 // renderSDKJSFiles emits the JS/TS SDK: one handrolled ESM client.js plus a
@@ -23,7 +25,7 @@ func renderSDKJSFiles(spec sdkSpec) []generatedFile {
 	js.WriteString(header)
 	dts.WriteString(header)
 
-	js.WriteString(jsRuntimePrelude)
+	js.WriteString(fmt.Sprintf(jsRuntimePrelude, file.MaxProcessFileSize, crud.MaxMultipartBodyBytes))
 
 	dts.WriteString(dtsRuntimePrelude)
 
@@ -39,11 +41,16 @@ func renderSDKJSFiles(spec sdkSpec) []generatedFile {
 		// the assignment and whatever follows runs in the constructor. Bracket
 		// access is identical for every legitimate name (`client.posts` still
 		// resolves) and admits no name that is not a string.
-		resourceProps = append(resourceProps, fmt.Sprintf("    this[%q] = new Resource(this, %q);", jsResourceProp(ent), ent.Table))
+		resourceProps = append(resourceProps, fmt.Sprintf("    this[%q] = new Resource(this, %q%s);", jsResourceProp(ent), ent.Table, jsUploadColumns(decl)))
 		// One binding per move, same quoting rule: the key is data, never
 		// an identifier, in the emitted statements.
 		for _, t := range crud.RoutableTransitions(decl.States) {
 			resourceProps = append(resourceProps, fmt.Sprintf("    this[%q][%q] = (id) => this[%q].transition(id, %q);", jsResourceProp(ent), t.Key, jsResourceProp(ent), t.Key))
+		}
+		// One binding per endpoint gofastr.settings.yml declares on the
+		// table (checkEndpointCalls keeps its name off every member above).
+		for _, ep := range sdkEndpoints(decl) {
+			resourceProps = append(resourceProps, jsEndpointBinding(jsResourceProp(ent), ep))
 		}
 	}
 
@@ -75,6 +82,9 @@ func renderSDKJSFiles(spec sdkSpec) []generatedFile {
 		if len(crud.RoutableTransitions(spec.Decls[i].States)) > 0 {
 			prop += fmt.Sprintf(" & %sMoves", ent.Struct)
 		}
+		if len(sdkEndpoints(spec.Decls[i])) > 0 {
+			prop += fmt.Sprintf(" & %sEndpoints", ent.Struct)
+		}
 		dts.WriteString(prop + ";\n")
 	}
 	dts.WriteString(`  /**
@@ -90,6 +100,24 @@ func renderSDKJSFiles(spec sdkSpec) []generatedFile {
 		{name: "client.d.ts", content: dts.String()},
 		{name: "README.md", content: renderSDKJSReadme(spec)},
 	}
+}
+
+// jsUploadColumns is the third Resource argument of an entity that takes
+// files: each Input key mapped to its column, the name a multipart part
+// goes by. Empty for an entity without Image or File fields.
+func jsUploadColumns(decl framework.EntityDeclaration) string {
+	if len(uploadFields(decl)) == 0 {
+		return ""
+	}
+	dropCreate, _ := writeShapeDrops(decl)
+	var pairs []string
+	for _, f := range decl.Fields {
+		if f.Hidden || dropCreate(f) {
+			continue
+		}
+		pairs = append(pairs, fmt.Sprintf("%q: %q", toCamelJSON(f.Name), f.Name))
+	}
+	return ", { " + strings.Join(pairs, ", ") + " }"
 }
 
 // jsResourceProp is the camelCase property name a table gets on the Client
@@ -146,7 +174,12 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		if inputTakesValue(fd) {
 			opt = ""
 		}
-		fmt.Fprintf(dts, "  %s%s: %s;\n", toCamelJSON(fd.Name), opt, tsTypeForField(fd.Type, fd.Values))
+		typ := tsTypeForField(fd.Type, fd.Values)
+		if slices.ContainsFunc(uploadFields(decl), func(u framework.FieldDeclaration) bool { return u.Name == fd.Name }) {
+			// A Blob (a File is one) is uploaded; a string is a stored URL.
+			typ += " | Blob"
+		}
+		fmt.Fprintf(dts, "  %s%s: %s;\n", toCamelJSON(fd.Name), opt, typ)
 	}
 	dts.WriteString("}\n\n")
 
@@ -207,6 +240,40 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		}
 		dts.WriteString("}\n\n")
 	}
+	writeDTSEndpoints(dts, decl, ent)
+}
+
+// dtsRuntimeTypes are the names client.d.ts declares for every app.
+var dtsRuntimeTypes = []string{"ApiError", "ListParams", "CursorParams", "ListResponse", "CursorPage", "BatchResult", "BatchResponse", "Resource", "Client"}
+
+// checkDTSTypeNames refuses an endpoint whose <Method>Request interface
+// would take a name client.d.ts already declares: TypeScript merges two
+// interfaces of one name, so the clash would compile and type the call
+// with the other declaration's fields. The Go twin needs no check here;
+// refuseDuplicateDecls catches it in client.go.
+func checkDTSTypeNames(spec sdkSpec) error {
+	owner := map[string]string{}
+	for _, n := range dtsRuntimeTypes {
+		owner[n] = "the SDK runtime"
+	}
+	for _, ent := range spec.Entities {
+		for _, suffix := range []string{"", "Input", "Patch", "Moves", "Endpoints"} {
+			owner[ent.Struct+suffix] = "entity " + ent.Table
+		}
+	}
+	for _, d := range spec.Decls {
+		for _, ep := range sdkEndpoints(d) {
+			if _, rest, _ := endpointInput(ep); len(rest) == 0 {
+				continue
+			}
+			name := toCamelCase(ep.Name) + "Request"
+			if prev, dup := owner[name]; dup {
+				return fmt.Errorf("endpoint %q on %q: its request type %s is already declared by %s in client.d.ts; rename the endpoint", ep.Name, d.Name, name, prev)
+			}
+			owner[name] = "endpoint " + ep.Name
+		}
+	}
+	return nil
 }
 
 // stampNote renders a move's stamp for a doc comment; empty when none.
@@ -317,10 +384,75 @@ function encodeParams(params) {
   return q;
 }
 
+// The server's multipart limits: one file, and the whole request body.
+// partFraming is a generous allowance for one part's boundary line and
+// headers past its name, so the body estimate errs over, not under.
+const maxFileBytes = %d;
+const maxUploadBytes = %d;
+const partFraming = 256;
+
+/**
+ * Returns body as it is unless a value is a Blob (a File is one). Then it
+ * builds the multipart/form-data body the server takes a file upload in:
+ * each part named by its column, a Blob as a file, a string as it is and
+ * any other value as JSON. A file over the server's limits throws here,
+ * before anything is sent; the whole-body check counts every part's bytes
+ * plus partFraming each.
+ */
+const isBlob = (v) => typeof Blob !== "undefined" && v instanceof Blob;
+
+/** A batch goes as JSON, where a Blob would arrive as {}: refuse it. */
+function refuseBlobs(items) {
+  for (const item of items || []) {
+    for (const [key, value] of Object.entries(item || {})) {
+      if (isBlob(value)) {
+        throw new Error("batch: " + key + " is a file, and a batch sends JSON; upload it with create, update or patch");
+      }
+    }
+  }
+}
+
+function toFormData(body, columns) {
+  if (!columns || !body || !Object.values(body).some(isBlob)) return body;
+  const form = new FormData();
+  const utf8 = new TextEncoder();
+  let size = 0;
+  for (const [key, value] of Object.entries(body)) {
+    if (value === undefined) continue;
+    const column = Object.hasOwn(columns, key) ? columns[key] : "";
+    if (!column) throw new Error("multipart: field " + key + " has no column");
+    if (value === null) {
+      throw new Error("multipart: " + key + " is null, which a multipart body cannot carry; send it in a separate patch");
+    }
+    size += partFraming + utf8.encode(column).length;
+    if (isBlob(value)) {
+      if (value.size > maxFileBytes) {
+        throw new Error("multipart: file " + key + " is over the server's limit of " + (maxFileBytes / 1048576) + " MiB per file");
+      }
+      const name = value.name || column;
+      size += value.size + utf8.encode(name).length;
+      form.append(column, value, name);
+    } else {
+      const text = typeof value === "string" ? value : JSON.stringify(value);
+      size += utf8.encode(text).length;
+      form.append(column, text);
+    }
+  }
+  if (size > maxUploadBytes) {
+    throw new Error("multipart: the request is over the server's limit of " + (maxUploadBytes / 1048576) + " MiB");
+  }
+  return form;
+}
+
 class Resource {
-  constructor(client, table) {
+  /**
+   * columns maps each Input key to its column; only a table with Image or
+   * File fields has it, and only it takes Blob values.
+   */
+  constructor(client, table, columns) {
     this.client = client;
     this.table = table;
+    this.columns = columns || null;
   }
 
   _path(suffix, params) {
@@ -351,14 +483,13 @@ class Resource {
     return out && out.data !== undefined ? out.data : out;
   }
 
-  async create(body) {
-    const out = await this.client.do("POST", this._path(""), body);
-    return out && out.data !== undefined ? out.data : out;
+  /** A Blob value (an Image or File field) sends the body as multipart. */
+  create(body) {
+    return this._write("POST", this._path(""), body);
   }
 
-  async update(id, body) {
-    const out = await this.client.do("PUT", this._path("/" + encodeURIComponent(id)), body);
-    return out && out.data !== undefined ? out.data : out;
+  update(id, body) {
+    return this._write("PUT", this._path("/" + encodeURIComponent(id)), body);
   }
 
   /**
@@ -366,8 +497,12 @@ class Resource {
    * presence-faithful, so {views: 0} sets views to zero while an omitted
    * key leaves the column untouched.
    */
-  async patch(id, body) {
-    const out = await this.client.do("PATCH", this._path("/" + encodeURIComponent(id)), body);
+  patch(id, body) {
+    return this._write("PATCH", this._path("/" + encodeURIComponent(id)), body);
+  }
+
+  async _write(method, path, body) {
+    const out = await this.client.do(method, path, toFormData(body, this.columns));
     return out && out.data !== undefined ? out.data : out;
   }
 
@@ -375,12 +510,14 @@ class Resource {
     return this.client.do("DELETE", this._path("/" + encodeURIComponent(id)));
   }
 
-  batchCreate(items) {
+  async batchCreate(items) {
+    refuseBlobs(items);
     return this._batch("POST", { items });
   }
 
   /** Each item must carry id plus the fields to change. */
-  batchUpdate(items) {
+  async batchUpdate(items) {
+    refuseBlobs(items);
     return this._batch("PATCH", { items });
   }
 
@@ -414,6 +551,26 @@ class Resource {
   }
 
   /**
+   * Calls one endpoint gofastr.settings.yml declares under this table.
+   * GET and DELETE send input as the query string; every other method
+   * sends it as the JSON body, an empty object when there is none (the
+   * route requires the JSON content type). Generated clients bind each
+   * endpoint as a named method (api.posts.featurePost(id, input)).
+   */
+  _endpoint(method, suffix, input) {
+    if (method === "GET" || method === "DELETE") {
+      const q = new URLSearchParams();
+      for (const [key, value] of Object.entries(input || {})) {
+        if (value === undefined || value === null) continue;
+        q.set(key, String(value));
+      }
+      const s = q.toString();
+      return this.client.do(method, this._path(suffix) + (s ? "?" + s : ""));
+    }
+    return this.client.do(method, this._path(suffix), input || {});
+  }
+
+  /**
    * Subscribes to the entity's live SSE feed (entity.created / updated /
    * deleted). onEvent receives (event, data) with data already JSON-parsed.
    * Resolves when the stream ends; abort via {signal}. Uses fetch streaming
@@ -432,7 +589,9 @@ const jsClientMethods = `  async do(method, path, body) {
     const headers = { Accept: "application/json" };
     if (this.token) headers.Authorization = "Bearer " + this.token;
     const init = { method, headers };
-    if (body !== undefined && body !== null) {
+    if (typeof FormData !== "undefined" && body instanceof FormData) {
+      init.body = body; // fetch sets the multipart Content-Type and boundary
+    } else if (body !== undefined && body !== null) {
       headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(body);
     }
@@ -580,6 +739,9 @@ export interface BatchResult<T> {
   skipped?: boolean;
 }
 
+/** A batch goes as JSON, so its items take no Blob: upload one row at a time. */
+export type NoBlob<T> = { [K in keyof T]: Exclude<T[K], Blob> };
+
 export interface BatchResponse<T> {
   committed: boolean;
   results: Array<BatchResult<T>>;
@@ -593,8 +755,8 @@ export declare class Resource<T, TInput, TPatch> {
   update(id: string, body: TInput): Promise<T>;
   patch(id: string, body: TPatch): Promise<T>;
   remove(id: string): Promise<null>;
-  batchCreate(items: TInput[]): Promise<BatchResponse<T>>;
-  batchUpdate(items: Array<TPatch & { id: string }>): Promise<BatchResponse<T>>;
+  batchCreate(items: Array<NoBlob<TInput>>): Promise<BatchResponse<T>>;
+  batchUpdate(items: Array<NoBlob<TPatch> & { id: string }>): Promise<BatchResponse<T>>;
   batchDelete(ids: string[]): Promise<BatchResponse<T>>;
   watch(
     onEvent: (event: string, data: unknown) => void | Promise<void>,

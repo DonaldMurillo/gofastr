@@ -1,0 +1,55 @@
+version: v0.93.0
+title: entities/client and the generated CLI are rebuilt from entities/
+notes:
+  - change: "gofastr generate cli output is derived: the generated files are named *.gen.go and every run rebuilds them, removes the ones the entities no longer produce, and keeps custom.go; the old one-shot .go files are removed on the first run, which stops on one you edited until --force"
+    breaking: true
+    nodetect: "the CLI is generated Go with no gofastr symbol that changed; the first gofastr generate cli run removes the old files you left alone and stops on each one you edited, naming it"
+    guidance: "Move edits in the CLI's generated files (main.go, config.go, auth.go, output.go, verbs.go, <entity>.go) into custom.go, where customCommands can replace any command including login and logout, then run gofastr generate cli with your original flags and --force once. Add a cli entry to gofastr.settings.yml so gofastr build keeps it current. See gofastr docs app-cli."
+  - change: "entities/client/client.go is derived: gofastr generate client, plain gofastr generate, gofastr build and generate app --add rebuild it from entities/*.go whenever it exists"
+    breaking: true
+    nodetect: "only an edited client.go needs action, and the first gofastr build names it and leaves it alone; nothing in the source tells an edit from the file generate app wrote"
+    guidance: "If you edited entities/client/client.go, move your code into another file of package client and run gofastr generate client --force once. From then on builds keep it current; never edit client.go again."
+  - change: "the sdk and cli entries in gofastr.settings.yml read only, exclude and targets as YAML lists and refuse a comma string; an unknown key or a value of the wrong type in either entry now fails gofastr generate, gofastr build and gofastr generate sdk instead of being ignored"
+    breaking: true
+    hits: review
+    find:
+      text:
+        - glob: "**/gofastr.settings.yml"
+          match: '^\s+(only|exclude|targets|verbs):\s*[^\s\[#]'
+    guidance: "A hit under an extension's config is that extension's own key; leave it. Under an sdk or cli entry, write each list as a YAML list: only: [posts, comments] instead of only: posts,comments. The refusal prints the list spelling for the value it read. See gofastr docs sdk and gofastr docs app-cli."
+  - change: "Endpoint routes answer 401 to a caller with no user unless the endpoint sets Public, send Cache-Control: no-store when gated, and refuse a form-shaped cross-site write with 403; before, an Endpoint's HTTP route had only the middleware the app put in front of it"
+    breaking: true
+    hits: review
+    find:
+      fields:
+        - field: gofastr/framework/entity.Endpoint.Handler
+    guidance: "An endpoint that anonymous callers must reach (a webhook receiver, a health probe, a public search) sets Public: true. One that already sat behind auth middleware needs nothing. A browser form that posted to an endpoint from another origin now gets 403; send JSON instead. See gofastr docs entity-declarations."
+  - change: "Endpoint.MCPPublic is renamed Public, and it opens the HTTP route as well as the MCP tool"
+    breaking: true
+    hits: edit
+    find:
+      fields:
+        - field: gofastr/framework/entity.Endpoint.MCPPublic
+    guidance: "Rename MCPPublic to Public. The endpoint's HTTP route then serves anonymous callers too, which an endpoint marked MCPPublic was meant to allow."
+  - change: "custom endpoints can be declared under endpoints: in gofastr.settings.yml with a linked typed handler; gofastr generate writes entities/endpoints.gen.go and the Go client, JS SDK and CLI each gain a typed call"
+    breaking: false
+    nodetect: "a new section; nothing in an existing app uses it"
+    guidance: "Optional. Move a hand-registered endpoint into the settings file to get typed calls in the clients. See gofastr docs endpoints."
+  - change: "an app spec's endpoints: entries take the gofastr.settings.yml shape: entity is required, path is relative to the entity's route, and handler links entities/<file>.go#<Name>; generate app writes them into the settings file with a typed stub per handler, and an entity's own endpoints: list is refused"
+    breaking: true
+    hits: review
+    find:
+      text:
+        - glob: "**/gofastr.yml"
+          match: '^\s+path:\s*"?/'
+        - glob: "**/gofastr.yml"
+          match: '^\s{4,}endpoints:'
+    guidance: "Only an app spec you still generate from needs this. Move each entity's endpoints: entries to the top-level endpoints: list with entity: <name>; drop the leading /<entity>/ from path (/orders/{id}/confirm becomes {id}/confirm); set handler to entities/<entity>_endpoints.go#<ExportedName>. A path: hit outside endpoints: belongs to another construct; leave it. An endpoint with no entity is a hand-registered route: write it in owned Go with fwApp.Router().Handle. See gofastr docs app-spec."
+  - change: "kiln freeze refuses a world route, a scaffold endpoint with no entity, and an endpoint whose path sits outside its entity's route"
+    breaking: true
+    nodetect: "a Kiln world lives in the running Kiln session, not in the source tree; the freeze names each refused surface"
+    guidance: "Delete the route or endpoint from the world (delete_route, or set_scaffold without it), freeze, and register the route by hand in owned Go after generation. Give a scaffold endpoint an entity and a path under that entity's route to keep it in the app spec."
+  - change: "on SQLite, CRUD responses carry a schema.Decimal column as a JSON string (\"12.5\"), as they already did on Postgres and as OpenAPI documents; before, SQLite answered a number"
+    breaking: true
+    nodetect: "the change is in what a running app answers; code that reads the JSON lives in the app's consumers, not in its source"
+    guidance: "A consumer that read a decimal from an SQLite-backed app as a JSON number parses the string now: strconv.ParseFloat or a decimal type in Go, Number() or a decimal library in JS. The generated Go client and SDKs already typed the field as a string, and the Go client failed to decode the number before."

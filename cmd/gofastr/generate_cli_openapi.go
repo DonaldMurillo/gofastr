@@ -48,7 +48,7 @@ import (
 
 // runGenerateCLIFromOpenAPI implements `gofastr generate cli
 // --from-openapi <spec>`: same output conventions as the entity path
-// (one-shot owned code, custom.go seam, cmd/<binary> layout), different
+// (derived *.gen.go files, custom.go seam, cmd/<binary> layout), different
 // source of truth.
 func runGenerateCLIFromOpenAPI(opts cliOptions) {
 	doc, err := loadOpenAPIDoc(opts.fromOpenAPI)
@@ -435,7 +435,6 @@ func buildOpenAPICLISpec(doc map[string]any, opts cliOptions, clientImport strin
 		Binary:       opts.binary,
 		EnvPrefix:    cliEnvPrefix(opts.binary),
 		ClientImport: clientImport,
-		Selection:    " --from-openapi " + opts.fromOpenAPI,
 		SelfClient:   true,
 		TokenHeader:  "Authorization",
 		TokenPrefix:  "Bearer ",
@@ -583,7 +582,7 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 	// read to choose a command. --from-openapi is documented for URL
 	// sources, so the spec is not always operator-typed: refuse the
 	// bytes at spec build, next to the identifier grammar checks above
-	// and buildCLISpec's Selection guard. Newlines and tabs stay
+	// and buildCLISpec's --api-prefix guard. Newlines and tabs stay
 	// allowed — a multi-line summary is quoted data, not a terminal
 	// rewrite (TestGenerateCLI_OpenAPIHostileStringsStayQuoted pins it
 	// accepted). The 8-bit C1 spellings (U+0080–U+009F: CSI as U+009B,

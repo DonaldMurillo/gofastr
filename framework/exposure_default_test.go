@@ -218,7 +218,7 @@ func TestCRUDFalseStillServesEndpoints(t *testing.T) {
 			Exposure: &entity.ExposureConfig{CRUD: &off},
 			Endpoints: []entity.Endpoint{{
 				Method: http.MethodGet, Path: "stats", Name: "posts_stats", // relative: mounts under the entity
-				MCP: true,
+				MCP: true, Public: true,
 				Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.WriteHeader(http.StatusOK)
 					_, _ = w.Write([]byte(`{"ok":true}`))

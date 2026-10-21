@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -249,6 +250,9 @@ type App struct {
 	auditActor func(context.Context) string
 	// entityUI is the UI EntityUI built; a second call is refused.
 	entityUI *entityui.UI
+	// pendingEndpoints holds EntityEndpoints calls until App.Entity
+	// registers the entity they name.
+	pendingEndpoints map[string][]entity.Endpoint
 	// crudMounts records where each entity's write routes mounted: the
 	// router that carries them (a group's sub-router, with its
 	// middleware) and the path on it. EntityUI mounts the bulk and export
@@ -1600,7 +1604,7 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 		}
 		path := groupEndpointPath(ent, endpoint)
 		if endpoint.Handler != nil {
-			g.Handle(method, path, endpoint.Handler)
+			g.Handle(method, path, endpointRoute(endpoint))
 		}
 		if endpoint.MCP {
 			if endpoint.MCPHandler == nil {
@@ -2041,6 +2045,24 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 	return a
 }
 
+// EntityEndpoints queues endpoints for the entity that a later App.Entity
+// or TryEntity call registers under name. That call merges them into its
+// config's Endpoints, so they pass the same route and MCP checks as
+// endpoints written in the config. It is how a generated
+// entities/endpoints.gen.go attaches endpoints to entity files it does not
+// own. Calling it for an entity already registered panics, and Start fails
+// while endpoints are still queued for a name nothing registered.
+func (a *App) EntityEndpoints(name string, endpoints ...entity.Endpoint) *App {
+	if _, err := a.Registry.Get(name); err == nil {
+		panic(fmt.Sprintf("framework: EntityEndpoints(%q) after the entity was registered; queue endpoints before App.Entity", name))
+	}
+	if a.pendingEndpoints == nil {
+		a.pendingEndpoints = map[string][]entity.Endpoint{}
+	}
+	a.pendingEndpoints[name] = append(a.pendingEndpoints[name], endpoints...)
+	return a
+}
+
 // TryEntity is the error-returning variant of Entity: it registers an entity
 // and returns an error on any misconfiguration instead of panicking. It also
 // recovers panics from deeper validation (e.g. an invalid TenantField) and
@@ -2068,6 +2090,15 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	// silently mark the entity as seeded with empty data on first run.
 	if config.SeedFS != nil && config.SeedPath == "" {
 		return fmt.Errorf("entity %q has SeedFS set but SeedPath empty: point SeedPath at a file within the FS or unset SeedFS", name)
+	}
+
+	// Endpoints queued by EntityEndpoints join the config here, before
+	// Define, so every check below sees them. They leave the queue only
+	// once registration commits: a rejected declaration keeps them for
+	// the corrected retry.
+	queued := a.pendingEndpoints[name]
+	if len(queued) > 0 {
+		config.Endpoints = append(slices.Clip(config.Endpoints), queued...)
 	}
 
 	e := entity.Define(name, config)
@@ -2157,6 +2188,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 			return fmt.Errorf("failed to register endpoints for entity %q: %w", name, err)
 		}
 	}
+	delete(a.pendingEndpoints, name)
 
 	return nil
 }
@@ -2567,7 +2599,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 		path := openapi.EntityEndpointRoutePath(ent, endpoint.Path, a.apiPrefix())
 		specPath := openapi.EntityEndpointPath(ent, endpoint.Path)
 		if endpoint.Handler != nil {
-			a.router.Handle(method, path, endpoint.Handler)
+			a.router.Handle(method, path, endpointRoute(endpoint))
 		}
 		if endpoint.MCP {
 			if endpoint.MCPHandler == nil {
@@ -2589,17 +2621,41 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 	return nil
 }
 
+// endpointRoute is an Endpoint's Handler behind the gates every endpoint
+// route carries, the ones the CRUD routes apply to their own: a forgeable
+// cross-site request answers 403 on every method but GET and HEAD, and an
+// anonymous caller answers 401 unless the endpoint is Public. Before this,
+// Handler ran with whatever the app's middleware chain happened to hold,
+// so an endpoint on an entity whose CRUD answered 401 served anyone.
+func endpointRoute(ep entity.Endpoint) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead &&
+			handler.IsForgeableRequest(r) && handler.IsCrossSiteRequest(r) {
+			handler.WriteError(w, handler.Errorf(http.StatusForbidden, "cross-site request refused"))
+			return
+		}
+		if !ep.Public {
+			w.Header().Set("Cache-Control", "no-store")
+			if _, ok := handler.GetUser(r.Context()); !ok {
+				handler.WriteError(w, handler.Errorf(http.StatusUnauthorized, "authentication required"))
+				return
+			}
+		}
+		ep.Handler.ServeHTTP(w, r)
+	})
+}
+
 // endpointMCPOptions returns the registration options for an Endpoint's MCP
 // twin. An Endpoint's two front doors do not get the same protection for
-// free: Handler inherits the route's middleware chain, MCPHandler is
-// registered straight onto the MCP server and sees none of it. So the twin
-// defaults to requiring an authenticated caller, and an endpoint that really
-// is anonymous says so with MCPPublic.
+// free: endpointRoute gates the HTTP route, MCPHandler is registered
+// straight onto the MCP server and sees none of it. So the twin defaults to
+// requiring an authenticated caller, and an endpoint that really is
+// anonymous says so with Public.
 func endpointMCPOptions(ep entity.Endpoint) []mcp.ToolOption {
 	switch {
 	case ep.MCPGate != nil:
 		return []mcp.ToolOption{mcp.WithToolGate(ep.MCPGate)}
-	case ep.MCPPublic:
+	case ep.Public:
 		return nil
 	default:
 		return []mcp.ToolOption{mcp.WithToolGate(MCPRequireUser())}
@@ -3180,6 +3236,10 @@ func (a *App) Start(addr string) error {
 	// drives the real binary over HTTP still records what it exercised.
 	// No-op in every other process.
 	a.enableSemanticCoverageFromEnv()
+
+	if len(a.pendingEndpoints) > 0 {
+		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity call registered", strings.Join(slices.Sorted(maps.Keys(a.pendingEndpoints)), ", "))
+	}
 
 	runtimeIsolation, err := isolation.Resolve(".")
 	if err != nil {

@@ -1,55 +1,15 @@
 package main
 
 import (
-	"go/parser"
-	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
-
-// TestRenderAppSpecStubsValidGoWithoutHandler proves bug 1 is fixed:
-// an endpoint with no Handler set (only Name/Method/Path) must still
-// render valid Go in stubs.go. Previously this emitted
-// "func (w http.ResponseWriter, r *http.Request) {" which Go parses as
-// a method with multiple receivers ("method has multiple receivers").
-func TestRenderAppSpecStubsValidGoWithoutHandler(t *testing.T) {
-	bp := AppSpec{
-		App:       AppSpecApp{Name: "NoHandler", Module: "example.com/nohandler"},
-		Endpoints: []AppSpecEndpoint{{Name: "health", Method: "GET", Path: "/health"}},
-	}
-	src := renderAppSpecStubs(bp)
-	fset := token.NewFileSet()
-	if _, err := parser.ParseFile(fset, "stubs.go", src, parser.AllErrors); err != nil {
-		t.Fatalf("stubs.go is not valid Go: %v\n%s", err, src)
-	}
-	// The handler must be derived from Name and registered consistently.
-	if !strings.Contains(src, "func Health(") {
-		t.Fatalf("expected handler derived from endpoint Name:\n%s", src)
-	}
-}
-
-// TestRenderAppSpecStubsSkipsAnonymousEndpoint proves that when both
-// Handler and Name are empty there is no stub emitted at all (and the
-// file stays valid Go).
-func TestRenderAppSpecStubsSkipsAnonymousEndpoint(t *testing.T) {
-	bp := AppSpec{
-		App:       AppSpecApp{Name: "Anon", Module: "example.com/anon"},
-		Endpoints: []AppSpecEndpoint{{Method: "GET", Path: "/x"}},
-	}
-	src := renderAppSpecStubs(bp)
-	fset := token.NewFileSet()
-	if _, err := parser.ParseFile(fset, "stubs.go", src, parser.AllErrors); err != nil {
-		t.Fatalf("stubs.go is not valid Go: %v\n%s", err, src)
-	}
-	if strings.Contains(src, "http.ResponseWriter") {
-		t.Fatalf("expected no handler stub for anonymous endpoint:\n%s", src)
-	}
-}
 
 // TestRenderAppSpecNodeOnlyScreenBuilds proves bug 2 is fixed: a
 // screen whose body is a single node block (Kind set) with a plain
@@ -164,7 +124,7 @@ func covT_richAppSpec() AppSpec {
 			},
 			{Name: "empty", Title: "Empty", Type: "drawer"}, // no body → html.Heading path
 		},
-		Endpoints:  []AppSpecEndpoint{{Name: "health", Method: "GET", Path: "/health"}},
+		Endpoints:  []settings.Endpoint{{Name: "archive", Entity: "posts", Method: "POST", Path: "{id}/archive", Handler: "entities/posts_endpoints.go#ArchivePost"}},
 		Middleware: []AppSpecNamedStub{{Name: "logging"}},
 		Plugins:    []AppSpecNamedStub{{Name: "metrics"}},
 		Helpers:    []AppSpecNamedStub{{Name: "fmtx"}},
@@ -198,6 +158,17 @@ func TestRenderAppSpecFilesRichShape(t *testing.T) {
 	}
 	if strings.Contains(screens, `"github.com/DonaldMurillo/gofastr/kiln/render"`) {
 		t.Errorf("screens.go must NOT import the heavy kiln/render package")
+	}
+	// The endpoint lands in the settings file with its stub and registration.
+	for name, want := range map[string]string{
+		"gofastr.settings.yml":        "handler: \"entities/posts_endpoints.go#ArchivePost\"",
+		"entities/posts_endpoints.go": "func ArchivePost(ctx context.Context, in ArchivePostInput) (*Posts, error)",
+		"entities/endpoints.gen.go":   `app.EntityEndpoints("posts"`,
+		"entities/client/client.go":   ") Archive(ctx context.Context, id string)",
+	} {
+		if !strings.Contains(got[name], want) {
+			t.Errorf("%s missing %q:\n%s", name, want, got[name])
+		}
 	}
 	main := got["main.go"]
 	if !strings.Contains(main, "lib/pq") {
@@ -298,5 +269,27 @@ func TestRenderAppSpecNodeAppBuildsWithoutAuthoringEngine(t *testing.T) {
 		if strings.Contains(string(out), banned) {
 			t.Errorf("generated app spec package pulls %q — authoring engine leaked into a shipped app", banned)
 		}
+	}
+}
+
+// Each path value becomes its own input field, spelled the way Go spells
+// an id; two values that fold to one field name are refused, since the stub
+// would not compile.
+func TestEndpointStubPathFields(t *testing.T) {
+	spec := func(path string) AppSpec {
+		return AppSpec{
+			App:       AppSpecApp{Name: "S", Module: "example.com/s"},
+			Entities:  []framework.EntityDeclaration{{Name: "orders", Fields: []framework.FieldDeclaration{{Name: "total", Type: "decimal"}}}},
+			Endpoints: []settings.Endpoint{{Name: "move_line", Entity: "orders", Method: "POST", Path: path, Handler: "entities/orders_endpoints.go#MoveLine"}},
+		}
+	}
+	files, err := renderAppSpecFiles(spec("{id}/lines/{line_id}/move"))
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	stub := filesByName(files)[filepath.Join("entities", "orders_endpoints.go")]
+	assertContains(t, stub, "\tID string `path:\"id\" json:\"-\"`\n\tLineID string `path:\"line_id\" json:\"-\"`\n")
+	if _, err := renderAppSpecFiles(spec("{id}/lines/{i_d}/move")); err == nil || !strings.Contains(err.Error(), "both become input field ID") {
+		t.Fatalf("render err = %v, want the folded field refused", err)
 	}
 }

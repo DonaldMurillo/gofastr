@@ -136,34 +136,38 @@ func TestFileEdited(t *testing.T) {
 	}
 }
 
-// generate cli: a conflict says what made the files in the way, and
-// --force names the ones edited since.
+// generate cli rebuilds its derived files in place; an edited one is named
+// before its edit is dropped, and an untouched one is not.
 func TestGenerateCLIProvenance(t *testing.T) {
 	dir := cliTempModule(t)
 	covT_capStdout(t, func() { runGenerateCLI([]string{"--binary=myapp"}) })
 
-	var code int
-	out := covT_capStdout(t, func() {
-		code = covT_capExit(t, func() { runGenerateCLI([]string{"--binary=myapp"}) })
-	})
-	if code != 1 || !strings.Contains(out, "written by `gofastr generate cli "+markerVersion(cliVersion())+"`") {
-		t.Fatalf("conflict: exit %d, output:\n%s", code, out)
-	}
-
-	mainGo := filepath.Join(dir, "cmd", "myapp", "main.go")
+	mainGo := filepath.Join(dir, "cmd", "myapp", "main.gen.go")
 	data, err := os.ReadFile(mainGo)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if m, _, ok := codegen.ReadMarker(mainGo, string(data)); !ok || m.Kind != codegen.KindDerived || m.Generator != "cli" {
+		t.Fatalf("main.gen.go marker = %+v (marked %v), want cli derived", m, ok)
+	}
 	if err := os.WriteFile(mainGo, append(data, "\n// hand edit\n"...), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out = covT_capStdout(t, func() { runGenerateCLI([]string{"--binary=myapp", "--force"}) })
-	if !strings.Contains(out, "edited since they were generated") || !strings.Contains(out, filepath.Join("cmd", "myapp", "main.go")) {
-		t.Fatalf("--force did not name the edited file:\n%s", out)
+	var code int
+	out := covT_capStdout(t, func() {
+		code = covT_capExit(t, func() { runGenerateCLI([]string{"--binary=myapp"}) })
+	})
+	if code > 0 {
+		t.Fatalf("a second run must rebuild, not refuse: exit %d\n%s", code, out)
 	}
-	if strings.Contains(out, filepath.Join("cmd", "myapp", "auth.go")) {
-		t.Fatalf("--force named an untouched file:\n%s", out)
+	if !strings.Contains(out, filepath.Join("cmd", "myapp", "main.gen.go")+" was edited since `gofastr generate cli` wrote it") {
+		t.Fatalf("no edit warning for main.gen.go:\n%s", out)
+	}
+	if strings.Contains(out, "auth.gen.go was edited") {
+		t.Fatalf("warned about an untouched file:\n%s", out)
+	}
+	if again, _ := os.ReadFile(mainGo); strings.Contains(string(again), "hand edit") {
+		t.Fatal("the rebuild kept the edit in a derived file")
 	}
 }
 

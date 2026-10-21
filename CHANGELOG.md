@@ -18,6 +18,80 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ErrDuplicateJob`; the admin's replay answers 409 for it, and "Replay
   N failed" skips it and replays the rest. `RedisQueue` refuses a keyed
   job with `queue.ErrUniqueUnsupported`.
+
+### Fixed
+- **`DBQueue` index names on long table names.** Postgres cuts
+  identifiers at 63 bytes, so with a table name of 62 or 63 bytes the
+  dequeue and lane indexes got the same name and the second was never
+  created. A name over the limit now ends in a hash of the table name.
+
+## [0.93.0] - 2026-10-20
+
+**BREAKING** for generated clients, endpoints and SQLite decimals.
+`entities/client/client.go` and the generated CLI are rebuilt from
+`entities/` on every build, and only `custom.go` in the CLI is yours.
+Custom endpoints move to `gofastr.settings.yml` with a linked typed
+handler, `kiln freeze` writes them in that shape, and the Go client,
+JS SDK and CLI each gain a typed call for them. An `Endpoint` route now requires a signed-in caller unless it sets
+`Public`, which replaces `MCPPublic`. The `sdk` and `cli` settings
+entries take YAML lists and refuse unknown keys. On SQLite, a decimal
+column answers as a JSON string, as it already did on Postgres. The
+generated clients upload Image and File fields. v0.93.0 also adds HTTPS
+serving, `InTx` options, tracing spans for SQL, jobs and outbound HTTP,
+content-hash static URLs and admin email previews. `gofastr upgrade`
+lists each change.
+
+### Added
+- **Custom endpoints in `gofastr.settings.yml`.** An `endpoints:` entry
+  names an entity, a method, a path relative to the entity, and a linked
+  handler (`entities/refunds.go#RefundOrder`). `gofastr generate` reads
+  the handler's input and output types from the Go source and writes
+  `entities/endpoints.gen.go`, which registers the route with typed input
+  and output schemas. The Go client and SDK gain `c.RefundOrder(ctx, id,
+  client.RefundOrderRequest{...})`, the JS SDK `api.orders.refundOrder(id,
+  {...})` typed in `client.d.ts`, and the generated CLI
+  `orders refund-order <id> --flag ...`. OpenAPI documents path, query and
+  body inputs separately and the response as the returned entity schema,
+  the SDK docs site names the typed calls, and the SDK schema hash covers
+  the endpoints. Input fields travel by their
+  `handler.Bind` tags; generation refuses a name that collides with a
+  resource method, a state move or a CLI verb, and a return type the
+  client selection leaves out. `mcp: true` adds the MCP tool and
+  `public: true` serves anonymous callers. New `gofastr generate
+  endpoints` rebuilds only the registration. See `gofastr docs endpoints`.
+- **The generated clients upload files.** For an entity with an Image
+  or File field, the Go client and SDK gain `Create<Entity>WithFiles`,
+  `Update<Entity>WithFiles` and `Patch<Entity>WithFiles`, which take an
+  `<Entity>Files` struct of `*FilePart{Name, Body}` beside the write
+  struct, plus `DoMultipart` for any other multipart route. The JS SDK
+  sends a create, update or patch whose Image or File value is a `Blob`
+  as multipart, and `client.d.ts` types those fields `string | Blob`.
+  The generated CLI gains a file flag per such field, `--logo
+  ./acme.png` or `--logo -` for stdin. Every part goes by its column
+  name, which is what the server matches. Each client refuses, before
+  sending, a file over the server's 32 MiB per-file limit, a body over
+  its 64 MiB limit, and a `null`, which a multipart body cannot carry;
+  the Go client also refuses a field set in the body and sent as a
+  file. A JS batch refuses a `Blob`, since a batch sends JSON. Read-only
+  file fields get no upload slot or flag. See `gofastr docs sdk` and
+  `gofastr docs app-cli`.
+- **`App.EntityEndpoints` queues endpoints for an entity registered
+  later.** The next `App.Entity` or `TryEntity` call for that name merges
+  them into its config, so they pass the same route and MCP checks.
+  Calling it after registration panics, and `Start` fails while endpoints
+  wait on a name nothing registered. See `gofastr docs
+  entity-declarations` → Endpoints from another file.
+- **`gofastr pack` recovers `hooks`, `middleware`, `plugins`, `helpers`
+  and `endpoints`.** The first four come back from their wiring in
+  `app.go` and `main.go` plus the names and descriptions in `stubs.go`, so
+  a stub whose body you wrote still packs; endpoints come back from the
+  `endpoints:` section of `gofastr.settings.yml`, and the check counts a
+  linked handler file as hand-written. Pack also recovers nav icons,
+  `app.output_dir`, `paragraph` blocks and `entity_form` blocks.
+  `examples/ecommerce/app` packs with nothing unrecovered. When the
+  app's `.env` is missing, pack says the spec has no admin seed password
+  instead of leaving the check to report `app.go` and `main.go` as
+  changed. See `gofastr docs app-spec` → Packing.
 - **`App.InTx` takes transaction options.** `framework.TxIsolation(level)`
   sets the isolation level and `framework.TxReadOnly()` makes writes
   fail. The SQLite driver ignores the read-only flag, so on SQLite the
@@ -64,6 +138,73 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   A failed call's span records the error's type, never its message.
 
 ### Changed
+- **BREAKING: an app spec's `endpoints:` entries are `gofastr.settings.yml`
+  endpoints.** Each takes `name`, `entity` (required), `method`, a `path`
+  relative to the entity's route (`{id}/publish`), a `handler` link
+  (`entities/posts_endpoints.go#PublishPost`), `description`, `mcp` and
+  `public`. `generate app` merges them into the settings file, writes each
+  linked handler as a typed stub that answers 501 until you write it, and
+  writes `entities/endpoints.gen.go` and the client calls; it no longer
+  writes `http.HandlerFunc` stubs into `stubs.go` or `Router().Handle`
+  lines into `app.go`. An entity's own `endpoints:` list is refused with
+  the move to make. `gofastr upgrade` finds both spellings. A route with no
+  entity belongs in owned Go (`fwApp.Router().Handle`). `--add` merges a
+  fragment's endpoints into the settings file, and its `--json` report
+  lists the settings file and the rebuilt `endpoints.gen.go` and
+  `client.go` under a new `updated` key instead of `skipped_existing`. See
+  `gofastr docs app-spec` → Custom endpoints.
+- **BREAKING: `kiln freeze` writes endpoints in the settings shape and
+  refuses what has none.** Entity and scaffold endpoints freeze to the
+  top-level list with a relative path and an
+  `entities/<entity>_endpoints.go#<Name>` link. A world route, a scaffold
+  endpoint with no entity, one whose path sits outside its entity's route
+  (`/<table>/…`), or one that repeats another's route stops the freeze,
+  naming it; delete it and register the route in
+  owned Go after generation. See `gofastr docs kiln`.
+- **`entity_detail` refuses `text:` and `fields:`.** The record page draws
+  the entity's `display:` block, so both were accepted and never rendered.
+- **BREAKING: `Endpoint` routes require a signed-in caller unless the
+  endpoint sets `Public`.** The HTTP route answers 401 with no user on the
+  request and sends `Cache-Control: no-store` when gated. Public or not,
+  it refuses with 403 a cross-site write a plain HTML form could send (no
+  `Content-Type`, urlencoded, multipart or `text/plain`). Before, an
+  endpoint's HTTP route had only the middleware the app put in front of
+  it, while its MCP twin already required a user. OpenAPI marks every
+  endpoint operation but a `Public` one with the security schemes.
+  `Endpoint.MCPPublic` is
+  renamed `Public` and now opens both doors. `gofastr upgrade` lists every
+  endpoint and each `MCPPublic`. See `gofastr docs entity-declarations`.
+- **BREAKING: the generated CLI and `entities/client` are rebuilt from
+  `entities/`.** `gofastr generate cli` writes `*.gen.go` files that say
+  DO NOT EDIT; every run rebuilds them, removes the ones the entities no
+  longer produce (a dropped entity, a deselected verb) and keeps
+  `custom.go`, the one file that is yours. `customCommands` there can
+  replace `login` and `logout` too. A second run no longer needs
+  `--force`. A `cli` entry in `gofastr.settings.yml` (keys `binary`,
+  `api_prefix`, `from_openapi`, the lists `only` and `exclude`, and
+  `verbs`, one list or a map from entity to its list) makes plain
+  `gofastr generate` and `gofastr build` rebuild the CLI; such a run
+  rewrites only changed files and prints nothing when the CLI is current.
+  `gofastr generate cli` reads the same entry, flags winning key by key,
+  and a run no entry drove prints the entry to paste. The `main.gen.go`
+  header no longer repeats the flags.
+  New `gofastr generate client` rebuilds `entities/client/client.go`, and
+  `gofastr generate`, `gofastr build`, `--watch` and `generate app --add`
+  run it whenever that file exists, so the client follows a new entity or
+  field. The first run on a CLI from an earlier release removes its old
+  `.go` files and stops on any you edited; an edited `client.go` from an
+  earlier release is left alone with a warning. Move the edits into
+  `custom.go` or another file of package `client`, then run the generator
+  once with `--force`. `gofastr upgrade` lists both. See `gofastr docs
+  app-cli` and `gofastr docs codegen`.
+- **BREAKING: the `sdk` entry in `gofastr.settings.yml` reads `only`,
+  `exclude` and `targets` as YAML lists.** A comma string such as
+  `only: posts,comments` is refused with the list spelling
+  (`only: [posts, comments]`); before, `targets` as a string was dropped
+  without a word. An unknown key or a value of the wrong type fails
+  `gofastr generate`, `gofastr build` and `gofastr generate sdk` with the
+  entry named, where it used to be ignored. `gofastr upgrade` finds the
+  comma strings. See `gofastr docs sdk`.
 - **A nested `App.InTx` runs under a savepoint.** Called inside another
   transaction, `InTx` used to join it outright, so an error it returned
   left its writes in place and, on Postgres, a failed statement aborted
@@ -77,10 +218,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `https://` when the app serves TLS. A custom runner adds the argument.
 
 ### Fixed
-- **`DBQueue` index names on long table names.** Postgres cuts
-  identifiers at 63 bytes, so with a table name of 62 or 63 bytes the
-  dequeue and lane indexes got the same name and the second was never
-  created. A name over the limit now ends in a hash of the table name.
+- **A decimal column reads back as a string on SQLite.** OpenAPI and the
+  generated clients type `schema.Decimal` as a string, and Postgres
+  returns one, but SQLite gives a `DECIMAL` column numeric affinity, so
+  every read there answered `12.5`. The Go client could not decode such
+  a row at all. Every CRUD read, included relation rows and
+  `GroupCountAll` groups among them, now answers `"12.5"`.
+- **A multipart write stores no file for a column it cannot set.** A
+  file part named after a read-only or hidden Image or File field was
+  saved to storage, and then the write skipped the column, so nothing
+  referenced the object; a caller could repeat it to fill the disk. The
+  part is ignored now, as the write ignores a value for that column.
 - **`App.Shutdown` during boot always stops the server.** A `Shutdown`
   that ran while `Start` was still booting could miss the server `Start`
   was about to adopt, and `Start` then served forever. `Start` now sees

@@ -210,9 +210,7 @@ screens:
         level: 1
         text: Post Details
       - kind: entity_detail
-        text: Post
         entity: posts
-        fields: [title, status, published_at]
 
   - name: users
     route: /users
@@ -246,16 +244,16 @@ screens:
 
 endpoints:
   - name: posts_published
-    method: GET
-    path: /posts/published
     entity: posts
-    handler: postsPublished
+    method: GET
+    path: "published"
+    handler: entities/posts_endpoints.go#PostsPublished
     description: List only published posts
   - name: posts_search
-    method: GET
-    path: /posts/search
     entity: posts
-    handler: postsSearch
+    method: GET
+    path: "search"
+    handler: entities/posts_endpoints.go#PostsSearch
     description: Search posts by keyword
 
 middleware:

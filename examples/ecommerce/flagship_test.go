@@ -332,9 +332,19 @@ func assertOpenAPIEntityRouteParity(t *testing.T, client *http.Client, base stri
 	}
 	specPaths := make(map[string]struct{}, len(spec.Paths))
 	serverURL := strings.TrimRight(spec.Servers[0].URL, "/")
+	// The router serves every state move through one transitions/{key}
+	// route; the spec names each move as its own operation.
+	moves := 0
 	for path := range spec.Paths {
 		fullPath := normalizeRouteParams(serverURL + "/" + strings.TrimLeft(path, "/"))
+		if i := strings.LastIndex(fullPath, "/transitions/"); i >= 0 && !strings.Contains(fullPath[i+len("/transitions/"):], "/") {
+			fullPath = fullPath[:i] + "/transitions/:key"
+			moves++
+		}
 		specPaths[fullPath] = struct{}{}
+	}
+	if moves != 6 {
+		t.Errorf("OpenAPI lists %d order state moves, want the 6 gofastr.yml declares", moves)
 	}
 
 	if missing, stale := routeSetDifference(livePaths, specPaths), routeSetDifference(specPaths, livePaths); len(missing) > 0 || len(stale) > 0 {

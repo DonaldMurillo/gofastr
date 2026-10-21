@@ -80,6 +80,7 @@ func TestCovGroupEndpointsHappy(t *testing.T) {
 		Method:     http.MethodPost,
 		Path:       "{id}/publish",
 		MCP:        true,
+		Public:     true,
 		Handler:    http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("ok")) }),
 		MCPHandler: func(context.Context, map[string]any) (any, error) { return nil, nil },
 	}},

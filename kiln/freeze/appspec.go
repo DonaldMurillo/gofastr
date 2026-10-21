@@ -2,6 +2,7 @@ package freeze
 
 import (
 	"fmt"
+	"go/token"
 	"maps"
 	"reflect"
 	"slices"
@@ -11,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/kiln/world"
 )
@@ -35,6 +37,9 @@ func AppSpecYAML(w *world.World) ([]byte, error) {
 }
 
 func validateGraduation(w *world.World) error {
+	if _, err := freezeEndpoints(w); err != nil {
+		return err
+	}
 	for _, e := range sortedEntities(w) {
 		if e.MultiTenant {
 			return fmt.Errorf("freeze: entity %q sets multi_tenant, but an app spec cannot choose the app-specific tenant resolver; use owner_field for per-user scoping or wire tenant middleware in owned Go before freezing", e.Name)
@@ -268,21 +273,6 @@ func entityMaps(w *world.World) []any {
 			}
 			m["relations"] = relations
 		}
-		if len(e.Endpoints) > 0 {
-			endpoints := make([]any, 0, len(e.Endpoints))
-			for i, ep := range e.Endpoints {
-				name := ep.Name
-				if name == "" {
-					name = endpointName(ep.Method, ep.Path, i)
-				}
-				endpoints = append(endpoints, compact(map[string]any{
-					"name": name, "method": strings.ToUpper(ep.Method), "path": ep.Path,
-					"description": ep.Description, "mcp": ep.MCP,
-					"handler": handlerName("endpoint", e.Name+"_"+name, i),
-				}))
-			}
-			m["endpoints"] = endpoints
-		}
 		out = append(out, m)
 	}
 	return out
@@ -398,38 +388,124 @@ func hookMaps(w *world.World) []any {
 	return out
 }
 
+// endpointMaps writes the world's endpoints as the app spec's top-level
+// endpoints: list. validateGraduation has already refused any freeze
+// cannot carry.
 func endpointMaps(w *world.World) []any {
-	out := make([]any, 0, len(w.Endpoints)+len(w.Routes))
+	eps, _ := freezeEndpoints(w)
+	out := make([]any, 0, len(eps))
+	for _, e := range eps {
+		out = append(out, compact(map[string]any{
+			"name": e.Name, "entity": e.Entity, "method": e.Method, "path": e.Path,
+			"handler": e.Handler, "description": e.Description, "mcp": e.MCP,
+		}))
+	}
+	return out
+}
+
+// freezeEndpoints turns the world's endpoints into the shape the app
+// spec's endpoints: list and gofastr.settings.yml hold: each hangs under
+// an entity, its path relative to the entity's route, and links a typed
+// handler that generate app stubs in entities/<entity>_endpoints.go.
+// Entity endpoints come first, in entity order, then the scaffold's.
+//
+// A world route, or a scaffold endpoint with no entity or a path outside
+// its entity's route, has no such spelling. Freeze refuses it rather than
+// move its URL: the route belongs in owned Go after generation.
+func freezeEndpoints(w *world.World) ([]settings.Endpoint, error) {
+	for _, r := range w.Routes {
+		if r != nil {
+			return nil, fmt.Errorf("freeze: route %s %s hangs under no entity, and an app spec endpoint needs one; delete the route and register it by hand in owned Go after generation (fwApp.Router().Handle)", r.Method, r.Path)
+		}
+	}
+	var out []settings.Endpoint
+	add := func(entity, name, method, routePath, handler, description string, mcp bool, i int) error {
+		where := fmt.Sprintf("endpoint %s %s", method, routePath)
+		if entity == "" {
+			return fmt.Errorf("freeze: %s names no entity, and an app spec endpoint hangs under one; give it an entity or register it by hand in owned Go after generation (fwApp.Router().Handle)", where)
+		}
+		ent, ok := w.Entities[entity]
+		if !ok || ent == nil {
+			return fmt.Errorf("freeze: %s hangs under entity %q, which is not in the world", where, entity)
+		}
+		// The app serves an entity, and the endpoints under it, at its
+		// table: /api/<table>/...
+		table := ent.Table
+		if table == "" {
+			table = entity
+		}
+		rel := strings.TrimPrefix(routePath, "/")
+		if strings.HasPrefix(routePath, "/") {
+			if rel, ok = strings.CutPrefix(rel, table+"/"); !ok {
+				return fmt.Errorf("freeze: %s is not under /%s/, the route of its entity %q; move it there or register it by hand in owned Go after generation (fwApp.Router().Handle)", where, table, entity)
+			}
+		}
+		if name = identifier(name); name == "" {
+			name = endpointName(method, rel, i)
+		}
+		// A handler already spelled as an exported Go name keeps its
+		// spelling; anything else is folded from its words.
+		if !token.IsIdentifier(handler) || !token.IsExported(handler) || !isASCII(handler) {
+			if handler = identifier(handler); handler == "" {
+				handler = name
+			}
+			handler = exportedName(handler)
+		}
+		e := settings.Endpoint{
+			Name: name, Entity: entity, Method: strings.ToUpper(method), Path: rel,
+			Handler:     "entities/" + entity + "_endpoints.go#" + handler,
+			Description: description, MCP: mcp,
+		}
+		for _, prev := range out {
+			if prev.Name == e.Name || prev.Handler == e.Handler {
+				return fmt.Errorf("freeze: endpoints %s and %s both freeze to endpoint %s (%s); give each its own name", prev.Name, e.Name, e.Name, e.Handler)
+			}
+		}
+		// The checks generate runs on the app spec's list: an endpoint
+		// freeze writes is one generate takes.
+		if err := settings.CheckEndpoints(append(slices.Clone(out), e)); err != nil {
+			return fmt.Errorf("freeze: %s: %w", where, err)
+		}
+		out = append(out, e)
+		return nil
+	}
+	for _, ent := range sortedEntities(w) {
+		for i, ep := range ent.Endpoints {
+			if err := add(ent.Name, ep.Name, ep.Method, ep.Path, "", ep.Description, ep.MCP, i); err != nil {
+				return nil, err
+			}
+		}
+	}
 	for i, ep := range w.Endpoints {
 		if ep == nil {
 			continue
 		}
-		name := ep.Name
-		if name == "" {
-			name = endpointName(ep.Method, ep.Path, i)
+		if err := add(ep.Entity, ep.Name, ep.Method, ep.Path, ep.Handler, ep.Description, ep.MCP, len(out)+i); err != nil {
+			return nil, err
 		}
-		handler := ep.Handler
-		if handler == "" {
-			handler = handlerName("endpoint", name, i)
-		}
-		out = append(out, compact(map[string]any{
-			"name": name, "method": strings.ToUpper(ep.Method), "path": ep.Path,
-			"entity": ep.Entity, "handler": handler,
-			"description": ep.Description, "mcp": ep.MCP,
-		}))
 	}
-	for i, route := range w.Routes {
-		if route == nil {
-			continue
+	return out, nil
+}
+
+func isASCII(s string) bool {
+	for i := range len(s) {
+		if s[i] >= 0x80 {
+			return false
 		}
-		name := endpointName(route.Method, route.Path, len(out)+i)
-		out = append(out, map[string]any{
-			"name": name, "method": strings.ToUpper(route.Method), "path": route.Path,
-			"handler":     handlerName("route", name, i),
-			"description": "Kiln declarative action " + route.Action.Kind + "; implement the owned-Go handler after generation",
-		})
 	}
-	return out
+	return true
+}
+
+// exportedName spells a snake identifier as an exported Go name:
+// refund_order is RefundOrder.
+func exportedName(snake string) string {
+	var b strings.Builder
+	for _, word := range strings.Split(snake, "_") {
+		if word != "" {
+			b.WriteString(strings.ToUpper(word[:1]) + word[1:])
+		}
+	}
+	return b.String()
 }
 
 func middlewareMaps(w *world.World) []any {
@@ -888,7 +964,7 @@ func OrderedKeys(m map[string]any, order []string) []string {
 var (
 	topLevelOrder = []string{"app", "entities", "screens", "nav", "seed", "endpoints", "middleware", "plugins", "helpers"}
 	appOrder      = []string{"name", "module", "db", "static_dir", "output_dir", "api_prefix", "theme", "auth", "admin", "pwa", "llm_md"}
-	entityOrder   = []string{"name", "table", "crud", "mcp", "soft_delete", "multi_tenant", "owner_field", "cross_owner_read", "search_fields", "timestamps", "cursor_field", "cursor_fields", "properties", "access", "indices", "fields", "relations", "endpoints"}
+	entityOrder   = []string{"name", "table", "crud", "mcp", "soft_delete", "multi_tenant", "owner_field", "cross_owner_read", "search_fields", "timestamps", "cursor_field", "cursor_fields", "properties", "access", "indices", "fields", "relations"}
 	fieldOrder    = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden"}
 	screenOrder   = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
 	blockOrder    = []string{"kind", "props", "children"}
@@ -896,7 +972,7 @@ var (
 	indexOrder    = []string{"name", "columns", "unique"}
 	navOrder      = []string{"label", "href", "icon", "role", "items"}
 	accessOrder   = []string{"auth", "role", "read", "create", "update", "delete"}
-	endpointOrder = []string{"name", "method", "path", "entity", "handler", "description", "mcp"}
+	endpointOrder = []string{"name", "entity", "method", "path", "handler", "description", "mcp"}
 	stubOrder     = []string{"name", "description"}
 	seedOrder     = []string{"entity", "rows", "count", "weights"}
 	dbOrder       = []string{"driver", "url"}

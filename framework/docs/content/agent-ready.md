@@ -431,8 +431,9 @@ caller.** An `Endpoint` has two front doors for one operation: `Handler`
 inherits the route's middleware chain, `MCPHandler` does not. An endpoint
 behind `auth.RequireRole("editor")` was therefore role-checked over HTTP
 and ungated over MCP. Declare something stricter with
-`Endpoint.MCPGate`, or opt out with `Endpoint.MCPPublic: true` for an
-endpoint that really is anonymous over HTTP too:
+`Endpoint.MCPGate`, or opt out with `Endpoint.Public: true` for an
+endpoint that really is anonymous. `Public` opens the HTTP route too,
+which otherwise answers 401 to a caller with no user:
 
 ```go
 entity.Endpoint{
