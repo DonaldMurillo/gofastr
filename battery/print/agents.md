@@ -48,7 +48,7 @@ app.RegisterBattery(pb)
 
 **Print a document from a host page** with a plain link, not an island:
 ```go
-pb.PrintLink("invoice", map[string]string{"id": inv.ID}, "Print invoice")
+pb.PrintLink(r.Context(), "invoice", map[string]string{"id": inv.ID}, "Print invoice")
 // → <a href="/print/invoice/42" target="_blank" rel="noopener">Print invoice</a>
 ```
 

@@ -1,6 +1,7 @@
 package print
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -257,6 +258,7 @@ func (b *Battery) build(w http.ResponseWriter, r *http.Request, doc *Document, f
 	page := effectivePage(doc.Page, b.cfg.DefaultPage)
 
 	in := shellInput{
+		Lang:         i18n.FromContext(r.Context()).Tag,
 		Title:        title,
 		Body:         body,
 		PageCSS:      pageCSS(page),
@@ -334,14 +336,15 @@ func writeBuildError(w http.ResponseWriter, r *http.Request, err error) {
 
 // PrintLink renders an anchor to a print document, opened in a new tab so
 // the host SPA is untouched. params fill the document's {placeholders}.
-// label defaults to "Print". Returns empty HTML for an unknown document.
-func (b *Battery) PrintLink(docName string, params map[string]string, label string) render.HTML {
+// label defaults to "Print" in the language of ctx (nil is English).
+// Returns empty HTML for an unknown document.
+func (b *Battery) PrintLink(ctx context.Context, docName string, params map[string]string, label string) render.HTML {
 	doc, ok := b.byName[docName]
 	if !ok {
 		return ""
 	}
 	if label == "" {
-		label = "Print"
+		label = printLabel.Text(ctx)
 	}
 	path := doc.Path
 	for k, v := range params {

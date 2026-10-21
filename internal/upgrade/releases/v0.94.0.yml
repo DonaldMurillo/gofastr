@@ -762,3 +762,36 @@ notes:
         - field: gofastr/framework/ui.LightboxConfig.Ctx
         - field: gofastr/framework/ui.ConfirmActionConfig.Ctx
     guidance: "Delete the Ctx line. The widget is mounted once, and its dialog renders with the context of the request that shows it, so the labels already follow the reader."
+  - change: "app.App.LangForPath, app.App.SkipLabelForPath and uihost.UIHost.LangForPath are LangFor(ctx, path) and SkipLabelFor(ctx, path); with no route rule the language is the request's negotiated locale before the app's default"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/core-ui/app.App.LangForPath
+        - gofastr/core-ui/app.App.SkipLabelForPath
+        - gofastr/framework/uihost.UIHost.LangForPath
+    guidance: "Pass the request context: a.LangFor(r.Context(), path), a.SkipLabelFor(r.Context(), path). A page whose locale was negotiated from Accept-Language or a cookie now declares that language on <html lang> and dir."
+  - change: "i18n.PluralRule and Translator.RegisterPluralRule are removed; plural categories come from CLDR for every locale"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/core/i18n.PluralRule
+        - gofastr/core/i18n.Translator.RegisterPluralRule
+    guidance: "Delete the registration. The CLDR rule for the locale applies on its own; write the catalog's plural forms under the CLDR category names (one, few, many, other). See gofastr docs i18n."
+  - change: "framework components write numbers, dates and times in the reader's locale: counts group digits (4,820), timestamps read Mar 5, 2026, 2:05 PM, and a stepper's or counter's number attributes carry the formatted value"
+    breaking: true
+    nodetect: "the change is in rendered markup; only tests or scrapers that compare it notice"
+    guidance: "Update assertions that matched the raw digits or the old layout. Format your own values with i18n.Number, i18n.Date and i18n.DateTime so they match."
+  - change: "kit CSS uses logical properties (inset-inline-start, margin-inline-end, text-align: start) and mirrors on dir=\"rtl\" pages"
+    breaking: true
+    nodetect: "the change is in the kit's stylesheets; an app's override lives in its own CSS"
+    guidance: "An owned style sheet that overrides a kit side with a physical property (left, margin-right) now lands on the wrong side in a right-to-left locale; spell it with the logical property. TooltipLeft and TooltipRight mean start and end."
+  - change: "print.Battery.PrintLink takes the request context first: PrintLink(ctx, doc, params, label); an empty label is \"Print\" in the reader's language"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/battery/print.Battery.PrintLink
+          type: '^func\(docName string, params map\[string\]string, label string\) render\.HTML$'
+    guidance: "Pass the request context: pb.PrintLink(r.Context(), \"invoice\", params, label)."
