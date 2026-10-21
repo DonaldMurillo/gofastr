@@ -51,11 +51,11 @@ func writeStaleMarkupReload(w http.ResponseWriter, r *http.Request, path, swapLa
 	updated := html.EscapeString(pageAppUpdated.Text(r.Context(), nil))
 	reload := html.EscapeString(pageReloadPage.Text(r.Context(), nil))
 	if !handler.IsSafeRelativePath(target) {
-		fmt.Fprintf(w, `<p role="alert">%s %s.</p>`, updated, reload)
+		fmt.Fprintf(w, `<p role="alert">%s %s</p>`, updated, reload)
 		return
 	}
 	// The refresh URL is single-quoted inside the attribute, so a quote
 	// in the query must not end it early.
 	esc := html.EscapeString(strings.ReplaceAll(target, "'", "%27"))
-	fmt.Fprintf(w, `<meta http-equiv="refresh" content="0; url='%s'"><p role="alert">%s <a href="%s">%s</a>.</p>`, esc, updated, esc, reload)
+	fmt.Fprintf(w, `<meta http-equiv="refresh" content="0; url='%s'"><p role="alert">%s <a href="%s">%s</a></p>`, esc, updated, esc, reload)
 }

@@ -43,7 +43,7 @@ var (
 	// The notice a tab opened before a deploy gets in place of the page
 	// it asked for (writeStaleMarkupReload).
 	pageAppUpdated = i18n.Define("uihost.app_updated", "This app was updated.")
-	pageReloadPage = i18n.Define("uihost.reload_page", "Reload the page")
+	pageReloadPage = i18n.Define("uihost.reload_page", "Reload the page.")
 )
 
 // The RFC 9457 problem documents a machine client gets for a 404 or a
