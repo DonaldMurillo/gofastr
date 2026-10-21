@@ -127,10 +127,11 @@ Selection names match the entity name, table, or kebab command form; a
 typo fails generation rather than silently generating everything.
 Verbs: `list get create update patch delete batch-create batch-update
 batch-delete watch`. Excluded entities and verbs render nothing, so there
-is no dead code to strip. The chosen selection is echoed in the
-generated `main.gen.go` header. To have `gofastr generate` and `gofastr
-build` keep the CLI current, record it as a `cli` entry in
-`gofastr.settings.yml` (see [Keeping it current](#keeping-it-current)).
+is no dead code to strip. The generated files do not record the
+selection. To have `gofastr generate` and `gofastr build` keep the CLI
+current, record it as a `cli` entry in `gofastr.settings.yml` (see
+[Keeping it current](#keeping-it-current)); a run with no entry prints
+one to paste.
 
 Other flags: `--out=cmd/<binary>` (target directory), `--binary=<name>` (command
 name; defaults to the project directory, and drives the env-var
@@ -222,21 +223,42 @@ keys mirror the flags:
 codegen:
   generators:
     - name: cli
-      output: cmd/myapp          # --out
+      output: cmd/myapp            # --out
       config:
-        binary: myapp            # --binary
-        api_prefix: api          # --api-prefix
-        only: posts,comments     # --only
-        exclude: audit_logs      # --exclude
-        verbs: list,get          # --verbs
-        from_openapi: openapi.json   # --from-openapi; a file, never a URL
+        binary: myapp              # --binary
+        api_prefix: api            # --api-prefix
+        only: [posts, comments]    # --only
+        exclude: [audit_logs]      # --exclude
+        verbs:                     # --verbs
+          posts: [list, get]
+          comments: ["*"]
 ```
 
-Every value is a string, and only `api_prefix` may be empty (`""` for an
-app with no API prefix). A run from the settings file rewrites only the
-files whose bytes changed and prints nothing when the CLI is current.
-`from_openapi` takes a file in the project: a build that fetched a URL
-would depend on the network. Fetch the document into the repo instead.
+`only`, `exclude` and `verbs` are YAML lists. A comma string such as
+`only: posts,comments` is refused with the list spelling. `verbs` is
+either one list for every entity (`verbs: [list, get]`) or a map from
+entity to its list, as above; quote `"*"`, which YAML otherwise reads as
+an alias. `api_prefix` may be empty (`""` for an app with no API prefix).
+Any other value is a non-empty string.
+
+To build the CLI from an OpenAPI document instead, set
+`from_openapi: openapi.json` (`--from-openapi`), which excludes the
+selection keys. It takes a file in the project: a build that fetched a
+URL would depend on the network. Fetch the document into the repo
+instead.
+
+A run from the settings file rewrites only the files whose bytes changed
+and prints nothing when the CLI is current.
+
+`gofastr generate cli` reads the same entry. Flags win, key by key, and
+the entry fills the rest, so `gofastr generate cli --only=posts` keeps
+the entry's binary and output. With `--out` or `--binary` it uses the
+entry for that directory or binary; with neither, the only entry. Two or
+more entries need `--out` or `--binary` to pick one. `--from-openapi`
+takes the entry's binary and output but none of its entity selection.
+Only the settings file in the directory it runs in counts. A run that no
+entry drove prints the entry that reproduces it, ready to paste under
+`codegen.generators`.
 
 ### Upgrading a CLI generated before v0.93.0
 

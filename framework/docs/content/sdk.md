@@ -121,7 +121,16 @@ codegen:
         targets: [go, js]
         name: myapp
         base_url: "https://api.example.com"
+        only: [posts, comments]
 ```
+
+The config keys are `name`, `api_prefix`, `module`, `base_url`,
+`sdk_version` (strings) and `targets`, `only`, `exclude` (YAML lists). An
+unknown key, a value of the wrong type, or a comma string where a list
+belongs fails the run with the entry named, from `gofastr generate`,
+`gofastr build` and `gofastr generate sdk` alike.
+`gofastr generate sdk` takes defaults only from the settings file in the
+directory it runs in, since the entry's paths are relative to that file.
 
 Config-provenance strings are treated as hostile at emission: the app
 name (flag or `gofastr.settings.yml`) is scrubbed before it reaches the

@@ -55,10 +55,31 @@ type cliOptions struct {
 	dryRun      bool
 	json        bool
 	fromOpenAPI string // spec file or URL; switches off the entity path
+	// apiPrefixSet: --api-prefix (or the entry's api_prefix) was given, so
+	// a settings default does not replace it, "" included.
+	apiPrefixSet bool
 	// fromSettings: run from a gofastr.settings.yml cli entry by `gofastr
 	// generate` or `gofastr build`. Unchanged files are not rewritten, and
 	// the run says nothing when the CLI is already current.
 	fromSettings bool
+	// flagSet names the selection flags given on the command line, empty
+	// ones included, so a settings entry fills only the rest.
+	flagSet map[string]bool
+	// settingsEntry: an explicit run took defaults from a cli entry, so its
+	// next steps need not print one to paste.
+	settingsEntry bool
+	// entryIndex is the cli entry's position in codegen.generators, for
+	// errors about values it supplied.
+	entryIndex int
+}
+
+// selectionSource names where a selection value came from, so a typo in
+// a settings entry points at the entry, not at a flag nobody typed.
+func (o cliOptions) selectionSource(flag string) string {
+	if o.fromSettings || (o.settingsEntry && !o.flagSet[flag]) {
+		return fmt.Sprintf("codegen.generators[%d] (cli): config.%s", o.entryIndex, flag)
+	}
+	return "--" + flag
 }
 
 // cliField is the derived per-field model the renderers consume.
@@ -145,7 +166,6 @@ type cliSpec struct {
 	EnvPrefix    string
 	APIPrefix    string // "" or "/api" (leading slash, no trailing)
 	ClientImport string
-	Selection    string // flag string echoed into the header for regen
 	Entities     []cliEntity
 
 	// --from-openapi mode (see generate_cli_openapi.go): Ops replace
@@ -169,6 +189,13 @@ func runGenerateCLI(args []string) {
 		osExit(1)
 		return
 	}
+	used, err := applyCLIConfigDefaults(&opts)
+	if err != nil {
+		fail("%v", err)
+		osExit(1)
+		return
+	}
+	opts.settingsEntry = used
 	generateCLI(opts)
 }
 
@@ -364,7 +391,15 @@ func emitCLIFiles(opts cliOptions, spec cliSpec) {
 	fmt.Printf("    go build -o %s ./%s   : build the CLI\n", spec.Binary, opts.outDir)
 	fmt.Printf("    ./%s login --url https://your-app.example.com --with-token   : store a scoped API token\n", spec.Binary)
 	fmt.Println("    custom.go is yours: add or override commands there. The *.gen.go files are rebuilt on every run")
-	fmt.Println("    list a cli entry in gofastr.settings.yml and gofastr build keeps this CLI current (gofastr docs app-cli)")
+	if opts.settingsEntry {
+		fmt.Println("    gofastr build rebuilds it from the cli entry in gofastr.settings.yml")
+		return
+	}
+	fmt.Println("    add this entry to codegen.generators in gofastr.settings.yml and gofastr build keeps the CLI current (gofastr docs app-cli):")
+	fmt.Println()
+	for _, line := range strings.Split(strings.TrimRight(cliEntryYAML(opts, spec.Binary), "\n"), "\n") {
+		fmt.Println("      " + line)
+	}
 }
 
 // splitCommaList splits a comma-separated flag value, trimming whitespace
@@ -380,7 +415,7 @@ func splitCommaList(v string) []string {
 }
 
 func parseCLIOptions(args []string) (cliOptions, error) {
-	opts := cliOptions{apiPrefix: "api"}
+	opts := cliOptions{apiPrefix: "api", flagSet: map[string]bool{}}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		nextValue := func() (string, bool) {
@@ -413,25 +448,36 @@ func parseCLIOptions(args []string) (cliOptions, error) {
 				opts.binary = v
 			} else if v, ok := value("--api-prefix"); ok {
 				opts.apiPrefix = v
+				opts.apiPrefixSet = true
 			} else if v, ok := value("--only"); ok {
 				opts.only = splitCommaList(v)
+				opts.flagSet["only"] = true
 			} else if v, ok := value("--exclude"); ok {
 				opts.exclude = splitCommaList(v)
+				opts.flagSet["exclude"] = true
 			} else if v, ok := value("--verbs"); ok {
 				opts.verbs = v
+				opts.flagSet["verbs"] = true
 			} else if v, ok := value("--from-openapi"); ok {
 				opts.fromOpenAPI = v
+				opts.flagSet["from-openapi"] = true
 			} else {
 				return opts, fmt.Errorf("unknown flag: %s", arg)
 			}
 		}
 	}
+	return opts, checkCLIOptions(opts)
+}
+
+// checkCLIOptions refuses option combinations that cannot mean anything,
+// whether flags or a settings entry set them.
+func checkCLIOptions(opts cliOptions) error {
 	if opts.fromOpenAPI != "" {
 		if len(opts.only) > 0 || len(opts.exclude) > 0 || opts.verbs != "" || opts.apiPrefix != "api" {
-			return opts, fmt.Errorf("--from-openapi is spec-driven: --only/--exclude/--verbs/--api-prefix apply to entity generation only")
+			return fmt.Errorf("--from-openapi is spec-driven: --only/--exclude/--verbs/--api-prefix apply to entity generation only")
 		}
 	}
-	return opts, nil
+	return nil
 }
 
 // parseVerbSelection parses --verbs: either a bare global allow-list
@@ -516,16 +562,19 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 	}
 	// Selection names must all resolve to a declared entity: a typo'd
 	// --only silently generating everything (or nothing) is a trap.
-	for _, sel := range [][]string{opts.only, opts.exclude} {
-		for _, name := range sel {
+	for _, sel := range []struct {
+		flag  string
+		names []string
+	}{{"only", opts.only}, {"exclude", opts.exclude}} {
+		for _, name := range sel.names {
 			if !cliAnyEntityMatches(decls, name) {
-				return cliSpec{}, fmt.Errorf("--only/--exclude: no entity named %q", name)
+				return cliSpec{}, fmt.Errorf("%s: no entity named %q", opts.selectionSource(sel.flag), name)
 			}
 		}
 	}
 	for name := range perEntityVerbs {
 		if !cliAnyEntityMatches(decls, name) {
-			return cliSpec{}, fmt.Errorf("--verbs: no entity named %q", name)
+			return cliSpec{}, fmt.Errorf("%s: no entity named %q", opts.selectionSource("verbs"), name)
 		}
 	}
 
@@ -557,17 +606,11 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 		EnvPrefix:    cliEnvPrefix(binary),
 		APIPrefix:    apiPrefix,
 		ClientImport: clientImport,
-		Selection:    cliSelectionNote(opts),
 	}
-	// Selection is baked verbatim into the generated main.go header
-	// comment — the same sink --binary is control-char-guarded for above.
-	// --api-prefix and --out reach it from argv without their own checks
-	// (only/exclude/verbs values are already constrained to entity names
-	// and known verbs), so guard the composed value once, at the sink.
-	for _, r := range spec.Selection {
-		if r < 0x20 || r == 0x7f {
-			return cliSpec{}, fmt.Errorf("selection flags are baked into the generated main.go header comment and must not contain control characters: %q", spec.Selection)
-		}
+	// The prefix is joined into every request URL; a control byte there is
+	// never a path, so refuse it here rather than ship a CLI that 404s.
+	if strings.ContainsFunc(apiPrefix, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+		return cliSpec{}, fmt.Errorf("--api-prefix must not contain control characters: %q", opts.apiPrefix)
 	}
 	matchesAny := func(decl framework.EntityDeclaration, names []string) bool {
 		for _, name := range names {
@@ -808,34 +851,6 @@ func cliEnvPrefix(binary string) string {
 	return out
 }
 
-// cliSelectionNote reconstructs the selection flags for the regen hint baked
-// into the generated main.go header.
-func cliSelectionNote(opts cliOptions) string {
-	var parts []string
-	if opts.binary != "" {
-		parts = append(parts, "--binary="+opts.binary)
-	}
-	if opts.apiPrefix != "api" {
-		parts = append(parts, "--api-prefix="+opts.apiPrefix)
-	}
-	if len(opts.only) > 0 {
-		parts = append(parts, "--only="+strings.Join(opts.only, ","))
-	}
-	if len(opts.exclude) > 0 {
-		parts = append(parts, "--exclude="+strings.Join(opts.exclude, ","))
-	}
-	if opts.verbs != "" {
-		parts = append(parts, "--verbs='"+opts.verbs+"'")
-	}
-	if opts.outDir != "" && opts.outDir != filepath.ToSlash(filepath.Join("cmd", opts.binary)) {
-		parts = append(parts, "--out="+opts.outDir)
-	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return " " + strings.Join(parts, " ")
-}
-
 // renderCLIFiles renders the CLI tree. Every file but custom.go is
 // derived and named *.gen.go, so `ls` shows which files a run rebuilds.
 func renderCLIFiles(spec cliSpec) []generatedFile {
@@ -894,8 +909,8 @@ func renderCLIMain(spec cliSpec) string {
 	}
 	var sb strings.Builder
 	fmt.Fprintf(&sb, `// %s is a terminal client for your app's HTTP API, generated by
-// `+"`gofastr generate cli%s`"+` from `+source+`. Every run rebuilds
-// the *.gen.go files; custom.go, your extension seam, is never overwritten.
+// `+"`gofastr generate cli`"+` from `+source+`. Every run rebuilds the
+// *.gen.go files; custom.go, your extension seam, is never overwritten.
 package main
 
 import (
@@ -963,7 +978,7 @@ func builtinCommands() []command {
 		{name: "login", summary: "store the server URL and a scoped API token", run: runLogin},
 		{name: "logout", summary: "remove the stored API token", run: runLogout},
 	}
-`, spec.Binary, spec.Selection, spec.Binary, spec.EnvPrefix, spec.APIPrefix, exampleCommandName(spec))
+`, spec.Binary, spec.Binary, spec.EnvPrefix, spec.APIPrefix, exampleCommandName(spec))
 	for _, ent := range spec.Entities {
 		if len(ent.Verbs) == 0 && len(ent.Transitions) == 0 {
 			continue

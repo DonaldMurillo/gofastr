@@ -166,7 +166,11 @@ func runGenerateSDK(args []string) {
 		osExit(1)
 		return
 	}
-	applySDKConfigDefaults(&opts)
+	if err := applySDKConfigDefaults(&opts); err != nil {
+		fail("%v", err)
+		osExit(1)
+		return
+	}
 
 	decls, err := packReadEntities(".")
 	if err != nil {
@@ -320,20 +324,23 @@ func parseSDKOptions(args []string) (sdkOptions, error) {
 //
 // The same entry drives `gofastr generate --config` through the registered
 // in-process generator (sdkGenerator), so both invocation paths agree.
-func applySDKConfigDefaults(opts *sdkOptions) {
+func applySDKConfigDefaults(opts *sdkOptions) error {
 	discovery, err := codegen.DiscoverConfig(".")
-	if err != nil || !discovery.Found {
-		return
+	if err != nil {
+		return err
 	}
-	for _, gen := range discovery.Config.Codegen.Generators {
+	// A settings file in a parent directory names paths from its own
+	// directory, while this run writes from the current one.
+	if !discovery.Found || !sameDir(discovery.ProjectDir, ".") {
+		return nil
+	}
+	for i, gen := range discovery.Config.Codegen.Generators {
 		if gen.Name != "sdk" || gen.Extension != "" {
 			continue
 		}
-		cfgString := func(key string) string {
-			if v, ok := gen.Config[key].(string); ok {
-				return strings.TrimSpace(v)
-			}
-			return ""
+		entry, err := decodeSDKEntry(i, gen)
+		if err != nil {
+			return err
 		}
 		if opts.outDir == "" {
 			out := gen.Output
@@ -342,42 +349,29 @@ func applySDKConfigDefaults(opts *sdkOptions) {
 			}
 			opts.outDir = filepath.ToSlash(filepath.Join(discovery.Config.Codegen.Output, out))
 		}
-		if opts.name == "" {
-			opts.name = cfgString("name")
-		}
-		if opts.apiPrefix == "" {
-			opts.apiPrefix = cfgString("api_prefix")
-		}
-		if opts.module == "" {
-			opts.module = cfgString("module")
-		}
-		if opts.baseURL == "" {
-			opts.baseURL = cfgString("base_url")
-		}
-		if opts.sdkVersion == "" {
-			opts.sdkVersion = cfgString("sdk_version")
-		}
-		if len(opts.targets) == 0 {
-			if raw, ok := gen.Config["targets"].([]any); ok {
-				for _, t := range raw {
-					if s, ok := t.(string); ok {
-						opts.targets = append(opts.targets, strings.TrimSpace(s))
-					}
-				}
+		for _, field := range []struct{ dst, entry *string }{
+			{&opts.name, &entry.name},
+			{&opts.apiPrefix, &entry.apiPrefix},
+			{&opts.module, &entry.module},
+			{&opts.baseURL, &entry.baseURL},
+			{&opts.sdkVersion, &entry.sdkVersion},
+		} {
+			if *field.dst == "" {
+				*field.dst = *field.entry
 			}
 		}
-		if len(opts.only) == 0 {
-			if v := cfgString("only"); v != "" {
-				opts.only = splitCommaList(v)
+		for _, field := range []struct{ dst, entry *[]string }{
+			{&opts.targets, &entry.targets},
+			{&opts.only, &entry.only},
+			{&opts.exclude, &entry.exclude},
+		} {
+			if len(*field.dst) == 0 {
+				*field.dst = *field.entry
 			}
 		}
-		if len(opts.exclude) == 0 {
-			if v := cfgString("exclude"); v != "" {
-				opts.exclude = splitCommaList(v)
-			}
-		}
-		return
+		return nil
 	}
+	return nil
 }
 
 // buildSDKSpec validates selection and derives the renderer input. It
@@ -769,26 +763,11 @@ func (sdkGenerator) Generate(_ context.Context, genCtx *codegen.Context, cfg cod
 	if len(decls) == 0 {
 		return nil, fmt.Errorf("no entities package found in %s", dir)
 	}
-	opts := sdkOptions{}
-	cfgString := func(key string) string {
-		if v, ok := cfg.Config[key].(string); ok {
-			return strings.TrimSpace(v)
-		}
-		return ""
-	}
-	opts.name = cfgString("name")
-	opts.apiPrefix = cfgString("api_prefix")
-	opts.module = cfgString("module")
-	opts.baseURL = cfgString("base_url")
-	opts.sdkVersion = cfgString("sdk_version")
-	opts.only = splitCommaList(cfgString("only"))
-	opts.exclude = splitCommaList(cfgString("exclude"))
-	if raw, ok := cfg.Config["targets"].([]any); ok {
-		for _, t := range raw {
-			if s, ok := t.(string); ok {
-				opts.targets = append(opts.targets, strings.TrimSpace(s))
-			}
-		}
+	// splitCLIEntries already decoded this entry with its index; -1 only
+	// drops the index from an error an embedder's config would reach.
+	opts, err := decodeSDKEntry(-1, cfg)
+	if err != nil {
+		return nil, err
 	}
 	// The runner prefixes output itself (cfg.Output); outDir only matters
 	// for the direct command path.

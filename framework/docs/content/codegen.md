@@ -92,10 +92,17 @@ package patterns (`./...` when absent). `--dry-run` skips it, and
 
 An entry named `cli` runs `gofastr generate cli` after the engine. It writes
 to its own `output` (default `cmd/<binary>`), not under `codegen.output`,
-takes no `source`, and its `config` keys mirror the flags as strings:
-`binary`, `api_prefix`, `only`, `exclude`, `verbs`, and `from_openapi` (a
-file in the project, never a URL). `--json` refuses a config that lists it,
+takes no `source`, and its `config` keys mirror the flags: `binary`,
+`api_prefix` and `from_openapi` (a file in the project, never a URL) are
+strings; `only` and `exclude` are YAML lists; `verbs` is a list or a map
+from entity to its list. `gofastr generate cli` reads the same entry,
+flags winning key by key. `--json` refuses a config that lists it,
 because the CLI run would print its own report into that document. See [Keeping it current](app-cli.md#keeping-it-current).
+
+There is no `client` entry. Every plain `gofastr generate` and `gofastr
+build` rebuilds `entities/client/client.go` when it exists, so a config
+that lists `client` is refused before any generator runs; remove the
+entry.
 
 ```yaml
 generators:
@@ -103,6 +110,7 @@ generators:
   - name: cli
     config:
       binary: shop
+      only: [orders, products]
   - name: styles
     config:
       patterns: ["./ui/..."]

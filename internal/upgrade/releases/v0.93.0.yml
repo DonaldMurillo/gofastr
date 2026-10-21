@@ -9,3 +9,11 @@ notes:
     breaking: true
     nodetect: "only an edited client.go needs action, and the first gofastr build names it and leaves it alone; nothing in the source tells an edit from the file generate app wrote"
     guidance: "If you edited entities/client/client.go, move your code into another file of package client and run gofastr generate client --force once. From then on builds keep it current; never edit client.go again."
+  - change: "the sdk and cli entries in gofastr.settings.yml read only, exclude and targets as YAML lists and refuse a comma string; an unknown key or a value of the wrong type in either entry now fails gofastr generate, gofastr build and gofastr generate sdk instead of being ignored"
+    breaking: true
+    hits: review
+    find:
+      text:
+        - glob: "**/gofastr.settings.yml"
+          match: '^\s+(only|exclude|targets|verbs):\s*[^\s\[#]'
+    guidance: "A hit under an extension's config is that extension's own key; leave it. Under an sdk or cli entry, write each list as a YAML list: only: [posts, comments] instead of only: posts,comments. The refusal prints the list spelling for the value it read. See gofastr docs sdk and gofastr docs app-cli."

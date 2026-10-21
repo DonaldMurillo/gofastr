@@ -498,11 +498,15 @@ func generateFromCodegenConfig(options generateOptions, discovery codegen.Discov
 		failConfig(fmt.Errorf("the styles generator has no dry run, so --dry-run --json cannot report it; run `gofastr generate --dry-run --json` from a config without it, or drop --json"))
 		return
 	}
-	engineGens, cliRuns, err := splitCLIEntries(engineGens)
+	// Decode against the full list so an error names the entry's own index.
+	_, cliRuns, err := splitCLIEntries(cfg.Codegen.Generators)
 	if err != nil {
 		failConfig(err)
 		return
 	}
+	engineGens = slices.DeleteFunc(engineGens, func(gen codegen.GeneratorConfig) bool {
+		return gen.Extension == "" && gen.Name == "cli"
+	})
 	if len(cliRuns) > 0 && options.json {
 		err := fmt.Errorf("a cli entry writes its own --json document, so the codegen config cannot report it in one; run `gofastr generate cli --json` for it, or drop --json")
 		if !options.dryRun {
@@ -519,16 +523,8 @@ func generateFromCodegenConfig(options generateOptions, discovery codegen.Discov
 	if len(engineGens) > 0 {
 		runCodegenEngine(options, cfg, discovery)
 	}
-	for _, args := range cliRuns {
-		if options.dryRun {
-			args = append(args, "--dry-run")
-		}
-		cliOpts, err := parseCLIOptions(args)
-		if err != nil {
-			fail("codegen.generators cli entry: %v", err)
-			osExit(1)
-			return
-		}
+	for _, cliOpts := range cliRuns {
+		cliOpts.dryRun = options.dryRun
 		cliOpts.fromSettings = true
 		generateCLI(cliOpts)
 	}
@@ -653,25 +649,21 @@ func splitStylesEntries(gens []codegen.GeneratorConfig) (engine []codegen.Genera
 	return engine, stylePatterns, nil
 }
 
-// cliConfigFlags maps a cli entry's config keys to the flags they stand
-// for. Values are strings, the spelling the sdk entry uses.
-var cliConfigFlags = map[string]string{
-	"binary":       "--binary",
-	"api_prefix":   "--api-prefix",
-	"only":         "--only",
-	"exclude":      "--exclude",
-	"verbs":        "--verbs",
-	"from_openapi": "--from-openapi",
-}
-
 // splitCLIEntries pulls the `cli` entries out of a config's generator list
-// and turns each into the `gofastr generate cli` arguments it stands for.
-// The CLI writes to its own directory (output, default cmd/<binary>,
+// and decodes each into the options the `gofastr generate cli` flags would
+// set. The CLI writes to its own directory (output, default cmd/<binary>,
 // relative to the project), not under codegen.output, so it runs after the
 // engine instead of inside its file set. A `client` entry is refused: the
-// app client needs none, every plain generate rebuilds it.
-func splitCLIEntries(gens []codegen.GeneratorConfig) (engine []codegen.GeneratorConfig, runs [][]string, err error) {
+// app client needs none, every plain generate rebuilds it. An `sdk` entry
+// stays with the engine but is decoded here too, so a bad key fails with
+// its index before any generator writes.
+func splitCLIEntries(gens []codegen.GeneratorConfig) (engine []codegen.GeneratorConfig, runs []cliOptions, err error) {
 	for i, gen := range gens {
+		if gen.Extension == "" && gen.Name == "sdk" {
+			if _, err := decodeSDKEntry(i, gen); err != nil {
+				return nil, nil, err
+			}
+		}
 		if gen.Extension != "" || (gen.Name != "cli" && gen.Name != "client") {
 			engine = append(engine, gen)
 			continue
@@ -679,30 +671,11 @@ func splitCLIEntries(gens []codegen.GeneratorConfig) (engine []codegen.Generator
 		if gen.Name == "client" {
 			return nil, nil, fmt.Errorf("codegen.generators[%d]: client needs no entry; every plain gofastr generate and gofastr build rebuilds entities/client/client.go when it exists. Remove the entry", i)
 		}
-		if gen.Source.Type != "" {
-			return nil, nil, fmt.Errorf("codegen.generators[%d] (cli): source does not apply; the CLI reads entities/, or the document named by config.from_openapi", i)
+		opts, err := decodeCLIEntry(i, gen)
+		if err != nil {
+			return nil, nil, err
 		}
-		args := []string{}
-		if gen.Output != "" {
-			args = append(args, "--out="+gen.Output)
-		}
-		for _, key := range slices.Sorted(maps.Keys(gen.Config)) {
-			flag, ok := cliConfigFlags[key]
-			if !ok {
-				return nil, nil, fmt.Errorf("codegen.generators[%d] (cli): unknown config key %q (one of %s)", i, key, strings.Join(slices.Sorted(maps.Keys(cliConfigFlags)), ", "))
-			}
-			v, ok := gen.Config[key].(string)
-			v = strings.TrimSpace(v)
-			// api_prefix may be empty: an app with no API prefix needs it.
-			if !ok || (v == "" && key != "api_prefix") {
-				return nil, nil, fmt.Errorf("codegen.generators[%d] (cli): config.%s must be a non-empty string", i, key)
-			}
-			if key == "from_openapi" && strings.Contains(v, "://") {
-				return nil, nil, fmt.Errorf("codegen.generators[%d] (cli): config.from_openapi must be a file in the project, not a URL: every build would fetch it. Save the document and name the file", i)
-			}
-			args = append(args, flag+"="+v)
-		}
-		runs = append(runs, args)
+		runs = append(runs, opts)
 	}
 	return engine, runs, nil
 }
