@@ -78,7 +78,7 @@ type App struct {
 // WithNotFoundBody sets the body the 404-outlet outcome renders and
 // returns the app for chaining (see App.NotFound).
 func (a *App) WithNotFoundBody(c component.Component) *App {
-	refuseRetiredTitle("not-found body", c)
+	RefuseRetiredTitle("not-found body", c)
 	a.NotFound = c
 	return a
 }

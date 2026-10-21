@@ -470,6 +470,7 @@ func WithLangFunc(fn func(path string) string) Option {
 // layout; pages without their own layout end up with the framework's
 // bare <main>.
 func WithNotFoundScreen(c component.Component) Option {
+	app.RefuseRetiredTitle("not-found screen", c)
 	return func(ds *UIHost) {
 		ds.notFoundScreen = c
 	}
@@ -481,6 +482,7 @@ func WithNotFoundScreen(c component.Component) Option {
 // same chrome every page gets and NO error text of its own — the
 // error is logged by the host, the page is a product surface.
 func WithErrorScreen(c component.Component) Option {
+	app.RefuseRetiredTitle("error screen", c)
 	return func(ds *UIHost) {
 		ds.errorScreen = c
 	}

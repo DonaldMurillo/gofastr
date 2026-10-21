@@ -59,7 +59,7 @@ func (r *Router) Screen(screen *Screen, layout *Layout) {
 	}
 
 	screen.Path = normalizeRoutePath(screen.Path)
-	refuseRetiredTitle("screen "+screen.Path, screen.Component)
+	RefuseRetiredTitle("screen "+screen.Path, screen.Component)
 
 	if !strings.Contains(screen.Path, ":") {
 		if _, ok := r.exactRedir[screen.Path]; ok {

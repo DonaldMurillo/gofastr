@@ -48,10 +48,10 @@ type ScreenDescriber interface {
 	ScreenDescription(ctx context.Context) string
 }
 
-// refuseRetiredTitle panics on a component still declaring the
+// RefuseRetiredTitle panics on a component still declaring the
 // no-argument ScreenTitle or ScreenDescription. Those compile but satisfy
 // neither interface, so the page would lose its title without a word.
-func refuseRetiredTitle(where string, comp any) {
+func RefuseRetiredTitle(where string, comp any) {
 	if _, ok := comp.(interface{ ScreenTitle() string }); ok {
 		panic(fmt.Sprintf("app: %s: %T declares ScreenTitle() string; "+
 			"screen titles are ScreenTitle(ctx context.Context) string", where, comp))
