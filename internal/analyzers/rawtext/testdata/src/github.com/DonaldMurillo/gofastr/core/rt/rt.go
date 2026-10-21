@@ -164,6 +164,7 @@ func page(ctx context.Context, method string) {
 	_ = ui.NumberFieldConfig{Help: "Choose a value."}       // want `Help: "Choose a value." is English written`
 	_ = render.Text(fmt.Sprintf("Signed in as %s", method)) // want `render.Text\("Signed in as"\) writes English`
 	_ = ui.ButtonConfig{Label: fmt.Sprintf("%s · %s", method, method)}
+	_ = render.Text(fmt.Sprintf("report%s.csv", method))
 	_ = render.Text(closeWord) // want `render.Text\("Close"\) writes English`
 	_ = render.Text(emptyClass)
 	// Tokens, classes, keys and symbols are not words: quiet.

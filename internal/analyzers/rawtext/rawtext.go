@@ -381,7 +381,9 @@ func constProse(pass *analysis.Pass, e ast.Expr) (string, bool) {
 			if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
 				return "", false
 			}
-			return proseText(reVerb.ReplaceAllString(constant.StringVal(tv.Value), " "))
+			// Removed, not replaced by a space: "report%s.csv" is a
+			// file name, not the words "report .csv".
+			return proseText(reVerb.ReplaceAllString(constant.StringVal(tv.Value), ""))
 		}
 	}
 	tv, ok := pass.TypesInfo.Types[e]
