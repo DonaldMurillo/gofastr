@@ -135,7 +135,7 @@ func (s *winShell) installTray(cfg *desktop.Tray) {
 	_, _, _ = callWindows(capShell, "Shell_NotifyIconW", nimAdd, uintptr(unsafe.Pointer(&tray.data)))
 	if cfg.Menu != nil {
 		ids := append([]string(nil), s.actionIDs...)
-		rows := desktop.PlanTrayMenu(cfg, s.title, &ids)
+		rows := desktop.PlanTrayMenu(s.text(), cfg, s.title, &ids)
 		s.actionIDs = ids
 		firstID := uint16(1000 + len(s.menuActions))
 		popup, err := win32.CreatePopupMenu()
@@ -250,7 +250,8 @@ func (s *winShell) Prompt(ctx context.Context, req desktop.PermissionRequest) (d
 	var decision desktop.Decision
 	err := s.runNativeModal(ctx, func(op *modalOperation) error {
 		var promptErr error
-		decision, promptErr = showPermissionPrompt(s.hwnd, req, op)
+		// ctx is the bridge request's: the dialog speaks the page's language.
+		decision, promptErr = showPermissionPrompt(s.hwnd, req, desktop.PromptText(ctx, req), op)
 		return promptErr
 	})
 	if err != nil {
@@ -413,7 +414,7 @@ func findTaskDialogProc() (*syscall.LazyProc, func(), error) {
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity type="win32" name="gofastr.desktop" version="1.0.0.0"/>
   <dependency><dependentAssembly>
-    <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+    <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/><!-- not-a-secret: the public token every Common-Controls v6 manifest names -->
   </dependentAssembly></dependency>
 </assembly>`
 	file, err := os.CreateTemp("", "gofastr-comctl-v6-*.manifest")
@@ -470,12 +471,12 @@ func findTaskDialogProc() (*syscall.LazyProc, func(), error) {
 	return proc, cleanup, nil
 }
 
-func showPermissionMessageBox(owner uintptr, instruction string, op *modalOperation) (desktop.Decision, error) {
+func showPermissionMessageBox(owner uintptr, instruction string, words desktop.PromptWords, op *modalOperation) (desktop.Decision, error) {
 	if op.cancelled.Load() {
 		return desktop.DecisionDeny, desktop.ErrCancelled
 	}
-	message := instruction + "\n\nSelect Yes to Allow, No to Allow Once, or Cancel to Deny."
-	result := win32.MessageBox(owner, message, "Permission required", 0x3|0x20|0x2000)
+	message := instruction + "\n\n" + words.YesNo
+	result := win32.MessageBox(owner, message, words.Title, 0x3|0x20|0x2000)
 	if op.cancelled.Load() {
 		return desktop.DecisionDeny, desktop.ErrCancelled
 	}
@@ -491,18 +492,17 @@ func showPermissionMessageBox(owner uintptr, instruction string, op *modalOperat
 	}
 }
 
-func showPermissionPrompt(owner uintptr, req desktop.PermissionRequest, op *modalOperation) (desktop.Decision, error) {
-	instruction := "Allow this app to use " + req.Capability + "."
+func showPermissionPrompt(owner uintptr, req desktop.PermissionRequest, words desktop.PromptWords, op *modalOperation) (desktop.Decision, error) {
+	instruction := words.Use
 	if req.Description != "" {
 		instruction = req.Description
 	}
-	content := "Choose Allow to grant access, Allow Once for this request, or Deny."
-	title, _ := win32.UTF16Ptr("Permission required")
+	title, _ := win32.UTF16Ptr(words.Title)
 	main, _ := win32.UTF16Ptr(instruction)
-	body, _ := win32.UTF16Ptr(content)
-	btnOnce, _ := win32.UTF16Ptr("Allow Once")
-	btnAllow, _ := win32.UTF16Ptr("Allow")
-	btnDeny, _ := win32.UTF16Ptr("Deny")
+	body, _ := win32.UTF16Ptr(words.Choose)
+	btnOnce, _ := win32.UTF16Ptr(words.AllowOnce)
+	btnAllow, _ := win32.UTF16Ptr(words.Allow)
+	btnDeny, _ := win32.UTF16Ptr(words.Deny)
 	buttons := new([36]byte)
 	op.taskDialogButtons = buttons
 	for i, button := range []struct {
@@ -531,7 +531,7 @@ func showPermissionPrompt(owner uintptr, req desktop.PermissionRequest, op *moda
 	defer op.shell.unregisterModalCancel(op.id.Load())
 	proc, deactivate, err := findTaskDialogProc()
 	if err != nil {
-		return showPermissionMessageBox(owner, instruction, op)
+		return showPermissionMessageBox(owner, instruction, words, op)
 	}
 	defer deactivate()
 	var pressed int32
@@ -545,7 +545,7 @@ func showPermissionPrompt(owner uintptr, req desktop.PermissionRequest, op *moda
 	runtime.KeepAlive(btnAllow)
 	runtime.KeepAlive(btnDeny)
 	if int32(r) < 0 {
-		return showPermissionMessageBox(owner, instruction, op)
+		return showPermissionMessageBox(owner, instruction, words, op)
 	}
 	if op.cancelled.Load() {
 		return desktop.DecisionDeny, desktop.ErrCancelled

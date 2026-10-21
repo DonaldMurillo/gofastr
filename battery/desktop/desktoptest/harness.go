@@ -2,6 +2,7 @@ package desktoptest
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -530,7 +531,7 @@ func (h *Harness) activate(cfg desktop.WindowConfig, item desktop.MenuItem, wher
 		if cfg.OnSettings == nil {
 			h.t.Fatalf("desktoptest: %s is a settings role but the battery installed no OnSettings", where)
 		}
-		cfg.OnSettings()
+		cfg.OnSettings(context.Background())
 	case item.Role == desktop.RoleShow:
 		if w := h.Shell.Window(mainWindowID); w != nil {
 			_ = w.Focus()
@@ -558,7 +559,7 @@ func (h *Harness) OpenSettings() {
 	if cfg.OnSettings == nil {
 		h.t.Fatal("desktoptest.OpenSettings: the battery installed no OnSettings")
 	}
-	cfg.OnSettings()
+	cfg.OnSettings(context.Background())
 }
 
 // CloseWindow is the user closing a secondary window through the OS:

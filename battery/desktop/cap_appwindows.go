@@ -66,7 +66,7 @@ func (b *Battery) windowsCapability() Capability {
 				Description: "Opens (or focuses) the app's settings window; unsupported when the app configured none.",
 				Output:      json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}}}`),
 				Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
-					w, err := b.OpenSettings()
+					w, err := b.OpenSettings(ctx)
 					if err != nil {
 						return nil, err
 					}

@@ -106,16 +106,19 @@ type winShell struct {
 	running         bool
 	quitBeforeRun   atomic.Bool
 	closeHides      bool
-	trayTitle       string
-	tray            *trayState
-	appearance      desktop.Appearance
+	// textCtx carries the locale the shell's own words speak (menus,
+	// accelerator names, the About box), resolved once in Run.
+	textCtx    context.Context
+	trayTitle  string
+	tray       *trayState
+	appearance desktop.Appearance
 
 	windowsByID map[string]*winWindow
 	windowsHWND map[uintptr]*winWindow
 	menuActions map[uint16]menuAction
 	actionIDs   []string
 	onMenu      func(string)
-	onSettings  func()
+	onSettings  func(context.Context)
 	onClosed    func(string)
 	onFrame     func(string, desktop.Frame)
 	onFocus     func(string)
@@ -240,6 +243,7 @@ func (s *winShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready func
 	s.mu.Unlock()
 	activeWindows.Store(main.hwnd, main)
 	activeShells.Store(main.hwnd, s)
+	s.textCtx = desktop.ShellContext(ctx, preferredLanguages())
 	if err := s.installMenus(main.hwnd, cfg.Title, cfg.Menu, cfg.Settings != nil); err != nil {
 		s.closeRunError(err)
 	}

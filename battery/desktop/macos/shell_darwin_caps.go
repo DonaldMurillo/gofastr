@@ -29,7 +29,8 @@ const modalTimeout = 10 * time.Minute
 
 // Prompt shows the OS permission alert: "<Capability>.<Method> wants
 // permission <Permission>" with Allow / Allow once / Deny, in that
-// order (runModal returns 1000/1001/1002).
+// order (runModal returns 1000/1001/1002), worded by
+// desktop.PromptText in ctx's locale.
 func (s *darwinShell) Prompt(ctx context.Context, req desktop.PermissionRequest) (desktop.Decision, error) {
 	if err := ctx.Err(); err != nil {
 		return desktop.DecisionDeny, desktop.ErrCancelled
@@ -45,14 +46,15 @@ func (s *darwinShell) Prompt(ctx context.Context, req desktop.PermissionRequest)
 	// returned; a plain local would be a data race and the value would
 	// be read by nobody anyway.
 	var res promptResult
+	// ctx is the bridge request's, so the alert speaks the page's language.
+	words := desktop.PromptText(ctx, req)
 	if err := s.onMainWithTimeout(modalTimeout, func() {
 		alert := objc.ID(objc.Send(objc.ID(objc.Send(objc.Class("NSAlert"), objc.Sel("alloc"))), objc.Sel("init")))
-		objc.Send(alert, objc.Sel("setMessageText:"),
-			uintptr(objc.NSString(req.Capability+"."+req.Method+" wants permission "+req.Permission)))
+		objc.Send(alert, objc.Sel("setMessageText:"), uintptr(objc.NSString(words.Message)))
 		objc.Send(alert, objc.Sel("setInformativeText:"), uintptr(objc.NSString(req.Description)))
-		objc.Send(alert, objc.Sel("addButtonWithTitle:"), uintptr(objc.NSString("Allow")))
-		objc.Send(alert, objc.Sel("addButtonWithTitle:"), uintptr(objc.NSString("Allow once")))
-		objc.Send(alert, objc.Sel("addButtonWithTitle:"), uintptr(objc.NSString("Deny")))
+		objc.Send(alert, objc.Sel("addButtonWithTitle:"), uintptr(objc.NSString(words.Allow)))
+		objc.Send(alert, objc.Sel("addButtonWithTitle:"), uintptr(objc.NSString(words.AllowOnce)))
+		objc.Send(alert, objc.Sel("addButtonWithTitle:"), uintptr(objc.NSString(words.Deny)))
 		switch objc.Send(alert, objc.Sel("runModal")) {
 		case 1000:
 			res.set(desktop.DecisionAllow)

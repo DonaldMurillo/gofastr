@@ -309,16 +309,19 @@ type darwinShell struct {
 	// the MAIN window's; wkConfig is the WKWebViewConfiguration every
 	// window shares, so a second web view gets the first one's cookie
 	// store (the boot cookie) for free.
-	mu             sync.Mutex
-	nsApp          objc.ID
-	bridge         objc.ID
-	window         objc.ID
-	webView        objc.ID
-	wkConfig       objc.ID
-	title          string
-	actionIDs      []string
-	onMenu         func(id string)
-	onSettings     func()
+	mu         sync.Mutex
+	nsApp      objc.ID
+	bridge     objc.ID
+	window     objc.ID
+	webView    objc.ID
+	wkConfig   objc.ID
+	title      string
+	actionIDs  []string
+	onMenu     func(id string)
+	onSettings func(context.Context)
+	// textCtx is the locale context the shell's own words speak,
+	// resolved once in Run (desktop.ShellContext).
+	textCtx        context.Context
 	onWindowClosed func(id string)
 	// onWindowFrame reports user moves and resizes (the windowDidMove:
 	// and windowDidEndLiveResize: delegates), on a goroutine.
@@ -458,14 +461,17 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	installDeepLinkHandler(bridge, cfg.OnDeepLink)
 
 	hasSettings := cfg.Settings != nil
-	plans, actionIDs := desktop.PlanMenuBar(cfg.Title, cfg.Menu, hasSettings)
-	trayRows := desktop.PlanTrayMenu(cfg.Tray, cfg.Title, &actionIDs)
+	// The shell's own menu words speak the user's macOS language.
+	textCtx := desktop.ShellContext(ctx, preferredLanguages())
+	plans, actionIDs := desktop.PlanMenuBar(textCtx, cfg.Title, cfg.Menu, hasSettings)
+	trayRows := desktop.PlanTrayMenu(textCtx, cfg.Tray, cfg.Title, &actionIDs)
 	s.mu.Lock()
 	s.nsApp = nsApp
 	s.bridge = bridge
 	s.title = cfg.Title
 	s.onMenu = cfg.OnMenu
 	s.onSettings = cfg.OnSettings
+	s.textCtx = textCtx
 	s.onWindowClosed = cfg.OnWindowClosed
 	s.onWindowFrame = cfg.OnWindowFrame
 	s.onWindowFocus = cfg.OnWindowFocus

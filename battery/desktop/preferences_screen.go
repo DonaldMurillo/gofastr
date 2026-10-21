@@ -85,11 +85,13 @@ type preferencesScreen struct {
 
 // ScreenTitle names the page. The preferences form is the app's one
 // settings surface, so the title is fixed.
-func (s *preferencesScreen) ScreenTitle() string { return "Settings" }
+func (s *preferencesScreen) ScreenTitle(ctx context.Context) string {
+	return pageSettingsTitle.Text(ctx, nil)
+}
 
 // ScreenDescription is the page's one-line description.
-func (s *preferencesScreen) ScreenDescription() string {
-	return "Preferences for this installation"
+func (s *preferencesScreen) ScreenDescription(ctx context.Context) string {
+	return pageSettingsDescription.Text(ctx, nil)
 }
 
 // RenderCtx paints the form from the declared list and the

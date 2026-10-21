@@ -1,5 +1,11 @@
 package desktop
 
+import (
+	"context"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
+)
+
 // The pure menu planning pass: WindowConfig.Menu (plus the standard
 // app and Edit menus) resolved into a platform-neutral description a
 // native shell renders with its own toolkit calls. Keeping the mapping
@@ -116,14 +122,37 @@ func lowerASCII(s string) string {
 // editMenuRows are the standard text-editing commands every WebView
 // app needs inside the page. They target the first responder (the
 // WKWebView's internal editor), not the bridge.
+// Their titles come from editMenuTitles, in the plan's locale.
 var editMenuRows = []MenuItemPlan{
-	{Title: "Undo", Key: "z", Mask: nsModifierCommand, FirstResponder: "undo:"},
-	{Title: "Redo", Key: "z", Mask: nsModifierCommand | nsModifierShift, FirstResponder: "redo:"},
+	{Key: "z", Mask: nsModifierCommand, FirstResponder: "undo:"},
+	{Key: "z", Mask: nsModifierCommand | nsModifierShift, FirstResponder: "redo:"},
 	{Sep: true},
-	{Title: "Cut", Key: "x", Mask: nsModifierCommand, FirstResponder: "cut:"},
-	{Title: "Copy", Key: "c", Mask: nsModifierCommand, FirstResponder: "copy:"},
-	{Title: "Paste", Key: "v", Mask: nsModifierCommand, FirstResponder: "paste:"},
-	{Title: "Select All", Key: "a", Mask: nsModifierCommand, FirstResponder: "selectAll:"},
+	{Key: "x", Mask: nsModifierCommand, FirstResponder: "cut:"},
+	{Key: "c", Mask: nsModifierCommand, FirstResponder: "copy:"},
+	{Key: "v", Mask: nsModifierCommand, FirstResponder: "paste:"},
+	{Key: "a", Mask: nsModifierCommand, FirstResponder: "selectAll:"},
+}
+
+// editMenuTitles names each editMenuRows row by its FirstResponder.
+var editMenuTitles = map[string]i18n.Phrase{
+	"undo:":      menuUndo,
+	"redo:":      menuRedo,
+	"cut:":       menuCut,
+	"copy:":      menuCopy,
+	"paste:":     menuPaste,
+	"selectAll:": menuSelectAll,
+}
+
+// editMenu is the Edit menu in ctx's locale.
+func editMenu(ctx context.Context) MenuPlan {
+	rows := make([]MenuItemPlan, len(editMenuRows))
+	for i, row := range editMenuRows {
+		if !row.Sep {
+			row.Title = editMenuTitles[row.FirstResponder].Text(ctx)
+		}
+		rows[i] = row
+	}
+	return MenuPlan{Title: menuEdit.Text(ctx), Items: rows}
 }
 
 // PlanMenuBar resolves a validated Menu plus the shell-owned standard
@@ -137,15 +166,18 @@ var editMenuRows = []MenuItemPlan{
 // appTitle names the app menu and its Quit item ("Quit <Title>"). A
 // nil Menu still yields a working bar (app + Edit): a macOS app
 // without a menu bar has no keyboard escape and no standard way to
-// quit.
-func PlanMenuBar(appTitle string, m *Menu, hasSettings bool) (plans []MenuPlan, actionIDs []string) {
-	appItems := []MenuItemPlan{{Title: "About " + appTitle, Role: RoleAbout}}
+// quit. The shell-owned words (the app menu's items, role items'
+// default titles, the Edit menu) are in ctx's locale: see
+// [ShellContext].
+func PlanMenuBar(ctx context.Context, appTitle string, m *Menu, hasSettings bool) (plans []MenuPlan, actionIDs []string) {
+	app := map[string]any{"app": appTitle}
+	appItems := []MenuItemPlan{{Title: menuAbout.Text(ctx, app), Role: RoleAbout}}
 	if hasSettings {
-		appItems = append(appItems, MenuItemPlan{Title: "Settings…", Role: RoleSettings, Key: ",", Mask: nsModifierCommand})
+		appItems = append(appItems, MenuItemPlan{Title: menuSettings.Text(ctx), Role: RoleSettings, Key: ",", Mask: nsModifierCommand})
 	}
 	appItems = append(appItems,
 		MenuItemPlan{Sep: true},
-		MenuItemPlan{Title: "Quit " + appTitle, Role: RoleQuit, Key: "q", Mask: nsModifierCommand},
+		MenuItemPlan{Title: menuQuit.Text(ctx, app), Role: RoleQuit, Key: "q", Mask: nsModifierCommand},
 	)
 	plans = append(plans, MenuPlan{Title: appTitle, Items: appItems})
 
@@ -156,24 +188,24 @@ func PlanMenuBar(appTitle string, m *Menu, hasSettings bool) (plans []MenuPlan, 
 				// drop it rather than render an empty untitled menu.
 				continue
 			}
-			mp := MenuPlan{Title: defaultRoleTitle(it, appTitle)}
+			mp := MenuPlan{Title: defaultRoleTitle(ctx, it, appTitle)}
 			if len(it.Children) > 0 {
-				mp.Items = planRows(it.Children, appTitle, &actionIDs)
+				mp.Items = planRows(ctx, it.Children, appTitle, &actionIDs)
 			} else {
 				// A childless top-level item becomes its own
 				// single-row menu so its action stays reachable.
-				mp.Items = planRows([]MenuItem{it}, appTitle, &actionIDs)
+				mp.Items = planRows(ctx, []MenuItem{it}, appTitle, &actionIDs)
 			}
 			plans = append(plans, mp)
 		}
 	}
 
-	plans = append(plans, MenuPlan{Title: "Edit", Items: editMenuRows})
+	plans = append(plans, editMenu(ctx))
 	return plans, actionIDs
 }
 
 // planRows maps menu items to planned rows, assigning action tags.
-func planRows(items []MenuItem, appTitle string, actionIDs *[]string) []MenuItemPlan {
+func planRows(ctx context.Context, items []MenuItem, appTitle string, actionIDs *[]string) []MenuItemPlan {
 	rows := make([]MenuItemPlan, 0, len(items))
 	for _, it := range items {
 		if it.Role == RoleSeparator {
@@ -184,35 +216,36 @@ func planRows(items []MenuItem, appTitle string, actionIDs *[]string) []MenuItem
 		row := MenuItemPlan{Title: it.Title, Key: eq, Mask: mask, Role: it.Role}
 		switch {
 		case it.Role == RoleQuit || it.Role == RoleAbout || it.Role == RoleSettings || it.Role == RoleShow:
-			row.Title = defaultRoleTitle(it, appTitle)
+			row.Title = defaultRoleTitle(ctx, it, appTitle)
 		case it.Navigate != "" || it.Handler != nil:
 			row.Action = true
 			row.Tag = len(*actionIDs)
 			*actionIDs = append(*actionIDs, it.ID)
 		}
 		if len(it.Children) > 0 {
-			row.Submenu = planRows(it.Children, appTitle, actionIDs)
+			row.Submenu = planRows(ctx, it.Children, appTitle, actionIDs)
 		}
 		rows = append(rows, row)
 	}
 	return rows
 }
 
-// defaultRoleTitle fills the OS-standard label for a role item whose
-// Title is empty.
-func defaultRoleTitle(it MenuItem, appTitle string) string {
+// defaultRoleTitle fills the OS-standard label, in ctx's locale, for a
+// role item whose Title is empty.
+func defaultRoleTitle(ctx context.Context, it MenuItem, appTitle string) string {
 	if it.Title != "" {
 		return it.Title
 	}
+	app := map[string]any{"app": appTitle}
 	switch it.Role {
 	case RoleQuit:
-		return "Quit " + appTitle
+		return menuQuit.Text(ctx, app)
 	case RoleAbout:
-		return "About " + appTitle
+		return menuAbout.Text(ctx, app)
 	case RoleSettings:
-		return "Settings…"
+		return menuSettings.Text(ctx)
 	case RoleShow:
-		return "Show " + appTitle
+		return menuShow.Text(ctx, app)
 	}
 	return it.Title
 }
@@ -221,9 +254,9 @@ func defaultRoleTitle(it MenuItem, appTitle string) string {
 // shares the caller's action-ID table with the menu bar plan, so a
 // tray Navigate/Handler row's Tag resolves through the same table
 // OnMenu dispatches on.
-func PlanTrayMenu(t *Tray, appTitle string, actionIDs *[]string) []MenuItemPlan {
+func PlanTrayMenu(ctx context.Context, t *Tray, appTitle string, actionIDs *[]string) []MenuItemPlan {
 	if t == nil || t.Menu == nil {
 		return nil
 	}
-	return planRows(t.Menu.Items, appTitle, actionIDs)
+	return planRows(ctx, t.Menu.Items, appTitle, actionIDs)
 }

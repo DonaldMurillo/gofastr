@@ -3,6 +3,7 @@
 package macos
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"sync"
@@ -419,10 +420,13 @@ func bridgeTerminateAfterLastWindow(a *ffi.Args) uintptr {
 func bridgeSettingsAction(a *ffi.Args) uintptr {
 	if s := activeShell.Load(); s != nil {
 		s.mu.Lock()
-		onSettings := s.onSettings
+		onSettings, textCtx := s.onSettings, s.textCtx
 		s.mu.Unlock()
+		if textCtx == nil {
+			textCtx = context.Background()
+		}
 		if onSettings != nil {
-			go onSettings()
+			go onSettings(textCtx)
 		}
 	}
 	return 0

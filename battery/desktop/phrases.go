@@ -20,8 +20,41 @@ var (
 	reasonPrefsSaveFailed = i18n.Define("desktop.prefs_save_failed", "saving preferences failed")
 )
 
-// The preferences screen's heading and its save button.
+// The preferences screen's heading, description and save button.
 var (
-	pageSettingsTitle = i18n.Define("desktop.settings_title", "Settings")
-	pageSettingsSave  = i18n.Define("desktop.settings_save", "Save")
+	pageSettingsTitle       = i18n.Define("desktop.settings_title", "Settings")
+	pageSettingsDescription = i18n.Define("desktop.settings_description", "Preferences for this installation")
+	pageSettingsSave        = i18n.Define("desktop.settings_save", "Save")
+)
+
+// The shell's own words: the menus it adds, the role items' default
+// titles, the permission prompt and the Windows About box.
+var (
+	menuAbout     = i18n.Define("desktop.menu_about", "About {{app}}")
+	menuSettings  = i18n.Define("desktop.menu_settings", "Settings…")
+	menuQuit      = i18n.Define("desktop.menu_quit", "Quit {{app}}")
+	menuShow      = i18n.Define("desktop.menu_show", "Show {{app}}")
+	menuEdit      = i18n.Define("desktop.menu_edit", "Edit")
+	menuUndo      = i18n.Define("desktop.menu_undo", "Undo")
+	menuRedo      = i18n.Define("desktop.menu_redo", "Redo")
+	menuCut       = i18n.Define("desktop.menu_cut", "Cut")
+	menuCopy      = i18n.Define("desktop.menu_copy", "Copy")
+	menuPaste     = i18n.Define("desktop.menu_paste", "Paste")
+	menuSelectAll = i18n.Define("desktop.menu_select_all", "Select All")
+
+	permissionAsks   = i18n.Define("desktop.permission_asks", "{{capability}}.{{method}} wants permission {{permission}}")
+	permissionTitle  = i18n.Define("desktop.permission_title", "Permission required")
+	permissionUse    = i18n.Define("desktop.permission_use", "Allow this app to use {{capability}}.")
+	permissionChoose = i18n.Define("desktop.permission_choose", "Choose Allow to grant access, Allow once for this request, or Deny.")
+	permissionYesNo  = i18n.Define("desktop.permission_yes_no", "Select Yes to Allow, No to Allow once, or Cancel to Deny.")
+	permissionAllow  = i18n.Define("desktop.permission_allow", "Allow")
+	permissionOnce   = i18n.Define("desktop.permission_once", "Allow once")
+	permissionDeny   = i18n.Define("desktop.permission_deny", "Deny")
+
+	aboutTitle = i18n.Define("desktop.about_title", "About")
+	aboutBody  = i18n.Define("desktop.about_body", "A desktop application built with gofastr.")
+
+	acceleratorCtrl  = i18n.Define("desktop.accelerator_ctrl", "Ctrl")
+	acceleratorAlt   = i18n.Define("desktop.accelerator_alt", "Alt")
+	acceleratorShift = i18n.Define("desktop.accelerator_shift", "Shift")
 )
