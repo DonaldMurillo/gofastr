@@ -118,3 +118,9 @@ notes:
     breaking: false
     nodetect: "new fields in responses; nothing in an app's source spells them"
     guidance: "Optional. Branch on reason instead of matching message text, and translate a message by adding its key to a locale file. See gofastr docs i18n."
+  - change: "i18nui.WithTranslator is removed; i18n.WithTranslator puts the translator on the context for every phrase, framework/ui included"
+    breaking: true
+    hits: edit
+    find:
+      uses: [gofastr/framework/i18nui.WithTranslator]
+    guidance: "Call i18n.WithTranslator(ctx, tr) with the same arguments. An app built with framework.WithI18n needs neither: the request context already carries the translator."
