@@ -23,7 +23,7 @@ func (s *winShell) installMenus(hwnd uintptr, title string, menu *desktop.Menu, 
 		if err != nil {
 			return err
 		}
-		if err := s.appendRows(popup, p.Items, []string{p.Title}); err != nil {
+		if err := s.appendRows(popup, p.Items, []string{p.English}); err != nil {
 			return err
 		}
 		if err := win32.AppendMenu(root, win32.MF_POPUP, popup, p.Title); err != nil {
@@ -39,6 +39,9 @@ func (s *winShell) installMenus(hwnd uintptr, title string, menu *desktop.Menu, 
 
 func pathKey(path []string) string { return strings.Join(path, "\x00") }
 
+// appendRows renders rows into menu. An action's path is the rows'
+// English titles (a role name for an untitled role row): the native
+// driver matches it, and the drawn label follows the OS language.
 func (s *winShell) appendRows(menu uintptr, rows []desktop.MenuItemPlan, prefix []string) error {
 	for _, row := range rows {
 		if row.Sep {
@@ -48,10 +51,11 @@ func (s *winShell) appendRows(menu uintptr, rows []desktop.MenuItemPlan, prefix 
 			continue
 		}
 		label := row.Title
-		if label == "" && row.Role != "" {
-			label = row.Role
+		name := row.English
+		if name == "" && row.Role != "" {
+			name = row.Role
 		}
-		path := append(append([]string(nil), prefix...), label)
+		path := append(append([]string(nil), prefix...), name)
 		if len(row.Submenu) != 0 {
 			sub, err := win32.CreatePopupMenu()
 			if err != nil {
@@ -193,19 +197,27 @@ func (s *winShell) findAction(path []string, tray bool) (menuAction, bool) {
 			return a, true
 		}
 	}
-	for _, a := range s.menuActions {
-		if len(a.path) != len(path) {
-			continue
-		}
-		match := true
-		for i := range path {
-			if !strings.EqualFold(a.path[i], path[i]) {
-				match = false
-				break
+	// English titles first, then a role name for the last step ("quit"
+	// finds the app menu's Quit row), the order darwin matches in.
+	for _, byRole := range []bool{false, true} {
+		for _, a := range s.menuActions {
+			if len(a.path) != len(path) || len(path) == 0 {
+				continue
 			}
-		}
-		if match {
-			return a, true
+			match := true
+			for i := range path {
+				name := a.path[i]
+				if byRole && i == len(path)-1 {
+					name = a.role
+				}
+				if name == "" || !strings.EqualFold(name, path[i]) {
+					match = false
+					break
+				}
+			}
+			if match {
+				return a, true
+			}
 		}
 	}
 	return menuAction{}, false

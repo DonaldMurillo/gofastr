@@ -851,3 +851,17 @@ notes:
         - gofastr/battery/auth.ErrPasswordEmpty
         - gofastr/battery/auth.ErrPasswordTooShort
     guidance: "errors.Is still matches them. Code that compared err.Error() with \"auth: password is empty\" or \"auth: password too short\" should use errors.Is; render the message with i18n.ErrorText(ctx, err) for the caller's locale."
+  - change: "desktop.MenuItem.Title, desktop.Tray.Tooltip, desktop.Preference.Label and desktop.Preference.Help are i18n.Phrase"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/battery/desktop.MenuItem.Title
+          type: '^string$'
+        - symbol: gofastr/battery/desktop.Tray.Tooltip
+          type: '^string$'
+        - symbol: gofastr/battery/desktop.Preference.Label
+          type: '^string$'
+        - symbol: gofastr/battery/desktop.Preference.Help
+          type: '^string$'
+    guidance: "Define each word at package level, var menuNewNote = i18n.Define(\"myapp.menu.new_note\", \"New note\"), and set Title: menuNewNote. The shell renders menu titles and the tooltip in the OS language; the preferences screen renders Label and Help in the request's. Tray.Title stays a string. desktoptest ClickMenu and ClickTray still take the English title."

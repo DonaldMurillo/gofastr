@@ -308,6 +308,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   takes one, and `desktop.WindowConfig.OnSettings` is `func(ctx
   context.Context)`. `gofastr upgrade` names each callback still
   written with the old signature.
+- **BREAKING: desktop menu, tray and preference words are phrases.**
+  `desktop.MenuItem.Title`, `desktop.Tray.Tooltip`,
+  `desktop.Preference.Label` and `desktop.Preference.Help` are
+  `i18n.Phrase`. The shell renders titles and the tooltip in the OS
+  language it already uses for its own menus; the preferences screen
+  and the `preferences` capability render label and help in the
+  request's language. `Tray.Title` stays a string: apps write a live
+  countdown there. `desktoptest` `ClickMenu` and `ClickTray` match a
+  title's English on every shell, the fake and the native drivers
+  alike, so a suite passes whatever language the machine is set to;
+  `desktop.MenuPlan` and `MenuItemPlan` carry that `English` beside the
+  drawn `Title`.
 - **BREAKING: setup wizard words are phrases.** `setup.Field.Label`,
   `setup.Config.Title` and the new `setup.Step.Title` are `i18n.Phrase`;
   the zero Phrase shows the field's or step's `Name`, or "Setup".

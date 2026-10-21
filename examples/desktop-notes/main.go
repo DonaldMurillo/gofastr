@@ -123,8 +123,8 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, error) {
 		// d.Preferences(), and rendered by desktop.PreferencesScreen at
 		// /settings.
 		Preferences: []desktop.Preference{
-			{Key: "notify_on_save", Label: "Notify on save", Kind: desktop.PreferenceBool, Default: true},
-			{Key: "export_folder", Label: "Export folder", Kind: desktop.PreferenceString, Default: ""},
+			{Key: "notify_on_save", Label: prefNotifyOnSave, Kind: desktop.PreferenceBool, Default: true},
+			{Key: "export_folder", Label: prefExportFolder, Kind: desktop.PreferenceString, Default: ""},
 		},
 		// gofastr-notes://notes/<id> opens the app on that note; the bundle
 		// registers the scheme with --scheme gofastr-notes.
@@ -136,12 +136,12 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, error) {
 			// menu bar. There is no API to choose the position; the
 			// user reorders items with cmd-drag.
 			Title:   "Notes",
-			Tooltip: "Notes",
+			Tooltip: trayTooltip,
 			Icon:    appIconPNG(),
 			Menu: &desktop.Menu{Items: []desktop.MenuItem{
-				{Title: "Show Notes", Role: desktop.RoleShow},
-				{Title: "New note", Navigate: "/notes/create"},
-				{Title: "Quick note…", Handler: func(ctx context.Context) error {
+				{Title: menuShow, Role: desktop.RoleShow},
+				{Title: menuNewNote, Navigate: "/notes/create"},
+				{Title: menuQuickNote, Handler: func(ctx context.Context) error {
 					// The widget is a styled window, not a navigation:
 					// a Navigate row would move the MAIN window.
 					if _, err := d.OpenWindow(desktop.Widget("/widget", 320, 280)); err != nil {
@@ -149,21 +149,21 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, error) {
 					}
 					return nil
 				}},
-				{Title: "Settings…", Role: desktop.RoleSettings},
+				{Title: menuSettings, Role: desktop.RoleSettings},
 				{Role: desktop.RoleSeparator},
 				{Role: desktop.RoleQuit},
 			}},
 			CloseHidesWindow: true,
 		},
 		Menu: &desktop.Menu{Items: []desktop.MenuItem{
-			{Title: "File", Children: []desktop.MenuItem{
-				{Title: "New note", Key: "cmd+n", Navigate: "/notes/create"},
-				{Title: "Export all…", Key: "cmd+e", Handler: func(ctx context.Context) error {
+			{Title: menuFile, Children: []desktop.MenuItem{
+				{Title: menuNewNote, Key: "cmd+n", Navigate: "/notes/create"},
+				{Title: menuExportAll, Key: "cmd+e", Handler: func(ctx context.Context) error {
 					return exportAll(ctx, app, d)
 				}},
-				{Title: "Settings…", Role: desktop.RoleSettings},
+				{Title: menuSettings, Role: desktop.RoleSettings},
 				{Role: desktop.RoleSeparator},
-				{Title: "Check for updates…", Handler: func(ctx context.Context) error {
+				{Title: menuCheckUpdates, Handler: func(ctx context.Context) error {
 					return checkForUpdates(ctx, d)
 				}},
 				{Role: desktop.RoleQuit},

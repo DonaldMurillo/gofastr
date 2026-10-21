@@ -21,11 +21,11 @@ import (
 func prefsDecls() []desktop.Preference {
 	min := func(n int) *int { return &n }
 	return []desktop.Preference{
-		{Key: "work_minutes", Label: "Work minutes", Kind: desktop.PreferenceInt, Default: 25, Min: min(1), Max: min(180), Help: "Length of one work session."},
-		{Key: "break_minutes", Label: "Break minutes", Kind: desktop.PreferenceInt, Default: 5, Min: min(1), Max: min(60)},
-		{Key: "notify_on_done", Label: "Notify when a session ends", Kind: desktop.PreferenceBool, Default: true},
-		{Key: "sound", Label: "Session sound", Kind: desktop.PreferenceChoice, Default: "chime", Choices: []string{"none", "chime", "bell"}},
-		{Key: "export_folder", Label: "Export folder", Kind: desktop.PreferenceString, Default: ""},
+		{Key: "work_minutes", Label: testPhrase("Work minutes"), Kind: desktop.PreferenceInt, Default: 25, Min: min(1), Max: min(180), Help: testPhrase("Length of one work session.")},
+		{Key: "break_minutes", Label: testPhrase("Break minutes"), Kind: desktop.PreferenceInt, Default: 5, Min: min(1), Max: min(60)},
+		{Key: "notify_on_done", Label: testPhrase("Notify when a session ends"), Kind: desktop.PreferenceBool, Default: true},
+		{Key: "sound", Label: testPhrase("Session sound"), Kind: desktop.PreferenceChoice, Default: "chime", Choices: []string{"none", "chime", "bell"}},
+		{Key: "export_folder", Label: testPhrase("Export folder"), Kind: desktop.PreferenceString, Default: ""},
 	}
 }
 

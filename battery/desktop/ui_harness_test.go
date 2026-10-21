@@ -61,10 +61,10 @@ func TestSettingsWindowFromEveryEntryPoint(t *testing.T) {
 		Title:    "UI",
 		Settings: &desktop.WindowSpec{Path: "/settings", Title: "Preferences", Width: 500, Height: 400},
 		Menu: &desktop.Menu{Items: []desktop.MenuItem{
-			{Title: "File", Children: []desktop.MenuItem{{Title: "Settings…", Role: desktop.RoleSettings}}},
+			{Title: testPhrase("File"), Children: []desktop.MenuItem{{Title: testPhrase("Settings…"), Role: desktop.RoleSettings}}},
 		}},
 		Tray: &desktop.Tray{Title: "UI", Menu: &desktop.Menu{Items: []desktop.MenuItem{
-			{Title: "Settings…", Role: desktop.RoleSettings},
+			{Title: testPhrase("Settings…"), Role: desktop.RoleSettings},
 		}}},
 	})
 	h := desktoptest.Run(t, app, d)
@@ -153,14 +153,14 @@ func TestSettingsUnconfiguredIsUnsupported(t *testing.T) {
 }
 
 func TestTrayTitleFromGoAndFromThePage(t *testing.T) {
-	app, d := uiApp(t, desktop.Config{Tray: &desktop.Tray{Title: "Tray", Tooltip: "tip"}})
+	app, d := uiApp(t, desktop.Config{Tray: &desktop.Tray{Title: "Tray", Tooltip: testPhrase("tip")}})
 	h := desktoptest.Run(t, app, d)
 
 	if got := h.Shell.TrayTitle(); got != "Tray" {
 		t.Fatalf("tray title after boot = %q", got)
 	}
 	cfg, _ := h.Shell.Config()
-	if cfg.Tray == nil || cfg.Tray.Tooltip != "tip" {
+	if cfg.Tray == nil || cfg.Tray.Tooltip.English() != "tip" {
 		t.Fatalf("shell got tray %+v", cfg.Tray)
 	}
 	if err := d.SetTrayTitle("Tray (1)"); err != nil {

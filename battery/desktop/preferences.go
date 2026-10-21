@@ -47,10 +47,11 @@ type Preference struct {
 	// Key is the preference's storage and form-field name. It must
 	// match ^[a-z][a-z0-9_]{0,63}$ and be unique in the list.
 	Key string
-	// Label is the field's visible label. Required.
-	Label string
+	// Label is the field's visible label, in the reader's language.
+	// Required.
+	Label i18n.Phrase
 	// Help is optional field help rendered under the control.
-	Help string
+	Help i18n.Phrase
 	// Kind is the value type. Required (the zero value is refused).
 	Kind PreferenceKind
 	// Default is the value used until something is stored. It must
@@ -82,7 +83,7 @@ func validatePreferences(decls []Preference) error {
 			return fmt.Errorf("desktop: duplicate preference key %q", p.Key)
 		}
 		seen[p.Key] = struct{}{}
-		if p.Label == "" {
+		if p.Label.IsZero() {
 			return fmt.Errorf("desktop: preference %q requires Label", p.Key)
 		}
 		if p.Kind != PreferenceInt && (p.Min != nil || p.Max != nil) {

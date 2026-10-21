@@ -63,13 +63,13 @@ func (b *Battery) preferencesCapability() Capability {
 				Description: "Returns every declared preference's current value and its declaration.",
 				Input:       json.RawMessage(`{"type":"object"}`),
 				Output:      json.RawMessage(`{"type":"object","properties":{"values":{"type":"object"},"declared":{"type":"array"}}}`),
-				Handler: func(_ context.Context, _ json.RawMessage) (any, error) {
+				Handler: func(ctx context.Context, _ json.RawMessage) (any, error) {
 					p := b.prefs
 					decls := p.Declared()
 					infos := make([]preferenceInfo, 0, len(decls))
 					for _, d := range decls {
 						infos = append(infos, preferenceInfo{
-							Key: d.Key, Label: d.Label, Help: d.Help,
+							Key: d.Key, Label: d.Label.Text(ctx), Help: helpText(ctx, d),
 							Kind: string(d.Kind), Default: d.Default,
 							Choices: d.Choices, Min: d.Min, Max: d.Max,
 						})

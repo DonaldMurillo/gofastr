@@ -157,33 +157,32 @@ func (s *darwinShell) ActivateTray(title string) error {
 	return actErr
 }
 
-// matchMenuItem finds a row by title, falling back to the OS-standard
-// label a role item carries when the plan left its Title empty ("quit"
-// matches "Quit <app title>"). Call on the main thread.
+// matchMenuItem finds a row of menu by its English title, else by its
+// role ("quit" matches the app menu's Quit row). The drawn title is in
+// the OS language, so matching it would make a test pass or fail by the
+// machine's settings. Call on the main thread.
 func (s *darwinShell) matchMenuItem(menu objc.ID, title string) objc.ID {
 	if menu == 0 {
 		return 0
 	}
-	if item := objc.ID(objc.Send(menu, objc.Sel("itemWithTitle:"), uintptr(objc.NSString(title)))); item != 0 {
-		return item
+	n := int(objc.Send(menu, objc.Sel("numberOfItems")))
+	items := make([]objc.ID, 0, n)
+	for i := range n {
+		items = append(items, objc.ID(objc.Send(menu, objc.Sel("itemAtIndex:"), uintptr(i))))
 	}
 	s.mu.Lock()
-	appTitle := s.title
-	s.mu.Unlock()
-	var alt string
-	switch title {
-	case desktop.RoleQuit:
-		alt = "Quit " + appTitle
-	case desktop.RoleAbout:
-		alt = "About " + appTitle
-	case desktop.RoleSettings:
-		alt = "Settings…"
-	case desktop.RoleShow:
-		alt = "Show " + appTitle
-	default:
-		return 0
+	defer s.mu.Unlock()
+	for _, item := range items {
+		if name, ok := s.menuNames[item]; ok && name.english != "" && name.english == title {
+			return item
+		}
 	}
-	return objc.ID(objc.Send(menu, objc.Sel("itemWithTitle:"), uintptr(objc.NSString(alt))))
+	for _, item := range items {
+		if name, ok := s.menuNames[item]; ok && name.role != "" && name.role == title {
+			return item
+		}
+	}
+	return 0
 }
 
 // fireMenuItem sends the item's own action with the item as the
@@ -394,4 +393,23 @@ func (s *darwinShell) MakeKey(id string) error {
 // package can assert tray.setTitle reached the status item.
 func (s *darwinShell) StatusItemTitle() string {
 	return s.statusItemButtonTitle()
+}
+
+// StatusItemToolTip reads the tray button's tooltip natively, so the
+// external test package can assert the Tooltip phrase reached the
+// status item in the shell's language.
+func (s *darwinShell) StatusItemToolTip() string {
+	s.mu.Lock()
+	item := s.statusItem
+	s.mu.Unlock()
+	if item == 0 {
+		return ""
+	}
+	var tip string
+	_ = s.onMain(func() {
+		if button := objc.ID(objc.Send(item, objc.Sel("button"))); button != 0 {
+			tip = objc.GoString(objc.ID(objc.Send(button, objc.Sel("toolTip"))))
+		}
+	})
+	return tip
 }

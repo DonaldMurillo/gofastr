@@ -122,7 +122,10 @@ func (s *winShell) installTray(cfg *desktop.Tray) {
 	tray.data = notifyIconData{Size: uint32(unsafe.Sizeof(notifyIconData{})), Hwnd: s.hwnd, ID: trayIconID,
 		Flags: nifMessage | nifIcon | nifTip, Callback: wmTrayNotify}
 	tray.data.Icon, _, _ = callWindows(capUser32, "LoadIconW", 0, uintptr(32512))
-	tip := cfg.Tooltip
+	tip := ""
+	if !cfg.Tooltip.IsZero() {
+		tip = cfg.Tooltip.Text(s.text())
+	}
 	if s.trayTitle != "" {
 		tip = s.trayTitle
 	} else if cfg.Title != "" {

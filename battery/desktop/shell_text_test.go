@@ -36,7 +36,7 @@ func frShellCtx() context.Context {
 // The shell-owned menus speak the locale the shell resolved: the app
 // menu's role items, the Edit menu and its rows.
 func TestPlanMenuBarSpeaksLocale(t *testing.T) {
-	m := &Menu{Items: []MenuItem{{Title: "Fichier", Children: []MenuItem{{Role: RoleQuit}, {Role: RoleShow}}}}}
+	m := &Menu{Items: []MenuItem{{Title: testPhrase("Fichier"), Children: []MenuItem{{Role: RoleQuit}, {Role: RoleShow}}}}}
 	plans, _ := PlanMenuBar(frShellCtx(), "Notes", m, true)
 	app := plans[0]
 	if got := app.Items[0].Title; got != "À propos de Notes" {
@@ -59,6 +59,38 @@ func TestPlanMenuBarSpeaksLocale(t *testing.T) {
 	// The shared row table is not rewritten by a localized plan.
 	if editMenuRows[0].Title != "" {
 		t.Errorf("editMenuRows carries a title %q; rows take their words per plan", editMenuRows[0].Title)
+	}
+}
+
+// A French plan still names every row in English, the name the native
+// drivers match, so a desktoptest suite passes on any OS language.
+func TestPlanKeepsEnglishNames(t *testing.T) {
+	file := testPhrase("File")
+	cat := i18n.NewMapCatalog()
+	cat.Set("fr", "desktop.menu_quit", i18n.Message{Text: "Quitter {{app}}"})
+	cat.Set("fr", file.Key(), i18n.Message{Text: "Fichier"})
+	ctx := i18n.WithContext(i18n.WithTranslator(context.Background(), i18n.NewTranslator(cat, "en")), i18n.Locale{Tag: "fr"})
+
+	m := &Menu{Items: []MenuItem{{Title: file, Children: []MenuItem{{Title: file, Navigate: "/f"}, {Role: RoleQuit}}}}}
+	plans, ids := PlanMenuBar(ctx, "Notes", m, false)
+	if got := plans[1]; got.Title != "Fichier" || got.English != "File" {
+		t.Errorf("menu = %q / %q, want Fichier / File", got.Title, got.English)
+	}
+	rows := plans[1].Items
+	if rows[0].Title != "Fichier" || rows[0].English != "File" || rows[1].Title != "Quitter Notes" || rows[1].English != "Quit Notes" {
+		t.Errorf("rows = %+v", rows)
+	}
+	if plans[0].Items[len(plans[0].Items)-1].English != "Quit Notes" {
+		t.Errorf("app menu Quit English = %q", plans[0].Items[len(plans[0].Items)-1].English)
+	}
+
+	tray := PlanTrayMenu(ctx, &Tray{Menu: &Menu{Items: []MenuItem{{Title: file, Navigate: "/t"}}}}, "Notes", &ids)
+	if tray[0].Title != "Fichier" || tray[0].English != "File" {
+		t.Errorf("tray row = %q / %q", tray[0].Title, tray[0].English)
+	}
+	// The English pass does not take tags of its own.
+	if len(ids) != 2 || tray[0].Tag != 1 {
+		t.Errorf("action ids = %v, tray tag %d", ids, tray[0].Tag)
 	}
 }
 
