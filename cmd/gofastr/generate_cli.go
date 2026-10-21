@@ -44,6 +44,11 @@ var cliReservedFlags = map[string]bool{
 	"help": true, "h": true, "with-token": true,
 }
 
+// cliEndpointReservedFlags are the flags an endpoint command registers
+// besides its inputs (runEndpointVerb, parseGlobals, package flag), and
+// o, which the shared body builder skips.
+var cliEndpointReservedFlags = map[string]bool{"url": true, "json": true, "o": true, "help": true, "h": true}
+
 type cliOptions struct {
 	outDir      string
 	binary      string
@@ -157,8 +162,30 @@ type cliEntity struct {
 	Verbs       []string
 	Fields      []cliField
 	Transitions []cliTransition // non-system state moves, one command each
+	Endpoints   []cliEndpoint   // gofastr.settings.yml endpoints, one command each
 	Search      bool
 	SoftDelete  bool
+}
+
+// cliEndpoint is one settings endpoint's command: `<entity> <Command>`
+// takes the path values as positional arguments and the rest as flags.
+type cliEndpoint struct {
+	Command string   // kebab of the endpoint name
+	Func    string   // CamelCase, for the generated wrapper
+	Method  string   // HTTP method
+	Segs    []string // route segments, "{name}" for a path value
+	Query   bool     // flags go in the query string, not a JSON body
+	Fields  []cliEndpointField
+	Summary string
+}
+
+// cliEndpointField is one flag of an endpoint command.
+type cliEndpointField struct {
+	Flag     string
+	Wire     string
+	Kind     string // fieldKind constant
+	Usage    string
+	Required bool
 }
 
 type cliSpec struct {
@@ -207,7 +234,7 @@ func generateCLI(opts cliOptions) {
 		return
 	}
 
-	decls, err := packReadEntities(".")
+	decls, err := readAppDecls(".")
 	if err != nil {
 		fail("read entities: %v", err)
 		osExit(1)
@@ -623,6 +650,7 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 	// Derived struct names must be unique across the selection (see the
 	// check inside the loop).
 	structOwners := map[string]string{} // derived struct name → declaring entity name
+	var selected []framework.EntityDeclaration
 	for _, decl := range decls {
 		if len(opts.only) > 0 && !matchesAny(decl, opts.only) {
 			continue
@@ -656,10 +684,14 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 		}
 		structOwners[ent.Struct] = decl.Name
 		spec.Entities = append(spec.Entities, ent)
+		selected = append(selected, decl)
 	}
 
 	if len(spec.Entities) == 0 {
 		return cliSpec{}, fmt.Errorf("selection matches no entities: nothing to generate")
+	}
+	if err := checkEndpointReturns(selected); err != nil {
+		return cliSpec{}, err
 	}
 	return spec, nil
 }
@@ -752,7 +784,58 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 		}
 		ent.Transitions = append(ent.Transitions, cliTransition{Key: t.Key, Summary: textsafe.StripUnsafe(summary)})
 	}
+	for _, ep := range sdkEndpoints(decl) {
+		ent.Endpoints = append(ent.Endpoints, buildCLIEndpoint(ep, table))
+	}
 	return ent
+}
+
+// buildCLIEndpoint derives an endpoint's command from its declaration.
+func buildCLIEndpoint(ep framework.Endpoint, table string) cliEndpoint {
+	_, rest, inQuery := endpointInput(ep)
+	summary := ep.Description
+	if summary == "" {
+		summary = ep.Method + " /" + table + "/" + ep.Path
+	}
+	ce := cliEndpoint{
+		Command: strings.ReplaceAll(ep.Name, "_", "-"),
+		Func:    toCamelCase(ep.Name),
+		Method:  ep.Method,
+		Segs:    strings.Split(ep.Path, "/"),
+		Query:   inQuery,
+		Summary: textsafe.StripUnsafe(summary),
+	}
+	for _, f := range rest {
+		usage := f.Name + " (" + strings.ToLower(strings.TrimPrefix(schemaTypeNames[f.Type], "schema.")) + ")"
+		if f.Required {
+			usage += ", required"
+		}
+		ce.Fields = append(ce.Fields, cliEndpointField{
+			Flag:     strings.ReplaceAll(f.Name, "_", "-"),
+			Wire:     f.Name,
+			Kind:     cliEndpointKind(f.Type),
+			Usage:    usage,
+			Required: f.Required,
+		})
+	}
+	return ce
+}
+
+// cliEndpointKind maps an endpoint input's type to the fieldKind constant
+// the shared endpoint body switches on.
+func cliEndpointKind(t schema.FieldType) string {
+	switch t {
+	case schema.Int:
+		return "fieldInt"
+	case schema.Float:
+		return "fieldFloat"
+	case schema.Bool:
+		return "fieldBool"
+	case schema.JSON:
+		return "fieldJSON"
+	default:
+		return "fieldString"
+	}
 }
 
 func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity, error) {
@@ -811,6 +894,16 @@ func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity
 	if err := validateDeclarationStates(decl); err != nil {
 		return cliEntity{}, fmt.Errorf("entity %q: %w", decl.Name, err)
 	}
+	// An endpoint's flags share the command's flag set with --url, --json
+	// and the flag package's own -h/--help. Inputs are unique by wire
+	// name, which has no dash, so two never derive one flag.
+	for _, ep := range ent.Endpoints {
+		for _, f := range ep.Fields {
+			if cliEndpointReservedFlags[f.Flag] {
+				return cliEntity{}, fmt.Errorf("entity %q: endpoint %s: input %q derives CLI flag --%s, which is reserved; rename the input", decl.Name, ep.Command, f.Wire, f.Flag)
+			}
+		}
+	}
 	return ent, nil
 }
 
@@ -867,14 +960,15 @@ func renderCLIFiles(spec cliSpec) []generatedFile {
 	if cliAnyVerb(spec, "list") || cliAnyVerb(spec, "get") || cliAnyVerb(spec, "delete") ||
 		cliAnyVerb(spec, "create") || cliAnyVerb(spec, "update") || cliAnyVerb(spec, "patch") ||
 		cliAnyVerb(spec, "batch-create") || cliAnyVerb(spec, "batch-update") ||
-		cliAnyVerb(spec, "batch-delete") || cliAnyVerb(spec, "watch") || cliAnyTransition(spec) {
+		cliAnyVerb(spec, "batch-delete") || cliAnyVerb(spec, "watch") || cliAnyTransition(spec) ||
+		cliAnyEndpoint(spec) {
 		files = append(files, generatedFile{
 			name:    "verbs.gen.go",
 			content: renderCLIVerbsFile(spec),
 		})
 	}
 	for _, ent := range spec.Entities {
-		if len(ent.Verbs) == 0 && len(ent.Transitions) == 0 {
+		if len(ent.Verbs) == 0 && len(ent.Transitions) == 0 && len(ent.Endpoints) == 0 {
 			continue
 		}
 		files = append(files, generatedFile{
@@ -980,7 +1074,7 @@ func builtinCommands() []command {
 	}
 `, spec.Binary, spec.Binary, spec.EnvPrefix, spec.APIPrefix, exampleCommandName(spec))
 	for _, ent := range spec.Entities {
-		if len(ent.Verbs) == 0 && len(ent.Transitions) == 0 {
+		if len(ent.Verbs) == 0 && len(ent.Transitions) == 0 && len(ent.Endpoints) == 0 {
 			continue
 		}
 		fmt.Fprintf(&sb, "\tcmds = append(cmds, %sCommands()...)\n", lowerFirst(ent.Struct))
@@ -1539,7 +1633,8 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 
 	hasMutation := has("create") || has("update") || has("patch")
 	hasWrapper := has("list") || has("get") || has("delete") || has("batch-create") ||
-		has("batch-update") || has("batch-delete") || has("watch") || len(ent.Transitions) > 0
+		has("batch-update") || has("batch-delete") || has("watch") || len(ent.Transitions) > 0 ||
+		len(ent.Endpoints) > 0
 	// Import needs shrink with the shared verb bodies (verbs.go): this
 	// file holds the command table, the one-line wrappers, and the
 	// per-entity flag/field tables. Only the batch wrappers reference
@@ -1589,6 +1684,10 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 	for _, tr := range ent.Transitions {
 		fmt.Fprintf(&sb, "\t\t{name: %q, summary: %q, run: run%s%s},\n",
 			ent.Command+" "+tr.Key, tr.Summary, ent.Struct, toCamelCase(tr.Key))
+	}
+	for _, ep := range ent.Endpoints {
+		fmt.Fprintf(&sb, "\t\t{name: %q, summary: %q, run: run%s%s},\n",
+			ent.Command+" "+ep.Command, ep.Summary, ent.Struct, ep.Func)
 	}
 	sb.WriteString("\t}\n}\n\n")
 	if hasWrapper {
@@ -1643,7 +1742,41 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 		fmt.Fprintf(&sb, "func run%s%s(args []string) int {\n\treturn runTransitionVerb(%q, %q, %q, args)\n}\n\n",
 			ent.Struct, toCamelCase(tr.Key), ent.Command+" "+tr.Key, base, tr.Key)
 	}
+	for _, ep := range ent.Endpoints {
+		renderCLIEndpoint(&sb, ent, ep, base)
+	}
 	return sb.String()
+}
+
+// renderCLIEndpoint emits one endpoint's call table and its wrapper over
+// runEndpointVerb. Every declaration-derived string is a literal.
+func renderCLIEndpoint(sb *strings.Builder, ent cliEntity, ep cliEndpoint, base string) {
+	v := lowerFirst(ent.Struct) + ep.Func + "Call"
+	if !isGoIdentifier(v) {
+		// The settings decoder holds names to snake_case, so this never
+		// fires; the generated build failing on the missing run func is
+		// the loud backstop, never a non-identifier in a declaration.
+		return
+	}
+	fmt.Fprintf(sb, "// %s is the route and flag table behind `%s %s`.\n", v, goCommentSafe(ent.Command), goCommentSafe(ep.Command))
+	fmt.Fprintf(sb, "var %s = endpointCall{\n\tmethod: %q,\n\tsegs:   []string{%s},\n", v, ep.Method, quoteList(ep.Segs))
+	if ep.Query {
+		sb.WriteString("\tquery:  true,\n")
+	}
+	if len(ep.Fields) > 0 {
+		sb.WriteString("\tfields: []mutationField{\n")
+		for _, f := range ep.Fields {
+			fmt.Fprintf(sb, "\t\t{flag: %q, wire: %q, kind: %s, usage: %q", f.Flag, f.Wire, f.Kind, f.Usage)
+			if f.Required {
+				sb.WriteString(", required: true")
+			}
+			sb.WriteString("},\n")
+		}
+		sb.WriteString("\t},\n")
+	}
+	sb.WriteString("}\n\n")
+	fmt.Fprintf(sb, "func run%s%s(args []string) int {\n\treturn runEndpointVerb(%q, %q, %s, args)\n}\n\n",
+		ent.Struct, ep.Func, ent.Command+" "+ep.Command, base, v)
 }
 
 func verbFuncSuffix(verb string) string {
@@ -1754,6 +1887,17 @@ func cliAnyTransition(spec cliSpec) bool {
 	return false
 }
 
+// cliAnyEndpoint reports whether any selected entity has a settings
+// endpoint; it gates the shared endpoint body in verbs.go.
+func cliAnyEndpoint(spec cliSpec) bool {
+	for _, ent := range spec.Entities {
+		if len(ent.Endpoints) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // cliAnyVerb reports whether any selected entity kept the verb; it gates
 // which shared bodies verbs.go needs.
 func cliAnyVerb(spec cliSpec, verb string) bool {
@@ -1786,25 +1930,31 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	batchDel := cliAnyVerb(spec, "batch-delete")
 	watch := cliAnyVerb(spec, "watch")
 	transition := cliAnyTransition(spec)
+	endpoint := cliAnyEndpoint(spec)
+	fields := mutation || endpoint // the field-flag table and its parser
 
 	var imports []string
 	if watch {
 		imports = append(imports, "\t\"context\"")
 	}
-	if mutation {
+	if fields {
 		imports = append(imports, "\t\"encoding/json\"") // json-typed field flags unwrap their value
+		imports = append(imports, "\t\"flag\"")
 	}
-	if list || del || batchDel || watch || mutation {
+	if list || del || batchDel || watch || fields {
 		imports = append(imports, "\t\"fmt\"")
 	}
 	if list || get || del || batchDel || mutation || transition {
 		imports = append(imports, "\t\"net/http\"")
 	}
-	if list || get || del || mutation || transition {
+	if list || get || del || mutation || transition || endpoint {
 		imports = append(imports, "\t\"net/url\"")
 	}
-	if batchDel {
+	if batchDel || endpoint {
 		imports = append(imports, "\t\"os\"") // usage errors go to stderr
+	}
+	if endpoint {
+		imports = append(imports, "\t\"strings\"")
 	}
 	if watch {
 		imports = append(imports, "\n\tclient `"+spec.ClientImport+"`")
@@ -1918,7 +2068,7 @@ func runGetVerb(cmd, base string, args []string) int {
 
 `)
 	}
-	if mutation {
+	if fields {
 		sb.WriteString(`// fieldKind is the flag type a mutation field declares.
 type fieldKind int
 
@@ -1930,18 +2080,69 @@ const (
 	fieldJSON
 )
 
-// mutationField describes one writable field behind create/update/patch:
-// the CLI flag, the JSON wire key it sets, the flag type, and the usage
-// line. Field names are data bound at generate time (string literals),
-// never identifiers.
+// mutationField describes one field flag behind create/update/patch or an
+// endpoint command: the CLI flag, the JSON wire key it sets, the flag
+// type, the usage line, and (endpoints only) whether the call needs it.
+// Field names are data bound at generate time (string literals), never
+// identifiers.
 type mutationField struct {
-	flag  string
-	wire  string
-	kind  fieldKind
-	usage string
+	flag     string
+	wire     string
+	kind     fieldKind
+	usage    string
+	required bool
 }
 
-// runCreateVerb is the shared create body over the entity's field table.
+// fieldFlags registers one flag per field on fs and returns the func
+// buildBody calls for each flag the caller set, which writes the flag's
+// value under its wire key.
+func fieldFlags(fs *flag.FlagSet, fields []mutationField) func(name string, body map[string]any) error {
+	strVals := make([]*string, len(fields))
+	intVals := make([]*int, len(fields))
+	floatVals := make([]*float64, len(fields))
+	boolVals := make([]*bool, len(fields))
+	for i, f := range fields {
+		switch f.kind {
+		case fieldInt:
+			intVals[i] = fs.Int(f.flag, 0, f.usage)
+		case fieldFloat:
+			floatVals[i] = fs.Float64(f.flag, 0, f.usage)
+		case fieldBool:
+			boolVals[i] = fs.Bool(f.flag, false, f.usage)
+		default: // string and json-typed fields both arrive as strings
+			strVals[i] = fs.String(f.flag, "", f.usage)
+		}
+	}
+	return func(name string, body map[string]any) error {
+		for i, f := range fields {
+			if f.flag != name {
+				continue
+			}
+			switch f.kind {
+			case fieldInt:
+				body[f.wire] = *intVals[i]
+			case fieldFloat:
+				body[f.wire] = *floatVals[i]
+			case fieldBool:
+				body[f.wire] = *boolVals[i]
+			case fieldJSON:
+				var v any
+				if err := json.Unmarshal([]byte(*strVals[i]), &v); err != nil {
+					return fmt.Errorf("--%s: %w", f.flag, err)
+				}
+				body[f.wire] = v
+			default:
+				body[f.wire] = *strVals[i]
+			}
+		}
+		return nil
+	}
+}
+
+`)
+	}
+	if mutation {
+		sb.WriteString(`// runCreateVerb is the shared create body over the entity's field table.
 func runCreateVerb(cmd, base string, fields []mutationField, args []string) int {
 	return runMutationVerb(cmd, http.MethodPost, false, base, fields, args)
 }
@@ -1973,50 +2174,12 @@ func runMutationVerb(cmd, method string, withID bool, base string, fields []muta
 	}
 	fs := newFlagSet(cmd)
 	jsonBody := fs.String("json", "", "raw JSON body: inline, @file, or - for stdin")
-	strVals := make([]*string, len(fields))
-	intVals := make([]*int, len(fields))
-	floatVals := make([]*float64, len(fields))
-	boolVals := make([]*bool, len(fields))
-	for i, f := range fields {
-		switch f.kind {
-		case fieldInt:
-			intVals[i] = fs.Int(f.flag, 0, f.usage)
-		case fieldFloat:
-			floatVals[i] = fs.Float64(f.flag, 0, f.usage)
-		case fieldBool:
-			boolVals[i] = fs.Bool(f.flag, false, f.usage)
-		default: // string and json-typed fields both arrive as strings
-			strVals[i] = fs.String(f.flag, "", f.usage)
-		}
-	}
+	apply := fieldFlags(fs, fields)
 	g, code := parseGlobals(fs, args)
 	if g == nil {
 		return code
 	}
-	body, code := buildBody(fs, *jsonBody, func(name string, body map[string]any) error {
-		for i, f := range fields {
-			if f.flag != name {
-				continue
-			}
-			switch f.kind {
-			case fieldInt:
-				body[f.wire] = *intVals[i]
-			case fieldFloat:
-				body[f.wire] = *floatVals[i]
-			case fieldBool:
-				body[f.wire] = *boolVals[i]
-			case fieldJSON:
-				var v any
-				if err := json.Unmarshal([]byte(*strVals[i]), &v); err != nil {
-					return fmt.Errorf("--%s: %w", f.flag, err)
-				}
-				body[f.wire] = v
-			default:
-				body[f.wire] = *strVals[i]
-			}
-		}
-		return nil
-	})
+	body, code := buildBody(fs, *jsonBody, apply)
 	if code != 0 {
 		return code
 	}
@@ -2076,6 +2239,103 @@ func runTransitionVerb(cmd, base, key string, args []string) int {
 		return apiFail(err)
 	}
 	return printJSON(out.Data)
+}
+
+`)
+	}
+	if endpoint {
+		sb.WriteString(`// endpointCall is one gofastr.settings.yml endpoint behind its command:
+// the method, the route segments ("{name}" takes the next positional
+// argument), and the flag table. query sends the flags as the query
+// string; otherwise they, or --json, are the JSON body.
+type endpointCall struct {
+	method string
+	segs   []string
+	query  bool
+	fields []mutationField
+}
+
+// runEndpointVerb is the shared endpoint body: fill the path values from
+// the positional arguments, send the flags, print the JSON response.
+func runEndpointVerb(cmd, base string, call endpointCall, args []string) int {
+	var names []string
+	for _, seg := range call.segs {
+		if strings.HasPrefix(seg, "{") {
+			names = append(names, "<"+strings.Trim(seg, "{}")+">")
+		}
+	}
+	path := base
+	for _, seg := range call.segs {
+		if !strings.HasPrefix(seg, "{") {
+			path += "/" + seg
+			continue
+		}
+		if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+			fmt.Fprintf(os.Stderr, "usage: %s %s %s [flags]\n", binaryName, cmd, strings.Join(names, " "))
+			return 2
+		}
+		path += "/" + url.PathEscape(args[0])
+		args = args[1:]
+	}
+	fs := newFlagSet(cmd)
+	jsonBody := new(string)
+	if !call.query {
+		jsonBody = fs.String("json", "", "raw JSON body: inline, @file, or - for stdin")
+	}
+	apply := fieldFlags(fs, call.fields)
+	g, code := parseGlobals(fs, args)
+	if g == nil {
+		return code
+	}
+	given := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
+	anyField := false
+	for _, f := range call.fields {
+		if given[f.flag] {
+			anyField = true
+		} else if f.required && *jsonBody == "" {
+			fmt.Fprintf(os.Stderr, "%s %s: --%s is required\n", binaryName, cmd, f.flag)
+			return 2
+		}
+	}
+	var body any
+	switch {
+	case call.query:
+		values := map[string]any{}
+		q := url.Values{}
+		for _, f := range call.fields {
+			if !given[f.flag] {
+				continue
+			}
+			if err := apply(f.flag, values); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 2
+			}
+			q.Set(f.wire, fmt.Sprint(values[f.wire]))
+		}
+		if len(q) > 0 {
+			path += "?" + q.Encode()
+		}
+	case !anyField && *jsonBody == "":
+		// Every field is optional and none was given. buildBody would
+		// refuse that ("nothing to send"), which suits update but not an
+		// endpoint. Send an empty JSON object rather than no body: a write
+		// with no Content-Type counts as form-shaped
+		// (handler.IsForgeableRequest), and a CSRF gate in front of the
+		// route would demand a token for it.
+		body = map[string]any{}
+	default:
+		b, code := buildBody(fs, *jsonBody, apply)
+		if code != 0 {
+			return code
+		}
+		body = b
+	}
+	var out any
+	if err := g.client.Do(g.ctx, call.method, path, body, &out); err != nil {
+		return apiFail(err)
+	}
+	return printJSON(out)
 }
 
 `)

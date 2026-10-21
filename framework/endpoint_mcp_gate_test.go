@@ -19,7 +19,7 @@ import (
 // wide open over MCP.
 //
 // The twin now defaults to requiring an authenticated caller. An endpoint that
-// really is public says so with MCPPublic.
+// really is public says so with Public.
 func TestEndpointMCPTwinRequiresUserByDefault(t *testing.T) {
 	app := newEndpointMCPApp(t, entity.Endpoint{
 		Method: "POST", Path: "{id}/publish", Name: "posts_publish", MCP: true,
@@ -42,7 +42,7 @@ func TestEndpointMCPTwinRequiresUserByDefault(t *testing.T) {
 // The opt-out has to actually work, or hosts will reach for something worse.
 func TestEndpointMCPPublicOptsOut(t *testing.T) {
 	app := newEndpointMCPApp(t, entity.Endpoint{
-		Method: "GET", Path: "{id}/preview", Name: "posts_preview", MCP: true, MCPPublic: true,
+		Method: "GET", Path: "{id}/preview", Name: "posts_preview", MCP: true, Public: true,
 		Handler:    http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }),
 		MCPHandler: func(context.Context, map[string]any) (any, error) { return "preview", nil },
 	})
@@ -52,10 +52,10 @@ func TestEndpointMCPPublicOptsOut(t *testing.T) {
 		Params: json.RawMessage(`{"name":"posts_preview","arguments":{}}`),
 	})
 	if resp.Error != nil {
-		t.Fatalf("MCPPublic endpoint refused an anonymous caller: %v", resp.Error)
+		t.Fatalf("Public endpoint refused an anonymous caller: %v", resp.Error)
 	}
 	if names := toolNames(t, app, context.Background()); !hasTool(names, "posts_preview") {
-		t.Errorf("MCPPublic endpoint missing from the listing: %v", names)
+		t.Errorf("Public endpoint missing from the listing: %v", names)
 	}
 }
 

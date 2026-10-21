@@ -118,3 +118,72 @@ func TestEndpointMCPInputSchema(t *testing.T) {
 		t.Fatalf("bare MCP input schema = %v, want %v", gotBare, want)
 	}
 }
+
+// A typed input splits by where each field travels: {param} fields are
+// path parameters, a settings endpoint's GET/DELETE fields are query
+// parameters, and only the rest is the JSON body.
+func TestEndpointInputSplitsByLocation(t *testing.T) {
+	ent := entity.Define("posts", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "title", Type: schema.String}},
+		Endpoints: []entity.Endpoint{
+			{Method: "POST", Path: "{id}/feature", SDK: true, InputSchema: []schema.Field{
+				{Name: "id", Type: schema.Int, Required: true},
+				{Name: "rank", Type: schema.Int, Required: true},
+			}},
+			{Method: "DELETE", Path: "{id}/cache", SDK: true, InputSchema: []schema.Field{
+				{Name: "id", Type: schema.String, Required: true},
+				{Name: "scope", Type: schema.String},
+			}},
+		},
+	})
+	paths := getMap(t, EntityOpenAPI(reg(ent), "t", "1", nil).Build(), "paths")
+	params := func(op map[string]any) map[string]map[string]any {
+		out := map[string]map[string]any{}
+		ps, _ := op["parameters"].([]map[string]any)
+		for _, p := range ps {
+			out[p["name"].(string)] = p
+		}
+		return out
+	}
+
+	feature := getMap(t, getMap(t, paths, "/posts/{id}/feature"), "post")
+	body := getMap(t, getMap(t, getMap(t, getMap(t, feature, "requestBody"), "content"), "application/json"), "schema")
+	if props := getMap(t, body, "properties"); props["id"] != nil || props["rank"] == nil {
+		t.Errorf("feature body properties = %v, want rank only", mapKeys(props))
+	}
+	if id := params(feature)["id"]; id == nil || id["in"] != "path" || !reflect.DeepEqual(id["schema"], map[string]any{"type": "integer"}) {
+		t.Errorf("feature id parameter = %v, want an integer path parameter", id)
+	}
+
+	cache := getMap(t, getMap(t, paths, "/posts/{id}/cache"), "delete")
+	if _, ok := cache["requestBody"]; ok {
+		t.Error("a settings DELETE endpoint advertises a body; its clients send the query string")
+	}
+	if scope := params(cache)["scope"]; scope == nil || scope["in"] != "query" || scope["required"] != false {
+		t.Errorf("cache scope parameter = %v, want an optional query parameter", scope)
+	}
+}
+
+// A generated endpoint's Returns names its 200 body: an entity schema,
+// or an array of them.
+func TestEndpointReturnsNamesResponse(t *testing.T) {
+	ent := entity.Define("posts", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "title", Type: schema.String}},
+		Endpoints: []entity.Endpoint{
+			{Method: "GET", Path: "search", SDK: true, Returns: "[]posts"},
+			{Method: "POST", Path: "{id}/feature", SDK: true, Returns: "posts"},
+		},
+	})
+	paths := getMap(t, EntityOpenAPI(reg(ent), "t", "1", nil).Build(), "paths")
+	body := func(path, method string) any {
+		rc := getMap(t, resp200(t, getMap(t, getMap(t, paths, path), method)), "content")
+		return getMap(t, getMap(t, rc, "application/json"), "schema")
+	}
+	ref := map[string]any{"$ref": "#/components/schemas/posts"}
+	if got := body("/posts/search", "get"); !reflect.DeepEqual(got, map[string]any{"type": "array", "items": ref}) {
+		t.Errorf("search 200 = %v", got)
+	}
+	if got := body("/posts/{id}/feature", "post"); !reflect.DeepEqual(got, ref) {
+		t.Errorf("feature 200 = %v", got)
+	}
+}

@@ -77,6 +77,12 @@ Per verb:
 - **watch**: subscribes to `GET {entity}/_events` and prints one
   `{"event":…,"data":…}` line per server event until interrupted.
   No auto-reconnect: wrap it in a shell loop if you need one.
+- **custom endpoints**: one command per endpoint declared in
+  `gofastr.settings.yml` ([Custom endpoints](endpoints.md)), named after
+  it in kebab case: `myapp orders refund-order <id> --reason late`. Path
+  values are positional, in path order; every other input field is a
+  flag, required unless the Go field is a pointer. `POST`/`PUT`/`PATCH`
+  endpoints also take `--json` in place of the flags.
 
 Connection resolution, in order: the `--url` flag →
 `<BINARY>_URL`/`<BINARY>_TOKEN` env vars → the config file written by
@@ -201,8 +207,9 @@ and never overwritten.** It is the extension seam:
 - `configureClient(c *client.Client)` runs before every request-bearing
   command. Use it to install a custom `http.Transport`, default headers,
   or retries.
-- Custom server endpoints are reachable via the client's raw
-  `Do(ctx, method, path, body, out)` escape hatch.
+- Endpoints registered by hand in Go (not in `gofastr.settings.yml`) are
+  reachable via the client's raw `Do(ctx, method, path, body, out)`
+  escape hatch.
 
 The rest of the tree is laid out the same way: each `<entity>.gen.go`
 holds the command table, the per-entity filter and mutation-field tables,

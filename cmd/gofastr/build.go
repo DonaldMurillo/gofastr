@@ -33,9 +33,9 @@ func runBuild(args []string) {
 	}
 
 	// Step 1: run the codegen extension protocol when a gofastr.settings.yml
-	// is present, and rebuild entities/client when the app has one. App
-	// generation (gofastr generate app) is an explicit, separate step:
-	// `gofastr build` does not guess an app spec.
+	// is present, and rebuild entities/client and entities/endpoints.gen.go
+	// when the app has them. App generation (gofastr generate app) is an
+	// explicit, separate step: `gofastr build` does not guess an app spec.
 	if !opts.noGenerate {
 		discovery, err := codegen.DiscoverConfig(".")
 		if err != nil {
@@ -48,7 +48,7 @@ func runBuild(args []string) {
 			fail("%v", err)
 			osExit(1)
 		}
-		if discovery.Found || appClientPresent(".") {
+		if buildGenerates(discovery.Found, ".") {
 			info("Generating code...")
 			generateProject(nil)
 		}
@@ -225,4 +225,11 @@ func buildEmbedGate(pattern string, allowUnverified bool) bool {
 			blocking)
 	}
 	return false
+}
+
+// buildGenerates reports whether `gofastr build` runs codegen first: when
+// a codegen config was found, or the app has derived files that need no
+// config entry (entities/client, the settings endpoints).
+func buildGenerates(configFound bool, dir string) bool {
+	return configFound || appClientPresent(dir) || appEndpointsWanted(dir)
 }

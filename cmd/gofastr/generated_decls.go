@@ -35,7 +35,7 @@ func refuseDuplicateDecls(files []generatedFile) error {
 		for _, name := range topLevelNames(parsed) {
 			key := declKey{dir, name}
 			if prev, dup := seen[key]; dup {
-				return fmt.Errorf("generated code declares %s twice (%s and %s): two declared names (entities, fields, enum values or move keys) meet in one identifier; rename one of them", name, prev, f.name)
+				return fmt.Errorf("generated code declares %s twice (%s and %s): two declared names (entities, fields, enum values, move keys or endpoint names) meet in one identifier; rename one of them", name, prev, f.name)
 			}
 			seen[key] = f.name
 		}

@@ -235,6 +235,12 @@ type Index struct {
 // are accepted. Handler is used for HTTP. MCPHandler is optional and is only
 // registered when MCP is true.
 //
+// The route runs Handler behind two gates, as the CRUD routes do: an
+// anonymous caller answers 401 unless Public is set, and a cross-site
+// request a form or a bodyless fetch could forge answers 403 on every
+// method but GET and HEAD. A per-caller response (not Public) also
+// carries Cache-Control: no-store unless Handler sets its own.
+//
 // Under framework.WithAPIPrefix a relative path resolves under the prefixed
 // table path. WithAPIPrefix("/api") mounts "{id}/publish" on entity "posts"
 // at POST /api/posts/{id}/publish, alongside that entity's CRUD routes. An
@@ -270,14 +276,27 @@ type Endpoint struct {
 	// therefore role-checked over HTTP and ungated over MCP.
 	//
 	// When unset, the twin defaults to requiring an authenticated caller
-	// (framework.MCPRequireUser). Set MCPPublic to opt out of that default;
+	// (framework.MCPRequireUser). Set Public to opt out of that default;
 	// set this to something stricter, e.g. auth.MCPRole("editor").
 	MCPGate func(ctx context.Context) error `json:"-"`
 
-	// MCPPublic opts the MCP twin out of the default authenticated-caller
-	// gate, for an endpoint that really is anonymous over HTTP too. Ignored
-	// when MCPGate is set.
-	MCPPublic bool `json:"mcpPublic,omitempty"`
+	// Public opts both front doors out of the default authenticated-caller
+	// gate, for an endpoint that really is anonymous: the HTTP route serves
+	// a caller with no session, and the MCP twin runs without
+	// MCPRequireUser. MCPGate, when set, still decides the twin.
+	Public bool `json:"public,omitempty"`
+
+	// SDK marks an endpoint declared under endpoints: in
+	// gofastr.settings.yml. The generated Go client, JS SDK and CLI carry a
+	// typed call for it, and the SDK schema hash covers it. The derived
+	// entities/endpoints.gen.go sets it; a hand-registered endpoint leaves
+	// it false and the generated clients reach it through Do.
+	SDK bool `json:"sdk,omitempty"`
+
+	// Returns names what a successful call answers with, for the generated
+	// clients: an entity name ("orders"), "[]" and an entity name for a
+	// list of them, or "" for an empty object. Set with SDK.
+	Returns string `json:"returns,omitempty"`
 }
 
 // TenantColumn returns the tenant-scoping column name for this entity:

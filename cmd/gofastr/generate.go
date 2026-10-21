@@ -263,23 +263,30 @@ func generateProject(args []string) {
 		rebuildAppClient(options, false)
 		return
 	}
-	// entities/client needs no config entry: an app that has one gets it
-	// rebuilt by every plain generate and build.
-	if appClientPresent(".") {
+	// entities/endpoints.gen.go and entities/client need no config entry:
+	// an app with settings endpoints or a client gets them rebuilt by
+	// every plain generate and build.
+	if appEndpointsWanted(".") || appClientPresent(".") {
 		rebuildAppClient(options, true)
 		return
 	}
 	fail("Nothing to generate: no codegen config found.")
-	info("Derived generators (%s) run from gofastr.settings.yml, and entities/client is rebuilt whenever it exists. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
+	info("Derived generators (%s) run from gofastr.settings.yml, entities/endpoints.gen.go is rebuilt from its endpoints section, and entities/client whenever it exists. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
 	osExit(1)
 }
 
-// rebuildAppClient runs refreshAppClient in the working directory for a
-// plain generate and exits on failure the way the other generators of that
-// run do. report: under --json, the client is the whole run, so its files
-// are the document; with a codegen config the engine already printed one.
+// rebuildAppClient runs refreshAppEndpoints and then refreshAppClient,
+// whose typed calls cover those endpoints, in the working directory for a
+// plain generate. It exits on failure the way the other generators of that
+// run do. report: under --json, these files are the whole run, so they are
+// the document; with a codegen config the engine already printed one.
 func rebuildAppClient(options generateOptions, report bool) {
-	files, err := refreshAppClient(".", options.dryRun, options.json)
+	files, err := refreshAppEndpoints(".", options.dryRun, options.json)
+	if err == nil {
+		var client []generatedFile
+		client, err = refreshAppClient(".", options.dryRun, options.json)
+		files = append(files, client...)
+	}
 	if err != nil {
 		if options.json {
 			printGeneratedErrorsJSON(err)

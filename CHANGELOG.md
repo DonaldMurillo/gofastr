@@ -8,6 +8,29 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 ## [Unreleased]
 
 ### Added
+- **Custom endpoints in `gofastr.settings.yml`.** An `endpoints:` entry
+  names an entity, a method, a path relative to the entity, and a linked
+  handler (`entities/refunds.go#RefundOrder`). `gofastr generate` reads
+  the handler's input and output types from the Go source and writes
+  `entities/endpoints.gen.go`, which registers the route with typed input
+  and output schemas. The Go client and SDK gain `c.RefundOrder(ctx, id,
+  client.RefundOrderRequest{...})`, the JS SDK `api.orders.refundOrder(id,
+  {...})` typed in `client.d.ts`, and the generated CLI
+  `orders refund-order <id> --flag ...`. OpenAPI documents path, query and
+  body inputs separately and the response as the returned entity schema,
+  the SDK docs site names the typed calls, and the SDK schema hash covers
+  the endpoints. Input fields travel by their
+  `handler.Bind` tags; generation refuses a name that collides with a
+  resource method, a state move or a CLI verb, and a return type the
+  client selection leaves out. `mcp: true` adds the MCP tool and
+  `public: true` serves anonymous callers. New `gofastr generate
+  endpoints` rebuilds only the registration. See `gofastr docs endpoints`.
+- **`App.EntityEndpoints` queues endpoints for an entity registered
+  later.** The next `App.Entity` or `TryEntity` call for that name merges
+  them into its config, so they pass the same route and MCP checks.
+  Calling it after registration panics, and `Start` fails while endpoints
+  wait on a name nothing registered. See `gofastr docs
+  entity-declarations` → Endpoints from another file.
 - **`App.InTx` takes transaction options.** `framework.TxIsolation(level)`
   sets the isolation level and `framework.TxReadOnly()` makes writes
   fail. The SQLite driver ignores the read-only flag, so on SQLite the
@@ -54,6 +77,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   A failed call's span records the error's type, never its message.
 
 ### Changed
+- **BREAKING: `Endpoint` routes require a signed-in caller unless the
+  endpoint sets `Public`.** The HTTP route answers 401 with no user on the
+  request and sends `Cache-Control: no-store` when gated. Public or not,
+  it refuses with 403 a cross-site write a plain HTML form could send (no
+  `Content-Type`, urlencoded, multipart or `text/plain`). Before, an
+  endpoint's HTTP route had only the middleware the app put in front of
+  it, while its MCP twin already required a user. OpenAPI marks every
+  endpoint operation but a `Public` one with the security schemes.
+  `Endpoint.MCPPublic` is
+  renamed `Public` and now opens both doors. `gofastr upgrade` lists every
+  endpoint and each `MCPPublic`. See `gofastr docs entity-declarations`.
 - **BREAKING: the generated CLI and `entities/client` are rebuilt from
   `entities/`.** `gofastr generate cli` writes `*.gen.go` files that say
   DO NOT EDIT; every run rebuilds them, removes the ones the entities no
