@@ -24,10 +24,9 @@ import (
 // owner's call. A dist/ directory holds the servable artifacts (sdk-go.zip,
 // client.js, client.d.ts, manifest.json) that framework/sdkdocs hosts.
 //
-// Unlike `generate cli` (one-shot owned code), SDK output is generator-owned
-// and regenerates IN PLACE: when the docs site warns that the artifacts
-// drifted from the live schema, the fix is re-running this command, so a
-// conflict prompt would only add friction. Point --out somewhere private if
+// SDK output is generator-owned and regenerates IN PLACE: when the docs
+// site warns that the artifacts drifted from the live schema, the fix is
+// re-running this command, so a conflict prompt would only add friction. Point --out somewhere private if
 // you need to keep an old build.
 
 type sdkOptions struct {

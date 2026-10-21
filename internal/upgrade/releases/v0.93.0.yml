@@ -1,0 +1,11 @@
+version: v0.93.0
+title: entities/client and the generated CLI are rebuilt from entities/
+notes:
+  - change: "gofastr generate cli output is derived: the generated files are named *.gen.go and every run rebuilds them, removes the ones the entities no longer produce, and keeps custom.go; the old one-shot .go files are removed on the first run, which stops on one you edited until --force"
+    breaking: true
+    nodetect: "the CLI is generated Go with no gofastr symbol that changed; the first gofastr generate cli run removes the old files you left alone and stops on each one you edited, naming it"
+    guidance: "Move edits in the CLI's generated files (main.go, config.go, auth.go, output.go, verbs.go, <entity>.go) into custom.go, where customCommands can replace any command including login and logout, then run gofastr generate cli with your original flags and --force once. Add a cli entry to gofastr.settings.yml so gofastr build keeps it current. See gofastr docs app-cli."
+  - change: "entities/client/client.go is derived: gofastr generate client, plain gofastr generate, gofastr build and generate app --add rebuild it from entities/*.go whenever it exists"
+    breaking: true
+    nodetect: "only an edited client.go needs action, and the first gofastr build names it and leaves it alone; nothing in the source tells an edit from the file generate app wrote"
+    guidance: "If you edited entities/client/client.go, move your code into another file of package client and run gofastr generate client --force once. From then on builds keep it current; never edit client.go again."

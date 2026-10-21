@@ -15,11 +15,15 @@ existing files unless you pass `--force`.
 - `package [<name>]`: a copy of a canonical chrome package (siteheader,
   sitefooter, docpage), recorded as an [unmounted](unmount.md) copy. No
   name lists them.
-- `cli`: a customer-facing CLI for the app API. See [CLI](cli.md).
 
 **Derived** generators keep a type-safe layer in sync with a source. Their
 files say DO NOT EDIT, and a rerun replaces them.
 
+- `client`: `entities/client/client.go`, the app's typed Go client, from
+  `entities/*.go`.
+- `cli`: a customer-facing CLI for the app API. Its `*.gen.go` files are
+  rebuilt; `custom.go` is created once and stays yours. See
+  [Ship your API as a CLI](app-cli.md).
 - `sdk`: Go and JavaScript/TypeScript API clients. See [SDK](sdk.md).
 - `styles [patterns]`: typed Go for app tokens and owned style sheets.
 
@@ -39,8 +43,11 @@ The codegen config is the `codegen:` section of
 2. Otherwise `gofastr.settings.yml`, looked up from the current directory to
    the project root.
 
-With no codegen config, `gofastr generate` has nothing to generate and exits
-with guidance. To generate an app, run `gofastr generate app gofastr.yml`.
+Whether or not a config is found, `gofastr generate` then rebuilds
+`entities/client/client.go` when that file exists; the `client` generator
+needs no config entry. With neither a config nor a client it has nothing to
+generate and exits with guidance. To generate an app, run `gofastr generate
+app gofastr.yml`.
 
 CLI flags override config values where they overlap:
 
@@ -83,9 +90,19 @@ writes beside each sheet rather than under `codegen.output`, so it takes no
 package patterns (`./...` when absent). `--dry-run` skips it, and
 `--dry-run --json` refuses a config that lists it.
 
+An entry named `cli` runs `gofastr generate cli` after the engine. It writes
+to its own `output` (default `cmd/<binary>`), not under `codegen.output`,
+takes no `source`, and its `config` keys mirror the flags as strings:
+`binary`, `api_prefix`, `only`, `exclude`, `verbs`, and `from_openapi` (a
+file in the project, never a URL). `--json` refuses a config that lists it,
+because the CLI run would print its own report into that document. See [Keeping it current](app-cli.md#keeping-it-current).
+
 ```yaml
 generators:
   - name: sdk
+  - name: cli
+    config:
+      binary: shop
   - name: styles
     config:
       patterns: ["./ui/..."]
@@ -284,7 +301,8 @@ Each generator reads the markers before it writes:
   template differs. See [App specs](app-spec.md).
 - A derived generator that is about to rebuild an edited file warns that
   the edit is lost and names the source to change instead: the style
-  sheet for `styles`, the entity declarations for `sdk`.
+  sheet for `styles`, the entity declarations for `sdk`, `client` and
+  `cli` (or the OpenAPI document a `cli --from-openapi` run read).
 
 Editing a scaffold file is expected: the marker stays and its sum stops
 matching, which only tells the next `--force` that the file holds your

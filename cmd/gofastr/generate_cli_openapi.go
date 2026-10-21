@@ -48,7 +48,7 @@ import (
 
 // runGenerateCLIFromOpenAPI implements `gofastr generate cli
 // --from-openapi <spec>`: same output conventions as the entity path
-// (one-shot owned code, custom.go seam, cmd/<binary> layout), different
+// (derived *.gen.go files, custom.go seam, cmd/<binary> layout), different
 // source of truth.
 func runGenerateCLIFromOpenAPI(opts cliOptions) {
 	doc, err := loadOpenAPIDoc(opts.fromOpenAPI)

@@ -268,8 +268,10 @@ func TestAddFragmentOrderContinuity(t *testing.T) {
 	if readFile(t, dir, "entities/register.go") != registerBefore {
 		t.Error("register.go changed during --add")
 	}
-	if readFile(t, dir, "entities/client/client.go") != clientBefore {
-		t.Error("client.go changed during --add")
+	// client.go is derived: --add rebuilds it over every entity
+	// (TestAddRebuildsClient), so it is the one file that changes.
+	if readFile(t, dir, "entities/client/client.go") == clientBefore {
+		t.Error("client.go not rebuilt during --add")
 	}
 }
 
@@ -416,22 +418,6 @@ func TestAddRefusesLegacyLayout(t *testing.T) {
 	}
 	if fileExists(dir, "entities/comments.go") {
 		t.Error("comments.go written into a legacy layout — output would not compile")
-	}
-}
-
-// ---- Test 9: client.go warn fires when client exists ----
-
-func TestAddClientGoWarnWhenExists(t *testing.T) {
-	dir, bp := addSetup(t, addTestAppSpec("example.com/addtest"))
-	covT_capStdout(t, func() { generateFromAppSpec(generateOptions{spec: bp}) })
-	frag := filepath.Join(dir, "fragment.yml")
-	os.WriteFile(frag, []byte(addFragmentAppSpec()), 0o644)
-	// Capture stderr to check for the warning.
-	out := covT_capStdout(t, func() {
-		generateFromAppSpec(generateOptions{spec: frag, add: true})
-	})
-	if !strings.Contains(out, "client.go") || !strings.Contains(out, "not updated") {
-		t.Errorf("expected client.go stale warning in output:\n%s", out)
 	}
 }
 

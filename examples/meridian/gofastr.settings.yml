@@ -1,0 +1,9 @@
+# Meridian's settings. The codegen section keeps cmd/meridian current:
+# `gofastr generate` and `gofastr build` rebuild its *.gen.go files from
+# entities/ on every run. cmd/meridian/custom.go is Meridian's own code.
+codegen:
+  generators:
+    - name: cli
+      output: cmd/meridian
+      config:
+        binary: meridian

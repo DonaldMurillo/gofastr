@@ -113,12 +113,14 @@ func hashGenerateInputs(options generateOptions) string {
 	if options.configPath != "" {
 		hashFileInto(h, options.configPath)
 	}
+	projectDir := "."
 	discovery, err := discoverGenerateConfig(options)
+	if err == nil && discovery.Found && strings.TrimSpace(discovery.ProjectDir) != "" {
+		projectDir = discovery.ProjectDir
+	}
+	// The entity declarations feed entities/client, the CLI and the SDK.
+	hashEntityDecls(h, filepath.Join(projectDir, "entities"))
 	if err == nil && discovery.Found {
-		projectDir := discovery.ProjectDir
-		if strings.TrimSpace(projectDir) == "" {
-			projectDir = "."
-		}
 		hashFileInto(h, discovery.Path)
 		for _, ext := range discovery.Config.Codegen.Extensions {
 			if len(ext.Command) > 0 && filepath.Base(ext.Command[0]) != ext.Command[0] {
@@ -129,6 +131,12 @@ func hashGenerateInputs(options generateOptions) string {
 		// json_file/json_dir source via the general codegen framework; hash
 		// those inputs so --watch reacts to them.
 		for _, gen := range discovery.Config.Codegen.Generators {
+			// A cli entry reads its OpenAPI document from config, not source.
+			if gen.Name == "cli" && gen.Extension == "" {
+				if doc, ok := gen.Config["from_openapi"].(string); ok && strings.TrimSpace(doc) != "" {
+					hashFileInto(h, projectRelativePath(projectDir, strings.TrimSpace(doc)))
+				}
+			}
 			switch strings.ToLower(gen.Source.Type) {
 			case "json_file":
 				hashFileInto(h, projectRelativePath(projectDir, gen.Source.Path))
@@ -153,4 +161,20 @@ func projectRelativePath(projectDir, path string) string {
 		return path
 	}
 	return filepath.Join(projectDir, path)
+}
+
+// hashEntityDecls hashes the Go files directly in the entities directory,
+// the declarations the derived clients are rebuilt from. Subdirectories
+// (entities/client among them) are output, not input, and are skipped.
+func hashEntityDecls(h interface{ Write([]byte) (int, error) }, dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || !e.Type().IsRegular() || filepath.Ext(e.Name()) != ".go" {
+			continue
+		}
+		hashFileInto(h, filepath.Join(dir, e.Name()))
+	}
 }

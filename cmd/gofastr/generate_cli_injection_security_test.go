@@ -359,7 +359,7 @@ func TestCLIFileCollisionsFailGeneration(t *testing.T) {
 		if err == nil {
 			t.Fatal("SECURITY: [silent-overwrite] colliding command forms wrote one entity over the other with no error")
 		}
-		if !strings.Contains(err.Error(), "user-posts.go") {
+		if !strings.Contains(err.Error(), "user-posts.gen.go") {
 			t.Errorf("collision error must name the colliding file: %v", err)
 		}
 	})

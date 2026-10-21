@@ -200,7 +200,12 @@ each command to the doc that covers it.
   any app gets it ([static export](static-export.md)); a registered
   [site search](site-search.md) battery writes its index too.
 - `gofastr generate cli`: a customer-facing terminal client for your
-  API, with scoped API-token auth ([app-cli](app-cli.md)).
+  API, with scoped API-token auth. Derived: every run rebuilds its
+  `*.gen.go` files and keeps `custom.go` ([app-cli](app-cli.md)).
+- `gofastr generate client [--force] [--dry-run] [--json]`: rebuild
+  `entities/client/client.go`, the app's typed Go client, from
+  `entities/*.go`. Plain `gofastr generate` and `gofastr build` run it
+  whenever that file exists ([app spec](app-spec.md)).
 - `gofastr generate sdk`: Go + JS/TS clients your app can host behind
   a live docs page ([sdk](sdk.md)).
 - `gofastr upgrade`: move to a newer release. Lists every migration

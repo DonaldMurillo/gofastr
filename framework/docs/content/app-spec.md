@@ -452,11 +452,13 @@ exists, so it lands in the skipped list and the existing file is left
 untouched. There is no diffing or merging: `--add` only writes files that
 don't exist.
 
-**The `client.go` caveat.** `entities/client/client.go` is an aggregate over
-*all* entities. When it already exists and `--add` introduces new entities,
-the generated client was not updated and does not include them. `--add` prints
-a warning naming the stale file; regenerate it from a full app spec with
-`--force`, or extend it by hand.
+**`client.go` follows the entities.** `entities/client/client.go` is an
+aggregate over *all* entities, so `--add` rebuilds it to cover the new ones.
+It is derived: `gofastr generate client`, plain `gofastr generate`, and
+`gofastr build` rebuild it from `entities/*.go` whenever it exists. Keep your
+own client code in another file of package `client`. A `client.go` from
+before v0.93.0 that you edited is left alone with a warning; move the edits
+out, then run `gofastr generate client --force` once.
 
 **Pre-0.15 layouts.** `--add` requires the per-piece layout on both sides: the
 per-entity `entities/` files and the per-screen `screen_<name>.go` files. If
@@ -665,7 +667,8 @@ overwrite code the generator never wrote; `examples/meridian/doc.go` says so,
 and `--force` there is a mistake, not a refresh. Two of its trees are the
 exception: `entities/` and `cmd/meridian/` are generator-owned, and
 `TestGeneratedTreesMatchGenerator` regenerates them into a scratch package
-and fails on any byte of drift (`custom.go`, the dev-owned CLI seam, is
+(the CLI through the `cli` entry in Meridian's `gofastr.settings.yml`) and
+fails on any byte of drift (`custom.go`, the dev-owned CLI seam, is
 excluded). `examples/ecommerce` regenerates in place as a whole, because its
 app spec sets `output_dir: app` and the generator owns that directory
 outright.

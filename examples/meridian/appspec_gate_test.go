@@ -131,19 +131,26 @@ func TestAppSpecStillGenerates(t *testing.T) {
 // no longer emits would linger as dead code that looks owned, so it
 // fails the gate until deleted.
 //
-//gofastr:test-reads examples/meridian/cmd/ examples/meridian/entities/
+//gofastr:test-reads examples/meridian/cmd/ examples/meridian/entities/ /examples/meridian/gofastr.settings.yml
 func TestGeneratedTreesMatchGenerator(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs the generator; skipped under -short")
 	}
 	dir, scratchModule := scratchWithAppSpec(t)
 	runGenerator(t, dir, "generate", "app", "gofastr.yml")
-	// The CLI reads the freshly emitted entities/ package, so it must
-	// run after generate, from the scratch root. --binary=meridian is
-	// load-bearing: the default derives the name from the scratch dir
-	// name, and the binary name reaches the emitted header comment and
-	// env prefix.
-	runGenerator(t, dir, "generate", "cli", "--binary=meridian")
+	// The CLI reads the freshly emitted entities/ package, so it runs
+	// after generate app, through Meridian's own settings file: the cli
+	// entry there (binary: meridian) is what gofastr build runs too. The
+	// binary name is load-bearing: the default derives it from the
+	// scratch dir name, and it reaches the emitted header and env prefix.
+	settings, err := os.ReadFile("gofastr.settings.yml")
+	if err != nil {
+		t.Fatalf("read gofastr.settings.yml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "gofastr.settings.yml"), settings, 0o644); err != nil {
+		t.Fatalf("write scratch settings: %v", err)
+	}
+	runGenerator(t, dir, "generate")
 
 	owned := []struct{ generated, committed string }{
 		{filepath.Join(dir, "entities"), "entities"},
@@ -180,8 +187,8 @@ func TestGeneratedTreesMatchGenerator(t *testing.T) {
 			checked++
 			if normalizeModule(rel, string(gotBytes), scratchModule) != string(wantBytes) {
 				t.Errorf("%s is stale: the generator emits different bytes. Regenerate in a scratch copy from the repo root:\n"+
-					"    d=$(mktemp -d) && cp examples/meridian/gofastr.yml \"$d\" && go build -o \"$d/gofastr\" ./cmd/gofastr &&\n"+
-					"    (cd \"$d\" && echo 'module github.com/DonaldMurillo/gofastr/examples/meridian' > go.mod && ./gofastr generate app gofastr.yml && ./gofastr generate cli --binary=meridian)\n"+
+					"    d=$(mktemp -d) && cp examples/meridian/gofastr.yml examples/meridian/gofastr.settings.yml \"$d\" && go build -o \"$d/gofastr\" ./cmd/gofastr &&\n"+
+					"    (cd \"$d\" && echo 'module github.com/DonaldMurillo/gofastr/examples/meridian' > go.mod && ./gofastr generate app gofastr.yml && ./gofastr generate)\n"+
 					"and copy entities/ and cmd/meridian/ from $d over the committed trees (keep cmd/meridian/custom.go)",
 					filepath.Join(tree.committed, rel))
 			}
