@@ -61,6 +61,28 @@ unzip go.zip
 go mod edit -replace local/myapp-sdk=./myapp-sdk
 ```
 
+An entity with an Image or File field also gets `Create<Entity>WithFiles`,
+`Update<Entity>WithFiles` and `Patch<Entity>WithFiles`. Each takes the
+usual write struct plus an `<Entity>Files` struct holding a `*FilePart`
+per file field, and sends one multipart/form-data request with every
+part named by its column. With no file set it sends JSON, as
+`Create<Entity>` does. Setting a field in the body and sending a file
+for it too is an error, since the server would keep the file and drop
+the value; a required file field's empty string is no setting and is
+left out. A multipart body cannot carry `null`, so a null value is an
+error too: clear a field in a separate JSON patch. A file over the
+server's 32 MiB per-file limit, or a body over its 64 MiB limit, fails
+before anything is sent. Read-only file fields get no upload slot. `DoMultipart` is
+the escape hatch for any other multipart route.
+
+```go
+f, _ := os.Open("acme.png")
+defer f.Close()
+created, err := c.CreateCustomersWithFiles(ctx, client.CustomersInput{Name: "Acme"},
+	client.CustomersFiles{Logo: &client.FilePart{Name: "acme.png", Body: f}})
+// created.Logo is the stored file's key.
+```
+
 ### The JS/TS SDK
 
 Two plain files, no npm packaging, no build step; publishing to a
@@ -90,6 +112,20 @@ snapshot on the error path — goes through a capped read (`_readBody`,
 throws instead of buffering. The exported
 `<entity>Fields` constants map camelCase names to the snake_case column
 names query params require.
+
+A `Blob` (a `File` is one) as the value of an Image or File field sends
+that create, update or patch as multipart/form-data, every part named
+by its column; `client.d.ts` types those fields `string | Blob`. A
+multipart body cannot carry `null`, so clear a field in a separate JSON
+patch. A file over 32 MiB, or a body over 64 MiB, throws before
+anything is sent. A batch goes as JSON, so `batchCreate` and
+`batchUpdate` reject a `Blob` value and their item types leave it out:
+upload one row at a time.
+
+```js
+const logo = document.querySelector("input[type=file]").files[0];
+const created = await api.customers.create({ name: "Acme", logo });
+```
 
 ## The casing contract both SDKs encode
 
@@ -240,8 +276,6 @@ Files the export already produced (or the user static dir) always win.
 Endpoints registered by hand in Go get no typed methods: both SDKs expose
 the `Do`/`do` escape hatch and the reference pages list them. Declare an
 endpoint in `gofastr.settings.yml` to get a typed method
-([Custom endpoints](endpoints.md)). Multipart
-uploads (Image/File fields) aren't available in the generated SDKs,
-matching the CLI. Servers reconfigured to snake_case responses (`WithJSONCase`) should set
+([Custom endpoints](endpoints.md)). Servers reconfigured to snake_case responses (`WithJSONCase`) should set
 `sdkdocs.Config.SnakeCase` for the docs examples; the generated SDKs
 assume the camelCase default.

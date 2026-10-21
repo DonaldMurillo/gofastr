@@ -292,9 +292,9 @@ func TestJSONCodecEdgeInputs(t *testing.T) {
 // there is nothing to do, and never rebuild the cache twice in a row.
 func TestJSONDecodeNoOpsOnEmptyInput(t *testing.T) {
 	ch := jsonFieldHandler(t)
-	ch.decodeJSONFields(nil)
-	ch.decodeJSONRows(nil)
-	ch.decodeJSONRows([]map[string]any{})
+	ch.decodeReadFields(nil)
+	ch.decodeReadRows(nil)
+	ch.decodeReadRows([]map[string]any{})
 
 	// A fresh snapshot must be reused, not rebuilt per call.
 	s1 := ch.ensureFieldCache()
@@ -310,7 +310,7 @@ func TestJSONDecodeNoOpsOnEmptyInput(t *testing.T) {
 	}.WithTimestamps(false))
 	plain.SetDB(ch.Entity.DB)
 	row := map[string]any{"name": `{"not":"decoded"}`}
-	NewCrudHandler(plain, ch.Entity.DB).decodeJSONRows([]map[string]any{row})
+	NewCrudHandler(plain, ch.Entity.DB).decodeReadRows([]map[string]any{row})
 	if row["name"] != `{"not":"decoded"}` {
 		t.Errorf("non-JSON field was decoded: %#v", row["name"])
 	}

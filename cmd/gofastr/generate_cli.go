@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -161,6 +162,7 @@ type cliEntity struct {
 	Table       string // route path segment
 	Verbs       []string
 	Fields      []cliField
+	Uploads     []cliField      // Image and File fields: a file flag each on create/update/patch
 	Transitions []cliTransition // non-system state moves, one command each
 	Endpoints   []cliEndpoint   // gofastr.settings.yml endpoints, one command each
 	Search      bool
@@ -729,6 +731,7 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 	// they get no mutation flag. The state field keeps one: create shares
 	// the flag table and may start at an initial value.
 	stamps, _ := statesWriteDrops(decl.States)
+	uploads := uploadFields(decl)
 	for _, fd := range decl.Fields {
 		if fd.Name == "id" || fd.Hidden {
 			continue
@@ -736,8 +739,12 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 		typ := strings.ToLower(fd.Type)
 		switch typ {
 		case "image", "file":
-			// Uploads are multipart, which the generated client doesn't
-			// speak yet; the whole field stays off the CLI surface.
+			// A file flag on the mutation verbs, sent as a multipart part,
+			// for the fields the client has an upload slot for; list and
+			// get leave the stored URL out of their tables.
+			if slices.ContainsFunc(uploads, func(u framework.FieldDeclaration) bool { return u.Name == fd.Name }) {
+				ent.Uploads = append(ent.Uploads, cliField{Snake: fd.Name, Wire: toCamelJSON(fd.Name), Flag: strings.ReplaceAll(fd.Name, "_", "-"), Type: typ})
+			}
 			continue
 		}
 		f := cliField{
@@ -890,6 +897,19 @@ func buildCLIEntity(decl framework.EntityDeclaration, verbs []string) (cliEntity
 			}
 			seen[name] = f.Snake
 		}
+	}
+	// A file flag shares the mutation verbs' flag set with the field flags.
+	for _, f := range ent.Uploads {
+		if !token.IsIdentifier(toCamelCase(f.Flag)) {
+			return cliEntity{}, fmt.Errorf("entity %q: field %s does not derive a usable CLI flag; rename it to letters, digits and underscores starting with a letter", decl.Name, f.Snake)
+		}
+		if cliReservedFlags[f.Flag] {
+			return cliEntity{}, fmt.Errorf("entity %q: field %q derives CLI flag --%s, which is reserved. Rename the field, or exclude the entity with --exclude=%s", decl.Name, f.Snake, f.Flag, decl.Name)
+		}
+		if prev, dup := seen[f.Flag]; dup {
+			return cliEntity{}, fmt.Errorf("entity %q: fields %q and %q both derive CLI flag --%s: rename one", decl.Name, prev, f.Snake, f.Flag)
+		}
+		seen[f.Flag] = f.Snake
 	}
 	if err := validateDeclarationStates(decl); err != nil {
 		return cliEntity{}, fmt.Errorf("entity %q: %w", decl.Name, err)
@@ -1843,6 +1863,9 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 func renderCLIMutationFields(sb *strings.Builder, ent cliEntity) {
 	p := lowerFirst(ent.Struct)
 	fmt.Fprintf(sb, "// %sMutationFields is the field-flag table behind `%s create/update/patch`:\n// one entry per writable field, each bound to the JSON wire key it sets.\n", p, goCommentSafe(ent.Command))
+	if len(ent.Uploads) > 0 {
+		sb.WriteString("// A file flag sends the write as multipart, where every part goes by its\n// column.\n")
+	}
 	fmt.Fprintf(sb, "var %sMutationFields = []mutationField{\n", p)
 	for _, f := range ent.Fields {
 		if f.ReadOnly {
@@ -1852,8 +1875,17 @@ func renderCLIMutationFields(sb *strings.Builder, ent cliEntity) {
 		if len(f.Values) > 0 {
 			help += " [" + strings.Join(f.Values, "|") + "]"
 		}
+		if len(ent.Uploads) > 0 {
+			fmt.Fprintf(sb, "\t{flag: %q, wire: %q, column: %q, kind: %s, usage: %q},\n",
+				f.Flag, f.Wire, f.Snake, cliFieldKindConst(f.GoType), help)
+			continue
+		}
 		fmt.Fprintf(sb, "\t{flag: %q, wire: %q, kind: %s, usage: %q},\n",
 			f.Flag, f.Wire, cliFieldKindConst(f.GoType), help)
+	}
+	for _, f := range ent.Uploads {
+		fmt.Fprintf(sb, "\t{flag: %q, wire: %q, column: %q, kind: fieldFile, usage: %q},\n",
+			f.Flag, f.Wire, f.Snake, f.Snake+" ("+f.Type+"): a file path, or - for stdin")
 	}
 	sb.WriteString("}\n\n")
 }
@@ -1898,6 +1930,17 @@ func cliAnyEndpoint(spec cliSpec) bool {
 	return false
 }
 
+// cliAnyUpload reports whether any selected entity takes a file on a
+// mutation verb; it gates the multipart body in verbs.go.
+func cliAnyUpload(spec cliSpec) bool {
+	for _, ent := range spec.Entities {
+		if len(ent.Uploads) > 0 && (slices.Contains(ent.Verbs, "create") || slices.Contains(ent.Verbs, "update") || slices.Contains(ent.Verbs, "patch")) {
+			return true
+		}
+	}
+	return false
+}
+
 // cliAnyVerb reports whether any selected entity kept the verb; it gates
 // which shared bodies verbs.go needs.
 func cliAnyVerb(spec cliSpec, verb string) bool {
@@ -1910,6 +1953,100 @@ func cliAnyVerb(spec cliSpec, verb string) bool {
 	}
 	return false
 }
+
+// fileFlagConst is the fieldKind of a file flag, declared only for a
+// selection with file fields.
+func fileFlagConst(uploads bool) string {
+	if !uploads {
+		return ""
+	}
+	return "\tfieldFile\n"
+}
+
+// fileFlagArm is fieldFlags' case for a file flag, which stores the path
+// as an uploadPath; only a selection with file fields has one.
+func fileFlagArm(uploads bool) string {
+	if !uploads {
+		return ""
+	}
+	return `			case fieldFile:
+				body[f.wire] = uploadPath(*strVals[i])
+`
+}
+
+// mutationSend is the send step of runMutationVerb: a body holding a file
+// flag goes out as multipart when the selection has file fields.
+func mutationSend(uploads bool) string {
+	if !uploads {
+		return `	if err := g.client.Do(g.ctx, method, path, body, &out); err != nil {
+		return apiFail(err)
+	}
+`
+	}
+	return `	var err error
+	if hasUpload(body) {
+		err = sendMultipart(g.ctx, g.client, method, path, fields, body, &out)
+	} else {
+		err = g.client.Do(g.ctx, method, path, body, &out)
+	}
+	if err != nil {
+		return apiFail(err)
+	}
+`
+}
+
+// cliUploadHelpers is the multipart half of the mutation verbs, emitted
+// when a selected entity has an Image or File field.
+const cliUploadHelpers = `// uploadPath is a file flag's value in a mutation body: a path, or - for
+// stdin. A body holding one goes out as multipart.
+type uploadPath string
+
+// hasUpload reports whether body holds a file flag.
+func hasUpload(body map[string]any) bool {
+	for _, v := range body {
+		if _, ok := v.(uploadPath); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// sendMultipart sends body as one multipart request, each value under its
+// column: a file flag as the file it names, any other value as text. The
+// client refuses a file over the server's limit before sending it.
+func sendMultipart(ctx context.Context, c *client.Client, method, path string, fields []mutationField, body map[string]any, out any) error {
+	values := map[string]any{}
+	files := map[string]client.FilePart{}
+	stdin := ""
+	for _, f := range fields {
+		v, ok := body[f.wire]
+		if !ok {
+			continue
+		}
+		p, isFile := v.(uploadPath)
+		if !isFile {
+			values[f.column] = v
+			continue
+		}
+		if p == "-" {
+			if stdin != "" {
+				return fmt.Errorf("--%s and --%s both read stdin; pass one of them a file path", stdin, f.flag)
+			}
+			stdin = f.flag
+			files[f.column] = client.FilePart{Name: f.flag, Body: os.Stdin}
+			continue
+		}
+		file, err := os.Open(string(p))
+		if err != nil {
+			return fmt.Errorf("--%s: %w", f.flag, err)
+		}
+		defer file.Close()
+		files[f.column] = client.FilePart{Name: filepath.Base(string(p)), Body: file}
+	}
+	return c.DoMultipart(ctx, method, path, values, files, out)
+}
+
+`
 
 // renderCLIVerbsFile emits verbs.go, the shared verb bodies. The former
 // per-entity copies (run<Ent>List/Get/Create/Update/Patch/Delete/
@@ -1932,9 +2069,10 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	transition := cliAnyTransition(spec)
 	endpoint := cliAnyEndpoint(spec)
 	fields := mutation || endpoint // the field-flag table and its parser
+	uploads := cliAnyUpload(spec)
 
 	var imports []string
-	if watch {
+	if watch || uploads {
 		imports = append(imports, "\t\"context\"")
 	}
 	if fields {
@@ -1950,13 +2088,16 @@ func renderCLIVerbsFile(spec cliSpec) string {
 	if list || get || del || mutation || transition || endpoint {
 		imports = append(imports, "\t\"net/url\"")
 	}
-	if batchDel || endpoint {
-		imports = append(imports, "\t\"os\"") // usage errors go to stderr
+	if batchDel || endpoint || uploads {
+		imports = append(imports, "\t\"os\"") // usage errors go to stderr; files open from disk
+	}
+	if uploads {
+		imports = append(imports, "\t\"path/filepath\"")
 	}
 	if endpoint {
 		imports = append(imports, "\t\"strings\"")
 	}
-	if watch {
+	if watch || uploads {
 		imports = append(imports, "\n\tclient `"+spec.ClientImport+"`")
 	}
 	var sb strings.Builder
@@ -2078,16 +2219,18 @@ const (
 	fieldFloat
 	fieldBool
 	fieldJSON
-)
+` + fileFlagConst(uploads) + `)
 
 // mutationField describes one field flag behind create/update/patch or an
-// endpoint command: the CLI flag, the JSON wire key it sets, the flag
+// endpoint command: the CLI flag, the JSON wire key it sets, the column a
+// multipart write names it by (entities with file fields only), the flag
 // type, the usage line, and (endpoints only) whether the call needs it.
 // Field names are data bound at generate time (string literals), never
 // identifiers.
 type mutationField struct {
 	flag     string
 	wire     string
+	column   string
 	kind     fieldKind
 	usage    string
 	required bool
@@ -2131,7 +2274,7 @@ func fieldFlags(fs *flag.FlagSet, fields []mutationField) func(name string, body
 					return fmt.Errorf("--%s: %w", f.flag, err)
 				}
 				body[f.wire] = v
-			default:
+` + fileFlagArm(uploads) + `			default:
 				body[f.wire] = *strVals[i]
 			}
 		}
@@ -2188,13 +2331,13 @@ func runMutationVerb(cmd, method string, withID bool, base string, fields []muta
 		path += "/" + url.PathEscape(id)
 	}
 	var out singleResponse
-	if err := g.client.Do(g.ctx, method, path, body, &out); err != nil {
-		return apiFail(err)
-	}
-	return printJSON(out.Data)
+` + mutationSend(uploads) + `	return printJSON(out.Data)
 }
 
 `)
+		if uploads {
+			sb.WriteString(cliUploadHelpers)
+		}
 	}
 	if del {
 		sb.WriteString(`// runDeleteVerb is the shared delete body: take the positional id,

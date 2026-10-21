@@ -767,7 +767,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 		// This path scans through the keyed/pooled scanners rather than
 		// ch.scanMany, so it decodes its own JSON columns.
-		ch.decodeJSONRows(results)
+		ch.decodeReadRows(results)
 
 		if err := ch.applyIncludeTree(withRealRequest(WithReadHooks(ctx), r), results, includes); err != nil {
 			writeIncludeError(w, "list", err)

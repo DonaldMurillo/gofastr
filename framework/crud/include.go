@@ -561,7 +561,7 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 		// case-convert only at the end of the walk. Without this a JSON
 		// field is an object on GET /children and a string one relation
 		// hop away.
-		decodeEntityJSONColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
+		decodeEntityReadColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
 	}
 
 	if err := ch.recurseIncludeChildren(ctx, nodes, loaded, budget); err != nil {
@@ -623,7 +623,7 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 			}
 			return fmt.Errorf("eager load %s: %w", node.Relation.Name, err)
 		}
-		decodeEntityJSONColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
+		decodeEntityReadColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
 	}
 	if err := ch.recurseIncludeChildren(ctx, children, loaded, budget); err != nil {
 		return err
