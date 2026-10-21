@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/fuzzy"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
@@ -521,7 +522,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	// Reported ahead of unknown: a caller who named a real column wants to be
 	// told it isn't filterable, not that it doesn't exist.
 	if blocked != "" {
-		return nil, notQueryableError(blocked, "filtered")
+		return nil, notQueryableError(blocked, reasonNotFilterable)
 	}
 	if unknown != "" {
 		return nil, unknownFilterError(unknown, names)
@@ -532,7 +533,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 	// An over-cap ?field_in= list narrows results silently; fail closed
 	// with a message shaped like the include path's scoped-IN cap.
 	if overCapField != "" {
-		return nil, fmt.Errorf("in-list on %q has %d entries (max %d)", overCapField, overCapCount, MaxINListEntries)
+		return nil, i18n.NewError(reasonInListOverCap, map[string]any{"field": strconv.Quote(overCapField), "count": overCapCount, "max": MaxINListEntries})
 	}
 
 	return filters, nil
@@ -542,8 +543,8 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 // tried to filter or sort on. Naming the field is deliberate: NoQuery fields
 // appear in responses, so the caller already knows the column exists and the
 // only useful information to add is that the query surface refuses it.
-func notQueryableError(field, verb string) error {
-	return fmt.Errorf("field %q cannot be %s", field, verb)
+func notQueryableError(field string, reason i18n.Phrase) error {
+	return i18n.NewError(reason, map[string]any{"field": strconv.Quote(field)})
 }
 
 // unknownFilterError builds the structured 400-shaped error for an
@@ -552,9 +553,9 @@ func notQueryableError(field, verb string) error {
 // generated client can surface it verbatim.
 func unknownFilterError(key string, fieldNames []string) error {
 	if suggestion := nearestField(key, fieldNames); suggestion != "" {
-		return fmt.Errorf("unknown filter %q (did you mean %q?)", key, suggestion)
+		return i18n.NewError(reasonUnknownFilterHint, map[string]any{"key": strconv.Quote(key), "suggestion": strconv.Quote(suggestion)})
 	}
-	return fmt.Errorf("unknown filter %q", key)
+	return i18n.NewError(reasonUnknownFilter, map[string]any{"key": strconv.Quote(key)})
 }
 
 // nearestField returns the single closest field name to key within a small
@@ -670,7 +671,7 @@ func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) 
 	// SQL and pollute the statement cache. Fail closed rather than
 	// silently truncate, mirroring the unknown-field policy above.
 	if len(sortParams) > maxSortFields {
-		return nil, fmt.Errorf("too many sort fields: %d (max %d)", len(sortParams), maxSortFields)
+		return nil, i18n.NewError(reasonTooManySorts, map[string]any{"count": len(sortParams), "max": maxSortFields})
 	}
 
 	var sorts []ParsedSort
@@ -683,7 +684,7 @@ func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) 
 		// adversarial clients.
 		for i := 0; i < len(s); i++ {
 			if s[i] < 0x20 || s[i] == 0x7f {
-				return nil, fmt.Errorf("invalid sort %q: control bytes not allowed", s)
+				return nil, i18n.NewError(reasonSortControlBytes, map[string]any{"sort": strconv.Quote(s)})
 			}
 		}
 		desc := false
@@ -693,10 +694,10 @@ func ParseSortValues(q url.Values, fields []schema.Field) ([]ParsedSort, error) 
 			field = s[1:]
 		}
 		if noQuery[field] {
-			return nil, notQueryableError(field, "sorted on")
+			return nil, notQueryableError(field, reasonNotSortable)
 		}
 		if !allowed[field] {
-			return nil, fmt.Errorf("invalid sort field %q", field)
+			return nil, i18n.NewError(reasonInvalidSortField, map[string]any{"field": strconv.Quote(field)})
 		}
 		// Resolve an alias to its column: ParsedSort.Field reaches ORDER BY,
 		// so emitting the wire name would name a column that does not exist.

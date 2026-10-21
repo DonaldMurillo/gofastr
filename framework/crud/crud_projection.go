@@ -1,10 +1,11 @@
 package crud
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // projectFromRequest reads the `?fields=` query parameter and returns the
@@ -53,7 +54,7 @@ func (ch *CrudHandler) projectFromRequestQ(q url.Values) ([]string, error) {
 			// DB name would otherwise leak into the error body, letting
 			// a probe confirm "is there a column called secret_key?"
 			// just by reading the 400 response.
-			return nil, fmt.Errorf("unknown projection field")
+			return nil, i18n.NewError(reasonUnknownProjection)
 		}
 		if _, dup := seen[col]; dup {
 			continue

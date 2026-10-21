@@ -2,10 +2,10 @@ package filter
 
 import (
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
@@ -96,7 +96,7 @@ func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
 	idx := newPredicateFieldIndex(fields)
 	var msg json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &msg); err != nil {
-		return nil, fmt.Errorf("where: invalid JSON: %w", err)
+		return nil, &i18n.Error{Reason: reasonWhereInvalidJSON, Params: map[string]any{"detail": err.Error()}, Err: err}
 	}
 	count := 0
 	p, err := parseNode(msg, idx, 1, &count)
@@ -108,21 +108,21 @@ func ParseWhere(raw string, fields []schema.Field) (*Predicate, error) {
 
 func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) (Predicate, error) {
 	if depth > maxPredicateDepth {
-		return Predicate{}, fmt.Errorf("where: nesting exceeds max depth %d", maxPredicateDepth)
+		return Predicate{}, i18n.NewError(reasonWhereTooDeep, map[string]any{"max": maxPredicateDepth})
 	}
 	*count++
 	if *count > maxPredicateNodes {
-		return Predicate{}, fmt.Errorf("where: exceeds max node count %d", maxPredicateNodes)
+		return Predicate{}, i18n.NewError(reasonWhereTooManyNodes, map[string]any{"max": maxPredicateNodes})
 	}
 	var rp rawPred
 	if err := json.Unmarshal(msg, &rp); err != nil {
-		return Predicate{}, fmt.Errorf("where: invalid node: %w", err)
+		return Predicate{}, &i18n.Error{Reason: reasonWhereInvalidNode, Params: map[string]any{"detail": err.Error()}, Err: err}
 	}
 
 	hasAnd, hasOr, hasField := len(rp.And) > 0, len(rp.Or) > 0, rp.Field != ""
 	// Exactly one kind per node.
 	if btoi(hasAnd)+btoi(hasOr)+btoi(hasField) != 1 {
-		return Predicate{}, fmt.Errorf("where: each node must be exactly one of and/or/field")
+		return Predicate{}, i18n.NewError(reasonWhereNodeShape)
 	}
 
 	if hasAnd || hasOr {
@@ -151,7 +151,7 @@ func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) 
 	}
 	op, ok := whereOps[opTok]
 	if !ok {
-		return Predicate{}, fmt.Errorf("where: unknown operator %q", rp.Op)
+		return Predicate{}, i18n.NewError(reasonWhereUnknownOp, map[string]any{"op": strconv.Quote(rp.Op)})
 	}
 	leaf := Predicate{Field: rp.Field, Op: op}
 	if op == OpIn {
@@ -162,7 +162,7 @@ func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) 
 			// allocate-then-reject shape is the same one SplitINValuesBounded
 			// exists to avoid on the ?field_in= path, keep them consistent.
 			if strings.Count(rp.Value, ",")+1 > MaxINListEntries {
-				return Predicate{}, fmt.Errorf("where: in-list exceeds %d entries", MaxINListEntries)
+				return Predicate{}, i18n.NewError(reasonWhereInOverCap, map[string]any{"max": MaxINListEntries})
 			}
 			vals = strings.Split(rp.Value, ",")
 		}

@@ -3,13 +3,13 @@ package pagination
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"math"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 const (
@@ -210,14 +210,14 @@ func EncodeCursor(field string, value any) string {
 // under a token any first-read intermediary parsed differently.
 func DecodeCursor(cursor string) (field string, value string, err error) {
 	if len(cursor) > maxCursorEncodedSize {
-		return "", "", fmt.Errorf("pagination: cursor exceeds %d bytes", maxCursorEncodedSize)
+		return "", "", i18n.NewError(reasonCursorTooLong, map[string]any{"max": maxCursorEncodedSize})
 	}
 	b, err := base64.StdEncoding.DecodeString(cursor)
 	if err != nil {
 		return "", "", err
 	}
 	if err := handler.CheckObjectKeys(b, strings.ToLower); err != nil {
-		return "", "", fmt.Errorf("pagination: cursor token: %w", err)
+		return "", "", &i18n.Error{Reason: reasonCursorToken, Params: map[string]any{"detail": err.Error()}, Err: err}
 	}
 	var token cursorToken
 	if err := json.Unmarshal(b, &token); err != nil {
@@ -260,7 +260,7 @@ func EncodeMultiCursor(fields []string, row map[string]any) string {
 // match the expected shape.
 func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
 	if len(cursor) > maxCursorEncodedSize {
-		return nil, fmt.Errorf("pagination: cursor exceeds %d bytes", maxCursorEncodedSize)
+		return nil, i18n.NewError(reasonCursorTooLong, map[string]any{"max": maxCursorEncodedSize})
 	}
 	b, err := base64.StdEncoding.DecodeString(cursor)
 	if err != nil {
@@ -270,14 +270,14 @@ func DecodeMultiCursor(cursor string) ([]multiCursorField, error) {
 	// lives one level down inside the f array, which the any-depth walk
 	// sees and a top-level-only check would not.
 	if err := handler.CheckObjectKeys(b, strings.ToLower); err != nil {
-		return nil, fmt.Errorf("pagination: cursor token: %w", err)
+		return nil, &i18n.Error{Reason: reasonCursorToken, Params: map[string]any{"detail": err.Error()}, Err: err}
 	}
 	var tok multiCursorToken
 	if err := json.Unmarshal(b, &tok); err != nil {
 		return nil, err
 	}
 	if len(tok.Fields) > maxCursorFields {
-		return nil, fmt.Errorf("pagination: cursor carries %d fields (max %d)", len(tok.Fields), maxCursorFields)
+		return nil, i18n.NewError(reasonCursorTooManyFields, map[string]any{"count": len(tok.Fields), "max": maxCursorFields})
 	}
 	// Names reach ORDER BY / allow-lists, so they get the same
 	// control-byte scrub as DecodeCursor. Values are bound SQL args,
