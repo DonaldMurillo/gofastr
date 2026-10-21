@@ -313,10 +313,13 @@ func (op *modalOperation) cancel() {
 	}
 }
 
-func (s *winShell) closePermissionDialog(owner uintptr, op *modalOperation) {
+// closePermissionDialog closes the prompt titled title, the
+// translated caption it was shown with: the message-box fallback has no
+// dialogHWND, so it is found by that caption.
+func (s *winShell) closePermissionDialog(owner uintptr, title string, op *modalOperation) {
 	hwnd := op.dialogHWND.Load()
 	if hwnd == 0 {
-		hwnd = win32.FindOwnedWindow(owner, "#32770", "Permission required")
+		hwnd = win32.FindOwnedWindow(owner, "#32770", title)
 	}
 	if hwnd != 0 {
 		_ = win32.PostMessage(hwnd, wmClose, 0, 0)
@@ -527,7 +530,7 @@ func showPermissionPrompt(owner uintptr, req desktop.PermissionRequest, words de
 	binary.LittleEndian.PutUint64(cfg[148:156], uint64(op.id.Load()))
 	activePermissionPrompts.Store(op.id.Load(), op)
 	defer activePermissionPrompts.Delete(op.id.Load())
-	op.shell.registerModalCancel(op.id.Load(), func() { op.shell.closePermissionDialog(owner, op) })
+	op.shell.registerModalCancel(op.id.Load(), func() { op.shell.closePermissionDialog(owner, words.Title, op) })
 	defer op.shell.unregisterModalCancel(op.id.Load())
 	proc, deactivate, err := findTaskDialogProc()
 	if err != nil {

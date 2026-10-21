@@ -27,6 +27,13 @@ var (
 	pageSettingsSave        = i18n.Define("desktop.settings_save", "Save")
 )
 
+// A number preference's range hint on the preferences screen.
+var (
+	hintPrefBetween = i18n.Define("desktop.pref_between", "Between {{min}} and {{max}}.")
+	hintPrefAtLeast = i18n.Define("desktop.pref_at_least", "At least {{min}}.")
+	hintPrefAtMost  = i18n.Define("desktop.pref_at_most", "At most {{max}}.")
+)
+
 // The shell's own words: the menus it adds, the role items' default
 // titles, the permission prompt and the Windows About box.
 var (
