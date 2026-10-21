@@ -596,7 +596,7 @@ const (
 	//   +3 the RPC error text speaks the page's language (2026-10-21):
 	//        a text-mode signal bound to a failed RPC renders "Request
 	//        failed (500)" through say() instead of a literal "Error: 500"
-	//        (TestRuntimeErrorObjectFormatting). Measured 14371 → 14374.
+	//        (TestNavSwapsRuntimeStrings). Measured 14371 → 14374.
 	//        (l1: 13)
 	//
 	// HALT NOTE: the bundle measures 13391 at level 6 — 291 over the

@@ -25,20 +25,37 @@ import (
 //	/e/en, /e/es → the shared shell holding an outlet: the envelope
 //	               navigator, which snapshots the live document on leave
 //	/f/...       → /k's routes under the envelope navigator
+//	/h/...       → keyed shells walked en → es → en → en2 → es: es is
+//	               left across shells, so no leave capture refreshes its
+//	               entry, and en2 re-enters es's shell so the entry
+//	               replays from the full fetch's cache
+//	/g/...       → /h's routes under the envelope navigator
 const stringsNavRoutes = `<script type="application/json" id="gofastr-routes">[` +
 	`{"path":"/s/en","layouts":["l:site"]},{"path":"/s/es","layouts":["l:site"]},` +
 	`{"path":"/e/en","layouts":["l:site"]},{"path":"/e/es","layouts":["l:site"]},` +
 	`{"path":"/k/en","layouts":["l:k-en"]},{"path":"/k/es","layouts":["l:k-es"]},` +
 	`{"path":"/k/en2","layouts":["l:k-es"]},` +
 	`{"path":"/f/en","layouts":["l:f-en"]},{"path":"/f/es","layouts":["l:f-es"]},` +
-	`{"path":"/f/en2","layouts":["l:f-es"]}` +
+	`{"path":"/f/en2","layouts":["l:f-es"]},` +
+	`{"path":"/g/en","layouts":["l:g-en"]},{"path":"/g/es","layouts":["l:g-es"]},` +
+	`{"path":"/g/en2","layouts":["l:g-es"]},` +
+	`{"path":"/h/en","layouts":["l:h-en"]},{"path":"/h/es","layouts":["l:h-es"]},` +
+	`{"path":"/h/en2","layouts":["l:h-es"]}` +
 	`]</script>`
 
-const stringsES = `{"runtime.load_failed":"No se pudo cargar {{path}}"}`
+const stringsES = `{"runtime.load_failed":"No se pudo cargar {{path}}",` +
+	`"runtime.request_failed_status":"Error en la solicitud ({{status}})"}`
+
+// rpcErrProbe is what a text-mode signal shows for a failed RPC
+// (setSignal with dispatchRPC's {ok:false} object).
+const rpcErrProbe = `(() => { const n = document.createElement('span');` +
+	` n.setAttribute('data-cui-signal', 'rpcerr'); document.body.appendChild(n);` +
+	` __gofastr.setSignal('rpcerr', {ok: false, status: 500, text: 'boom'});` +
+	` const t = n.textContent; n.remove(); return t; })()`
 
 func stringsNavPage(lang, key, strs, id, next string) string {
 	outlet := ""
-	if id[0] == 'e' || id[0] == 'f' {
+	if id[0] == 'e' || id[0] == 'f' || id[0] == 'g' {
 		outlet = `<div data-cui-outlet="l:site#aside" id="aside">aside</div>`
 	}
 	block := ""
@@ -98,21 +115,29 @@ func TestNavSwapsRuntimeStrings(t *testing.T) {
 	mux.HandleFunc("/f/en", shell("l:f-en", "en", "", "f-en", "/f/es"))
 	mux.HandleFunc("/f/es", shell("l:f-es", "es", stringsES, "f-es", "/f/en2"))
 	mux.HandleFunc("/f/en2", shell("l:f-es", "en", "", "f-en", "/f/es"))
+	mux.HandleFunc("/g/en", shell("l:g-en", "en", "", "g-en", "/g/es"))
+	mux.HandleFunc("/g/es", shell("l:g-es", "es", stringsES, "g-es", "/g/en"))
+	mux.HandleFunc("/g/en2", shell("l:g-es", "en", "", "g-en2", "/g/es"))
+	mux.HandleFunc("/h/en", shell("l:h-en", "en", "", "h-en", "/h/es"))
+	mux.HandleFunc("/h/es", shell("l:h-es", "es", stringsES, "h-es", "/h/en"))
+	mux.HandleFunc("/h/en2", shell("l:h-es", "en", "", "h-en2", "/h/es"))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
 	const probe = `__gofastr.say('runtime.load_failed', 'Could not load {{path}}', {path: '/x'})`
 	for _, base := range []string{"/s", "/k", "/e", "/f"} {
 		ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
-		var en1, es, en2, esBack string
+		var en1, es, en2, esBack, errEN, errES string
 		id := base[1:]
 		if err := chromedp.Run(ctx,
 			chromedp.Navigate(srv.URL+base+"/en"),
 			chromedp.WaitVisible(`#`+id+`-en`, chromedp.ByID),
 			chromedp.Evaluate(probe, &en1),
+			chromedp.Evaluate(rpcErrProbe, &errEN),
 			chromedp.Click(`#go-`+id+`-en`, chromedp.ByID),
 			chromedp.WaitVisible(`#`+id+`-es`, chromedp.ByID),
 			chromedp.Evaluate(probe, &es),
+			chromedp.Evaluate(rpcErrProbe, &errES),
 			chromedp.Click(`#go-`+id+`-es`, chromedp.ByID),
 			chromedp.WaitVisible(`#`+id+`-en`, chromedp.ByID),
 			chromedp.Evaluate(probe, &en2),
@@ -124,6 +149,35 @@ func TestNavSwapsRuntimeStrings(t *testing.T) {
 		}
 		if en1 != "Could not load /x" || es != "No se pudo cargar /x" || en2 != "Could not load /x" || esBack != es {
 			t.Errorf("%s: say across en → es → en → back = %q / %q / %q / %q", base, en1, es, en2, esBack)
+		}
+		if errEN != "Request failed (500) \u2014 boom" || errES != "Error en la solicitud (500) \u2014 boom" {
+			t.Errorf("%s: failed-RPC signal text en / es = %q / %q", base, errEN, errES)
+		}
+	}
+	for _, base := range []string{"/g", "/h"} {
+		ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+		id := base[1:]
+		step := func(path, want string, out *string) chromedp.Action {
+			return chromedp.Tasks{
+				chromedp.Evaluate(`__gofastr.navigate('`+base+path+`')`, nil),
+				chromedp.WaitVisible(`#`+id+want, chromedp.ByID),
+				chromedp.Evaluate(probe, out),
+			}
+		}
+		var en1, es, enMid, en2, esAgain string
+		if err := chromedp.Run(ctx,
+			chromedp.Navigate(srv.URL+base+"/en"),
+			chromedp.WaitVisible(`#`+id+`-en`, chromedp.ByID),
+			chromedp.Evaluate(probe, &en1),
+			step("/es", "-es", &es),
+			step("/en", "-en", &enMid),
+			step("/en2", "-en2", &en2),
+			step("/es", "-es", &esAgain),
+		); err != nil {
+			t.Fatalf("%s: chromedp: %v", base, err)
+		}
+		if es != "No se pudo cargar /x" || en2 != "Could not load /x" || esAgain != es {
+			t.Errorf("%s: say across en → es → en → en2 → es = %q / %q / %q / %q / %q", base, en1, es, enMid, en2, esAgain)
 		}
 	}
 }

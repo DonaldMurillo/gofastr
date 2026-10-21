@@ -901,7 +901,10 @@
           // The whole-shell swap: cross-chain replaces the outermost
           // shell, falling back to whole-main for a layout-less origin.
           const sourceRoot = shellEl(pdoc) || nm;
-          if (sourceRoot) sourceRoot.insertAdjacentHTML("afterbegin", NS._docCarrier(pdoc));
+          // The carrier rides <main>, so the cache entry below keeps the
+          // page's language and words: a page left across shells is
+          // never recaptured on leave.
+          (nm || sourceRoot)?.insertAdjacentHTML("afterbegin", NS._docCarrier(pdoc));
           const el = swapShell(sourceRoot);
           // The fetched head's route keys fold through the same atomic
           // merge (route-only for the scoping reason on routeFold;
