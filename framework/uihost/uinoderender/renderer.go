@@ -313,7 +313,7 @@ func (r *Renderer) renderDataTable(n uinodev1.Node) (render.HTML, error) {
 		}
 		rows[i] = ui.Row{Cells: cells}
 	}
-	return ui.DataTable(ui.DataTableConfig{Columns: cols, Rows: rows}), nil
+	return ui.DataTable(ui.DataTableConfig{Columns: cols, Rows: rows, Ctx: r.ctx}), nil
 }
 
 // --- Interactive renderers ----------------------------------------------
@@ -333,6 +333,7 @@ func (r *Renderer) renderButton(n uinodev1.Node) (render.HTML, error) {
 	return ui.Button(ui.ButtonConfig{
 		Label:   p.Label,
 		Variant: variant,
+		Ctx:     r.ctx,
 		ExtraAttrs: html.Attrs{
 			"data-cui-rpc": rpcURL,
 		},

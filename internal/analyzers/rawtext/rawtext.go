@@ -73,6 +73,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"iter"
 	"reflect"
 	"regexp"
 	"strings"
@@ -434,28 +435,43 @@ func checkEnvelopeFields(pass *analysis.Pass, lit *ast.CompositeLit, st *types.S
 	if !hasJSONField(st, "status") {
 		return
 	}
-	for _, e := range lit.Elts {
-		kv, ok := e.(*ast.KeyValueExpr)
-		if !ok {
+	for i, val := range litFields(lit, st) {
+		name, _, _ := strings.Cut(reflect.StructTag(st.Tag(i)).Get("json"), ",")
+		if name != "error" && name != "message" && name != "title" && name != "detail" {
 			continue
 		}
-		id, ok := kv.Key.(*ast.Ident)
-		if !ok {
-			continue
+		if v := pass.TypesInfo.Types[val]; v.Value != nil && v.Value.Kind() == constant.String &&
+			strings.Contains(constant.StringVal(v.Value), " ") {
+			pass.Reportf(val.Pos(), "a body's %s is English prose with no code: write it from a Phrase (reason.Text(ctx) beside reason.Code())", name)
 		}
-		for i := range st.NumFields() {
-			if st.Field(i).Name() != id.Name {
+	}
+}
+
+// litFields yields each element of a struct literal with the index of
+// the field it sets, keyed (Title: "x") or positional ({"x", 404}): the
+// positional form writes the same bytes and must not slip past.
+func litFields(lit *ast.CompositeLit, st *types.Struct) iter.Seq2[int, ast.Expr] {
+	return func(yield func(int, ast.Expr) bool) {
+		for pos, e := range lit.Elts {
+			kv, ok := e.(*ast.KeyValueExpr)
+			if !ok {
+				if pos < st.NumFields() && !yield(pos, e) {
+					return
+				}
 				continue
 			}
-			name, _, _ := strings.Cut(reflect.StructTag(st.Tag(i)).Get("json"), ",")
-			if name != "error" && name != "message" && name != "title" && name != "detail" {
-				break
+			id, ok := kv.Key.(*ast.Ident)
+			if !ok {
+				continue
 			}
-			if v := pass.TypesInfo.Types[kv.Value]; v.Value != nil && v.Value.Kind() == constant.String &&
-				strings.Contains(constant.StringVal(v.Value), " ") {
-				pass.Reportf(kv.Value.Pos(), "a body's %s is English prose with no code: write it from a Phrase (reason.Text(ctx) beside reason.Code())", name)
+			for i := range st.NumFields() {
+				if st.Field(i).Name() == id.Name {
+					if !yield(i, kv.Value) {
+						return
+					}
+					break
+				}
 			}
-			break
 		}
 	}
 }
@@ -473,27 +489,16 @@ func hasJSONField(st *types.Struct, name string) bool {
 // checkUIFields reports a reader-facing string field of a framework
 // type set to English.
 func checkUIFields(pass *analysis.Pass, lit *ast.CompositeLit, st *types.Struct, ui uiReporter) {
-	for _, e := range lit.Elts {
-		kv, ok := e.(*ast.KeyValueExpr)
-		if !ok {
+	for i, val := range litFields(lit, st) {
+		f := st.Field(i)
+		if !uiField(f.Name()) {
 			continue
 		}
-		id, ok := kv.Key.(*ast.Ident)
-		if !ok || !uiField(id.Name) {
+		if b, ok := f.Type().Underlying().(*types.Basic); !ok || b.Kind() != types.String {
 			continue
 		}
-		for i := range st.NumFields() {
-			f := st.Field(i)
-			if f.Name() != id.Name {
-				continue
-			}
-			if b, ok := f.Type().Underlying().(*types.Basic); !ok || b.Kind() != types.String {
-				break
-			}
-			if s, ok := uiProse(pass, kv.Value); ok {
-				ui.reportf(kv.Value, "%s: %q is English written into the page: define it as an i18n.Phrase at package level and set phrase.Text(ctx), or take it from the component's Strings", id.Name, s)
-			}
-			break
+		if s, ok := uiProse(pass, val); ok {
+			ui.reportf(val, "%s: %q is English written into the page: define it as an i18n.Phrase at package level and set phrase.Text(ctx), or take it from the component's Strings", f.Name(), s)
 		}
 	}
 }

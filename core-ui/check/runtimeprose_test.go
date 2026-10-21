@@ -29,6 +29,7 @@ const runtimeProseFixture = `(() => {
     input.placeholder = 'Search the docs';
     root.appendChild(document.createTextNode(` + "`${code} panels is the limit`" + `));
     NS._toastOrFallback({ variant: 'error', title: 'Request failed', body: 'Network error' });
+    NS.toast({ variant: 'success', title: 'Changes saved' });
   }
   function quiet(c, root, input, r, kind) {
     c.setAttribute('aria-label', say('runtime.notifications', 'Notifications'));
@@ -38,6 +39,7 @@ const runtimeProseFixture = `(() => {
     root.textContent = kind === 'a' ? 'data-hui-x' : 'runtime.key';
     input.placeholder = '';
     NS._toastOrFallback({ variant: 'error', title: NS.say('runtime.request_failed', 'Request failed') });
+    NS.toast({ variant: 'error', title: NS.say('runtime.request_failed', 'Request failed') });
     // gofastr:allow(runtimeprose) developer diagnostics, never shown to a reader
     root.textContent = 'Plugin host refused the frame';
     if (r.ok) root.title = 'Reload me'; // a comment saying 'Reload me' is not a sink
@@ -60,7 +62,7 @@ func TestLintRuntimeProseFiresOnLiterals(t *testing.T) {
 		"Could not load ", " — check your connection", "Notifications", "Dismiss notification",
 		"This panel cannot open links.", "This panel cannot submit this form.", "Search the docs",
 		"${code} panels is the limit", "Request failed", "Network error",
-		"A bare marker silences nothing", "Reload me",
+		"A bare marker silences nothing", "Reload me", "Changes saved",
 	}
 	got := map[string]int{}
 	for _, v := range res.Violations {

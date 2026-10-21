@@ -1,7 +1,8 @@
 package ui
 
 // D14b: tests that cfg.Ctx threads the request locale into i18nui.T
-// calls inside Repeater, PasswordInput, StepWizard, and Lightbox.
+// calls inside Repeater, PasswordInput and StepWizard, and that the
+// mounted Lightbox slot takes the locale from the render's context.
 //
 // Run: go test ./framework/ui/... -run TestCtxLocale
 //
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -137,8 +139,8 @@ func TestStepWizardNilCtxPreservesToday(t *testing.T) {
 // TestLightboxCtxLocalePrev: Prev aria-label uses ctx locale when Ctx set.
 func TestLightboxCtxLocalePrev(t *testing.T) {
 	ctx := makeCtxWithLocale(i18nui.LightboxPrev, "Image précédente")
-	slot := &lightboxSlot{name: "lb", label: "x", navArrows: true, ctx: ctx}
-	out := string(slot.Render())
+	slot := &lightboxSlot{name: "lb", label: "x", navArrows: true}
+	out := string(slot.RenderCtx(ctx))
 	if !strings.Contains(out, "Image précédente") {
 		t.Fatalf("expected translated Prev label, got:\n%s", out)
 	}
@@ -147,8 +149,8 @@ func TestLightboxCtxLocalePrev(t *testing.T) {
 // TestLightboxCtxLocaleNext: Next aria-label uses ctx locale when Ctx set.
 func TestLightboxCtxLocaleNext(t *testing.T) {
 	ctx := makeCtxWithLocale(i18nui.LightboxNext, "Image suivante")
-	slot := &lightboxSlot{name: "lb", label: "x", navArrows: true, ctx: ctx}
-	out := string(slot.Render())
+	slot := &lightboxSlot{name: "lb", label: "x", navArrows: true}
+	out := string(slot.RenderCtx(ctx))
 	if !strings.Contains(out, "Image suivante") {
 		t.Fatalf("expected translated Next label, got:\n%s", out)
 	}
@@ -157,8 +159,8 @@ func TestLightboxCtxLocaleNext(t *testing.T) {
 // TestLightboxCtxLocaleDownload: Download aria-label uses ctx locale.
 func TestLightboxCtxLocaleDownload(t *testing.T) {
 	ctx := makeCtxWithLocale(i18nui.LightboxDownload, "Télécharger")
-	slot := &lightboxSlot{name: "lb", label: "x", allowDownload: true, ctx: ctx}
-	out := string(slot.Render())
+	slot := &lightboxSlot{name: "lb", label: "x", allowDownload: true}
+	out := string(slot.RenderCtx(ctx))
 	if !strings.Contains(out, "Télécharger") {
 		t.Fatalf("expected translated Download label, got:\n%s", out)
 	}
@@ -173,17 +175,21 @@ func TestLightboxNilCtxPreservesToday(t *testing.T) {
 	}
 }
 
-// TestLightboxCfgCtxPassedToSlot: LightboxConfig.Ctx flows into the
-// internal lightboxSlot (verifies the wire-up in Lightbox()).
-func TestLightboxCfgCtxPassedToSlot(t *testing.T) {
+// TestLightboxSlotUsesRequestCtx: the mounted body slot takes its
+// locale from the render's context (verifies the wire-up in Lightbox()).
+func TestLightboxSlotUsesRequestCtx(t *testing.T) {
 	ctx := makeCtxWithLocale(i18nui.LightboxPrev, "Précédent")
-	b := Lightbox(LightboxConfig{Name: "test", NavArrows: true, Ctx: ctx})
+	b := Lightbox(LightboxConfig{Name: "test", NavArrows: true})
 	// Find the body slot and render it.
 	def := b.Definition()
 	var html string
 	for _, s := range def.Slots {
 		if s.Name == "body" {
-			html = string(s.Component.Render())
+			out, err := component.SafeRenderCtx(ctx, s.Component)
+			if err != nil {
+				t.Fatal(err)
+			}
+			html = string(out)
 			break
 		}
 	}
@@ -191,6 +197,6 @@ func TestLightboxCfgCtxPassedToSlot(t *testing.T) {
 		t.Fatal("Lightbox widget must have a 'body' slot that renders non-empty HTML")
 	}
 	if !strings.Contains(html, "Précédent") {
-		t.Fatalf("LightboxConfig.Ctx must be passed into the slot; got:\n%s", html)
+		t.Fatalf("the slot must render in the request's locale; got:\n%s", html)
 	}
 }

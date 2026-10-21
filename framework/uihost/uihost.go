@@ -2575,11 +2575,22 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 	if ds.App != nil && ds.App.Name != "" {
 		appName = ds.App.Name
 	}
+	ctx := r.Context()
+	writeMinimalPage(w, ds.LangForPath(path), pageNotFoundDocTitle.Text(ctx, map[string]any{"app": appName}),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageNotFoundTitle.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, phraseAround(ctx, pageNoRoute, "path",
+			html.Code(html.TextConfig{}, render.Text(textsafe.StripInvisible(path))), nil)),
+		html.Paragraph(html.TextConfig{}, html.Link(html.LinkConfig{Href: "/", Text: pageBackHome.Text(ctx)})),
+	)
+}
+
+// writeMinimalPage writes the bare error document a host with no root
+// layout serves: lang and title escaped, body already rendered HTML.
+func writeMinimalPage(w io.Writer, lang, title string, body ...render.HTML) {
 	fmt.Fprintf(w,
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>Not found: %s</title></head>`+
-			`<body><main role="main"><h1>404: Page not found</h1><p>No route matched <code>%s</code>.</p>`+
-			`<p><a href="/">Back to home</a></p></main></body></html>`,
-		stdhtml.EscapeString(ds.LangForPath(path)), stdhtml.EscapeString(appName), stdhtml.EscapeString(textsafe.StripInvisible(path)))
+		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>%s</title></head>`+
+			`<body><main role="main">%s</main></body></html>`,
+		stdhtml.EscapeString(lang), stdhtml.EscapeString(title), render.Join(body...))
 }
 
 // renderNotFoundDocument renders the not-found page as a full document
@@ -2720,11 +2731,12 @@ func (ds *UIHost) serveError(w http.ResponseWriter, r *http.Request, path string
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusInternalServerError)
-	fmt.Fprintf(w,
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>Something went wrong</title></head>`+
-			`<body><main role="main"><h1>Something went wrong</h1><p>This page could not be loaded. Try again in a moment.</p>`+
-			`<p><a href="/">Back to home</a></p></main></body></html>`,
-		stdhtml.EscapeString(ds.LangForPath(path)))
+	ctx := r.Context()
+	writeMinimalPage(w, ds.LangForPath(path), pageErrorTitle.Text(ctx),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageErrorTitle.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, render.Text(pageErrorBody.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, html.Link(html.LinkConfig{Href: "/", Text: pageBackHome.Text(ctx)})),
+	)
 }
 
 // serveServerError writes a bare 500 with no root layout: an RFC 9457
@@ -2749,11 +2761,12 @@ func (ds *UIHost) serveServerError(w http.ResponseWriter, r *http.Request, path 
 	if ds.App != nil && ds.App.Name != "" {
 		appName = ds.App.Name
 	}
-	fmt.Fprintf(w,
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>Server error: %s</title></head>`+
-			`<body><main role="main"><h1>500: Server error</h1><p>The page failed to render.</p>`+
-			`<p><a href="/">Back to home</a></p></main></body></html>`,
-		stdhtml.EscapeString(ds.LangForPath(path)), stdhtml.EscapeString(appName))
+	ctx := r.Context()
+	writeMinimalPage(w, ds.LangForPath(path), pageServerErrorDocTitle.Text(ctx, map[string]any{"app": appName}),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageServerErrorTitle.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, render.Text(problemRenderFailed.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, html.Link(html.LinkConfig{Href: "/", Text: pageBackHome.Text(ctx)})),
+	)
 }
 
 // renderErrorDocument is renderNotFoundDocument's 500 twin, finished

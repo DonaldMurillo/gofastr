@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/uinodev1"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // mustContain fails t if want is not a substring of got.
@@ -293,6 +295,20 @@ func TestRenderDataTableEmptyRows(t *testing.T) {
 	}
 	mustContain(t, h, "ui-data-table")
 	mustContain(t, h, "is-empty")
+}
+
+// The table's own words follow New's ctx, not only the renderer's.
+func TestRenderDataTableEmptyInLocale(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("fr", i18nui.TableNoResults.Key(), i18n.Message{Text: "Aucun résultat"})
+	ctx := i18n.WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"}), i18n.NewTranslator(cat, "en"))
+	h, err := New(ctx, nil).Render(tree(node(uinodev1.CompDataTable, uinodev1.DataTableProps{
+		Columns: []uinodev1.DataColumn{{Key: "name", Label: "Name"}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	mustContain(t, h, "Aucun résultat")
 }
 
 // --- ActionRef resolution seam (design §9) -------------------------------

@@ -105,7 +105,7 @@
     }
     if (out) {
       const fmt = out.getAttribute('data-hui-range-slider-output') || '';
-      out.textContent = fmt.replace('{{low}}', () => low.value).replace('{{high}}', () => high.value);
+      out.textContent = fmt.replaceAll('{{low}}', () => low.value).replaceAll('{{high}}', () => high.value);
     }
   }
 

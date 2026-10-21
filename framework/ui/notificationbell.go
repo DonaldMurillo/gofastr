@@ -115,10 +115,6 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	emptyText := cfg.EmptyText
-	if emptyText == "" {
-		emptyText = i18nui.NotificationEmpty.Text(ctx)
-	}
 
 	parts := headless.Parts{}
 	if cfg.Class != "" {
@@ -148,14 +144,21 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 		Strings: StringsFor(ctx),
 	}, notificationBellClasses))
 
-	// Popover slot.
-	slot := &notificationBellSlot{
-		name:       cfg.Name,
-		label:      cfg.Label,
-		items:      cfg.Items,
-		emptyText:  emptyText,
-		signalList: cfg.SignalList,
-	}
+	// Popover slot. The popover is mounted once, so the default empty
+	// text is said in each request's locale, not the mount's.
+	slot := requestSlot{build: func(ctx context.Context) component.Component {
+		emptyText := cfg.EmptyText
+		if emptyText == "" {
+			emptyText = i18nui.NotificationEmpty.Text(ctx)
+		}
+		return &notificationBellSlot{
+			name:       cfg.Name,
+			label:      cfg.Label,
+			items:      cfg.Items,
+			emptyText:  emptyText,
+			signalList: cfg.SignalList,
+		}
+	}}
 	titleID := cfg.Name + "-title"
 	pb := preset.Popover(cfg.Name).
 		Hidden().

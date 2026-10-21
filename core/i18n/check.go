@@ -122,10 +122,10 @@ func CheckCatalog(c *MapCatalog, locale string, opts ...CheckOption) []CatalogIs
 func isLetter(r rune) bool { return r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' }
 
 // placeholdersAgree reports whether m fills exactly the English's
-// placeholders. A plain translation names the same set; a plural one
-// may leave the count out of a form ("one" reads "a result"), so each
-// form names only placeholders the English has and the forms together
-// name them all.
+// placeholders. A plain translation names the same set. A plural one may
+// leave the count out of a form ("one" reads "a result"), but every form
+// keeps the English's other placeholders and names nothing it lacks, and
+// the forms together name them all.
 func placeholdersAgree(english string, m Message) bool {
 	want := Placeholders(english)
 	if len(m.Plural) == 0 {
@@ -133,19 +133,33 @@ func placeholdersAgree(english string, m Message) bool {
 	}
 	var union []string
 	for _, form := range m.Plural {
-		for _, p := range Placeholders(form) {
+		got := Placeholders(form)
+		for _, p := range got {
 			if !slices.Contains(want, p) {
 				return false
 			}
-			union = append(union, p)
 		}
+		for _, p := range want {
+			if !isCountParam(p) && !slices.Contains(got, p) {
+				return false
+			}
+		}
+		union = append(union, got...)
 	}
 	slices.Sort(union)
 	return slices.Equal(want, slices.Compact(union))
 }
 
+// isCountParam reports whether name is a param plural selection reads
+// its count from (see extractCount).
+func isCountParam(name string) bool {
+	return slices.Contains(countParams, name)
+}
+
 // Placeholders returns the distinct {{name}} placeholder names in s,
-// sorted: the set a translation of s must keep.
+// sorted: the set a translation of s must keep. A name is taken as
+// written, spaces included: the runtime's say() and the headless fills
+// match {{name}} exactly, so "{{ name }}" is a different placeholder.
 func Placeholders(s string) []string {
 	var out []string
 	for {
@@ -157,7 +171,7 @@ func Placeholders(s string) []string {
 		if end < 0 {
 			break
 		}
-		out = append(out, strings.TrimSpace(s[open+2:open+2+end]))
+		out = append(out, s[open+2:open+2+end])
 		s = s[open+2+end+2:]
 	}
 	slices.Sort(out)

@@ -75,9 +75,9 @@ func (b *Battery) mount() {
 	// on admin pages.
 	mounter := adminMounter{r: r, under: b.underPrefix}
 	ui.MountSidebarFunc(mounter, b.sidebar)
-	_, palette := ui.CommandPalette(b.paletteConfig(context.Background()))
+	palette := ui.CommandPaletteFunc(b.paletteConfig)
 	widget.MountBuilder(r, palette.PagesMatch(b.underPrefix))
-	_, keys := ui.ShortcutSheet(b.keysConfig(context.Background()))
+	keys := ui.ShortcutSheetFunc(b.keysConfig)
 	widget.MountBuilder(r, keys.PagesMatch(b.underPrefix))
 }
 

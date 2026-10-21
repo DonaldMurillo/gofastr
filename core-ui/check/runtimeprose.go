@@ -7,7 +7,7 @@ import (
 )
 
 // LintRuntimeProse fires when English prose written in a JS string
-// literal reaches a reader: a toast (NS._toastOrFallback,
+// literal reaches a reader: a toast (NS.toast, NS._toastOrFallback,
 // NS._fallbackToast, _showNavToast), a text node (createTextNode), an
 // element's textContent, innerText, title, placeholder, ariaLabel or
 // alt, or a label attribute set through setAttribute (aria-label,
@@ -63,7 +63,7 @@ const runtimeProseMarker = "gofastr:allow(runtimeprose)"
 // Sinks, matched on the blank view so a sink spelled in a comment or a
 // string never counts.
 var (
-	reToastSink = regexp.MustCompile(`\b(?:_toastOrFallback|_fallbackToast|_showNavToast|createTextNode)\s*\(`)
+	reToastSink = regexp.MustCompile(`\b(?:toast|_toastOrFallback|_fallbackToast|_showNavToast|createTextNode)\s*\(`)
 	reTextSink  = regexp.MustCompile(`\.(?:textContent|innerText|title|placeholder|ariaLabel|alt)\s*=[^=]`)
 	reAttrSink  = regexp.MustCompile(`\bsetAttribute\s*\(`)
 	reLabelAttr = regexp.MustCompile(`^\s*['"](?:aria-label|aria-description|title|placeholder|alt)['"]\s*,`)

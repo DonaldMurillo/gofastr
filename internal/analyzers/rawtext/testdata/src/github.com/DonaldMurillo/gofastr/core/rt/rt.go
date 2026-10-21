@@ -114,6 +114,11 @@ func problemDoc(w http.ResponseWriter) {
 		Status: http.StatusNotFound,
 		Detail: "no_route",
 	})
+	// The positional spelling writes the same body.
+	_ = json.NewEncoder(w).Encode(struct {
+		Title  string `json:"title"`
+		Status int    `json:"status"`
+	}{"Not Found", http.StatusNotFound}) // want `a body's title is English prose`
 	_ = json.NewEncoder(w).Encode(struct {
 		Message string `json:"message"`
 	}{Message: "method not found"})
@@ -129,6 +134,7 @@ func page(ctx context.Context, method string) {
 	_ = map[string]string{"aria-label": "Close dialog"}     // want `aria-label "Close dialog" is English written`
 	_ = ui.ButtonConfig{Label: "Save changes"}              // want `Label: "Save changes" is English written`
 	_ = ui.ButtonConfig{SubmitLabel: "Continue"}            // want `SubmitLabel: "Continue" is English written`
+	_ = ui.ButtonConfig{"Save changes", "", "fui-btn"}      // want `Label: "Save changes" is English written`
 	// Tokens, classes, keys and symbols are not words: quiet.
 	_ = render.Text("GET, POST")
 	_ = render.Text("fui-card")

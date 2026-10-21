@@ -183,7 +183,7 @@
     if (status) {
       const fmt = lb.getAttribute('data-hui-combobox-count');
       status.textContent = visible.length
-        ? (fmt ? fmt.replace('{{n}}', function () { return String(visible.length); }) : '')
+        ? (fmt ? fmt.replaceAll('{{n}}', function () { return String(visible.length); }) : '')
         : (status.getAttribute('data-hui-combobox-no-results') || '');
     }
   }

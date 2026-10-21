@@ -754,3 +754,11 @@ notes:
         - symbol: gofastr/framework/uihost/uinoderender.New
           type: '^func\(resolve uinoderender\.ActionResolver\) \*uinoderender\.Renderer$'
     guidance: "Pass the request context: ui.ShortcutList(r.Context(), items), uinoderender.New(r.Context(), resolve). The context picks the locale the words are written in."
+  - change: "ui.LightboxConfig.Ctx and ui.ConfirmActionConfig.Ctx are removed; the mounted widget says its words in each request's locale"
+    breaking: true
+    hits: edit
+    find:
+      fields:
+        - field: gofastr/framework/ui.LightboxConfig.Ctx
+        - field: gofastr/framework/ui.ConfirmActionConfig.Ctx
+    guidance: "Delete the Ctx line. The widget is mounted once, and its dialog renders with the context of the request that shows it, so the labels already follow the reader."

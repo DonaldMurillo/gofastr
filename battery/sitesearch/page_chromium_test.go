@@ -214,12 +214,12 @@ func TestPageShowsMoreOnExport(t *testing.T) {
 	}
 
 	// The button the reader pressed is gone: focus moves to the first
-	// result it revealed. A translation naming {q} or {n} twice gets
+	// result it revealed. A translation naming {{q}} or {{n}} twice gets
 	// both filled.
 	var focused bool
 	if err := chromedp.Run(ctx,
 		chromedp.Evaluate(`document.activeElement === document.querySelectorAll('[data-search-page-list] > li')[1].querySelector('a')`, &focused),
-		chromedp.Evaluate(`document.querySelector('[data-search-page]').setAttribute('data-search-page-count', '{n} ({n}) for {q}, {q}')`, nil),
+		chromedp.Evaluate(`document.querySelector('[data-search-page]').setAttribute('data-search-page-count', '{{n}} ({{n}}) for {{q}}, {{q}}')`, nil),
 		chromedp.Click(`[data-search-page-pager] button`, chromedp.ByQuery),
 		chromedp.Poll(`document.querySelectorAll('[data-search-page-list] > li').length > 2`, nil, chromedp.WithPollingTimeout(5*time.Second)),
 		chromedp.Evaluate(pageStatus, &status),

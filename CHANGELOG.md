@@ -83,8 +83,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **`i18n.CheckCatalog`.** Compares a locale's catalog with every phrase
   the program defines and reports unknown keys, placeholder sets that
   differ from the English, and phrases missing under a `Require`d
-  prefix. `i18n.Skip` leaves out the app's own data keys (`entity.`,
+  prefix. Each plural form is checked on its own, and may leave out only
+  the count. `i18n.Skip` leaves out the app's own data keys (`entity.`,
   `nav.`). See `gofastr docs i18n` → "Checking a catalog".
+- **Mounted widgets speak each reader's language.** A widget mounted
+  once at startup renders its body per request, and the framework's
+  words in it follow that request's locale: `ui.ConfirmAction`'s
+  buttons, `ui.Lightbox`'s controls, `ui.NotificationBell`'s empty
+  text, `ui.ShortcutSheet`'s title and `ui.CommandPalette`'s
+  placeholder and key hints. `ui.ShortcutSheetFunc` and
+  `ui.CommandPaletteFunc` build the whole config per request, so the
+  rows and commands translate too; the admin shell mounts both.
 
 ### Changed
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,
@@ -128,7 +137,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and the `ui.validation.*` keys (`KeyValidationRequired` through
   `KeyValidationUnique`) are gone: validation messages are the
   `validation.*` phrases, and a catalog translates them under that key.
-  `KeyValidationSummaryTitle` and `KeyValidationProblem` stay. The
+  The summary's `ui.validationSummary.title` and
+  `ui.validationSummary.problem` keys stay, as the
+  `i18nui.ValidationSummaryTitle` and `i18nui.ValidationProblem`
+  phrases. The
   entity bulk, saved-view and override refusal keys
   (`ui.entity.bulkNone`, `ui.entity.overrideDenied`, ...) move to
   `entityui.*` phrases (`entityui.bulk_none`, `entityui.override_denied`)
@@ -153,7 +165,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   gone; an empty `Messages` field uses the `localentity.*` phrase.
   `entityui.AccessDeniedTitle` is an `i18n.Phrase`, not a string
   constant. `ui.ShortcutList(ctx, items)` and `uinoderender.New(ctx,
-  resolve)` take a context.
+  resolve)` take a context. `ui.LightboxConfig.Ctx` and
+  `ui.ConfirmActionConfig.Ctx` are gone: the mounted widget takes the
+  locale from each request.
 
 ### Fixed
 - **`DBQueue` index names on long table names.** Postgres cuts

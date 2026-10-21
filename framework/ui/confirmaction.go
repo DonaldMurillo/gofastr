@@ -55,10 +55,10 @@ type ConfirmActionConfig struct {
 	// gives the user the information they need to confirm safely.
 	Body string
 
-	// ConfirmLabel defaults to "Confirm".
+	// ConfirmLabel defaults to "Confirm" in the reader's locale.
 	ConfirmLabel string
 
-	// CancelLabel defaults to "Cancel".
+	// CancelLabel defaults to "Cancel" in the reader's locale.
 	CancelLabel string
 
 	// RPCPath is the endpoint the Confirm button posts to. Required.
@@ -91,9 +91,6 @@ type ConfirmActionConfig struct {
 	// Enter must not fire the action) to Confirm. Set to true for
 	// non-destructive confirmations ("Apply changes?", "Continue?").
 	AutofocusConfirm bool
-	// Ctx carries the per-request context used to resolve the
-	// Confirm/Cancel button labels. When nil, English fallbacks apply.
-	Ctx context.Context
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers, ARIA overrides) onto the dialog's own root
@@ -126,28 +123,16 @@ func ConfirmAction(cfg ConfirmActionConfig) (render.HTML, *widget.Builder) {
 	if cfg.SuccessSignal != "" && !validSuccessSignalName(cfg.SuccessSignal) {
 		panic("ui: ConfirmAction SuccessSignal must match ^[A-Za-z0-9_-]+$, got " + cfg.SuccessSignal)
 	}
-	ctx := cfg.Ctx
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	variant := cfg.TriggerVariant
 	if variant == "" {
 		variant = "danger"
-	}
-	confirm := cfg.ConfirmLabel
-	if confirm == "" {
-		confirm = i18nui.DialogConfirm.Text(ctx)
-	}
-	cancel := cfg.CancelLabel
-	if cancel == "" {
-		cancel = i18nui.DialogCancel.Text(ctx)
 	}
 	method := cfg.RPCMethod
 	if method == "" {
 		method = "POST"
 	}
 	trigger := buildConfirmTrigger(cfg.Name, cfg.TriggerLabel, variant)
-	modal := buildConfirmModal(cfg.Name, cfg.Title, cfg.Body, confirm, cancel, method, cfg.RPCPath, cfg.SuccessSignal, cfg.AutofocusConfirm, html.SafeExtraAttrs(cfg.ExtraAttrs))
+	modal := buildConfirmModal(cfg.Name, cfg.Title, cfg.Body, cfg.ConfirmLabel, cfg.CancelLabel, method, cfg.RPCPath, cfg.SuccessSignal, cfg.AutofocusConfirm, html.SafeExtraAttrs(cfg.ExtraAttrs))
 	return trigger, modal
 }
 
@@ -197,19 +182,30 @@ func validSuccessSignalName(name string) bool {
 func buildConfirmModal(name, title, body, confirmLabel, cancelLabel, method, rpcPath, successSignal string, autofocusConfirm bool, extraAttrs html.Attrs) *widget.Builder {
 	titleID := name + "-title"
 	bodyID := name + "-body"
-	slot := &confirmDialogSlot{
-		titleID:          titleID,
-		bodyID:           bodyID,
-		title:            title,
-		body:             body,
-		confirmLabel:     confirmLabel,
-		cancelLabel:      cancelLabel,
-		rpcMethod:        method,
-		rpcPath:          rpcPath,
-		successSignal:    successSignal,
-		autofocusConfirm: autofocusConfirm,
-		extraAttrs:       extraAttrs,
-	}
+	// An empty label is the dialog's own word, said in each request's
+	// locale: the modal is mounted once, with no reader.
+	slot := requestSlot{build: func(ctx context.Context) component.Component {
+		confirm, cancel := confirmLabel, cancelLabel
+		if confirm == "" {
+			confirm = i18nui.DialogConfirm.Text(ctx)
+		}
+		if cancel == "" {
+			cancel = i18nui.DialogCancel.Text(ctx)
+		}
+		return &confirmDialogSlot{
+			titleID:          titleID,
+			bodyID:           bodyID,
+			title:            title,
+			body:             body,
+			confirmLabel:     confirm,
+			cancelLabel:      cancel,
+			rpcMethod:        method,
+			rpcPath:          rpcPath,
+			successSignal:    successSignal,
+			autofocusConfirm: autofocusConfirm,
+			extraAttrs:       extraAttrs,
+		}
+	}}
 	return preset.Modal(name).
 		Hidden().
 		Role("alertdialog").

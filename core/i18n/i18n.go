@@ -704,10 +704,13 @@ func mergeParams(in []map[string]any) map[string]any {
 	return out
 }
 
+// countParams are the params extractCount reads, in order.
+var countParams = []string{"count", "n", "Count", "N"}
+
 // extractCount looks for a "count" or "n" key holding an integer-ish
 // value. Returns (n, true) on success.
 func extractCount(p map[string]any) (int, bool) {
-	for _, k := range []string{"count", "n", "Count", "N"} {
+	for _, k := range countParams {
 		if v, ok := p[k]; ok {
 			switch x := v.(type) {
 			case int:

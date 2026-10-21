@@ -49,6 +49,31 @@ func TestCheckCatalogPluralMustCoverEnglish(t *testing.T) {
 	}
 }
 
+// A form may leave out the count but not another value: "one" with no
+// {{q}} renders n=1, q="tax" with the query lost.
+func TestCheckCatalogPluralFormKeepsParams(t *testing.T) {
+	c := NewMapCatalog()
+	c.Set("fr", "checktest.count", Message{Plural: map[string]string{
+		"one":   "Un résultat",
+		"other": "{{n}} résultats pour {{q}}",
+	}})
+	got := CheckCatalog(c, "fr")
+	if len(got) != 1 || got[0].Problem != ProblemPlaceholders {
+		t.Fatalf("a form dropping {{q}} = %+v, want one placeholder issue", got)
+	}
+}
+
+// say() and the headless fills match {{name}} exactly, so a spaced
+// spelling is a different placeholder.
+func TestCheckCatalogSpacedPlaceholder(t *testing.T) {
+	c := NewMapCatalog()
+	c.Set("fr", "checktest.greet", Message{Text: "Bonjour, {{ name }}"})
+	got := CheckCatalog(c, "fr")
+	if len(got) != 1 || got[0].Problem != ProblemPlaceholders {
+		t.Fatalf("{{ name }} = %+v, want one placeholder issue", got)
+	}
+}
+
 func TestCheckCatalogCleanAndNil(t *testing.T) {
 	c := NewMapCatalog()
 	c.Set("es", "checktest.greet", Message{Text: "Hola, {{name}}"})
@@ -61,7 +86,7 @@ func TestCheckCatalogCleanAndNil(t *testing.T) {
 }
 
 func TestPlaceholdersSortedDistinct(t *testing.T) {
-	got := Placeholders("{{b}} and {{ a }} and {{b}} and {single} and {{open")
+	got := Placeholders("{{b}} and {{a}} and {{b}} and {single} and {{open")
 	if !slices.Equal(got, []string{"a", "b"}) {
 		t.Fatalf("Placeholders = %q", got)
 	}
