@@ -150,19 +150,19 @@ func (t *Translator) render(tag string, m Message, params map[string]any) string
 			// No count supplied. Pick the "other" variant if present;
 			// otherwise fall through to interpolate whatever Text was.
 			if v, has := m.Plural["other"]; has {
-				return interpolate(v, params)
+				return Fill(v, params)
 			}
-			return interpolate(m.Text, params)
+			return Fill(m.Text, params)
 		}
 		cat := t.pluralCategory(tag, n)
 		if v, has := m.Plural[cat]; has {
-			return interpolate(v, params)
+			return Fill(v, params)
 		}
 		if v, has := m.Plural["other"]; has {
-			return interpolate(v, params)
+			return Fill(v, params)
 		}
 	}
-	return interpolate(m.Text, params)
+	return Fill(m.Text, params)
 }
 
 func (t *Translator) pluralCategory(tag string, n int) string {
@@ -744,10 +744,13 @@ func extractCount(p map[string]any) (int, bool) {
 	return 0, false
 }
 
-// interpolate replaces {{name}} tokens with stringified params. Names
-// are looked up case-sensitively. Unknown placeholders are left as-is,
-// easier to spot during development than silently empty.
-func interpolate(s string, params map[string]any) string {
+// Fill replaces s's {{name}} placeholders with stringified params: the
+// substitution [Phrase.Text] applies, for a template that arrives as a
+// plain string (a headless.Strings field, a catalog value read by
+// hand). Names are looked up case-sensitively. A value is written as
+// given and never rescanned. An unknown placeholder is left as written,
+// easier to spot than an empty gap.
+func Fill(s string, params map[string]any) string {
 	if s == "" || len(params) == 0 || !strings.Contains(s, "{{") {
 		return s
 	}

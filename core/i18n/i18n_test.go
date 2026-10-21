@@ -56,7 +56,7 @@ func TestTranslator_MissingKeyReturnsKey(t *testing.T) {
 // ----- placeholder interpolation -------------------------------------------
 
 func TestInterpolate_LeavesUnknownPlaceholdersIntact(t *testing.T) {
-	got := interpolate("Hello, {{name}}! You are {{role}}.", map[string]any{"name": "Bob"})
+	got := Fill("Hello, {{name}}! You are {{role}}.", map[string]any{"name": "Bob"})
 	if !strings.Contains(got, "Bob") {
 		t.Fatalf("known placeholder unfilled: %q", got)
 	}
@@ -66,7 +66,7 @@ func TestInterpolate_LeavesUnknownPlaceholdersIntact(t *testing.T) {
 }
 
 func TestInterpolate_PreservesUnbalancedBraces(t *testing.T) {
-	got := interpolate("Look at this {{unclosed", map[string]any{"x": 1})
+	got := Fill("Look at this {{unclosed", map[string]any{"x": 1})
 	if got != "Look at this {{unclosed" {
 		t.Fatalf("unbalanced braces mangled: %q", got)
 	}
