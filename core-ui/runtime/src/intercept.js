@@ -92,7 +92,11 @@
     return segs.length === s.length;
   }
 
-  const routeFor = (path) => routes().find((r) => r.path && matchRoute(r.path, path));
+  // Routes register unprefixed: /es/pricing matches /pricing.
+  const routeFor = (path) => {
+    const p = NS._unlocalize?.(path) ?? path;
+    return routes().find((r) => r.path && matchRoute(r.path, p));
+  };
   const pathOf = (u) => u.split('?')[0].split('#')[0];
   const top = () => layers[layers.length - 1];
   // Does the route's intercept open over the origin route o? Its from

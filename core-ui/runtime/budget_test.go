@@ -598,6 +598,14 @@ const (
 	//        failed (500)" through say() instead of a literal "Error: 500"
 	//        (TestNavSwapsRuntimeStrings). Measured 14371 → 14374.
 	//        (l1: 13)
+	//   +275 locale prefixes (2026-10-21): /es/pricing is the /pricing
+	//        screen in Spanish (framework.WithLocalePrefixes). The kernel
+	//        reads #gofastr-locales and splits the prefix off; the plain
+	//        navigator looks routes up and evicts cache keys without it,
+	//        and a link that changes the locale loads a document; the
+	//        server action and widget discovery fetches carry the page's
+	//        prefix. Every one of them runs before a demand module could
+	//        load, so no carve exists. Measured 14374 → 14649. (l1: 370)
 	//
 	// HALT NOTE: the bundle measures 13391 at level 6 — 291 over the
 	// 13100 target (the Back/Forward leave capture every page runs is
@@ -610,7 +618,7 @@ const (
 	// spelling) plus the fixes and boot rows named with their tests.
 	// The line is the measurement plus clearance (moved DOWN from
 	// 13527, never up).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 8
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 275 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -999,7 +1007,13 @@ const (
 	// that fits. The same day, the failed-RPC signal text through say()
 	// measures 14374/16636; it runs on every page with a text signal
 	// bound to an RPC, so the line moves to 16636.
-	coreCongestionWindowGZ = 16636
+	// 2026-10-21, locale prefixes: route lookups and cache eviction read
+	// the path without its /<tag>/ prefix, a locale change loads a
+	// document, and the action and widget discovery fetches carry the
+	// prefix. Core measures 14649/17006. The navigator runs these on
+	// every click, before any module could load, so the line moves to
+	// 17006, the smallest that fits.
+	coreCongestionWindowGZ = 17006
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1052,6 +1066,7 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"runtime strings follow the destination on soft nav (data-cui-strings)":    49,  // (l1: -9)
 		"Back keeps the page's runtime strings (live carrier, full-fetch cache)":   11,  // (l1: 35)
 		"failed-RPC signal text through say()":                                     3,   // (l1: 13)
+		"locale prefixes: unprefixed route lookups, prefixed fetches":              275, // (l1: 370)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1215,7 +1230,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// dropping the live one's dedup entry (TestStaleNavKeepsDedup).
 		// 7849 measured (7847 + 2) after the failed-navigation toast
 		// speaks through say() (2026-10-21, runtime strings).
-		"envelope": 7849,
+		// 7876 measured (7874 + 2) after its route lookup reads the path
+		// without the locale prefix (2026-10-21, locale prefixes).
+		"envelope": 7876,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
@@ -1223,7 +1240,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// hand-off. Pinned at the measured size plus 2 clearance.
 		// 3099 measured (3097 + 2) after its two toasts speak through
 		// say() (2026-10-21, runtime strings).
-		"widgets": 3099,
+		// 3112 measured (3110 + 2) after its chrome and state fetches
+		// carry the page's locale prefix (2026-10-21, locale prefixes).
+		"widgets": 3112,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1255,7 +1274,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// plus 2 clearance.
 		// 3445 measured (3443 + 2) after the panel-limit toast speaks
 		// through say() with its {{n}} (2026-10-21, runtime strings).
-		"intercept": 3445,
+		// 3468 measured (3466 + 2) after its route lookup reads the path
+		// without the locale prefix (2026-10-21, locale prefixes).
+		"intercept": 3468,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
@@ -1323,7 +1344,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 'Done' through say() too (2026-10-21): the optional-call toast
 		// spelling hid it from the runtimeprose lint. Hoisting the
 		// repeated network-error say() into a local measured 3343.
-		"rpc": 3332,
+		// 3346 measured (3344 + 2) after its form and RPC fetches carry
+		// the page's locale prefix (2026-10-21, locale prefixes).
+		"rpc": 3346,
 	}
 	const coreOverride = 0
 

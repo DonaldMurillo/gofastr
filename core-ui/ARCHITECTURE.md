@@ -839,6 +839,45 @@ call to a registered phrase with the same English. A client-side
 navigation keeps the block it booted with, so a reader who switches
 locale mid-session sees the old runtime words until the next full load.
 
+### Locale prefixes (`#gofastr-locales`, `__gofastr_locales`)
+
+An app built with `framework.WithLocalePrefixes` serves `/es/pricing` as
+the `/pricing` screen in Spanish. The router strips the prefix before
+matching, so the server's route table, the manifest
+(`window.__gofastr_routes`) and the screen cache all hold unprefixed
+paths. The host writes the locale set into an inert
+`<script type="application/json" id="gofastr-locales">{"default":"en","prefixes":["es"],"base":""}</script>`
+on full pages (`base` is a static export's mount path, which sits in
+front of the prefix); the kernel reads it once into
+`window.__gofastr_locales`. The id is reserved: `registry.DataBlock`
+refuses it.
+
+Three kernel helpers, exported on `__gofastr` for modules, carry the
+rules:
+
+- `_unlocalize(path)` strips a prefix. Route lookups (`routeEntry`, the
+  preload and intercept route matchers, the envelope's route info) and
+  cache invalidation compare unprefixed paths, so a `/es/` link resolves
+  to the same route and the same cache entry family as its English
+  twin.
+- `_localeOf(path)` names a path's locale (`''` for the default). A
+  navigation whose destination locale differs from the current page's
+  crosses a document boundary (`crossesDocBoundary`): the whole
+  document loads, so `<html lang>`, the shell and the runtime strings
+  change with it.
+- `_lp(url)` puts the current page's prefix on a root-relative URL that
+  has none. Every runtime fetch goes through it: the action endpoint,
+  widget discovery and chrome, poll and RPC URLs, the action module and
+  eager preloads. The server then answers in the reader's locale, and
+  the `page` the action endpoint receives is the unprefixed path.
+
+The server side of the same contract rewrites root-relative URLs in a
+prefixed HTML response (`core-ui/urlprefix`: `href`, form actions and
+the URL-valued `data-cui-*` attributes listed in `urlprefix.URLAttrs`)
+and the `Location` / `X-Gofastr-Location` headers. Markup never spells a
+prefix itself. A new URL-valued `data-cui-*` attribute joins
+`urlprefix.URLAttrs`, or `TestURLAttrsAllCovered` fails.
+
 ### First-load order
 
 A live page paints from its document and stylesheets alone. The one

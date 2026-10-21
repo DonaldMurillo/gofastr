@@ -34,7 +34,11 @@
     if (pattern.includes('*') ? parts.length < pp.length : pp.length !== parts.length) return false;
     return pp.every((seg, i) => seg.startsWith(':') || seg === parts[i]);
   };
-  const routeFor = (path) => routes().find((r) => r.path && matchRoute(r.path, path));
+  // Routes register unprefixed: /es/pricing matches /pricing.
+  const routeFor = (path) => {
+    const p = NS._unlocalize?.(path) ?? path;
+    return routes().find((r) => r.path && matchRoute(r.path, p));
+  };
 
   const MAX = 4;
   const store = new Map(); // path → { html, title, layer, at }
@@ -63,8 +67,11 @@
     for (const s of sels) {
       if (s === '*') { store.clear(); return; }
       if (!s || s[0] !== '/') continue;
-      if (s.includes('?')) { store.delete(s); continue; }
-      for (const k of store.keys()) if (k === s || k.startsWith(s + '?')) store.delete(k);
+      // Keys keep the locale prefix; selectors never carry one.
+      for (const k of store.keys()) {
+        const u = NS._unlocalize?.(k) ?? k;
+        if (s.includes('?') ? u === s : u === s || u.startsWith(s + '?')) store.delete(k);
+      }
     }
   };
 
@@ -185,7 +192,7 @@
       for (const r of routes()) {
         if (r.preload !== 'eager' || r.path.includes(':')) continue;
         if (n++ >= 3) break;
-        prefetch(r.path);
+        prefetch(NS._lp?.(r.path) ?? r.path);
       }
     });
   };

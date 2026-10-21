@@ -80,7 +80,8 @@
   // layouts" (which read as cross-chain and forced a shell rebuild on
   // every dynamic-route nav).
   const routeEntry = (path) => {
-    const clean = path.split('?')[0].split('#')[0];
+    // Routes register unprefixed: /es/pricing looks up /pricing.
+    const clean = _unlocalize(path.split('?')[0].split('#')[0]);
     let r = routes.get(clean);
     // A screen group registers its root as "/components/" but links may
     // write "/components", the server redirects between them, so the
@@ -134,6 +135,9 @@
   // (the rail rejects control characters), so unlike a comma it cannot
   // make two different sets read as one string.
   const crossesDocBoundary = (destPath) => {
+    // Another locale is another document: its lang, its strings table
+    // and every server-rendered word differ, not just the screen.
+    if (_localeOf(destPath) !== _localeOf(location.pathname)) return true;
     const de = routeEntry(destPath);
     const dest = (de && de.docScripts) || [];
     const srcs = [];
@@ -1041,10 +1045,14 @@
       for (const s of sels) {
         if (s === '*') { screenCache.clear(); return; }
         if (!s || s[0] !== '/') continue;
-        if (s.includes('?')) { screenCache.delete(s); continue; }
-        // Queryless selector: evict the pathname and all its query
-        // variants (a stale list is stale on every page/filter of it).
-        for (const k of screenCache.keys()) if (k === s || k.startsWith(s + '?')) screenCache.delete(k);
+        // A selector with "?" is exact; a queryless one evicts the
+        // pathname and all its query variants (a stale list is stale on
+        // every page/filter of it). Cache keys keep the locale prefix;
+        // selectors never carry one.
+        for (const k of screenCache.keys()) {
+          const u = _unlocalize(k);
+          if (s.includes('?') ? u === s : u === s || u.startsWith(s + '?')) screenCache.delete(k);
+        }
       }
     },
 

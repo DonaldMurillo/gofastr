@@ -567,7 +567,9 @@
   // the params; names the pattern did not capture stay literal.
   const _segName = (seg) => seg.slice(1).split(':')[0].replace(/\*$/, '');
   const routeInfo = (path) => {
-    const clean = path.split('?')[0].split('#')[0];
+    // Routes register unprefixed: /es/pricing resolves as /pricing.
+    const bare = path.split('?')[0].split('#')[0];
+    const clean = NS._unlocalize?.(bare) ?? bare;
     const list = window.__gofastr_routes || [];
     for (const e of list) {
       const pattern = (e && (e.path || e.Path)) || '';

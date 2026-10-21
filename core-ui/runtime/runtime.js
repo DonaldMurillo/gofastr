@@ -158,6 +158,34 @@
     const c = _readInlineJSON('gofastr-catalog');
     if (c) window.__gofastr_catalog = c;
   }
+  if (!window.__gofastr_locales) {
+    const l = _readInlineJSON('gofastr-locales');
+    if (l) window.__gofastr_locales = l;
+  }
+
+  // Locale prefixes (framework.WithLocalePrefixes): /es/pricing is the
+  // /pricing screen in Spanish. Route tables and cache keys hold the
+  // unprefixed path, so every lookup strips the prefix first; every
+  // runtime fetch of a /__gofastr endpoint or the page itself gains the
+  // current page's prefix (_lp) so the server answers in its locale. A
+  // link that changes the locale crosses a document boundary (nav.js).
+  // _splitLocale returns [tag, path without the prefix]; tag is '' for
+  // the default locale or an app without prefixes. base is the static
+  // export's BasePath, which sits in front of the prefix.
+  const _locBase = () => window.__gofastr_locales?.base || '';
+  const _splitLocale = (p) => {
+    p = String(p ?? '');
+    const L = window.__gofastr_locales, b = _locBase();
+    const m = L?.prefixes?.length && p.startsWith(b + '/') && /^\/([^/?#]+)(.*)$/.exec(p.slice(b.length));
+    return m && L.prefixes.includes(m[1]) ? [m[1], b + (m[2][0] === '/' ? m[2] : '/' + m[2])] : ['', p];
+  };
+  const _unlocalize = (p) => _splitLocale(p)[1];
+  const _localeOf = (p) => _splitLocale(p)[0];
+  const _lp = (u) => {
+    u = String(u ?? '');
+    const t = _localeOf(location.pathname), b = _locBase();
+    return t && u[1] !== '/' && u.startsWith(b + '/') && !_localeOf(u) ? b + '/' + t + u.slice(b.length) : u;
+  };
 
   // Signal store seed: server-provided initial values for the signal
   // bus (core-ui/store). Stashed now; applied to _signals right after
@@ -229,6 +257,9 @@
         reach it via NS.doc for every persistent <html>/<body> write. */
     doc,
     say,
+    _lp,
+    _unlocalize,
+    _localeOf,
 
     /* DOM attributes name fetch targets throughout the runtime. Keep these
        guards in kernel so navigation cannot race the RPC demand module that
@@ -407,11 +438,11 @@
     async _serverActionFor(componentId, action, params = {}) {
       const sessionCookie = document.cookie.match(/gofastr-session=([^;]+)/);
       const session = sessionCookie ? sessionCookie[1] : '';
-      const resp = await fetch('/__gofastr/action', {
+      const resp = await fetch(_lp('/__gofastr/action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // page: the owning screen's Policy reads this page's route params.
-        body: JSON.stringify({ action, params, session, componentId, page: location.pathname }),
+        body: JSON.stringify({ action, params, session, componentId, page: _unlocalize(location.pathname) }),
       });
       if (resp.ok) {
         const result = await resp.json();
@@ -994,7 +1025,8 @@
   // layouts" (which read as cross-chain and forced a shell rebuild on
   // every dynamic-route nav).
   const routeEntry = (path) => {
-    const clean = path.split('?')[0].split('#')[0];
+    // Routes register unprefixed: /es/pricing looks up /pricing.
+    const clean = _unlocalize(path.split('?')[0].split('#')[0]);
     let r = routes.get(clean);
     // A screen group registers its root as "/components/" but links may
     // write "/components", the server redirects between them, so the
@@ -1048,6 +1080,9 @@
   // (the rail rejects control characters), so unlike a comma it cannot
   // make two different sets read as one string.
   const crossesDocBoundary = (destPath) => {
+    // Another locale is another document: its lang, its strings table
+    // and every server-rendered word differ, not just the screen.
+    if (_localeOf(destPath) !== _localeOf(location.pathname)) return true;
     const de = routeEntry(destPath);
     const dest = (de && de.docScripts) || [];
     const srcs = [];
@@ -1955,10 +1990,14 @@
       for (const s of sels) {
         if (s === '*') { screenCache.clear(); return; }
         if (!s || s[0] !== '/') continue;
-        if (s.includes('?')) { screenCache.delete(s); continue; }
-        // Queryless selector: evict the pathname and all its query
-        // variants (a stale list is stale on every page/filter of it).
-        for (const k of screenCache.keys()) if (k === s || k.startsWith(s + '?')) screenCache.delete(k);
+        // A selector with "?" is exact; a queryless one evicts the
+        // pathname and all its query variants (a stale list is stale on
+        // every page/filter of it). Cache keys keep the locale prefix;
+        // selectors never carry one.
+        for (const k of screenCache.keys()) {
+          const u = _unlocalize(k);
+          if (s.includes('?') ? u === s : u === s || u.startsWith(s + '?')) screenCache.delete(k);
+        }
       }
     },
 
@@ -2014,7 +2053,7 @@
   // export never composes widgets-boot, the `static` composition omits it
   // and rpc-stub intercepts data-cui-open clicks, so this fetch only ever
   // runs in the live (full) composition.
-  fetch('/__gofastr/widgets?page=' + encodeURIComponent(location.pathname),
+  fetch(_lp('/__gofastr/widgets') + '?page=' + encodeURIComponent(_unlocalize(location.pathname)),
         { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
     .then((r) => (r.ok ? r.json() : null))
     .then(async (list) => {
@@ -2158,7 +2197,7 @@
   // so the URL's modal/drawer query params open the right surface.
   window.addEventListener('gofastr:navigate', (e) => {
     const path = (e && e.detail && e.detail.path) || location.pathname;
-    fetch('/__gofastr/widgets?page=' + encodeURIComponent(path),
+    fetch(_lp('/__gofastr/widgets') + '?page=' + encodeURIComponent(_unlocalize(path)),
           { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
       .then((r) => (r.ok ? r.json() : null))
       .then(async (list) => {
