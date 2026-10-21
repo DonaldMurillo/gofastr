@@ -211,6 +211,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   revenue report, and `locales/es.json` translates all of them; its catalog test fails
   on a `meridian.*` phrase with no Spanish. `rawtext` now covers
   `examples/meridian` as well as the framework.
+- **The language in the URL.** `framework.WithLocalePrefixes()` serves
+  each catalog locale under its own path: `/es/pricing` is the pricing
+  screen in Spanish, the fallback locale keeps the plain paths, and
+  `/en/pricing` answers 308 to `/pricing`. The router strips the prefix
+  before matching, so routes and screens are written once. Links, form
+  actions, island and poll URLs and redirects in a `/es/` response gain
+  the prefix on the way out (`core-ui/urlprefix`); the runtime keeps
+  navigation inside a locale client-side, sends its own requests under
+  the page's prefix, and loads a new document when the locale changes.
+  Pages carry an `hreflang` alternate per locale plus `x-default`, the
+  sitemap lists each page once per locale, robots rules repeat under
+  every prefix, and `gofastr export` writes a tree per locale. A
+  language switcher links with `i18n.LocalePath`. Boot refuses it
+  without `WithI18n`, beside `WithLocaleResolver`, and with a route under
+  a locale segment. Lower-level pieces: `i18n.PathLocales`,
+  `i18n.WithPathLocale`, `i18n.PathLocale`, `i18n.PathPrefix`,
+  `Router.PreRoute`, `urlprefix.Middleware` and
+  `UIHost.SetPathLocales`. App specs turn it on with
+  `app.locale_prefixes: true`; Meridian does, so its Spanish lives
+  under `/es/`. See `gofastr docs i18n` → "Locale in the URL".
 
 ### Changed
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,

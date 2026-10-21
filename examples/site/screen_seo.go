@@ -31,11 +31,12 @@ func (*SEOScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 // ScreenCanonical → <link rel="canonical">.
 func (*SEOScreen) ScreenCanonical() string { return siteOrigin + "/seo" }
 
-// ScreenHreflangs → one <link rel="alternate" hreflang> per locale.
+// ScreenHreflangs → one <link rel="alternate" hreflang> per entry. An app
+// that routes by locale prefix (framework.WithLocalePrefixes) gets these
+// per locale without declaring them; this site is English only.
 func (*SEOScreen) ScreenHreflangs() []uihost.HreflangLink {
 	return []uihost.HreflangLink{
 		{Lang: "en", URL: siteOrigin + "/seo"},
-		{Lang: "es", URL: siteOrigin + "/es/seo"},
 		{Lang: "x-default", URL: siteOrigin + "/seo"},
 	}
 }
@@ -115,7 +116,7 @@ func (*SEOBundleScreen) ScreenSEO(ctx context.Context) uihost.SEO {
 		Canonical:   siteOrigin + "/seo-bundle",
 		Hreflangs: []uihost.HreflangLink{
 			{Lang: "en", URL: siteOrigin + "/seo-bundle"},
-			{Lang: "es", URL: siteOrigin + "/es/seo-bundle"},
+			{Lang: "x-default", URL: siteOrigin + "/seo-bundle"},
 		},
 		Robots: "index,follow",
 		OG: &uihost.OG{

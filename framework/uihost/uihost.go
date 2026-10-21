@@ -137,6 +137,7 @@ type UIHost struct {
 	pageLoading         component.Component                  // WithPageLoading: rendered once into every full page, shown while a navigation is in flight (replaces the default progress strip)
 	organization        *OrganizationConfig                  // when set, Organization JSON-LD is embedded in every full page head (see organization.go)
 	sitemapConfig       *SitemapConfig                       // when set, /sitemap.xml lists every reachable route
+	pathLocales         *i18n.PathLocales                    // SetPathLocales: the app routes by locale prefix
 	robotsConfig        *RobotsConfig                        // when set, /robots.txt is served from this config
 	agentReady          *agentReadyConfig                    // when set, the agent-discovery surface (/llms.txt, agent card, Link headers, markdown negotiation) is served
 	pwaConfig           *PWAConfig                           // when set, the installable-PWA surface (manifest, service worker, offline screen) is served
@@ -1854,6 +1855,15 @@ func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp comp
 		return ""
 	}
 	resolved := resolveScreenSEOFor(ctx, screen, comp)
+	if len(resolved.Hreflangs) == 0 {
+		resolved.Hreflangs = ds.localeAlternates(pagePath)
+	}
+	resolved.Canonical = ds.localizeURL(ctx, resolved.Canonical)
+	if resolved.OG != nil && resolved.OG.URL != "" {
+		og := *resolved.OG
+		og.URL = ds.localizeURL(ctx, og.URL)
+		resolved.OG = &og
+	}
 
 	var parts []string
 	if resolved.Description != "" {
@@ -2187,6 +2197,10 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	if !bundle {
 		if routes := routesJSONScript(ds); routes != "" {
 			headClose.WriteString(routes)
+			headClose.WriteByte('\n')
+		}
+		if locales := ds.localesJSONScript(); locales != "" {
+			headClose.WriteString(locales)
 			headClose.WriteByte('\n')
 		}
 	}

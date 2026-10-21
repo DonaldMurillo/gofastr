@@ -167,7 +167,7 @@ func TestE2EHreflangAlternates(t *testing.T) {
 	}
 	base := startE2EServer(t)
 	_, _, body := fetchE2E(t, base, "/seo")
-	for _, lang := range []string{"en", "es", "x-default"} {
+	for _, lang := range []string{"en", "x-default"} {
 		if !hasHeadElement(t, body, "link", map[string]string{"rel": "alternate", "hreflang": lang}) {
 			t.Errorf("missing alternate for %q in head\n%s", lang, snippet(body, "hreflang"))
 		}
@@ -253,7 +253,7 @@ func TestE2ESEOBundleEmitsHead(t *testing.T) {
 		{"meta", map[string]string{"name": "description", "content": "Bundle-style SEO declaration in one method."}},
 		{"link", map[string]string{"rel": "canonical", "href": siteOrigin + "/seo-bundle"}},
 		{"link", map[string]string{"rel": "alternate", "hreflang": "en"}},
-		{"link", map[string]string{"rel": "alternate", "hreflang": "es"}},
+		{"link", map[string]string{"rel": "alternate", "hreflang": "x-default"}},
 		{"meta", map[string]string{"name": "robots", "content": "index,follow"}},
 		{"meta", map[string]string{"property": "og:title", "content": "GoFastr SEO bundle"}},
 		{"meta", map[string]string{"property": "og:type", "content": "article"}},
