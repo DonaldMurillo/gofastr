@@ -293,7 +293,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   string` and `app.ScreenDescriber` is `ScreenDescription(ctx
   context.Context) string`. Add the parameter to every screen; `gofastr
   upgrade` names each one. `App.Register` reads them once with a bare
-  context, which gives the English.
+  context, which gives the English. A screen or not-found body still
+  declaring the no-argument method panics at registration: that method
+  compiles, but the page would lose its title without a word.
 - **BREAKING: battery text callbacks take a context.** `BodyTemplate`
   on `auth.PasswordResetConfig`, `auth.EmailVerificationConfig` and
   `auth.MagicLinkConfig` is `func(ctx context.Context, url string)

@@ -48,6 +48,20 @@ type ScreenDescriber interface {
 	ScreenDescription(ctx context.Context) string
 }
 
+// refuseRetiredTitle panics on a component still declaring the
+// no-argument ScreenTitle or ScreenDescription. Those compile but satisfy
+// neither interface, so the page would lose its title without a word.
+func refuseRetiredTitle(where string, comp any) {
+	if _, ok := comp.(interface{ ScreenTitle() string }); ok {
+		panic(fmt.Sprintf("app: %s: %T declares ScreenTitle() string; "+
+			"screen titles are ScreenTitle(ctx context.Context) string", where, comp))
+	}
+	if _, ok := comp.(interface{ ScreenDescription() string }); ok {
+		panic(fmt.Sprintf("app: %s: %T declares ScreenDescription() string; "+
+			"screen descriptions are ScreenDescription(ctx context.Context) string", where, comp))
+	}
+}
+
 // ScreenLanger is an optional interface for components that declare the
 // document language of their own page as a BCP-47 tag ("es", "pt-BR"). It is
 // read AFTER Load, so a dynamic route can take the tag from the content it

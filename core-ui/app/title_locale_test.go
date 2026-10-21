@@ -41,3 +41,47 @@ func TestScreenTitleSpeaksLocale(t *testing.T) {
 		t.Fatalf("registered title = %q, want the English", screen.Title)
 	}
 }
+
+type retiredTitleComp struct{}
+
+func (retiredTitleComp) Render() render.HTML { return "body" }
+func (retiredTitleComp) ScreenTitle() string { return "Old title" }
+
+type retiredDescComp struct{}
+
+func (retiredDescComp) Render() render.HTML       { return "body" }
+func (retiredDescComp) ScreenDescription() string { return "Old description" }
+
+// A screen still declaring the retired no-argument methods compiles but
+// satisfies neither interface, so its title would vanish without a word.
+// Registration refuses it instead.
+func TestRetiredTitleMethodPanics(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		comp interface{ Render() render.HTML }
+		want string
+	}{
+		{"title", retiredTitleComp{}, "ScreenTitle(ctx context.Context) string"},
+		{"description", retiredDescComp{}, "ScreenDescription(ctx context.Context) string"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				r := recover()
+				msg, _ := r.(string)
+				if !strings.Contains(msg, tc.want) || !strings.Contains(msg, "/old") {
+					t.Fatalf("panic = %v, want one naming /old and %q", r, tc.want)
+				}
+			}()
+			app.NewApp("Luna").Register("/old", tc.comp, nil)
+		})
+	}
+}
+
+func TestRetiredTitleOnNotFoundPanics(t *testing.T) {
+	defer func() {
+		if msg, _ := recover().(string); !strings.Contains(msg, "ScreenTitle(ctx context.Context) string") {
+			t.Fatalf("panic = %q, want the retired-title refusal", msg)
+		}
+	}()
+	app.NewApp("Luna").WithNotFoundBody(retiredTitleComp{})
+}
