@@ -154,6 +154,11 @@ func (q *RedisQueue) Enqueue(ctx context.Context, job Job) (err error) {
 			err = fmt.Errorf("redis queue: enqueue panicked: %v", v)
 		}
 	}()
+	if job.UniqueKey != "" {
+		// RedisClient offers no atomic set-if-absent to hold the key
+		// with, and a job enqueued without it would run as a duplicate.
+		return ErrUniqueUnsupported
+	}
 	if job.ID == "" {
 		job.ID = redisRandomID()
 	}

@@ -420,7 +420,7 @@ go get command that must be run before go mod tidy.`)
 // can be older than the framework needs.
 const (
 	frameworkGoDirective = "1.27.0"
-	frameworkToolchain   = "go1.27.2"
+	frameworkToolchain   = "go1.27.3"
 )
 
 // installedFrameworkVersion returns the exact module version represented by

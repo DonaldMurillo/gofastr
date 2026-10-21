@@ -7,6 +7,30 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+### Added
+- **Unique jobs.** A job with `Job.UniqueKey` set is refused with
+  `queue.ErrDuplicateJob` while another job of the same type holds the
+  key, and nothing is enqueued. The key is free again once that job
+  succeeds or is dead-lettered. `DBQueue` holds it with a partial unique
+  index, so it holds across replicas and does not abort the caller's
+  transaction; existing tables gain the `unique_key` column on start.
+  `Replay` of a dead job whose key a newer job holds returns
+  `ErrDuplicateJob`; the admin's replay answers 409 for it, and "Replay
+  N failed" skips it and replays the rest. `RedisQueue` refuses a keyed
+  job with `queue.ErrUniqueUnsupported`.
+
+### Fixed
+- **`DBQueue` index names on long table names.** Postgres cuts
+  identifiers at 63 bytes, so with a table name of 62 or 63 bytes the
+  dequeue and lane indexes got the same name and the second was never
+  created. A name over the limit now ends in a hash of the table name.
+
+### Security
+- The repo builds with Go 1.27.3 (`toolchain go1.27.3` in go.mod, and in
+  the go.mod `gofastr init` writes; the `go 1.27.0` floor is unchanged).
+  1.27.3 fixes GO-2026-6809 in crypto/x509, which govulncheck reaches
+  through the SMTP sender's TLS handshake. Build apps with 1.27.3.
+
 ## [0.93.0] - 2026-10-20
 
 **BREAKING** for generated clients, endpoints and SQLite decimals.

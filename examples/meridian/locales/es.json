@@ -372,6 +372,8 @@
       "replayAllConfirm": "¿Repetir todos los trabajos fallidos?",
       "replayed": "Trabajo en cola de nuevo.",
       "replayedAll": "Trabajos fallidos en cola de nuevo.",
+      "replayedSome": "Trabajos fallidos en cola de nuevo, salvo los que tienen una clave única que ya usa un trabajo más reciente.",
+      "replayDuplicate": "Ya hay en cola un trabajo más reciente con la misma clave única.",
       "revoke": "Revocar",
       "revokeConfirm": "¿Revocar esta capacidad de {module}? Su generación sube y el proceso hijo se reinicia.",
       "roles": "Roles",

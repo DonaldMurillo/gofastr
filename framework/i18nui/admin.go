@@ -145,6 +145,8 @@ const (
 	KeyAdminReplayAllConfirm Key = "ui.admin.replayAllConfirm" // "Replay every failed job?"
 	KeyAdminReplayed         Key = "ui.admin.replayed"         // "Job queued again."
 	KeyAdminReplayedAll      Key = "ui.admin.replayedAll"      // "Failed jobs queued again."
+	KeyAdminReplayedSome     Key = "ui.admin.replayedSome"     // "Failed jobs queued again, except those whose unique key a newer job holds."
+	KeyAdminReplayDuplicate  Key = "ui.admin.replayDuplicate"  // "A newer job with the same unique key is already queued."
 )
 
 // The audit log.
@@ -360,6 +362,8 @@ var adminDefaults = map[Key]string{
 	KeyAdminReplayAllConfirm:   "Replay every failed job?",
 	KeyAdminReplayed:           "Job queued again.",
 	KeyAdminReplayedAll:        "Failed jobs queued again.",
+	KeyAdminReplayedSome:       "Failed jobs queued again, except those whose unique key a newer job holds.",
+	KeyAdminReplayDuplicate:    "A newer job with the same unique key is already queued.",
 	KeyAdminAudit:              "Audit log",
 	KeyAdminAuditFrom:          "From",
 	KeyAdminAuditTo:            "To",
