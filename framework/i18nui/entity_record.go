@@ -56,14 +56,8 @@ const (
 	KeyEntityOverrideReason   Key = "ui.entity.overrideReason"   // "Reason"
 	KeyEntityOverrideHelp     Key = "ui.entity.overrideHelp"     // "Required, at most 500 characters. Recorded in the audit log."
 	KeyEntityOverrideDone     Key = "ui.entity.overrideDone"     // "Status overridden"
-	KeyEntityOverrideFailed   Key = "ui.entity.overrideFailed"   // "Could not override the status."
 	KeyEntityOverrideTitle    Key = "ui.entity.overrideTitle"    // "Override the status of this {entity}?"
 	KeyEntityOverrideConfirm  Key = "ui.entity.overrideConfirm"  // "The change skips the workflow and is recorded in the audit log with your reason."
-	KeyEntityOverrideBlank    Key = "ui.entity.overrideBlank"    // "A reason is required."
-	KeyEntityOverrideLong     Key = "ui.entity.overrideLong"     // "The reason is longer than 500 characters."
-	KeyEntityOverrideStateBad Key = "ui.entity.overrideStateBad" // "That status is not one this entity declares."
-	KeyEntityOverrideNoAudit  Key = "ui.entity.overrideNoAudit"  // "A status override needs an audit log on this entity."
-	KeyEntityOverrideDenied   Key = "ui.entity.overrideDenied"   // "You may not override the status of this {entity}."
 
 	// One Activity tab entry's headline: who did what to this record.
 	KeyEntityActivityCreated  Key = "ui.entity.activityCreated"  // "{actor} created this {entity}"
@@ -130,14 +124,8 @@ var entityRecordDefaults = map[Key]string{
 	KeyEntityOverrideReason:     "Reason",
 	KeyEntityOverrideHelp:       "Required, at most 500 characters. Recorded in the audit log.",
 	KeyEntityOverrideDone:       "Status overridden",
-	KeyEntityOverrideFailed:     "Could not override the status.",
 	KeyEntityOverrideTitle:      "Override the status of this {entity}?",
 	KeyEntityOverrideConfirm:    "The change skips the workflow and is recorded in the audit log with your reason.",
-	KeyEntityOverrideBlank:      "A reason is required.",
-	KeyEntityOverrideLong:       "The reason is longer than 500 characters.",
-	KeyEntityOverrideStateBad:   "That status is not one this entity declares.",
-	KeyEntityOverrideNoAudit:    "A status override needs an audit log on this entity.",
-	KeyEntityOverrideDenied:     "You may not override the status of this {entity}.",
 
 	KeyEntityActivityCreated:  "{actor} created this {entity}",
 	KeyEntityActivityUpdated:  "{actor} made changes",

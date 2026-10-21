@@ -4,10 +4,14 @@ import (
 	"context"
 	"fmt"
 	"maps"
+
+	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 // ValidatorFunc validates entity data and returns field-level errors.
 // The returned map is field name → error message (empty map means valid).
+// The built-in validators write each message in ctx's locale through the
+// core/schema phrases (validation.required, validation.unique_taken).
 type ValidatorFunc func(ctx context.Context, data map[string]any) map[string]string
 
 // ValidationRegistry holds a chain of validator functions.
@@ -50,7 +54,7 @@ func Required(fields ...string) ValidatorFunc {
 		for _, field := range fields {
 			val, ok := data[field]
 			if !ok || isZero(val) {
-				errors[field] = "is required"
+				errors[field] = schema.ReasonRequired.Text(ctx)
 			}
 		}
 		return errors
@@ -67,7 +71,7 @@ func Unique(field string, checkFn func(ctx context.Context, value any) bool) Val
 			return errors
 		}
 		if !checkFn(ctx, val) {
-			errors[field] = "must be unique"
+			errors[field] = schema.ReasonUniqueTaken.Text(ctx)
 		}
 		return errors
 	}

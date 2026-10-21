@@ -81,8 +81,6 @@ const (
 	KeyEntitySavedDeleteConfirm Key = "ui.entity.savedDeleteConfirm" // "The view's filters and columns go; the records stay."
 	KeyEntitySavedSaved         Key = "ui.entity.savedSaved"         // "View saved."
 	KeyEntitySavedDeleted       Key = "ui.entity.savedDeleted"       // "View deleted."
-	KeyEntitySavedBadFilter     Key = "ui.entity.savedBadFilter"     // "The filter does not apply to this list."
-	KeyEntitySavedBadCols       Key = "ui.entity.savedBadCols"       // "The columns do not apply to this list."
 )
 
 var entityListDefaults = map[Key]string{
@@ -154,6 +152,4 @@ var entityListDefaults = map[Key]string{
 	KeyEntitySavedDeleteConfirm: "The view's filters and columns go; the records stay.",
 	KeyEntitySavedSaved:         "View saved.",
 	KeyEntitySavedDeleted:       "View deleted.",
-	KeyEntitySavedBadFilter:     "The filter does not apply to this list.",
-	KeyEntitySavedBadCols:       "The columns do not apply to this list.",
 }
