@@ -22,6 +22,26 @@
 
   const REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
 
+  // formatNumber writes n the way the page's language (<html lang>)
+  // writes numbers, so a value this module writes reads like the
+  // server's i18n.Number text it replaces: "٥٠" stays "٥٠" on an
+  // Egyptian Arabic page. Rebuilt when a client navigation changes lang.
+  let lang, nf;
+  function formatNumber(n) {
+    const l = document.documentElement.lang;
+    if (!nf || l !== lang) {
+      lang = l;
+      try { nf = new Intl.NumberFormat(l || undefined); } catch (_) { nf = new Intl.NumberFormat(); }
+    }
+    return nf.format(n);
+  }
+
+  // valueText is an input's value written the page's way.
+  function valueText(input) {
+    const n = parseFloat(input.value);
+    return Number.isFinite(n) ? formatNumber(n) : input.value;
+  }
+
   function within(root, sel) {
     const out = [];
     if (root.matches && root.matches(sel)) out.push(root);
@@ -32,13 +52,15 @@
   // ─── counter animation ───────────────────────────────────────────
 
   // The final value is already the SSR text; the animation only walks
-  // a display from the recorded start to it. Reduced motion, or a
-  // non-numeric either end, leaves the SSR text untouched.
+  // a display from the recorded start to it, written the page's way
+  // (formatNumber), so the SSR text is never parsed: "4,820" reads as 4.
+  // Reduced motion, or a non-numeric either end, leaves the SSR text
+  // untouched.
   function animateCounter(root) {
     const from = parseFloat(root.getAttribute('data-hui-counter-from'));
+    const to = parseFloat(root.getAttribute('data-hui-counter-to'));
     const value = root.querySelector('[data-cui-signal]');
     if (!value || !Number.isFinite(from)) return;
-    const to = parseFloat(value.textContent);
     if (!Number.isFinite(to) || to === from) return;
     if (REDUCED && REDUCED.matches) return;
     let ms = parseFloat(root.getAttribute('data-hui-counter-ms'));
@@ -47,9 +69,9 @@
     function frame(now) {
       const k = Math.min(1, (now - t0) / ms);
       const eased = 1 - Math.pow(1 - k, 3);
-      value.textContent = String(Math.round(from + (to - from) * eased));
+      value.textContent = formatNumber(Math.round(from + (to - from) * eased));
       if (k < 1) requestAnimationFrame(frame);
-      else value.textContent = String(to);
+      else value.textContent = formatNumber(to);
     }
     requestAnimationFrame(frame);
   }
@@ -85,7 +107,7 @@
   function syncSlider(input) {
     const root = input.closest('[data-hui-slider]');
     const out = root && root.querySelector('[data-hui-slider-output]');
-    if (out) out.textContent = input.value;
+    if (out) out.textContent = valueText(input);
   }
 
   // ─── range pair ──────────────────────────────────────────────────
@@ -105,7 +127,7 @@
     }
     if (out) {
       const fmt = out.getAttribute('data-hui-range-slider-output') || '';
-      out.textContent = fmt.replaceAll('{{low}}', () => low.value).replaceAll('{{high}}', () => high.value);
+      out.textContent = fmt.replaceAll('{{low}}', () => valueText(low)).replaceAll('{{high}}', () => valueText(high));
     }
   }
 
@@ -155,7 +177,7 @@
     for (const el of within(scope, '[data-hui-slider-output]')) {
       const input = el.closest('[data-hui-slider]');
       const range = input && input.querySelector('input[type="range"]');
-      if (range) el.textContent = range.value;
+      if (range) el.textContent = valueText(range);
     }
     for (const el of within(scope, '[data-hui-json]')) if (el.value.trim()) checkJSON(el);
     const seen = new Set();

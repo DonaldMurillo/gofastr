@@ -9,11 +9,14 @@ package ui
 // adapter wraps it in the complementary rail with its title and meta.
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // StepRailItem is one numbered step.
@@ -30,6 +33,10 @@ type StepRailItem struct {
 
 // StepRailConfig configures a StepRail.
 type StepRailConfig struct {
+	// Ctx carries the per-request context the default rail label and the
+	// step words are written in. When nil, English applies.
+	Ctx context.Context
+
 	// Title is the small heading at the top of the rail
 	// (e.g. "The path", "On this page"). Optional.
 	Title string
@@ -82,7 +89,7 @@ func StepRail(cfg StepRailConfig) render.HTML {
 	}
 	aria := cfg.Title
 	if aria == "" {
-		aria = "Page steps"
+		aria = i18nui.StepRailLabel.Text(cfg.Ctx)
 	}
 
 	steps := make([]headless.Step, len(cfg.Items))
@@ -108,7 +115,7 @@ func StepRail(cfg StepRailConfig) render.HTML {
 	// never self-marks (an owner must place it), so the mark is
 	// spliced on here.
 	list, err := registry.InjectAttribute(
-		headless.Steps(headless.StepsProps{Steps: steps}, stepRailClasses),
+		headless.Steps(headless.StepsProps{Steps: steps, Strings: StringsFor(cfg.Ctx)}, stepRailClasses),
 		"data-cui-internal", "")
 	if err != nil {
 		panic(err)

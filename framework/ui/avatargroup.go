@@ -1,13 +1,15 @@
 package ui
 
 import (
-	"strconv"
+	"context"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── AvatarGroup ────────────────────────────────────────────────────
@@ -31,8 +33,13 @@ type AvatarGroupConfig struct {
 	// own Size set explicitly. Default AvatarMd.
 	Size AvatarSize
 
-	// Label is the aria-label on the group element. Default "Avatars".
+	// Label is the aria-label on the group element. Default "Avatars",
+	// in the language of Ctx.
 	Label string
+
+	// Ctx carries the per-request context the default label and the
+	// overflow count are written in. When nil, English applies.
+	Ctx context.Context
 
 	// ShowNames wraps each Avatar in a Tooltip so hover / keyboard
 	// focus reveals the avatar's Name. Useful for team-roster stacks
@@ -62,7 +69,7 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 	}
 	label := cfg.Label
 	if label == "" {
-		label = "Avatars"
+		label = i18nui.AvatarGroupLabel.Text(cfg.Ctx)
 	}
 
 	cls := "fui-avatar-group"
@@ -103,7 +110,6 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 		items = append(items, headless.Own(av))
 	}
 	if overflow > 0 {
-		more := strconv.Itoa(overflow)
 		// role=img + aria-label is the canonical way to attach an
 		// accessible name to a graphical element. axe rejects bare
 		// aria-label on <span> (the implicit role doesn't accept it);
@@ -114,12 +120,12 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 			Class: "fui-avatar-group__overflow",
 			ExtraAttrs: html.Attrs{
 				"role":       "img",
-				"aria-label": more + " more",
+				"aria-label": i18nui.AvatarGroupMore.Text(cfg.Ctx, map[string]any{"count": overflow}),
 			},
 		},
 			html.Span(html.TextConfig{
 				ExtraAttrs: html.Attrs{"aria-hidden": "true"},
-			}, render.Text("+"+more)),
+			}, render.Text("+"+i18n.Number(cfg.Ctx, overflow))),
 		))
 	}
 

@@ -168,7 +168,8 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 	// caller's either; Steps' own root never self-marks (an owner must
 	// place it), so the mark is spliced on here.
 	list, err := registry.InjectAttribute(headless.Steps(headless.StepsProps{
-		Steps: steps,
+		Steps:   steps,
+		Strings: StringsFor(cfg.Ctx),
 	}, progressStepsClasses), "data-cui-internal", "")
 	if err != nil {
 		panic(err)

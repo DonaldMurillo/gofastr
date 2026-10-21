@@ -4,10 +4,10 @@ import (
 	"context"
 	"math"
 	"net/http"
-	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/battery/admin"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -45,7 +45,7 @@ func (revenueReport) RenderCtx(ctx context.Context) render.HTML {
 	breakdown := func(title, entityName, groupBy string) render.HTML {
 		id := entityName + "-by-" + groupBy
 		return ui.Card(ui.CardConfig{ID: id, Heading: title, HeadingLevel: 2},
-			ui.BarChart(ui.BarChartConfig{Bars: appUI.GroupBars(ctx, entityName, groupBy), ShowLabels: true, FitHeight: true, LabelledBy: id + "-title"}))
+			ui.BarChart(ui.BarChartConfig{Ctx: ctx, Bars: appUI.GroupBars(ctx, entityName, groupBy), ShowLabels: true, FitHeight: true, LabelledBy: id + "-title"}))
 	}
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		ui.PageHeader(ui.PageHeaderConfig{Title: "Revenue", Subtitle: "What comes in, what is owed, and what failed."}),
@@ -76,6 +76,7 @@ func paymentsHeatmap(ctx context.Context, labelledBy string) render.HTML {
 		}
 	}
 	return ui.Heatmap(ui.HeatmapConfig{
+		Ctx:        ctx,
 		Rows:       []string{"Card", "ACH", "Wire"},
 		Cols:       []string{"Succeeded", "Failed", "Refunded"},
 		Values:     values,
@@ -99,10 +100,11 @@ func paymentSuccessGauge(ctx context.Context) render.HTML {
 		rate = 100 * float64(all-min(failed, all)) / float64(all)
 	}
 	return ui.Gauge(ui.GaugeConfig{
+		Ctx:       ctx,
 		Label:     "Payments that went through",
 		Size:      200,
 		Value:     rate,
-		ValueText: strconv.FormatFloat(rate, 'f', 1, 64) + "%",
+		ValueText: i18n.Percent(ctx, rate/100, i18n.MinFraction(1)),
 		Bands: []ui.GaugeBand{
 			{From: 0, Tone: ui.GaugeDanger},
 			{From: 90, Tone: ui.GaugeWarning},

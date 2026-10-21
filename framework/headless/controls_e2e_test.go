@@ -88,6 +88,33 @@ func TestE2E_ControlsSliderMirrorsItsOutput(t *testing.T) {
 	}
 }
 
+// On an Egyptian Arabic page the slider outputs keep the page's digits:
+// the arrival scan and every drag write ٧٠, never the input's raw 70.
+func TestE2E_SliderOutputsUsePageDigits(t *testing.T) {
+	body := `<script>document.documentElement.lang = 'ar-EG'</script>` +
+		string(Slider(SliderProps{Name: "cpu", Label: "CPU share", Value: 40, ShowValue: true}, nil)) +
+		string(RangeSlider(RangeSliderProps{Name: "price", Label: "Price",
+			Min: 0, Max: 100, ValueLow: 20, ValueHigh: 80, ShowValue: true}, nil))
+	b := startBehaviorServer(t, body)
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, controlsLoadedExpr(ControlsBehaviorName)) {
+		t.Fatal("the output markers never loaded headless-controls")
+	}
+	if !pollTrue(ctx, `document.querySelector('[data-hui-slider-output]').textContent === '٤٠'`) {
+		t.Fatal("the arrival scan wrote the slider's raw value over the page's digits")
+	}
+	if !pollTrue(ctx, `document.querySelector('[data-hui-range-slider-output]').textContent === '٢٠ to ٨٠'`) {
+		t.Fatal("the range pair's sentence carries raw digits")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`const i = document.getElementById('cpu'); i.value = 70; i.dispatchEvent(new Event('input', {bubbles:true}))`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `document.querySelector('[data-hui-slider-output]').textContent === '٧٠'`) {
+		t.Fatal("a drag wrote the slider's raw value")
+	}
+}
+
 // The range pair cross-clamps the moved thumb and re-formats the
 // output through the sentence the component rendered into its hook —
 // the {name}-free "%s to %s" the server's Strings resolved.
@@ -123,7 +150,37 @@ func TestE2E_ControlsCounterAnimatesToTheSSRValue(t *testing.T) {
 	if !pollTrue(ctx, controlsLoadedExpr(ControlsBehaviorName)) {
 		t.Fatal("the animate marker never loaded headless-controls")
 	}
-	if !pollTrue(ctx, `document.querySelector('[data-hui-counter-animate] [data-cui-signal]').textContent === '4820'`) {
+	if !pollTrue(ctx, `document.querySelector('[data-hui-counter-animate] [data-cui-signal]').textContent === '4,820'`) {
 		t.Fatal("the animation did not land on the SSR value")
+	}
+}
+
+// A counter's live value is written the page's way: the server wrote
+// "4,820" for English, and a German page's increment reads "4.821", not
+// the kernel's raw "4821".
+func TestE2E_CounterNumbersFollowLang(t *testing.T) {
+	body := Counter(CounterProps{Signal: "seats", Label: "Seats", Value: 4820}, nil)
+	b := startBehaviorServer(t, string(body))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, controlsLoadedExpr(NumbersBehaviorName)) {
+		t.Fatal("the number-mode marker never loaded headless-numbers")
+	}
+	value := `document.querySelector('[data-cui-signal="seats"]').textContent`
+	if err := chromedp.Run(ctx, chromedp.Evaluate(
+		`window.__gofastr.setSignal('seats', 4820); document.documentElement.lang = 'de';
+		 document.querySelector('[data-cui-signal-inc="seats"]').click()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, value+` === '4.821'`) {
+		var got string
+		_ = chromedp.Run(ctx, chromedp.Evaluate(value, &got))
+		t.Fatalf("a German increment wrote %q, want 4.821", got)
+	}
+	// A word in a number binding stays a word.
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr.setSignal('seats', 'soon')`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, value+` === 'soon'`) {
+		t.Fatal("a non-number in number mode did not render as text")
 	}
 }

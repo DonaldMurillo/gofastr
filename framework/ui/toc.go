@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -9,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── TableOfContents ────────────────────────────────────────────────
@@ -38,6 +40,10 @@ type TOCItem struct {
 
 // TOCConfig configures a TableOfContents.
 type TOCConfig struct {
+	// Ctx carries the per-request context the default contents label is
+	// written in. When nil, English applies.
+	Ctx context.Context
+
 	// Items are the entries, in document order. Required: the
 	// no-script contract is this rendered list.
 	Items []TOCItem
@@ -116,6 +122,7 @@ func TableOfContents(cfg TOCConfig) render.HTML {
 		TargetSelector: cfg.Target,
 		ID:             cfg.ID,
 		ExtraAttrs:     headless.Safe(cfg.ExtraAttrs, "class", "id", "aria-label"),
+		Strings:        StringsFor(cfg.Ctx),
 	}, classes)
 	nav = tocStyle.WrapHTML(nav)
 	if !cfg.PhoneSheet {
@@ -124,7 +131,7 @@ func TableOfContents(cfg TOCConfig) render.HTML {
 	checkStackBreakpoint(cfg.Breakpoint)
 	label := cfg.Label
 	if label == "" {
-		label = "On this page"
+		label = i18nui.HuiTableOfContentsLabel.Text(cfg.Ctx)
 	}
 	sheetID := "fui-toc-sheet"
 	if cfg.ID != "" {
@@ -134,7 +141,7 @@ func TableOfContents(cfg TOCConfig) render.HTML {
 	if cfg.Breakpoint == StackBelowLG {
 		swap = interactive.SwapLG
 	}
-	return interactive.PhoneSheet(interactive.PhoneSheetConfig{ID: sheetID, Title: label, SwapAt: swap, Top: cfg.PhoneSheetTop, CloseLabel: cfg.CloseLabel}, nav)
+	return interactive.PhoneSheet(interactive.PhoneSheetConfig{ID: sheetID, Title: label, SwapAt: swap, Top: cfg.PhoneSheetTop, CloseLabel: cfg.CloseLabel, Ctx: cfg.Ctx}, nav)
 }
 
 var tocStyle = registry.RegisterStyle("ui-toc", tocCSS)

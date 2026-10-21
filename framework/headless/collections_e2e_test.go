@@ -266,7 +266,7 @@ func TestE2E_TagInputDollarValueIsLiteral(t *testing.T) {
 	})`, &got)); err != nil {
 		t.Fatal(err)
 	}
-	want := fill(DefaultStrings().RemoveLabelled, "label", v)
+	want := DefaultStrings().fill(DefaultStrings().RemoveLabelled, "label", v)
 	if got.Chip != want || got.Button != want {
 		t.Errorf("remove labels expanded the value: chip %q, button %q, want %q", got.Chip, got.Button, want)
 	}

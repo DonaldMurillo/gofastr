@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"math"
 	"slices"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── Gauge ──────────────────────────────────────────────────────────
@@ -69,6 +71,9 @@ type GaugeConfig struct {
 	// data-cui-*, role and the aria-label and aria-value* the meter
 	// derives from config.
 	ExtraAttrs html.Attrs
+	// Ctx carries the request: the chart's numbers and words follow the
+	// reader's locale. Nil writes English.
+	Ctx context.Context
 }
 
 var gaugeTones = []GaugeTone{GaugePrimary, GaugeInfo, GaugeSuccess, GaugeWarning, GaugeDanger}
@@ -91,13 +96,13 @@ func Gauge(cfg GaugeConfig) render.HTML {
 		}
 	}
 	if !finite(cfg.Value) {
-		return chartEmpty(cfg.ID, "", cfg.Class, cfg.Label+": no data yet", cfg.ExtraAttrs)
+		return chartEmpty(cfg.Ctx, cfg.ID, "", cfg.Class, i18nui.GaugeNoData.Text(cfg.Ctx, map[string]any{"label": cfg.Label}), cfg.ExtraAttrs)
 	}
 
 	v := min(max(cfg.Value, lo), hi)
 	text := cfg.ValueText
 	if text == "" {
-		text = strings.TrimSuffix(strings.TrimRight(strconv.FormatFloat(cfg.Value, 'f', 2, 64), "0"), ".")
+		text = chartNumber(cfg.Ctx, cfg.Value)
 	}
 	tone := GaugePrimary
 	reached := math.Inf(-1)

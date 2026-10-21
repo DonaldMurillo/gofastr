@@ -342,7 +342,7 @@ func tableAnnouncement(p TableProps, w *Strings) string {
 	if p.SortDir == SortDesc {
 		dir = w.SortDescending
 	}
-	sentence := fill(w.TableSortedBy, "column", name, "direction", dir)
+	sentence := w.fill(w.TableSortedBy, "column", name, "direction", dir)
 	if p.Summary != "" {
 		sentence += " " + p.Summary
 	}
@@ -424,7 +424,7 @@ func tableHeaderCell(b Box, p TableProps, w *Strings, col Column, sortParam, dir
 		// The anchor's text is empty, so its name comes from Strings
 		// with the column's Key in it: a nameless control cannot be
 		// told from the one beside it.
-		a["aria-label"] = fill(w.TableSortBy, "column", col.Key)
+		a["aria-label"] = w.fill(w.TableSortBy, "column", col.Key)
 	}
 	if !p.Island.zero() {
 		// The sort key the module records on click and looks for in

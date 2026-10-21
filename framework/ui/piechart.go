@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"math"
 	"strconv"
 	"strings"
@@ -56,12 +57,15 @@ type PieChartConfig struct {
 	// attributes the SVG derives from config (width, height, viewBox,
 	// xmlns, role, aria-labelledby, aria-hidden).
 	ExtraAttrs html.Attrs
+	// Ctx carries the request: the chart's numbers and words follow the
+	// reader's locale. Nil writes English.
+	Ctx context.Context
 }
 
 // PieChart renders a pie or donut chart.
 func PieChart(cfg PieChartConfig) render.HTML {
 	if len(cfg.Slices) == 0 {
-		return chartEmpty(cfg.ID, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
+		return chartEmpty(cfg.Ctx, cfg.ID, cfg.LabelledBy, cfg.Class, "", cfg.ExtraAttrs)
 	}
 	var total float64
 	for _, s := range cfg.Slices {
@@ -72,7 +76,7 @@ func PieChart(cfg PieChartConfig) render.HTML {
 	}
 	if total == 0 {
 		// Every slice is zero: nothing to draw, but a legitimate empty state.
-		return chartEmpty(cfg.ID, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
+		return chartEmpty(cfg.Ctx, cfg.ID, cfg.LabelledBy, cfg.Class, "", cfg.ExtraAttrs)
 	}
 
 	size := cfg.Size

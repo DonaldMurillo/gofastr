@@ -176,19 +176,19 @@ full drops the maximum and keeps the gutter — a dashboard should use the whole
 
 === Counter / a signal counter ===
 the value is on the page before any script runs and the buttons speak the kernel's increment contract — the counter works with no module of this package loaded at all
-<div aria-label="Quantity" role="group"><button aria-label="&lt;CounterDecrement&gt;" data-cui-internal="" data-cui-signal-inc="qty:-1" type="button">−</button><span aria-live="polite" data-cui-internal="" data-cui-signal="qty">2</span><button aria-label="&lt;CounterIncrement&gt;" data-cui-internal="" data-cui-signal-inc="qty" type="button">+</button></div>
+<div aria-label="Quantity" role="group"><button aria-label="&lt;CounterDecrement&gt;" data-cui-internal="" data-cui-signal-inc="qty:-1" type="button">−</button><span aria-live="polite" data-cui-internal="" data-cui-signal="qty" data-cui-signal-mode="number">2</span><button aria-label="&lt;CounterIncrement&gt;" data-cui-internal="" data-cui-signal-inc="qty" type="button">+</button></div>
 
 === Counter / animated ===
 the final value is the SSR text, so a reader without script sees the true count while the animation is only presentation, and reduced motion keeps the number
-<div aria-label="Deployed" data-hui-counter-animate="" data-hui-counter-from="0" data-hui-counter-ms="600" role="group"><button aria-label="&lt;CounterDecrement&gt;" data-cui-internal="" data-cui-signal-inc="deployed:-1" type="button">−</button><span aria-live="polite" data-cui-internal="" data-cui-signal="deployed">4820</span><button aria-label="&lt;CounterIncrement&gt;" data-cui-internal="" data-cui-signal-inc="deployed" type="button">+</button></div>
+<div aria-label="Deployed" data-hui-counter-animate="" data-hui-counter-from="0" data-hui-counter-ms="600" data-hui-counter-to="4820" role="group"><button aria-label="&lt;CounterDecrement&gt;" data-cui-internal="" data-cui-signal-inc="deployed:-1" type="button">−</button><span aria-live="polite" data-cui-internal="" data-cui-signal="deployed" data-cui-signal-mode="number">4,820</span><button aria-label="&lt;CounterIncrement&gt;" data-cui-internal="" data-cui-signal-inc="deployed" type="button">+</button></div>
 
 === Counter / display only ===
 a figure that animates in is read, not operated: no step buttons, no group role, and no live region to read out each frame of the tick-up; the page around it names the number
-<div data-hui-counter-animate="" data-hui-counter-from="0"><span data-cui-internal="" data-cui-signal="signups">12483</span></div>
+<div data-hui-counter-animate="" data-hui-counter-from="0" data-hui-counter-to="12483"><span data-cui-internal="" data-cui-signal="signups" data-cui-signal-mode="number">12,483</span></div>
 
 === Counter / the unlabelled group names itself ===
 a counter with no label of its own still names its group — the default word is the one Strings carries, so a translated page says it in the reader's language
-<div aria-label="&lt;CounterLabel&gt;" role="group"><button aria-label="&lt;CounterDecrement&gt;" data-cui-internal="" data-cui-signal-inc="hits:-1" type="button">−</button><span aria-live="polite" data-cui-internal="" data-cui-signal="hits">7</span><button aria-label="&lt;CounterIncrement&gt;" data-cui-internal="" data-cui-signal-inc="hits" type="button">+</button></div>
+<div aria-label="&lt;CounterLabel&gt;" role="group"><button aria-label="&lt;CounterDecrement&gt;" data-cui-internal="" data-cui-signal-inc="hits:-1" type="button">−</button><span aria-live="polite" data-cui-internal="" data-cui-signal="hits" data-cui-signal-mode="number">7</span><button aria-label="&lt;CounterIncrement&gt;" data-cui-internal="" data-cui-signal-inc="hits" type="button">+</button></div>
 
 === Counter / named, for a form ===
 a named number input submits without script, and the signal writes its value attribute so the display and the submitted field are one number

@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -181,7 +180,7 @@ func uploadHelpText(cfg FileUploadConfig) string {
 		bits = append(bits, cfg.Help)
 	}
 	if cfg.MaxSizeMB > 0 {
-		bits = append(bits, i18nui.FileMaxSize.Text(ctx, map[string]any{"n": strconv.Itoa(cfg.MaxSizeMB)}))
+		bits = append(bits, i18nui.FileMaxSize.Text(ctx, map[string]any{"n": cfg.MaxSizeMB}))
 	}
 	return strings.Join(bits, " · ")
 }

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -20,6 +21,10 @@ import (
 
 // SliderConfig configures a Slider.
 type SliderConfig struct {
+	// Ctx carries the per-request context the value output and edge
+	// labels are written in. When nil, English applies.
+	Ctx context.Context
+
 	// Name is the form-field name (required).
 	Name string
 	// Label is the accessible label (required, used as <label for=…>).
@@ -83,6 +88,7 @@ func Slider(cfg SliderConfig) render.HTML {
 		ID:             cfg.ID,
 		ExtraAttrs:     headless.Safe(cfg.ExtraAttrs, "class", "id"),
 		Parts:          parts,
+		Strings:        StringsFor(cfg.Ctx),
 	}, sliderClasses))
 }
 

@@ -125,7 +125,7 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 	for i, sl := range p.Slides {
 		label := sl.Label
 		if label == "" {
-			label = carouselSlideName(w.CarouselSlide, i+1, len(p.Slides))
+			label = w.fill(w.CarouselSlide, "n", i+1, "total", len(p.Slides))
 		}
 		own := html.Attrs{
 			"id":                   sl.ID,
@@ -147,7 +147,7 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 	// The status format travels beside the initial sentence: the module
 	// re-says the sentence through the format after every step, so the
 	// words stay the server's while the number stays live.
-	trackAttrs["data-hui-carousel-status"] = carouselSlideName(w.CarouselSlide, 1, len(p.Slides))
+	trackAttrs["data-hui-carousel-status"] = w.fill(w.CarouselSlide, "n", 1, "total", len(p.Slides))
 	trackAttrs["data-hui-carousel-status-fmt"] = w.CarouselSlide + "|" + strconv.Itoa(len(p.Slides))
 	// The stage is the positioning context the overlaid controls
 	// hang from: it wraps exactly the track, so an absolutely
@@ -196,13 +196,13 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 		for i, sl := range p.Slides {
 			own := html.Attrs{
 				"href":                   "#" + sl.ID,
-				"aria-label":             fill(w.CarouselGoTo, "n", strconv.Itoa(i+1)),
+				"aria-label":             w.fill(w.CarouselGoTo, "n", i+1),
 				"data-hui-carousel-goto": strconv.Itoa(i),
 			}
 			if i == 0 {
 				own["aria-current"] = "true"
 			}
-			dots = append(dots, b.El("a", PartCarouselDot, own, render.Text(strconv.Itoa(i+1))))
+			dots = append(dots, b.El("a", PartCarouselDot, own, render.Text(w.Number(i+1))))
 		}
 		children = append(children, b.El("nav", PartMarker, Internal(html.Attrs{
 			"aria-label": scrubControlBytes(p.Label),
@@ -220,9 +220,4 @@ func carouselSlidesHaveContent(slides []CarouselSlide) bool {
 		}
 	}
 	return false
-}
-
-// carouselSlideName formats the slide sentence.
-func carouselSlideName(format string, n, total int) string {
-	return fill(format, "n", strconv.Itoa(n), "total", strconv.Itoa(total))
 }

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"math"
 	"slices"
 	"strconv"
@@ -10,7 +11,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── ScatterChart ───────────────────────────────────────────────────
@@ -63,6 +66,9 @@ type ScatterChartConfig struct {
 	// data-cui-*, width, height, viewBox, xmlns, role, aria-labelledby
 	// (use LabelledBy) and aria-hidden.
 	ExtraAttrs html.Attrs
+	// Ctx carries the request: the chart's numbers and words follow the
+	// reader's locale. Nil writes English.
+	Ctx context.Context
 }
 
 // Plot gutters: tick labels sit left of and under the plot, and an axis
@@ -94,7 +100,7 @@ func ScatterChart(cfg ScatterChartConfig) render.HTML {
 		}
 	}
 	if len(xs) == 0 {
-		return chartEmpty(cfg.ID, cfg.LabelledBy, cfg.Class, "No data yet", cfg.ExtraAttrs)
+		return chartEmpty(cfg.Ctx, cfg.ID, cfg.LabelledBy, cfg.Class, "", cfg.ExtraAttrs)
 	}
 	w, h := cfg.Width, cfg.Height
 	if w <= 0 {
@@ -108,7 +114,7 @@ func ScatterChart(cfg ScatterChartConfig) render.HTML {
 	yText := make([]string, len(yTicks))
 	widest := 0
 	for i, t := range yTicks {
-		yText[i] = tickText(t, yStep)
+		yText[i] = tickText(cfg.Ctx, t, yStep)
 		widest = max(widest, utf8.RuneCountInString(yText[i]))
 	}
 	// The gutter fits the widest Y tick label.
@@ -224,7 +230,7 @@ func ScatterChart(cfg ScatterChartConfig) render.HTML {
 		if i == len(xTicks)-1 {
 			anchor = "end"
 		}
-		text(x, plotB+14, anchor, "fui-scatter-chart__tick", tickText(t, xStep))
+		text(x, plotB+14, anchor, "fui-scatter-chart__tick", tickText(cfg.Ctx, t, xStep))
 	}
 	line(plotL, plotB, plotR, plotB, "fui-scatter-chart__axis")
 	line(plotL, plotT, plotL, plotB, "fui-scatter-chart__axis")
@@ -256,11 +262,14 @@ func ScatterChart(cfg ScatterChartConfig) render.HTML {
 			sb.WriteString(`" r="4" class="fui-scatter-chart__point`)
 			tones[i].write(&sb, "fui-scatter-chart__point")
 			sb.WriteString(`><title>`)
-			title := s.Name + ": "
-			if p.Label != "" {
-				title += p.Label + " "
+			point, params := i18nui.ScatterPoint, map[string]any{
+				"series": s.Name, "label": p.Label,
+				"x": exactText(cfg.Ctx, p.X), "y": exactText(cfg.Ctx, p.Y),
 			}
-			sb.WriteString(escapeXML(title + "(" + exactText(p.X) + ", " + exactText(p.Y) + ")"))
+			if p.Label == "" {
+				point = i18nui.ScatterPointBare
+			}
+			sb.WriteString(escapeXML(point.Text(cfg.Ctx, params)))
 			sb.WriteString(`</title></circle>`)
 		}
 	}
@@ -317,9 +326,9 @@ func axisTicks(vs []float64) ([]float64, float64) {
 // tickText writes a tick with as many decimals as its step needs, so no
 // two ticks read the same. Very large or fallback ticks use the shortest
 // exact form.
-func tickText(t, step float64) string {
+func tickText(ctx context.Context, t, step float64) string {
 	if step == 0 {
-		return exactText(t)
+		return exactText(ctx, t)
 	}
 	if math.Abs(t) >= 1e9 || step < 1e-9 {
 		// Past plain decimals: the significant digits that tell this tick
@@ -331,7 +340,7 @@ func tickText(t, step float64) string {
 		d = len(s) - strings.IndexByte(s, '.') - 1
 	}
 	p := math.Pow(10, float64(d))
-	return strconv.FormatFloat(math.Round(t*p)/p, 'f', -1, 64)
+	return i18n.Number(ctx, math.Round(t*p)/p, i18n.MaxFraction(d))
 }
 
 // decExp is v's power of ten: 2 for 250, -12 for 2.5e-12.
@@ -341,8 +350,16 @@ func decExp(v float64) int {
 	return e
 }
 
-// exactText is v's shortest exact form: 0.0025, 1250, 1e+21.
-func exactText(v float64) string { return strconv.FormatFloat(v+0, 'g', -1, 64) }
+// exactText is v's shortest exact form in the reader's locale: 0.0025,
+// 1,250. Past plain decimals it keeps Go's exponent form, 1e+21, which
+// CLDR's table here does not cover.
+func exactText(ctx context.Context, v float64) string {
+	if a := math.Abs(v); a >= 1e15 || (a != 0 && a < 1e-6) {
+		return strconv.FormatFloat(v+0, 'g', -1, 64)
+	}
+	s, _ := i18n.Decimal(ctx, strconv.FormatFloat(v+0, 'f', -1, 64), i18n.MaxFraction(20))
+	return s
+}
 
 // niceStep rounds v up to 1, 2, 2.5 or 5 times a power of ten.
 func niceStep(v float64) float64 {

@@ -163,7 +163,7 @@ func Toast(p ToastProps, s Classes) render.HTML {
 		}
 		label := p.DismissLabel
 		if label == "" {
-			label = fill(w.DismissTitled, "title", orDefault(title, body))
+			label = w.fill(w.DismissTitled, "title", orDefault(title, body))
 		}
 		kids = append(kids, b.El("a", PartDismiss, Internal(Merge(html.Attrs{
 			"href":       p.DismissHref,
@@ -433,7 +433,7 @@ func NotificationBell(p NotificationBellProps, s Classes) render.HTML {
 	b := p.Parts.Box(s, PartText)
 	own := Merge(Safe(p.ExtraAttrs, "href", "aria-label"), Attrs(map[string]string{
 		"href":       urlsafe.CleanAnchor(p.Href),
-		"aria-label": fill(w.NotificationCount, "n", strconv.Itoa(p.UnreadCount)),
+		"aria-label": w.fill(w.NotificationCount, "n", p.UnreadCount),
 		"id":         p.ID,
 		// The sentence shape travels so the module can re-say the
 		// count when the signal changes it.
@@ -475,7 +475,7 @@ func NotificationBell(p NotificationBellProps, s Classes) render.HTML {
 		}
 		iconKids = append(iconKids,
 			b.El("span", PartMarker, countAttrs,
-				b.El("span", PartText, nil, render.Text(strconv.Itoa(p.UnreadCount)))))
+				b.El("span", PartText, nil, render.Text(w.Number(p.UnreadCount)))))
 	}
 	kids := []render.HTML{
 		b.El("span", PartIcon, Merge(Attrs(map[string]string{"aria-hidden": "true"}), iconOwn), iconKids...),

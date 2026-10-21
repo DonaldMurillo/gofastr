@@ -399,10 +399,11 @@ func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
 		titleText = i18nui.ValidationSummaryTitle.Text(ctx)
 	}
 	return validationSummaryStyle.WrapHTML(headless.ValidationSummary(headless.ValidationSummaryProps{
-		Title:  titleText,
-		Level:  2,
-		Errors: errs,
-		ID:     cfg.ID,
+		Title:   titleText,
+		Level:   2,
+		Errors:  errs,
+		ID:      cfg.ID,
+		Strings: StringsFor(ctx),
 		ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs,
 			"role", "tabindex", "aria-labelledby"),
 	}, withRootClass(validationSummaryClasses, cfg.Class)))
@@ -435,7 +436,7 @@ func validationSummaryCSS(_ style.Theme) string {
 }
 .fui-validation-summary__list {
   margin: 0;
-  padding-left: var(--spacing-lg, 16px);
+  padding-inline-start: var(--spacing-lg, 16px);
   list-style: disc;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #09090B);

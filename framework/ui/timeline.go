@@ -167,7 +167,7 @@ func timelineCSS(_ style.Theme) string {
   /* Centre the rail on the dot column's midpoint: (column − rail)/2.
      Knobs: --ui-timeline-rail-width (2px), --ui-timeline-dot-size
      (12px). */
-  left: calc((var(--spacing-lg, 16px) - var(--ui-timeline-rail-width, 2px)) / 2);
+  inset-inline-start: calc((var(--spacing-lg, 16px) - var(--ui-timeline-rail-width, 2px)) / 2);
   top: var(--spacing-md, 8px);
   bottom: 0;
   width: var(--ui-timeline-rail-width, 2px);
@@ -249,7 +249,7 @@ func timelineCSS(_ style.Theme) string {
   gap: var(--spacing-lg, 16px);
 }
 [data-cui-comp="ui-timeline"] .fui-timeline__item:has(> .fui-timeline__dot > .fui-icon)::before {
-  left: calc((var(--ui-timeline-icon-size, 28px) - var(--ui-timeline-rail-width, 2px)) / 2);
+  inset-inline-start: calc((var(--ui-timeline-icon-size, 28px) - var(--ui-timeline-rail-width, 2px)) / 2);
   top: var(--ui-timeline-icon-size, 28px);
 }
 [data-cui-comp="ui-timeline"] .fui-timeline__dot:has(> .fui-icon) {
