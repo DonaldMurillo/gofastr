@@ -3,9 +3,10 @@ package entityui
 import (
 	"context"
 	"fmt"
-	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"slices"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/hook"

@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -735,10 +734,10 @@ func bulkToast(ctx context.Context, m *meta, act bulkAction, t bulkTally) string
 	}
 	if key.IsZero() || t.skipped > 0 || t.failed > 0 {
 		return i18nui.EntityBulkDone.Text(ctx, map[string]any{
-			"done": strconv.Itoa(t.done), "skipped": strconv.Itoa(t.skipped), "failed": strconv.Itoa(t.failed),
+			"done": t.done, "skipped": t.skipped, "failed": t.failed,
 		})
 	}
-	return key.Text(ctx, map[string]any{"count": strconv.Itoa(t.done), "entity": m.noun(ctx, t.done != 1)})
+	return key.Text(ctx, map[string]any{"count": t.done, "entity": m.noun(ctx, t.done != 1)})
 }
 
 // bulkUndo is a delete's Undo button: a restore of the ids the run
@@ -830,7 +829,7 @@ func (u *UI) queueBulk(ctx context.Context, w http.ResponseWriter, r *http.Reque
 		}
 	}
 	ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusInfo, TTL: 6000, Title: i18nui.EntityBulkQueued.Text(ctx, map[string]any{
-		"count": strconv.Itoa(held.Count), "entity": m.plural(ctx),
+		"count": held.Count, "entity": m.plural(ctx),
 	})})
 	writeBulkJSON(w, http.StatusAccepted, map[string]any{"job": held.ID, "count": held.Count})
 }

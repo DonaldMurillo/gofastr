@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -94,9 +95,31 @@ func TestMoneySymbolFromCatalog(t *testing.T) {
 
 func TestMoneyFormatsText(t *testing.T) {
 	ctx := context.Background()
-	for in, want := range map[string]string{"0": "$0.00", "-1234": "-$1,234.00", "n/a": "n/a"} {
+	for in, want := range map[string]string{"0": "$0.00", "-1234": "-$1,234.00", "1.00": "$1.00",
+		"n/a": "n/a", "--5": "--5", "-+5": "-+5"} {
 		if got := money(ctx, in); got != want {
 			t.Errorf("money(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// Screens write numbers and dates the reader's way, and a decimal past
+// float64's digits prints exactly.
+func TestFormatsFollowLocale(t *testing.T) {
+	fr := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
+	en := context.Background()
+	at := time.Date(2026, 3, 5, 14, 5, 0, 0, time.UTC)
+	for _, tc := range []struct{ got, want string }{
+		{decimal(fr, "1234.5"), "1 234,50"},
+		{decimal(en, "12345678901234567.891"), "12,345,678,901,234,567.89"},
+		{money(fr, "-1234"), "-$1 234,00"},
+		{formatDate(en, at, false), "Mar 5, 2026"},
+		{formatDate(fr, at, false), "5 mars 2026"},
+		{formatDate(fr, "2026-03-05 14:05:00", true), "5 mars 2026, 14:05"},
+		{formatDate(en, "not a date", true), "not a date"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("got %q want %q", tc.got, tc.want)
 		}
 	}
 }

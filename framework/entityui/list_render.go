@@ -298,7 +298,7 @@ func (b *ListBuilder) header(ctx context.Context, s *listState, total int, known
 			subtitle = i18nui.EntityCountOne.Text(ctx, map[string]any{"entity": m.noun(ctx, false)})
 		} else {
 			subtitle = i18nui.EntityCount.Text(ctx, map[string]any{
-				"count":  formatNumber(float64(total), 0),
+				"count":  total,
 				"entity": m.noun(ctx, true),
 			})
 		}
@@ -340,7 +340,7 @@ func (b *ListBuilder) embeddedBody(ctx context.Context, s *listState, rows []map
 	title := b.title(ctx, m)
 	var count render.HTML
 	if known {
-		count = ui.Muted(render.Text(formatNumber(float64(total), 0)))
+		count = ui.Muted(render.Text(i18n.Number(ctx, total)))
 	}
 	actions := slices.Clone(b.actions)
 	if !s.deletedView && b.mayCreate() && s.createPath != "" && canCreate(ctx, m) {
