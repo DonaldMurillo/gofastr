@@ -171,7 +171,9 @@
     if (lang) carrier.setAttribute('data-cui-lang', lang);
     const skip = source.querySelector('[data-skip-link]');
     if (skip) carrier.setAttribute('data-cui-skip-label', skip.textContent);
-    carrier.setAttribute('data-cui-strings', source.getElementById('gofastr-strings')?.textContent || '');
+    // The live document's head block is the first page's: after a soft
+    // nav its words are the table applyDocShell last set.
+    carrier.setAttribute('data-cui-strings', JSON.stringify(source == document ? _says : _json(source.getElementById('gofastr-strings')?.textContent)));
     return carrier.outerHTML;
   };
   window.__gofastr._docCarrier = docCarrier;
@@ -629,7 +631,9 @@
         const nm = pdoc.querySelector('main');
         await _swapCommit(myEpoch, prevPath, dest, () => {
           const sourceRoot = shellEl(pdoc) || nm;
-          if (sourceRoot) sourceRoot.insertAdjacentHTML("afterbegin", docCarrier(pdoc));
+          // The carrier rides <main>, so the cache entry below (and the
+          // whole-main fallback) keeps the page's language and words.
+          (nm || sourceRoot)?.insertAdjacentHTML("afterbegin", docCarrier(pdoc));
           const el = swapShell(sourceRoot);
           if (!el) {
             // No live shell to replace (layout-less origin), fall back to

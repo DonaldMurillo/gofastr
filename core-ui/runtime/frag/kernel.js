@@ -176,10 +176,11 @@
   // locale) else the English beside the key, with {{name}} filled from
   // p. A Go test holds each say() call to its registered phrase. No
   // Object.prototype member is a string, so a key like "toString" falls
-  // through to the English.
-  let _says;
+  // through to the English. A soft nav replaces the table
+  // (applyDocShell, frag/nav.js).
+  let _says = _readInlineJSON('gofastr-strings') || {};
   const say = (k, en, p) => {
-    const s = (_says ??= _readInlineJSON('gofastr-strings') || {})[k];
+    const s = _says[k];
     return (typeof s == 'string' ? s : en).replace(/\{\{(\w+)\}\}/g, (m, n) => (p && own(p, n) ? p[n] : m));
   };
   const closestAttr = (el, attr) => {

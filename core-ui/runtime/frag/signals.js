@@ -76,7 +76,7 @@
           // documented optimistic-UI invariant, "a failed delete
           // leaves the row/list unchanged", depends on this no-op.
           // Text-mode nodes below still render a human-readable
-          // "Error: …" string, so failure feedback is not lost.
+          // "Request failed (…)" string, so failure feedback is not lost.
           if (typeof value !== 'string') return;
           // A value seeded from location.search is attacker-supplied by
           // construction, `?x=<img onerror=…>` on any page carrying an
@@ -124,12 +124,11 @@
         } else {
           // Task B: when the value is an error object from dispatchRPC
           // ({ok:false, status, text}), render it as a human-readable
-          // string instead of raw JSON so users see "Error: 500" rather
-          // than {"ok":false,"status":500,"text":"..."}.
+          // string instead of raw JSON so users see "Request failed (500)"
+          // in their language rather than {"ok":false,"status":500,...}.
           if (value != null && typeof value === 'object' && value.ok === false) {
-            const s = value.status ? String(value.status) : 'unknown';
             const t = value.text ? String(value.text).substring(0, 200) : '';
-            node.textContent = 'Error: ' + s + (t ? ' \u2014 ' + t : '');
+            node.textContent = say('runtime.request_failed_status', 'Request failed ({{status}})', { status: value.status || '?' }) + (t ? ' \u2014 ' + t : '');
           } else if (value == null) {
             node.textContent = '';
           } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {

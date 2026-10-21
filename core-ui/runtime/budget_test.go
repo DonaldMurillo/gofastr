@@ -587,6 +587,17 @@ const (
 	//        (TestNavSwapsRuntimeStrings). One _json helper replaced
 	//        three try/JSON.parse spellings. Measured 14304 → 14352.
 	//        (l1: -9)
+	//   +11 Back keeps the page's words (2026-10-21): the live
+	//        document's carrier copies say()'s current table, not the
+	//        first page's head block, and a full fetch puts its carrier
+	//        in <main> so the cache entry holds it. say() reads its table
+	//        at boot instead of lazily. Measured 14352 → 14371 (the
+	//        lazy-table spelling measured 14378). (l1: 35)
+	//   +3 the RPC error text speaks the page's language (2026-10-21):
+	//        a text-mode signal bound to a failed RPC renders "Request
+	//        failed (500)" through say() instead of a literal "Error: 500"
+	//        (TestRuntimeErrorObjectFormatting). Measured 14371 → 14374.
+	//        (l1: 13)
 	//
 	// HALT NOTE: the bundle measures 13391 at level 6 — 291 over the
 	// 13100 target (the Back/Forward leave capture every page runs is
@@ -599,7 +610,7 @@ const (
 	// spelling) plus the fixes and boot rows named with their tests.
 	// The line is the measurement plus clearance (moved DOWN from
 	// 13527, never up).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 8
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -980,7 +991,15 @@ const (
 	// 2026-10-21, later still: the destination's runtime strings on soft
 	// navigation, with one _json helper for the three JSON.parse sites,
 	// measure 14352/16588. The line moves DOWN to 16588.
-	coreCongestionWindowGZ = 16588
+	// 2026-10-21, review: Back to a page reached by soft navigation keeps
+	// its runtime words (the live carrier copies say()'s table; a full
+	// fetch's carrier rides <main> into the cache entry). Core measures
+	// 14371/16623. Both are the leave capture and the full-fetch commit
+	// every navigation runs, so no carve exists. 16623, the smallest step
+	// that fits. The same day, the failed-RPC signal text through say()
+	// measures 14374/16636; it runs on every page with a text signal
+	// bound to an RPC, so the line moves to 16636.
+	coreCongestionWindowGZ = 16636
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1031,6 +1050,8 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"page head/language carriers, safe metadata application and cache replay":  519, // (l1: 649)
 		"runtime strings: kernel say() and the core fragments' calls":              97,  // (l1: 189)
 		"runtime strings follow the destination on soft nav (data-cui-strings)":    49,  // (l1: -9)
+		"Back keeps the page's runtime strings (live carrier, full-fetch cache)":   11,  // (l1: 35)
+		"failed-RPC signal text through say()":                                     3,   // (l1: 13)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {

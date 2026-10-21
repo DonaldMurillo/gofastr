@@ -358,7 +358,6 @@ signals	10	sel
 signals	10	target
 signals	10	v
 signals	12	dur
-signals	12	s
 signals	12	t
 signals	2	isReservedSignalKey
 signals	4	G
