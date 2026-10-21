@@ -42,7 +42,7 @@ func altPolicy() app.Policy {
 
 func blockPolicy() app.Policy {
 	return app.PolicyFunc(func(ctx context.Context) app.Decision {
-		return decide.Block(403, "no")
+		return decide.Block(403)
 	})
 }
 

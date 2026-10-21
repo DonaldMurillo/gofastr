@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
@@ -50,13 +51,13 @@ func RequireAuth(jwt *JWTAuth) middleware.Middleware {
 						return
 					}
 				}
-				http.Error(w, `{"error":{"code":401,"message":"missing or invalid authorization header"}}`, http.StatusUnauthorized)
+				handler.WriteError(w, r, handler.Fail(http.StatusUnauthorized, reasonBadAuthorization))
 				return
 			}
 
 			claims, err := jwt.ValidateToken(tokenStr)
 			if err != nil {
-				http.Error(w, `{"error":{"code":401,"message":"invalid or expired token"}}`, http.StatusUnauthorized)
+				handler.WriteError(w, r, handler.Fail(http.StatusUnauthorized, reasonInvalidToken))
 				return
 			}
 
@@ -68,7 +69,7 @@ func RequireAuth(jwt *JWTAuth) middleware.Middleware {
 			// is not an observable distinction worth an oracle for.
 			user, ok := jwt.resolveOwner(r.Context(), claims)
 			if !ok {
-				http.Error(w, `{"error":{"code":401,"message":"invalid or expired token"}}`, http.StatusUnauthorized)
+				handler.WriteError(w, r, handler.Fail(http.StatusUnauthorized, reasonInvalidToken))
 				return
 			}
 			ctx := handler.SetUser(r.Context(), user)
@@ -106,7 +107,7 @@ func RequireRole(roles ...string) middleware.Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := GetCurrentUser(r.Context())
 			if user == nil {
-				http.Error(w, `{"error":{"code":401,"message":"unauthorized"}}`, http.StatusUnauthorized)
+				handler.WriteError(w, r, handler.Fail(http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized)))
 				return
 			}
 
@@ -120,17 +121,17 @@ func RequireRole(roles ...string) middleware.Middleware {
 			// Use embeds.RequireScope for what an embed may reach; roles gate
 			// interactive callers.
 			if _, embedded := embed.GrantFromContext(r.Context()); embedded {
-				http.Error(w, `{"error":{"code":403,"message":"role-gated routes are not reachable from an embedded surface"}}`, http.StatusForbidden)
+				handler.WriteError(w, r, handler.Fail(http.StatusForbidden, reasonEmbedRoleGated))
 				return
 			}
 
 			if roleGateDenied(r.Context(), user) {
-				http.Error(w, `{"error":{"code":403,"message":"forbidden"}}`, http.StatusForbidden)
+				handler.WriteError(w, r, handler.Fail(http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden)))
 				return
 			}
 
 			if !hasAnyRole(user, roles) {
-				http.Error(w, `{"error":{"code":403,"message":"forbidden"}}`, http.StatusForbidden)
+				handler.WriteError(w, r, handler.Fail(http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden)))
 				return
 			}
 

@@ -16,6 +16,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -431,24 +432,24 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	var cerr error
 	body.Email, cerr = p.mgr.canonicalizeEmail(body.Email)
 	if cerr != nil {
-		writeAuthError(w, http.StatusBadRequest, errComposedEmailMessage)
+		writeAuthError(w, r, http.StatusBadRequest, reasonComposedEmail)
 		return
 	}
 	if body.Email == "" {
-		writeAuthError(w, http.StatusBadRequest, "email is required")
+		writeAuthError(w, r, http.StatusBadRequest, reasonEmailIsRequired)
 		return
 	}
 	// The address rides inside the token and is handed to the sender, so
 	// an oversized one is carried all the way into delivery unless it is
 	// refused here. Length is independent of whether the account exists,
 	// so this opens no enumeration oracle.
-	if !emailWithinLimit(w, body.Email) {
+	if !emailWithinLimit(w, r, body.Email) {
 		return
 	}
 
 	token, err := createPurposeToken(r.Context(), p.tokenStore, purposeMagicLink, body.Email, p.config.TokenTTL)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to create token")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToCreateToken)
 		return
 	}
 
@@ -465,7 +466,7 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 			linkBody = p.config.BodyTemplate(magicLinkURL)
 		}
 		if err := p.config.EmailSender.SendMagicLink(r.Context(), body.Email, linkBody); err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "failed to send email")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToSendEmail)
 			return
 		}
 	case p.config.DevMode:
@@ -486,7 +487,7 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		// Fail-closed. The operator forgot to wire EmailSender and didn't
 		// opt into DevMode, better a 503 than silently leaking tokens.
-		writeAuthError(w, http.StatusServiceUnavailable, "magic link delivery not configured")
+		writeAuthError(w, r, http.StatusServiceUnavailable, reasonMagicLinkDeliveryNotConfigured)
 		return
 	}
 
@@ -499,7 +500,7 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]any{
-		"message": "magic link sent",
+		"message": reasonMagicLinkSent.Text(r.Context()),
 		"success": true,
 	})
 }
@@ -546,7 +547,7 @@ type ConfirmPageData struct {
 func (p *MagicLinkPlugin) confirmHandler(w http.ResponseWriter, r *http.Request) {
 	token := r.URL.Query().Get("token")
 	if token == "" {
-		writeAuthError(w, http.StatusUnauthorized, "token is required")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonTokenIsRequired)
 		return
 	}
 	// Peek, never redeem: the token has to survive for the POST, and a
@@ -556,7 +557,7 @@ func (p *MagicLinkPlugin) confirmHandler(w http.ResponseWriter, r *http.Request)
 	if peeker, ok := p.tokenStore.(MagicLinkTokenPeeker); ok {
 		got, err := peeker.PeekToken(r.Context(), token)
 		if err != nil {
-			writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
+			writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidToken)
 			return
 		}
 		// A token from another flow reads as unknown here rather than
@@ -564,7 +565,7 @@ func (p *MagicLinkPlugin) confirmHandler(w http.ResponseWriter, r *http.Request)
 		// display a reset token's userID as the address to sign in as.
 		addr, ok := peekPurposePayload(got, purposeMagicLink)
 		if !ok {
-			writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
+			writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidToken)
 			return
 		}
 		email = addr
@@ -657,10 +658,10 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
 	if err := r.ParseForm(); err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			writeAuthError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			writeAuthError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 			return
 		}
-		writeAuthError(w, http.StatusBadRequest, "invalid form body")
+		writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidForm)
 		return
 	}
 	token := r.PostFormValue("token")
@@ -668,20 +669,20 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		token = r.URL.Query().Get("token")
 	}
 	if token == "" {
-		writeAuthError(w, http.StatusUnauthorized, "token is required")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonTokenIsRequired)
 		return
 	}
 
 	email, err := redeemPurposeToken(r.Context(), p.tokenStore, purposeMagicLink, token)
 	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "invalid or expired token")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidToken)
 		return
 	}
 
 	// Find or create user
 	userStore := p.mgr.UserStore()
 	if userStore == nil {
-		writeAuthError(w, http.StatusInternalServerError, "user store not configured")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUserStoreNotConfigured)
 		return
 	}
 
@@ -691,7 +692,7 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		// NOT silently auto-create a user, that would mask the failure
 		// AND let an attacker provoke account creation by tripping a
 		// transient lookup error.
-		writeAuthError(w, http.StatusInternalServerError, "user lookup failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
 		return
 	}
 	if findErr != nil {
@@ -707,7 +708,7 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 			user, err = userStore.CreateUser(r.Context(), email, passwordPlaceholderHash, p.mgr.DefaultRoles())
 		}
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "failed to create user")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToCreateUser)
 			return
 		}
 		// The redeemed token proved the mailbox. A failure leaves the
@@ -715,7 +716,7 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		// is a no-op on an account nothing else has touched.
 		if verifier, ok := userStore.(EmailVerifier); ok {
 			if err := verifier.MarkEmailVerified(r.Context(), user.GetID()); err != nil {
-				writeAuthError(w, http.StatusInternalServerError, "failed to mark email verified")
+				writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToMarkEmailVerified)
 				return
 			}
 		}
@@ -731,20 +732,19 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		// owner's password on every magic link.
 		checker, ok := userStore.(EmailVerifiedChecker)
 		if !ok {
-			writeAuthError(w, http.StatusInternalServerError,
-				"user store does not implement EmailVerifiedChecker")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonStoreNoVerifiedChecker)
 			return
 		}
 		verified, err := checker.IsEmailVerified(r.Context(), user.GetID())
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "user lookup failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
 			return
 		}
 		if !verified {
 			if err := p.mgr.claimAccount(r.Context(), user.GetID(), "magic_link", remoteHost(r), true); err != nil {
 				slog.Warn("magic-link account claim failed",
 					"plugin", "magic-link", "user_hash", hashedIdentifier(user.GetID()), "err", err)
-				writeAuthError(w, http.StatusInternalServerError, "account claim failed")
+				writeAuthError(w, r, http.StatusInternalServerError, reasonAccountClaimFailed)
 				return
 			}
 		}
@@ -758,7 +758,7 @@ func (p *MagicLinkPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	cfg := p.mgr.Config()
 	sess, _, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "session create failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
 		return
 	}
 	// Set session cookie through the one mint helper: SameSite=Strict,

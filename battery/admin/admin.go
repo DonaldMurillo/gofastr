@@ -36,6 +36,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/queue"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -588,7 +589,7 @@ func (b *Battery) gate(next http.Handler) http.Handler {
 				http.Redirect(w, r, b.cfg.LoginPath+"?next="+url.QueryEscape(r.URL.Path), http.StatusSeeOther)
 				return
 			}
-			http.Error(w, http.StatusText(status), status)
+			i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -634,7 +635,7 @@ func (b *Battery) readOps(w http.ResponseWriter, r *http.Request, page string) (
 		var raw map[string]any
 		if err := handler.DecodeStrict(r.Body, &raw); err != nil {
 			if tooLarge(err) {
-				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return nil, false
 			}
 			b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
@@ -663,7 +664,7 @@ func (b *Battery) readOps(w http.ResponseWriter, r *http.Request, page string) (
 	}
 	if err := r.ParseForm(); err != nil {
 		if tooLarge(err) {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 			return nil, false
 		}
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")

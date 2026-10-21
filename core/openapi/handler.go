@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // Handler returns an http.Handler that serves the OpenAPI spec as JSON
@@ -23,7 +24,7 @@ func Handler(spec *Spec) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if _, ok := handler.GetUser(r.Context()); !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 			return
 		}
 		serveSpec(w, r, spec)
@@ -147,7 +148,7 @@ func DocsHandler(spec *Spec, basePath string, public bool) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		if !public {
 			if _, ok := handler.GetUser(r.Context()); !ok {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 				return
 			}
 		}

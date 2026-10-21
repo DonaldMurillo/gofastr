@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -517,7 +518,7 @@ func LLMMDHandler(ent *entity.Entity, opts ...LLMMDOptions) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if _, ok := handler.GetUser(r.Context()); !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 			return
 		}
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
@@ -562,7 +563,7 @@ func RegistryLLMMDHandler(registry entity.Registry, appName string, crudMount fu
 		w.Header().Set("Cache-Control", "no-store")
 		ctx := r.Context()
 		if _, ok := handler.GetUser(ctx); !ok {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 			return
 		}
 		md := registryLLMMD(registry, appName, func(ent *entity.Entity) bool {

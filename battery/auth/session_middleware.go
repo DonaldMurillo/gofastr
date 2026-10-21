@@ -240,7 +240,7 @@ func RequireSession(opts ...RequireSessionOption) middleware.Middleware {
 				// A JSON 401, not the browser redirect: a bearer client is
 				// not a browser that lost its cookie.
 				if _, tokenAuth := TokenScopes(r.Context()); tokenAuth {
-					http.Error(w, `{"error":{"code":401,"message":"interactive session required, not an API token"}}`, http.StatusUnauthorized)
+					handler.WriteError(w, r, handler.Fail(http.StatusUnauthorized, reasonSessionRequired))
 					return
 				}
 				next.ServeHTTP(w, r)
@@ -250,7 +250,7 @@ func RequireSession(opts ...RequireSessionOption) middleware.Middleware {
 				http.Redirect(w, r, o.failHTMLPath, http.StatusSeeOther)
 				return
 			}
-			http.Error(w, `{"error":{"code":401,"message":"login required"}}`, http.StatusUnauthorized)
+			handler.WriteError(w, r, handler.Fail(http.StatusUnauthorized, reasonLoginRequired))
 		})
 	}
 }

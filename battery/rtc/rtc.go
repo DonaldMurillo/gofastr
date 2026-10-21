@@ -44,6 +44,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/fanout"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/stream"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -457,11 +458,11 @@ func (s *Signaler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var he *HTTPError
 		if errors.As(err, &he) {
-			s.refuse(w, r, he.Status, he.Message)
+			s.refuse(w, r, he.Status, he.Reason, he.Params)
 			return
 		}
 		s.logger.Warn("rtc: join refused", "reason", "unauthorized")
-		s.refuse(w, r, http.StatusForbidden, "forbidden")
+		s.refuse(w, r, http.StatusForbidden, i18n.Phrase{}, nil)
 		return
 	}
 	s.Serve(w, r, join)
@@ -474,17 +475,21 @@ func (s *Signaler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // so a page cannot probe the network), and the runtime's ws module
 // classes that band as refused and does not reconnect. A status
 // outside 4xx/5xx is sent as 403.
-func (s *Signaler) refuse(w http.ResponseWriter, r *http.Request, status int, msg string) {
+func (s *Signaler) refuse(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, params map[string]any) {
 	// Clamp before either branch: a host's HTTPError with a stray or
 	// zero Status must not reach WriteHeader (which panics) any more
 	// than the wire.
 	if status < 400 || status > 599 {
 		status = http.StatusForbidden
 	}
+	if reason.IsZero() {
+		reason = i18n.StatusPhrase(status)
+	}
 	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
-		http.Error(w, msg, status)
+		i18n.HTTPError(w, r, status, reason, params)
 		return
 	}
+	msg := reason.Text(r.Context(), params)
 	// The close code is on the wire before the close handshake wait
 	// begins, so the wait buys a refusal nothing: at the default 1 s
 	// CloseTimeout every unauthenticated dial pinned a hijacked
@@ -493,7 +498,7 @@ func (s *Signaler) refuse(w http.ResponseWriter, r *http.Request, status int, ms
 	ws.CloseTimeout = refuseCloseTimeout
 	conn, err := stream.Upgrade(w, r, ws)
 	if err != nil {
-		http.Error(w, "websocket upgrade required", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonWebSocketRequired)
 		return
 	}
 	_ = conn.CloseWithStatus(uint16(4000+status), msg)

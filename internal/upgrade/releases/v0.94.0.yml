@@ -1,0 +1,120 @@
+version: v0.94.0
+title: Framework messages are phrases with stable error codes
+notes:
+  - change: "handler.WrapError takes an i18n.Phrase, handler.ValidationError and crud.NewValidationError take map[string][]schema.Violation, crud.ValidationError.Fields returns it, schema.ValidationResult.Errors holds violations, and handler.WriteError takes the request"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/core/handler.WrapError
+          type: '^func\(code int, message string, err error\) \*handler\.Error$'
+        - symbol: gofastr/core/handler.ValidationError
+          type: '^func\(fields map\[string\]\[\]string\) \*handler\.Error$'
+        - symbol: gofastr/core/handler.WriteError
+          type: '^func\(w http\.ResponseWriter, err error\)$'
+        - symbol: gofastr/framework/crud.NewValidationError
+          type: '^func\(fields map\[string\]\[\]string\) \*crud\.ValidationError$'
+        - symbol: gofastr/framework/crud.ValidationError.Fields
+          type: '^func\(\) map\[string\]\[\]string$'
+        - symbol: gofastr/core/schema.ValidationResult.Errors
+          type: '^map\[string\]\[\]string$'
+    guidance: "Define each message once at package level, var reasonTaken = i18n.Define(\"myapp.taken\", \"is taken\"), and pass it: handler.WrapError(409, reasonTaken, err) or handler.Fail(409, reasonTaken). Build field errors as schema.Violation{Reason: schema.ReasonRequired} (or your own phrase); read one back as a string with v.Error() for English or v.Text(ctx) for the caller's locale. Pass r to handler.WriteError(w, r, err). handler.Errorf still sends your own text as written. See gofastr docs i18n."
+  - change: "handler.Error.Fields is renamed Violations and holds map[string][]schema.Violation"
+    breaking: true
+    hits: edit
+    find:
+      uses: [gofastr/core/handler.Error.Fields]
+    guidance: "Use Violations: map[string][]schema.Violation{\"email\": {{Reason: schema.ReasonRequired}}}, or build the error with handler.ValidationError."
+  - change: "decide.Block and auth.WithBlock drop their message argument; decide.BlockWith and auth.WithBlockReason take an i18n.Phrase; app.Decision and app.RenderResult carry Reason and Params instead of Message"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/core-ui/app/decide.Block
+          type: '^func\(status int, message string\) app\.Decision$'
+        - symbol: gofastr/battery/auth.WithBlock
+          type: '^func\(status int, msg string\) auth\.PolicyOption$'
+      uses:
+        - gofastr/core-ui/app.Decision.Message
+        - gofastr/core-ui/app.RenderResult.Message
+    guidance: "decide.Block(403) writes the status's own phrase. For your own text, define a phrase at package level and call decide.BlockWith(403, reasonNoAccess) or auth.WithBlockReason(403, reasonNoAccess). Read d.Reason.Text(ctx, d.Params) where you read d.Message."
+  - change: "print.AccessPolicy returns (status int, reason i18n.Phrase); print.RequireAuth and print.Public follow"
+    breaking: true
+    hits: review
+    find:
+      uses: [gofastr/battery/print.AccessPolicy]
+      shapes:
+        - symbol: gofastr/battery/print.RequireAuth
+          type: '^func\([^)]*\*http\.Request\) \(int, string\)$'
+        - symbol: gofastr/battery/print.Public
+          type: '^func\([^)]*\*http\.Request\) \(int, string\)$'
+    guidance: "A policy of your own returns a phrase where it returned a string: return http.StatusForbidden, reasonNoPrint. Return i18n.Phrase{} for the status's own phrase."
+  - change: "rtc.HTTPError carries Reason and Params instead of Message"
+    breaking: true
+    hits: edit
+    find:
+      uses: [gofastr/battery/rtc.HTTPError.Message]
+    guidance: "Return &rtc.HTTPError{Status: 401, Reason: signInFirst} with signInFirst defined by i18n.Define at package level. See gofastr docs rtc."
+  - change: "middleware.RateLimitConfig.ErrorMessage string is Message i18n.Phrase"
+    breaking: true
+    hits: edit
+    find:
+      uses: [gofastr/core/middleware.RateLimitConfig.ErrorMessage]
+    guidance: "Set Message to a phrase defined at package level, or leave it zero for \"rate limit exceeded\" (catalog key error.rate_limited)."
+  - change: "i18nui.TranslateValidation and the ui.validation.* keys are removed; validation messages are the validation.* phrases"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/framework/i18nui.TranslateValidation
+        - gofastr/framework/i18nui.KeyValidationRequired
+        - gofastr/framework/i18nui.KeyValidationEmail
+        - gofastr/framework/i18nui.KeyValidationMin
+        - gofastr/framework/i18nui.KeyValidationMax
+        - gofastr/framework/i18nui.KeyValidationMinLen
+        - gofastr/framework/i18nui.KeyValidationMaxLen
+        - gofastr/framework/i18nui.KeyValidationPattern
+        - gofastr/framework/i18nui.KeyValidationUnique
+    guidance: "Render a validation failure with its schema.Violation: v.Text(ctx). Translate it in your catalog under validation.<code> (validation.required, validation.max_length, validation.unique_taken) with {{name}} placeholders."
+  - change: "the entity bulk, saved-view and status-override refusal keys move from ui.entity.* to entityui.* phrases with {{name}} placeholders"
+    breaking: true
+    hits: edit
+    find:
+      uses:
+        - gofastr/framework/i18nui.KeyEntityBulkNone
+        - gofastr/framework/i18nui.KeyEntityBulkUnknown
+        - gofastr/framework/i18nui.KeyEntityBulkOverCap
+        - gofastr/framework/i18nui.KeyEntityBulkNeedsUser
+        - gofastr/framework/i18nui.KeyEntityBulkBadFilter
+        - gofastr/framework/i18nui.KeyEntityBulkFailed
+        - gofastr/framework/i18nui.KeyEntityBulkBadScope
+        - gofastr/framework/i18nui.KeyEntityBulkEveryOverCap
+        - gofastr/framework/i18nui.KeyEntityBulkStale
+        - gofastr/framework/i18nui.KeyEntitySavedBadFilter
+        - gofastr/framework/i18nui.KeyEntitySavedBadCols
+        - gofastr/framework/i18nui.KeyEntityOverrideFailed
+        - gofastr/framework/i18nui.KeyEntityOverrideBlank
+        - gofastr/framework/i18nui.KeyEntityOverrideLong
+        - gofastr/framework/i18nui.KeyEntityOverrideStateBad
+        - gofastr/framework/i18nui.KeyEntityOverrideNoAudit
+        - gofastr/framework/i18nui.KeyEntityOverrideDenied
+      text:
+        - glob: "**/*.json"
+          match: '"(bulkNone|bulkUnknown|bulkOverCap|bulkNeedsUser|bulkBadFilter|bulkFailed|bulkBadScope|bulkEveryOverCap|bulkStale|savedBadFilter|savedBadCols|overrideFailed|overrideBlank|overrideLong|overrideStateBad|overrideNoAudit|overrideDenied)"\s*:'
+    guidance: "In each locale file, move the string from ui.entity.<camelKey> to a top-level entityui section under the snake_case code (bulkOverCap becomes entityui.bulk_over_cap) and write placeholders as {{cap}} and {{entity}}. See gofastr docs i18n."
+  - change: "a plain-text refusal with no message of its own writes its lowercase status phrase (\"internal server error\") instead of http.StatusText (\"Internal Server Error\")"
+    breaking: true
+    nodetect: "the change is in a response body; code that compares it lives in the app's tests or its consumers"
+    guidance: "Compare the status code rather than the body. A test that matched \"Internal Server Error\" matches \"internal server error\", or the catalog's text for error.internal in the locale it sends."
+  - change: "a crud list refuses a bad filter, sort, where, DSL filter, include, projection or nested filter with the parser's own message and code (unknown filter \"x\", unknown_filter) instead of wrapping it in \"invalid filters: ...\" or \"invalid query: ...\"; a bad cursor keeps its text and answers the decoder's code (cursor_format)"
+    breaking: true
+    nodetect: "the change is in a response body; code that reads it lives in the app's consumers"
+    guidance: "A client that matched the \"invalid filters:\" or \"invalid query:\" prefix, or the invalid_query and invalid_cursor reasons, branches on the specific reason instead (unknown_filter, invalid_sort_field, unknown_include, cursor_format, ...)."
+  - change: "entity.Unique's message is \"is already in use\" (validation.unique_taken) instead of \"must be unique\", and entity.Required and entity.Unique write their message in the context's locale"
+    breaking: true
+    nodetect: "the change is in a message string; only code comparing it, in tests or consumers, notices"
+    guidance: "Update any comparison against \"must be unique\"."
+  - change: "every JSON error body carries reason, a stable code, beside its message, and field failures add field_reasons; OpenAPI and the generated clients list both"
+    breaking: false
+    nodetect: "new fields in responses; nothing in an app's source spells them"
+    guidance: "Optional. Branch on reason instead of matching message text, and translate a message by adding its key to a locale file. See gofastr docs i18n."

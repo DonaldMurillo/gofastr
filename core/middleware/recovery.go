@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"runtime/debug"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -61,7 +62,7 @@ func RecoveryFn(getLogger func() *slog.Logger) Middleware {
 					if cut {
 						panic(http.ErrAbortHandler)
 					}
-					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+					i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 				}
 			}()
 			next.ServeHTTP(w, r)

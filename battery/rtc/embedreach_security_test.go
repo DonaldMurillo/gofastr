@@ -40,7 +40,7 @@ func TestEmbedGrantCannotJoinRTC(t *testing.T) {
 		ICEServers: []ICEServer{{URLs: []string{"stun:stun.example.net:3478"}}},
 		Authorize: func(*http.Request) (Join, error) {
 			authorized = true
-			return Join{}, &HTTPError{Status: http.StatusUnauthorized, Message: "no"}
+			return Join{}, &HTTPError{Status: http.StatusUnauthorized, Reason: testReasonNo}
 		},
 	})
 	defer sig.Close()

@@ -88,7 +88,7 @@ func TestRegionGuardRendersAltAndBlocks(t *testing.T) {
 	t.Run("outlet-block-renders-the-fallback", func(t *testing.T) {
 		a := app.NewApp("t")
 		shell, outlets := guardedShell(app.PolicyFunc(func(ctx context.Context) app.Decision {
-			return decide.Block(403, "archived")
+			return decide.Block(403)
 		}), nil)
 		a.SetDefaultLayout(shell)
 		var fillRuns int
@@ -146,7 +146,7 @@ func TestRegionGuardRendersAltAndBlocks(t *testing.T) {
 			return string(res.HTML)
 		}
 		if s := build(app.PolicyFunc(func(ctx context.Context) app.Decision {
-			return decide.Block(403, "quiet")
+			return decide.Block(403)
 		})); strings.Contains(s, "crumbs:/c") {
 			t.Errorf("a blocked area renders nothing: %s", s)
 		}
@@ -189,7 +189,7 @@ func TestRegionGuardRendersAltAndBlocks(t *testing.T) {
 			t.Fatalf("the reset carries no body, got %q", fill.HTML)
 		}
 		fill, outcome = build(app.PolicyFunc(func(ctx context.Context) app.Decision {
-			return decide.Block(403, "archived")
+			return decide.Block(403)
 		})).RenderPartResult(context.Background(), "/p", "l:shell#aside")
 		if outcome != app.PartApplied {
 			t.Fatalf("a blocked region answers its fallback as the part body, got %d", outcome)
@@ -205,7 +205,7 @@ func TestRegionGuardRendersAltAndBlocks(t *testing.T) {
 		team := app.NewKey[string]("team")
 		shell, _ := guardedShell(app.PolicyFunc(func(ctx context.Context) app.Decision {
 			if _, err := team.Get(ctx); err != nil {
-				return decide.Block(500, "unreachable")
+				return decide.Block(500)
 			}
 			return decide.Allow()
 		}), nil)

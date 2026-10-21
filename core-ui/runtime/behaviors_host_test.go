@@ -54,7 +54,7 @@ func TestCyclePanicSurfacesAs500ThroughARealHost(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500: the cycle panic must surface through the recovery chain, not kill the connection", w.Code)
 	}
-	if body := w.Body.String(); !strings.Contains(body, "Internal Server Error") {
+	if body := w.Body.String(); !strings.Contains(body, "internal server error") {
 		t.Fatalf("body = %q, want the recovery screen", body)
 	}
 	if !strings.Contains(logbuf.String(), "aa -> bb -> cc -> aa") {

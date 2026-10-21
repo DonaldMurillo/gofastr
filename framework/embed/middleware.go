@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"path"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
@@ -113,7 +115,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 				return
 			}
 			if !h.Ready() {
-				http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+				i18n.HTTPError(w, r, http.StatusServiceUnavailable, i18n.StatusPhrase(http.StatusServiceUnavailable))
 				return
 			}
 			g, err := h.VerifyGrant(r.Context(), token)
@@ -122,7 +124,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 				// presented a credential and had it rejected must not silently
 				// become a public visitor. That turns an expired grant into a
 				// wrong render instead of an error the frame can act on.
-				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+				i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 				return
 			}
 
@@ -139,7 +141,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			// of the bugs this feature has had.
 			surface, known := h.Lookup(g.Surface)
 			if !known || surface == nil {
-				http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 				return
 			}
 			// Decide on the path the ROUTER will dispatch on, not on the
@@ -148,7 +150,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			// /api/docs/ and an app's own "/{slug}".
 			routed, routable := RoutedPath(r.URL)
 			if !routable {
-				http.Error(w, "embed: request path is not canonical", http.StatusBadRequest)
+				i18n.HTTPError(w, r, http.StatusBadRequest, reasonPathNotCanonical)
 				return
 			}
 			// A reserved prefix is refused here as well as at boot. Boot
@@ -156,17 +158,16 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			// battery route that sits under a runtime prefix, or one the
 			// surface reaches some other way, must still never see a grant.
 			if res, reserved := reservedFor(h.reserved, path.Clean(routed)); reserved {
-				http.Error(w, fmt.Sprintf(
-					"embed surface %q may not reach %s: %s is mounted by the framework "+
-						"or a battery and no embed grant may reach it", g.Surface, routed, res),
-					http.StatusForbidden)
+				i18n.HTTPError(w, r, http.StatusForbidden, reasonReservedPath, map[string]any{
+					"surface": strconv.Quote(g.Surface), "path": routed, "reserved": res,
+				})
 				return
 			}
 			if !surface.MayReach(routed) {
-				http.Error(w, fmt.Sprintf(
-					"embed surface %q may not reach %s: add it to that surface's Reach "+
-						"to allow it, e.g. Reach: []string{%q}",
-					g.Surface, routed, reachSuggestion(routed)), http.StatusForbidden)
+				i18n.HTTPError(w, r, http.StatusForbidden, reasonOutsideReach, map[string]any{
+					"surface": strconv.Quote(g.Surface), "path": routed,
+					"suggestion": fmt.Sprintf("[]string{%q}", reachSuggestion(routed)),
+				})
 				return
 			}
 
@@ -195,15 +196,15 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 			// first request, loudly, instead of serving cross-tenant data
 			// quietly for the life of the deployment.
 			if u, ok := handler.GetUser(r.Context()); ok && u != nil {
-				misordered(w, "a user")
+				misordered(w, r, "a user")
 				return
 			}
 			if t, ok := handler.GetTenant(r.Context()); ok && t != nil {
-				misordered(w, "a tenant")
+				misordered(w, r, "a tenant")
 				return
 			}
 			if tenant.GetTenantID(r.Context()) != "" {
-				misordered(w, "a tenant id")
+				misordered(w, r, "a tenant id")
 				return
 			}
 
@@ -254,7 +255,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 					// Fail closed, for the same reason the subject resolver
 					// does: continuing without a tenant would either error
 					// deep in CRUD or, worse, run untenanted.
-					http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+					i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 					return
 				}
 				if tid != "" {
@@ -269,7 +270,7 @@ func (h *Host) Middleware() func(http.Handler) http.Handler {
 					// The subject no longer resolves. Fail closed: continuing
 					// anonymously would downgrade an authenticated embed into a
 					// public one without saying so.
-					http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+					i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 					return
 				}
 				if !IsNilValue(user) {
@@ -321,14 +322,14 @@ func (h *Host) RequireScope(scope string) func(http.Handler) http.Handler {
 				// present, Middleware did not run on this route. Refuse rather
 				// than let the caller past a gate that never looked at it.
 				if r.Header.Get(GrantHeader) != "" {
-					http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+					i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 					return
 				}
 				next.ServeHTTP(w, r)
 				return
 			}
 			if !g.HasScope(scope) {
-				http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -339,11 +340,8 @@ func (h *Host) RequireScope(scope string) func(http.Handler) http.Handler {
 // misordered answers a request that proves Middleware is installed inside an
 // authenticator instead of outside it. 500, not 403: the caller did nothing
 // wrong and retrying will not help.
-func misordered(w http.ResponseWriter, what string) {
-	http.Error(w, "embed: Middleware() ran after something that already resolved "+
-		what+": install it OUTERMOST, before session/bearer/API-token/tenant "+
-		"middleware, so the grant's subject is the only identity on the request",
-		http.StatusInternalServerError)
+func misordered(w http.ResponseWriter, r *http.Request, what string) {
+	i18n.HTTPError(w, r, http.StatusInternalServerError, reasonMisordered, map[string]any{"what": what})
 }
 
 // IsNilValue reports whether v is nil, including a non-nil interface wrapping a

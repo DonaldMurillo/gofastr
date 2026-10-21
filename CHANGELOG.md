@@ -18,6 +18,84 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `ErrDuplicateJob`; the admin's replay answers 409 for it, and "Replay
   N failed" skips it and replays the rest. `RedisQueue` refuses a keyed
   job with `queue.ErrUniqueUnsupported`.
+- **Error codes and translated framework messages.** Every JSON error
+  body the framework writes carries `reason`, a stable code such as
+  `unique_taken` or `unknown_filter`, beside `error` or `message`, which
+  is now in the request's locale. Field failures add `field_reasons`, one
+  code per message in `fields`. This covers `core/handler`, crud (single,
+  batch and state-move results), auth's JSON bodies, entity bulk actions,
+  saved views and status overrides, desktop preferences and semantic
+  search. Plain-text refusals (`429`, `503`, the recovery `500`, ...) and
+  battery screens translate too. Each message is an `i18n.Phrase`
+  (`i18n.Define(key, english)`), and its code is the key's last segment,
+  so a locale file translates one by naming its key
+  (`validation.required`, `error.not_found`, `filter.unknown_filter`).
+  New: `i18n.Phrase`, `i18n.Define`, `i18n.Phrases`, `i18n.Error`,
+  `i18n.NewError`, `i18n.Wrap`, `i18n.Phrased`, `i18n.ErrorText`,
+  `i18n.HTTPError`, `i18n.HTTPErrorFor`, `i18n.StatusPhrase`,
+  `handler.Fail`, `handler.ViolationBodies`, `schema.Violation` and the
+  `schema.Reason*` phrases. A wrapped error's text keeps its frame
+  (`nested filter "author.age_like": ...`) and its code is the innermost
+  cause's. OpenAPI lists `reason` and `field_reasons` on its error
+  schemas; the generated Go client, JS SDK and CLI decode them. See
+  `gofastr docs i18n` → "Framework messages and error codes".
+- **`rawtext` analyzer.** `make analyze` refuses English that skips the
+  catalog in `core/`, `framework/`, `battery/` and `core-ui/`: a bare
+  `http.Error`, `i18n.Define` in a function body or with computed text,
+  `handler.Errorf` and `handler.Error{Message: ...}`, a response helper
+  that takes a `msg string`, a JSON envelope whose `error` or `message`
+  is prose or `err.Error()`, and a constant JSON body written straight
+  to the response with a prose message. A deliberate site carries
+  `//gofastr:allow(rawtext) <why>`.
+
+### Changed
+- **BREAKING: error helpers take phrases.** `handler.WrapError(code,
+  reason, err)` takes an `i18n.Phrase`; `handler.Fail(code, reason,
+  params)` builds one. `handler.ValidationError` and
+  `crud.NewValidationError` take `map[string][]schema.Violation`, and
+  `crud.ValidationError.Fields()` returns it. `handler.Error.Fields` is
+  now `Violations`, beside new `Reason` and `Params`.
+  `schema.ValidationResult.Errors` holds `[]schema.Violation` per field;
+  `Violation.Error()` is the old English message. `handler.WriteError`
+  takes the request (`WriteError(w, r, err)`) so it can answer in the
+  caller's locale. `handler.Errorf` is unchanged and sends its text as
+  written, with no code.
+- **BREAKING: refusal messages are phrases.** `decide.Block(status)`
+  drops its message; `decide.BlockWith(status, reason, params)` names
+  one, and `app.Decision` and `app.RenderResult` carry `Reason` and
+  `Params` instead of `Message`. `auth.WithBlock(status)` drops its
+  message; `auth.WithBlockReason(status, reason)` names one.
+  `print.AccessPolicy` returns `(status, i18n.Phrase)`. `rtc.HTTPError`
+  carries `Reason` and `Params` instead of `Message`.
+  `middleware.RateLimitConfig.ErrorMessage string` is
+  `Message i18n.Phrase`.
+- **BREAKING: plain-text status bodies are lowercase.** A refusal with no
+  message of its own writes its status phrase, "internal server error",
+  "gateway timeout", "not found", where it wrote `http.StatusText`'s
+  "Internal Server Error".
+- **BREAKING: query parsers answer with their own code.** A crud list
+  given a bad `?field_<op>=`, `?sort=`, `?where=`, `?filter=`,
+  `?include=`, `?fields=` or nested `?rel.field=` answers the parser's
+  message and code (`unknown filter "x"`, `unknown_filter`), where it
+  wrapped it in "invalid filters: ..." or "invalid query: ...". A bad
+  cursor keeps its "invalid cursor: ..." text and answers the decoder's
+  code (`cursor_format`). The `filter`, `dsl` and `pagination` errors
+  and crud's include, nested-filter, projection and cursor errors are
+  `*i18n.Error`; their `Error()` text is unchanged.
+- **BREAKING: `entity.Unique` says "is already in use"**, the same phrase
+  (`validation.unique_taken`) crud's conflict answer uses, where it said
+  "must be unique". `entity.Required` and `entity.Unique` write their
+  message in the context's locale.
+- **BREAKING: `i18nui` validation keys removed.** `TranslateValidation`
+  and the `ui.validation.*` keys (`KeyValidationRequired` through
+  `KeyValidationUnique`) are gone: validation messages are the
+  `validation.*` phrases, and a catalog translates them under that key.
+  `KeyValidationSummaryTitle` and `KeyValidationProblem` stay. The
+  entity bulk, saved-view and override refusal keys
+  (`ui.entity.bulkNone`, `ui.entity.overrideDenied`, ...) move to
+  `entityui.*` phrases (`entityui.bulk_none`, `entityui.override_denied`)
+  whose placeholders use the double-brace spelling (`{{cap}}`,
+  `{{entity}}`).
 
 ### Fixed
 - **`DBQueue` index names on long table names.** Postgres cuts

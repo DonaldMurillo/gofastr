@@ -12,6 +12,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
@@ -661,7 +662,7 @@ func gateSession(level gateLevel, h http.Handler) http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !gateSatisfied(level, r) {
-			http.Error(w, "forbidden: widget requires a session", http.StatusForbidden)
+			i18n.HTTPError(w, r, http.StatusForbidden, reasonWidgetNeedsSession)
 			return
 		}
 		h.ServeHTTP(w, r)

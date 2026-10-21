@@ -45,7 +45,7 @@ func TestTimeoutAbandonsPartialResponse(t *testing.T) {
 		t.Fatalf("status = %d, want 504", rec.Code)
 	}
 	body := rec.Body.String()
-	if body != "Gateway Timeout\n" {
+	if body != "gateway timeout\n" {
 		t.Fatalf("504 body must be exactly the middleware's error text, got %q", body)
 	}
 	if got := rec.Header().Get("X-Partial-Secret"); got != "" {
@@ -86,7 +86,7 @@ func TestTimeoutFlushTimerNeverInterleaves(t *testing.T) {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/sse", nil))
 		body := rec.Body.String()
-		if strings.Contains(body, "Gateway Timeout") {
+		if strings.Contains(body, "gateway timeout") {
 			t.Fatalf("SECURITY: 504 written onto a committed stream:\n%s", body)
 		}
 		if got := strings.Count(body, frame); got != 8 {
@@ -162,7 +162,7 @@ func TestTimeoutFlushTimerNeverInterleaves(t *testing.T) {
 			awaitHandler(t, iterDone)
 			body := rec.Body.String()
 			streamed := strings.Contains(body, frame)
-			gw := strings.Contains(body, "Gateway Timeout")
+			gw := strings.Contains(body, "gateway timeout")
 			if streamed && gw {
 				t.Fatalf("iter %d (delay=%s): 504 interleaved with stream bytes:\n%s", i, delay, body)
 			}
@@ -286,7 +286,7 @@ func TestTimeoutHijackBeforeDeadlineKeepsTheConnection(t *testing.T) {
 	}
 	select {
 	case b := <-leaked:
-		if strings.Contains(string(b), "Gateway Timeout") {
+		if strings.Contains(string(b), "gateway timeout") {
 			t.Fatalf("SECURITY: the 504 was written onto the hijacked connection: %q", b)
 		}
 	case <-time.After(2 * time.Second):

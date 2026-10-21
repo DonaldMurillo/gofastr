@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"golang.org/x/text/unicode/norm"
 )
@@ -55,10 +56,10 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request, canonicalize 
 		r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
 		if err := r.ParseForm(); err != nil {
 			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-				writeAuthError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				writeAuthError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return "", "", true, false
 			}
-			writeAuthError(w, http.StatusBadRequest, "invalid form body")
+			writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidForm)
 			return "", "", true, false
 		}
 		// SECURITY: net/url keeps the FIRST value of a duplicated form
@@ -71,11 +72,11 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request, canonicalize 
 		// bound handler.
 		for _, field := range []string{"email", "password"} {
 			if len(r.PostForm[field]) > 1 {
-				writeAuthError(w, http.StatusBadRequest, "invalid form body")
+				writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidForm)
 				return "", "", true, false
 			}
 		}
-		email, ok = canonicalizeDecodedEmail(w, canonicalize, r.PostFormValue("email"))
+		email, ok = canonicalizeDecodedEmail(w, r, canonicalize, r.PostFormValue("email"))
 		if !ok {
 			return "", "", true, false
 		}
@@ -90,7 +91,7 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request, canonicalize 
 	if !decodeJSONLimited(w, r, &body) {
 		return "", "", false, false
 	}
-	email, ok = canonicalizeDecodedEmail(w, canonicalize, body.Email)
+	email, ok = canonicalizeDecodedEmail(w, r, canonicalize, body.Email)
 	if !ok {
 		return "", "", false, false
 	}
@@ -100,13 +101,13 @@ func decodeAuthCredentials(w http.ResponseWriter, r *http.Request, canonicalize 
 // canonicalizeDecodedEmail is the shared tail of both decode branches:
 // canonicalize (refusing decomposed Unicode), then bound the length so
 // the limiter key / user-table value stays finite.
-func canonicalizeDecodedEmail(w http.ResponseWriter, canonicalize func(string) (string, error), raw string) (string, bool) {
+func canonicalizeDecodedEmail(w http.ResponseWriter, r *http.Request, canonicalize func(string) (string, error), raw string) (string, bool) {
 	email, err := canonicalizeEmailWith(canonicalize, raw)
 	if err != nil {
-		writeAuthError(w, http.StatusBadRequest, errComposedEmailMessage)
+		writeAuthError(w, r, http.StatusBadRequest, reasonComposedEmail)
 		return "", false
 	}
-	if !emailWithinLimit(w, email) {
+	if !emailWithinLimit(w, r, email) {
 		return "", false
 	}
 	return email, true
@@ -117,10 +118,6 @@ func canonicalizeDecodedEmail(w http.ResponseWriter, canonicalize func(string) (
 // canonicalizer normalizes to NFC and never returns it); every email-
 // ingesting handler surfaces it as 400.
 var ErrEmailNotComposed = errors.New("auth: email address is not in composed Unicode form (NFC)")
-
-// errComposedEmailMessage is the client-facing wording for the same
-// refusal; it names the fix without echoing the input.
-const errComposedEmailMessage = "email must be in composed Unicode form (NFC)"
 
 // CanonicalEmail is the battery's single definition of email identity.
 // Every flow that looks an email up or stores one (login, registration,
@@ -193,9 +190,9 @@ const maxEmailLen = 254
 // is the only limit on how much state one unauthenticated request can
 // park in either. Length does not depend on whether the account exists,
 // so rejecting here opens no account-existence oracle.
-func emailWithinLimit(w http.ResponseWriter, email string) bool {
+func emailWithinLimit(w http.ResponseWriter, r *http.Request, email string) bool {
 	if len(email) > maxEmailLen {
-		writeAuthError(w, http.StatusBadRequest, "invalid email")
+		writeAuthError(w, r, http.StatusBadRequest, reasonInvalidEmail)
 		return false
 	}
 	return true
@@ -275,7 +272,7 @@ func getDefaultLoginErrorPath() string {
 // When no usable Referer is available, falls back to
 // defaultLoginErrorPath (if configured via SetDefaultLoginErrorPath)
 // or JSON otherwise.
-func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase) {
 	target := safeReferer(r)
 	if target == "" {
 		fallback := getDefaultLoginErrorPath()
@@ -284,14 +281,14 @@ func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, msg 
 		}
 	}
 	if target == "" {
-		writeAuthError(w, status, msg)
+		writeAuthError(w, r, status, reason)
 		return
 	}
 	sep := "?"
 	if strings.Contains(target, "?") {
 		sep = "&"
 	}
-	http.Redirect(w, r, target+sep+"error="+sanitiseErr(msg), http.StatusSeeOther)
+	http.Redirect(w, r, target+sep+"error="+sanitiseErr(reason.Code()), http.StatusSeeOther)
 }
 
 // safeReferer returns the request's Referer when its host matches the

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // maxRequestBody caps the JSON body size for /index and /query so a
@@ -82,12 +83,12 @@ func requireAuth(cfg handlerConfig) func(http.Handler) http.Handler {
 			// token must never serve the index, even to a caller who sends a
 			// (meaningless) Authorization header.
 			if cfg.authToken == "" {
-				writeErr(w, http.StatusUnauthorized, "authentication required")
+				writeErr(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)
 				return
 			}
 			h := r.Header.Get("Authorization")
 			if !strings.HasPrefix(h, bearerPrefix) {
-				writeErr(w, http.StatusUnauthorized, "authentication required")
+				writeErr(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)
 				return
 			}
 			// Compare fixed-width digests, not the raw strings.
@@ -98,7 +99,7 @@ func requireAuth(cfg handlerConfig) func(http.Handler) http.Handler {
 			got := sha256.Sum256([]byte(strings.TrimSpace(h[len(bearerPrefix):])))
 			want := sha256.Sum256([]byte(cfg.authToken))
 			if subtle.ConstantTimeCompare(got[:], want[:]) != 1 {
-				writeErr(w, http.StatusUnauthorized, "authentication required")
+				writeErr(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -139,7 +140,7 @@ func requireJSON(next http.Handler) http.Handler {
 			ct = ct[:semi]
 		}
 		if strings.ToLower(strings.TrimSpace(ct)) != "application/json" {
-			writeErr(w, http.StatusUnsupportedMediaType, "content-type must be application/json")
+			writeErr(w, r, http.StatusUnsupportedMediaType, i18n.ReasonJSONMediaType)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -154,7 +155,7 @@ func requireJSON(next http.Handler) http.Handler {
 func limitBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.ContentLength > maxRequestBody {
-			writeErr(w, http.StatusRequestEntityTooLarge, "request body too large")
+			writeErr(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
@@ -180,10 +181,10 @@ func indexHandler(idx Index) http.Handler {
 		raw, err := io.ReadAll(r.Body)
 		if err != nil {
 			if isBodyTooLarge(err) {
-				writeErr(w, http.StatusRequestEntityTooLarge, "request body too large")
+				writeErr(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return
 			}
-			writeErr(w, http.StatusBadRequest, "invalid JSON body")
+			writeErr(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 			return
 		}
 		// Strict decode: stdlib json keeps the LAST duplicate key and
@@ -191,15 +192,15 @@ func indexHandler(idx Index) http.Handler {
 		// {"documents":[A],"documents":[B]} indexes batch B while any
 		// audit log records A. Refuse the ambiguity.
 		if err := handler.UnmarshalStrict(raw, &body); err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid JSON body")
+			writeErr(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 			return
 		}
 		if len(body.Documents) == 0 {
-			writeErr(w, http.StatusBadRequest, "documents is required and must be non-empty")
+			writeErr(w, r, http.StatusBadRequest, reasonDocumentsRequired)
 			return
 		}
 		if err := idx.Add(r.Context(), body.Documents...); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal error")
+			writeErr(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 		writeJSON(w, http.StatusAccepted, indexResponse{Added: len(body.Documents)})
@@ -212,25 +213,25 @@ func queryHandler(idx Index) http.Handler {
 		raw, err := io.ReadAll(r.Body)
 		if err != nil {
 			if isBodyTooLarge(err) {
-				writeErr(w, http.StatusRequestEntityTooLarge, "request body too large")
+				writeErr(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return
 			}
-			writeErr(w, http.StatusBadRequest, "invalid JSON body")
+			writeErr(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 			return
 		}
 		// Same strict rule as /index: a duplicated or case-folded "text"
 		// key must not silently swap the query.
 		if err := handler.UnmarshalStrict(raw, &q); err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid JSON body")
+			writeErr(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 			return
 		}
 		if strings.TrimSpace(q.Text) == "" {
-			writeErr(w, http.StatusBadRequest, "query.text is required")
+			writeErr(w, r, http.StatusBadRequest, reasonQueryTextIsRequired)
 			return
 		}
 		hits, err := idx.Query(r.Context(), q)
 		if err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal error")
+			writeErr(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 		writeJSON(w, http.StatusOK, queryResponse{Hits: hits})
@@ -250,11 +251,11 @@ func deleteHandler(idx Index) http.Handler {
 			id = r.URL.Query().Get("id")
 		}
 		if id == "" {
-			writeErr(w, http.StatusBadRequest, "doc id is required")
+			writeErr(w, r, http.StatusBadRequest, reasonDocIdIsRequired)
 			return
 		}
 		if err := idx.Remove(r.Context(), id); err != nil {
-			writeErr(w, http.StatusInternalServerError, "internal error")
+			writeErr(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -283,11 +284,12 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 }
 
 type errorResponse struct {
-	Error string `json:"error"`
+	Error  string `json:"error"`
+	Reason string `json:"reason"`
 }
 
-func writeErr(w http.ResponseWriter, code int, msg string) {
-	writeJSON(w, code, errorResponse{Error: msg})
+func writeErr(w http.ResponseWriter, r *http.Request, code int, reason i18n.Phrase, params ...map[string]any) {
+	writeJSON(w, code, errorResponse{Error: reason.Text(r.Context(), params...), Reason: reason.Code()})
 }
 
 // errMethodNotAllowed is reserved for future use when we split the

@@ -153,8 +153,8 @@ func (ch *CrudHandler) checkMediaProvenance(ctx context.Context, body map[string
 		if cur[m.ref] {
 			continue
 		}
-		return &ValidationError{fields: map[string][]string{
-			m.field: {"storage key was not uploaded by this request"},
+		return &ValidationError{fields: map[string][]schema.Violation{
+			m.field: {{Reason: reasonKeyNotUploaded}},
 		}}
 	}
 	return nil

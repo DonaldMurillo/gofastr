@@ -210,7 +210,7 @@ func (ch *CrudHandler) requirePermission(w http.ResponseWriter, r *http.Request,
 		return true
 	}
 	if !ch.accessAllows(r.Context(), perm, recordID) {
-		writeJSONError(w, http.StatusForbidden, "access denied: missing permission "+perm)
+		writeJSONError(w, r, http.StatusForbidden, handler.ReasonMissingPermission, map[string]any{"permission": string(perm)})
 		return false
 	}
 	return true
@@ -404,7 +404,7 @@ func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id 
 	}
 	id, found := owner.Get(r.Context())
 	if !found {
-		writeJSONError(w, http.StatusUnauthorized, "authentication required")
+		writeJSONError(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)
 		return nil, false
 	}
 	return id, true
@@ -432,7 +432,7 @@ func (ch *CrudHandler) requireAuthenticated(w http.ResponseWriter, r *http.Reque
 		return true // an explicit mechanism already governs this entity
 	}
 	if _, ok := handler.GetUser(r.Context()); !ok {
-		writeJSONError(w, http.StatusUnauthorized, "authentication required")
+		writeJSONError(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)
 		return false
 	}
 	return true
@@ -485,7 +485,7 @@ func (ch *CrudHandler) RequireTenant(w http.ResponseWriter, r *http.Request) (ok
 	}
 	ctx := r.Context()
 	if tenantIDFromCtx(ctx) == "" && !tenant.IsCrossTenant(ctx) {
-		writeJSONError(w, http.StatusUnauthorized, "tenant context required")
+		writeJSONError(w, r, http.StatusUnauthorized, reasonTenantRequired)
 		return false
 	}
 	return true

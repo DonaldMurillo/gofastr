@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -315,21 +316,21 @@ var b64url = base64.RawURLEncoding
 func (p *PasskeyPlugin) requireFullSession(w http.ResponseWriter, r *http.Request) (*Session, bool) {
 	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "not authenticated")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonNotAuthenticated)
 		return nil, false
 	}
 	if sess.PendingTwoFactor {
-		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+		writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 		return nil, false
 	}
 	if !sess.TwoFactorVerified {
 		on, err := p.mgr.twoFactorEnabled(r.Context(), sess.UserID)
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "2FA state lookup failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reason2faLookupFailed)
 			return nil, false
 		}
 		if on {
-			writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+			writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 			return nil, false
 		}
 	}
@@ -350,7 +351,7 @@ func decodeB64Fields(fields map[string]string) (map[string][]byte, error) {
 	for _, k := range slices.Sorted(maps.Keys(fields)) {
 		b, err := b64url.Strict().DecodeString(fields[k])
 		if err != nil || len(b) == 0 {
-			return nil, fmt.Errorf("%s must be unpadded base64url", k)
+			return nil, i18n.NewError(reasonNotBase64URL, map[string]any{"field": k})
 		}
 		out[k] = b
 	}
@@ -362,7 +363,7 @@ func decodeB64Fields(fields map[string]string) (map[string][]byte, error) {
 // cross-site page send a CORS preflight before reaching them.
 func requireJSON(w http.ResponseWriter, r *http.Request) bool {
 	if !handler.IsJSONContentType(r.Header.Get("Content-Type")) {
-		writeAuthError(w, http.StatusUnsupportedMediaType, "expected application/json")
+		writeAuthError(w, r, http.StatusUnsupportedMediaType, i18n.ReasonJSONMediaType)
 		return false
 	}
 	return true
@@ -379,35 +380,35 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if len(sess.UserID) > maxUserHandleLen {
-		writeAuthError(w, http.StatusInternalServerError, "user id is longer than a WebAuthn user handle allows")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUserIdTooLong)
 		return
 	}
 	userStore := p.mgr.UserStore()
 	if userStore == nil {
-		writeAuthError(w, http.StatusInternalServerError, "user store not configured")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUserStoreNotConfigured)
 		return
 	}
 	user, err := userStore.FindByID(r.Context(), sess.UserID)
 	if errors.Is(err, ErrUserNotFound) {
-		writeAuthError(w, http.StatusUnauthorized, "not authenticated")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonNotAuthenticated)
 		return
 	}
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "user lookup failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
 		return
 	}
 	existing, err := p.store.ListPasskeys(r.Context(), sess.UserID)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "passkey lookup failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyLookupFailed)
 		return
 	}
 	if len(existing) >= p.config.MaxPerUser {
-		writeAuthError(w, http.StatusConflict, "passkey limit reached; remove one first")
+		writeAuthError(w, r, http.StatusConflict, reasonPasskeyLimit)
 		return
 	}
 	challenge, err := createPurposeToken(r.Context(), p.challenges, purposePasskeyRegister, sess.UserID, p.config.ChallengeTTL)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "challenge create failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonChallengeCreateFailed)
 		return
 	}
 	exclude := make([]map[string]string, 0, len(existing))
@@ -469,12 +470,12 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	name, ok := passkeyName(body.Name)
 	if !ok {
-		writeAuthError(w, http.StatusBadRequest, "name must be at most 64 printable characters")
+		writeAuthError(w, r, http.StatusBadRequest, reasonNameTooLong)
 		return
 	}
 	f, err := decodeB64Fields(map[string]string{"id": body.ID, "clientDataJSON": body.ClientDataJSON, "attestationObject": body.AttestationObject})
 	if err != nil {
-		writeAuthError(w, http.StatusBadRequest, err.Error())
+		writeAuthErrorFor(w, r, http.StatusBadRequest, err, i18n.StatusPhrase(http.StatusBadRequest))
 		return
 	}
 	challenge, err := p.rp.checkClientData(f["clientDataJSON"], "webauthn.create")
@@ -502,11 +503,11 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	// under it would each register past it; count again before storing.
 	existing, err := p.store.ListPasskeys(r.Context(), sess.UserID)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "passkey lookup failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyLookupFailed)
 		return
 	}
 	if len(existing) >= p.config.MaxPerUser {
-		writeAuthError(w, http.StatusConflict, "passkey limit reached; remove one first")
+		writeAuthError(w, r, http.StatusConflict, reasonPasskeyLimit)
 		return
 	}
 	now := time.Now().UTC()
@@ -517,10 +518,10 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	if err := p.store.AddPasskey(r.Context(), cred); err != nil {
 		if errors.Is(err, ErrPasskeyExists) {
-			writeAuthError(w, http.StatusConflict, "passkey already registered")
+			writeAuthError(w, r, http.StatusConflict, reasonPasskeyAlreadyRegistered)
 			return
 		}
-		writeAuthError(w, http.StatusInternalServerError, "passkey save failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeySaveFailed)
 		return
 	}
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -538,7 +539,7 @@ func (p *PasskeyPlugin) loginOptionsHandler(w http.ResponseWriter, r *http.Reque
 	}
 	challenge, err := createPurposeToken(r.Context(), p.challenges, purposePasskeyLogin, "", p.config.ChallengeTTL)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "challenge create failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonChallengeCreateFailed)
 		return
 	}
 	// No allowCredentials: the browser offers the passkeys it holds for
@@ -552,10 +553,6 @@ func (p *PasskeyPlugin) loginOptionsHandler(w http.ResponseWriter, r *http.Reque
 		"allowCredentials": []any{},
 	}})
 }
-
-// errPasskeySignIn is the one answer every failed sign-in gets: which
-// check failed is in the audit trail, not the response.
-const errPasskeySignIn = "passkey sign-in failed"
 
 func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 	if !p.limit.guard(w, r) {
@@ -576,7 +573,7 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 		"signature": body.Signature, "userHandle": body.UserHandle,
 	})
 	if err != nil {
-		writeAuthError(w, http.StatusBadRequest, err.Error())
+		writeAuthErrorFor(w, r, http.StatusBadRequest, err, i18n.StatusPhrase(http.StatusBadRequest))
 		return
 	}
 	challenge, err := p.rp.checkClientData(f["clientDataJSON"], "webauthn.get")
@@ -591,7 +588,7 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 	cred, err := p.store.GetPasskey(r.Context(), f["id"])
 	if err != nil {
 		if !errors.Is(err, ErrPasskeyNotFound) {
-			writeAuthError(w, http.StatusInternalServerError, "passkey lookup failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyLookupFailed)
 			return
 		}
 		p.refuse(w, r, "", "login", "unknown_credential", errors.New("unknown credential id"))
@@ -621,21 +618,21 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 			Kind: "passkey.clone_suspected", UserID: cred.UserID, Remote: remoteHost(r),
 			Meta: map[string]string{"stored": strconv.FormatUint(uint64(cred.SignCount), 10), "presented": strconv.FormatUint(uint64(res.signCount), 10)},
 		})
-		writeAuthError(w, http.StatusUnauthorized, errPasskeySignIn)
+		writeAuthError(w, r, http.StatusUnauthorized, reasonPasskeySignIn)
 		return
 	}
 	wrote, err := p.store.RecordPasskeyUse(r.Context(), cred.ID, cred.SignCount, res.signCount, res.backedUp, time.Now().UTC())
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "passkey update failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyUpdateFailed)
 		return
 	}
 	if !wrote {
-		writeAuthError(w, http.StatusConflict, "passkey used concurrently; retry")
+		writeAuthError(w, r, http.StatusConflict, reasonPasskeyConflict)
 		return
 	}
 	userStore := p.mgr.UserStore()
 	if userStore == nil {
-		writeAuthError(w, http.StatusInternalServerError, "user store not configured")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUserStoreNotConfigured)
 		return
 	}
 	user, err := userStore.FindByID(r.Context(), cred.UserID)
@@ -644,7 +641,7 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 			p.refuse(w, r, cred.UserID, "login", "account_gone", errors.New("the passkey's account no longer exists"))
 			return
 		}
-		writeAuthError(w, http.StatusInternalServerError, "user lookup failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
 		return
 	}
 	sess, pending, err := p.mgr.MintSession(r.Context(), user.GetID(), p.mgr.Config().SessionTTL)
@@ -655,11 +652,11 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 			Kind: "login.failed", UserID: user.GetID(), Email: user.GetEmail(), Remote: remoteHost(r),
 			Meta: map[string]string{"reason": "twofa_failclosed", "via": "passkey"},
 		})
-		writeAuthError(w, http.StatusInternalServerError, "two-factor enforcement unavailable")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonTwoFactorUnavailable)
 		return
 	}
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "session create failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
 		return
 	}
 	kind := "login.succeeded"
@@ -694,10 +691,10 @@ func (p *PasskeyPlugin) refuse(w http.ResponseWriter, r *http.Request, userID, c
 		"user_hash", hashedIdentifier(userID), "reason", reason,
 		"detail", textsafe.Truncate(textsafe.ScrubControlBytes(why.Error()), 200))
 	if ceremony == "login" {
-		writeAuthError(w, http.StatusUnauthorized, errPasskeySignIn)
+		writeAuthError(w, r, http.StatusUnauthorized, reasonPasskeySignIn)
 		return
 	}
-	writeAuthError(w, http.StatusBadRequest, "passkey registration failed")
+	writeAuthError(w, r, http.StatusBadRequest, reasonPasskeyRegistrationFailed)
 }
 
 // ─── management ───────────────────────────────────────────────────────
@@ -723,7 +720,7 @@ func (p *PasskeyPlugin) listHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	creds, err := p.store.ListPasskeys(r.Context(), sess.UserID)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "passkey lookup failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyLookupFailed)
 		return
 	}
 	out := make([]map[string]any, 0, len(creds))
@@ -749,16 +746,16 @@ func (p *PasskeyPlugin) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	f, err := decodeB64Fields(map[string]string{"id": body.ID})
 	if err != nil {
-		writeAuthError(w, http.StatusBadRequest, err.Error())
+		writeAuthErrorFor(w, r, http.StatusBadRequest, err, i18n.StatusPhrase(http.StatusBadRequest))
 		return
 	}
 	deleted, err := p.store.DeletePasskey(r.Context(), sess.UserID, f["id"])
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "passkey delete failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonPasskeyDeleteFailed)
 		return
 	}
 	if !deleted {
-		writeAuthError(w, http.StatusNotFound, "passkey not found")
+		writeAuthError(w, r, http.StatusNotFound, reasonPasskeyNotFound)
 		return
 	}
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{Kind: "passkey.deleted", UserID: sess.UserID, Remote: remoteHost(r)})

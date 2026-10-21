@@ -144,22 +144,35 @@ the buffered path so includes still resolve. Only the explicit
 
 ## Errors
 
-- `unknown include "x"`: the named relation does not exist on the
-  entity at that depth.
-- `streaming list does not support include`: `?stream=true` was
-  combined with `?include=`.
-- `relation "y" targets entity "z", which is not registered`: a
-  segment named a relation whose target is not in the registry.
-- `include "x" requires an entity registry`: the handler has no
-  `Registry` set, so no target can be resolved. Framework apps wire
-  this automatically; a hand-built `crud.NewCrudHandler` must set
-  `.Registry`.
-- `include "x" is N relations deep; the maximum is 4`: the path
-  exceeded the depth cap.
-- `include exceeds the maximum number of related rows`: the assembled
-  response would carry more than 20,000 related-row references.
-- `too many include paths: N (max 32)`: the request named more
-  comma-separated include paths than one response may eager-load.
+Each refusal's body carries its `reason` code (in brackets below)
+beside the message, which is in the request's locale (see
+[i18n](i18n.md) → "The error contract").
+
+- `unknown include "x"` (`unknown_include`, or `unknown_include_hint`
+  when a near miss is suggested): the named relation does not exist on
+  the entity at that depth.
+- `streaming list does not support include` (`stream_include`):
+  `?stream=true` was combined with `?include=`.
+- `relation "y" targets entity "z", which is not registered`
+  (`include_target_unregistered`): a segment named a relation whose
+  target is not in the registry.
+- `include "x" requires an entity registry` (`include_no_registry`):
+  the handler has no `Registry` set, so no target can be resolved.
+  Framework apps wire this automatically; a hand-built
+  `crud.NewCrudHandler` must set `.Registry`.
+- `include "x" is N relations deep; the maximum is 4`
+  (`include_too_deep`): the path exceeded the depth cap.
+- A scoped filter (`?include=comments(status=open)`) on a field the
+  target hides or refuses answers `include_scoped_unknown_field` or
+  `include_scoped_not_filterable`; an operator that does not suit the
+  column answers `op_type_mismatch` inside its `include "x": scoped`
+  frame.
+- `include exceeds the maximum number of related rows`
+  (`include_budget`): the assembled response would carry more than
+  20,000 related-row references.
+- `too many include paths: N (max 32)` (`include_too_many_paths`): the
+  request named more comma-separated include paths than one response
+  may eager-load.
   Every mention carrying a distinct scoped-filter set is its own
   eager-load node and its own SELECT, so breadth is capped like depth
   and total rows are.
@@ -190,7 +203,7 @@ governs it, not the entity in the path.
 the entity that failed:
 
 ```json
-{"code":403,"error":"access denied: include targets entity users, which you may not read","success":false}
+{"code":403,"error":"access denied: include targets entity users, which you may not read","reason":"include_forbidden","success":false}
 ```
 
 A scope-restricted request (an API token or an embed grant) also needs

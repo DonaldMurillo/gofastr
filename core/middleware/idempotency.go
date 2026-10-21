@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -207,20 +208,20 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			key := r.Header.Get(IdempotencyKeyHeader)
 			if key == "" {
 				if cfg.Required {
-					http.Error(w, "missing Idempotency-Key header", http.StatusBadRequest)
+					i18n.HTTPError(w, r, http.StatusBadRequest, reasonIdemKeyMissing)
 					return
 				}
 				next.ServeHTTP(w, r)
 				return
 			}
 			if len(key) > 255 {
-				http.Error(w, "Idempotency-Key too long", http.StatusBadRequest)
+				i18n.HTTPError(w, r, http.StatusBadRequest, reasonIdemKeyTooLong)
 				return
 			}
 
 			body, tooLarge, err := readBodyLimit(r, cfg.MaxBodyBytes)
 			if err != nil {
-				http.Error(w, "failed to read request body", http.StatusBadRequest)
+				i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonBodyUnreadable)
 				return
 			}
 			if tooLarge {
@@ -260,18 +261,18 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			replay, ok, beginErr := cfg.Store.Begin(r.Context(), storeKey, fp)
 			switch {
 			case errors.Is(beginErr, ErrFingerprintMismatch):
-				http.Error(w, "Idempotency-Key reused with different request", http.StatusUnprocessableEntity)
+				i18n.HTTPError(w, r, http.StatusUnprocessableEntity, reasonIdemKeyReused)
 				return
 			case errors.Is(beginErr, ErrInFlight):
 				w.Header().Set("Retry-After", "1")
-				http.Error(w, "concurrent request for this Idempotency-Key", http.StatusConflict)
+				i18n.HTTPError(w, r, http.StatusConflict, reasonIdemInFlight)
 				return
 			case beginErr != nil:
 				if cfg.FailOpen {
 					next.ServeHTTP(w, r)
 					return
 				}
-				http.Error(w, "idempotency store unavailable", http.StatusServiceUnavailable)
+				i18n.HTTPError(w, r, http.StatusServiceUnavailable, reasonIdemStoreDown)
 				return
 			}
 			if ok && replay != nil {

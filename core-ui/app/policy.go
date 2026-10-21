@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -12,11 +13,14 @@ import (
 // partial. HTTP hosts inspect Kind first to choose between writing the
 // HTML body, issuing a redirect, or returning an error status.
 type RenderResult struct {
-	Kind    DecisionKind
-	HTML    render.HTML // populated for DecisionAllow and DecisionRenderAlt
-	URL     string      // populated for DecisionRedirect
-	Status  int         // populated for DecisionBlock
-	Message string      // optional, for DecisionBlock
+	Kind   DecisionKind
+	HTML   render.HTML // populated for DecisionAllow and DecisionRenderAlt
+	URL    string      // populated for DecisionRedirect
+	Status int         // populated for DecisionBlock
+	// Reason and Params are the DecisionBlock body, translated per
+	// request; a zero Reason means the status's generic phrase.
+	Reason i18n.Phrase
+	Params map[string]any
 	// Title is the screen's effective title, re-read from ScreenTitler on
 	// the per-request instance AFTER Load, so dynamic routes (whose
 	// registration-time title is empty or generic) report the loaded
@@ -96,7 +100,7 @@ const (
 	// Alt's Load runs if Alt implements ScreenLoader.
 	DecisionRenderAlt
 	// DecisionBlock aborts with the given HTTP Status and optional
-	// Message. Use for hard 401/403/404 outcomes.
+	// Reason. Use for hard 401/403/404 outcomes.
 	DecisionBlock
 )
 
@@ -108,7 +112,8 @@ type Decision struct {
 	URL        string                     // populated for DecisionRedirect
 	AltFactory func() component.Component // populated for DecisionRenderAlt, called PER REQUEST
 	Status     int                        // populated for DecisionBlock
-	Message    string                     // optional, for DecisionBlock
+	Reason     i18n.Phrase                // optional, for DecisionBlock
+	Params     map[string]any             // Reason's params
 }
 
 // Decision values are constructed via the helpers in subpackage

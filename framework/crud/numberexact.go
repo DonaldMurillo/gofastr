@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -118,11 +119,11 @@ func decodeStrictUseNumber(data []byte) (map[string]any, error) {
 	dec.UseNumber()
 	var body map[string]any
 	if err := dec.Decode(&body); err != nil {
-		return nil, handler.Errorf(400, "invalid JSON: %s", err.Error())
+		return nil, handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": err.Error()})
 	}
 	norm, err := normalizeJSONNumbers(body)
 	if err != nil {
-		return nil, handler.Errorf(400, "invalid JSON: %s", err.Error())
+		return nil, handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": err.Error()})
 	}
 	return norm.(map[string]any), nil
 }
@@ -137,7 +138,7 @@ func redecodeUseNumber(data []byte, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 	if err := dec.Decode(v); err != nil {
-		return handler.Errorf(400, "invalid JSON: %s", err.Error())
+		return handler.Fail(http.StatusBadRequest, handler.ReasonInvalidJSON, map[string]any{"detail": err.Error()})
 	}
 	_, err := normalizeJSONNumbers(v)
 	return err
@@ -205,16 +206,14 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 			}
 			fl, err := x.Float64()
 			if err != nil {
-				return &ValidationError{fields: map[string][]string{f.Name: {"must be an integer"}}}
+				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: schema.ReasonNotInteger}}}}
 			}
 			if i, ok := exactFloatInt64(fl); ok {
 				body[f.Name] = i
 				continue
 			}
 			if fl == math.Trunc(fl) {
-				return &ValidationError{fields: map[string][]string{f.Name: {
-					"number is beyond exact float64 precision; send the integer as a JSON integer literal or a string",
-				}}}
+				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: reasonBeyondPrecision}}}}
 			}
 		case float64:
 			if i, ok := exactFloatInt64(x); ok {
@@ -222,9 +221,7 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 				continue
 			}
 			if x == math.Trunc(x) {
-				return &ValidationError{fields: map[string][]string{f.Name: {
-					"number is beyond exact float64 precision; send the integer as a JSON integer literal or a string",
-				}}}
+				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: reasonBeyondPrecision}}}}
 			}
 		case float32:
 			if i, ok := exactFloatInt64(float64(x)); ok {
@@ -232,9 +229,7 @@ func (ch *CrudHandler) coerceNumberColumnValues(body map[string]any) error {
 				continue
 			}
 			if float64(x) == math.Trunc(float64(x)) {
-				return &ValidationError{fields: map[string][]string{f.Name: {
-					"number is beyond exact float64 precision; send the integer as a JSON integer literal or a string",
-				}}}
+				return &ValidationError{fields: map[string][]schema.Violation{f.Name: {{Reason: reasonBeyondPrecision}}}}
 			}
 		default:
 			// int64 already exact; strings bind by affinity / parse in

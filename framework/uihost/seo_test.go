@@ -142,7 +142,7 @@ func TestSitemapOmitsPolicyGatedScreens(t *testing.T) {
 	a.Register("/", &plainComp{}, nil)
 	a.RegisterScreen(app.NewScreen("/app/dash", &plainComp{}).WithPolicy(signedIn), nil)
 	a.RegisterScreen(app.NewScreen("/app/blocked", &plainComp{}).
-		WithPolicy(app.PolicyFunc(func(context.Context) app.Decision { return decide.Block(403, "no") })), nil)
+		WithPolicy(app.PolicyFunc(func(context.Context) app.Decision { return decide.Block(403) })), nil)
 	ds := New(a, WithSitemap(SitemapConfig{BaseURL: "https://example.com"}))
 
 	for _, user := range []string{"", "u1"} {

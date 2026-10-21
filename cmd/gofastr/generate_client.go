@@ -225,11 +225,13 @@ var moveBody = map[string]any{}
 // successes still carry Data, but Committed=false on the envelope means
 // nothing was persisted (the whole batch runs in one transaction).
 type BatchResult struct {
-	Index   int                 ` + "`json:\"index\"`" + `
-	Data    map[string]any      ` + "`json:\"data,omitempty\"`" + `
-	Error   string              ` + "`json:\"error,omitempty\"`" + `
-	Fields  map[string][]string ` + "`json:\"fields,omitempty\"`" + `
-	Skipped bool                ` + "`json:\"skipped,omitempty\"`" + `
+	Index        int                 ` + "`json:\"index\"`" + `
+	Data         map[string]any      ` + "`json:\"data,omitempty\"`" + `
+	Error        string              ` + "`json:\"error,omitempty\"`" + `
+	Reason       string              ` + "`json:\"reason,omitempty\"`" + `
+	Fields       map[string][]string ` + "`json:\"fields,omitempty\"`" + `
+	FieldReasons map[string][]string ` + "`json:\"field_reasons,omitempty\"`" + `
+	Skipped      bool                ` + "`json:\"skipped,omitempty\"`" + `
 }
 
 // BatchResponse is the envelope every _batch endpoint returns.

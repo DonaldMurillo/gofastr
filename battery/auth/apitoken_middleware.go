@@ -324,7 +324,7 @@ func RequireAPIScopes(apiPrefix string) middleware.Middleware {
 				verb = "read"
 			}
 			if !scopeMatches(held, resource+":"+verb) {
-				writeAuthError(w, http.StatusForbidden, "insufficient token scope")
+				writeAuthError(w, r, http.StatusForbidden, reasonInsufficientTokenScope)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -343,7 +343,7 @@ func RequireScope(scope string) middleware.Middleware {
 				next.ServeHTTP(w, r)
 				return
 			}
-			writeAuthError(w, http.StatusForbidden, "insufficient token scope")
+			writeAuthError(w, r, http.StatusForbidden, reasonInsufficientTokenScope)
 		})
 	}
 }

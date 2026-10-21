@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/email"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -160,7 +161,7 @@ func (b *Battery) mountEmails(r *router.Router) {
 		}
 		msg, err := b.renderEmail(r.Context(), p)
 		if err != nil {
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 		if msg.HTMLBody == "" {

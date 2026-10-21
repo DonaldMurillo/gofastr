@@ -225,8 +225,8 @@ func TestPreferencesSetCoercesAndRefuses(t *testing.T) {
 		if !errors.As(err, &pe) {
 			t.Fatalf("Set(%s, %v) = %v, want a preferenceError", tc.key, tc.val, err)
 		}
-		if !strings.Contains(pe.msg, tc.want) {
-			t.Fatalf("Set(%s, %v) msg = %q, want it to contain %q", tc.key, tc.val, pe.msg, tc.want)
+		if !strings.Contains(pe.reason.Format(pe.params), tc.want) {
+			t.Fatalf("Set(%s, %v) msg = %q, want it to contain %q", tc.key, tc.val, pe.reason.Format(pe.params), tc.want)
 		}
 		if pe.key != tc.key {
 			t.Fatalf("preferenceError key = %q, want %q", pe.key, tc.key)

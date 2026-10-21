@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/stream"
 )
 
@@ -288,7 +289,7 @@ func mintPeerID() (string, bool) {
 func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 	if err := validJoin(join); err != nil {
 		s.logger.Warn("rtc: join refused", "reason", "bad_join")
-		s.refuse(w, r, http.StatusBadRequest, "invalid join")
+		s.refuse(w, r, http.StatusBadRequest, reasonInvalidJoin, nil)
 		return
 	}
 	peerID := join.PeerID
@@ -296,7 +297,7 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 		var ok bool
 		if peerID, ok = mintPeerID(); !ok {
 			s.logger.Warn("rtc: join refused", "reason", "no_peer_id")
-			s.refuse(w, r, http.StatusServiceUnavailable, "try again")
+			s.refuse(w, r, http.StatusServiceUnavailable, reasonTryAgain, nil)
 			return
 		}
 	}
@@ -307,7 +308,7 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
-		s.refuse(w, r, http.StatusServiceUnavailable, "signaler closed")
+		s.refuse(w, r, http.StatusServiceUnavailable, reasonSignalerClosed, nil)
 		return
 	}
 	now := time.Now()
@@ -317,7 +318,7 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 		room := scrubLogField(join.Room)
 		s.mu.Unlock()
 		s.logger.Warn("rtc: join refused", "reason", "room_full", "room", room)
-		s.refuse(w, r, http.StatusConflict, "room full")
+		s.refuse(w, r, http.StatusConflict, reasonRoomFull, nil)
 		return
 	}
 	s.mu.Unlock()
@@ -330,7 +331,7 @@ func (s *Signaler) Serve(w http.ResponseWriter, r *http.Request, join Join) {
 		// Upgrade writes nothing on a handshake it refuses (a plain
 		// GET, a cross-origin upgrade); without this the request
 		// fell out of the handler as an empty 200.
-		http.Error(w, "websocket upgrade required", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonWebSocketRequired)
 		return
 	}
 

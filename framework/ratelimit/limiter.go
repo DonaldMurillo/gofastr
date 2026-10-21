@@ -40,6 +40,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
@@ -429,7 +430,7 @@ func (rl *Limiter) MiddlewareByKey(keyFunc func(*http.Request) string) func(http
 			allowed, retry := rl.AllowContext(r.Context(), keyFunc(r))
 			if !allowed {
 				w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
-				http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+				i18n.HTTPError(w, r, http.StatusTooManyRequests, reasonRateLimited)
 				return
 			}
 			next.ServeHTTP(w, r)

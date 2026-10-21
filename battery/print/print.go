@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -231,15 +232,18 @@ func (b *Battery) serveHTML(doc *Document) http.Handler {
 // forPDF flag switches the app.css href to absolute and drops auto-print.
 func (b *Battery) build(w http.ResponseWriter, r *http.Request, doc *Document, forPDF bool) (string, PageConfig, bool) {
 	if pol := b.accessOf(doc); pol != nil {
-		if status, msg := pol(r); status != 0 {
-			http.Error(w, msg, status)
+		if status, reason := pol(r); status != 0 {
+			if reason.IsZero() {
+				reason = i18n.StatusPhrase(status)
+			}
+			i18n.HTTPError(w, r, status, reason)
 			return "", PageConfig{}, false
 		}
 	}
 
 	comp, err := safeBuild(doc, r)
 	if err != nil {
-		writeBuildError(w, err)
+		writeBuildError(w, r, err)
 		return "", PageConfig{}, false
 	}
 
@@ -317,14 +321,14 @@ func (b *Battery) baseCSS() string {
 
 // writeBuildError maps a Build error to a clean status page (never a
 // stack trace).
-func writeBuildError(w http.ResponseWriter, err error) {
+func writeBuildError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
-		http.Error(w, "not found", http.StatusNotFound)
+		i18n.HTTPError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 	case errors.Is(err, ErrForbidden):
-		http.Error(w, "forbidden", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 	default:
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 	}
 }
 

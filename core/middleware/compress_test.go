@@ -526,7 +526,7 @@ func TestCompressPanicMidStreamCutsTheResponse(t *testing.T) {
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("reading the body: err = %v, want a truncated response", err)
 	}
-	if bytes.Contains(raw, []byte("Internal Server Error")) {
+	if bytes.Contains(raw, []byte("internal server error")) {
 		t.Fatal("the 500 text was appended to the gzip stream")
 	}
 }

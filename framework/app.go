@@ -52,7 +52,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/lifecycle"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -1203,7 +1202,8 @@ func (a *App) SetLogger(l *slog.Logger) {
 // DefaultMiddleware is the framework's standard safety chain in
 // canonical order:
 //
-//	recovery → request-id → [idempotency] → [i18n] → security headers → timeout
+//	recovery → request-id → [i18n] → [compress] → [db] → [tracing] →
+//	[metrics] → [idempotency] → security headers → timeout
 //
 // The optional entries are present when the App was configured with
 // WithIdempotency / WithI18n; the timeout entry is omitted when
@@ -1238,6 +1238,19 @@ func DefaultMiddleware(a *App) []router.Middleware {
 		middleware.RecoveryFn(getLogger),
 		middleware.RequestID(),
 	}
+	// Locale and translator go on the context ahead of every middleware
+	// that can refuse a request, so an idempotency or metrics refusal
+	// answers in the caller's language too.
+	if translator != nil {
+		var negOpts []i18n.NegotiateOption
+		if localeResolver != nil {
+			negOpts = append(negOpts, i18n.WithLocaleResolver(localeResolver))
+		}
+		// A second recovery inside it answers a handler's panic in the
+		// caller's locale; the outer one still catches a panicking
+		// locale resolver.
+		chain = append(chain, i18n.Middleware(translator, negOpts...), middleware.RecoveryFn(getLogger))
+	}
 	// Compress sits outside the timeout and every handler-facing
 	// middleware, so it sees the final bytes and the timeout's flushes.
 	if a != nil && a.Config.Compression {
@@ -1257,26 +1270,6 @@ func DefaultMiddleware(a *App) []router.Middleware {
 	}
 	if idempotency != nil {
 		chain = append(chain, middleware.Idempotency(*idempotency))
-	}
-	if translator != nil {
-		var negOpts []i18n.NegotiateOption
-		if localeResolver != nil {
-			negOpts = append(negOpts, i18n.WithLocaleResolver(localeResolver))
-		}
-		chain = append(chain, i18n.Middleware(translator, negOpts...))
-		// Bridge: stash the translator on the request ctx so framework/ui
-		// components (DataTable, FilterToolbar, Carousel, …) resolve their
-		// labels via i18nui.T(r.Context(), …) using the caller's locale.
-		// Without this the components silently render English even when a
-		// catalog is wired, because i18n.Middleware only attaches the
-		// Locale, not the translator. Framework may import i18nui; core
-		// may not, which is why this bridge lives here and not in core/i18n.
-		chain = append(chain, func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				ctx := i18nui.WithTranslator(r.Context(), translator)
-				next.ServeHTTP(w, r.WithContext(ctx))
-			})
-		})
 	}
 	shCfg := middleware.SecurityHeadersConfig{}
 	if a != nil {
@@ -2631,13 +2624,13 @@ func endpointRoute(ep entity.Endpoint) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead &&
 			handler.IsForgeableRequest(r) && handler.IsCrossSiteRequest(r) {
-			handler.WriteError(w, handler.Errorf(http.StatusForbidden, "cross-site request refused"))
+			handler.WriteError(w, r, handler.Fail(http.StatusForbidden, handler.ReasonCrossSiteRefused))
 			return
 		}
 		if !ep.Public {
 			w.Header().Set("Cache-Control", "no-store")
 			if _, ok := handler.GetUser(r.Context()); !ok {
-				handler.WriteError(w, handler.Errorf(http.StatusUnauthorized, "authentication required"))
+				handler.WriteError(w, r, handler.Fail(http.StatusUnauthorized, handler.ReasonAuthenticationRequired))
 				return
 			}
 		}
@@ -3951,7 +3944,7 @@ func (a *App) AuthenticatorNoted() bool { return a.authenticatorNoted.Load() }
 func (a *App) debugAllowed(w http.ResponseWriter, r *http.Request) bool {
 	ctx := r.Context()
 	if u, ok := handler.GetUser(ctx); !ok || u == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 		return false
 	}
 	allowed := false
@@ -3963,7 +3956,7 @@ func (a *App) debugAllowed(w http.ResponseWriter, r *http.Request) bool {
 		}
 	}
 	if !allowed {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 	}
 	return allowed
 }
@@ -4027,7 +4020,7 @@ func (a *App) registerDebugEndpoints() {
 		}
 		p := pprof.Lookup("goroutineleak")
 		if p == nil {
-			http.Error(w, "goroutineleak profile unavailable", http.StatusNotImplemented)
+			i18n.HTTPError(w, r, http.StatusNotImplemented, i18n.StatusPhrase(http.StatusNotImplemented))
 			return
 		}
 		// Leak detection is GC-reachability-based; force a cycle so the

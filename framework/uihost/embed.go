@@ -17,6 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/store"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
@@ -445,7 +446,7 @@ func (ds *UIHost) handleEmbedLoaderJS(w http.ResponseWriter, r *http.Request) {
 	stripAmbientCredentials(r)
 	js, err := runtime.EmbedLoaderJS()
 	if err != nil {
-		http.Error(w, "embed loader unavailable", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
@@ -483,7 +484,7 @@ func (ds *UIHost) handleEmbedRuntimeJS(w http.ResponseWriter, r *http.Request) {
 	stripAmbientCredentials(r)
 	js, err := runtime.EmbedJS()
 	if err != nil {
-		http.Error(w, "embed runtime unavailable", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
@@ -520,17 +521,17 @@ type embedGrantResponse struct {
 // bad signature, expired, already used, wrong origin, unknown surface, is an
 // oracle: it tells a caller probing with a captured nonce exactly how far they
 // got. The server logs the real reason; the client learns only that it failed.
-func embedError(w http.ResponseWriter, status int, reason string, err error) {
+func embedError(w http.ResponseWriter, r *http.Request, status int, why string, err error) {
 	if err != nil {
-		slog.Default().Debug("uihost: embed request refused", "reason", reason, "err", err)
+		slog.Default().Debug("uihost: embed request refused", "reason", why, "err", err)
 	}
-	http.Error(w, http.StatusText(status), status)
+	i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
 }
 
 func (ds *UIHost) handleEmbedExchange(w http.ResponseWriter, r *http.Request) {
 	stripAmbientCredentials(r)
 	if !ds.embedHost.Ready() {
-		embedError(w, http.StatusServiceUnavailable, "no signing key", nil)
+		embedError(w, r, http.StatusServiceUnavailable, "no signing key", nil)
 		return
 	}
 	// Cap the body: this endpoint is reachable by anything that can send a
@@ -541,12 +542,12 @@ func (ds *UIHost) handleEmbedExchange(w http.ResponseWriter, r *http.Request) {
 	// client-body decode in the framework.
 	var req embedExchangeRequest
 	if err := handler.DecodeStrict(http.MaxBytesReader(w, r.Body, 8<<10), &req); err != nil {
-		embedError(w, http.StatusBadRequest, "malformed body", err)
+		embedError(w, r, http.StatusBadRequest, "malformed body", err)
 		return
 	}
 	res, err := ds.embedHost.Exchange(r.Context(), req.Token, req.Origin)
 	if err != nil {
-		embedError(w, http.StatusUnauthorized, "exchange refused", err)
+		embedError(w, r, http.StatusUnauthorized, "exchange refused", err)
 		return
 	}
 	if res.Replay {
@@ -579,12 +580,12 @@ func (ds *UIHost) handleEmbedExchange(w http.ResponseWriter, r *http.Request) {
 func (ds *UIHost) handleEmbedRefresh(w http.ResponseWriter, r *http.Request) {
 	stripAmbientCredentials(r)
 	if !ds.embedHost.Ready() {
-		embedError(w, http.StatusServiceUnavailable, "no signing key", nil)
+		embedError(w, r, http.StatusServiceUnavailable, "no signing key", nil)
 		return
 	}
 	grant, err := ds.embedHost.Refresh(r.Context(), r.Header.Get(embedGrantHeader))
 	if err != nil {
-		embedError(w, http.StatusUnauthorized, "refresh refused", err)
+		embedError(w, r, http.StatusUnauthorized, "refresh refused", err)
 		return
 	}
 	ds.writeEmbedGrant(w, grant.Token, grant.Expires.UnixMilli())
@@ -660,7 +661,7 @@ func (ds *UIHost) resolveEmbedSurface(w http.ResponseWriter, r *http.Request) (*
 		// ("Not Found" vs "404 page not found"), and every 404 on this surface
 		// has to be byte-identical or the difference itself answers "does this
 		// name exist?".
-		embedError(w, http.StatusNotFound, "unknown surface", nil)
+		embedError(w, r, http.StatusNotFound, "unknown surface", nil)
 		return nil, false
 	}
 	return s, true
@@ -689,7 +690,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 		// wired without an app secret served a framable document for a
 		// handshake that could never complete. framework.App.Mount panics in
 		// that case, but a host mounted standalone does not go through it.
-		embedError(w, http.StatusServiceUnavailable, "no signing key", nil)
+		embedError(w, r, http.StatusServiceUnavailable, "no signing key", nil)
 		return
 	}
 	applyEmbedFraming(w, ds.embedShellOrigins(r, s))
@@ -917,12 +918,12 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ds.embedHost.Ready() {
-		embedError(w, http.StatusServiceUnavailable, "no signing key", nil)
+		embedError(w, r, http.StatusServiceUnavailable, "no signing key", nil)
 		return
 	}
 	grant, err := ds.embedHost.VerifyGrant(r.Context(), r.Header.Get(embedGrantHeader))
 	if err != nil {
-		embedError(w, http.StatusUnauthorized, "grant refused", err)
+		embedError(w, r, http.StatusUnauthorized, "grant refused", err)
 		return
 	}
 	// A grant for surface A must not render surface B. The grant names its
@@ -932,7 +933,7 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 	// have told any grant holder which surface names are real, the same
 	// enumeration the absence of an index endpoint is meant to prevent.
 	if grant.Surface != s.Name {
-		embedError(w, http.StatusNotFound, "grant is for another surface", nil)
+		embedError(w, r, http.StatusNotFound, "grant is for another surface", nil)
 		return
 	}
 
@@ -981,7 +982,7 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 	if resolveTenant := ds.embedHost.TenantResolver(); resolveTenant != nil && grant.Subject != "" {
 		tid, err := resolveTenant(ctx, grant.Subject)
 		if err != nil {
-			embedError(w, http.StatusForbidden, "tenant did not resolve", err)
+			embedError(w, r, http.StatusForbidden, "tenant did not resolve", err)
 			return
 		}
 		if tid != "" {
@@ -995,7 +996,7 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 			// The subject no longer resolves (deleted, disabled, store
 			// outage). Fail closed: rendering anonymously here would silently
 			// downgrade an authenticated embed into a public one.
-			embedError(w, http.StatusForbidden, "subject did not resolve", err)
+			embedError(w, r, http.StatusForbidden, "subject did not resolve", err)
 			return
 		}
 		// isNilValue, not user != nil: a resolver written as
@@ -1039,14 +1040,14 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 		// A screen policy wants the viewer elsewhere. There is nowhere to send
 		// them from inside a frame on a stranger's site, and following the
 		// redirect would render a DIFFERENT screen than the surface declares.
-		embedError(w, http.StatusForbidden, "screen policy redirected", nil)
+		embedError(w, r, http.StatusForbidden, "screen policy redirected", nil)
 		return
 	case app.DecisionBlock:
 		status := res.Status
 		if status == 0 {
 			status = http.StatusForbidden
 		}
-		embedError(w, status, "screen policy blocked", nil)
+		embedError(w, r, status, "screen policy blocked", nil)
 		return
 	}
 

@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
@@ -116,7 +117,7 @@ func bffOriginGuard(prefix func() string, allowed map[string]struct{}) func(http
 			origin := r.Header.Get("Origin")
 			if origin != "" {
 				if _, ok := allowed[origin]; !ok {
-					http.Error(w, "origin not allowed", http.StatusForbidden)
+					i18n.HTTPError(w, r, http.StatusForbidden, i18n.ReasonOriginRefused)
 					return
 				}
 				w.Header().Set("Access-Control-Allow-Origin", origin)
@@ -125,7 +126,7 @@ func bffOriginGuard(prefix func() string, allowed map[string]struct{}) func(http
 			}
 			if token, ok := bffBearerCredential(r.Header.Get("Authorization")); ok &&
 				!strings.HasPrefix(token, TokenPrefix) {
-				http.Error(w, "bearer JWTs are disabled for the BFF API", http.StatusUnauthorized)
+				i18n.HTTPError(w, r, http.StatusUnauthorized, reasonBearerDisabled)
 				return
 			}
 			// Only consume real CORS preflights. Application-owned OPTIONS
