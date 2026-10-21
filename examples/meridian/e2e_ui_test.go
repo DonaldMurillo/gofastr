@@ -142,7 +142,7 @@ func TestE2E_QuickAddModal(t *testing.T) {
 		// close and the re-rendered count land after a fetch round-trip:
 		// poll for both instead of sleeping a fixed window.
 		chromedp.Poll(closedJS, &closedAfterSave, chromedp.WithPollingTimeout(8*time.Second)),
-		// The count subtitle is entityui's "{count} {plural}" with the
+		// The count subtitle is entityui's "{{count}} {{plural}}" with the
 		// title-cased plural label.
 		chromedp.Poll(`document.body.innerText.includes("11 customers")`, &countBumped, chromedp.WithPollingTimeout(8*time.Second)),
 	); err != nil {
