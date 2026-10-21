@@ -91,7 +91,7 @@ func printDesktopUsage() {
 	fmt.Println(`Usage: gofastr desktop run|build|types|keygen|feed [flags]
 
 Build and run a GoFastr app as a desktop application (battery/desktop,
-experimental: macOS/arm64 and Windows/amd64).
+experimental: macOS/arm64, Windows/amd64, Linux/amd64 and Linux/arm64).
 
   run [--dir=<path>] [--pkg=<path>] [--watch]
         CGO_ENABLED=0 build of the package, then exec it with
@@ -103,6 +103,10 @@ experimental: macOS/arm64 and Windows/amd64).
         [--sign=<identity>|--no-sign] [-o=<dir>]
         [--notarize] [--notary-profile=<name>] [--entitlements=<plist>]
         [--scheme=<scheme>]
+        On Linux, writes <o>/<Name> as a CGO-free ELF executable for
+        the current architecture (or GOARCH=amd64/arm64). Install GTK 3
+        and WebKitGTK 4.1 on the target machine. No installer, icon,
+        signing, or URL-scheme registration is generated on Linux.
         On macOS, cross-compiles (darwin/arm64, -trimpath, -s -w) and
         writes <o>/<Name>.app with Info.plist, the binary, PkgInfo, and
         an icon.icns built in pure Go from the PNG (no iconutil). Default

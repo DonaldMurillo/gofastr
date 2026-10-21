@@ -24,6 +24,7 @@ var (
 	libGdk     = &library{soname: "libgdk-3.so.0", packages: "libgtk-3-0 (Debian/Ubuntu), gtk3 (Fedora)"}
 	libGtk     = &library{soname: "libgtk-3.so.0", packages: "libgtk-3-0 (Debian/Ubuntu), gtk3 (Fedora)"}
 	libWebKit  = &library{soname: "libwebkit2gtk-4.1.so.0", packages: "libwebkit2gtk-4.1-0 (Debian/Ubuntu), webkit2gtk4.1 (Fedora)"}
+	libCairo   = &library{soname: "libcairo.so.2", packages: "libcairo2 (Debian/Ubuntu), cairo (Fedora)"}
 	libJSC     = &library{soname: "libjavascriptcoregtk-4.1.so.0", packages: "libjavascriptcoregtk-4.1-0 (Debian/Ubuntu), webkit2gtk4.1 (Fedora)"}
 
 	libPixbuf = &library{soname: "libgdk_pixbuf-2.0.so.0", packages: "libgdk-pixbuf-2.0-0 (Debian/Ubuntu), gdk-pixbuf2 (Fedora)", optional: true}
@@ -32,7 +33,7 @@ var (
 
 // libraries is the load order. GLib and GObject come first so the
 // symbols WebKitGTK resolves lazily are already global in the process.
-var libraries = []*library{libGLib, libGObject, libGdk, libGtk, libWebKit, libJSC, libPixbuf, libNotify}
+var libraries = []*library{libGLib, libGObject, libGdk, libGtk, libWebKit, libJSC, libCairo, libPixbuf, libNotify}
 
 // installLine is the one instruction a user can act on. Everything else
 // in the list above arrives as a dependency of these two.
@@ -53,6 +54,55 @@ type library struct {
 // Fields whose library is optional are zero when that library is absent;
 // every other field is non-zero once Load returns nil.
 type Symbols struct {
+	GtkMainLevel                             uintptr // gtk_main_level
+	GtkDialogResponse                        uintptr // gtk_dialog_response
+	GtkClipboardRequestText                  uintptr // gtk_clipboard_request_text
+	GtkNativeDialogShow                      uintptr // gtk_native_dialog_show
+	GtkNativeDialogHide                      uintptr // gtk_native_dialog_hide
+	GtkNativeDialogSetModal                  uintptr // gtk_native_dialog_set_modal
+	GtkMessageDialogNew                      uintptr // gtk_message_dialog_new
+	GtkDialogAddButton                       uintptr // gtk_dialog_add_button
+	GtkDialogSetDefaultResponse              uintptr // gtk_dialog_set_default_response
+	GtkFileChooserSetSelectMultiple          uintptr // gtk_file_chooser_set_select_multiple
+	GtkFileChooserSetCurrentName             uintptr // gtk_file_chooser_set_current_name
+	GtkFileChooserSetDoOverwriteConfirmation uintptr // gtk_file_chooser_set_do_overwrite_confirmation
+	GtkFileChooserSetLocalOnly               uintptr // gtk_file_chooser_set_local_only
+	GtkFileChooserGetFilenames               uintptr // gtk_file_chooser_get_filenames
+	GtkFileChooserAddFilter                  uintptr // gtk_file_chooser_add_filter
+	GtkFileFilterNew                         uintptr // gtk_file_filter_new
+	GtkFileFilterSetName                     uintptr // gtk_file_filter_set_name
+	GtkFileFilterAddPattern                  uintptr // gtk_file_filter_add_pattern
+	GSListFree                               uintptr // g_slist_free
+	GMainContextIteration                    uintptr // g_main_context_iteration
+	GSourceRemove                            uintptr // g_source_remove
+	GtkWindowPresent                         uintptr // gtk_window_present
+	GtkWindowGetPosition                     uintptr // gtk_window_get_position
+	GtkWindowGetSize                         uintptr // gtk_window_get_size
+	GtkWindowMove                            uintptr // gtk_window_move
+	GtkWindowResize                          uintptr // gtk_window_resize
+	GtkWindowSetPosition                     uintptr // gtk_window_set_position
+	GtkWindowSetResizable                    uintptr // gtk_window_set_resizable
+	GtkWindowSetDecorated                    uintptr // gtk_window_set_decorated
+	GtkWindowSetKeepAbove                    uintptr // gtk_window_set_keep_above
+	GtkWindowSetAcceptFocus                  uintptr // gtk_window_set_accept_focus
+	GtkWindowStick                           uintptr // gtk_window_stick
+	GtkWidgetGetVisible                      uintptr // gtk_widget_get_visible
+	GtkWindowIsActive                        uintptr // gtk_window_is_active
+	GtkWidgetSetSensitive                    uintptr // gtk_widget_set_sensitive
+	GtkAccelGroupNew                         uintptr // gtk_accel_group_new
+	GtkWindowAddAccelGroup                   uintptr // gtk_window_add_accel_group
+	GtkWidgetAddAccelerator                  uintptr // gtk_widget_add_accelerator
+	GdkKeyvalFromName                        uintptr // gdk_keyval_from_name
+	WebkitUserScriptUnref                    uintptr // webkit_user_script_unref
+	WebkitWebViewNewWithContext              uintptr // webkit_web_view_new_with_context
+	WebkitWebContextNewEphemeral             uintptr // webkit_web_context_new_ephemeral
+	WebkitWebViewCallAsyncJS                 uintptr // webkit_web_view_call_async_javascript_function
+	WebkitWebViewCallAsyncJSFinish           uintptr // webkit_web_view_call_async_javascript_function_finish
+	WebkitWebViewEvalJSFinish                uintptr // webkit_web_view_evaluate_javascript_finish
+	WebkitWebViewExecuteEditingCommand       uintptr // webkit_web_view_execute_editing_command
+	JscValueToJSON                           uintptr // jsc_value_to_json
+	CairoSurfaceDestroy                      uintptr // cairo_surface_destroy
+	CairoSurfaceWriteToPNGStream             uintptr // cairo_surface_write_to_png_stream
 	// GLib.
 	GFree       uintptr // g_free
 	GIdleAdd    uintptr // g_idle_add — the mainThread hop
@@ -145,6 +195,55 @@ type symbol struct {
 // moves.
 func table() []symbol {
 	return []symbol{
+		{&Sym.GtkMainLevel, libGtk, "gtk_main_level"},
+		{&Sym.GtkDialogResponse, libGtk, "gtk_dialog_response"},
+		{&Sym.GtkClipboardRequestText, libGtk, "gtk_clipboard_request_text"},
+		{&Sym.GtkNativeDialogShow, libGtk, "gtk_native_dialog_show"},
+		{&Sym.GtkNativeDialogHide, libGtk, "gtk_native_dialog_hide"},
+		{&Sym.GtkNativeDialogSetModal, libGtk, "gtk_native_dialog_set_modal"},
+		{&Sym.GtkMessageDialogNew, libGtk, "gtk_message_dialog_new"},
+		{&Sym.GtkDialogAddButton, libGtk, "gtk_dialog_add_button"},
+		{&Sym.GtkDialogSetDefaultResponse, libGtk, "gtk_dialog_set_default_response"},
+		{&Sym.GtkFileChooserSetSelectMultiple, libGtk, "gtk_file_chooser_set_select_multiple"},
+		{&Sym.GtkFileChooserSetCurrentName, libGtk, "gtk_file_chooser_set_current_name"},
+		{&Sym.GtkFileChooserSetDoOverwriteConfirmation, libGtk, "gtk_file_chooser_set_do_overwrite_confirmation"},
+		{&Sym.GtkFileChooserSetLocalOnly, libGtk, "gtk_file_chooser_set_local_only"},
+		{&Sym.GtkFileChooserGetFilenames, libGtk, "gtk_file_chooser_get_filenames"},
+		{&Sym.GtkFileChooserAddFilter, libGtk, "gtk_file_chooser_add_filter"},
+		{&Sym.GtkFileFilterNew, libGtk, "gtk_file_filter_new"},
+		{&Sym.GtkFileFilterSetName, libGtk, "gtk_file_filter_set_name"},
+		{&Sym.GtkFileFilterAddPattern, libGtk, "gtk_file_filter_add_pattern"},
+		{&Sym.GSListFree, libGLib, "g_slist_free"},
+		{&Sym.GMainContextIteration, libGLib, "g_main_context_iteration"},
+		{&Sym.GSourceRemove, libGLib, "g_source_remove"},
+		{&Sym.GtkWindowPresent, libGtk, "gtk_window_present"},
+		{&Sym.GtkWindowGetPosition, libGtk, "gtk_window_get_position"},
+		{&Sym.GtkWindowGetSize, libGtk, "gtk_window_get_size"},
+		{&Sym.GtkWindowMove, libGtk, "gtk_window_move"},
+		{&Sym.GtkWindowResize, libGtk, "gtk_window_resize"},
+		{&Sym.GtkWindowSetPosition, libGtk, "gtk_window_set_position"},
+		{&Sym.GtkWindowSetResizable, libGtk, "gtk_window_set_resizable"},
+		{&Sym.GtkWindowSetDecorated, libGtk, "gtk_window_set_decorated"},
+		{&Sym.GtkWindowSetKeepAbove, libGtk, "gtk_window_set_keep_above"},
+		{&Sym.GtkWindowSetAcceptFocus, libGtk, "gtk_window_set_accept_focus"},
+		{&Sym.GtkWindowStick, libGtk, "gtk_window_stick"},
+		{&Sym.GtkWidgetGetVisible, libGtk, "gtk_widget_get_visible"},
+		{&Sym.GtkWindowIsActive, libGtk, "gtk_window_is_active"},
+		{&Sym.GtkWidgetSetSensitive, libGtk, "gtk_widget_set_sensitive"},
+		{&Sym.GtkAccelGroupNew, libGtk, "gtk_accel_group_new"},
+		{&Sym.GtkWindowAddAccelGroup, libGtk, "gtk_window_add_accel_group"},
+		{&Sym.GtkWidgetAddAccelerator, libGtk, "gtk_widget_add_accelerator"},
+		{&Sym.GdkKeyvalFromName, libGdk, "gdk_keyval_from_name"},
+		{&Sym.WebkitUserScriptUnref, libWebKit, "webkit_user_script_unref"},
+		{&Sym.WebkitWebViewNewWithContext, libWebKit, "webkit_web_view_new_with_context"},
+		{&Sym.WebkitWebContextNewEphemeral, libWebKit, "webkit_web_context_new_ephemeral"},
+		{&Sym.WebkitWebViewCallAsyncJS, libWebKit, "webkit_web_view_call_async_javascript_function"},
+		{&Sym.WebkitWebViewCallAsyncJSFinish, libWebKit, "webkit_web_view_call_async_javascript_function_finish"},
+		{&Sym.WebkitWebViewEvalJSFinish, libWebKit, "webkit_web_view_evaluate_javascript_finish"},
+		{&Sym.WebkitWebViewExecuteEditingCommand, libWebKit, "webkit_web_view_execute_editing_command"},
+		{&Sym.JscValueToJSON, libJSC, "jsc_value_to_json"},
+		{&Sym.CairoSurfaceDestroy, libCairo, "cairo_surface_destroy"},
+		{&Sym.CairoSurfaceWriteToPNGStream, libCairo, "cairo_surface_write_to_png_stream"},
 		{&Sym.GFree, libGLib, "g_free"},
 		{&Sym.GIdleAdd, libGLib, "g_idle_add"},
 		{&Sym.GErrorFree, libGLib, "g_error_free"},
