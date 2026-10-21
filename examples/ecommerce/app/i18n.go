@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=0b8315054219212c
+//gofastr:generated generator=app kind=scaffold version=dev sum=5de57e833b07cc17
 
 package main
 
@@ -21,7 +21,8 @@ var localeFS embed.FS
 
 // pseudoLocale is the tag GOFASTR_PSEUDO_LOCALE=1 adds: every phrase
 // accented and lengthened, for finding layouts that cannot take longer
-// words. A browser asking for en-XA gets it.
+// words. A browser asking for en-XA gets it, or /en-xa/ under
+// app.locale_prefixes (the catalog stores tags lowercase).
 const pseudoLocale = "en-XA"
 
 // translatorOption installs the app's translator.

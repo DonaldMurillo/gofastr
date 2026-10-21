@@ -1,4 +1,4 @@
-<!-- gofastr:generated generator=app kind=scaffold version=dev sum=62e006b552c9ed22 -->
+<!-- gofastr:generated generator=app kind=scaffold version=dev sum=0c4ebb4e4d56793e -->
 # Translations
 
 Add one JSON file per language, named by its tag: `es.json`,
@@ -15,6 +15,7 @@ included. Dots nest:
 }
 ```
 
-A key with no translation renders its English. The browser's
-Accept-Language picks the locale. Run with `GOFASTR_PSEUDO_LOCALE=1` and
-ask for `en-XA` to see every phrase accented and lengthened.
+A key with no translation renders its English. Each language lives under its own
+path: `/es/` serves es.json, and English keeps the plain paths. Run
+with `GOFASTR_PSEUDO_LOCALE=1` and open `/en-xa/` to see every phrase
+accented and lengthened.

@@ -109,6 +109,11 @@ type AppSpecApp struct {
 	// Independent of PWA. A screen inventory is schema disclosure, so
 	// it never rides along with another feature.
 	LLMMD bool
+	// LocalePrefixes emits framework.WithLocalePrefixes()
+	// (app.locale_prefixes): every locales/<tag>.json is served under
+	// /<tag>/, with hreflang, sitemap and robots entries. English keeps
+	// the plain paths.
+	LocalePrefixes bool
 }
 
 // AppSpecPWA configures the generated app's installable-PWA surface
@@ -563,7 +568,7 @@ func decodeAppSpecApp(node *coreyaml.Node) (AppSpecApp, error) {
 	if err != nil {
 		return AppSpecApp{}, err
 	}
-	allowed := map[string]bool{"name": true, "description": true, "base_url": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "api_prefix": true, "public_openapi": true, "theme": true, "auth": true, "admin": true, "pwa": true, "llm_md": true}
+	allowed := map[string]bool{"name": true, "description": true, "base_url": true, "module": true, "db": true, "static_dir": true, "output_dir": true, "api_prefix": true, "public_openapi": true, "theme": true, "auth": true, "admin": true, "pwa": true, "llm_md": true, "locale_prefixes": true}
 	if err := rejectUnknownKeys(m, allowed, "app"); err != nil {
 		return AppSpecApp{}, err
 	}
@@ -640,6 +645,9 @@ func decodeAppSpecApp(node *coreyaml.Node) (AppSpecApp, error) {
 	}
 	if v, ok := m["llm_md"]; ok {
 		app.LLMMD = boolValue(v)
+	}
+	if v, ok := m["locale_prefixes"]; ok {
+		app.LocalePrefixes = boolValue(v)
 	}
 	return app, nil
 }
@@ -3601,7 +3609,7 @@ func renderAppSpec(bp AppSpec, entityOrderOffset, screenOrderOffset int, fonts b
 		// catalog embeds. The generator never writes a <tag>.json, so
 		// a regenerate keeps every translation.
 		files = append(files, generatedFile{name: "i18n.go", content: appSpecI18nGo})
-		files = append(files, generatedFile{name: "locales/README.md", content: appSpecLocalesReadme})
+		files = append(files, generatedFile{name: "locales/README.md", content: strings.Replace(appSpecLocalesReadme, "{{pick}}", appSpecLocalesPick(bp), 1)})
 	}
 	if len(bp.Entities) > 0 {
 		decls := make([]framework.EntityDeclaration, len(bp.Entities))
@@ -4642,7 +4650,8 @@ var localeFS embed.FS
 
 // pseudoLocale is the tag GOFASTR_PSEUDO_LOCALE=1 adds: every phrase
 // accented and lengthened, for finding layouts that cannot take longer
-// words. A browser asking for en-XA gets it.
+// words. A browser asking for en-XA gets it, or /en-xa/ under
+// app.locale_prefixes (the catalog stores tags lowercase).
 const pseudoLocale = "en-XA"
 
 // translatorOption installs the app's translator.
@@ -4676,10 +4685,23 @@ included. Dots nest:
 }
 ` + "```" + `
 
-A key with no translation renders its English. The browser's
-Accept-Language picks the locale. Run with ` + "`GOFASTR_PSEUDO_LOCALE=1`" + ` and
-ask for ` + "`en-XA`" + ` to see every phrase accented and lengthened.
+A key with no translation renders its English. {{pick}}
 `
+
+// appSpecLocalesPick is the README's line on how a reader gets a
+// locale: the browser's Accept-Language, or the path under
+// app.locale_prefixes.
+func appSpecLocalesPick(bp AppSpec) string {
+	if bp.App.LocalePrefixes {
+		return "Each language lives under its own\n" +
+			"path: `/es/` serves es.json, and English keeps the plain paths. Run\n" +
+			"with `GOFASTR_PSEUDO_LOCALE=1` and open `/en-xa/` to see every phrase\n" +
+			"accented and lengthened."
+	}
+	return "The browser's\n" +
+		"Accept-Language picks the locale. Run with `GOFASTR_PSEUDO_LOCALE=1` and\n" +
+		"ask for `en-XA` to see every phrase accented and lengthened."
+}
 
 // appSpecNeedsAuthHooks reports whether generated screens render an auth
 // form, whose error copy lives in the owned auth_hooks.go seam.
@@ -4926,6 +4948,11 @@ func renderAppSpecMain(bp AppSpec) string {
 	sb.WriteString("\t\t// The app's translations (i18n.go): locales/<tag>.json, picked\n")
 	sb.WriteString("\t\t// by the browser's Accept-Language.\n")
 	sb.WriteString("\t\ttranslatorOption(),\n")
+	if bp.App.LocalePrefixes {
+		sb.WriteString("\t\t// Each locale under its own path (/es/pricing), with hreflang,\n")
+		sb.WriteString("\t\t// sitemap and robots entries; English keeps the plain paths.\n")
+		sb.WriteString("\t\tframework.WithLocalePrefixes(),\n")
+	}
 	sb.WriteString("\t\t// Agent-ready MCP surface: WithMCP mounts /mcp (POST JSON-RPC +\n")
 	sb.WriteString("\t\t// GET SSE) plus the discovery well-knowns (/.well-known/mcp/*);\n")
 	sb.WriteString("\t\t// WithMCPIntrospection adds read-only orientation tools\n")
@@ -8849,7 +8876,7 @@ var appLevelKeys = map[string]bool{
 	"name": true, "description": true, "base_url": true, "module": true,
 	"db": true, "static_dir": true, "output_dir": true, "api_prefix": true,
 	"public_openapi": true, "theme": true, "auth": true, "admin": true,
-	"pwa": true, "llm_md": true,
+	"pwa": true, "llm_md": true, "locale_prefixes": true,
 }
 
 // topLevelKeys are the app spec's root sections; written under `app:`

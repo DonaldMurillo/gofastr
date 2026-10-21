@@ -62,6 +62,36 @@ func TestE2E(t *testing.T) {
 		}
 	}
 
+	// Locale prefixes: /es/ serves the Spanish catalog with its links,
+	// alternates, sitemap and robots rules; /en/ folds onto the plain path.
+	if code, body := e2eDo(t, http.DefaultClient, "GET", base+"/es/pricing", ""); code != http.StatusOK {
+		t.Errorf("/es/pricing = %d, want 200", code)
+	} else {
+		for _, want := range []string{"Contactar con ventas", `href="/es/about"`, `hreflang="es"`, `hreflang="x-default"`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("/es/pricing lacks %s", want)
+			}
+		}
+	}
+	if r, err := noRedir.Get(base + "/en/pricing"); err == nil {
+		r.Body.Close()
+		if r.StatusCode != http.StatusPermanentRedirect || r.Header.Get("Location") != "/pricing" {
+			t.Errorf("/en/pricing = %d Location %q, want 308 to /pricing", r.StatusCode, r.Header.Get("Location"))
+		}
+	}
+	if r, err := noRedir.Get(base + "/es/app"); err == nil {
+		r.Body.Close()
+		if loc := r.Header.Get("Location"); r.StatusCode != http.StatusSeeOther || !strings.HasPrefix(loc, "/es/login") {
+			t.Errorf("anon /es/app = %d Location %q, want 303 to /es/login", r.StatusCode, loc)
+		}
+	}
+	if _, body := e2eDo(t, http.DefaultClient, "GET", base+"/sitemap.xml", ""); !strings.Contains(body, "/es/pricing</loc>") {
+		t.Errorf("sitemap lacks /es/pricing:\n%s", body)
+	}
+	if _, body := e2eDo(t, http.DefaultClient, "GET", base+"/robots.txt", ""); !strings.Contains(body, "Disallow: /es/app\n") {
+		t.Errorf("robots.txt does not keep crawlers out of /es/app:\n%s", body)
+	}
+
 	// Sign in, then every gated screen renders.
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}
