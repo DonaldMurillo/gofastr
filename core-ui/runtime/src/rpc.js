@@ -139,7 +139,7 @@
       formResult(form, false);
       console.error('[gofastr] form submit could not complete', err);
       if (typeof NS.toast === 'function') {
-        NS.toast({ variant: 'error', title: 'Could not complete that submission.', ttl: 6000 });
+        NS.toast({ variant: 'error', title: NS.say('runtime.submit_failed', 'Could not complete that submission.'), ttl: 6000 });
       }
     }
   }
@@ -278,7 +278,7 @@
             const d = JSON.parse(txt);
             if (d && typeof d.error === 'string') msg = d.error.slice(0, 300);
           } catch (_) {}
-          NS._toastOrFallback?.({ variant: 'error', title: errToast || ('Request failed (' + r.status + ')'), body: msg, ttl: 6000 });
+          NS._toastOrFallback?.({ variant: 'error', title: errToast || NS.say('runtime.request_failed_status', 'Request failed ({{status}})', { status: r.status }), body: msg, ttl: 6000 });
         }
         return;
       }
@@ -375,13 +375,13 @@
     } catch (err) {
       if ((err && err.name === 'AbortError') || stale()) return;
       if (errToast !== null) {
-        NS._toastOrFallback?.({ variant: 'error', title: errToast || 'Request failed', body: 'Network error — please try again', ttl: 6000 });
+        NS._toastOrFallback?.({ variant: 'error', title: errToast || NS.say('runtime.request_failed', 'Request failed'), body: NS.say('runtime.network_error', 'Network error: please try again'), ttl: 6000 });
       }
       if (responseSignal) {
         NS.setSignal(responseSignal, {
           ok: false,
           status: 0,
-          text: 'Network error \u2014 please try again',
+          text: NS.say('runtime.network_error', 'Network error: please try again'),
         });
       }
     } finally {

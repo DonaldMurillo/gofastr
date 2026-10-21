@@ -1,6 +1,7 @@
 package uinoderender
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -38,7 +39,7 @@ func keyResolver(m map[string]string) ActionResolver {
 // --- Per-component golden-ish: assert on the real design-system marker ---
 
 func TestRenderStackMapsToLayoutPrimitive(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(uinodev1.Node{
 		Component: uinodev1.CompStack,
 		Props:     uinodev1.StackProps{Direction: "vertical", Gap: "md"},
@@ -51,7 +52,7 @@ func TestRenderStackMapsToLayoutPrimitive(t *testing.T) {
 }
 
 func TestRenderStackHorizontalMapsToCluster(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(uinodev1.Node{
 		Component: uinodev1.CompStack,
 		Props:     uinodev1.StackProps{Direction: "horizontal"},
@@ -64,7 +65,7 @@ func TestRenderStackHorizontalMapsToCluster(t *testing.T) {
 }
 
 func TestRenderClusterMapsToLayoutPrimitive(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(uinodev1.Node{
 		Component: uinodev1.CompCluster, Props: uinodev1.ClusterProps{Gap: "sm"},
 	}))
@@ -75,7 +76,7 @@ func TestRenderClusterMapsToLayoutPrimitive(t *testing.T) {
 }
 
 func TestRenderGridMapsToLayoutPrimitive(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(uinodev1.Node{
 		Component: uinodev1.CompGrid, Props: uinodev1.GridProps{Columns: 3, Gap: "md"},
 	}))
@@ -87,7 +88,7 @@ func TestRenderGridMapsToLayoutPrimitive(t *testing.T) {
 }
 
 func TestRenderSectionMapsToHtmlSection(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(uinodev1.Node{
 		Component: uinodev1.CompSection,
 		Props:     uinodev1.SectionProps{Title: "Dashboard", Subtitle: "sub"},
@@ -101,7 +102,7 @@ func TestRenderSectionMapsToHtmlSection(t *testing.T) {
 }
 
 func TestRenderSectionFallbackLabel(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	// A section with no title must still get an a11y label (html.Section
 	// panics without one); the host supplies "Section".
 	h, err := r.Render(tree(uinodev1.Node{
@@ -114,7 +115,7 @@ func TestRenderSectionFallbackLabel(t *testing.T) {
 }
 
 func TestRenderCardMapsToCardPrimitive(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(uinodev1.Node{
 		Component: uinodev1.CompCard, Props: uinodev1.CardProps{Title: "C", Elevation: "flat"},
 	}))
@@ -126,7 +127,7 @@ func TestRenderCardMapsToCardPrimitive(t *testing.T) {
 }
 
 func TestRenderDividerMapsToDividerPrimitive(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(uinodev1.Node{Component: uinodev1.CompDivider, Props: uinodev1.DividerProps{}}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -135,7 +136,7 @@ func TestRenderDividerMapsToDividerPrimitive(t *testing.T) {
 }
 
 func TestRenderHeadingUsesHtmlHeading(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(uinodev1.Node{
 		Component: uinodev1.CompHeading, Props: uinodev1.HeadingProps{Level: 3, Text: "Hi"},
 	}))
@@ -147,7 +148,7 @@ func TestRenderHeadingUsesHtmlHeading(t *testing.T) {
 }
 
 func TestRenderInlineTextPrimitives(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	cases := []struct {
 		name string
 		node uinodev1.Node
@@ -172,7 +173,7 @@ func TestRenderInlineTextPrimitives(t *testing.T) {
 }
 
 func TestRenderBadgeToneMapsToStatusVariant(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	cases := []struct {
 		tone string
 		cls  string
@@ -196,7 +197,7 @@ func TestRenderBadgeToneMapsToStatusVariant(t *testing.T) {
 }
 
 func TestRenderDetailListMapsToPrimitive(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(node(uinodev1.CompDetailList, uinodev1.DetailListProps{
 		Items: []uinodev1.DetailItem{{Label: "Name", Value: "Ada"}},
 	})))
@@ -209,7 +210,7 @@ func TestRenderDetailListMapsToPrimitive(t *testing.T) {
 }
 
 func TestRenderKeyValueReusesDetailList(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	// key-value reuses the <dl> DetailList primitive (no distinct KV
 	// component exists; both render label/value description rows).
 	h, err := r.Render(tree(node(uinodev1.CompKeyValue, uinodev1.KeyValueProps{
@@ -224,7 +225,7 @@ func TestRenderKeyValueReusesDetailList(t *testing.T) {
 }
 
 func TestRenderStatCardMapsToPrimitive(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(node(uinodev1.CompStatCard, uinodev1.StatCardProps{
 		Label: "MRR", Value: "$1k", Unit: "USD", Trend: "up",
 	})))
@@ -238,7 +239,7 @@ func TestRenderStatCardMapsToPrimitive(t *testing.T) {
 }
 
 func TestRenderImageMapsToHtmlImage(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(node(uinodev1.CompImage, uinodev1.ImageProps{
 		Src: "/assets/logo.png", Alt: "Logo",
 	})))
@@ -253,7 +254,7 @@ func TestRenderImageMapsToHtmlImage(t *testing.T) {
 // --- DataTable panic-safety (design §9 named hazard) --------------------
 
 func TestRenderDataTableMapsToPrimitive(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(node(uinodev1.CompDataTable, uinodev1.DataTableProps{
 		Columns: []uinodev1.DataColumn{{Key: "name", Label: "Name"}},
 		Rows:    []uinodev1.DataRow{{Cells: []uinodev1.DataCell{{Text: "Ada"}}}},
@@ -270,7 +271,7 @@ func TestRenderDataTableEmptyColumns(t *testing.T) {
 	// The validator rejects empty columns, but the renderer must be
 	// panic-safe for a hand-built Tree too: empty columns render an
 	// empty-state, never a panic (datatable.go:154).
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(node(uinodev1.CompDataTable, uinodev1.DataTableProps{
 		Columns: nil,
 	})))
@@ -283,7 +284,7 @@ func TestRenderDataTableEmptyColumns(t *testing.T) {
 func TestRenderDataTableEmptyRows(t *testing.T) {
 	// Empty rows are handled by ui.DataTable itself; the renderer passes
 	// them through and must not panic.
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(node(uinodev1.CompDataTable, uinodev1.DataTableProps{
 		Columns: []uinodev1.DataColumn{{Key: "name", Label: "Name"}},
 	})))
@@ -297,7 +298,7 @@ func TestRenderDataTableEmptyRows(t *testing.T) {
 // --- ActionRef resolution seam (design §9) -------------------------------
 
 func TestRenderButtonActionRefResolves(t *testing.T) {
-	r := New(keyResolver(map[string]string{"save": "/m/mod/save"}))
+	r := New(context.Background(), keyResolver(map[string]string{"save": "/m/mod/save"}))
 	h, err := r.Render(tree(uinodev1.Node{
 		Component: uinodev1.CompButton,
 		Props:     uinodev1.ButtonProps{Label: "Save", Variant: "primary"},
@@ -313,7 +314,7 @@ func TestRenderButtonActionRefResolves(t *testing.T) {
 // TestRenderButtonDefaultVariantPrimary pins the site default: a
 // button with no variant renders as primary.
 func TestRenderButtonDefaultVariantPrimary(t *testing.T) {
-	r := New(keyResolver(map[string]string{"save": "/m/mod/save"}))
+	r := New(context.Background(), keyResolver(map[string]string{"save": "/m/mod/save"}))
 	h, err := r.Render(tree(uinodev1.Node{
 		Component: uinodev1.CompButton,
 		Props:     uinodev1.ButtonProps{Label: "Save"},
@@ -326,7 +327,7 @@ func TestRenderButtonDefaultVariantPrimary(t *testing.T) {
 }
 
 func TestRenderLinkActionRefResolvedToRpcURL(t *testing.T) {
-	r := New(keyResolver(map[string]string{"act": "/m/mod/act"}))
+	r := New(context.Background(), keyResolver(map[string]string{"act": "/m/mod/act"}))
 	h, err := r.Render(tree(uinodev1.Node{
 		Component: uinodev1.CompLink,
 		Props:     uinodev1.LinkProps{Text: "Act"},
@@ -340,7 +341,7 @@ func TestRenderLinkActionRefResolvedToRpcURL(t *testing.T) {
 }
 
 func TestRenderLinkToPropIsHostRelativeHref(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	h, err := r.Render(tree(node(uinodev1.CompLink, uinodev1.LinkProps{Text: "Home", To: "/home"})))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -352,7 +353,7 @@ func TestRenderLinkToPropIsHostRelativeHref(t *testing.T) {
 }
 
 func TestRenderButtonUnresolvedFailsClosed(t *testing.T) {
-	r := New(keyResolver(map[string]string{})) // resolves nothing
+	r := New(context.Background(), keyResolver(map[string]string{})) // resolves nothing
 	_, err := r.Render(tree(uinodev1.Node{
 		Component: uinodev1.CompButton,
 		Props:     uinodev1.ButtonProps{Label: "Save"},
@@ -367,7 +368,7 @@ func TestRenderButtonUnresolvedFailsClosed(t *testing.T) {
 }
 
 func TestRenderNilResolverFailsClosed(t *testing.T) {
-	r := New(nil)
+	r := New(context.Background(), nil)
 	_, err := r.Render(tree(uinodev1.Node{
 		Component: uinodev1.CompButton,
 		Props:     uinodev1.ButtonProps{Label: "Save"},
@@ -402,7 +403,7 @@ func TestRoundTripNoModuleAttrInOutput(t *testing.T) {
 	// A clean, valid tree renders to markup where every id/class/aria is
 	// host-assigned. No module-supplied id/class/data-*/on* can appear
 	// because the wire type cannot carry them.
-	r := New(staticResolver("/m/mod/x"))
+	r := New(context.Background(), staticResolver("/m/mod/x"))
 	treeJSON := `{
 		"component": "section",
 		"props": {"title": "Dashboard"},
@@ -456,7 +457,7 @@ func TestRoundTripNoModuleAttrInOutput(t *testing.T) {
 // --- Fuzz-ish: every component with minimal valid props, no panic --------
 
 func TestRenderAllComponentsNoPanic(t *testing.T) {
-	r := New(staticResolver("/m/mod/rpc"))
+	r := New(context.Background(), staticResolver("/m/mod/rpc"))
 	nodes := []uinodev1.Node{
 		node(uinodev1.CompStack, uinodev1.StackProps{}),
 		node(uinodev1.CompCluster, uinodev1.ClusterProps{}),

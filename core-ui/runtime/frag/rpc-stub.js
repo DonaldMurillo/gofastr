@@ -34,7 +34,7 @@
       const rpc = e.target.closest && e.target.closest('[data-cui-rpc]');
       if (rpc && rpc.tagName !== 'FORM') {
         e.preventDefault();
-        _showNavToast('Needs the Go server.');
+        _showNavToast(say('runtime.needs_server', 'Needs the Go server.'));
         return;
       }
       // (data-cui-open is handled by widgets-boot-static's eager
@@ -47,7 +47,7 @@
       // data-cui-rpc on a <form>, a dead RPC submit. Same notice.
       if (form.hasAttribute('data-cui-rpc')) {
         e.preventDefault();
-        _showNavToast('Needs the Go server.');
+        _showNavToast(say('runtime.needs_server', 'Needs the Go server.'));
       }
     });
   }

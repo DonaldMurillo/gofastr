@@ -49,7 +49,7 @@
     const fail = (code, detail) => {
       if (root) {
         root.setAttribute('data-cui-embed-state', 'error');
-        root.textContent = 'This panel could not load. Error: ' + code + '.';
+        root.textContent = say('runtime.embed_failed', 'This panel could not load. Error: {{code}}.', { code });
       }
       post({ type: 'error', code: code });
       console.warn('[gofastr/embed] ' + code, detail || '');
@@ -392,8 +392,8 @@
           root.prepend(notice);
         }
         notice.textContent = kind === 'link'
-          ? 'This panel cannot open links.'
-          : 'This panel cannot submit this form.';
+          ? say('runtime.embed_no_links', 'This panel cannot open links.')
+          : say('runtime.embed_no_forms', 'This panel cannot submit this form.');
       }
       post({ type: 'error', code: code });
       console.warn('[gofastr/embed] ' + code + ': ' + destination);

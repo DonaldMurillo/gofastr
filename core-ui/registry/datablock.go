@@ -35,7 +35,7 @@ var (
 		"gofastr-runtime-modules": true, "gofastr-behaviors": true,
 		"gofastr-compute-assets": true, "gofastr-catalog": true,
 		"gofastr-routes": true, "gofastr-embed-root": true,
-		"gofastr-embed-navigation-error": true,
+		"gofastr-embed-navigation-error": true, "gofastr-strings": true,
 	}
 )
 

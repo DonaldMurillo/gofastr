@@ -760,6 +760,12 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 		b.WriteString(manifest)
 		b.WriteByte('\n')
 	}
+	// The frame's own words (a failed load, a blocked link) in the
+	// reader's language.
+	if strs := runtimeStringsScript(r.Context()); strs != "" {
+		b.WriteString(strs)
+		b.WriteByte('\n')
+	}
 	b.WriteString("</head>\n<body>\n")
 	b.WriteString(`<div id="gofastr-embed-root" data-cui-embed-state="loading"></div>` + "\n")
 	// The embed runtime carries the app's compiled component actions with it.

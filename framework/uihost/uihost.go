@@ -1586,7 +1586,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// Install the per-request signal value bag BEFORE rendering so a
 	// producer's Slice.Seed(ctx, v) during Load (and a consumer's
 	// Bind(ctx, …) during RenderCtx) write/read the same bag that
-	// injectSignalSeed resolves below.
+	// injectHeadData resolves below.
 	ctx = store.WithValues(ctx)
 	var res app.RenderResult
 	res, err := ds.App.RenderPageResult(ctx, path)
@@ -1693,7 +1693,7 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 		markup: widgets,
 	}
 	out = ds.injectChromeDoc(out, path, sessionID, boundedPresenceParam(r), true, comp, inline)
-	out = injectSignalSeed(ctx, out)
+	out = injectHeadData(ctx, out)
 	if widgets != "" {
 		out = replaceChromeMarker(out, "</body>", widgets+"</body>", "widget chrome")
 	}
@@ -2461,7 +2461,10 @@ func (s *notFoundBodyScreen) Render() render.HTML {
 // link. Composed from design-system elements, zero bespoke CSS. It
 // renders INSIDE the root layout's <main> slot, so it carries no
 // role="main" wrapper of its own.
-type defaultNotFoundScreen struct{ path string }
+type defaultNotFoundScreen struct {
+	component.ContextOnly
+	path string
+}
 
 // backToHomeLink is the default error pages' primary action: a typed
 // anchor dressed in framework/ui's button-link class vocabulary
@@ -2475,29 +2478,29 @@ type defaultNotFoundScreen struct{ path string }
 // every host that links the package. On a host that does not, the
 // anchor degrades to the browser's link look — no sheet exists to
 // fetch, so no marker is emitted either.
-func backToHomeLink() render.HTML {
+func backToHomeLink(ctx context.Context) render.HTML {
 	return html.Link(html.LinkConfig{
 		Href:  "/",
-		Text:  "Back to home",
+		Text:  pageBackHome.Text(ctx),
 		Class: "fui-button fui-button--primary",
 	})
 }
 
-func (s *defaultNotFoundScreen) Render() render.HTML {
+func (s *defaultNotFoundScreen) RenderCtx(ctx context.Context) render.HTML {
 	if s.path == "" {
 		// A static export's 404.html: rendered once at build time, so
 		// there is no request path to name.
 		return render.Join(
-			html.Heading(html.HeadingConfig{Level: 1}, render.Text("404: Page not found")),
-			html.Paragraph(html.TextConfig{}, render.Text("This page does not exist.")),
-			html.Paragraph(html.TextConfig{}, backToHomeLink()),
+			html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageNotFoundTitle.Text(ctx))),
+			html.Paragraph(html.TextConfig{}, render.Text(pageNotFoundBody.Text(ctx))),
+			html.Paragraph(html.TextConfig{}, backToHomeLink(ctx)),
 		)
 	}
 	return render.Join(
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text("404: Page not found")),
-		html.Paragraph(html.TextConfig{}, render.Text("No route matched "),
-			html.Code(html.TextConfig{}, render.Text(textsafe.StripInvisible(s.path))), render.Text(".")),
-		html.Paragraph(html.TextConfig{}, backToHomeLink()),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageNotFoundTitle.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, phraseAround(ctx, pageNoRoute, "path",
+			html.Code(html.TextConfig{}, render.Text(textsafe.StripInvisible(s.path))), nil)),
+		html.Paragraph(html.TextConfig{}, backToHomeLink(ctx)),
 	)
 }
 
@@ -2534,17 +2537,7 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 		// The problem document deliberately omits the request path:
 		// echoing a hostile URL into a machine body is a reflection
 		// vector no error page needs.
-		json.NewEncoder(w).Encode(struct {
-			Type   string `json:"type"`
-			Title  string `json:"title"`
-			Status int    `json:"status"`
-			Detail string `json:"detail"`
-		}{
-			Type:   "about:blank",
-			Title:  "Not Found",
-			Status: http.StatusNotFound,
-			Detail: "No route matches this request.",
-		})
+		json.NewEncoder(w).Encode(newProblem(r.Context(), http.StatusNotFound, problemNotFound, problemNoRoute))
 		return
 	}
 	// Markdown recovery arm: agent-readable, gated on the same
@@ -2642,13 +2635,13 @@ func (ds *UIHost) serveNotFoundPartial(w http.ResponseWriter, r *http.Request, p
 // one honest sentence, a home link. It deliberately names NO detail of
 // the failure (the resolver's error text is logged, never rendered)
 // and renders inside the root layout's <main> slot.
-type defaultErrorScreen struct{}
+type defaultErrorScreen struct{ component.ContextOnly }
 
-func (s *defaultErrorScreen) Render() render.HTML {
+func (s *defaultErrorScreen) RenderCtx(ctx context.Context) render.HTML {
 	return render.Join(
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text("Something went wrong")),
-		html.Paragraph(html.TextConfig{}, render.Text("This page could not be loaded. Try again in a moment.")),
-		html.Paragraph(html.TextConfig{}, backToHomeLink()),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageErrorTitle.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, render.Text(pageErrorBody.Text(ctx))),
+		html.Paragraph(html.TextConfig{}, backToHomeLink(ctx)),
 	)
 }
 
@@ -2747,17 +2740,7 @@ func (ds *UIHost) serveServerError(w http.ResponseWriter, r *http.Request, path 
 	if acceptsProblemJSON(r) {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(struct {
-			Type   string `json:"type"`
-			Title  string `json:"title"`
-			Status int    `json:"status"`
-			Detail string `json:"detail"`
-		}{
-			Type:   "about:blank",
-			Title:  "Internal Server Error",
-			Status: http.StatusInternalServerError,
-			Detail: "The page failed to render.",
-		})
+		json.NewEncoder(w).Encode(newProblem(r.Context(), http.StatusInternalServerError, problemServerError, problemRenderFailed))
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -4105,17 +4088,17 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 	path := r.URL.Path
 	allow := w.Header().Get("Allow")
 
+	rctx := r.Context()
 	children := []render.HTML{
-		html.Heading(html.HeadingConfig{Level: 1}, render.Text("405: Method Not Allowed")),
-		html.Paragraph(html.TextConfig{}, render.Text("Method "+r.Method+" is not allowed for "),
-			html.Code(html.TextConfig{}, render.Text(path)), render.Text("."),
-		),
+		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageMethodTitle.Text(rctx))),
+		html.Paragraph(html.TextConfig{}, phraseAround(rctx, pageMethodBody, "path",
+			html.Code(html.TextConfig{}, render.Text(path)), map[string]any{"method": r.Method})),
 	}
 	if allow != "" {
-		children = append(children, html.Paragraph(html.TextConfig{},
-			render.Text("Allowed methods: "), html.Code(html.TextConfig{}, render.Text(allow)), render.Text(".")))
+		children = append(children, html.Paragraph(html.TextConfig{}, phraseAround(rctx, pageMethodAllowed, "methods",
+			html.Code(html.TextConfig{}, render.Text(allow)), nil)))
 	}
-	children = append(children, html.Paragraph(html.TextConfig{}, backToHomeLink()))
+	children = append(children, html.Paragraph(html.TextConfig{}, backToHomeLink(rctx)))
 	body := html.Div(html.DivConfig{Role: "main"}, children...)
 
 	if ds.App != nil && ds.App.Router != nil {
@@ -4400,7 +4383,7 @@ func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (stri
 	// emit one <link rel=stylesheet> per registered component instead
 	// of the comp-bundle.css?names= form.
 	page := ds.injectChromeModeFor(string(res.HTML), path, "", "", false, res.Component)
-	return injectSignalSeed(ctx, page), res.FillFailures, nil
+	return injectHeadData(ctx, page), res.FillFailures, nil
 }
 
 // RenderStaticNotFoundPage renders the not-found page as a full static
@@ -4427,7 +4410,7 @@ func (ds *UIHost) RenderStaticNotFoundPage(ctx context.Context, path string) (st
 		return "", false
 	}
 	page := ds.injectChromeModeFor(string(res.HTML), path, "", "", false, res.Component)
-	return injectSignalSeed(ctx, page), true
+	return injectHeadData(ctx, page), true
 }
 
 // actionsToJS converts an ActionRegistry to browser-runnable JavaScript
@@ -4738,14 +4721,36 @@ func signalsJSONScript(seed map[string]any) string {
 		`</script>`
 }
 
-// injectSignalSeed resolves the signal seed for the rendered page (names
-// referenced in the HTML plus all app-global slices), and splices the
-// JSON block into <head> just before </head> so it is in place before
-// runtime.js (deferred, after parsing) reads it. ctx must carry the request value
-// bag (store.WithValues), so producer-seeded per-request values win over
-// declared defaults. No-op when there is nothing to seed.
-func injectSignalSeed(ctx context.Context, page string) string {
+// runtimeStringsScript is the #gofastr-strings block for ctx's locale, or
+// "" when every runtime string reads as its English.
+func runtimeStringsScript(ctx context.Context) string {
+	strs := runtime.StringsJSON(ctx)
+	if strs == nil {
+		return ""
+	}
+	return `<script type="application/json" id="gofastr-strings">` + escapeJSONForScript(strs) + `</script>`
+}
+
+// injectHeadData splices the page's per-request JSON blocks into <head>
+// just before </head>, so they are in place before runtime.js (deferred,
+// after parsing) reads them:
+//
+//   - #gofastr-signals, the signal seed (names referenced in the HTML
+//     plus all app-global slices). ctx must carry the request value bag
+//     (store.WithValues), so producer-seeded per-request values win over
+//     declared defaults.
+//   - #gofastr-strings, the runtime strings translated for ctx's locale
+//     (runtime.StringsJSON), which the kernel's say() reads.
+//
+// Each block is left out when it has nothing to carry.
+func injectHeadData(ctx context.Context, page string) string {
 	block := signalsJSONScript(store.SeedFor(ctx, page))
+	if strs := runtimeStringsScript(ctx); strs != "" {
+		if block != "" {
+			block += "\n"
+		}
+		block += strs
+	}
 	if block == "" {
 		return page
 	}

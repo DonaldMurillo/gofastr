@@ -78,7 +78,7 @@ func Layout(sidebar component.Component) *appui.Layout {
 		var parts []render.HTML
 		if sidebar != nil {
 			nav, _ := component.SafeRenderCtx(ctx, sidebar)
-			parts = append(parts, html.Nav(html.NavConfig{Label: "Sidebar", Class: "desktopui-frame__sidebar"}, nav))
+			parts = append(parts, html.Nav(html.NavConfig{Label: sidebarLabel.Text(ctx), Class: "desktopui-frame__sidebar"}, nav))
 		}
 		parts = append(parts, l.Primary())
 		return html.Div(html.DivConfig{Class: "desktopui-frame"}, parts...)

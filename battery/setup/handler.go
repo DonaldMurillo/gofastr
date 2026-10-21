@@ -237,12 +237,9 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 		done, err := r.completeAndSwap(req.Context())
 		switch {
 		case err != nil:
-			r.renderIncomplete(w, "Every step ran, but the completion check failed: "+err.Error()+
-				". Fix the underlying issue and reload this page: setup finishes automatically once the check passes.")
+			r.renderIncomplete(req.Context(), w, pageCheckFailed.Text(req.Context(), map[string]any{"cause": err.Error()}))
 		case !done:
-			r.renderIncomplete(w, "Every step ran, but setup still reports incomplete. "+
-				"The Complete predicate does not observe the steps' writes, e.g. AdminStep configured "+
-				"with a different users table than the auth store writes to. Fix the wiring and restart.")
+			r.renderIncomplete(req.Context(), w, pageIncompleteWiring.Text(req.Context()))
 		default:
 			r.renderCompletionPage(w, req)
 		}

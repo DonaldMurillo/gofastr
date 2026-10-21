@@ -48,7 +48,7 @@ var livenessEmbedSourceControls = []embedSourceControl{
 	{name: "deadline aborts the underlying request", file: "frag/boot-embed.js", literal: "new AbortController()", minCount: 1, mutation: "null"},
 	{name: "exchange refresh and content receive abort signals", file: "frag/boot-embed.js", literal: "signal: signal", minCount: 3, mutation: "signal: undefined"},
 	{name: "exchange refresh and content are deadline-bounded", file: "frag/boot-embed.js", literal: "await withDeadline(", minCount: 3, mutation: "await ("},
-	{name: "failure state has visible text", file: "frag/boot-embed.js", literal: "root.textContent = 'This panel could not load. Error: ' + code + '.';", minCount: 1, mutation: "root.textContent = '';"},
+	{name: "failure state has visible text", file: "frag/boot-embed.js", literal: "root.textContent = say('runtime.embed_failed', 'This panel could not load. Error: {{code}}.', { code });", minCount: 1, mutation: "root.textContent = '';"},
 }
 
 func readEmbedControlSources(t *testing.T) map[string]string {
