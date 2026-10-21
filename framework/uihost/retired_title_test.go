@@ -1,6 +1,8 @@
 package uihost
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -29,4 +31,15 @@ func TestHostScreensRefuseRetiredTitle(t *testing.T) {
 			opt(retiredTitlePage{})
 		})
 	}
+}
+
+// RenderScreen takes a component no registration saw.
+func TestRenderScreenRefusesRetiredTitle(t *testing.T) {
+	defer func() {
+		if msg, _ := recover().(string); !strings.Contains(msg, "ScreenTitle(ctx context.Context) string") {
+			t.Fatalf("panic = %q, want the retired-title refusal", msg)
+		}
+	}()
+	New(newRecoverApp()).RenderScreen(httptest.NewRecorder(),
+		httptest.NewRequest(http.MethodGet, "/gone", nil), retiredTitlePage{}, ScreenResponse{Status: http.StatusGone})
 }

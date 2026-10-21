@@ -566,6 +566,7 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 // exactly like a registered screen (per-request instance, DI, Load,
 // article wrap, the default layout chain).
 func notFoundScreenFor(ctx context.Context, comp component.Component) *Screen {
+	RefuseRetiredTitle("not-found body", comp)
 	return NewScreen("/__gofastr_not_found__", comp).WithTitle(pageNotFoundDocTitle.Text(ctx))
 }
 
@@ -604,6 +605,7 @@ func (a *App) RenderNotFoundFromResult(ctx context.Context, path, fromPath strin
 // the default layout chain) so the error body renders inside the root
 // layout like every page..
 func errorScreenFor(ctx context.Context, comp component.Component) *Screen {
+	RefuseRetiredTitle("error body", comp)
 	return NewScreen("/__gofastr_error__", comp).WithTitle(pageErrorDocTitle.Text(ctx))
 }
 
@@ -710,10 +712,12 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 
 	// Per-request component instance: shallow-copy from the registered
 	// template so SetParams / Inject / Load mutations land on storage
-	// only this request can see. RenderAlt overrides with its factory.
+	// only this request can see. RenderAlt overrides with its factory,
+	// whose component no registration ever saw.
 	comp := screen.newInstance()
 	if decision.Kind == DecisionRenderAlt && decision.AltFactory != nil {
 		comp = decision.AltFactory()
+		RefuseRetiredTitle("screen "+screen.Path+" RenderAlt", comp)
 	}
 
 	// Inject route params into ParamSetter components
@@ -1388,6 +1392,7 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 	comp := screen.newInstance()
 	if decision.Kind == DecisionRenderAlt && decision.AltFactory != nil {
 		comp = decision.AltFactory()
+		RefuseRetiredTitle("screen "+screen.Path+" RenderAlt", comp)
 	}
 
 	if len(params) > 0 {

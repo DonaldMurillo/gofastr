@@ -293,10 +293,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   string` and `app.ScreenDescriber` is `ScreenDescription(ctx
   context.Context) string`. Add the parameter to every screen; `gofastr
   upgrade` names each one. `App.Register` reads them once with a bare
-  context, which gives the English. A screen, not-found body, or host
-  404/500 screen still declaring the no-argument method panics at
-  registration: that method compiles, but the page would lose its title
-  without a word. `app.RefuseRetiredTitle` is the check, for code that
+  context, which gives the English. A component still declaring the
+  no-argument method panics at registration, or at its first render
+  when no registration sees it (a `RenderAlt` result, a not-found or
+  error body, `RenderScreen`): that method compiles, but the page would
+  lose its title without a word. `app.RefuseRetiredTitle` is the check, for code that
   holds a component outside the router.
 - **BREAKING: battery text callbacks take a context.** `BodyTemplate`
   on `auth.PasswordResetConfig`, `auth.EmailVerificationConfig` and

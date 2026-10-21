@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -73,6 +75,49 @@ func TestRetiredTitleMethodPanics(t *testing.T) {
 				}
 			}()
 			app.NewApp("Luna").Register("/old", tc.comp, nil)
+		})
+	}
+}
+
+// Components that reach a render without passing registration: a
+// policy's RenderAlt result and the synthetic 404/500 bodies.
+func TestRetiredTitleAtRenderPanics(t *testing.T) {
+	alt := app.PolicyFunc(func(context.Context) app.Decision {
+		return decide.RenderAlt(func() component.Component { return retiredTitleComp{} })
+	})
+	newApp := func() *app.App {
+		a := app.NewApp("Luna")
+		a.RegisterScreen(app.NewScreen("/dash", phrasedTitleComp{}).WithPolicy(alt), nil)
+		return a
+	}
+	ctx := context.Background()
+	for name, render := range map[string]func() error{
+		"alt page":    func() error { _, err := newApp().RenderPageResult(ctx, "/dash"); return err },
+		"alt partial": func() error { _, err := newApp().RenderPartialResult(ctx, "/dash"); return err },
+		"not-found": func() error {
+			_, err := newApp().RenderNotFoundPageResult(ctx, "/x", retiredTitleComp{})
+			return err
+		},
+		"not-found partial": func() error {
+			_, err := newApp().RenderNotFoundFromResult(ctx, "/x", "/dash", retiredTitleComp{})
+			return err
+		},
+		"error": func() error {
+			_, err := newApp().RenderErrorPageResult(ctx, "/x", retiredTitleComp{})
+			return err
+		},
+		"error partial": func() error {
+			_, err := newApp().RenderErrorFromResult(ctx, "/x", "/dash", retiredTitleComp{})
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if msg, _ := recover().(string); !strings.Contains(msg, "ScreenTitle(ctx context.Context) string") {
+					t.Fatalf("panic = %q, want the retired-title refusal", msg)
+				}
+			}()
+			_ = render()
 		})
 	}
 }
