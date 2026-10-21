@@ -48,9 +48,27 @@
 //     (framework/ui, framework/headless, framework/entityui, core-ui).
 //     Prose is a constant, or a concatenation with a constant operand,
 //     holding two words or one capitalised word; a class, key, path,
-//     symbol or all-capitals token ("GET, POST") stays quiet. Define the words as a Phrase and render phrase.Text(ctx),
-//     or take them from the component's Strings (ui.StringsFor). The
-//     runtime's JS twin is core-ui/check LintRuntimeProse.
+//     symbol or all-capitals token ("GET, POST") stays quiet. A local
+//     variable (a parameter included) assigned such a constant anywhere
+//     in its function is prose at every sink it reaches: StepRail's
+//     `if aria == "" { aria = "Page steps" }` default shipped English
+//     one assignment away from its aria-label. A
+//     package's own helper whose string parameter reaches one of those
+//     sinks, directly or through another such helper, makes that
+//     argument a sink at its call sites (textparam). Define the words
+//     as a Phrase and render phrase.Text(ctx), or take them from the
+//     component's Strings (ui.StringsFor). The runtime's JS twin is
+//     core-ui/check LintRuntimeProse.
+//   - numtext: a number turned into Go's digits (strconv.Itoa,
+//     FormatInt, FormatUint, FormatFloat, or fmt.Sprint/Sprintf of plain
+//     numbers) where a reader sees it: a value in a params map literal
+//     passed to Phrase.Text, Translator.T or i18n's T, Fill, FillContext,
+//     NewError or Wrap; the argument of render.Text; a label attribute
+//     or reader-facing component field. Phrase params write a number in
+//     the reader's locale (1 234 in French, ١٬٢٣٤ in Egyptian Arabic) and
+//     pick the plural form from it, so ASCII digits read wrong both ways.
+//     Pass the number, or write it with i18n.Number. A machine value a
+//     person copies (an id, a port, a code) carries the allow marker.
 //
 // Silent postures, deliberately:
 //   - _test.go files, and every package outside the four roots
@@ -77,13 +95,14 @@ import (
 	"reflect"
 	"regexp"
 	"strings"
+	"sync"
 
 	"golang.org/x/tools/go/analysis"
 )
 
 var Analyzer = &analysis.Analyzer{
 	Name: "rawtext",
-	Doc:  "forbids framework responses written outside the i18n catalog: http.Error, i18n.Define off package level or with non-constant text, handler.Errorf/Message, response helpers taking a msg string, prose or err.Error() in error envelopes and raw JSON bodies, and English written into markup (render.Text, label attributes, reader-facing component fields)",
+	Doc:  "forbids framework responses written outside the i18n catalog: http.Error, i18n.Define off package level or with non-constant text, handler.Errorf/Message, response helpers taking a msg string, prose or err.Error() in error envelopes and raw JSON bodies, English written into markup (render.Text, label attributes, reader-facing component fields), and numbers stringified into phrase params or markup",
 	Run:  run,
 }
 
@@ -111,12 +130,16 @@ func run(pass *analysis.Pass) (any, error) {
 	if !inScope(pass.Pkg.Path()) {
 		return nil, nil
 	}
+	defer localProseCache.Delete(pass)
+	defer localNumberCache.Delete(pass)
+	forwarders := phraseForwarders(pass)
+	texts := textParams(pass)
 	for _, f := range pass.Files {
 		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
 			continue
 		}
 		bodies := funcBodies(f)
-		ui := uiReporter{pass: pass, specs: specLiterals(pass, f)}
+		ui := uiReporter{pass: pass, specs: specLiterals(pass, f), forwarders: forwarders, textParams: texts}
 		ast.Inspect(f, func(n ast.Node) bool {
 			switch n := n.(type) {
 			case *ast.CallExpr:
@@ -127,6 +150,8 @@ func run(pass *analysis.Pass) (any, error) {
 				checkParams(pass, n.Type, n.Name.Name)
 			case *ast.FuncLit:
 				checkParams(pass, n.Type, "func literal")
+			case *ast.AssignStmt:
+				checkLabelIndex(pass, n, ui)
 			}
 			return true
 		})
@@ -210,7 +235,10 @@ func checkCall(pass *analysis.Pass, call *ast.CallExpr, bodies []*ast.BlockStmt,
 		if s, ok := uiProse(pass, call.Args[0]); ok {
 			ui.reportf(call.Args[0], "render.Text(%q) writes English into the page: define it as an i18n.Phrase at package level and render phrase.Text(ctx), or take it from the component's Strings", s)
 		}
+		reportNumberText(pass, call.Args[0], ui, "a number into the page")
 	}
+	checkPhraseParams(pass, call, ui)
+	checkTextArgs(pass, call, ui)
 }
 
 // uiPackage reports whether path declares components: types whose
@@ -239,6 +267,12 @@ var docPackages = map[string]bool{
 type uiReporter struct {
 	pass  *analysis.Pass
 	specs []*ast.CompositeLit
+	// forwarders are this package's helpers that hand their params to
+	// a phrase sink (phraseForwarders).
+	forwarders map[*types.Func]bool
+	// textParams are this package's helpers' string parameters that
+	// reach the page (textParams).
+	textParams map[*types.Func]map[int]bool
 }
 
 func (u uiReporter) reportf(n ast.Node, format string, args ...any) {
@@ -311,16 +345,31 @@ var (
 // uiProse reports e's constant text when it reads as words for a person.
 // A concatenation is prose when one of its constant operands is: "Method
 // " + m + " is not allowed" spells English around a value.
+// A local variable is prose when the function assigns it prose
+// (localProse).
 func uiProse(pass *analysis.Pass, e ast.Expr) (string, bool) {
+	if id, ok := ast.Unparen(e).(*ast.Ident); ok {
+		if v, ok := pass.TypesInfo.Uses[id].(*types.Var); ok {
+			if s, ok := localProse(pass)[v]; ok {
+				return s, true
+			}
+		}
+	}
+	return constProse(pass, e)
+}
+
+// constProse is uiProse for a constant or a concatenation, no variables
+// followed.
+func constProse(pass *analysis.Pass, e ast.Expr) (string, bool) {
 	tv, ok := pass.TypesInfo.Types[e]
 	if !ok {
 		return "", false
 	}
 	if bin, isBin := ast.Unparen(e).(*ast.BinaryExpr); isBin && tv.Value == nil && bin.Op == token.ADD {
-		if s, ok := uiProse(pass, bin.X); ok {
+		if s, ok := constProse(pass, bin.X); ok {
 			return s, true
 		}
-		return uiProse(pass, bin.Y)
+		return constProse(pass, bin.Y)
 	}
 	if tv.Value == nil || tv.Value.Kind() != constant.String {
 		return "", false
@@ -333,6 +382,90 @@ func uiProse(pass *analysis.Pass, e ast.Expr) (string, bool) {
 		return "", false // "GET, POST": tokens, not words
 	}
 	return s, reWords.MatchString(s) || reCapWord.MatchString(s)
+}
+
+// checkLabelIndex reports prose set as a label attribute by index,
+// attrs["aria-label"] = "Page steps", the map literal's twin.
+func checkLabelIndex(pass *analysis.Pass, as *ast.AssignStmt, ui uiReporter) {
+	if as.Tok != token.ASSIGN || len(as.Lhs) != len(as.Rhs) {
+		return
+	}
+	for i, lhs := range as.Lhs {
+		if !labelIndex(pass, lhs) {
+			continue
+		}
+		k := pass.TypesInfo.Types[lhs.(*ast.IndexExpr).Index]
+		if s, ok := uiProse(pass, as.Rhs[i]); ok {
+			ui.reportf(as.Rhs[i], "%s %q is English written into the page: define it as an i18n.Phrase at package level and set phrase.Text(ctx), or take it from the component's Strings", constant.StringVal(k.Value), s)
+		}
+	}
+}
+
+// localProseCache holds each pass's localProse map while it runs, and
+// localNumberCache its localNumber map.
+var localProseCache, localNumberCache sync.Map // *analysis.Pass -> map[*types.Var]string
+
+// localProse maps each function-scoped string variable (parameters
+// included) that some assignment or declaration in the package's
+// non-test files sets to prose onto the first such text.
+func localProse(pass *analysis.Pass) map[*types.Var]string {
+	return localVars(pass, &localProseCache, func(e ast.Expr) (string, bool) { return constProse(pass, e) })
+}
+
+// localNumber maps each function-scoped variable that some assignment
+// sets to number text (n := strconv.Itoa(size)) onto the call's name.
+func localNumber(pass *analysis.Pass) map[*types.Var]string {
+	return localVars(pass, &localNumberCache, func(e ast.Expr) (string, bool) { return numberCall(pass, e) })
+}
+
+// localVars maps each function-scoped variable that some assignment or
+// declaration in the package's non-test files sets to a value classify
+// accepts onto the first such result, cached per pass.
+func localVars(pass *analysis.Pass, cache *sync.Map, classify func(ast.Expr) (string, bool)) map[*types.Var]string {
+	if m, ok := cache.Load(pass); ok {
+		return m.(map[*types.Var]string)
+	}
+	out := map[*types.Var]string{}
+	record := func(lhs, rhs ast.Expr) {
+		id, ok := ast.Unparen(lhs).(*ast.Ident)
+		if !ok {
+			return
+		}
+		v, _ := pass.TypesInfo.ObjectOf(id).(*types.Var)
+		if v == nil || v.IsField() || v.Parent() == nil || v.Parent() == pass.Pkg.Scope() {
+			return
+		}
+		if _, seen := out[v]; seen {
+			return
+		}
+		if s, ok := classify(rhs); ok {
+			out[v] = s
+		}
+	}
+	for _, f := range pass.Files {
+		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+			continue
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.AssignStmt:
+				if len(n.Lhs) == len(n.Rhs) && (n.Tok == token.ASSIGN || n.Tok == token.DEFINE) {
+					for i := range n.Lhs {
+						record(n.Lhs[i], n.Rhs[i])
+					}
+				}
+			case *ast.ValueSpec:
+				if len(n.Names) == len(n.Values) {
+					for i := range n.Names {
+						record(n.Names[i], n.Values[i])
+					}
+				}
+			}
+			return true
+		})
+	}
+	cache.Store(pass, out)
+	return out
 }
 
 // proseField matches a JSON "error", "message", "title" or "detail" key
@@ -411,6 +544,7 @@ func checkLiteral(pass *analysis.Pass, lit *ast.CompositeLit, ui uiReporter) {
 			if s, ok := uiProse(pass, kv.Value); ok {
 				ui.reportf(kv.Value, "%s %q is English written into the page: define it as an i18n.Phrase at package level and set phrase.Text(ctx), or take it from the component's Strings", k, s)
 			}
+			reportNumberText(pass, kv.Value, ui, "a number into "+k)
 			continue
 		}
 		if k != "error" && k != "message" {
@@ -500,6 +634,7 @@ func checkUIFields(pass *analysis.Pass, lit *ast.CompositeLit, st *types.Struct,
 		if s, ok := uiProse(pass, val); ok {
 			ui.reportf(val, "%s: %q is English written into the page: define it as an i18n.Phrase at package level and set phrase.Text(ctx), or take it from the component's Strings", f.Name(), s)
 		}
+		reportNumberText(pass, val, ui, "a number into "+f.Name())
 	}
 }
 

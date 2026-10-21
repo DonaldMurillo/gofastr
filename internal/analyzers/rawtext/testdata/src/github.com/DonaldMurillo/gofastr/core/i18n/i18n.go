@@ -14,6 +14,14 @@ func (p Phrase) Text(ctx context.Context, params ...map[string]any) string { ret
 
 func (p Phrase) Code() string { return p.key }
 
+type Translator struct{}
+
+func (t *Translator) T(ctx context.Context, key string, params ...map[string]any) string { return key }
+
+func Fill(s string, params map[string]any) string { return s }
+
+func FillContext(ctx context.Context, s string, params map[string]any) string { return s }
+
 // statusPhrases is package level inside a composite: quiet.
 var statusPhrases = map[int]Phrase{
 	404: Define("error.not_found", "not found"),
