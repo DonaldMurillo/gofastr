@@ -1,13 +1,8 @@
 // Package i18n is a small internationalization primitive for GoFastr
 // apps: locale negotiation from `Accept-Language`, JSON-backed message
-// catalogs with `{{placeholder}}` interpolation, and CLDR-style plural
-// categories (zero / one / two / few / many / other) with sensible
-// English defaults and a hook for per-locale custom rules.
-//
-// The goal is to make "translate this string for this caller's locale"
-// trivial without pulling in the full ICU stack. Number / date /
-// currency formatting is out of scope here; use stdlib `time` /
-// `strconv` or wire your own formatter on top.
+// catalogs with `{{placeholder}}` interpolation, and CLDR plural
+// categories (zero / one / two / few / many / other) for every
+// language, through golang.org/x/text.
 //
 // Wiring:
 //
@@ -30,7 +25,6 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
-	"math"
 	"net/http"
 	"path"
 	"slices"
@@ -65,20 +59,12 @@ type Catalog interface {
 	Locales() []string
 }
 
-// PluralRule maps an integer count to a CLDR plural category for the
-// locale. Built-in rules cover English ("one" if n==1, "other"
-// otherwise); register more with [Translator.RegisterPluralRule] or
-// drop in a third-party CLDR-data set.
-type PluralRule func(n int) string
-
-// Translator looks up keys in a Catalog, applies per-locale plural
-// rules, and interpolates {{placeholders}} from params.
+// Translator looks up keys in a Catalog, picks a plural message's form
+// by the locale's CLDR rules, and interpolates {{placeholders}} from
+// params.
 type Translator struct {
 	catalog  Catalog
 	fallback string
-
-	mu    sync.RWMutex
-	rules map[string]PluralRule
 }
 
 // NewTranslator wraps a Catalog with a fallback locale (used when the
@@ -88,26 +74,13 @@ func NewTranslator(c Catalog, fallback string) *Translator {
 	return &Translator{
 		catalog:  c,
 		fallback: normalize(fallback),
-		rules: map[string]PluralRule{
-			"en": englishPlural,
-		},
 	}
-}
-
-// RegisterPluralRule installs a plural rule for the supplied locale.
-// Looked up first by exact tag, then by language base (so "en-US"
-// falls back to "en").
-func (t *Translator) RegisterPluralRule(locale string, rule PluralRule) *Translator {
-	t.mu.Lock()
-	t.rules[normalize(locale)] = rule
-	t.mu.Unlock()
-	return t
 }
 
 // T returns the translated message for key, interpolating any
 // {{placeholder}} tokens from the first params map. When the message
 // is a plural and params contains a numeric "count" / "n", the
-// matching category is selected via the locale's PluralRule.
+// locale's CLDR rule picks the form.
 //
 // Lookup order: ctx locale → fallback locale → bare key. Empty key
 // returns empty string.
@@ -142,58 +115,30 @@ func (t *Translator) lookup(tag, key string) (Message, bool) {
 	return Message{}, false
 }
 
-// render interpolates placeholders and applies plural selection.
+// render applies plural selection and interpolates placeholders, a
+// number param written the way tag's locale writes numbers. The plural
+// form is picked from the raw count, before it is formatted.
 func (t *Translator) render(tag string, m Message, params map[string]any) string {
+	loc := resolveCLDR(tag).loc
 	if len(m.Plural) > 0 {
-		n, ok := extractCount(params)
+		ops, ok := countOperands(params)
 		if !ok {
 			// No count supplied. Pick the "other" variant if present;
 			// otherwise fall through to interpolate whatever Text was.
 			if v, has := m.Plural["other"]; has {
-				return Fill(v, params)
+				return fill(v, params, loc)
 			}
-			return Fill(m.Text, params)
+			return fill(m.Text, params, loc)
 		}
-		cat := t.pluralCategory(tag, n)
+		cat := pluralCategory(tag, ops)
 		if v, has := m.Plural[cat]; has {
-			return Fill(v, params)
+			return fill(v, params, loc)
 		}
 		if v, has := m.Plural["other"]; has {
-			return Fill(v, params)
+			return fill(v, params, loc)
 		}
 	}
-	return Fill(m.Text, params)
-}
-
-func (t *Translator) pluralCategory(tag string, n int) string {
-	// Snapshot the registered rule under the read lock and evaluate it
-	// outside: plural rules are registered callbacks (RegisterRule),
-	// and a rule that blocks or panics must not hold every other
-	// translator call behind t.mu — the same registry rule core/mcp's
-	// listing gates learned.
-	t.mu.RLock()
-	var rule func(int) string
-	for _, c := range tagFallbacks(tag) {
-		if r, ok := t.rules[c]; ok {
-			rule = r
-			break
-		}
-	}
-	t.mu.RUnlock()
-	if rule != nil {
-		return rule(n)
-	}
-	return englishPlural(n)
-}
-
-// englishPlural is the conservative default: "one" iff n == 1, else
-// "other". Reasonable for English-ish languages; register a real rule
-// for languages with more categories (Arabic, Russian, etc.).
-func englishPlural(n int) string {
-	if n == 1 {
-		return "one"
-	}
-	return "other"
+	return fill(m.Text, params, loc)
 }
 
 // ----- catalog implementations ---------------------------------------------
@@ -204,7 +149,6 @@ type MapCatalog struct {
 	// mu guards Entries. Set is documented as a test convenience, but
 	// MapCatalog is also the type LoadJSONCatalog returns, so a host can
 	// hold a live one and call Set while request goroutines are in Get.
-	// The Translator's own mutex guards only its plural rules.
 	mu      sync.RWMutex
 	Entries map[string]map[string]Message // locale → key → message
 }
@@ -704,56 +648,29 @@ func mergeParams(in []map[string]any) map[string]any {
 	return out
 }
 
-// countParams are the params extractCount reads, in order.
-var countParams = []string{"count", "n", "Count", "N"}
-
-// extractCount looks for a "count" or "n" key holding an integer-ish
-// value. Returns (n, true) on success.
-func extractCount(p map[string]any) (int, bool) {
-	for _, k := range countParams {
-		if v, ok := p[k]; ok {
-			switch x := v.(type) {
-			case int:
-				return x, true
-			case int32:
-				return int(x), true
-			case int64:
-				return int(x), true
-			case uint:
-				// Same overflow check core/schema's toInt64 carries:
-				// uint is 64 bits wide on this repo's platforms, and an
-				// out-of-int-range count converts to a negative, which
-				// then picks the wrong CLDR plural category.
-				if x > math.MaxInt {
-					return 0, false
-				}
-				return int(x), true
-			case uint64:
-				if x > math.MaxInt64 {
-					return 0, false
-				}
-				return int(x), true
-			case float32:
-				return int(x), true
-			case float64:
-				return int(x), true
-			case string:
-				if n, err := strconv.Atoi(x); err == nil {
-					return n, true
-				}
-			}
-		}
-	}
-	return 0, false
+// Fill replaces s's {{name}} placeholders with stringified params.
+// Names are looked up case-sensitively. A value is written as given and
+// never rescanned. An unknown placeholder is left as written, easier to
+// spot than an empty gap. Numbers print as Go prints them; text a
+// reader sees goes through [FillContext], which writes them the
+// reader's way.
+func Fill(s string, params map[string]any) string {
+	return fill(s, params, nil)
 }
 
-// Fill replaces s's {{name}} placeholders with stringified params: the
-// substitution [Phrase.Text] applies, for a template that arrives as a
-// plain string (a headless.Strings field, a catalog value read by
-// hand). Names are looked up case-sensitively. A value is written as
-// given and never rescanned. An unknown placeholder is left as written,
-// easier to spot than an empty gap.
-func Fill(s string, params map[string]any) string {
+// FillContext is the substitution [Phrase.Text] applies, for a template
+// that arrives as a plain string (a headless.Strings field, a catalog
+// value read by hand): [Fill], with every number param (any integer or
+// float kind that is not a fmt.Stringer or error) written in ctx's
+// locale, so 1234 reads "1 234" in French. Pass the number, not
+// strconv.Itoa of it.
+func FillContext(ctx context.Context, s string, params map[string]any) string {
+	return fill(s, params, cldrFor(ctx).loc)
+}
+
+// fill substitutes params into s; a non-nil loc writes number params
+// in that locale.
+func fill(s string, params map[string]any, loc *cldrLocale) string {
 	if s == "" || len(params) == 0 || !strings.Contains(s, "{{") {
 		return s
 	}
@@ -774,7 +691,11 @@ func Fill(s string, params map[string]any) string {
 		}
 		name := strings.TrimSpace(s[i+j+2 : i+j+2+k])
 		if v, ok := params[name]; ok {
-			fmt.Fprint(&b, v)
+			if n, isNum := loc.formatParam(v); isNum {
+				b.WriteString(n)
+			} else {
+				fmt.Fprint(&b, v)
+			}
 		} else {
 			// Leave the placeholder intact so it's visible.
 			b.WriteString(s[i+j : i+j+2+k+2])

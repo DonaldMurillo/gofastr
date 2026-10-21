@@ -95,8 +95,10 @@ func (p Phrase) IsZero() bool { return p.key == "" }
 // [WithTranslator]), else the [Default] one, interpolating {{name}}
 // placeholders from params. A param that is a [Phrased] error renders
 // as its own Text, so a wrapped cause translates with its frame. A
-// catalog miss renders the English text with the same params. The zero
-// Phrase renders "".
+// number param is written the way the text's language writes numbers:
+// pass the count itself, which also picks the plural form. A catalog
+// miss renders the English text with the same params, numbers written
+// as English writes them. The zero Phrase renders "".
 func (p Phrase) Text(ctx context.Context, params ...map[string]any) string {
 	if p.key == "" {
 		return ""
@@ -111,7 +113,7 @@ func (p Phrase) Text(ctx context.Context, params ...map[string]any) string {
 			return s
 		}
 	}
-	return Fill(p.english, merged)
+	return fill(p.english, merged, cldrEnglish().loc)
 }
 
 // innermostCode walks the [Phrased] errors under outer and returns the
