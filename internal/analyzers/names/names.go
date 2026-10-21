@@ -38,6 +38,7 @@ var Analyzers = []string{
 	"nonfinite",
 	"nowaitdelay",
 	"nostore",
+	"rawtext",
 	"recovercallback",
 	"recoverlog",
 	"reflectset",

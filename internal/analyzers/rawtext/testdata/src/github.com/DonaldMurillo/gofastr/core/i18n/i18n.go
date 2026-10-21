@@ -1,0 +1,25 @@
+// Package i18n is the stub of core/i18n the rawtext fixtures call.
+package i18n
+
+import (
+	"context"
+	"net/http"
+)
+
+type Phrase struct{ key, english string }
+
+func Define(key, english string) Phrase { return Phrase{key, english} }
+
+func (p Phrase) Text(ctx context.Context, params ...map[string]any) string { return p.english }
+
+func (p Phrase) Code() string { return p.key }
+
+// statusPhrases is package level inside a composite: quiet.
+var statusPhrases = map[int]Phrase{
+	404: Define("error.not_found", "not found"),
+}
+
+func HTTPError(w http.ResponseWriter, r *http.Request, status int, p Phrase) {
+	//gofastr:allow(rawtext) the sanctioned writer
+	http.Error(w, p.Text(r.Context()), status)
+}
