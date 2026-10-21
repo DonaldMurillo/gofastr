@@ -63,15 +63,17 @@ const runtimeProseMarker = "gofastr:allow(runtimeprose)"
 // Sinks, matched on the blank view so a sink spelled in a comment or a
 // string never counts. A toast call matches its optional-call spelling
 // too (NS._toastOrFallback?.(...)): the lint missed rpc.js's 'Done'
-// success toast behind one.
+// success toast behind one. A text sink matches += as well as =, and a
+// lone capitalised word may end in a colon: signals.js wrote 'Error: '
+// past both.
 var (
 	reToastSink = regexp.MustCompile(`\b(?:toast|_toastOrFallback|_fallbackToast|_showNavToast|createTextNode)\s*(?:\?\.\s*)?\(`)
-	reTextSink  = regexp.MustCompile(`\.(?:textContent|innerText|title|placeholder|ariaLabel|alt)\s*=[^=]`)
+	reTextSink  = regexp.MustCompile(`\.(?:textContent|innerText|title|placeholder|ariaLabel|alt)\s*\+?=[^=]`)
 	reAttrSink  = regexp.MustCompile(`\bsetAttribute\s*\(`)
 	reLabelAttr = regexp.MustCompile(`^\s*['"](?:aria-label|aria-description|title|placeholder|alt)['"]\s*,`)
 	reSaidAs    = regexp.MustCompile(`\bsay\(\s*(['"])[^'"]*(['"])\s*,\s*$`)
-	reTwoWords  = regexp.MustCompile(`[A-Za-z]{2,}[,.:;!?)]*\s+\S*[A-Za-z]{2,}`)
-	reCapWord   = regexp.MustCompile(`^[A-Z][a-z]{2,}[.!?]?$`)
+	reTwoWords  = regexp.MustCompile(`[A-Za-z]{2,}[,.:;!?)]*(?:\s+\S+)*?\s+\S*[A-Za-z]{2,}`)
+	reCapWord   = regexp.MustCompile(`^[A-Z][a-z]{2,}[.!?:]?$`)
 	reInterp    = regexp.MustCompile(`\$\{[^}]*\}`)
 )
 

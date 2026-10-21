@@ -172,14 +172,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   New `i18n.Match(tr, tags...)` and `i18n.EnvLocale(tr)` pick a locale
   with no request; `desktop.ShellContext` uses them for a shell's own
   menus, About box, permission prompt, accelerator names and the
-  settings window's title. After a client-side navigation the runtime's
-  own words follow the destination page (`data-cui-strings`), and an
-  action's default success toast says `runtime.done`. See
+  settings window's title; the settings window's number hints ("Between
+  1 and 180.") are phrases with the locale's digits. After a client-side
+  navigation, and on Back to a page reached that way, the runtime's own
+  words follow the page shown (`data-cui-strings`). An action's default
+  success toast says `runtime.done`, and a failed RPC shown in a text
+  signal reads "Request failed (500)" in the page's language, where it
+  read "Error: 500". See
   `gofastr docs i18n` → "Beyond the page body".
 - **`rawtext` refuses literal screen titles.** A `ScreenTitle` or
   `ScreenDescription` method returning a constant in framework code is
-  reported; return a phrase's `Text(ctx)`. `LintRuntimeProse` also reads
-  a toast called with the optional-call spelling (`_toastOrFallback?.(`).
+  reported; return a phrase's `Text(ctx)`. The `uitext` arm also reads a
+  component's `Help` field, a `fmt.Sprintf` whose format is English
+  ("Signed in as %s"), a package-level variable declared with English,
+  and English with short words between ("Choose a value").
+  `LintRuntimeProse` also reads a toast called with the optional-call
+  spelling (`_toastOrFallback?.(`), a `+=` text write and a lone word
+  ending in a colon (`'Error: '`).
 
 ### Changed
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,
@@ -292,7 +301,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   context.Context, d ConfirmPageData) []byte`. `desktop.PlanMenuBar` and
   `desktop.PlanTrayMenu` take a context first, `Battery.OpenSettings`
   takes one, and `desktop.WindowConfig.OnSettings` is `func(ctx
-  context.Context)`.
+  context.Context)`. `gofastr upgrade` names each callback still
+  written with the old signature.
 - **BREAKING: setup wizard words are phrases.** `setup.Field.Label`,
   `setup.Config.Title` and the new `setup.Step.Title` are `i18n.Phrase`;
   the zero Phrase shows the field's or step's `Name`, or "Setup".

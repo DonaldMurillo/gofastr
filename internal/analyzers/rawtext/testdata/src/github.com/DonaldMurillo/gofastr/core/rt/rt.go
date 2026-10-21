@@ -147,6 +147,12 @@ func defaulted(title string, n int) {
 // uitext arm.
 type localConfig struct{ Label string }
 
+// A package-level var holding prose is the literal under another name.
+var (
+	closeWord  = "Close"
+	emptyClass = "fui-empty"
+)
+
 func page(ctx context.Context, method string) {
 	_ = render.Text("Page not found")                       // want `render.Text\("Page not found"\) writes English`
 	_ = render.Text("Method " + method + " is not allowed") // want `render.Text\("Method"\) writes English`
@@ -155,6 +161,11 @@ func page(ctx context.Context, method string) {
 	_ = ui.ButtonConfig{Label: "Save changes"}              // want `Label: "Save changes" is English written`
 	_ = ui.ButtonConfig{SubmitLabel: "Continue"}            // want `SubmitLabel: "Continue" is English written`
 	_ = ui.ButtonConfig{"Save changes", "", "fui-btn"}      // want `Label: "Save changes" is English written`
+	_ = ui.NumberFieldConfig{Help: "Choose a value."}       // want `Help: "Choose a value." is English written`
+	_ = render.Text(fmt.Sprintf("Signed in as %s", method)) // want `render.Text\("Signed in as"\) writes English`
+	_ = ui.ButtonConfig{Label: fmt.Sprintf("%s · %s", method, method)}
+	_ = render.Text(closeWord) // want `render.Text\("Close"\) writes English`
+	_ = render.Text(emptyClass)
 	// Tokens, classes, keys and symbols are not words: quiet.
 	_ = render.Text("GET, POST")
 	_ = render.Text("fui-card")

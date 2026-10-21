@@ -134,6 +134,7 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 	defer localProseCache.Delete(pass)
 	defer localNumberCache.Delete(pass)
+	defer packageProseCache.Delete(pass)
 	forwarders := phraseForwarders(pass)
 	texts := textParams(pass)
 	for _, f := range pass.Files {
@@ -322,6 +323,7 @@ var uiFields = map[string]bool{
 	"Label": true, "Title": true, "Placeholder": true, "AriaLabel": true, "Alt": true,
 	"Heading": true, "Description": true, "Text": true, "Hint": true, "Caption": true,
 	"Subtitle": true, "Empty": true, "EmptyText": true, "EmptyTitle": true,
+	"Help": true,
 }
 
 // uiField reports whether a UI config field named name holds words a
@@ -339,9 +341,10 @@ func uiField(name string) bool {
 	return false
 }
 
-// reWords is two words; reCapWord one capitalised word.
+// reWords is two words, with any short ones between ("Choose a value");
+// reCapWord one capitalised word.
 var (
-	reWords   = regexp.MustCompile(`\pL{2,}[,.:;!?)]*\s+\S*\pL{2,}`)
+	reWords   = regexp.MustCompile(`\pL{2,}[,.:;!?)]*(?:\s+\S+)*?\s+\S*\pL{2,}`)
 	reCapWord = regexp.MustCompile(`^\p{Lu}\p{Ll}{2,}[.!?…]?$`)
 )
 
@@ -349,11 +352,15 @@ var (
 // A concatenation is prose when one of its constant operands is: "Method
 // " + m + " is not allowed" spells English around a value.
 // A local variable is prose when the function assigns it prose
-// (localProse).
+// (localProse), and a package-level one when its declaration does
+// (packageProse).
 func uiProse(pass *analysis.Pass, e ast.Expr) (string, bool) {
 	if id, ok := ast.Unparen(e).(*ast.Ident); ok {
 		if v, ok := pass.TypesInfo.Uses[id].(*types.Var); ok {
 			if s, ok := localProse(pass)[v]; ok {
+				return s, true
+			}
+			if s, ok := packageProse(pass)[v]; ok {
 				return s, true
 			}
 		}
@@ -361,9 +368,22 @@ func uiProse(pass *analysis.Pass, e ast.Expr) (string, bool) {
 	return constProse(pass, e)
 }
 
+// reVerb is a fmt verb with its flags, width and precision.
+var reVerb = regexp.MustCompile(`%[-+# 0-9.*\[\]]*[a-zA-Z%]`)
+
 // constProse is uiProse for a constant or a concatenation, no variables
-// followed.
+// followed. A fmt.Sprintf is prose when its constant format is, verbs
+// removed: "Page %d of %d" spells English around the numbers.
 func constProse(pass *analysis.Pass, e ast.Expr) (string, bool) {
+	if call, ok := ast.Unparen(e).(*ast.CallExpr); ok && len(call.Args) > 0 {
+		if pkg, name := callee(pass, call); pkg == "fmt" && name == "Sprintf" {
+			tv, ok := pass.TypesInfo.Types[call.Args[0]]
+			if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
+				return "", false
+			}
+			return proseText(reVerb.ReplaceAllString(constant.StringVal(tv.Value), " "))
+		}
+	}
 	tv, ok := pass.TypesInfo.Types[e]
 	if !ok {
 		return "", false
@@ -377,7 +397,12 @@ func constProse(pass *analysis.Pass, e ast.Expr) (string, bool) {
 	if tv.Value == nil || tv.Value.Kind() != constant.String {
 		return "", false
 	}
-	s := strings.TrimSpace(constant.StringVal(tv.Value))
+	return proseText(constant.StringVal(tv.Value))
+}
+
+// proseText reports s, trimmed, when it reads as words for a person.
+func proseText(s string) (string, bool) {
+	s = strings.TrimSpace(s)
 	if strings.ContainsAny(s, "<>{}=") {
 		return "", false // markup, a template or CSS, not a label
 	}
@@ -442,6 +467,47 @@ var localProseCache, localNumberCache sync.Map // *analysis.Pass -> map[*types.V
 // shape this exists to catch.
 func localProse(pass *analysis.Pass) map[*types.Var]string {
 	return localVars(pass, &localProseCache, false, func(e ast.Expr) (string, bool) { return constProse(pass, e) })
+}
+
+// packageProseCache holds each pass's packageProse map while it runs.
+var packageProseCache sync.Map // *analysis.Pass -> map[*types.Var]string
+
+// packageProse maps each package-level string variable whose declaration
+// in a non-test file sets it to prose onto that text: var closeLabel =
+// "Close" read at a sink is the same English as the literal.
+func packageProse(pass *analysis.Pass) map[*types.Var]string {
+	if m, ok := packageProseCache.Load(pass); ok {
+		return m.(map[*types.Var]string)
+	}
+	out := map[*types.Var]string{}
+	for _, f := range pass.Files {
+		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+			continue
+		}
+		for _, d := range f.Decls {
+			gd, ok := d.(*ast.GenDecl)
+			if !ok || gd.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				vs := spec.(*ast.ValueSpec)
+				if len(vs.Names) != len(vs.Values) {
+					continue
+				}
+				for i, name := range vs.Names {
+					v, _ := pass.TypesInfo.Defs[name].(*types.Var)
+					if v == nil {
+						continue
+					}
+					if s, ok := constProse(pass, vs.Values[i]); ok {
+						out[v] = s
+					}
+				}
+			}
+		}
+	}
+	packageProseCache.Store(pass, out)
+	return out
 }
 
 // localNumber maps each function-scoped variable declared with number

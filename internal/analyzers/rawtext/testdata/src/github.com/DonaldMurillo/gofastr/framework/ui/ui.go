@@ -6,3 +6,8 @@ type ButtonConfig struct {
 	SubmitLabel string
 	Class       string
 }
+
+type NumberFieldConfig struct {
+	Label string
+	Help  string
+}
