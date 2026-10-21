@@ -1,4 +1,4 @@
-// Command cldrgen writes core/i18n's CLDR table (cldr_tables.go) from the
+// Command cldrgen writes core/i18n's CLDR table (cldr_tables.gen.go) from the
 // Unicode CLDR JSON release named by cldrVersion: for every locale CLDR
 // rates "modern", its date and time patterns, month, weekday, era and
 // day-period names, the flexible day periods a "B" pattern reads, GMT
@@ -44,7 +44,7 @@ import (
 const (
 	cldrVersion = "47.0.0"
 	baseURL     = "https://raw.githubusercontent.com/unicode-org/cldr-json/" + cldrVersion + "/cldr-json/"
-	outFile     = "core/i18n/cldr_tables.go"
+	outFile     = "core/i18n/cldr_tables.gen.go"
 	samplesFile = "core/i18n/cldr_plural_samples_test.go"
 	// maxBody caps one downloaded JSON file; the largest CLDR file read
 	// here is under 100 KB.

@@ -13,7 +13,7 @@ import (
 )
 
 // cldrLocale is one locale's formatting data, generated from CLDR into
-// cldr_tables.go. Arrays of four run full, long, medium, short; list
+// cldr_tables.gen.go. Arrays of four run full, long, medium, short; list
 // patterns run start, middle, end, two.
 type cldrLocale struct {
 	date, time, dateTime [4]string
