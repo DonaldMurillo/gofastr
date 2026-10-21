@@ -181,6 +181,10 @@ var fragmentAttrs = map[string][]string{
 		"data-cui-lang",
 		"data-cui-skip-label",
 		"data-cui-page-head",
+		// data-cui-strings rides the page-head template: the runtime
+		// strings in the destination reader's locale, which replace
+		// say()'s table on every swap.
+		"data-cui-strings",
 		"data-cui-page-meta",
 		"data-cui-screen-group",
 		// The fills-envelope, view-transition and loading-content

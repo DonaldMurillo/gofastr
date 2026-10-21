@@ -580,6 +580,13 @@ const (
 	//        TestStringsJSONCarriesOnlyTranslations). Measured
 	//        14176 → 14303 (+127); 30 of those bytes were slack under
 	//        the old line. (l1: 189)
+	//   +49 runtime strings follow the destination (2026-10-21): a soft
+	//        navigation keeps the document, so the page-head template
+	//        and the full-fetch carrier bring the destination's
+	//        data-cui-strings and applyDocShell swaps say()'s table
+	//        (TestNavSwapsRuntimeStrings). One _json helper replaced
+	//        three try/JSON.parse spellings. Measured 14304 → 14352.
+	//        (l1: -9)
 	//
 	// HALT NOTE: the bundle measures 13391 at level 6 — 291 over the
 	// 13100 target (the Back/Forward leave capture every page runs is
@@ -592,7 +599,7 @@ const (
 	// spelling) plus the fixes and boot rows named with their tests.
 	// The line is the measurement plus clearance (moved DOWN from
 	// 13527, never up).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 8
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -970,7 +977,10 @@ const (
 	// string drops calc() inside min() and the 0 of 0.5rem. Core measures
 	// 14304/16597. The line moves DOWN to 16597, the smallest that fits,
 	// so the padded level-6 fixture crosses it again.
-	coreCongestionWindowGZ = 16597
+	// 2026-10-21, later still: the destination's runtime strings on soft
+	// navigation, with one _json helper for the three JSON.parse sites,
+	// measure 14352/16588. The line moves DOWN to 16588.
+	coreCongestionWindowGZ = 16588
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1020,6 +1030,7 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"stale cleanup keeps the live dedup + one-shot bounded module wait":        8,   // (l1: 23)
 		"page head/language carriers, safe metadata application and cache replay":  519, // (l1: 649)
 		"runtime strings: kernel say() and the core fragments' calls":              97,  // (l1: 189)
+		"runtime strings follow the destination on soft nav (data-cui-strings)":    49,  // (l1: -9)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1287,7 +1298,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 3328 measured (3326 + 2) after its failure toasts and the
 		// network-error signal speak through say() (2026-10-21, runtime
 		// strings).
-		"rpc": 3328,
+		// 3332 measured (3330 + 2) after the default success toast says
+		// 'Done' through say() too (2026-10-21): the optional-call toast
+		// spelling hid it from the runtimeprose lint. Hoisting the
+		// repeated network-error say() into a local measured 3343.
+		"rpc": 3332,
 	}
 	const coreOverride = 0
 

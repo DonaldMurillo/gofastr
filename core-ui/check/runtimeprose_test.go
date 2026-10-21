@@ -30,6 +30,7 @@ const runtimeProseFixture = `(() => {
     root.appendChild(document.createTextNode(` + "`${code} panels is the limit`" + `));
     NS._toastOrFallback({ variant: 'error', title: 'Request failed', body: 'Network error' });
     NS.toast({ variant: 'success', title: 'Changes saved' });
+    NS._toastOrFallback?.({ variant: 'success', title: kind || 'Done' });
   }
   function quiet(c, root, input, r, kind) {
     c.setAttribute('aria-label', say('runtime.notifications', 'Notifications'));
@@ -62,7 +63,7 @@ func TestLintRuntimeProseFiresOnLiterals(t *testing.T) {
 		"Could not load ", " — check your connection", "Notifications", "Dismiss notification",
 		"This panel cannot open links.", "This panel cannot submit this form.", "Search the docs",
 		"${code} panels is the limit", "Request failed", "Network error",
-		"A bare marker silences nothing", "Reload me", "Changes saved",
+		"A bare marker silences nothing", "Reload me", "Changes saved", "Done",
 	}
 	got := map[string]int{}
 	for _, v := range res.Violations {

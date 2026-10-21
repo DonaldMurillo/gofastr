@@ -139,12 +139,9 @@
   // executable), so they pass strict CSP. Reading happens before
   // first paint of any non-trivial component because runtime.js is
   // injected at the end of <body>, after the JSON blocks in <head>.
-  const _readInlineJSON = (id) => {
-    const el = document.getElementById(id);
-    if (!el) return null;
-    try { return JSON.parse(el.textContent || 'null'); }
-    catch (_) { return null; }
-  };
+  // _json parses server-written JSON text, null for none or garbage.
+  const _json = (t) => { try { return JSON.parse(t || 'null'); } catch (_) { return null; } };
+  const _readInlineJSON = (id) => _json(document.getElementById(id)?.textContent);
   if (!window.__gofastr_routes) {
     const r = _readInlineJSON('gofastr-routes');
     if (r) window.__gofastr_routes = r;

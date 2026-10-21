@@ -171,6 +171,7 @@
     if (lang) carrier.setAttribute('data-cui-lang', lang);
     const skip = source.querySelector('[data-skip-link]');
     if (skip) carrier.setAttribute('data-cui-skip-label', skip.textContent);
+    carrier.setAttribute('data-cui-strings', source.getElementById('gofastr-strings')?.textContent || '');
     return carrier.outerHTML;
   };
   window.__gofastr._docCarrier = docCarrier;
@@ -431,6 +432,8 @@
   const applyDocShell = (root) => {
     syncPageHead(root);
     const fresh = root && root.querySelector('template[data-cui-page-head][data-cui-lang]');
+    // The destination's runtime words; none means English.
+    if (fresh) _says = _json(fresh.getAttribute('data-cui-strings')) || {};
     const c = fresh || root && (root.matches('[data-cui-lang],[data-cui-skip-label]')
       ? root : root.querySelector('[data-cui-lang],[data-cui-skip-label]'));
     if (!c) return;
@@ -770,8 +773,7 @@
     if (!root || !root.querySelector) return;
     const el = root.querySelector('#gofastr-signals-partial');
     if (!el) return;
-    let data = null;
-    try { data = JSON.parse(el.textContent || 'null'); } catch (_) { /* ignore */ }
+    const data = _json(el.textContent);
     el.remove();
     if (!data) return;
     const G = window.__gofastr;
