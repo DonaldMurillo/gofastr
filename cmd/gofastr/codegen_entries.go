@@ -61,7 +61,7 @@ func (e entryConfig) list(key string) ([]string, error) {
 		return nil, nil
 	}
 	if s, isString := raw.(string); isString {
-		return nil, e.errorf("config.%s must be a YAML list, not a string: write %s: [%s]", key, key, strings.Join(splitCommaList(s), ", "))
+		return nil, e.errorf("config.%s must be a YAML list, not a string: write %s: %s", key, key, yamlList(splitCommaList(s)))
 	}
 	items, isList := raw.([]any)
 	if !isList || len(items) == 0 {
@@ -97,7 +97,7 @@ func (e entryConfig) verbs() (string, error) {
 				return "", e.errorf("config.verbs key %q is not an entity name", entity)
 			}
 			if s, isString := m[entity].(string); isString {
-				return "", e.errorf("config.verbs.%s must be a YAML list, not a string: write %s: [%s] under verbs", entity, entity, strings.Join(splitCommaList(s), ", "))
+				return "", e.errorf("config.verbs.%s must be a YAML list, not a string: write %s: %s under verbs", yamlScalar(entity), yamlScalar(entity), yamlList(splitCommaList(s)))
 			}
 			sub := entryConfig{index: e.index, name: e.name, cfg: map[string]any{"verbs." + entity: m[entity]}}
 			list, err := sub.list("verbs." + entity)
@@ -139,7 +139,7 @@ func (e entryConfig) singleVerbs(list []string) error {
 // would set. output is relative to the project, like --out.
 func decodeCLIEntry(index int, gen codegen.GeneratorConfig) (cliOptions, error) {
 	e := entryConfig{index: index, name: "cli", cfg: gen.Config}
-	opts := cliOptions{apiPrefix: "api"}
+	opts := cliOptions{apiPrefix: "api", entryIndex: index}
 	if gen.Source.Type != "" {
 		return opts, e.errorf("source does not apply; the CLI reads entities/, or the document named by config.from_openapi")
 	}
@@ -271,7 +271,7 @@ func applyCLIConfigDefaults(opts *cliOptions) (bool, error) {
 	case len(entries) == 1:
 		picked = &entries[0].opts
 	case len(entries) > 1:
-		return false, fmt.Errorf("gofastr.settings.yml lists %d cli entries; pass --out to pick one", len(entries))
+		return false, fmt.Errorf("gofastr.settings.yml lists %d cli entries; pass --out or --binary to pick one", len(entries))
 	}
 	if picked == nil {
 		return false, nil
@@ -281,6 +281,14 @@ func applyCLIConfigDefaults(opts *cliOptions) (bool, error) {
 	}
 	if opts.binary == "" {
 		opts.binary = picked.binary
+	}
+	opts.entryIndex = picked.entryIndex
+	if !opts.flagSet["from-openapi"] {
+		opts.fromOpenAPI = picked.fromOpenAPI
+	} else if opts.fromOpenAPI != "" {
+		// --from-openapi is spec-driven: the entry's entity selection does
+		// not apply, and copying it would refuse flags nobody typed.
+		return true, checkCLIOptions(*opts)
 	}
 	if !opts.apiPrefixSet && picked.apiPrefixSet {
 		opts.apiPrefix, opts.apiPrefixSet = picked.apiPrefix, true
@@ -294,9 +302,6 @@ func applyCLIConfigDefaults(opts *cliOptions) (bool, error) {
 	}
 	if !opts.flagSet["verbs"] {
 		opts.verbs = picked.verbs
-	}
-	if !opts.flagSet["from-openapi"] {
-		opts.fromOpenAPI = picked.fromOpenAPI
 	}
 	return true, checkCLIOptions(*opts)
 }

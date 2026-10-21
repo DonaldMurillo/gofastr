@@ -254,9 +254,11 @@ and prints nothing when the CLI is current.
 the entry fills the rest, so `gofastr generate cli --only=posts` keeps
 the entry's binary and output. With `--out` or `--binary` it uses the
 entry for that directory or binary; with neither, the only entry. Two or
-more entries need `--out` to pick one. Only the settings file in the
-directory it runs in counts. A run that no entry drove prints the entry
-that reproduces it, ready to paste.
+more entries need `--out` or `--binary` to pick one. `--from-openapi`
+takes the entry's binary and output but none of its entity selection.
+Only the settings file in the directory it runs in counts. A run that no
+entry drove prints the entry that reproduces it, ready to paste under
+`codegen.generators`.
 
 ### Upgrading a CLI generated before v0.93.0
 

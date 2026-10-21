@@ -99,6 +99,11 @@ from entity to its list. `gofastr generate cli` reads the same entry,
 flags winning key by key. `--json` refuses a config that lists it,
 because the CLI run would print its own report into that document. See [Keeping it current](app-cli.md#keeping-it-current).
 
+There is no `client` entry. Every plain `gofastr generate` and `gofastr
+build` rebuilds `entities/client/client.go` when it exists, so a config
+that lists `client` is refused before any generator runs; remove the
+entry.
+
 ```yaml
 generators:
   - name: sdk

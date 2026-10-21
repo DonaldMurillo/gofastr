@@ -68,6 +68,18 @@ type cliOptions struct {
 	// settingsEntry: an explicit run took defaults from a cli entry, so its
 	// next steps need not print one to paste.
 	settingsEntry bool
+	// entryIndex is the cli entry's position in codegen.generators, for
+	// errors about values it supplied.
+	entryIndex int
+}
+
+// selectionSource names where a selection value came from, so a typo in
+// a settings entry points at the entry, not at a flag nobody typed.
+func (o cliOptions) selectionSource(flag string) string {
+	if o.fromSettings || (o.settingsEntry && !o.flagSet[flag]) {
+		return fmt.Sprintf("codegen.generators[%d] (cli): config.%s", o.entryIndex, flag)
+	}
+	return "--" + flag
 }
 
 // cliField is the derived per-field model the renderers consume.
@@ -383,7 +395,7 @@ func emitCLIFiles(opts cliOptions, spec cliSpec) {
 		fmt.Println("    gofastr build rebuilds it from the cli entry in gofastr.settings.yml")
 		return
 	}
-	fmt.Println("    add this to gofastr.settings.yml and gofastr build keeps the CLI current (gofastr docs app-cli):")
+	fmt.Println("    add this entry to codegen.generators in gofastr.settings.yml and gofastr build keeps the CLI current (gofastr docs app-cli):")
 	fmt.Println()
 	for _, line := range strings.Split(strings.TrimRight(cliEntryYAML(opts, spec.Binary), "\n"), "\n") {
 		fmt.Println("      " + line)
@@ -550,16 +562,19 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts cliOptions, clientIm
 	}
 	// Selection names must all resolve to a declared entity: a typo'd
 	// --only silently generating everything (or nothing) is a trap.
-	for _, sel := range [][]string{opts.only, opts.exclude} {
-		for _, name := range sel {
+	for _, sel := range []struct {
+		flag  string
+		names []string
+	}{{"only", opts.only}, {"exclude", opts.exclude}} {
+		for _, name := range sel.names {
 			if !cliAnyEntityMatches(decls, name) {
-				return cliSpec{}, fmt.Errorf("--only/--exclude: no entity named %q", name)
+				return cliSpec{}, fmt.Errorf("%s: no entity named %q", opts.selectionSource(sel.flag), name)
 			}
 		}
 	}
 	for name := range perEntityVerbs {
 		if !cliAnyEntityMatches(decls, name) {
-			return cliSpec{}, fmt.Errorf("--verbs: no entity named %q", name)
+			return cliSpec{}, fmt.Errorf("%s: no entity named %q", opts.selectionSource("verbs"), name)
 		}
 	}
 
