@@ -345,7 +345,7 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta, title string, s
 	if !m.hasAPI {
 		return nil, nil
 	}
-	for _, act := range recordActions(m) {
+	for _, act := range recordActions(ctx, m) {
 		if !mayRun(ctx, m, act, b.id) {
 			continue
 		}
@@ -518,9 +518,9 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 	// empty tab fails that tab alone, never the page.
 	for _, xt := range slices.Concat(m.ext.Tabs, b.tabs) {
 		key, build := xt.Key, xt.Build
-		label := xt.Label
-		if label == "" {
-			label = key
+		label := key
+		if !xt.Label.IsZero() {
+			label = xt.Label.Text(ctx)
 		}
 		tabs = append(tabs, tab{key: key, label: label, build: func() (render.HTML, error) {
 			return contain(ctx, m.name, "tab "+key, func() (render.HTML, error) {

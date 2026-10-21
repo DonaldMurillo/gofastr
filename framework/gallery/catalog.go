@@ -116,7 +116,7 @@ var Catalog = []Entry{
 	}},
 	{"themepicker", "ThemePicker", "Buttons & links", "Switches the whole page to a registered theme override and remembers the choice.", func() render.HTML {
 		return row(
-			ui.ThemePicker(ui.ThemePickerConfig{Themes: []ui.ThemeChoice{{Label: "Square", Theme: squareTheme}}}),
+			ui.ThemePicker(ui.ThemePickerConfig{Themes: []ui.ThemeChoice{{Label: squareName, Theme: squareTheme}}}),
 		)
 	}},
 

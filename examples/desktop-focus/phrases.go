@@ -23,3 +23,6 @@ var (
 	prefTrayCountdown  = i18n.Define("focus.pref.tray_countdown", "Countdown in the menu bar")
 	prefSound          = i18n.Define("focus.pref.sound", "Session sound")
 )
+
+// tabStart is the task record's focus tab, in the request's language.
+var tabStart = i18n.Define("focus.tasks.tab_start", "Start")

@@ -371,7 +371,7 @@ func (b *Battery) checkConfig() error {
 		if p.Build == nil {
 			return fmt.Errorf("admin: Pages[%d] (%s) has no Build", i, p.Path)
 		}
-		if p.Title == "" {
+		if p.Title.IsZero() {
 			return fmt.Errorf("admin: Pages[%d] (%s) has no Title", i, p.Path)
 		}
 		if p.Nav != nil {
@@ -389,7 +389,7 @@ func (b *Battery) checkConfig() error {
 			return fmt.Errorf("admin: Cards[%d].Key %q is used twice", i, c.Key)
 		}
 		keys[c.Key] = true
-		if c.Build == nil || c.Title == "" {
+		if c.Build == nil || c.Title.IsZero() {
 			return fmt.Errorf("admin: Cards[%d] (%s) needs a Title and a Build", i, c.Key)
 		}
 		if c.Poll < 0 {
@@ -419,10 +419,10 @@ func (b *Battery) checkConfig() error {
 		}
 	}
 	for i, l := range b.cfg.Links {
-		if l.Label == "" || !strings.HasPrefix(l.Href, "/") || strings.HasPrefix(l.Href, "//") {
+		if l.Label.IsZero() || !strings.HasPrefix(l.Href, "/") || strings.HasPrefix(l.Href, "//") {
 			return fmt.Errorf("admin: Links[%d] needs a Label and a same-origin Href", i)
 		}
-		if err := checkIcon(l.Icon, "link "+l.Label); err != nil {
+		if err := checkIcon(l.Icon, "link "+l.Label.English()); err != nil {
 			return err
 		}
 	}

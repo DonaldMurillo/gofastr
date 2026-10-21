@@ -18,10 +18,13 @@ import (
 // caller (admin.Page.Build never runs elevated), so a figure the
 // caller may not see reads "—".
 
+// revenueTitle names the report: its heading, crumb and nav entry.
+var revenueTitle = i18n.Define("meridian.admin.revenue.title", "Revenue")
+
 // revenuePage is the report's admin page, in the Billing group.
 var revenuePage = admin.Page{
 	Path:  "/revenue",
-	Title: "Revenue",
+	Title: revenueTitle,
 	Nav:   &entity.EntityNav{Group: "billing", Icon: "chart", Order: 10},
 	Build: func(r *http.Request) (component.Component, error) {
 		return revenueReport{}, nil

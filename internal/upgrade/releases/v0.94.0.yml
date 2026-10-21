@@ -875,3 +875,37 @@ notes:
         - symbol: gofastr/battery/desktop.Preference.Help
           type: '^string$'
     guidance: "Define each word at package level, var menuNewNote = i18n.Define(\"myapp.menu.new_note\", \"New note\"), and set Title: menuNewNote. The shell renders menu titles and the tooltip in the OS language; the preferences screen renders Label and Help in the request's. Tray.Title stays a string. desktoptest ClickMenu and ClickTray still take the English title."
+  - change: "admin.Page.Title, admin.Card.Title, admin.Link.Label and admin.Metric.Label are i18n.Phrase"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/battery/admin.Page.Title
+          type: '^string$'
+        - symbol: gofastr/battery/admin.Card.Title
+          type: '^string$'
+        - symbol: gofastr/battery/admin.Link.Label
+          type: '^string$'
+        - symbol: gofastr/battery/admin.Metric.Label
+          type: '^string$'
+    guidance: "Define each word at package level, var revenueTitle = i18n.Define(\"myapp.admin.revenue\", \"Revenue\"), and set Title: revenueTitle. The admin draws it in the request's language; a catalog entry for the key translates it."
+  - change: "entityui.Tab.Label, entityui.SidePanel.Title and entityui.Action.Label are i18n.Phrase"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/framework/entityui.Tab.Label
+          type: '^string$'
+        - symbol: gofastr/framework/entityui.SidePanel.Title
+          type: '^string$'
+        - symbol: gofastr/framework/entityui.Action.Label
+          type: '^string$'
+    guidance: "Define each word at package level, var billingTitle = i18n.Define(\"myapp.customers.billing\", \"Billing\"), and set Title: billingTitle. Leave it zero to show the extension's Key, as an empty string did."
+  - change: "ui.ThemeChoice.Label is i18n.Phrase"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/framework/ui.ThemeChoice.Label
+          type: '^string$'
+    guidance: "Define the theme's name at package level, var brutalName = i18n.Define(\"myapp.themes.brutal\", \"Brutal\"), and set Label: brutalName. ThemePicker draws it in the language of ThemePickerConfig.Ctx."

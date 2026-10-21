@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -21,11 +22,14 @@ var appExtensions = entityui.Extensions{
 	},
 }
 
+// panelBilling is the Billing panel's title.
+var panelBilling = i18n.Define("meridian.customers.billing.title", "Billing")
+
 // customerBilling is the customer record's Billing panel: what the
 // customer owes, what they have paid and how many invoices they have,
 // read as the caller, so a figure they may not see reads "—".
 var customerBilling = entityui.SidePanel{
-	Key: "billing", Title: "Billing",
+	Key: "billing", Title: panelBilling,
 	Build: func(rc entityui.RecordContext) (component.Component, error) {
 		return billingPanel{ui: rc.UI, customer: rc.Record.ID}, nil
 	},

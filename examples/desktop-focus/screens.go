@@ -511,7 +511,7 @@ func buildSite(app *framework.App, eng *Engine, d *desktop.Battery) (*appui.App,
 
 	focusUI := app.EntityUI(entityui.Extensions{
 		Entities: map[string]entityui.Extension{
-			"tasks": {Tabs: []entityui.Tab{{Key: "focus", Label: "Start", Build: taskFocusTab}}},
+			"tasks": {Tabs: []entityui.Tab{{Key: "focus", Label: tabStart, Build: taskFocusTab}}},
 		},
 	})
 	tasks := app.MustCrudHandler("tasks")

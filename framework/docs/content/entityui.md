@@ -457,6 +457,10 @@ appUI := fwApp.EntityUI(entityui.Extensions{
   `View`), its All tab links `?view=all`, the reserved key. A view with
   neither a `Where` nor a registered func fails at boot, and so does a
   func registered for a key no view declares.
+- A tab's `Label`, a side panel's `Title` and an action's `Label` are
+  `i18n.Phrase` values declared at package level
+  (`i18n.Define("myapp.customers.billing", "Billing")`), drawn in the
+  request's language. The zero Phrase shows the extension's `Key`.
 - **Tabs** add a record tab after the built-in ones. `Build` runs inside
   a recover: a panicking tab fails that tab alone.
 - **Side** adds panels to the record's side column on the Edit tab,

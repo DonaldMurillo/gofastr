@@ -348,12 +348,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   are `*i18n.Error`.** `errors.Is` still matches them; their text is
   "password is empty" and "password too short", without the `auth:`
   prefix.
+- **BREAKING: admin, entityui and theme picker words are phrases.**
+  `admin.Page.Title`, `admin.Card.Title`, `admin.Link.Label`,
+  `admin.Metric.Label`, `entityui.Tab.Label`, `entityui.SidePanel.Title`,
+  `entityui.Action.Label` and `ui.ThemeChoice.Label` are `i18n.Phrase`,
+  drawn in the request's language. An extension whose label is the zero
+  Phrase shows its `Key`, as an empty string did. `gofastr upgrade`
+  names each field still set to a string.
 
 ### Fixed
 - **`DBQueue` index names on long table names.** Postgres cuts
   identifiers at 63 bytes, so with a table name of 62 or 63 bytes the
   dequeue and lane indexes got the same name and the second was never
   created. A name over the limit now ends in a hash of the table name.
+- **The bulk bar names a move in the reader's language.** It drew the
+  transition's declared English; it now reads the
+  `entity.<entity>.transitions.<key>` catalog entry, as the record page
+  does.
 
 ### Security
 - The repo builds with Go 1.27.3 (`toolchain go1.27.3` in go.mod, and in

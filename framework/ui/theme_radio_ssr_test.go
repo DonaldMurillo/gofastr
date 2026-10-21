@@ -36,7 +36,7 @@ func TestThemeRadiosSSRCheckFirstVisit(t *testing.T) {
 	alt := style.DefaultTheme()
 	alt.Colors.Primary = style.Color{Name: "primary", Value: "#00aa00"}
 	brutal := style.RegisterThemeOverride(alt)
-	picker := string(ThemePicker(ThemePickerConfig{Themes: []ThemeChoice{{Label: "Brutal", Theme: brutal}}}))
+	picker := string(ThemePicker(ThemePickerConfig{Themes: []ThemeChoice{{Label: testPhrase("Brutal"), Theme: brutal}}}))
 	pill := string(ThemeToggle(ThemeToggleConfig{Variant: ThemeTogglePill}))
 	for name, tc := range map[string]struct {
 		out  string

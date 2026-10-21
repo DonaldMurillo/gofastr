@@ -343,9 +343,9 @@ func (fb *formBuilder) sidePanels(ctx context.Context) []render.HTML {
 			}
 			return renderComponent(cctx, c), nil
 		})
-		title := p.Title
-		if title == "" {
-			title = p.Key
+		title := p.Key
+		if !p.Title.IsZero() {
+			title = p.Title.Text(ctx)
 		}
 		out = append(out, ui.Section(ui.SectionConfig{ID: "eui-side-" + p.Key, Heading: title, Overline: true, Compact: true}, body))
 	}

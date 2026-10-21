@@ -2,6 +2,7 @@ package gallery
 
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
@@ -13,6 +14,9 @@ import (
 // on a host with its own spacing or fonts the switch changes those
 // too (theming → "Page themes", an override is a whole theme).
 var squareTheme = style.RegisterThemeOverride(squareThemeValue())
+
+// squareName is the tile's option label.
+var squareName = i18n.Define("gallery.themepicker.square", "Square")
 
 func squareThemeValue() style.Theme {
 	t := theme.Default(theme.Overrides{

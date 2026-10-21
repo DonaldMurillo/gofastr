@@ -357,11 +357,11 @@ func (b *Battery) navGroups(ctx context.Context, count func(*entity.Entity) rend
 		if p.Nav == nil || p.Nav.Hide || !b.pageAllows(ctx, p) {
 			continue
 		}
-		all = append(all, navItem{group: p.Nav.Group, order: p.Nav.Order, label: p.Title,
+		all = append(all, navItem{group: p.Nav.Group, order: p.Nav.Order, label: p.Title.Text(ctx),
 			href: b.cfg.PathPrefix + p.Path, icon: p.Nav.Icon})
 	}
 	for _, l := range b.cfg.Links {
-		all = append(all, navItem{group: l.Group, label: l.Label, href: l.Href, icon: l.Icon})
+		all = append(all, navItem{group: l.Group, label: l.Label.Text(ctx), href: l.Href, icon: l.Icon})
 	}
 	var order []string
 	byGroup := map[string][]navItem{}
@@ -570,7 +570,7 @@ func (b *Battery) trail(ctx context.Context, path string) []ui.Crumb {
 	}
 	for _, p := range b.cfg.Pages {
 		if rest == p.Path {
-			return []ui.Crumb{{Text: p.Title}}
+			return []ui.Crumb{{Text: p.Title.Text(ctx)}}
 		}
 	}
 	if e, id, ok := b.entityPath(rest); ok {

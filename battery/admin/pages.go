@@ -26,8 +26,9 @@ type Page struct {
 	// not take one of the admin's own paths.
 	Path string
 
-	// Title is the page title, its crumb and its nav and palette label.
-	Title string
+	// Title is the page title, its crumb and its nav and palette label,
+	// in the request's language.
+	Title i18n.Phrase
 
 	// Nav places the page in the sidebar (Group, Order, Icon). Nil, or
 	// Hide, leaves it out of the sidebar; the palette still lists it.
@@ -49,8 +50,8 @@ type Card struct {
 	// Key names the card: a lowercase slug, unique among Cards.
 	Key string
 
-	// Title is the card's heading.
-	Title string
+	// Title is the card's heading, in the request's language.
+	Title i18n.Phrase
 
 	// Build draws the card body with the caller's own context. A panic or
 	// an error draws a generic message in the card and logs.
@@ -65,7 +66,8 @@ type Card struct {
 type Link struct {
 	// Group is the nav group key; "" is the default group.
 	Group string
-	Label string
+	// Label is the link's text, in the request's language.
+	Label i18n.Phrase
 	// Href is a same-origin path.
 	Href string
 	// Icon is a registered kit icon name, or "".
@@ -89,12 +91,9 @@ func reservedPagePath(p string) bool {
 // policy, so a refused caller is answered before Build runs.
 func (b *Battery) mountPages(group *appui.ScreenGroup) {
 	for _, p := range b.cfg.Pages {
-		s := b.screen(group, p.Path, i18n.Phrase{}, false, func(ctx context.Context, _ map[string]string) render.HTML {
+		s := b.screen(group, p.Path, p.Title, false, func(ctx context.Context, _ map[string]string) render.HTML {
 			return b.buildSlot(ctx, "page "+p.Path, p.Build)
 		})
-		as := s.Component.(*adminScreen)
-		as.title = func(context.Context, map[string]string) string { return p.Title }
-		s.Title = p.Title
 		if p.Access != nil {
 			s.WithPolicy(appui.PolicyFunc(func(ctx context.Context) appui.Decision {
 				if b.pageAllows(ctx, p) {
