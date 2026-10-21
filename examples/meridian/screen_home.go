@@ -25,7 +25,7 @@ func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 // ScreenSchema emits Organization + WebSite JSON-LD on the homepage,
 // the structured-data anchor crawlers use to connect the brand's name,
 // logo, and canonical URL.
-func (s *HomeScreen) ScreenSchema() []seo.Thing {
+func (s *HomeScreen) ScreenSchema(ctx context.Context) []seo.Thing {
 	org := seo.NewOrganization()
 	org.Name = "Meridian"
 	org.URL = siteOrigin

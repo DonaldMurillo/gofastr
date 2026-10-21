@@ -5425,7 +5425,7 @@ func appSpecScreenBody(bp AppSpec, screen AppSpecScreen, entityMap map[string]fr
 		// which keeps uihost strict mode passing without inventing filler
 		// copy. Replace with a real ScreenDescription when the page has
 		// something to say.
-		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenSEO() uihost.SEO { return uihost.SEO{} } // deliberate SEO opt-out: set description in the app spec or replace with real copy\n", typeName))
+		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenSEO(ctx context.Context) uihost.SEO { return uihost.SEO{} } // deliberate SEO opt-out: set description in the app spec or replace with real copy\n", typeName))
 	}
 	typeConst, _ := screenTypeConst(screen.Type)
 	sb.WriteString(fmt.Sprintf("func (s *%s) ScreenType() app.ScreenType { return %s }\n", typeName, typeConst))

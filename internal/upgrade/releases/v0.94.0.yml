@@ -805,6 +805,16 @@ notes:
         - symbol: gofastr/core-ui/app.ScreenDescriber.ScreenDescription
           type: '^func\(\) string$'
     guidance: "Add the parameter: func (s *HelpScreen) ScreenTitle(ctx context.Context) string. A screen with the old signature no longer satisfies the interface, so its page silently loses its title. To translate it, return a phrase: helpTitle.Text(ctx). App.Register reads it once with a bare context, which gives the English, for the route table."
+  - change: "uihost.ScreenSEO and uihost.ScreenSchema take the request context: ScreenSEO(ctx context.Context) uihost.SEO and ScreenSchema(ctx context.Context) []seo.Thing"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/framework/uihost.ScreenSEO.ScreenSEO
+          type: '^func\(\) uihost\.SEO$'
+        - symbol: gofastr/framework/uihost.ScreenSchema.ScreenSchema
+          type: '^func\(\) \[\]seo\.Thing$'
+    guidance: "Add the parameter: func (s *PricingScreen) ScreenSEO(ctx context.Context) uihost.SEO. Registration panics on a screen still declaring the old method, which would otherwise drop its SEO without a word. Build an OG title or a JSON-LD description from a phrase to translate it: pricingOGTitle.Text(ctx)."
   - change: "auth BodyTemplate callbacks take the requester's context (func(ctx context.Context, url string) string) and MagicLinkConfig.ConfirmPage is func(ctx context.Context, d ConfirmPageData) []byte"
     breaking: true
     hits: edit

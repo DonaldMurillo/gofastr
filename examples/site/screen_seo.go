@@ -41,7 +41,7 @@ func (*SEOScreen) ScreenHreflangs() []uihost.HreflangLink {
 }
 
 // ScreenSchema → one <script type="application/ld+json"> per item.
-func (*SEOScreen) ScreenSchema() []seo.Thing {
+func (*SEOScreen) ScreenSchema(ctx context.Context) []seo.Thing {
 	article := seo.NewArticle()
 	article.Headline = "GoFastr SEO module"
 	article.Description = "How per-page SEO tags compose in GoFastr."
@@ -75,7 +75,7 @@ func (s *SEOScreen) Render() render.HTML {
 		),
 		ui.Section(ui.SectionConfig{Heading: "Bundle alternative: ScreenSEO", Compact: true},
 			html.Paragraph(html.TextConfig{},
-				render.Text("Prefer one method over four? "), codeText("ScreenSEO()"),
+				render.Text("Prefer one method over four? "), codeText("ScreenSEO(ctx)"),
 				render.Text(" bundles description, canonical, hreflangs, robots, OG, Twitter Card, and JSON-LD into a single declaration. "),
 				ui.Link(ui.LinkConfig{Href: "/seo-bundle", Text: "See the ScreenSEO bundle demo →"}),
 			),
@@ -105,7 +105,7 @@ func (*SEOBundleScreen) ScreenType() app.ScreenType             { return app.Scr
 
 // ScreenSEO returns every per-page SEO field in one struct. Empty fields fall
 // through to the per-concern interface chain.
-func (*SEOBundleScreen) ScreenSEO() uihost.SEO {
+func (*SEOBundleScreen) ScreenSEO(ctx context.Context) uihost.SEO {
 	article := seo.NewArticle()
 	article.Headline = "GoFastr SEO bundle"
 	article.Description = "All per-page SEO declared in one struct."

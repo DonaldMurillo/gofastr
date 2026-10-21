@@ -53,7 +53,7 @@ func (s *PostScreen) ScreenRobots() string                          { return "no
 func (s *PostScreen) ScreenHreflangs() []uihost.HreflangLink {
     return []uihost.HreflangLink{{Lang: "en", URL: "…"}, {Lang: "x-default", URL: "…"}}
 }
-func (s *PostScreen) ScreenSchema() []seo.Thing { // core-ui/seo: typed JSON-LD
+func (s *PostScreen) ScreenSchema(ctx context.Context) []seo.Thing { // core-ui/seo: typed JSON-LD
     a := seo.NewArticle()
     a.Headline = s.post.Title
     return []seo.Thing{a}
@@ -64,7 +64,7 @@ Or declare everything at once with the bundle; its non-empty fields
 override the per-concern interfaces:
 
 ```go
-func (s *PostScreen) ScreenSEO() uihost.SEO {
+func (s *PostScreen) ScreenSEO(ctx context.Context) uihost.SEO {
     return uihost.SEO{
         Description: s.post.Summary,
         Canonical:   s.post.URL,

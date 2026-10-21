@@ -24,7 +24,7 @@ func (s *PricingScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 // ScreenSEO bundles this page's whole SEO declaration: canonical (the
 // page is reachable with tracking params), a page-specific OG override
 // of the sitewide default, and Product JSON-LD for the Pro plan.
-func (s *PricingScreen) ScreenSEO() uihost.SEO {
+func (s *PricingScreen) ScreenSEO(ctx context.Context) uihost.SEO {
 	pro := seo.NewProduct()
 	pro.Name = "Meridian Pro"
 	pro.Description = "For growing teams that live in their revenue."

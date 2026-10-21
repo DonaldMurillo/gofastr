@@ -54,6 +54,18 @@ type retiredDescComp struct{}
 func (retiredDescComp) Render() render.HTML       { return "body" }
 func (retiredDescComp) ScreenDescription() string { return "Old description" }
 
+// The SEO bundle and the JSON-LD hook live in framework/uihost; the old
+// spellings are refused by name, whatever they return.
+type retiredSEOComp struct{}
+
+func (retiredSEOComp) Render() render.HTML { return "body" }
+func (retiredSEOComp) ScreenSEO() struct{} { return struct{}{} }
+
+type retiredSchemaComp struct{}
+
+func (*retiredSchemaComp) Render() render.HTML { return "body" }
+func (*retiredSchemaComp) ScreenSchema() []any { return nil }
+
 // A screen still declaring the retired no-argument methods compiles but
 // satisfies neither interface, so its title would vanish without a word.
 // Registration refuses it instead.
@@ -63,8 +75,10 @@ func TestRetiredTitleMethodPanics(t *testing.T) {
 		comp interface{ Render() render.HTML }
 		want string
 	}{
-		{"title", retiredTitleComp{}, "ScreenTitle(ctx context.Context) string"},
-		{"description", retiredDescComp{}, "ScreenDescription(ctx context.Context) string"},
+		{"title", retiredTitleComp{}, "ScreenTitle(ctx context.Context) now"},
+		{"description", retiredDescComp{}, "ScreenDescription(ctx context.Context) now"},
+		{"seo", retiredSEOComp{}, "ScreenSEO(ctx context.Context) now"},
+		{"schema", &retiredSchemaComp{}, "ScreenSchema(ctx context.Context) now"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			defer func() {
@@ -113,7 +127,7 @@ func TestRetiredTitleAtRenderPanics(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			defer func() {
-				if msg, _ := recover().(string); !strings.Contains(msg, "ScreenTitle(ctx context.Context) string") {
+				if msg, _ := recover().(string); !strings.Contains(msg, "ScreenTitle(ctx context.Context) now") {
 					t.Fatalf("panic = %q, want the retired-title refusal", msg)
 				}
 			}()
@@ -124,7 +138,7 @@ func TestRetiredTitleAtRenderPanics(t *testing.T) {
 
 func TestRetiredTitleOnNotFoundPanics(t *testing.T) {
 	defer func() {
-		if msg, _ := recover().(string); !strings.Contains(msg, "ScreenTitle(ctx context.Context) string") {
+		if msg, _ := recover().(string); !strings.Contains(msg, "ScreenTitle(ctx context.Context) now") {
 			t.Fatalf("panic = %q, want the retired-title refusal", msg)
 		}
 	}()

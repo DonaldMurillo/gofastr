@@ -245,7 +245,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **signout**: `framework/ui.SignOut`, logout control: minimal form POSTing to the auth sign-out endpoint; compatible with `auth.WithBFFPosture`, whose logout handler enforces same-origin submission
 - **pollingindicator**: `framework/ui.PollingIndicator`, pulsing dot + label confirming a polling RPC is firing
 - **seo**: `core-ui/seo` + `uihost.WithSitemap` / `WithRobots` + `ScreenCanonical` / `ScreenHreflangs` / `ScreenSchema`, per-page SEO + sitewide sitemap.xml / robots.txt
-- **seo-bundle**: `ScreenSEO()` returning an `SEO` struct, per-screen bundle of description + canonical + hreflangs + robots + OG + Twitter Card + JSON-LD in one declaration; alternative to the per-method calls above
+- **seo-bundle**: `ScreenSEO(ctx)` returning an `SEO` struct, per-screen bundle of description + canonical + hreflangs + robots + OG + Twitter Card + JSON-LD in one declaration; alternative to the per-method calls above
 
 ### Marketing & page sections
 

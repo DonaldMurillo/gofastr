@@ -305,16 +305,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the logical property. An app override written with the physical
   property still lands on a left-to-right page but hits the wrong side
   on a right-to-left one; write the logical property instead.
-- **BREAKING: screen titles and descriptions take the request
+- **BREAKING: screen titles, descriptions and SEO take the request
   context.** `app.ScreenTitler` is `ScreenTitle(ctx context.Context)
-  string` and `app.ScreenDescriber` is `ScreenDescription(ctx
-  context.Context) string`. Add the parameter to every screen; `gofastr
-  upgrade` names each one. `App.Register` reads them once with a bare
-  context, which gives the English. A component still declaring the
-  no-argument method panics at registration, or at its first render
-  when no registration sees it (a `RenderAlt` result, a not-found or
-  error body, `RenderScreen`): that method compiles, but the page would
-  lose its title without a word. `app.RefuseRetiredTitle` is the check, for code that
+  string`, `app.ScreenDescriber` is `ScreenDescription(ctx
+  context.Context) string`, `uihost.ScreenSEO` is `ScreenSEO(ctx
+  context.Context) uihost.SEO` and `uihost.ScreenSchema` is
+  `ScreenSchema(ctx context.Context) []seo.Thing`, so an OG title or a
+  JSON-LD description can be a phrase. Add the parameter to every
+  screen; `gofastr upgrade` names each one. `App.Register` reads titles
+  and descriptions once with a bare context, which gives the English. A
+  component still declaring a no-argument method panics at
+  registration, or at its first render when no registration sees it (a
+  `RenderAlt` result, a not-found or error body, `RenderScreen`): that
+  method compiles, but the page would lose its title or SEO without a
+  word. `app.RefuseRetiredScreenMethods` is the check, for code that
   holds a component outside the router.
 - **BREAKING: battery text callbacks take a context.** `BodyTemplate`
   on `auth.PasswordResetConfig`, `auth.EmailVerificationConfig` and

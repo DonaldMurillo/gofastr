@@ -317,7 +317,7 @@ type ScreenRobots interface {
 //	    seo.NewBreadcrumbList(...),
 //	}
 type ScreenSchema interface {
-	ScreenSchema() []seo.Thing
+	ScreenSchema(ctx context.Context) []seo.Thing
 }
 
 // ScreenStatusCode is an optional screen interface that overrides the
@@ -351,8 +351,11 @@ type SEO struct {
 //
 // Returning a zero-value SEO from ScreenSEO opts out of all per-page
 // emission for the screen (useful for routes you want fully naked).
+//
+// ctx is the request's, as for ScreenTitle: an OG title or a JSON-LD
+// description built from a phrase speaks the reader's language.
 type ScreenSEO interface {
-	ScreenSEO() SEO
+	ScreenSEO(ctx context.Context) SEO
 }
 
 // routeInfoJSON is the JSON shape sent to the browser as __gofastr_routes.
@@ -470,7 +473,7 @@ func WithLangFunc(fn func(path string) string) Option {
 // layout; pages without their own layout end up with the framework's
 // bare <main>.
 func WithNotFoundScreen(c component.Component) Option {
-	app.RefuseRetiredTitle("not-found screen", c)
+	app.RefuseRetiredScreenMethods("not-found screen", c)
 	return func(ds *UIHost) {
 		ds.notFoundScreen = c
 	}
@@ -482,7 +485,7 @@ func WithNotFoundScreen(c component.Component) Option {
 // same chrome every page gets and NO error text of its own — the
 // error is logged by the host, the page is a product surface.
 func WithErrorScreen(c component.Component) Option {
-	app.RefuseRetiredTitle("error screen", c)
+	app.RefuseRetiredScreenMethods("error screen", c)
 	return func(ds *UIHost) {
 		ds.errorScreen = c
 	}
@@ -1935,7 +1938,7 @@ func resolveScreenSEOFor(ctx context.Context, screen *app.Screen, comp component
 	}
 	var bundle SEO
 	if b, ok := src.(ScreenSEO); ok {
-		bundle = b.ScreenSEO()
+		bundle = b.ScreenSEO(ctx)
 	}
 
 	desc := bundle.Description
@@ -1971,7 +1974,7 @@ func resolveScreenSEOFor(ctx context.Context, screen *app.Screen, comp component
 	schema := bundle.Schema
 	if len(schema) == 0 {
 		if s, ok := src.(ScreenSchema); ok {
-			schema = s.ScreenSchema()
+			schema = s.ScreenSchema(ctx)
 		}
 	}
 	// An article screen emits Article JSON-LD + og:type=article so a browser
