@@ -8,14 +8,26 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
+// The words this file says, in English. The app's catalog
+// (locales/*.json) translates them by key.
+var (
+	customersCrudTextCustomers         = i18n.Define("meridian.screens.customers_crud.customers", "Customers")
+	customersCrudTextNoCustomersYetAdd = i18n.Define("meridian.screens.customers_crud.no_customers_yet_add", "No customers yet. Add your first to get started.")
+	customersCrudTextCustomer          = i18n.Define("meridian.screens.customers_crud.customer", "Customer")
+	customersCrudTextNewCustomer       = i18n.Define("meridian.screens.customers_crud.new_customer", "New Customer")
+)
+
 type CustomersScreen struct{ component.ContextOnly }
 
-func (s *CustomersScreen) ScreenTitle(ctx context.Context) string       { return "Customers" }
+func (s *CustomersScreen) ScreenTitle(ctx context.Context) string {
+	return customersCrudTextCustomers.Text(ctx)
+}
 func (s *CustomersScreen) ScreenDescription(ctx context.Context) string { return "" }
 func (s *CustomersScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
@@ -27,8 +39,8 @@ func (s *CustomersScreen) RenderCtx(ctx context.Context) render.HTML {
 		// facet come from the entity itself (search_fields, display
 		// facets in gofastr.yml), not per-screen config. Quick add is
 		// the app's own action beside New: it opens the quick-add modal.
-		appUI.List("customers").Columns("name", "email", "company", "status", "mrr").PageSize(8).Heading("Customers", 1).Empty("No customers yet. Add your first to get started.").
-			Actions(interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: "Quick add", Variant: ui.ButtonSecondary}), "customer-quick-add")).
+		appUI.List("customers").Columns("name", "email", "company", "status", "mrr").PageSize(8).Heading(customersCrudTextCustomers.Text(ctx), 1).Empty(customersCrudTextNoCustomersYetAdd.Text(ctx)).
+			Actions(interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: quickAddOpen.Text(ctx), Variant: ui.ButtonSecondary}), "customer-quick-add")).
 			RenderCtx(ctx),
 	)
 }
@@ -38,8 +50,10 @@ type CustomerDetailScreen struct {
 	id string
 }
 
-func (s *CustomerDetailScreen) SetParams(p map[string]string)                { s.id = p["id"] }
-func (s *CustomerDetailScreen) ScreenTitle(ctx context.Context) string       { return "Customer" }
+func (s *CustomerDetailScreen) SetParams(p map[string]string) { s.id = p["id"] }
+func (s *CustomerDetailScreen) ScreenTitle(ctx context.Context) string {
+	return customersCrudTextCustomer.Text(ctx)
+}
 func (s *CustomerDetailScreen) ScreenDescription(ctx context.Context) string { return "" }
 func (s *CustomerDetailScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
@@ -56,7 +70,9 @@ func (s *CustomerDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 
 type CustomersCreateScreen struct{ component.ContextOnly }
 
-func (s *CustomersCreateScreen) ScreenTitle(ctx context.Context) string       { return "New Customer" }
+func (s *CustomersCreateScreen) ScreenTitle(ctx context.Context) string {
+	return customersCrudTextNewCustomer.Text(ctx)
+}
 func (s *CustomersCreateScreen) ScreenDescription(ctx context.Context) string { return "" }
 func (s *CustomersCreateScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 

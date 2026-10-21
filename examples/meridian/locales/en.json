@@ -1,0 +1,13 @@
+{
+  "entity": {
+    "payments": {
+      "fields": {
+        "method": {
+          "values": {
+            "ach": "ACH"
+          }
+        }
+      }
+    }
+  }
+}

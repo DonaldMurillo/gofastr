@@ -11,7 +11,7 @@
 // sweep had to convert.
 //
 // Arms, all in the framework's own packages (core, framework, battery,
-// core-ui under the module path):
+// core-ui under the module path) and examples/meridian:
 //   - httperror: a call to net/http.Error. Write through
 //     i18n.HTTPError (a Phrase) or i18n.HTTPErrorFor (an error).
 //   - define: an i18n.Define call inside a function body (a func or a
@@ -117,7 +117,8 @@ var Analyzer = &analysis.Analyzer{
 
 const module = "github.com/DonaldMurillo/gofastr/"
 
-// inScope reports whether path is one of the framework's own packages.
+// inScope reports whether path is one of the framework's own packages,
+// or Meridian.
 func inScope(path string) bool {
 	rest, ok := strings.CutPrefix(path, module)
 	if !ok {
@@ -128,7 +129,10 @@ func inScope(path string) bool {
 	case "core", "framework", "battery", "core-ui":
 		return true
 	}
-	return false
+	// Meridian, the flagship: the app every framework change is checked
+	// against says its words through phrases, the way a generated app
+	// does, so the pseudo-locale sweep sees every word it shows.
+	return rest == "examples/meridian" || strings.HasPrefix(rest, "examples/meridian/")
 }
 
 var msgParams = map[string]bool{

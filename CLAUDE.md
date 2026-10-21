@@ -402,7 +402,8 @@ expose them to agents connected to a live app.**
   and the check-csp ignore directive are anchored comment-initial
   now: prose that merely mentions either no longer silences anything.
   The 2026-10 i18n round added `rawtext`: framework code under
-  core/, framework/, battery/ and core-ui/ sends every user-facing
+  core/, framework/, battery/ and core-ui/, and the Meridian
+  flagship (examples/meridian), sends every user-facing
   message through an `i18n.Phrase`, so a catalog translates it and
   the body carries its code. It fires on a bare `http.Error` (use
   `i18n.HTTPError`), `i18n.Define` inside a function or with

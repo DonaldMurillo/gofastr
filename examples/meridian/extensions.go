@@ -22,8 +22,13 @@ var appExtensions = entityui.Extensions{
 	},
 }
 
-// panelBilling is the Billing panel's title.
-var panelBilling = i18n.Define("meridian.customers.billing.title", "Billing")
+// The Billing panel's words: its title and the figures it lists.
+var (
+	panelBilling       = i18n.Define("meridian.customers.billing.title", "Billing")
+	billingOutstanding = i18n.Define("meridian.customers.billing.outstanding", "Outstanding")
+	billingPaidToDate  = i18n.Define("meridian.customers.billing.paid_to_date", "Paid to date")
+	billingInvoices    = i18n.Define("meridian.customers.billing.invoices", "Invoices")
+)
 
 // customerBilling is the customer record's Billing panel: what the
 // customer owes, what they have paid and how many invoices they have,
@@ -48,9 +53,9 @@ func (p billingPanel) RenderCtx(ctx context.Context) render.HTML {
 		return render.Text(p.ui.StatValue(ctx, "invoices", agg, field, mine+where, format))
 	}
 	return ui.DetailList(ui.DetailListConfig{Spread: true, Items: []ui.DetailItem{
-		{Label: "Outstanding", Value: stat("sum", "amount", ` and status in ["open", "past_due"]`, "money")},
-		{Label: "Paid to date", Value: stat("sum", "amount", ` and status = "paid"`, "money")},
-		{Label: "Invoices", Value: stat("count", "", "", "")},
+		{Label: billingOutstanding.Text(ctx), Value: stat("sum", "amount", ` and status in ["open", "past_due"]`, "money")},
+		{Label: billingPaidToDate.Text(ctx), Value: stat("sum", "amount", ` and status = "paid"`, "money")},
+		{Label: billingInvoices.Text(ctx), Value: stat("count", "", "", "")},
 	}})
 }
 

@@ -206,6 +206,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   phrase back as its English. Meridian's pseudo-locale switch is
   `GOFASTR_PSEUDO_LOCALE` too. See `gofastr docs app-spec` →
   "Translations".
+- **Meridian's screens speak Spanish.** Every word its screens and
+  chrome show is a phrase, from the marketing pages to the admin's
+  revenue report, and `locales/es.json` translates all of them; its catalog test fails
+  on a `meridian.*` phrase with no Spanish. `rawtext` now covers
+  `examples/meridian` as well as the framework.
 
 ### Changed
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,

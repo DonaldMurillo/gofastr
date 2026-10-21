@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/examples/meridian/sitefooter"
@@ -28,6 +29,25 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+)
+
+// The words this file says, in English. The app's catalog
+// (locales/*.json) translates them by key.
+var (
+	chromeTextPricing       = i18n.Define("meridian.chrome.pricing", "Pricing")
+	chromeTextAbout         = i18n.Define("meridian.chrome.about", "About")
+	chromeTextDashboard     = i18n.Define("meridian.chrome.dashboard", "Dashboard")
+	chromeTextSignIn        = i18n.Define("meridian.chrome.sign_in", "Sign in")
+	chromeTextTerms         = i18n.Define("meridian.chrome.terms", "Terms")
+	chromeTextPrivacy       = i18n.Define("meridian.chrome.privacy", "Privacy")
+	chromeTextProduct       = i18n.Define("meridian.chrome.product", "Product")
+	chromeTextCompany       = i18n.Define("meridian.chrome.company", "Company")
+	chromeTextLegal         = i18n.Define("meridian.chrome.legal", "Legal")
+	chromeTextOverview      = i18n.Define("meridian.chrome.overview", "Overview")
+	chromeTextCustomers     = i18n.Define("meridian.chrome.customers", "Customers")
+	chromeTextSubscriptions = i18n.Define("meridian.chrome.subscriptions", "Subscriptions")
+	chromeTextInvoices      = i18n.Define("meridian.chrome.invoices", "Invoices")
+	chromeTextAdmin         = i18n.Define("meridian.chrome.admin", "Admin")
 )
 
 const (
@@ -89,16 +109,16 @@ func guestPolicy(appHome string) app.Policy {
 // components. The header is the banner landmark itself and a direct
 // child of the page-tall stack, so it stays pinned for the page.
 func marketingHeader(ctx context.Context) render.HTML {
-	links := []siteheader.Link{{Label: "Pricing", Href: "/pricing"}, {Label: "About", Href: "/about"}}
+	links := []siteheader.Link{{Label: chromeTextPricing.Text(ctx), Href: "/pricing"}, {Label: chromeTextAbout.Text(ctx), Href: "/about"}}
 	var actions, persistent render.HTML
 	if u, ok := handler.GetUser(ctx); ok && u != nil {
-		links = append(links, siteheader.Link{Label: "Dashboard", Href: "/app"})
+		links = append(links, siteheader.Link{Label: chromeTextDashboard.Text(ctx), Href: "/app"})
 		actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true}, ui.SignOut(ui.SignOutConfig{Next: "/"}), ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}))
 	} else {
 		// Sign in is the journey-critical CTA: it rides the header's
 		// persistent slot, so it stays in the bar on phones instead of
 		// folding into the menu.
-		persistent = ui.LinkButton(ui.LinkButtonConfig{Label: "Sign in", Href: "/login", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})
+		persistent = ui.LinkButton(ui.LinkButtonConfig{Label: chromeTextSignIn.Text(ctx), Href: "/login", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})
 		actions = ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})
 	}
 	return siteheader.Render(siteheader.Config{
@@ -113,13 +133,13 @@ func marketingHeader(ctx context.Context) render.HTML {
 // marketingFooter is the site's colophon: the wordmark over the
 // Product/Company/Legal columns, on the page measure the header and
 // main share.
-func marketingFooter() render.HTML {
+func marketingFooter(ctx context.Context) render.HTML {
 	return sitefooter.Render(sitefooter.Config{
 		Name: appName,
 		Columns: []sitefooter.Column{
-			{Title: "Product", Links: []sitefooter.Link{{Label: "Pricing", Href: "/pricing"}}},
-			{Title: "Company", Links: []sitefooter.Link{{Label: "About", Href: "/about"}}},
-			{Title: "Legal", Links: []sitefooter.Link{{Label: "Terms", Href: "/terms"}, {Label: "Privacy", Href: "/privacy"}}},
+			{Title: chromeTextProduct.Text(ctx), Links: []sitefooter.Link{{Label: chromeTextPricing.Text(ctx), Href: "/pricing"}}},
+			{Title: chromeTextCompany.Text(ctx), Links: []sitefooter.Link{{Label: chromeTextAbout.Text(ctx), Href: "/about"}}},
+			{Title: chromeTextLegal.Text(ctx), Links: []sitefooter.Link{{Label: chromeTextTerms.Text(ctx), Href: "/terms"}, {Label: chromeTextPrivacy.Text(ctx), Href: "/privacy"}}},
 		},
 	})
 }
@@ -221,23 +241,38 @@ var inkBand = style.RegisterThemeOverride(inkTheme())
 // body ships zero chrome of its own, just a heading and a ui.Form. The
 // form RPCs the auto-CRUD endpoint; on success it closes the modal, resets
 // the fields, and SPA-navigates to the list so the new row appears.
+// The body renders per request (widget slots render with the request
+// context), so its words follow the reader's language.
 func quickAddCustomerModal() widget.Definition {
-	heading := html.Heading(html.HeadingConfig{Level: 2, ID: "customer-quick-add-title"}, render.Text("New customer"))
-	form := ui.Form(ui.FormConfig{Action: "/api/customers", Method: "POST", SubmitLabel: "Add customer", ExtraAttrs: interactive.Post("/api/customers").
-		OnSuccess(interactive.CloseWidget(), interactive.ResetForm(), interactive.Navigate("/app/customers")).Attrs()},
-		ui.TextField(ui.TextFieldConfig{Name: "name", Label: "Name", ID: "qa-name", Required: true}),
-		ui.FormField(ui.FormFieldConfig{Label: "Email", For: "qa-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
-			return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
-		}}),
-		ui.TextField(ui.TextFieldConfig{Name: "company", Label: "Company", ID: "qa-company"}),
-	)
+	body := app.NewContextComponent(func(ctx context.Context) render.HTML {
+		heading := html.Heading(html.HeadingConfig{Level: 2, ID: "customer-quick-add-title"}, render.Text(quickAddTitle.Text(ctx)))
+		form := ui.Form(ui.FormConfig{Action: "/api/customers", Method: "POST", SubmitLabel: quickAddSubmit.Text(ctx), ExtraAttrs: interactive.Post("/api/customers").
+			OnSuccess(interactive.CloseWidget(), interactive.ResetForm(), interactive.Navigate("/app/customers")).Attrs()},
+			ui.TextField(ui.TextFieldConfig{Name: "name", Label: quickAddName.Text(ctx), ID: "qa-name", Required: true}),
+			ui.FormField(ui.FormFieldConfig{Label: quickAddEmail.Text(ctx), For: "qa-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
+				return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
+			}}),
+			ui.TextField(ui.TextFieldConfig{Name: "company", Label: quickAddCompany.Text(ctx), ID: "qa-company"}),
+		)
+		return render.Join(heading, form)
+	})
 	return preset.Modal("customer-quick-add").
 		Hidden().
 		LabelledBy("customer-quick-add-title").
 		Pages("/app/customers").
-		Slot("body", app.NewStaticComponent(render.Join(heading, form))).
+		Slot("body", body).
 		Build()
 }
+
+// The quick-add modal's words.
+var (
+	quickAddOpen    = i18n.Define("meridian.quick_add.open", "Quick add")
+	quickAddTitle   = i18n.Define("meridian.quick_add.title", "New customer")
+	quickAddSubmit  = i18n.Define("meridian.quick_add.submit", "Add customer")
+	quickAddName    = i18n.Define("meridian.quick_add.name", "Name")
+	quickAddEmail   = i18n.Define("meridian.quick_add.email", "Email")
+	quickAddCompany = i18n.Define("meridian.quick_add.company", "Company")
+)
 
 // fontFaceCSS holds the @font-face rules for the app's fonts, shared by
 // the UI host and the admin battery so every surface loads identical fonts.
@@ -254,12 +289,13 @@ var fontFaceCSS = style.FontFaceCSS("",
 // whether or not anyone was signed in. Same shape the app generator
 // emits, meridian is hand-maintained, so it does not inherit that fix.
 func sidebarConfig(ctx context.Context) ui.SidebarConfig {
-	cfg := ui.SidebarConfig{Title: "Meridian", Items: []ui.SidebarItem{
-		{Label: "Overview", Href: "/app"},
-		{Label: "Customers", Href: "/app/customers"},
-		{Label: "Subscriptions", Href: "/app/subscriptions"},
-		{Label: "Invoices", Href: "/app/invoices"},
-		{Label: "Admin", Href: "/admin", Roles: []string{"admin"}},
+	//gofastr:allow(rawtext) the product's name reads the same in every language
+	cfg := ui.SidebarConfig{Title: appName, Items: []ui.SidebarItem{
+		{Label: chromeTextOverview.Text(ctx), Href: "/app"},
+		{Label: chromeTextCustomers.Text(ctx), Href: "/app/customers"},
+		{Label: chromeTextSubscriptions.Text(ctx), Href: "/app/subscriptions"},
+		{Label: chromeTextInvoices.Text(ctx), Href: "/app/invoices"},
+		{Label: chromeTextAdmin.Text(ctx), Href: "/admin", Roles: []string{"admin"}},
 	}}
 	var authAction render.HTML
 	if u, ok := handler.GetUser(ctx); ok && u != nil {
@@ -317,7 +353,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		return ui.Stack(ui.StackConfig{Screen: true, StickyHeader: true, Gap: ui.GapNone},
 			header,
 			ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage}, l.Primary()),
-			marketingFooter(),
+			marketingFooter(ctx),
 		)
 	})
 	// appUI is the app's entityui value: every entity screen renders through

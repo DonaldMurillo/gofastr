@@ -15,6 +15,7 @@ func TestRawTextFiresInFrameworkRoots(t *testing.T) {
 		"github.com/DonaldMurillo/gofastr/core/i18n",
 		"github.com/DonaldMurillo/gofastr/core/handler",
 		"github.com/DonaldMurillo/gofastr/battery/desktop/shellfx",
+		"github.com/DonaldMurillo/gofastr/examples/meridian",
 	)
 }
 
