@@ -341,7 +341,7 @@ func TestGenerateCLIPicksEntryByOut(t *testing.T) {
 	writeSettings(t, dir, "codegen:\n  generators:\n    - name: cli\n      config:\n        binary: shop\n        only: [posts]\n    - name: cli\n      config:\n        binary: docs\n        only: [documents]\n")
 	var code int
 	out := covT_capStdout(t, func() { code = covT_capExit(t, func() { runGenerateCLI(nil) }) })
-	if code != 1 || !strings.Contains(out, "pass --out") {
+	if code != 1 || !strings.Contains(out, "pass --out or --binary") {
 		t.Fatalf("two entries and no --out must be refused, exit %d:\n%s", code, out)
 	}
 	covT_capStdout(t, func() { runGenerateCLI([]string{"--out=cmd/docs"}) })
@@ -361,7 +361,7 @@ func TestGenerateCLIPrintsItsEntry(t *testing.T) {
 		runGenerateCLI([]string{"--binary=shop", "--api-prefix=", "--exclude=documents", "--verbs=posts=list,get"})
 	})
 	_, after, ok := strings.Cut(out, "keeps the CLI current")
-	if !ok {
+	if !ok || !strings.Contains(out, "codegen.generators") {
 		t.Fatalf("no entry to paste:\n%s", out)
 	}
 	_, entry, _ := strings.Cut(after, "\n\n")
@@ -525,5 +525,59 @@ func TestSettingsErrorKeepsEntryIndex(t *testing.T) {
 	out := covT_capStdout(t, func() { code = covT_capExit(t, func() { generateProject(nil) }) })
 	if code != 1 || !strings.Contains(out, "codegen.generators[1] (sdk)") {
 		t.Fatalf("want the sdk entry's index 1, exit %d:\n%s", code, out)
+	}
+}
+
+// A refusal quotes the value it read, so a control byte in the settings
+// file reaches the terminal escaped.
+func TestListRefusalEscapesValue(t *testing.T) {
+	for name, body := range map[string]string{
+		"only":  "        only: \"posts\\x1b[2J\"\n",
+		"verbs": "        verbs:\n          posts: \"list\\x1b[2J\"\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := cliTempModule(t)
+			writeSettings(t, dir, "codegen:\n  generators:\n    - name: cli\n      config:\n"+body)
+			var code int
+			out := covT_capStdout(t, func() { code = covT_capExit(t, func() { generateProject(nil) }) })
+			if code != 1 || strings.Contains(out, "\x1b[2J") || !strings.Contains(out, `\x1b[2J`) {
+				t.Fatalf("want the value escaped, exit %d:\n%q", code, out)
+			}
+		})
+	}
+}
+
+// --from-openapi on the command line takes the entry's binary and output,
+// not its entity selection.
+func TestOpenAPIFlagSkipsEntrySelection(t *testing.T) {
+	dir := oaTempModule(t)
+	writeSettings(t, dir, "codegen:\n  generators:\n    - name: cli\n      config:\n        binary: oapp\n        api_prefix: v1\n        only: [posts]\n")
+	var code int
+	out := covT_capStdout(t, func() {
+		code = covT_capExit(t, func() { runGenerateCLI([]string{"--from-openapi=openapi.json"}) })
+	})
+	if code != -1 || !fileExists(dir, "cmd/oapp/operations.gen.go") {
+		t.Fatalf("exit %d:\n%s", code, out)
+	}
+}
+
+// A selection typo names where the value came from: the entry when the
+// settings file set it, the flag when the command line did.
+func TestSelectionTypoNamesItsSource(t *testing.T) {
+	dir := cliTempModule(t)
+	writeSettings(t, dir, "codegen:\n  generators:\n    - name: cli\n      config:\n        binary: shop\n        only: [postz]\n")
+	for _, tc := range []struct {
+		run  func()
+		want string
+	}{
+		{func() { generateProject(nil) }, "codegen.generators[0] (cli): config.only"},
+		{func() { runGenerateCLI(nil) }, "codegen.generators[0] (cli): config.only"},
+		{func() { runGenerateCLI([]string{"--only=postz"}) }, "--only: no entity"},
+	} {
+		var code int
+		out := covT_capStdout(t, func() { code = covT_capExit(t, tc.run) })
+		if code != 1 || !strings.Contains(out, tc.want) {
+			t.Errorf("want %q, exit %d:\n%s", tc.want, code, out)
+		}
 	}
 }
