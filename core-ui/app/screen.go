@@ -30,16 +30,22 @@ const (
 // ScreenTitler is an optional interface for components that declare their
 // own page title. The returned string is the page-specific portion, the
 // framework appends the app name from AppConfig.Name to produce the full
-// <title>. For example, ScreenTitle() returning "Dashboard" with
+// <title>. For example, ScreenTitle returning "Dashboard" with
 // AppConfig.Name "MyApp" produces <title>Dashboard — MyApp</title>.
+//
+// ctx is the request's on every render, so a title built from a phrase
+// (i18n.Phrase.Text) speaks the reader's language. Register also reads it
+// once with a bare context for the route table; that copy is the
+// phrase's English.
 type ScreenTitler interface {
-	ScreenTitle() string
+	ScreenTitle(ctx context.Context) string
 }
 
 // ScreenDescriber is an optional interface for components that declare their
-// own page description (used for route preloading metadata and SEO).
+// own page description (used for route preloading metadata and SEO). ctx
+// follows the ScreenTitler rules.
 type ScreenDescriber interface {
-	ScreenDescription() string
+	ScreenDescription(ctx context.Context) string
 }
 
 // ScreenLanger is an optional interface for components that declare the

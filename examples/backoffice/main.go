@@ -264,7 +264,7 @@ func logout(w http.ResponseWriter, r *http.Request) {
 
 type homeScreen struct{ component.ContextOnly }
 
-func (homeScreen) ScreenTitle() string { return "Backoffice" }
+func (homeScreen) ScreenTitle(ctx context.Context) string { return "Backoffice" }
 
 func (homeScreen) RenderCtx(ctx context.Context) render.HTML {
 	href, label := "/login", "Sign in"
@@ -283,7 +283,7 @@ func (homeScreen) RenderCtx(ctx context.Context) render.HTML {
 // POST still goes to the raw loginSubmit handler.
 type loginScreen struct{ component.ContextOnly }
 
-func (loginScreen) ScreenTitle() string { return "Sign in · Backoffice" }
+func (loginScreen) ScreenTitle(ctx context.Context) string { return "Sign in · Backoffice" }
 
 func (loginScreen) RenderCtx(context.Context) render.HTML {
 	return ui.AuthCard(ui.AuthCardConfig{

@@ -18,8 +18,8 @@ type ixDetail struct {
 	id string
 }
 
-func (s *ixDetail) SetParams(p map[string]string) { s.id = p["id"] }
-func (s *ixDetail) ScreenTitle() string           { return "Product" }
+func (s *ixDetail) SetParams(p map[string]string)          { s.id = p["id"] }
+func (s *ixDetail) ScreenTitle(ctx context.Context) string { return "Product" }
 
 func (s *ixDetail) RenderCtx(ctx context.Context) render.HTML {
 	out := "DETAIL " + s.id

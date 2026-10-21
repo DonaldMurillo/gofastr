@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=c7872739d4c64447
+//gofastr:generated generator=app kind=scaffold version=dev sum=6c27df00e0277a0a
 
 package main
 
@@ -16,8 +16,10 @@ import (
 
 type ReviewsScreen struct{ component.ContextOnly }
 
-func (s *ReviewsScreen) ScreenTitle() string        { return "Reviews" }
-func (s *ReviewsScreen) ScreenDescription() string  { return "Customer reviews and ratings" }
+func (s *ReviewsScreen) ScreenTitle(ctx context.Context) string { return "Reviews" }
+func (s *ReviewsScreen) ScreenDescription(ctx context.Context) string {
+	return "Customer reviews and ratings"
+}
 func (s *ReviewsScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *ReviewsScreen) RenderCtx(ctx context.Context) render.HTML {

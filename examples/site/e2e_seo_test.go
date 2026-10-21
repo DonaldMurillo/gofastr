@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -142,7 +143,7 @@ func TestE2EAutoMetaDescription(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("expected 200, got %d", code)
 	}
-	if !hasHeadElement(t, body, "meta", map[string]string{"name": "description", "content": new(SEOScreen).ScreenDescription()}) {
+	if !hasHeadElement(t, body, "meta", map[string]string{"name": "description", "content": new(SEOScreen).ScreenDescription(context.Background())}) {
 		t.Errorf("expected auto-emitted meta description from ScreenDescriber, got:\n%s",
 			snippet(body, "meta name=\"description\""))
 	}

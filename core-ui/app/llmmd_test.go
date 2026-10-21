@@ -485,7 +485,7 @@ func (c *loadedDocComp) Load(ctx context.Context) error {
 	c.title = "Doc " + c.slug
 	return nil
 }
-func (c *loadedDocComp) ScreenTitle() string { return c.title }
+func (c *loadedDocComp) ScreenTitle(ctx context.Context) string { return c.title }
 func (c *loadedDocComp) Render() render.HTML {
 	return render.HTML("<h1>Doc " + c.slug + "</h1><p>Body of " + c.slug + ".</p>")
 }

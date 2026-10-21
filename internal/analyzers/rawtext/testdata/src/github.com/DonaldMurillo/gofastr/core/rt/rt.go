@@ -249,3 +249,26 @@ func useEmpty(n int) {
 	_ = empty("Wide Class", "")
 	_ = empty("x", strconv.Itoa(n)) // want `strconv.Itoa writes a number into empty`
 }
+
+// A screen's title and description reach the tab, the head and the
+// route table; both take the request ctx, so a literal is English on
+// every locale.
+type helpScreen struct{ section string }
+
+func (s helpScreen) ScreenTitle(ctx context.Context) string {
+	if s.section == "" {
+		return "Help center" // want `ScreenTitle returns "Help center"`
+	}
+	return s.section
+}
+
+func (s helpScreen) ScreenDescription(ctx context.Context) string {
+	return "Answers to common questions" // want `ScreenDescription returns "Answers to common questions"`
+}
+
+var pageHelpTitle = i18n.Define("rt.help_title", "Help center")
+
+type phrasedScreen struct{}
+
+func (phrasedScreen) ScreenTitle(ctx context.Context) string       { return pageHelpTitle.Text(ctx) }
+func (phrasedScreen) ScreenDescription(ctx context.Context) string { return "" }

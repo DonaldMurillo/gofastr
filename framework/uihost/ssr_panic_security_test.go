@@ -154,7 +154,7 @@ func (c *loadErr) Render() render.HTML        { return render.Text("loaded") }
 type titleBoom struct{ calls int }
 
 func (c *titleBoom) Render() render.HTML { return render.Text("titled") }
-func (c *titleBoom) ScreenTitle() string {
+func (c *titleBoom) ScreenTitle(ctx context.Context) string {
 	c.calls++
 	if c.calls >= 2 {
 		panic("test: screen title boom")

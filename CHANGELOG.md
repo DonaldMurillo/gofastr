@@ -160,6 +160,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   corner radius, an asymmetric four-value shorthand) where a logical
   property exists. See `gofastr docs contracts`. The contract catalog
   holds 80 rules.
+- **Pages outside the app shell, mail and desktop shells in the
+  reader's language.** `App.Start` negotiates the locale ahead of the
+  server wrappers and the setup wizard, so the setup wizard, the sign-in
+  gate, the service pages and the magic-link confirmation page speak it
+  and declare it with the new `i18n.DocLang(ctx)`. The deploy-skew
+  reload notice and the PWA offline page are phrases; the offline page's
+  `lang` matches its body. Password-reset, email-verification and
+  magic-link mail render under the requester's locale, and
+  `notify.Recipient.Locale` renders a notification in its recipient's.
+  New `i18n.Match(tr, tags...)` and `i18n.EnvLocale(tr)` pick a locale
+  with no request; `desktop.ShellContext` uses them for a shell's own
+  menus, About box, permission prompt, accelerator names and the
+  settings window's title. After a client-side navigation the runtime's
+  own words follow the destination page (`data-cui-strings`), and an
+  action's default success toast says `runtime.done`. See
+  `gofastr docs i18n` → "Beyond the page body".
+- **`rawtext` refuses literal screen titles.** A `ScreenTitle` or
+  `ScreenDescription` method returning a constant in framework code is
+  reported; return a phrase's `Text(ctx)`. `LintRuntimeProse` also reads
+  a toast called with the optional-call spelling (`_toastOrFallback?.(`).
 
 ### Changed
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,
@@ -259,6 +279,27 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the logical property. An app override written with the physical
   property still lands on a left-to-right page but hits the wrong side
   on a right-to-left one; write the logical property instead.
+- **BREAKING: screen titles and descriptions take the request
+  context.** `app.ScreenTitler` is `ScreenTitle(ctx context.Context)
+  string` and `app.ScreenDescriber` is `ScreenDescription(ctx
+  context.Context) string`. Add the parameter to every screen; `gofastr
+  upgrade` names each one. `App.Register` reads them once with a bare
+  context, which gives the English.
+- **BREAKING: battery text callbacks take a context.** `BodyTemplate`
+  on `auth.PasswordResetConfig`, `auth.EmailVerificationConfig` and
+  `auth.MagicLinkConfig` is `func(ctx context.Context, url string)
+  string`, and `auth.MagicLinkConfig.ConfirmPage` is `func(ctx
+  context.Context, d ConfirmPageData) []byte`. `desktop.PlanMenuBar` and
+  `desktop.PlanTrayMenu` take a context first, `Battery.OpenSettings`
+  takes one, and `desktop.WindowConfig.OnSettings` is `func(ctx
+  context.Context)`.
+- **BREAKING: setup wizard words are phrases.** `setup.Field.Label`,
+  `setup.Config.Title` and the new `setup.Step.Title` are `i18n.Phrase`;
+  the zero Phrase shows the field's or step's `Name`, or "Setup".
+- **BREAKING: `auth.ErrPasswordEmpty` and `auth.ErrPasswordTooShort`
+  are `*i18n.Error`.** `errors.Is` still matches them; their text is
+  "password is empty" and "password too short", without the `auth:`
+  prefix.
 
 ### Fixed
 - **`DBQueue` index names on long table names.** Postgres cuts

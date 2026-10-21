@@ -1,18 +1,20 @@
 package uihost
 
 import (
-	"github.com/DonaldMurillo/gofastr/core-ui/app"
-	"github.com/DonaldMurillo/gofastr/core/render"
+	"context"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 type suffixTitleComponent struct{ Title string }
 
-func (c *suffixTitleComponent) Render() render.HTML { return "Help center" }
-func (c *suffixTitleComponent) ScreenTitle() string { return c.Title }
+func (c *suffixTitleComponent) Render() render.HTML                    { return "Help center" }
+func (c *suffixTitleComponent) ScreenTitle(ctx context.Context) string { return c.Title }
 
 func TestHostTitleSuffix(t *testing.T) {
 	for _, mode := range []string{"partial", "recovery"} {

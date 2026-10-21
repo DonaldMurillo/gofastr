@@ -58,7 +58,9 @@
 //     argument a sink at its call sites (textparam). Define the words
 //     as a Phrase and render phrase.Text(ctx), or take them from the
 //     component's Strings (ui.StringsFor). The runtime's JS twin is
-//     core-ui/check LintRuntimeProse.
+//     core-ui/check LintRuntimeProse. A ScreenTitle or
+//     ScreenDescription method returning such a constant is the same
+//     shape: the method takes the request ctx, so return phrase.Text(ctx).
 //   - numtext: a number turned into Go's digits (strconv.Itoa,
 //     FormatInt, FormatUint, FormatFloat, or fmt.Sprint/Sprintf of plain
 //     numbers) where a reader sees it: a value in a params map literal
@@ -148,6 +150,7 @@ func run(pass *analysis.Pass) (any, error) {
 				checkLiteral(pass, n, ui)
 			case *ast.FuncDecl:
 				checkParams(pass, n.Type, n.Name.Name)
+				checkScreenText(pass, n, ui)
 			case *ast.FuncLit:
 				checkParams(pass, n.Type, "func literal")
 			case *ast.AssignStmt:
@@ -382,6 +385,32 @@ func constProse(pass *analysis.Pass, e ast.Expr) (string, bool) {
 		return "", false // "GET, POST": tokens, not words
 	}
 	return s, reWords.MatchString(s) || reCapWord.MatchString(s)
+}
+
+// screenTextMethods are the app.ScreenTitler and app.ScreenDescriber
+// methods: the tab title, the head's description and the route table.
+var screenTextMethods = map[string]bool{"ScreenTitle": true, "ScreenDescription": true}
+
+// checkScreenText reports a ScreenTitle or ScreenDescription method
+// returning prose. Both take the request ctx so the words can follow
+// the reader; a literal is English on every locale.
+func checkScreenText(pass *analysis.Pass, fn *ast.FuncDecl, ui uiReporter) {
+	if fn.Recv == nil || fn.Body == nil || !screenTextMethods[fn.Name.Name] {
+		return
+	}
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.FuncLit:
+			return false // its returns are its own
+		case *ast.ReturnStmt:
+			if len(n.Results) == 1 {
+				if s, ok := uiProse(pass, n.Results[0]); ok {
+					ui.reportf(n.Results[0], "%s returns %q, English on every locale: define it as an i18n.Phrase at package level and return phrase.Text(ctx)", fn.Name.Name, s)
+				}
+			}
+		}
+		return true
+	})
 }
 
 // checkLabelIndex reports prose set as a label attribute by index,

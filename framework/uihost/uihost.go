@@ -1463,7 +1463,7 @@ func scrubCtl(s string) string {
 // core/textsafe set: RLO/LRI isolates, zero-widths, BOM) from the text
 // inside the first <title>…</title> element of a rendered page. The page
 // renderer escapes markup but not invisible characters, and dynamic-route
-// titles re-read ScreenTitle() AFTER Load so the tab title is
+// titles re-read ScreenTitle AFTER Load so the tab title is
 // user-data-bearing by design; a title computed from loaded data (a doc
 // title, a display name) would otherwise reorder or salt the browser's
 // tab-title readout. Only the element's text is touched: the surrounding
@@ -1694,7 +1694,7 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 		allow:  func(styles, scripts []string) bool { return allowInlineHashes(w.Header(), styles, scripts) },
 		markup: widgets,
 	}
-	out = ds.injectChromeDoc(out, path, sessionID, boundedPresenceParam(r), true, comp, inline)
+	out = ds.injectChromeDoc(ctx, out, path, sessionID, boundedPresenceParam(r), true, comp, inline)
 	out = injectHeadData(ctx, out)
 	if widgets != "" {
 		out = replaceChromeMarker(out, "</body>", widgets+"</body>", "widget chrome")
@@ -1813,15 +1813,15 @@ func replaceChromeMarker(page, marker, replacement, what string) string {
 
 // injectChrome adds links and scripts pointing at the host's served
 // endpoints. pagePath is the route path used for SEOScreen resolution.
-func (ds *UIHost) injectChrome(page, pagePath, sessionID, presenceTopic string) string {
-	return ds.injectChromeModeFor(page, pagePath, sessionID, presenceTopic, true, nil)
+func (ds *UIHost) injectChrome(ctx context.Context, page, pagePath, sessionID, presenceTopic string) string {
+	return ds.injectChromeModeFor(ctx, page, pagePath, sessionID, presenceTopic, true, nil)
 }
 
 // injectChromeFor is injectChrome with the loaded per-request component,
 // so per-instance metadata (the meta description of a dynamic route)
 // lands in the head. comp may be nil.
-func (ds *UIHost) injectChromeFor(page, pagePath, sessionID, presenceTopic string, comp component.Component) string {
-	return ds.injectChromeModeFor(page, pagePath, sessionID, presenceTopic, true, comp)
+func (ds *UIHost) injectChromeFor(ctx context.Context, page, pagePath, sessionID, presenceTopic string, comp component.Component) string {
+	return ds.injectChromeModeFor(ctx, page, pagePath, sessionID, presenceTopic, true, comp)
 }
 
 // screenHeadHTML returns per-screen head content. It composes from
@@ -1840,7 +1840,7 @@ func (ds *UIHost) injectChromeFor(page, pagePath, sessionID, presenceTopic strin
 // The per-concern SEO fields are resolved first via resolveScreenSEO
 // (the shared resolution path also used to render the per-screen
 // llm.md front-matter), then rendered to HTML.
-func (ds *UIHost) screenHeadHTML(pagePath string, comp component.Component) string {
+func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp component.Component) string {
 	if ds.App == nil || pagePath == "" {
 		return ""
 	}
@@ -1848,7 +1848,7 @@ func (ds *UIHost) screenHeadHTML(pagePath string, comp component.Component) stri
 	if !ok {
 		return ""
 	}
-	resolved := resolveScreenSEOFor(screen, comp)
+	resolved := resolveScreenSEOFor(ctx, screen, comp)
 
 	var parts []string
 	if resolved.Description != "" {
@@ -1916,8 +1916,8 @@ func (ds *UIHost) screenHeadHTML(pagePath string, comp component.Component) stri
 // the per-concern interfaces. The returned SEO is the merged value both
 // the HTML head and the per-screen llm.md front-matter render from,
 // keeping the two surfaces in lockstep (#108).
-func resolveScreenSEO(screen *app.Screen) SEO {
-	return resolveScreenSEOFor(screen, nil)
+func resolveScreenSEO(ctx context.Context, screen *app.Screen) SEO {
+	return resolveScreenSEOFor(ctx, screen, nil)
 }
 
 // resolveScreenSEOFor resolves the screen's SEO bundle against the given
@@ -1926,7 +1926,7 @@ func resolveScreenSEO(screen *app.Screen) SEO {
 // only the loaded instance knows the per-URL description/og values (the
 // docs catch-all regression: registration-time description is empty for
 // every dynamic route).
-func resolveScreenSEOFor(screen *app.Screen, comp component.Component) SEO {
+func resolveScreenSEOFor(ctx context.Context, screen *app.Screen, comp component.Component) SEO {
 	src := component.Component(screen.Component)
 	if comp != nil {
 		src = comp
@@ -1942,7 +1942,7 @@ func resolveScreenSEOFor(screen *app.Screen, comp component.Component) SEO {
 		// snapshot: screen.Description was read once at Register, before
 		// any params existed.
 		if d, ok := src.(app.ScreenDescriber); ok {
-			desc = d.ScreenDescription()
+			desc = d.ScreenDescription(ctx)
 		}
 	}
 	if desc == "" {
@@ -1991,7 +1991,7 @@ func resolveScreenSEOFor(screen *app.Screen, comp component.Component) SEO {
 	if article {
 		if meta.Headline == "" {
 			if t, ok := src.(app.ScreenTitler); ok {
-				meta.Headline = t.ScreenTitle()
+				meta.Headline = t.ScreenTitle(ctx)
 			}
 		}
 		if meta.Description == "" {
@@ -2069,12 +2069,12 @@ func twitterTags(tc TwitterCard) []string {
 // component instead, used by static export, since static hosts
 // don't typically serve query-parameterized files. Live HTTP mode
 // always passes bundle=true. pagePath is used for SEOScreen resolution.
-func (ds *UIHost) injectChromeMode(page, pagePath, sessionID, presenceTopic string, bundle bool) string {
-	return ds.injectChromeModeFor(page, pagePath, sessionID, presenceTopic, bundle, nil)
+func (ds *UIHost) injectChromeMode(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool) string {
+	return ds.injectChromeModeFor(ctx, page, pagePath, sessionID, presenceTopic, bundle, nil)
 }
 
-func (ds *UIHost) injectChromeModeFor(page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component) string {
-	return ds.injectChromeDoc(page, pagePath, sessionID, presenceTopic, bundle, comp, nil)
+func (ds *UIHost) injectChromeModeFor(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component) string {
+	return ds.injectChromeDoc(ctx, page, pagePath, sessionID, presenceTopic, bundle, comp, nil)
 }
 
 // inlineHead is how a live page may inline its head (firstpaint.go).
@@ -2091,7 +2091,7 @@ type inlineHead struct {
 // injectChromeDoc is the chrome injector. inline, when set, lets a head
 // small enough for the first round trip carry its resources. A nil
 // inline, or export mode, links every head resource.
-func (ds *UIHost) injectChromeDoc(page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component, inline *inlineHead) string {
+func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID, presenceTopic string, bundle bool, comp component.Component, inline *inlineHead) string {
 	// First full-shell render freezes the extra-script rail: registering
 	// after this point would ship a script on some pages and not others.
 	ds.markServingBegun()
@@ -2145,7 +2145,7 @@ func (ds *UIHost) injectChromeDoc(page, pagePath, sessionID, presenceTopic strin
 	// time and serve as sitewide fallbacks. Per-screen SEOScreen data is
 	// per-request.
 	var headParts []string
-	if screenHead := ds.screenHeadHTML(pagePath, comp); screenHead != "" {
+	if screenHead := ds.screenHeadHTML(ctx, pagePath, comp); screenHead != "" {
 		headParts = append(headParts, markScreenHead(screenHead))
 	}
 	// Caller-supplied head HTML (WithHeadHTML) is scrubbed for <script>
@@ -3130,7 +3130,15 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 	if c, ok := res.Component.(app.ScreenLanger); ok && c.ScreenLang() != "" {
 		lang = c.ScreenLang()
 	}
-	res.HTML = render.Join(res.HTML, render.Tag("template", map[string]string{"data-cui-page-head": markScreenHead(ds.screenHeadHTML(path, res.Component)), "data-cui-lang": lang, "data-cui-dir": i18n.Dir(lang), "data-cui-skip-label": ds.App.SkipLabelFor(ctx, path)}))
+	head := map[string]string{"data-cui-page-head": markScreenHead(ds.screenHeadHTML(ctx, path, res.Component)), "data-cui-lang": lang, "data-cui-dir": i18n.Dir(lang), "data-cui-skip-label": ds.App.SkipLabelFor(ctx, path)}
+	// The runtime's own words for the destination's reader: a soft nav
+	// keeps the document, so the #gofastr-strings block in <head> would
+	// otherwise keep speaking the first page's language. Absent means
+	// English, which clears a previous page's table.
+	if strs := runtime.StringsJSON(ctx); strs != nil {
+		head["data-cui-strings"] = string(strs)
+	}
+	res.HTML = render.Join(res.HTML, render.Tag("template", head))
 	// Fills envelope a fills-capable client that
 	// kept layout layers with tree-layout outlets gets the partial as an
 	// envelope — the seed island (scanned over the primary payload AND
@@ -3960,7 +3968,7 @@ func (ds *UIHost) mountPageLLMMD(r *router.Router) {
 			if app.ResolvePolicy(app.WithRequest(req.Context(), req), sc).Kind != app.DecisionAllow {
 				md = app.ScreenLLMMDWithheld(sc)
 			} else {
-				seo := resolveScreenSEO(sc)
+				seo := resolveScreenSEO(req.Context(), sc)
 				fm := screenSEOFrontMatter(sc.Title, seo)
 				md = app.ScreenLLMMDWithMeta(sc, fm)
 			}
@@ -4274,7 +4282,7 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 		if title == "" {
 			title = scr.Title
 		}
-		seo := resolveScreenSEOFor(scr, res.Component)
+		seo := resolveScreenSEOFor(ctx, scr, res.Component)
 		if fm := screenSEOFrontMatter(title, seo); fm != "" {
 			md = fm + "\n" + md
 		}
@@ -4397,7 +4405,7 @@ func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (stri
 	// bundle=false: static hosts don't serve query-paramed files, so
 	// emit one <link rel=stylesheet> per registered component instead
 	// of the comp-bundle.css?names= form.
-	page := ds.injectChromeModeFor(string(res.HTML), path, "", "", false, res.Component)
+	page := ds.injectChromeModeFor(ctx, string(res.HTML), path, "", "", false, res.Component)
 	return injectHeadData(ctx, page), res.FillFailures, nil
 }
 
@@ -4424,7 +4432,7 @@ func (ds *UIHost) RenderStaticNotFoundPage(ctx context.Context, path string) (st
 		slog.Warn("uihost: static not-found render failed; exporting no 404.html", "err", err)
 		return "", false
 	}
-	page := ds.injectChromeModeFor(string(res.HTML), path, "", "", false, res.Component)
+	page := ds.injectChromeModeFor(ctx, string(res.HTML), path, "", "", false, res.Component)
 	return injectHeadData(ctx, page), true
 }
 
@@ -5252,7 +5260,15 @@ func ReadCustomCSSFile(path string) string {
 // locale only decides the document language and direction (see LangFor).
 // Pass "" for a shell that belongs to no route.
 func (ds *UIHost) documentShell(ctx context.Context, path, title, body string) string {
-	lang := ds.LangFor(ctx, path)
+	return ds.documentShellLang(ctx, path, "", title, body)
+}
+
+// documentShellLang is documentShell with the document language named
+// by the caller; "" resolves it for path the way documentShell does.
+func (ds *UIHost) documentShellLang(ctx context.Context, path, lang, title, body string) string {
+	if lang == "" {
+		lang = ds.LangFor(ctx, path)
+	}
 	return fmt.Sprintf(
 		`<!DOCTYPE html><html dir="%s" lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>%s</title></head><body>%s</body></html>`,
 		i18n.Dir(lang), stdhtml.EscapeString(lang), stdhtml.EscapeString(title), body)

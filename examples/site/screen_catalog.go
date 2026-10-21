@@ -55,8 +55,8 @@ func catalogByID(id string) (catalogItem, bool) {
 
 type CatalogScreen struct{ component.ContextOnly }
 
-func (s *CatalogScreen) ScreenTitle() string { return "Catalog example" }
-func (s *CatalogScreen) ScreenDescription() string {
+func (s *CatalogScreen) ScreenTitle(ctx context.Context) string { return "Catalog example" }
+func (s *CatalogScreen) ScreenDescription(ctx context.Context) string {
 	return "A list whose detail route opens as a drawer when you click through, and as a full page when you load its URL directly."
 }
 func (s *CatalogScreen) ScreenType() app.ScreenType { return app.ScreenPage }
@@ -104,13 +104,13 @@ type CatalogItemScreen struct {
 
 func (s *CatalogItemScreen) SetParams(p map[string]string) { s.id = p["id"] }
 func (s *CatalogItemScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
-func (s *CatalogItemScreen) ScreenTitle() string {
+func (s *CatalogItemScreen) ScreenTitle(ctx context.Context) string {
 	if it, ok := catalogByID(s.id); ok {
 		return it.Name
 	}
 	return "Product"
 }
-func (s *CatalogItemScreen) ScreenDescription() string {
+func (s *CatalogItemScreen) ScreenDescription(ctx context.Context) string {
 	if it, ok := catalogByID(s.id); ok {
 		return it.Blurb
 	}

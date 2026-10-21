@@ -15,9 +15,9 @@ import (
 
 type CustomersScreen struct{ component.ContextOnly }
 
-func (s *CustomersScreen) ScreenTitle() string        { return "Customers" }
-func (s *CustomersScreen) ScreenDescription() string  { return "" }
-func (s *CustomersScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *CustomersScreen) ScreenTitle(ctx context.Context) string       { return "Customers" }
+func (s *CustomersScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *CustomersScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 func (s *CustomersScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
@@ -38,10 +38,10 @@ type CustomerDetailScreen struct {
 	id string
 }
 
-func (s *CustomerDetailScreen) SetParams(p map[string]string) { s.id = p["id"] }
-func (s *CustomerDetailScreen) ScreenTitle() string           { return "Customer" }
-func (s *CustomerDetailScreen) ScreenDescription() string     { return "" }
-func (s *CustomerDetailScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
+func (s *CustomerDetailScreen) SetParams(p map[string]string)                { s.id = p["id"] }
+func (s *CustomerDetailScreen) ScreenTitle(ctx context.Context) string       { return "Customer" }
+func (s *CustomerDetailScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *CustomerDetailScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 func (s *CustomerDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
@@ -56,9 +56,9 @@ func (s *CustomerDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 
 type CustomersCreateScreen struct{ component.ContextOnly }
 
-func (s *CustomersCreateScreen) ScreenTitle() string        { return "New Customer" }
-func (s *CustomersCreateScreen) ScreenDescription() string  { return "" }
-func (s *CustomersCreateScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *CustomersCreateScreen) ScreenTitle(ctx context.Context) string       { return "New Customer" }
+func (s *CustomersCreateScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *CustomersCreateScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 func (s *CustomersCreateScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},

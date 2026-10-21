@@ -14,8 +14,10 @@ import (
 
 type DashboardScreen struct{ component.ContextOnly }
 
-func (s *DashboardScreen) ScreenTitle() string        { return "Overview" }
-func (s *DashboardScreen) ScreenDescription() string  { return "Your revenue at a glance." }
+func (s *DashboardScreen) ScreenTitle(ctx context.Context) string { return "Overview" }
+func (s *DashboardScreen) ScreenDescription(ctx context.Context) string {
+	return "Your revenue at a glance."
+}
 func (s *DashboardScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *DashboardScreen) RenderCtx(ctx context.Context) render.HTML {
@@ -31,9 +33,9 @@ func (s *DashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 
 type InvoicesScreen struct{ component.ContextOnly }
 
-func (s *InvoicesScreen) ScreenTitle() string        { return "Invoices" }
-func (s *InvoicesScreen) ScreenDescription() string  { return "" }
-func (s *InvoicesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *InvoicesScreen) ScreenTitle(ctx context.Context) string       { return "Invoices" }
+func (s *InvoicesScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *InvoicesScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 func (s *InvoicesScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
@@ -49,10 +51,10 @@ type InvoiceDetailScreen struct {
 	id string
 }
 
-func (s *InvoiceDetailScreen) SetParams(p map[string]string) { s.id = p["id"] }
-func (s *InvoiceDetailScreen) ScreenTitle() string           { return "Invoice" }
-func (s *InvoiceDetailScreen) ScreenDescription() string     { return "" }
-func (s *InvoiceDetailScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
+func (s *InvoiceDetailScreen) SetParams(p map[string]string)                { s.id = p["id"] }
+func (s *InvoiceDetailScreen) ScreenTitle(ctx context.Context) string       { return "Invoice" }
+func (s *InvoiceDetailScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *InvoiceDetailScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 func (s *InvoiceDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
@@ -66,9 +68,9 @@ func (s *InvoiceDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 
 type InvoicesCreateScreen struct{ component.ContextOnly }
 
-func (s *InvoicesCreateScreen) ScreenTitle() string        { return "New Invoice" }
-func (s *InvoicesCreateScreen) ScreenDescription() string  { return "" }
-func (s *InvoicesCreateScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *InvoicesCreateScreen) ScreenTitle(ctx context.Context) string       { return "New Invoice" }
+func (s *InvoicesCreateScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *InvoicesCreateScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 func (s *InvoicesCreateScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},

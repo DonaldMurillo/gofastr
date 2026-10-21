@@ -5258,7 +5258,8 @@ func emitsHTMLRef(code string) bool {
 // passes false to stay byte-compatible with the pre-per-screen screens.go.
 func writeScreenImportBlock(sb *strings.Builder, needs screenImportNeeds, anyCtx, withMount, hasScreens bool) {
 	sb.WriteString("import (\n")
-	if hasScreens && anyCtx {
+	// Every screen takes a context: ScreenTitle(ctx) is always emitted.
+	if hasScreens {
 		sb.WriteString("\t\"context\"\n\n")
 	}
 	if withMount {
@@ -5328,9 +5329,9 @@ func appSpecScreenBody(bp AppSpec, screen AppSpecScreen, entityMap map[string]fr
 	} else {
 		sb.WriteString(fmt.Sprintf("type %s struct{}\n\n", typeName))
 	}
-	sb.WriteString(fmt.Sprintf("func (s *%s) ScreenTitle() string { return %q }\n", typeName, screen.TitleOrName()))
+	sb.WriteString(fmt.Sprintf("func (s *%s) ScreenTitle(ctx context.Context) string { return %q }\n", typeName, screen.TitleOrName()))
 	if screen.Description != "" {
-		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenDescription() string { return %q }\n", typeName, screen.Description))
+		sb.WriteString(fmt.Sprintf("func (s *%s) ScreenDescription(ctx context.Context) string { return %q }\n", typeName, screen.Description))
 	} else {
 		// No description in the app spec. A zero-value ScreenSEO is the
 		// framework's documented "deliberately no per-page SEO" opt-out,

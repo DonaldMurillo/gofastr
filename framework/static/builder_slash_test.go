@@ -17,9 +17,9 @@ import (
 // linksScreen renders one link of every shape the export meets.
 type linksScreen struct{}
 
-func (linksScreen) ScreenTitle() string            { return "Links" }
-func (linksScreen) ScreenDescription() string      { return "" }
-func (linksScreen) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
+func (linksScreen) ScreenTitle(ctx context.Context) string       { return "Links" }
+func (linksScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (linksScreen) ScreenType() coreapp.ScreenType               { return coreapp.ScreenPage }
 func (linksScreen) Render() render.HTML {
 	return render.HTML(`<a href="/">root</a>` +
 		`<a href="/about">page</a>` +

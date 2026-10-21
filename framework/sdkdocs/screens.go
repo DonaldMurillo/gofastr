@@ -157,8 +157,8 @@ func heading(level int, t string) render.HTML {
 
 type indexScreen struct{ site *site }
 
-func (sc *indexScreen) ScreenTitle() string { return sc.site.cfg.AppName + " SDKs" }
-func (sc *indexScreen) ScreenDescription() string {
+func (sc *indexScreen) ScreenTitle(ctx context.Context) string { return sc.site.cfg.AppName + " SDKs" }
+func (sc *indexScreen) ScreenDescription(ctx context.Context) string {
 	return "Client SDKs and API reference for " + sc.site.cfg.AppName
 }
 
@@ -314,8 +314,8 @@ console.log(page.total);`, origin, prop)
 
 type authScreen struct{ site *site }
 
-func (sc *authScreen) ScreenTitle() string { return "API authentication" }
-func (sc *authScreen) ScreenDescription() string {
+func (sc *authScreen) ScreenTitle(ctx context.Context) string { return "API authentication" }
+func (sc *authScreen) ScreenDescription(ctx context.Context) string {
 	return "Bearer-token authentication for the " + sc.site.cfg.AppName + " API"
 }
 
@@ -372,8 +372,8 @@ func (s *site) exampleHost() string {
 
 type errorsScreen struct{ site *site }
 
-func (sc *errorsScreen) ScreenTitle() string { return "API errors" }
-func (sc *errorsScreen) ScreenDescription() string {
+func (sc *errorsScreen) ScreenTitle(ctx context.Context) string { return "API errors" }
+func (sc *errorsScreen) ScreenDescription(ctx context.Context) string {
 	return "Error envelope and status codes for the " + sc.site.cfg.AppName + " API"
 }
 
@@ -451,14 +451,14 @@ func (sc *entityScreen) StaticPaths(_ context.Context) []map[string]string {
 	return out
 }
 
-func (sc *entityScreen) ScreenTitle() string {
+func (sc *entityScreen) ScreenTitle(ctx context.Context) string {
 	if e, ok := sc.current(); ok {
 		return e.Config.Name + ": API reference"
 	}
 	return "API reference"
 }
 
-func (sc *entityScreen) ScreenDescription() string {
+func (sc *entityScreen) ScreenDescription(ctx context.Context) string {
 	return "Entity API reference for " + sc.site.cfg.AppName
 }
 

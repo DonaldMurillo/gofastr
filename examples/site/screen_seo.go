@@ -9,6 +9,8 @@ package main
 // =============================================================================
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/seo"
@@ -20,8 +22,8 @@ import (
 // SEOScreen implements the four per-concern SEO interfaces individually.
 type SEOScreen struct{}
 
-func (*SEOScreen) ScreenTitle() string { return "SEO" }
-func (*SEOScreen) ScreenDescription() string {
+func (*SEOScreen) ScreenTitle(ctx context.Context) string { return "SEO" }
+func (*SEOScreen) ScreenDescription(ctx context.Context) string {
 	return "Per-page SEO: canonical URL, hreflang alternates, JSON-LD article schema, plus sitewide sitemap.xml and robots.txt."
 }
 func (*SEOScreen) ScreenType() app.ScreenType { return app.ScreenPage }
@@ -98,8 +100,8 @@ func seoPage(blocks ...render.HTML) render.HTML {
 // SEOBundleScreen implements the bundle-style ScreenSEO alternative.
 type SEOBundleScreen struct{}
 
-func (*SEOBundleScreen) ScreenTitle() string        { return "SEO bundle (ScreenSEO)" }
-func (*SEOBundleScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (*SEOBundleScreen) ScreenTitle(ctx context.Context) string { return "SEO bundle (ScreenSEO)" }
+func (*SEOBundleScreen) ScreenType() app.ScreenType             { return app.ScreenPage }
 
 // ScreenSEO returns every per-page SEO field in one struct. Empty fields fall
 // through to the per-concern interface chain.

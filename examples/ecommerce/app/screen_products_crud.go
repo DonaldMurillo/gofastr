@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=1e1127fbb441082c
+//gofastr:generated generator=app kind=scaffold version=dev sum=b1d4ff5dad03caea
 
 package main
 
@@ -16,8 +16,10 @@ import (
 
 type HomeScreen struct{ component.ContextOnly }
 
-func (s *HomeScreen) ScreenTitle() string        { return "ShopFront: Home" }
-func (s *HomeScreen) ScreenDescription() string  { return "E-commerce storefront homepage" }
+func (s *HomeScreen) ScreenTitle(ctx context.Context) string { return "ShopFront: Home" }
+func (s *HomeScreen) ScreenDescription(ctx context.Context) string {
+	return "E-commerce storefront homepage"
+}
 func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *HomeScreen) RenderCtx(ctx context.Context) render.HTML {
@@ -30,8 +32,10 @@ func (s *HomeScreen) RenderCtx(ctx context.Context) render.HTML {
 
 type ProductsScreen struct{ component.ContextOnly }
 
-func (s *ProductsScreen) ScreenTitle() string        { return "All Products" }
-func (s *ProductsScreen) ScreenDescription() string  { return "Browse our full product catalog" }
+func (s *ProductsScreen) ScreenTitle(ctx context.Context) string { return "All Products" }
+func (s *ProductsScreen) ScreenDescription(ctx context.Context) string {
+	return "Browse our full product catalog"
+}
 func (s *ProductsScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *ProductsScreen) RenderCtx(ctx context.Context) render.HTML {
@@ -46,10 +50,12 @@ type ProductDetailScreen struct {
 	id string
 }
 
-func (s *ProductDetailScreen) SetParams(p map[string]string) { s.id = p["id"] }
-func (s *ProductDetailScreen) ScreenTitle() string           { return "Product Details" }
-func (s *ProductDetailScreen) ScreenDescription() string     { return "View product details" }
-func (s *ProductDetailScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
+func (s *ProductDetailScreen) SetParams(p map[string]string)          { s.id = p["id"] }
+func (s *ProductDetailScreen) ScreenTitle(ctx context.Context) string { return "Product Details" }
+func (s *ProductDetailScreen) ScreenDescription(ctx context.Context) string {
+	return "View product details"
+}
+func (s *ProductDetailScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *ProductDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},

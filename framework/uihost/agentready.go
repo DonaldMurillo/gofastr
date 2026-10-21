@@ -891,7 +891,7 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 		// SEO resolved against the LOADED instance so the negotiated
 		// markdown's front matter matches the HTML head (llmmd_seo.go's
 		// lockstep contract), not the zero-value registration template.
-		seo := resolveScreenSEOFor(screen, res.Component)
+		seo := resolveScreenSEOFor(ctx, screen, res.Component)
 		if fm := screenSEOFrontMatter(title, seo); fm != "" {
 			md = fm + "\n" + md
 		}

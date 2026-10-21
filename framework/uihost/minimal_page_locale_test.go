@@ -60,3 +60,22 @@ func TestBareErrorPagesInLocale(t *testing.T) {
 		}
 	}
 }
+
+// A tab opened before a deploy gets the reload notice in its reader's
+// language, on both the refresh body and the bare one.
+func TestStaleMarkupNoticeInLocale(t *testing.T) {
+	tr := map[i18n.Phrase]string{
+		pageAppUpdated: "Cette application a été mise à jour.",
+		pageReloadPage: "Rechargez la page",
+	}
+	w := httptest.NewRecorder()
+	writeStaleMarkupReload(w, frenchRequest("/a", tr), "/a", "")
+	if want := `Cette application a été mise à jour. <a href="/a">Rechargez la page</a>.`; !strings.Contains(w.Body.String(), want) {
+		t.Errorf("refresh body missing %q:\n%s", want, w.Body.String())
+	}
+	w = httptest.NewRecorder()
+	writeStaleMarkupReload(w, frenchRequest("/a", tr), "//evil", "")
+	if want := `<p role="alert">Cette application a été mise à jour. Rechargez la page.</p>`; w.Body.String() != want {
+		t.Errorf("bare body = %q, want %q", w.Body.String(), want)
+	}
+}

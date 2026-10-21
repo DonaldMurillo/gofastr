@@ -23,6 +23,8 @@ package main
 // sessions). Each appears in the other's roster; close one and it drops.
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/island"
@@ -62,8 +64,8 @@ func renderPresenceRoster(members []island.PresenceMember) render.HTML {
 // who's currently viewing it.
 type PresenceScreen struct{}
 
-func (s *PresenceScreen) ScreenTitle() string { return "Live Presence" }
-func (s *PresenceScreen) ScreenDescription() string {
+func (s *PresenceScreen) ScreenTitle(ctx context.Context) string { return "Live Presence" }
+func (s *PresenceScreen) ScreenDescription(ctx context.Context) string {
 	return "Live viewer roster via SSE presence topics"
 }
 func (s *PresenceScreen) ScreenType() app.ScreenType { return app.ScreenPage }

@@ -29,9 +29,9 @@ type describedScreen struct{}
 func (s *describedScreen) Render() render.HTML {
 	return html.Div(html.DivConfig{}, render.HTML("hi"))
 }
-func (s *describedScreen) SetParams(map[string]string) {}
-func (s *describedScreen) ScreenTitle() string         { return "Pricing" }
-func (s *describedScreen) ScreenDescription() string   { return "Plans and prices." }
+func (s *describedScreen) SetParams(map[string]string)                  {}
+func (s *describedScreen) ScreenTitle(ctx context.Context) string       { return "Pricing" }
+func (s *describedScreen) ScreenDescription(ctx context.Context) string { return "Plans and prices." }
 
 // optedOutScreen has a title but opts out of per-page SEO via the
 // documented zero-value ScreenSEO return.
@@ -40,8 +40,8 @@ type optedOutScreen struct{}
 func (s *optedOutScreen) Render() render.HTML {
 	return html.Div(html.DivConfig{}, render.HTML("hi"))
 }
-func (s *optedOutScreen) ScreenTitle() string { return "Internal" }
-func (s *optedOutScreen) ScreenSEO() SEO      { return SEO{} }
+func (s *optedOutScreen) ScreenTitle(ctx context.Context) string { return "Internal" }
+func (s *optedOutScreen) ScreenSEO() SEO                         { return SEO{} }
 
 // strictSiteOptions is the complete site-level SEO surface strict mode
 // requires.

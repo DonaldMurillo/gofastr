@@ -16,9 +16,9 @@ import (
 
 type SignupScreen struct{ component.ContextOnly }
 
-func (s *SignupScreen) ScreenTitle() string        { return "Create your account" }
-func (s *SignupScreen) ScreenDescription() string  { return "" }
-func (s *SignupScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *SignupScreen) ScreenTitle(ctx context.Context) string       { return "Create your account" }
+func (s *SignupScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *SignupScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 func (s *SignupScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},

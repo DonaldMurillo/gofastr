@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -12,8 +13,10 @@ import (
 
 type AboutScreen struct{}
 
-func (s *AboutScreen) ScreenTitle() string        { return "About Meridian" }
-func (s *AboutScreen) ScreenDescription() string  { return "Why we built a calmer billing console." }
+func (s *AboutScreen) ScreenTitle(ctx context.Context) string { return "About Meridian" }
+func (s *AboutScreen) ScreenDescription(ctx context.Context) string {
+	return "Why we built a calmer billing console."
+}
 func (s *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *AboutScreen) Render() render.HTML {

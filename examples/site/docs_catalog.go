@@ -345,9 +345,9 @@ func registerDocsGroup(site *app.App) {
 // fills.
 type DocPageScreen struct{ Entry docEntry }
 
-func (s *DocPageScreen) ScreenTitle() string        { return s.Entry.Title }
-func (s *DocPageScreen) ScreenDescription() string  { return s.Entry.Desc }
-func (s *DocPageScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *DocPageScreen) ScreenTitle(ctx context.Context) string       { return s.Entry.Title }
+func (s *DocPageScreen) ScreenDescription(ctx context.Context) string { return s.Entry.Desc }
+func (s *DocPageScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 // SetParams is empty: the slug reaches the screen through the resolver
 // (resolvedDoc), but the router refuses a dynamic route whose screen has

@@ -21,6 +21,7 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"strconv"
 	"sync"
@@ -37,8 +38,10 @@ type HomeScreen struct{}
 
 // ScreenTitle returns the bare page name; core-ui/app appends " — GoFastr"
 // (the app name) to form the <title>, so it must NOT be repeated here.
-func (s *HomeScreen) ScreenTitle() string { return "Full-stack Go that doesn't get in your way" }
-func (s *HomeScreen) ScreenDescription() string {
+func (s *HomeScreen) ScreenTitle(ctx context.Context) string {
+	return "Full-stack Go that doesn't get in your way"
+}
+func (s *HomeScreen) ScreenDescription(ctx context.Context) string {
 	return "An early (v0.x) full-stack Go framework that stays out of your way. Declare your domain in Go and get server-rendered screens, a REST API, MCP tools, migrations, and a typed query builder. It stays plain Go that you and your agents can read, edit, and own."
 }
 func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
@@ -178,6 +181,7 @@ func main() {
 var heroDonaldSrc = `package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 
@@ -194,7 +198,7 @@ import (
 // A screen is plain Go: Render returns server-rendered HTML.
 type HomeScreen struct{}
 
-func (s *HomeScreen) ScreenTitle() string { return "Notes" }
+func (s *HomeScreen) ScreenTitle(ctx context.Context) string { return "Notes" }
 func (s *HomeScreen) Render() render.HTML {
 	return html.Heading(html.HeadingConfig{Level: 1}, render.Text("My notes"))
 }

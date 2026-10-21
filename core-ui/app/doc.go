@@ -19,8 +19,8 @@
 // each interface independently, implement only what you need:
 //
 //	type Home struct{}
-//	func (h *Home) Render() render.HTML        { return render.Text("hi") }
-//	func (h *Home) ScreenTitle() string        { return "Home" }
+//	func (h *Home) Render() render.HTML                    { return render.Text("hi") }
+//	func (h *Home) ScreenTitle(ctx context.Context) string { return "Home" }
 //	// That's it, ScreenType defaults to ScreenPage, description defaults to empty.
 //
 //	application := app.NewApp("MyApp")
