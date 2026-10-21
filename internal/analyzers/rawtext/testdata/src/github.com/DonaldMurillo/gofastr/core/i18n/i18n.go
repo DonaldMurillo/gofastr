@@ -31,3 +31,6 @@ func HTTPError(w http.ResponseWriter, r *http.Request, status int, p Phrase) {
 	//gofastr:allow(rawtext) the sanctioned writer
 	http.Error(w, p.Text(r.Context()), status)
 }
+
+// Number writes v in the reader's locale.
+func Number(ctx context.Context, v int) string { return "" }

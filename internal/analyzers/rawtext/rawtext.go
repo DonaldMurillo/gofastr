@@ -407,39 +407,70 @@ var localProseCache, localNumberCache sync.Map // *analysis.Pass -> map[*types.V
 
 // localProse maps each function-scoped string variable (parameters
 // included) that some assignment or declaration in the package's
-// non-test files sets to prose onto the first such text.
+// non-test files sets to prose onto the first such text. Any one
+// assignment counts: an English default a later branch may replace
+// (label := "Close"; if cfg.Label != "" { label = cfg.Label }) is the
+// shape this exists to catch.
 func localProse(pass *analysis.Pass) map[*types.Var]string {
-	return localVars(pass, &localProseCache, func(e ast.Expr) (string, bool) { return constProse(pass, e) })
+	return localVars(pass, &localProseCache, false, func(e ast.Expr) (string, bool) { return constProse(pass, e) })
 }
 
-// localNumber maps each function-scoped variable that some assignment
-// sets to number text (n := strconv.Itoa(size)) onto the call's name.
+// localNumber maps each function-scoped variable declared with number
+// text (n := strconv.Itoa(size)) onto the call's name, when no other
+// assignment gives it a different value: a local later set to
+// i18n.Number(ctx, n) carries the reader's digits by the time it is
+// written.
 func localNumber(pass *analysis.Pass) map[*types.Var]string {
-	return localVars(pass, &localNumberCache, func(e ast.Expr) (string, bool) { return numberCall(pass, e) })
+	return localVars(pass, &localNumberCache, true, func(e ast.Expr) (string, bool) { return numberCall(pass, e) })
 }
 
-// localVars maps each function-scoped variable that some assignment or
-// declaration in the package's non-test files sets to a value classify
-// accepts onto the first such result, cached per pass.
-func localVars(pass *analysis.Pass, cache *sync.Map, classify func(ast.Expr) (string, bool)) map[*types.Var]string {
+// localVars maps the package's function-scoped variables, in non-test
+// files, onto what classify reports for a value they are given, cached
+// per pass. With every unset, any one such assignment or declaration
+// counts. With every set, the variable must be declared with such a
+// value (:= or var with an initializer) and no assignment, range
+// clause or address-of may give it another; += keeps what it holds.
+func localVars(pass *analysis.Pass, cache *sync.Map, every bool, classify func(ast.Expr) (string, bool)) map[*types.Var]string {
 	if m, ok := cache.Load(pass); ok {
 		return m.(map[*types.Var]string)
 	}
 	out := map[*types.Var]string{}
-	record := func(lhs, rhs ast.Expr) {
-		id, ok := ast.Unparen(lhs).(*ast.Ident)
+	declared := map[*types.Var]bool{}
+	poisoned := map[*types.Var]bool{}
+	local := func(e ast.Expr) *types.Var {
+		id, ok := ast.Unparen(e).(*ast.Ident)
 		if !ok {
-			return
+			return nil
 		}
 		v, _ := pass.TypesInfo.ObjectOf(id).(*types.Var)
 		if v == nil || v.IsField() || v.Parent() == nil || v.Parent() == pass.Pkg.Scope() {
+			return nil
+		}
+		return v
+	}
+	poison := func(e ast.Expr) {
+		if v := local(e); v != nil {
+			poisoned[v] = true
+		}
+	}
+	record := func(lhs, rhs ast.Expr, declares bool) {
+		v := local(lhs)
+		if v == nil {
 			return
 		}
-		if _, seen := out[v]; seen {
-			return
-		}
-		if s, ok := classify(rhs); ok {
-			out[v] = s
+		s, ok := classify(rhs)
+		switch {
+		case !every:
+			if _, seen := out[v]; !seen && ok {
+				out[v] = s
+			}
+		case !ok:
+			poisoned[v] = true
+		case declares:
+			declared[v] = true
+			if _, seen := out[v]; !seen {
+				out[v] = s
+			}
 		}
 	}
 	for _, f := range pass.Files {
@@ -449,20 +480,49 @@ func localVars(pass *analysis.Pass, cache *sync.Map, classify func(ast.Expr) (st
 		ast.Inspect(f, func(n ast.Node) bool {
 			switch n := n.(type) {
 			case *ast.AssignStmt:
-				if len(n.Lhs) == len(n.Rhs) && (n.Tok == token.ASSIGN || n.Tok == token.DEFINE) {
+				switch {
+				case n.Tok != token.ASSIGN && n.Tok != token.DEFINE:
+					// An op-assign (+=) keeps what the variable holds.
+				case len(n.Lhs) == len(n.Rhs):
 					for i := range n.Lhs {
-						record(n.Lhs[i], n.Rhs[i])
+						record(n.Lhs[i], n.Rhs[i], n.Tok == token.DEFINE)
+					}
+				default:
+					for _, l := range n.Lhs {
+						poison(l)
 					}
 				}
 			case *ast.ValueSpec:
 				if len(n.Names) == len(n.Values) {
 					for i := range n.Names {
-						record(n.Names[i], n.Values[i])
+						record(n.Names[i], n.Values[i], true)
 					}
+				} else {
+					for _, name := range n.Names {
+						poison(name)
+					}
+				}
+			case *ast.RangeStmt:
+				if n.Key != nil {
+					poison(n.Key)
+				}
+				if n.Value != nil {
+					poison(n.Value)
+				}
+			case *ast.UnaryExpr:
+				if n.Op == token.AND {
+					poison(n.X)
 				}
 			}
 			return true
 		})
+	}
+	if every {
+		for v := range out {
+			if !declared[v] || poisoned[v] {
+				delete(out, v)
+			}
+		}
 	}
 	cache.Store(pass, out)
 	return out

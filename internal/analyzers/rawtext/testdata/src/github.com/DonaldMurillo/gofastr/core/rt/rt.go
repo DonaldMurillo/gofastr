@@ -202,6 +202,21 @@ func counts(ctx context.Context, n int, size int64, ratio float64, d seconds, tr
 	_ = reasonGone.Text(ctx, map[string]any{"n": digits}) // want `strconv.Itoa turns a number`
 	_ = render.Text("+" + digits)                         // want `strconv.Itoa writes a number into the page`
 	_ = map[string]string{"data-count": digits}
+	// A local that a later assignment replaces with localized text is
+	// not number text: only a local every assignment fills with Go's
+	// digits is followed.
+	shown := strconv.Itoa(n)
+	_ = map[string]string{"data-count": shown}
+	shown = i18n.Number(ctx, n)
+	_ = render.Text(shown)
+	picked := strconv.Itoa(n)
+	for _, picked = range []string{i18n.Number(ctx, n)} {
+	}
+	_ = render.Text(picked)
+	held := strconv.Itoa(n)
+	ptr := &held
+	*ptr = i18n.Number(ctx, n)
+	_ = render.Text(held)
 }
 
 // say forwards kv to a phrase sink.
