@@ -125,7 +125,7 @@ type UIHost struct {
 	llmMDPublic         bool                                 // when true, mount per-screen /llm.md + /llm-pages.md; default disabled (schema disclosure)
 	headHTML            string                               // raw HTML to inject into <head> (escape hatch)
 	lang                string                               // WithLang document language for host-built shells; EffectiveLang resolves it
-	langFunc            func(path string) string             // WithLangFunc per-route language for host-built shells; LangForPath resolves it
+	langFunc            func(path string) string             // WithLangFunc per-route language for host-built shells; LangFor resolves it
 	headTags            []string                             // typed head tags built from convenience options
 	faviconURL          string                               // configured WithFavicon URL: serveOrRender 204s it when no static file matches
 	noLiveChannel       bool                                 // WithNoLiveChannel: omit the gofastr-sse meta (no EventSource)
@@ -873,7 +873,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
 }
 .skip-link:focus {
   position: fixed !important;
-  top: var(--spacing-md, 8px); left: var(--spacing-md, 8px);
+  top: var(--spacing-md, 8px); inset-inline-start: var(--spacing-md, 8px);
   width: auto; height: auto;
   padding: var(--spacing-md, 8px) var(--spacing-lg, 16px);
   margin: 0;
@@ -892,7 +892,7 @@ main[tabindex="-1"]:focus:not(:focus-visible),
    after 4s via the runtime. Strict-CSP-clean (no inline styles). */
 .cui-nav-toast {
   position: fixed;
-  right: var(--spacing-lg, 16px); bottom: var(--spacing-lg, 16px);
+  inset-inline-end: var(--spacing-lg, 16px); bottom: var(--spacing-lg, 16px);
   z-index: var(--z-toast, 500);
   max-width: calc(100vw - var(--spacing-2xl, 32px));
   padding: calc(var(--spacing-sm, 4px) * 3) var(--spacing-lg, 16px);
@@ -956,6 +956,8 @@ const frameworkProgressStripCSS = `html[aria-busy="true"]::after {
   pointer-events: none;
   color: var(--color-primary, #18181B);
 }
+/* The sweep runs in the reading direction. */
+html[aria-busy="true"]:dir(rtl)::after { animation-direction: reverse; }
 @keyframes fui-nav-progress {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(100%); }
@@ -2576,7 +2578,7 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 		appName = ds.App.Name
 	}
 	ctx := r.Context()
-	writeMinimalPage(w, ds.LangForPath(path), pageNotFoundDocTitle.Text(ctx, map[string]any{"app": appName}),
+	writeMinimalPage(w, ds.LangFor(ctx, path), pageNotFoundDocTitle.Text(ctx, map[string]any{"app": appName}),
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageNotFoundTitle.Text(ctx))),
 		html.Paragraph(html.TextConfig{}, phraseAround(ctx, pageNoRoute, "path",
 			html.Code(html.TextConfig{}, render.Text(textsafe.StripInvisible(path))), nil)),
@@ -2588,9 +2590,9 @@ func (ds *UIHost) serveNotFound(w http.ResponseWriter, r *http.Request, path str
 // layout serves: lang and title escaped, body already rendered HTML.
 func writeMinimalPage(w io.Writer, lang, title string, body ...render.HTML) {
 	fmt.Fprintf(w,
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><title>%s</title></head>`+
+		`<!DOCTYPE html><html dir="%s" lang="%s"><head><meta charset="UTF-8"><title>%s</title></head>`+
 			`<body><main role="main">%s</main></body></html>`,
-		stdhtml.EscapeString(lang), stdhtml.EscapeString(title), render.Join(body...))
+		i18n.Dir(lang), stdhtml.EscapeString(lang), stdhtml.EscapeString(title), render.Join(body...))
 }
 
 // renderNotFoundDocument renders the not-found page as a full document
@@ -2732,7 +2734,7 @@ func (ds *UIHost) serveError(w http.ResponseWriter, r *http.Request, path string
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusInternalServerError)
 	ctx := r.Context()
-	writeMinimalPage(w, ds.LangForPath(path), pageErrorTitle.Text(ctx),
+	writeMinimalPage(w, ds.LangFor(ctx, path), pageErrorTitle.Text(ctx),
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageErrorTitle.Text(ctx))),
 		html.Paragraph(html.TextConfig{}, render.Text(pageErrorBody.Text(ctx))),
 		html.Paragraph(html.TextConfig{}, html.Link(html.LinkConfig{Href: "/", Text: pageBackHome.Text(ctx)})),
@@ -2762,7 +2764,7 @@ func (ds *UIHost) serveServerError(w http.ResponseWriter, r *http.Request, path 
 		appName = ds.App.Name
 	}
 	ctx := r.Context()
-	writeMinimalPage(w, ds.LangForPath(path), pageServerErrorDocTitle.Text(ctx, map[string]any{"app": appName}),
+	writeMinimalPage(w, ds.LangFor(ctx, path), pageServerErrorDocTitle.Text(ctx, map[string]any{"app": appName}),
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageServerErrorTitle.Text(ctx))),
 		html.Paragraph(html.TextConfig{}, render.Text(problemRenderFailed.Text(ctx))),
 		html.Paragraph(html.TextConfig{}, html.Link(html.LinkConfig{Href: "/", Text: pageBackHome.Text(ctx)})),
@@ -3124,11 +3126,11 @@ func (ds *UIHost) writePartialResult(w http.ResponseWriter, r *http.Request, ctx
 	// Carry page-owned metadata inside the cached primary payload. Attribute
 	// escaping keeps authored head HTML inert until the runtime selects safe
 	// meta/link elements; a script is never replayed on navigation.
-	lang := ds.App.LangForPath(path)
+	lang := ds.App.LangFor(ctx, path)
 	if c, ok := res.Component.(app.ScreenLanger); ok && c.ScreenLang() != "" {
 		lang = c.ScreenLang()
 	}
-	res.HTML = render.Join(res.HTML, render.Tag("template", map[string]string{"data-cui-page-head": markScreenHead(ds.screenHeadHTML(path, res.Component)), "data-cui-lang": lang, "data-cui-skip-label": ds.App.SkipLabelForPath(path)}))
+	res.HTML = render.Join(res.HTML, render.Tag("template", map[string]string{"data-cui-page-head": markScreenHead(ds.screenHeadHTML(path, res.Component)), "data-cui-lang": lang, "data-cui-dir": i18n.Dir(lang), "data-cui-skip-label": ds.App.SkipLabelFor(ctx, path)}))
 	// Fills envelope a fills-capable client that
 	// kept layout layers with tree-layout outlets gets the partial as an
 	// envelope — the seed island (scanned over the primary payload AND
@@ -4129,7 +4131,7 @@ func (ds *UIHost) serveMethodNotAllowedPage(w http.ResponseWriter, r *http.Reque
 	ctx := store.WithValues(app.WithRequest(r.Context(), r))
 	ds.finishPageDocument(w, r, ctx,
 		//gofastr:allow(GOFASTR1403) documentShell HTML-escapes the concatenated title; body is already rendered HTML.
-		render.HTML(ds.documentShell(path, "405: "+appName, string(body))), path, nil, http.StatusMethodNotAllowed)
+		render.HTML(ds.documentShell(ctx, path, "405: "+appName, string(body))), path, nil, http.StatusMethodNotAllowed)
 }
 
 // devStaticNoStore marks a project static response uncacheable while the
@@ -5182,13 +5184,13 @@ func (ds *UIHost) EffectiveLang() string {
 	return "en"
 }
 
-// LangForPath returns the document language for a host-built shell standing in
+// LangFor returns the document language for a host-built shell standing in
 // for path: WithLangFunc ([WithLangFunc]) first, then the app's own LangFunc
 // ([app.App.WithLangFunc]) so a site that configured its languages once on the
-// app gets them here too, then EffectiveLang. An empty path (a shell that
-// belongs to no route, such as the PWA offline page) skips straight to
-// EffectiveLang.
-func (ds *UIHost) LangForPath(path string) string {
+// app gets them here too, then the locale the request negotiated
+// (i18n.FromContext), then EffectiveLang. An empty path (a shell that belongs
+// to no route, such as the PWA offline page) skips the route rules.
+func (ds *UIHost) LangFor(ctx context.Context, path string) string {
 	if path != "" {
 		if ds.langFunc != nil {
 			if lang := strings.TrimSpace(ds.langFunc(path)); lang != "" {
@@ -5200,6 +5202,9 @@ func (ds *UIHost) LangForPath(path string) string {
 				return lang
 			}
 		}
+	}
+	if tag := i18n.FromContext(ctx).Tag; tag != "" {
+		return tag
 	}
 	return ds.EffectiveLang()
 }
@@ -5243,12 +5248,14 @@ func ReadCustomCSSFile(path string) string {
 // do on a registered screen. Title and lang are escaped here; body is
 // already-rendered HTML.
 //
-// path is the route the shell stands in for, and only decides the document
-// language (see LangForPath). Pass "" for a shell that belongs to no route.
-func (ds *UIHost) documentShell(path, title, body string) string {
+// path is the route the shell stands in for, and with ctx's negotiated
+// locale only decides the document language and direction (see LangFor).
+// Pass "" for a shell that belongs to no route.
+func (ds *UIHost) documentShell(ctx context.Context, path, title, body string) string {
+	lang := ds.LangFor(ctx, path)
 	return fmt.Sprintf(
-		`<!DOCTYPE html><html lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>%s</title></head><body>%s</body></html>`,
-		stdhtml.EscapeString(ds.LangForPath(path)), stdhtml.EscapeString(title), body)
+		`<!DOCTYPE html><html dir="%s" lang="%s"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>%s</title></head><body>%s</body></html>`,
+		i18n.Dir(lang), stdhtml.EscapeString(lang), stdhtml.EscapeString(title), body)
 }
 
 var screenMetaTagPrefix = regexp.MustCompile(`(?i)<(meta|link)\b`)

@@ -385,7 +385,7 @@ func (ds *UIHost) PWAOfflineHTML() string {
 	}
 	// Precached once, so it speaks the catalog's English: there is no
 	// reader to ask for a language at install time.
-	shell := ds.documentShell("", pageOfflineDocTitle.Text(context.Background(), map[string]any{"app": cfg.Name}), `<main role="main">`+string(body)+`</main>`)
+	shell := ds.documentShell(context.Background(), "", pageOfflineDocTitle.Text(context.Background(), map[string]any{"app": cfg.Name}), `<main role="main">`+string(body)+`</main>`)
 	// bundle=false (same as RenderStaticPage): component CSS must be
 	// direct per-component links. The bundle URL depends on the page's
 	// component set: precaching it would answer every OTHER page's

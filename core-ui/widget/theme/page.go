@@ -273,7 +273,7 @@ func PageCSS(t style.Theme) string {
 		Set(
 			"padding", "{spacing.sm} {spacing.md}",
 			"border-bottom", "{strokes.thin} solid {colors.border}",
-			"text-align", "left",
+			"text-align", "start",
 		).
 		End()
 	ss.Rule("body.kiln-app th").

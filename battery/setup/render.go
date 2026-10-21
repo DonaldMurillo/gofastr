@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -142,7 +143,7 @@ func (r *Runner) renderStep(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	body := r.buildStepForm(req.Context(), stepIdx, steps, nil)
-	r.writePage(w, body)
+	r.writePage(req.Context(), w, body)
 }
 
 // renderIncomplete writes an honest "steps ran, but setup is not complete"
@@ -165,25 +166,25 @@ func (r *Runner) renderIncomplete(ctx context.Context, w http.ResponseWriter, re
 			}),
 		),
 	})
-	r.writePage(w, body)
+	r.writePage(ctx, w, body)
 }
 
 // renderStepWithErrors writes the step page with validation errors.
 func (r *Runner) renderStepWithErrors(w http.ResponseWriter, req *http.Request, stepIdx int, errors map[string]string) {
 	body := r.buildStepForm(req.Context(), stepIdx, r.cfg.Steps, errors)
-	r.writePage(w, body)
+	r.writePage(req.Context(), w, body)
 }
 
 // renderCompletionPage writes the "all done" page.
 func (r *Runner) renderCompletionPage(w http.ResponseWriter, req *http.Request) {
-	r.writePage(w, r.buildCompletionPage(req.Context()))
+	r.writePage(req.Context(), w, r.buildCompletionPage(req.Context()))
 }
 
 // writePage emits a complete standalone HTML document. Mirrors the
 // battery/admin pattern: theme CSS tokens + registered component CSS
 // collected via registry.Scan, so every framework/ui component used in
 // the body is styled without any bespoke stylesheet.
-func (r *Runner) writePage(w http.ResponseWriter, body render.HTML) {
+func (r *Runner) writePage(ctx context.Context, w http.ResponseWriter, body render.HTML) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 
@@ -194,8 +195,14 @@ func (r *Runner) writePage(w http.ResponseWriter, body render.HTML) {
 
 	_ = comps // used by serveCSS via registry.Scan at request time
 
+	// The wizard speaks its phrases in the request's locale, so the
+	// document declares that language and its direction.
+	lang := i18n.FromContext(ctx).Tag
+	if lang == "" {
+		lang = "en"
+	}
 	fmt.Fprintf(w, `<!doctype html>
-<html lang="en">
+<html dir="%s" lang="%s">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -205,7 +212,7 @@ func (r *Runner) writePage(w http.ResponseWriter, body render.HTML) {
 <body>
 %s
 </body>
-</html>`, r.cfg.Title, cssLink, body)
+</html>`, i18n.Dir(lang), render.Escape(lang), r.cfg.Title, cssLink, body)
 }
 
 // serveCSS emits the combined stylesheet: theme :root tokens + the CSS

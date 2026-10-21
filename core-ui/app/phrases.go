@@ -9,4 +9,7 @@ var (
 	pageNotFoundTitle    = i18n.Define("app.not_found_title", "404: Page not found")
 	pageNotFoundBody     = i18n.Define("app.not_found_body", "This page does not exist.")
 	pageErrorDocTitle    = i18n.Define("app.error_doc_title", "Something went wrong")
+	// skipToMain is the app shell's skip link when the app sets no
+	// SkipLabel or SkipLabelFunc.
+	skipToMain = i18n.Define("app.skip_to_main", "Skip to main content")
 )

@@ -733,7 +733,8 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 	var b strings.Builder
 	// The frame's language is that of the app route it renders, not of the shell
 	// URL (/__gofastr/embed/<surface>), which matches no registered route.
-	b.WriteString("<!DOCTYPE html>\n<html lang=\"" + stdhtml.EscapeString(ds.LangForPath(s.Path())) + "\">\n<head>\n")
+	lang := ds.LangFor(r.Context(), s.Path())
+	b.WriteString("<!DOCTYPE html>\n<html dir=\"" + i18n.Dir(lang) + "\" lang=\"" + stdhtml.EscapeString(lang) + "\">\n<head>\n")
 	b.WriteString(`<meta charset="utf-8">` + "\n")
 	b.WriteString(`<meta name="viewport" content="width=device-width, initial-scale=1">` + "\n")
 	// An embed is a fragment of an app rendered inside someone else's page. It

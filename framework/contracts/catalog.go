@@ -165,6 +165,7 @@ const (
 	RuleDuplicateTokenValue = "GOFASTR1821"
 	RuleRepeatedLiteral     = "GOFASTR1822"
 	RuleBareThemeLiteral    = "GOFASTR1823"
+	RulePhysicalSide        = "GOFASTR1824"
 )
 
 // Permission rules.
@@ -1280,6 +1281,27 @@ func renderingRules() []Rule {
 			Good: "border: var(--stroke-thin, 1px) solid var(--color-border); " +
 				"transition: color var(--duration-fast, 150ms) var(--easing-ease-in-out, ease); " +
 				"padding: calc(var(--spacing-sm, 4px) * 1.5) calc(var(--spacing-sm, 4px) * 3); width: var(--ui-checkbox-box-size, 18px);",
+		}},
+	}, {
+		ID: RulePhysicalSide, Slug: "rendering/physical-side",
+		Title: "Kit CSS pins a physical side where a reading-direction one exists", Capability: CapRendering, Severity: SeverityError,
+		Summary: "Design-system CSS names left or right: a left/right offset, a margin, padding, scroll margin or border on one side, " +
+			"a corner radius, text-align, float or clear set to left or right, a background position on a side with no " +
+			"`:dir(rtl)` mirror in the file, or a four-value margin, padding, inset or border shorthand whose left and right differ. " +
+			"left: 50% and right: 50% (centring), auto, and a line that is itself a :dir() override pass. Dev tooling " +
+			"(framework/dev) is exempt.",
+		Why: "A page renders <html dir=\"rtl\"> for Arabic, Hebrew, Persian and the other right-to-left scripts. Logical " +
+			"properties follow that direction on their own; a physical one keeps the sidebar border, the list indent, the " +
+			"toast corner and the select chevron on the left-to-right side, so the kit looks broken to every right-to-left reader.",
+		Fix: "Write the logical property: inset-inline-start/end for left/right, margin-inline-start, padding-inline-end, " +
+			"border-inline-end, border-start-start-radius, text-align: start, float: inline-start, padding-block plus " +
+			"padding-inline for an asymmetric shorthand. A value with no logical spelling (a background position, a " +
+			"translateX travel) gets a :dir(rtl) override beside it. A side that must stay physical carries " +
+			"//gofastr:allow(GOFASTR1824) with the reason.",
+		Doc: "i18n",
+		Examples: []Example{{
+			Bad:  "border-right: var(--stroke-thin, 1px) solid var(--color-border); padding-left: var(--spacing-lg, 16px); text-align: left;",
+			Good: "border-inline-end: var(--stroke-thin, 1px) solid var(--color-border); padding-inline-start: var(--spacing-lg, 16px); text-align: start;",
 		}},
 	}}
 }
