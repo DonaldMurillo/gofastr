@@ -424,7 +424,10 @@ expose them to agents connected to a live app.**
   sink was the shape 23 kit sites hid. The
   gallery, `framework/sdkdocs` (the API reference, English like
   OpenAPI), `headless.Spec` examples and the `headless.Strings`
-  defaults table are exempt. The runtime's JS twin is
+  defaults table are exempt. Its `nativetext` arm covers the desktop
+  shells: a constant into `objc.NSString` or a Win32 menu, window or
+  message-box title is English on every OS language. The runtime's JS
+  twin is
   `core-ui/check.LintRuntimeProse`: literal prose into a toast,
   `textContent`, `aria-label` or `title` goes through `say()` and a
   phrase registered with `runtime.RegisterStrings`.

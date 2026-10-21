@@ -61,6 +61,13 @@
 //     core-ui/check LintRuntimeProse. A ScreenTitle or
 //     ScreenDescription method returning such a constant is the same
 //     shape: the method takes the request ctx, so return phrase.Text(ctx).
+//   - nativetext: prose handed to the OS by a desktop shell: the string
+//     argument of objc.NSString/NSStringErr, and the title or text of
+//     win32.SetWindowText, AppendMenu, MessageBox, CreateWindow and
+//     CreateWindowEx. The shell speaks the OS language
+//     (desktop.ShellContext), so render a phrase in that context and
+//     pass its text. AppKit keys and selectors ("CFBundleShortVersionString")
+//     read as no words and stay quiet.
 //   - numtext: a number turned into Go's digits (strconv.Itoa,
 //     FormatInt, FormatUint, FormatFloat, or fmt.Sprint/Sprintf of plain
 //     numbers) where a reader sees it: a value in a params map literal
@@ -241,8 +248,33 @@ func checkCall(pass *analysis.Pass, call *ast.CallExpr, bodies []*ast.BlockStmt,
 		}
 		reportNumberText(pass, call.Args[0], ui, "a number into the page")
 	}
+	if args, ok := nativeSinks[pkg][name]; ok {
+		for _, i := range args {
+			if i < len(call.Args) {
+				if s, ok := uiProse(pass, call.Args[i]); ok {
+					ui.reportf(call.Args[i], "%s(%q) hands English to the OS: define it as an i18n.Phrase at package level and pass phrase.Text of the shell's context (desktop.ShellContext)", name, s)
+				}
+			}
+		}
+	}
 	checkPhraseParams(pass, call, ui)
 	checkTextArgs(pass, call, ui)
+}
+
+// nativeSinks are the desktop shells' calls that hand a string to the OS
+// for a person to read (a menu row, a window title, an alert, a tooltip
+// through NSString), with the argument positions that carry it. The
+// shell renders its words in the OS language, so a constant here is
+// English on every machine. Keys and selectors passed to NSString
+// ("CFBundleShortVersionString") are not prose and stay quiet.
+var nativeSinks = map[string]map[string][]int{
+	module + "battery/desktop/internal/objc": {
+		"NSString": {0}, "NSStringErr": {0},
+	},
+	module + "battery/desktop/internal/win32": {
+		"SetWindowText": {1}, "AppendMenu": {3}, "MessageBox": {1, 2},
+		"CreateWindow": {1}, "CreateWindowEx": {2},
+	},
 }
 
 // uiPackage reports whether path declares components: types whose

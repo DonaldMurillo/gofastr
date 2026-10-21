@@ -189,6 +189,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `LintRuntimeProse` also reads a toast called with the optional-call
   spelling (`_toastOrFallback?.(`), a `+=` text write and a lone word
   ending in a colon (`'Error: '`).
+- **`rawtext` reads the desktop shells' native text.** Its `nativetext`
+  arm reports a constant passed to `objc.NSString` or used as the title
+  or text of a Win32 menu row, window or message box: the shell speaks
+  the OS language, so it passes a phrase's text.
 
 ### Changed
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,
