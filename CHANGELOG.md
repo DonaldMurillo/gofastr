@@ -7,6 +7,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.93.0] - 2026-10-20
+
+**BREAKING** for generated clients, endpoints and SQLite decimals.
+`entities/client/client.go` and the generated CLI are rebuilt from
+`entities/` on every build, and only `custom.go` in the CLI is yours.
+Custom endpoints move to `gofastr.settings.yml` with a linked typed
+handler, `kiln freeze` writes them in that shape, and the Go client,
+JS SDK and CLI each gain a typed call for them. An `Endpoint` route now requires a signed-in caller unless it sets
+`Public`, which replaces `MCPPublic`. The `sdk` and `cli` settings
+entries take YAML lists and refuse unknown keys. On SQLite, a decimal
+column answers as a JSON string, as it already did on Postgres. The
+generated clients upload Image and File fields. v0.93.0 also adds HTTPS
+serving, `InTx` options, tracing spans for SQL, jobs and outbound HTTP,
+content-hash static URLs and admin email previews. `gofastr upgrade`
+lists each change.
+
 ### Added
 - **Custom endpoints in `gofastr.settings.yml`.** An `endpoints:` entry
   names an entity, a method, a path relative to the entity, and a linked
