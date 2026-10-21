@@ -32,7 +32,7 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 			status = ui.ProgressStepCurrent
 		}
 		progressSteps[i] = ui.ProgressStep{
-			Label:  s.Name,
+			Label:  s.title(ctx),
 			Status: status,
 		}
 	}
@@ -56,7 +56,7 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 			inputValue = os.Getenv(f.EnvVar)
 		}
 		fields = append(fields, ui.FormFieldFor(ui.FieldErrors(fieldErrors), f.Name, ui.FormFieldConfig{
-			Label:    f.Label,
+			Label:    f.label(ctx),
 			For:      inputID,
 			Required: true,
 			Input: func(c headless.FieldControl) render.HTML {
@@ -103,11 +103,11 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 
 	// AuthCard wraps everything in a centered, constrained card.
 	return ui.AuthCard(ui.AuthCardConfig{
-		Title: r.cfg.Title,
+		Title: r.cfg.Title.Text(ctx),
 		Alert: alert,
 		Body: ui.Stack(ui.StackConfig{Gap: ui.GapMD},
 			progress,
-			html.Heading(html.HeadingConfig{Level: 2}, render.Text(currentStep.Name)),
+			html.Heading(html.HeadingConfig{Level: 2}, render.Text(currentStep.title(ctx))),
 			formBody,
 		),
 	})
@@ -116,7 +116,7 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 // buildCompletionPage renders the "all done" body.
 func (r *Runner) buildCompletionPage(ctx context.Context) render.HTML {
 	return ui.AuthCard(ui.AuthCardConfig{
-		Title: r.cfg.Title,
+		Title: r.cfg.Title.Text(ctx),
 		Body: ui.Stack(ui.StackConfig{Gap: ui.GapMD},
 			html.Heading(html.HeadingConfig{Level: 2}, render.Text(pageCompleteTitle.Text(ctx))),
 			html.Paragraph(html.TextConfig{}, render.Text(pageCompleteBody.Text(ctx))),
@@ -152,7 +152,7 @@ func (r *Runner) renderStep(w http.ResponseWriter, req *http.Request) {
 // operator on a lie.
 func (r *Runner) renderIncomplete(ctx context.Context, w http.ResponseWriter, reason string) {
 	body := ui.AuthCard(ui.AuthCardConfig{
-		Title: r.cfg.Title,
+		Title: r.cfg.Title.Text(ctx),
 		Alert: ui.Notification(ui.NotificationConfig{
 			Title:   pageNotCompleteTitle.Text(ctx),
 			Body:    reason,
@@ -197,10 +197,7 @@ func (r *Runner) writePage(ctx context.Context, w http.ResponseWriter, body rend
 
 	// The wizard speaks its phrases in the request's locale, so the
 	// document declares that language and its direction.
-	lang := i18n.FromContext(ctx).Tag
-	if lang == "" {
-		lang = "en"
-	}
+	lang := i18n.DocLang(ctx)
 	fmt.Fprintf(w, `<!doctype html>
 <html dir="%s" lang="%s">
 <head>
@@ -212,7 +209,7 @@ func (r *Runner) writePage(ctx context.Context, w http.ResponseWriter, body rend
 <body>
 %s
 </body>
-</html>`, i18n.Dir(lang), render.Escape(lang), r.cfg.Title, cssLink, body)
+</html>`, i18n.Dir(lang), render.Escape(lang), render.Escape(r.cfg.Title.Text(ctx)), cssLink, body)
 }
 
 // serveCSS emits the combined stylesheet: theme :root tokens + the CSS

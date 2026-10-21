@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -13,6 +12,8 @@ import (
 
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // RecommendedMinPasswordBytes is the minimum length application
@@ -26,11 +27,11 @@ const RecommendedMinPasswordBytes = 8
 // ErrPasswordEmpty is returned by HashPassword when the input is the
 // empty string, a blank field at signup would be silently accepted
 // otherwise, and every login attempt with no password would match.
-var ErrPasswordEmpty = errors.New("auth: password is empty")
+var ErrPasswordEmpty error = i18n.NewError(reasonPasswordEmpty)
 
 // ErrPasswordTooShort is returned by ValidatePasswordStrength when the
 // input is shorter than RecommendedMinPasswordBytes.
-var ErrPasswordTooShort = errors.New("auth: password too short")
+var ErrPasswordTooShort error = i18n.NewError(reasonPasswordTooShortField)
 
 // PasswordHasher hashes and verifies passwords. The package ships two
 // implementations: [BcryptHasher] (the default, what HashPassword has always

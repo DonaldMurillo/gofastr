@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -49,7 +50,9 @@ type MagicLinkConfig struct {
 	// Note: MagicLinkEmailSender's interface still takes (to, link).
 	// Implementations decide whether to wrap the link in HTML; this
 	// hook is the bridge for ones that just blast the body verbatim.
-	BodyTemplate func(url string) string
+	// ctx is the request's, so it carries the reader's locale: render
+	// the body from your phrases with it (i18n.Phrase.Text).
+	BodyTemplate func(ctx context.Context, url string) string
 
 	// BaseURL is the application base URL used to construct magic links
 	// (e.g. "http://localhost:8080").
@@ -84,8 +87,10 @@ type MagicLinkConfig struct {
 	// too and should not pay for it.
 	//
 	// The form MUST POST `token` back to the same path. See
-	// ConfirmPageData.
-	ConfirmPage func(ConfirmPageData) []byte
+	// ConfirmPageData. ctx is the request's: it carries the caller's
+	// locale, so the page's phrases resolve in the caller's language and
+	// i18n.DocLang(ctx) is its <html lang>.
+	ConfirmPage func(ctx context.Context, d ConfirmPageData) []byte
 
 	// DevMode permits the plugin to operate without an EmailSender by
 	// logging the magic-link URL to stdout. Without this flag, a nil
@@ -463,7 +468,7 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	case p.config.EmailSender != nil:
 		linkBody := magicLinkURL
 		if p.config.BodyTemplate != nil {
-			linkBody = p.config.BodyTemplate(magicLinkURL)
+			linkBody = p.config.BodyTemplate(r.Context(), magicLinkURL)
 		}
 		if err := p.config.EmailSender.SendMagicLink(r.Context(), body.Email, linkBody); err != nil {
 			writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToSendEmail)
@@ -521,12 +526,10 @@ type ConfirmPageData struct {
 	// CSRFField is a ready-to-embed hidden input carrying the CSRF
 	// token, or "" when the route is not behind CSRF middleware.
 	//
-	// A custom ConfirmPage MUST render this inside its form. It exists
-	// because ConfirmPageData carries no request and no context, so a
-	// custom page had no way to reach CSRFInputHTML, which meant that
+	// A custom ConfirmPage MUST render this inside its form. Without it,
 	// with auth.CSRF() mounted (WithBFFPosture does this app-wide), the
-	// only button on the confirmation page returned 403, and passwordless
-	// sign-in was unreachable.
+	// only button on the confirmation page returns 403 and passwordless
+	// sign-in is unreachable.
 	CSRFField template.HTML
 }
 
@@ -587,9 +590,9 @@ func (p *MagicLinkPlugin) confirmHandler(w http.ResponseWriter, r *http.Request)
 	}
 	var body []byte
 	if p.config.ConfirmPage != nil {
-		body = p.config.ConfirmPage(data)
+		body = p.config.ConfirmPage(r.Context(), data)
 	} else {
-		body = defaultConfirmPage(data)
+		body = defaultConfirmPage(r.Context(), data)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
@@ -602,11 +605,23 @@ func (p *MagicLinkPlugin) confirmHandler(w http.ResponseWriter, r *http.Request)
 
 // defaultConfirmPage is the unstyled fallback. It ships no CSS and no
 // class names: styling belongs to the app, which supplies
-// MagicLinkConfig.ConfirmPage built from the design system.
-func defaultConfirmPage(d ConfirmPageData) []byte {
-	who := "this account"
+// MagicLinkConfig.ConfirmPage built from the design system. Its words
+// are phrases in the caller's locale, and the document declares that
+// language and its direction.
+func defaultConfirmPage(ctx context.Context, d ConfirmPageData) []byte {
+	// The address is what lets a user notice a link meant for someone
+	// else, so it stays emphasised wherever the translation puts it: the
+	// sentence is escaped whole, then the escaped address inside it is
+	// wrapped. Both pieces are escaped, so the wrap adds no markup the
+	// requester controls.
+	who := confirmThisAccount.Text(ctx)
 	if d.Email != "" {
-		who = html.EscapeString(d.Email)
+		who = d.Email
+	}
+	whoHTML := html.EscapeString(who)
+	ask := html.EscapeString(confirmAs.Text(ctx, map[string]any{"who": who}))
+	if d.Email != "" {
+		ask = strings.Replace(ask, whoHTML, "<strong>"+whoHTML+"</strong>", 1)
 	}
 	// action is a URL attribute: HTML escaping is scheme-blind, so the
 	// value goes through the one scheme allow-list (urlsafe.CleanAnchor,
@@ -615,23 +630,25 @@ func defaultConfirmPage(d ConfirmPageData) []byte {
 	// somehow fails the allow-list renders an empty action, which posts
 	// to the current URL and is refused by the verify handler.
 	action := urlsafe.CleanAnchor(d.Action)
+	lang := i18n.DocLang(ctx)
+	title := html.EscapeString(confirmTitle.Text(ctx))
 	return []byte(`<!doctype html>
-<html lang="en">
+<html lang="` + html.EscapeString(lang) + `" dir="` + i18n.Dir(lang) + `">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>Confirm sign-in</title>
+<title>` + title + `</title>
 </head>
 <body>
 <main>
-<h1>Confirm sign-in</h1>
-<p>Continue to sign in as <strong>` + who + `</strong>?</p>
-<p>If you did not request this link, close this page: someone else may be trying to sign you into their account.</p>
+<h1>` + title + `</h1>
+<p>` + ask + `</p>
+<p>` + html.EscapeString(confirmWarning.Text(ctx)) + `</p>
 <form method="post" action="` + html.EscapeString(action) + `">
 <input type="hidden" name="token" value="` + html.EscapeString(d.Token) + `">
 ` + string(d.CSRFField) + `
-<button type="submit">Sign in</button>
+<button type="submit">` + html.EscapeString(confirmSubmit.Text(ctx)) + `</button>
 </form>
 </main>
 </body>

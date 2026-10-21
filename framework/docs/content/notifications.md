@@ -104,10 +104,34 @@ per-notification overrides don't need a custom Channel. A templated
 override is a spoofing vector, so the channel's configured from-address
 is the only legitimate source.
 
-For larger apps with translations, render templates yourself via the
-`core/i18n` package and pass the result via `Data["_rendered_email"]`
-/ `Data["_rendered"]`; the Notifier short-circuits the templater for
-that channel.
+## Translated notifications
+
+`MapTemplater` text is fixed. For a message in the recipient's
+language, set `Recipient.Locale` (a BCP 47 tag, usually from the
+user's profile) and implement `Templater` with `i18n` phrases. The
+Notifier runs the templater and the channel under that locale, so the
+message speaks the recipient's language, not the language of the
+request that triggered it. A tag the catalog lacks falls back to the
+catalog's fallback; an empty `Locale` keeps the caller's.
+
+```go
+var welcomeSubject = i18n.Define("myapp.welcome_subject", "Welcome, {{name}}")
+
+type phraseTemplater struct{}
+
+func (phraseTemplater) Render(ctx context.Context, typ, channel string, data map[string]any) (notify.Rendered, error) {
+    return notify.Rendered{Subject: welcomeSubject.Text(ctx, data)}, nil
+}
+
+n.Send(ctx, notify.Notification{
+    Type: "welcome",
+    To:   notify.Recipient{UserID: u.ID, Email: u.Email, Locale: u.Locale},
+    Data: map[string]any{"name": u.Name},
+})
+```
+
+A body rendered elsewhere can still skip the templater through
+`Data["_rendered_email"]` / `Data["_rendered"]`.
 
 ## Writing a channel
 

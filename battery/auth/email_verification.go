@@ -40,7 +40,9 @@ type EmailVerificationConfig struct {
 	// BodyTemplate, when non-nil, transforms the verification URL into
 	// the full email body before EmailSender.Send is called. nil means
 	// "send the URL as the entire body" (the historical behavior).
-	BodyTemplate func(url string) string
+	// ctx is the request's, so it carries the reader's locale: render
+	// the body from your phrases with it (i18n.Phrase.Text).
+	BodyTemplate func(ctx context.Context, url string) string
 	// TokenStore persists pending verification tokens. Defaults to in-memory
 	// (does not survive restart / scale), set a durable store
 	// (e.g. NewSQLMagicLinkTokenStore(db)) in production.
@@ -163,7 +165,7 @@ func (p *EmailVerificationPlugin) sendHandler(w http.ResponseWriter, r *http.Req
 	case p.cfg.EmailSender != nil:
 		emailBody := verifyURL
 		if p.cfg.BodyTemplate != nil {
-			emailBody = p.cfg.BodyTemplate(verifyURL)
+			emailBody = p.cfg.BodyTemplate(r.Context(), verifyURL)
 		}
 		if err := p.cfg.EmailSender.Send(r.Context(), user.GetEmail(), emailBody); err != nil {
 			writeAuthError(w, r, http.StatusInternalServerError, reasonEmailSendFailed)

@@ -24,6 +24,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 func TestSetupRedSameSiteOriginRefused(t *testing.T) {
@@ -34,8 +36,8 @@ func TestSetupRedSameSiteOriginRefused(t *testing.T) {
 		Steps: []Step{{
 			Name: "Create Admin",
 			Fields: []Field{
-				{Name: "ADMIN_EMAIL", Label: "Admin email"},
-				{Name: "ADMIN_PASSWORD", Label: "Admin password", Secret: true},
+				{Name: "ADMIN_EMAIL", Label: i18n.Define("setup_test.admin_email", "Admin email")},
+				{Name: "ADMIN_PASSWORD", Label: i18n.Define("setup_test.admin_password", "Admin password"), Secret: true},
 			},
 			Run: func(_ context.Context, values map[string]string) error {
 				ran = true

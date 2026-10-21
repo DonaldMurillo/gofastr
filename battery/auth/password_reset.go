@@ -48,7 +48,10 @@ type PasswordResetConfig struct {
 	// BodyTemplate, when non-nil, transforms the reset URL into the
 	// full email body before EmailSender.Send is called. nil means
 	// "send the URL as the entire body" (the historical behavior).
-	BodyTemplate func(url string) string
+	// ctx is the request's (for a reset, a detached copy that keeps its
+	// values), so it carries the reader's locale: render the body from
+	// your phrases with it (i18n.Phrase.Text).
+	BodyTemplate func(ctx context.Context, url string) string
 
 	// DevMode logs the reset URL when EmailSender is nil. NEVER enable in
 	// production, anyone with log read access then resets arbitrary
@@ -368,7 +371,7 @@ func (p *PasswordResetPlugin) sendResetEmail(delivery passwordResetDelivery) {
 
 	body := delivery.resetURL
 	if p.cfg.BodyTemplate != nil {
-		body = p.cfg.BodyTemplate(delivery.resetURL)
+		body = p.cfg.BodyTemplate(ctx, delivery.resetURL)
 	}
 	if err := p.cfg.EmailSender.Send(ctx, delivery.to, body); err != nil {
 		// The client still receives the anti-enumeration 200. Log hashed

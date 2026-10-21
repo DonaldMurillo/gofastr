@@ -60,8 +60,8 @@ type searchScreen struct {
 	path string
 }
 
-// ScreenTitle names the page.
-func (s *searchScreen) ScreenTitle() string { return "Search" }
+// ScreenTitle names the page with its heading's word.
+func (s *searchScreen) ScreenTitle(ctx context.Context) string { return i18nui.SearchLabel.Text(ctx) }
 
 // ScreenRobots keeps the page out of crawlers and out of the index.
 func (s *searchScreen) ScreenRobots() string { return "noindex" }
