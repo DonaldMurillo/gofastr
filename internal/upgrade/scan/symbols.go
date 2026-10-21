@@ -286,7 +286,17 @@ func (e *engine) defsPackage(p *packages.Package) {
 			continue
 		}
 		for _, w := range wants {
-			if w.sym.Member != id.Name || !typeImplements(sig.Recv().Type(), w.iface) {
+			if w.sym.Member != id.Name {
+				continue
+			}
+			// Against the bumped kit an implementation still spelling the
+			// old shape no longer implements the interface, and an
+			// optional one (app.ScreenTitler) breaks no assertion either.
+			// A shapes entry reads it anyway when the method is all the
+			// type misses: it implements every other method.
+			sws := e.shapeIndex[w.sym]
+			impl := typeImplements(sig.Recv().Type(), w.iface)
+			if !impl && (len(sws) == 0 || !typeImplements(sig.Recv().Type(), interfaceWithout(w.iface, w.sym.Member))) {
 				continue
 			}
 			pos := p.Fset.Position(id.Pos())
@@ -294,13 +304,15 @@ func (e *engine) defsPackage(p *packages.Package) {
 			if !ok {
 				continue
 			}
-			for _, n := range e.symIndex[w.sym] {
-				e.addGo(n, Hit{File: rel, Line: pos.Line, Col: pos.Column, Why: w.sym.String()})
+			if impl {
+				for _, n := range e.symIndex[w.sym] {
+					e.addGo(n, Hit{File: rel, Line: pos.Line, Col: pos.Column, Why: w.sym.String()})
+				}
 			}
 			// A shapes entry reads the implementation's own signature: an
 			// app method still spelling the old shape is the hit, one
 			// already ported is not.
-			if sws := e.shapeIndex[w.sym]; len(sws) > 0 {
+			if len(sws) > 0 {
 				ts := shapeString(sig)
 				for _, sw := range sws {
 					if sw.re.MatchString(ts) {
@@ -369,6 +381,17 @@ func (e *engine) lookupNamed(sym upgrade.Symbol, load int) *types.Named {
 		return nil
 	}
 	return named
+}
+
+// interfaceWithout is iface less its method named member.
+func interfaceWithout(iface *types.Interface, member string) *types.Interface {
+	var ms []*types.Func
+	for i := 0; i < iface.NumMethods(); i++ {
+		if m := iface.Method(i); m.Name() != member {
+			ms = append(ms, m)
+		}
+	}
+	return types.NewInterfaceType(ms, nil).Complete()
 }
 
 // typeImplements reports whether the receiver type, or its pointer,

@@ -809,29 +809,39 @@ notes:
     breaking: true
     hits: edit
     find:
-      uses:
-        - gofastr/battery/auth.PasswordResetConfig.BodyTemplate
-        - gofastr/battery/auth.EmailVerificationConfig.BodyTemplate
-        - gofastr/battery/auth.MagicLinkConfig.BodyTemplate
-        - gofastr/battery/auth.MagicLinkConfig.ConfirmPage
+      shapes:
+        - symbol: gofastr/battery/auth.PasswordResetConfig.BodyTemplate
+          type: '^func\(url string\) string$'
+        - symbol: gofastr/battery/auth.EmailVerificationConfig.BodyTemplate
+          type: '^func\(url string\) string$'
+        - symbol: gofastr/battery/auth.MagicLinkConfig.BodyTemplate
+          type: '^func\(url string\) string$'
+        - symbol: gofastr/battery/auth.MagicLinkConfig.ConfirmPage
+          type: '^func\(auth\.ConfirmPageData\) \[\]byte$'
     guidance: "Add ctx as the first parameter. It carries the locale of the request that asked for the mail, so a phrase rendered in it reads in that person's language: resetBody.Text(ctx, map[string]any{\"url\": url})."
   - change: "desktop.PlanMenuBar, desktop.PlanTrayMenu and Battery.OpenSettings take a context first, and WindowConfig.OnSettings is func(ctx context.Context)"
     breaking: true
     hits: edit
     find:
-      uses:
-        - gofastr/battery/desktop.PlanMenuBar
-        - gofastr/battery/desktop.PlanTrayMenu
-        - gofastr/battery/desktop.Battery.OpenSettings
-        - gofastr/battery/desktop.WindowConfig.OnSettings
+      shapes:
+        - symbol: gofastr/battery/desktop.PlanMenuBar
+          type: '^func\(appTitle string, m \*desktop\.Menu, hasSettings bool\) \(plans \[\]desktop\.MenuPlan, actionIDs \[\]string\)$'
+        - symbol: gofastr/battery/desktop.PlanTrayMenu
+          type: '^func\(t \*desktop\.Tray, appTitle string, actionIDs \*\[\]string\) \[\]desktop\.MenuItemPlan$'
+        - symbol: gofastr/battery/desktop.Battery.OpenSettings
+          type: '^func\(\) \(desktop\.Window, error\)$'
+        - symbol: gofastr/battery/desktop.WindowConfig.OnSettings
+          type: '^func\(\)$'
     guidance: "A shell plans its menus under desktop.ShellContext(ctx, preferredLanguages), which carries the locale the shell's own words speak; pass the same ctx to OnSettings. App code calling OpenSettings passes the request or shell context."
   - change: "setup.Field.Label and setup.Config.Title are i18n.Phrase; setup.Step gains Title"
     breaking: true
     hits: edit
     find:
-      uses:
-        - gofastr/battery/setup.Field.Label
-        - gofastr/battery/setup.Config.Title
+      shapes:
+        - symbol: gofastr/battery/setup.Field.Label
+          type: '^string$'
+        - symbol: gofastr/battery/setup.Config.Title
+          type: '^string$'
     guidance: "Define the words at package level, var adminEmail = i18n.Define(\"myapp.setup.admin_email\", \"Admin email\"), and set Label: adminEmail. Leave it zero to show the field's Name, or for Config.Title the built-in \"Setup\"."
   - change: "auth.ErrPasswordEmpty and auth.ErrPasswordTooShort are *i18n.Error; their text loses the auth: prefix"
     breaking: true
