@@ -63,12 +63,13 @@ func Pseudo(s string) string {
 	return b.String()
 }
 
-// AddPseudo puts Pseudo of every default into c under tag (en-XA is the
-// usual pseudo-locale tag), so a page rendered in that locale shows any
-// text that skipped the catalog as plain English and any layout that
-// cannot take longer words as overflow.
+// AddPseudo puts Pseudo of every defined phrase ([i18n.Phrases]) into c
+// under tag (en-XA is the usual pseudo-locale tag), so a page rendered in
+// that locale shows any text that skipped the catalog as plain English
+// and any layout that cannot take longer words as overflow.
 func AddPseudo(c *i18n.MapCatalog, tag string) {
-	for _, k := range slices.Sorted(maps.Keys(Defaults)) {
-		c.Set(tag, string(k), i18n.Message{Text: Pseudo(Defaults[k])})
+	phrases := i18n.Phrases()
+	for _, k := range slices.Sorted(maps.Keys(phrases)) {
+		c.Set(tag, k, i18n.Message{Text: Pseudo(phrases[k])})
 	}
 }

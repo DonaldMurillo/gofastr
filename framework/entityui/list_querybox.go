@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -44,12 +45,12 @@ func (b *ListBuilder) queryField(ctx context.Context, s *listState) render.HTML 
 	example := queryExample(queryable)
 	var ref []ui.DetailItem
 	if example != "" {
-		ref = append(ref, ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyEntityQueryBoxExample), Value: ui.InlineCode(example)})
+		ref = append(ref, ui.DetailItem{Label: i18nui.EntityQueryBoxExample.Text(ctx), Value: ui.InlineCode(example)})
 	}
 	ref = append(ref,
-		ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyEntityQueryBoxOperators), Value: codeRun(queryOperators...)},
-		ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyEntityQueryBoxJoin), Value: codeRun("and", "or", "( )")},
-		ui.DetailItem{Label: i18nui.T(ctx, i18nui.KeyEntityQueryBoxFields), Value: codeRun(names...)},
+		ui.DetailItem{Label: i18nui.EntityQueryBoxOperators.Text(ctx), Value: codeRun(queryOperators...)},
+		ui.DetailItem{Label: i18nui.EntityQueryBoxJoin.Text(ctx), Value: codeRun("and", "or", "( )")},
+		ui.DetailItem{Label: i18nui.EntityQueryBoxFields.Text(ctx), Value: codeRun(names...)},
 	)
 	rows, box := filterRowsOf(s)
 	return render.Join(
@@ -57,10 +58,10 @@ func (b *ListBuilder) queryField(ctx context.Context, s *listState) render.HTML 
 		ui.TextField(ui.TextFieldConfig{
 			Name:        s.p.filter,
 			ID:          "eui-" + listIDSafe(s.key, m.name) + "-filter",
-			Label:       i18nui.T(ctx, i18nui.KeyEntityQueryBoxField),
+			Label:       i18nui.EntityQueryBoxField.Text(ctx),
 			Value:       box,
 			Placeholder: example,
-			Help:        i18nui.T(ctx, i18nui.KeyEntityQueryBoxHelp),
+			Help:        i18nui.EntityQueryBoxHelp.Text(ctx),
 		}),
 		ui.DetailList(ui.DetailListConfig{Items: ref}),
 	)
@@ -70,15 +71,15 @@ func (b *ListBuilder) queryField(ctx context.Context, s *listState) render.HTML 
 // with its name.
 var rowOps = []struct {
 	op  string
-	key i18nui.Key
+	key i18n.Phrase
 }{
-	{"=", i18nui.KeyEntityFilterOpEq},
-	{"!=", i18nui.KeyEntityFilterOpNe},
-	{"contains", i18nui.KeyEntityFilterOpLike},
-	{">", i18nui.KeyEntityFilterOpGt},
-	{"<", i18nui.KeyEntityFilterOpLt},
-	{">=", i18nui.KeyEntityFilterOpGte},
-	{"<=", i18nui.KeyEntityFilterOpLte},
+	{"=", i18nui.EntityFilterOpEq},
+	{"!=", i18nui.EntityFilterOpNe},
+	{"contains", i18nui.EntityFilterOpLike},
+	{">", i18nui.EntityFilterOpGt},
+	{"<", i18nui.EntityFilterOpLt},
+	{">=", i18nui.EntityFilterOpGte},
+	{"<=", i18nui.EntityFilterOpLte},
 }
 
 // maxFilterRows caps the rows one submit reads.
@@ -101,7 +102,7 @@ func rowTerms(m *meta, fields, ops, values []string) []string {
 		v := strings.TrimSpace(values[i])
 		if v == "" || len([]rune(v)) > maxFilterRowValue || !slices.ContainsFunc(rowOps, func(o struct {
 			op  string
-			key i18nui.Key
+			key i18n.Phrase
 		}) bool {
 			return o.op == ops[i]
 		}) {
@@ -183,7 +184,7 @@ func filterRowsField(ctx context.Context, s *listState, queryable []schema.Field
 	fields = append(fields, system...)
 	ops := make([]ui.SelectOption, 0, len(rowOps))
 	for _, o := range rowOps {
-		ops = append(ops, ui.SelectOption{Value: o.op, Text: i18nui.T(ctx, o.key)})
+		ops = append(ops, ui.SelectOption{Value: o.op, Text: o.key.Text(ctx)})
 	}
 	return ui.FilterRows(ui.FilterRowsConfig{
 		ID:         "eui-" + listIDSafe(s.key, s.m.name) + "-rows",
@@ -193,10 +194,10 @@ func filterRowsField(ctx context.Context, s *listState, queryable []schema.Field
 		Fields:     fields,
 		Operators:  ops,
 		Rows:       rows,
-		Legend:     i18nui.T(ctx, i18nui.KeyEntityFilterRows),
-		FieldLabel: i18nui.T(ctx, i18nui.KeyEntityFilterRowField),
-		OpLabel:    i18nui.T(ctx, i18nui.KeyEntityFilterRowOp),
-		ValueLabel: i18nui.T(ctx, i18nui.KeyEntityFilterRowValue),
+		Legend:     i18nui.EntityFilterRows.Text(ctx),
+		FieldLabel: i18nui.EntityFilterRowField.Text(ctx),
+		OpLabel:    i18nui.EntityFilterRowOp.Text(ctx),
+		ValueLabel: i18nui.EntityFilterRowValue.Text(ctx),
 		Ctx:        ctx,
 	})
 }

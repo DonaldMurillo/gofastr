@@ -272,8 +272,8 @@
     if (ttl > 0) item.setAttribute('data-hui-toast-ttl-ms', String(acted ? Math.max(ttl, 10000) : ttl));
     const dismiss = root.querySelector('[data-hui-toast-dismiss]');
     if (dismiss) {
-      const fmt = readWord(container, tpl, 'data-hui-toast-dismiss-label') || '%s';
-      dismiss.setAttribute('aria-label', fmt.replace('%s', () => cfg.title));
+      const fmt = readWord(container, tpl, 'data-hui-toast-dismiss-label') || '{{title}}';
+      dismiss.setAttribute('aria-label', fmt.replace('{{title}}', () => cfg.title));
     }
     container.appendChild(item);
 
@@ -321,7 +321,7 @@
     const status = wrap.querySelector('[data-hui-copy-status]');
     if (status) {
       const name = wrap.getAttribute('data-hui-copy-name') || id || '';
-      const sentence = (wrap.getAttribute('data-hui-copy-sentence') || '').replace('{name}', () => name);
+      const sentence = (wrap.getAttribute('data-hui-copy-sentence') || '').replace('{{name}}', () => name);
       status.textContent = '';
       requestAnimationFrame(() => { status.textContent = sentence; });
     }

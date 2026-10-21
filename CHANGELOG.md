@@ -44,9 +44,47 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `http.Error`, `i18n.Define` in a function body or with computed text,
   `handler.Errorf` and `handler.Error{Message: ...}`, a response helper
   that takes a `msg string`, a JSON envelope whose `error` or `message`
-  is prose or `err.Error()`, and a constant JSON body written straight
-  to the response with a prose message. A deliberate site carries
-  `//gofastr:allow(rawtext) <why>`.
+  is prose or `err.Error()`, a status-bearing JSON struct body (RFC 9457)
+  whose `title` or `detail` is prose, and a constant JSON body written
+  straight to the response with a prose message. It also refuses English
+  in markup: `render.Text` of a prose constant, an `aria-label`, `title`,
+  `placeholder` or `alt` attribute written as a constant, and a constant
+  in a reader-facing field of a `framework/ui`, `framework/headless`,
+  `framework/entityui` or `core-ui` type (`Label`, `Heading`, `Hint`,
+  and any field ending in `Label`, `Title`, `Text` or `Placeholder`). A
+  deliberate site carries
+  `//gofastr:allow(rawtext) <why>`. `core-ui/check.LintRuntimeProse` is
+  the runtime JavaScript twin: literal prose written into a toast, a
+  `textContent`, an `aria-label` or a `title`.
+- **Every component word is a phrase.** All of `framework/ui`'s labels,
+  hints and screen-reader text are `i18n.Phrase` vars in
+  `framework/i18nui` (`i18nui.PaginationNext`, `i18nui.KeyCtrl`, ...),
+  under the same `ui.*` keys a catalog already used, so a catalog
+  translates them as before. Newly translatable: keycap words in
+  `ShortcutHint` (`ui.key.*`, so German can say `Strg`), the pricing
+  card's badge and default button, and the code block's labels and copy
+  button. `PricingCard`, `ShortcutHint`, `Button` and `CodeBlock` take a
+  `Ctx` field for the reader's locale. `i18n.Fill` fills `{{name}}`
+  placeholders in a plain string, and `i18nui.HTML` does it for a line
+  that carries markup.
+- **Framework pages speak the reader's language.** The fallback 404, 405,
+  500 and offline pages, the uihost problem documents (now with `reason`
+  beside `title` and `detail`), the API 404, the setup wizard, the
+  desktop settings screen and sidebar, the static-export preview banner,
+  the process-module UI renderer, local entities' validation messages
+  and the passkey prompts all read from phrases.
+- **Runtime strings.** The runtime's own words (a failed request's toast,
+  a navigation that could not load, the embed error, local-entity
+  validation) are phrases registered with `runtime.RegisterStrings`. The
+  host writes the ones the reader's locale translates into a
+  `#gofastr-strings` JSON block, and the runtime's `say(key, english,
+  params)` reads it. A test holds every `say` call in the repo's
+  JavaScript to a registered phrase with the same English.
+- **`i18n.CheckCatalog`.** Compares a locale's catalog with every phrase
+  the program defines and reports unknown keys, placeholder sets that
+  differ from the English, and phrases missing under a `Require`d
+  prefix. `i18n.Skip` leaves out the app's own data keys (`entity.`,
+  `nav.`). See `gofastr docs i18n` → "Checking a catalog".
 
 ### Changed
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,
@@ -96,6 +134,26 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `entityui.*` phrases (`entityui.bulk_none`, `entityui.override_denied`)
   whose placeholders use the double-brace spelling (`{{cap}}`,
   `{{entity}}`).
+- **BREAKING: `i18nui` keys are phrases.** The `i18nui.Key` type, its
+  `Key*` constants, `Defaults`, `T`, `TVars`, `TVarsHTML` and `AllKeys`
+  are gone. Each key is now a phrase var named without the `Key` prefix
+  (`i18nui.KeyPaginationNext` is `i18nui.PaginationNext`); say it with
+  `.Text(ctx)` or `.Text(ctx, params)`, and use `i18nui.HTML` where
+  `TVarsHTML` took markup. The catalog keys are unchanged.
+- **BREAKING: placeholders are `{{name}}`.** Component phrases,
+  `headless.Strings` fields and `localentity.Messages` spell a
+  placeholder `{{name}}` where they spelled `{n}`, `{label}` or `%s`. A
+  catalog entry or a `Strings` value that still uses the old spelling
+  shows it literally.
+- **BREAKING: `ui.CheckStrings` and `ui.StringsRefusal` are removed.**
+  `i18n.CheckCatalog` checks every phrase, components included.
+- **BREAKING: smaller removals and signatures.**
+  `headless.Strings.MultiSelectRemoveLabel` is gone; the multi-select
+  chip's remove control uses `RemoveLabelled`, as the tag input does. `localentity.DefaultMessages` is
+  gone; an empty `Messages` field uses the `localentity.*` phrase.
+  `entityui.AccessDeniedTitle` is an `i18n.Phrase`, not a string
+  constant. `ui.ShortcutList(ctx, items)` and `uinoderender.New(ctx,
+  resolve)` take a context.
 
 ### Fixed
 - **`DBQueue` index names on long table names.** Postgres cuts

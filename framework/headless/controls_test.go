@@ -190,7 +190,7 @@ func TestRangeSliderPairContract(t *testing.T) {
 	for _, want := range []string{
 		`name="price-min"`, `name="price-max"`,
 		`aria-label="Minimum Price"`, `aria-label="Maximum Price"`,
-		`data-hui-range-slider-output="%s to %s"`,
+		`data-hui-range-slider-output="{{low}} to {{high}}"`,
 		`>20 to 80</output>`,
 	} {
 		has(t, got, want, "the pair's wiring is incomplete")

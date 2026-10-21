@@ -27,7 +27,7 @@ func TestRecordPanickingTabFailsTabOnly(t *testing.T) {
 		RenderCtx(x.userCtx("/rec/invoices/inv-1", "?tab=boom", "u1")))
 
 	// The slot message renders HTML-escaped (Couldn&#39;t).
-	want := strings.ReplaceAll(i18nui.Defaults[i18nui.KeyEntitySlotFailed], "'", "&#39;")
+	want := strings.ReplaceAll(i18nui.EntitySlotFailed.English(), "'", "&#39;")
 	if !strings.Contains(body, want) {
 		t.Fatalf("the panicking tab shows the slot message:\n%s", body)
 	}
@@ -70,7 +70,7 @@ func TestRecordTabsAreQueryLinks(t *testing.T) {
 	}
 	// An unknown key falls back to Edit's body, not a failure.
 	unknown := render("nonsense")
-	if strings.Contains(unknown, i18nui.Defaults[i18nui.KeyEntitySlotFailed]) && strings.Contains(unknown, `?tab=nonsense`) {
+	if strings.Contains(unknown, i18nui.EntitySlotFailed.English()) && strings.Contains(unknown, `?tab=nonsense`) {
 		t.Fatalf("an unknown tab key shows Edit:\n%s", unknown)
 	}
 }
@@ -159,18 +159,18 @@ func TestRecord422FieldNamesMatchControls(t *testing.T) {
 // mapping the keys, the page carries the mapped words and no bare key.
 func TestRecordChromeComesFromTranslator(t *testing.T) {
 	cat := i18n.NewMapCatalog()
-	mapped := map[i18nui.Key]string{
-		i18nui.KeyEntityTabEdit:          "BEARBEITEN",
-		i18nui.KeyEntitySave:             "SPEICHERN",
-		i18nui.KeyEntitySaved:            "GESPEICHERT",
-		i18nui.KeyEntityDetails:          "ANGABEN",
-		i18nui.KeyEntityLeaveGuard:       "UNGESPEICHERTE ÄNDERUNGEN",
-		i18nui.KeyEntityLeaveGuardTitle:  "ÄNDERUNGEN VERWERFEN?",
-		i18nui.KeyEntityLeaveGuardAccept: "VERWERFEN",
-		i18nui.KeyEntityNotFound:         "NICHT GEFUNDEN",
+	mapped := map[i18n.Phrase]string{
+		i18nui.EntityTabEdit:          "BEARBEITEN",
+		i18nui.EntitySave:             "SPEICHERN",
+		i18nui.EntitySaved:            "GESPEICHERT",
+		i18nui.EntityDetails:          "ANGABEN",
+		i18nui.EntityLeaveGuard:       "UNGESPEICHERTE ÄNDERUNGEN",
+		i18nui.EntityLeaveGuardTitle:  "ÄNDERUNGEN VERWERFEN?",
+		i18nui.EntityLeaveGuardAccept: "VERWERFEN",
+		i18nui.EntityNotFound:         "NICHT GEFUNDEN",
 	}
 	for k, v := range mapped {
-		cat.Set("de", string(k), i18n.Message{Text: v})
+		cat.Set("de", k.Key(), i18n.Message{Text: v})
 	}
 	x := newInvoiceUI(t, withTranslator(i18n.NewTranslator(cat, "en")))
 	withLocale := func() string {
@@ -179,7 +179,7 @@ func TestRecordChromeComesFromTranslator(t *testing.T) {
 	}
 	body := withLocale()
 	for _, v := range mapped {
-		if v == mapped[i18nui.KeyEntityNotFound] {
+		if v == mapped[i18nui.EntityNotFound] {
 			continue // not-found is not on this page
 		}
 		if !strings.Contains(body, v) {

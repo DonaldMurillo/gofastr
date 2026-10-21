@@ -586,15 +586,15 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 	// client-side toggle can re-say.
 	collapseLabel := cfg.CollapseLabel
 	if collapseLabel == "" {
-		collapseLabel = i18nui.T(ctx, i18nui.KeyHuiSidebarCollapse)
+		collapseLabel = i18nui.HuiSidebarCollapse.Text(ctx)
 	}
 	expandLabel := cfg.ExpandLabel
 	if expandLabel == "" {
-		expandLabel = i18nui.T(ctx, i18nui.KeyHuiSidebarExpand)
+		expandLabel = i18nui.HuiSidebarExpand.Text(ctx)
 	}
 	collapseText := cfg.CollapseText
 	if collapseText == "" {
-		collapseText = i18nui.T(ctx, i18nui.KeyHuiSidebarCollapseText)
+		collapseText = i18nui.HuiSidebarCollapseText.Text(ctx)
 	}
 
 	out := headless.Sidebar(headless.SidebarProps{

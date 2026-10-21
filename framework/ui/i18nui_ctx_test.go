@@ -19,9 +19,9 @@ import (
 
 // makeCtxWithLocale builds a ctx carrying a French translator that maps
 // the given key to the given translated string.
-func makeCtxWithLocale(key i18nui.Key, translated string) context.Context {
+func makeCtxWithLocale(key i18n.Phrase, translated string) context.Context {
 	cat := i18n.NewMapCatalog()
-	cat.Set("fr", string(key), i18n.Message{Text: translated})
+	cat.Set("fr", key.Key(), i18n.Message{Text: translated})
 	tr := i18n.NewTranslator(cat, "en")
 	ctx := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
 	return i18n.WithTranslator(ctx, tr)
@@ -29,7 +29,7 @@ func makeCtxWithLocale(key i18nui.Key, translated string) context.Context {
 
 // TestRepeaterCtxLocaleAdd: AddLabel uses ctx locale when Ctx set.
 func TestRepeaterCtxLocaleAdd(t *testing.T) {
-	ctx := makeCtxWithLocale(i18nui.KeyRepeaterAdd, "Ajouter")
+	ctx := makeCtxWithLocale(i18nui.RepeaterAdd, "Ajouter")
 	out := string(Repeater(RepeaterConfig{Name: "x", Ctx: ctx}))
 	if !strings.Contains(out, "Ajouter") {
 		t.Fatalf("expected translated AddLabel 'Ajouter', got:\n%s", out)
@@ -39,7 +39,7 @@ func TestRepeaterCtxLocaleAdd(t *testing.T) {
 // TestRepeaterCtxLocaleRemove: RemoveLabel uses ctx locale when Ctx set.
 // Provide a Template so at least one remove button is rendered.
 func TestRepeaterCtxLocaleRemove(t *testing.T) {
-	ctx := makeCtxWithLocale(i18nui.KeyRepeaterRemove, "Supprimer")
+	ctx := makeCtxWithLocale(i18nui.RepeaterRemove, "Supprimer")
 	out := string(Repeater(RepeaterConfig{
 		Name: "x",
 		Ctx:  ctx,
@@ -62,7 +62,7 @@ func TestRepeaterNilCtxPreservesToday(t *testing.T) {
 
 // TestPasswordInputCtxLocale: show-password aria-label uses ctx locale.
 func TestPasswordInputCtxLocale(t *testing.T) {
-	ctx := makeCtxWithLocale(i18nui.KeyPasswordInputShow, "Afficher le mot de passe")
+	ctx := makeCtxWithLocale(i18nui.PasswordInputShow, "Afficher le mot de passe")
 	out := string(PasswordInput(PasswordInputConfig{
 		Name: "pw",
 		ID:   "pw",
@@ -83,7 +83,7 @@ func TestPasswordInputNilCtxPreservesToday(t *testing.T) {
 
 // TestStepWizardCtxLocaleBack: Back button uses ctx locale.
 func TestStepWizardCtxLocaleBack(t *testing.T) {
-	ctx := makeCtxWithLocale(i18nui.KeyStepWizardBack, "Retour")
+	ctx := makeCtxWithLocale(i18nui.StepWizardBack, "Retour")
 	out := string(StepWizard(StepWizardConfig{
 		Steps:       []StepWizardStep{{Heading: "A"}, {Heading: "B"}},
 		CurrentStep: 1,
@@ -97,7 +97,7 @@ func TestStepWizardCtxLocaleBack(t *testing.T) {
 
 // TestStepWizardCtxLocaleSubmit: Submit button uses ctx locale.
 func TestStepWizardCtxLocaleSubmit(t *testing.T) {
-	ctx := makeCtxWithLocale(i18nui.KeyStepWizardSubmit, "Envoyer")
+	ctx := makeCtxWithLocale(i18nui.StepWizardSubmit, "Envoyer")
 	out := string(StepWizard(StepWizardConfig{
 		Steps:       []StepWizardStep{{Heading: "A"}, {Heading: "B"}},
 		CurrentStep: 1,
@@ -111,7 +111,7 @@ func TestStepWizardCtxLocaleSubmit(t *testing.T) {
 
 // TestStepWizardCtxLocaleNext: Next button uses ctx locale on non-final step.
 func TestStepWizardCtxLocaleNext(t *testing.T) {
-	ctx := makeCtxWithLocale(i18nui.KeyStepWizardNext, "Continuer")
+	ctx := makeCtxWithLocale(i18nui.StepWizardNext, "Continuer")
 	out := string(StepWizard(StepWizardConfig{
 		Steps:       []StepWizardStep{{Heading: "A"}, {Heading: "B"}, {Heading: "C"}},
 		CurrentStep: 0,
@@ -136,7 +136,7 @@ func TestStepWizardNilCtxPreservesToday(t *testing.T) {
 
 // TestLightboxCtxLocalePrev: Prev aria-label uses ctx locale when Ctx set.
 func TestLightboxCtxLocalePrev(t *testing.T) {
-	ctx := makeCtxWithLocale(i18nui.KeyLightboxPrev, "Image précédente")
+	ctx := makeCtxWithLocale(i18nui.LightboxPrev, "Image précédente")
 	slot := &lightboxSlot{name: "lb", label: "x", navArrows: true, ctx: ctx}
 	out := string(slot.Render())
 	if !strings.Contains(out, "Image précédente") {
@@ -146,7 +146,7 @@ func TestLightboxCtxLocalePrev(t *testing.T) {
 
 // TestLightboxCtxLocaleNext: Next aria-label uses ctx locale when Ctx set.
 func TestLightboxCtxLocaleNext(t *testing.T) {
-	ctx := makeCtxWithLocale(i18nui.KeyLightboxNext, "Image suivante")
+	ctx := makeCtxWithLocale(i18nui.LightboxNext, "Image suivante")
 	slot := &lightboxSlot{name: "lb", label: "x", navArrows: true, ctx: ctx}
 	out := string(slot.Render())
 	if !strings.Contains(out, "Image suivante") {
@@ -156,7 +156,7 @@ func TestLightboxCtxLocaleNext(t *testing.T) {
 
 // TestLightboxCtxLocaleDownload: Download aria-label uses ctx locale.
 func TestLightboxCtxLocaleDownload(t *testing.T) {
-	ctx := makeCtxWithLocale(i18nui.KeyLightboxDownload, "Télécharger")
+	ctx := makeCtxWithLocale(i18nui.LightboxDownload, "Télécharger")
 	slot := &lightboxSlot{name: "lb", label: "x", allowDownload: true, ctx: ctx}
 	out := string(slot.Render())
 	if !strings.Contains(out, "Télécharger") {
@@ -176,7 +176,7 @@ func TestLightboxNilCtxPreservesToday(t *testing.T) {
 // TestLightboxCfgCtxPassedToSlot: LightboxConfig.Ctx flows into the
 // internal lightboxSlot (verifies the wire-up in Lightbox()).
 func TestLightboxCfgCtxPassedToSlot(t *testing.T) {
-	ctx := makeCtxWithLocale(i18nui.KeyLightboxPrev, "Précédent")
+	ctx := makeCtxWithLocale(i18nui.LightboxPrev, "Précédent")
 	b := Lightbox(LightboxConfig{Name: "test", NavArrows: true, Ctx: ctx})
 	// Find the body slot and render it.
 	def := b.Definition()

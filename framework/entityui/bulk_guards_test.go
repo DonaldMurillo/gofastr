@@ -211,7 +211,7 @@ func TestCreateScreenNeedsRead(t *testing.T) {
 	grant(t, policy, "maker", "invoices:create")
 	ctx := bulkCtx("u1", policy, "maker")
 	body := string(x.ui.Create("invoices").Base("/rec/invoices").RenderCtx(app.WithRequest(ctx, httptest.NewRequest(http.MethodGet, "/rec/invoices/create", nil))))
-	if strings.Contains(body, "<form") || !strings.Contains(body, AccessDeniedTitle) {
+	if strings.Contains(body, "<form") || !strings.Contains(body, AccessDeniedTitle.English()) {
 		t.Fatalf("a caller who may not read drew the create form:\n%s", body)
 	}
 }

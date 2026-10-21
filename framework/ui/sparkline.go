@@ -81,7 +81,7 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 			attrs = html.Attrs{}
 		}
 		attrs["data-cui-comp"] = "ui-sparkline"
-		attrs["aria-label"] = i18nui.T(ctx, i18nui.KeySparklineNoData)
+		attrs["aria-label"] = i18nui.SparklineNoData.Text(ctx)
 		if cfg.Class != "" {
 			attrs["class"] = cfg.Class
 		}

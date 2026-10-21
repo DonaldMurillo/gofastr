@@ -41,14 +41,14 @@ func TestPseudo(t *testing.T) {
 func TestAddPseudoCoversDefaults(t *testing.T) {
 	c := i18n.NewMapCatalog()
 	AddPseudo(c, "en-XA")
-	for k, v := range Defaults {
-		m, ok := c.Get("en-XA", string(k))
+	for k, v := range i18n.Phrases() {
+		m, ok := c.Get("en-XA", k)
 		if !ok || m.Text != Pseudo(v) {
 			t.Fatalf("%s: got %q, %v", k, m.Text, ok)
 		}
 	}
 	ctx := i18n.WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "en-xa"}), i18n.NewTranslator(c, "en"))
-	if got := T(ctx, KeyDialogSave); got != Pseudo(Defaults[KeyDialogSave]) {
+	if got := DialogSave.Text(ctx); got != Pseudo(DialogSave.English()) {
 		t.Fatalf("T in the pseudo locale = %q", got)
 	}
 }

@@ -153,7 +153,7 @@
     }
     const all = lb.getAttribute('data-search-all');
     if (all && list.length) {
-      const label = (lb.getAttribute('data-search-all-label') || '').replace(/\{q\}/g, function () { return q; });
+      const label = (lb.getAttribute('data-search-all-label') || '').replace(/\{\{q\}\}/g, function () { return q; });
       const li = row(lb, fresh.length, label, '', null, BASE + all + '?q=' + encodeURIComponent(q), false);
       li.classList.add('fui-cmd-palette__option--all');
       fresh.push(li);
@@ -183,7 +183,7 @@
     if (status) {
       const fmt = lb.getAttribute('data-hui-combobox-count');
       status.textContent = visible.length
-        ? (fmt ? fmt.replace('{n}', function () { return String(visible.length); }) : '')
+        ? (fmt ? fmt.replace('{{n}}', function () { return String(visible.length); }) : '')
         : (status.getAttribute('data-hui-combobox-no-results') || '');
     }
   }

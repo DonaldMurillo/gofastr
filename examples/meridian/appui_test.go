@@ -47,7 +47,7 @@ func TestMissingEntityStatFailsClosed(t *testing.T) {
 func TestAnonymousListDrawsRefusalNotRows(t *testing.T) {
 	ui := newTestAppUI(t)
 	html := ui.List("customers").RenderCtx(context.Background()).String()
-	if !strings.Contains(html, entityui.AccessDeniedTitle) {
+	if !strings.Contains(html, entityui.AccessDeniedTitle.English()) {
 		t.Fatalf("anonymous list on the owner-scoped customers entity must draw the not-available notice, got:\n%s", html)
 	}
 	if strings.Contains(html, "<table") {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -234,14 +235,12 @@ func TestSidebarCollapseLabelsConfigurableBothStates(t *testing.T) {
 // pair (the runtime module has no English fallback), so a translated
 // page re-says the toggle in its own language after hydration too.
 func TestSidebarCollapseLabelsUseI18n(t *testing.T) {
-	prevC := i18nui.Defaults[i18nui.KeyHuiSidebarCollapse]
-	prevE := i18nui.Defaults[i18nui.KeyHuiSidebarExpand]
-	i18nui.Defaults[i18nui.KeyHuiSidebarCollapse] = "PROBE-COLLAPSE"
-	i18nui.Defaults[i18nui.KeyHuiSidebarExpand] = "PROBE-EXPAND"
-	t.Cleanup(func() {
-		i18nui.Defaults[i18nui.KeyHuiSidebarCollapse] = prevC
-		i18nui.Defaults[i18nui.KeyHuiSidebarExpand] = prevE
-	})
+	cat := i18n.NewMapCatalog()
+	cat.Set("en", i18nui.HuiSidebarCollapse.Key(), i18n.Message{Text: "PROBE-COLLAPSE"})
+	cat.Set("en", i18nui.HuiSidebarExpand.Key(), i18n.Message{Text: "PROBE-EXPAND"})
+	prev := i18n.Default()
+	i18n.SetDefault(i18n.NewTranslator(cat, "en"))
+	t.Cleanup(func() { i18n.SetDefault(prev) })
 	out := string(ui.Sidebar(ui.SidebarConfig{
 		Variant:    ui.SidebarCollapsible,
 		DrawerName: "workspace-nav",

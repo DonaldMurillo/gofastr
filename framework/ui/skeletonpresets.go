@@ -29,7 +29,7 @@ func skeletonLabel(label string, ctx context.Context) string {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return i18nui.T(ctx, i18nui.KeyLoading)
+	return i18nui.Loading.Text(ctx)
 }
 
 // skeletonClasses dresses the bars every preset draws.

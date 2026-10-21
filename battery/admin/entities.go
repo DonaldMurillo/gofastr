@@ -181,24 +181,24 @@ func (b *Battery) mountEntities(group *appui.ScreenGroup, r *router.Router) {
 		base := "/entities/" + name
 		listPath := b.entityBase(e)
 		related := b.relatedTo(e)
-		list := b.screen(group, base, i18nui.KeyAdminEntities, true, func(ctx context.Context, _ map[string]string) render.HTML {
+		list := b.screen(group, base, i18nui.AdminEntities, true, func(ctx context.Context, _ map[string]string) render.HTML {
 			return b.ui.List(name).Base(listPath).Bulk().Delete().Undo().Duplicate().
 				QueryBox().ColumnsMenu().LayoutSwitch().InlineEdit().Deleted().SavedViews().TabCounts().RenderCtx(ctx)
 		})
 		b.entityTitle(list, e, func(ctx context.Context, _ map[string]string) string { return b.plural(ctx, e) })
 
-		create := b.screen(group, base+"/create", i18nui.KeyAdminEntities, true, func(ctx context.Context, _ map[string]string) render.HTML {
+		create := b.screen(group, base+"/create", i18nui.AdminEntities, true, func(ctx context.Context, _ map[string]string) render.HTML {
 			return b.ui.Create(name).Base(listPath).RenderCtx(ctx)
 		})
 		b.entityTitle(create, e, func(ctx context.Context, _ map[string]string) string {
-			return i18nui.TVars(ctx, i18nui.KeyAdminPaletteNew, map[string]string{"entity": b.singular(ctx, e)})
+			return i18nui.AdminPaletteNew.Text(ctx, map[string]any{"entity": b.singular(ctx, e)})
 		})
 		// New, like a record, opens as a drawer over the list, and over
 		// the record of each entity it belongs to, whose Related tab adds
 		// to it; a direct load is the full page.
 		create.Intercept = &appui.Intercept{From: listPath, AlsoFrom: b.parentRecords(e), As: appui.ScreenDrawer}
 
-		record := b.screen(group, base+"/:id", i18nui.KeyAdminEntities, true, func(ctx context.Context, p map[string]string) render.HTML {
+		record := b.screen(group, base+"/:id", i18nui.AdminEntities, true, func(ctx context.Context, p map[string]string) render.HTML {
 			return b.ui.Record(name, p["id"]).Base(listPath).Related(related...).Activity().Delete().Undo().Duplicate().Steps().Panel().
 				API().Override().RenderCtx(ctx)
 		})
@@ -302,7 +302,7 @@ func countText(ctx context.Context, raw string) string {
 		return raw
 	}
 	if n >= manyRows {
-		return i18nui.TVars(ctx, i18nui.KeyAdminCountMany, map[string]string{"count": strconv.Itoa(manyRows/1000) + "k"})
+		return i18nui.AdminCountMany.Text(ctx, map[string]any{"count": strconv.Itoa(manyRows/1000) + "k"})
 	}
 	return raw
 }

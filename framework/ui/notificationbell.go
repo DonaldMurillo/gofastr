@@ -117,7 +117,7 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 	}
 	emptyText := cfg.EmptyText
 	if emptyText == "" {
-		emptyText = i18nui.T(ctx, i18nui.KeyNotificationEmpty)
+		emptyText = i18nui.NotificationEmpty.Text(ctx)
 	}
 
 	parts := headless.Parts{}

@@ -113,7 +113,7 @@ func TestRecordAnonymousRefusedDefaultPosture(t *testing.T) {
 	x := newInvoiceUI(t)
 	body := string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").
 		RenderCtx(x.ctx("/rec/invoices/inv-1", "")))
-	if !strings.Contains(body, AccessDeniedTitle) {
+	if !strings.Contains(body, AccessDeniedTitle.English()) {
 		t.Fatalf("an anonymous caller must see the refusal, got:\n%s", body)
 	}
 	if strings.Contains(body, "INV-1") {
@@ -141,7 +141,7 @@ func TestRecordOtherOwnerNotFoundIdentical(t *testing.T) {
 	if other != missing {
 		t.Fatalf("another owner's id and a missing id differ:\nother:\n%s\nmissing:\n%s", other, missing)
 	}
-	if !strings.Contains(other, i18nui.Defaults[i18nui.KeyEntityNotFound]) {
+	if !strings.Contains(other, i18nui.EntityNotFound.English()) {
 		t.Fatalf("both must render not-found, got:\n%s", other)
 	}
 	if strings.Contains(other, "INV-1") {

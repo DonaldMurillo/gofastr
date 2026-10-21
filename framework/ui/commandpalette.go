@@ -179,7 +179,7 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 	}
 	placeholder := cfg.Placeholder
 	if placeholder == "" {
-		placeholder = i18nui.T(ctx, i18nui.KeyCommandPalettePlaceholder)
+		placeholder = i18nui.CommandPalettePlaceholder.Text(ctx)
 	}
 	shortcut := cfg.Shortcut
 	if shortcut == "" {
@@ -191,7 +191,7 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 	}
 	triggerLabel := cfg.TriggerLabel
 	if triggerLabel == "" {
-		triggerLabel = i18nui.T(ctx, i18nui.KeyCommandPaletteOpen)
+		triggerLabel = i18nui.CommandPaletteOpen.Text(ctx)
 	}
 
 	// The trigger is an anchor to the fallback: with script the widget
@@ -233,14 +233,14 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 		emptyHTML:     cfg.EmptyHTML,
 		search:        cfg.Search,
 		options:       paletteCommandsToOptions(cfg.Commands),
-		title:         i18nui.T(ctx, i18nui.KeyCommandPaletteTitle),
-		navigateLabel: i18nui.T(ctx, i18nui.KeyCommandPaletteNavigate),
-		selectLabel:   i18nui.T(ctx, i18nui.KeyCommandPaletteSelect),
-		closeLabel:    i18nui.T(ctx, i18nui.KeyCommandPaletteClose),
-		loadingLabel:  i18nui.T(ctx, i18nui.KeyHuiComboboxLoading),
-		emptyLabel:    i18nui.T(ctx, i18nui.KeyHuiComboboxNoResults),
+		title:         i18nui.CommandPaletteTitle.Text(ctx),
+		navigateLabel: i18nui.CommandPaletteNavigate.Text(ctx),
+		selectLabel:   i18nui.CommandPaletteSelect.Text(ctx),
+		closeLabel:    i18nui.CommandPaletteClose.Text(ctx),
+		loadingLabel:  i18nui.HuiComboboxLoading.Text(ctx),
+		emptyLabel:    i18nui.HuiComboboxNoResults.Text(ctx),
 		searchPage:    cfg.SearchPage,
-		allLabel:      i18nui.T(ctx, i18nui.KeySearchResultsAll),
+		allLabel:      i18nui.SearchResultsAll.Text(ctx),
 		extraAttrs:    html.SafeExtraAttrs(cfg.ExtraAttrs),
 	}
 	b := preset.Modal(name).
@@ -282,7 +282,7 @@ func PaletteResults(ctx context.Context, name string, cmds []PaletteCommand, emp
 	}
 	if len(cmds) == 0 {
 		if empty == "" {
-			empty = i18nui.T(ctx, i18nui.KeyHuiComboboxNoResults)
+			empty = i18nui.HuiComboboxNoResults.Text(ctx)
 		}
 		return render.Tag("li", map[string]string{
 			"role":          "option",
@@ -354,13 +354,13 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	// non-empty Label contract holds.
 	title := s.title
 	if title == "" {
-		title = i18nui.T(context.Background(), i18nui.KeyCommandPaletteTitle)
+		title = i18nui.CommandPaletteTitle.Text(context.Background())
 	}
 	// closeLabel is resolved alongside title at CommandPalette() call
 	// time; same direct-construction fallback for slots built in tests.
 	closeLabel := s.closeLabel
 	if closeLabel == "" {
-		closeLabel = i18nui.T(context.Background(), i18nui.KeyCommandPaletteClose)
+		closeLabel = i18nui.CommandPaletteClose.Text(context.Background())
 	}
 
 	srTitle := html.Heading(html.HeadingConfig{

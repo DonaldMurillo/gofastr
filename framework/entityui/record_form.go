@@ -94,14 +94,14 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 		}
 	}
 	cfg := ui.PageHeaderConfig{
-		Title: i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": m.singular(ctx)}),
+		Title: i18nui.EntityNew.Text(ctx, map[string]any{"entity": m.singular(ctx)}),
 	}
 	if !m.hasAPI {
 		return render.Join(drawerBar(ctx, "", ""), ui.PageHeader(cfg), readOnlyNotice(ctx, m))
 	}
 	cfg.Actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
 		ui.LinkButton(ui.LinkButtonConfig{
-			Label: i18nui.T(ctx, i18nui.KeyEntityCancel), Href: base, Variant: ui.ButtonGhost,
+			Label: i18nui.EntityCancel.Text(ctx), Href: base, Variant: ui.ButtonGhost,
 		}),
 		saveButton(ctx, m, true),
 	)
@@ -142,7 +142,7 @@ func uniqueBlank(m *meta) map[string]bool {
 // no write routes: nothing to fill in, nothing to submit.
 func readOnlyNotice(ctx context.Context, m *meta) render.HTML {
 	return ui.Callout(ui.CalloutConfig{Variant: ui.StatusInfo},
-		render.Text(i18nui.TVars(ctx, i18nui.KeyEntityReadOnly, map[string]string{"entity": m.singular(ctx)})))
+		render.Text(i18nui.EntityReadOnly.Text(ctx, map[string]any{"entity": m.singular(ctx)})))
 }
 
 // mayCreateSet reports whether a create may set the field: visible,
@@ -220,7 +220,7 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 
 	action := m.api
 	rpc := interactive.Post(m.api)
-	toast := i18nui.TVars(ctx, i18nui.KeyEntityCreated, map[string]string{"entity": m.singular(ctx)})
+	toast := i18nui.EntityCreated.Text(ctx, map[string]any{"entity": m.singular(ctx)})
 	// A create lands on the list, or, opened as a drawer, back on the
 	// page under it (the list, or the record whose Related tab added
 	// it), which the runtime refreshes in place of leaving the stack.
@@ -231,7 +231,7 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 	if !fb.create {
 		action = m.api + "/" + url.PathEscape(b.id)
 		rpc = interactive.Put(action)
-		toast = i18nui.T(ctx, i18nui.KeyEntitySaved)
+		toast = i18nui.EntitySaved.Text(ctx)
 		dest = base + "/" + url.PathEscape(b.id)
 	}
 	attrs := rpc.
@@ -247,9 +247,9 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		HideSubmit:       true,
 		Wide:             len(side) > 0,
 		ExtraAttrs:       attrs,
-		LeaveGuard:       i18nui.T(ctx, i18nui.KeyEntityLeaveGuard),
-		LeaveGuardTitle:  i18nui.T(ctx, i18nui.KeyEntityLeaveGuardTitle),
-		LeaveGuardAccept: i18nui.T(ctx, i18nui.KeyEntityLeaveGuardAccept),
+		LeaveGuard:       i18nui.EntityLeaveGuard.Text(ctx),
+		LeaveGuardTitle:  i18nui.EntityLeaveGuardTitle.Text(ctx),
+		LeaveGuardAccept: i18nui.EntityLeaveGuardAccept.Text(ctx),
 	}, body)}
 	// The masked fields' Replace forms: empty, their input and button
 	// sit in the record form's markup and name them by the form
@@ -262,7 +262,7 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 			Ctx:        ctx,
 			HideSubmit: true,
 			ExtraAttrs: interactive.Put(action).
-				OnSuccessToast(i18nui.T(ctx, i18nui.KeyEntitySaved)).
+				OnSuccessToast(i18nui.EntitySaved.Text(ctx)).
 				OnSuccess(interactive.Navigate(dest)).
 				Attrs(),
 		}))
@@ -285,9 +285,9 @@ func (b *RecordBuilder) editableFields(m *meta) []schema.Field {
 
 func submitLabel(ctx context.Context, m *meta, create bool) string {
 	if create {
-		return i18nui.TVars(ctx, i18nui.KeyEntityCreate, map[string]string{"entity": m.singular(ctx)})
+		return i18nui.EntityCreate.Text(ctx, map[string]any{"entity": m.singular(ctx)})
 	}
-	return i18nui.T(ctx, i18nui.KeyEntitySave)
+	return i18nui.EntitySave.Text(ctx)
 }
 
 // formBuilder walks the declared layout and renders one field at a
@@ -395,12 +395,12 @@ func (fb *formBuilder) details(ctx context.Context) render.HTML {
 	if id := cell(rowValue(row, m.pk)); id != "" {
 		target := "eui-" + m.name + "-id"
 		items = append(items, ui.DetailItem{
-			Label: i18nui.T(ctx, i18nui.KeyEntityID),
+			Label: i18nui.EntityID.Text(ctx),
 			Value: render.Join(
 				html.Code(html.TextConfig{ID: target, ExtraAttrs: html.Attrs{"title": id}}, render.Text(id)),
 				ui.CopyButton(ui.CopyButtonConfig{
 					Target: target, IconOnly: true, Icon: "copy", Inline: true, Ctx: ctx,
-					AriaLabel: i18nui.T(ctx, i18nui.KeyCopyToClipboard),
+					AriaLabel: i18nui.CopyToClipboard.Text(ctx),
 				})),
 		})
 	}
@@ -422,7 +422,7 @@ func (fb *formBuilder) details(ctx context.Context) render.HTML {
 	if len(items) == 0 {
 		return ""
 	}
-	return ui.Section(ui.SectionConfig{Heading: i18nui.T(ctx, i18nui.KeyEntityDetails), Overline: true, Compact: true},
+	return ui.Section(ui.SectionConfig{Heading: i18nui.EntityDetails.Text(ctx), Overline: true, Compact: true},
 		ui.DetailList(ui.DetailListConfig{Spread: true, Items: items}))
 }
 
@@ -615,25 +615,25 @@ func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label strin
 // its native control (it would submit a value the user never saw), so
 // it becomes a select with an explicit "unchanged" option.
 func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label, help, id string) render.HTML {
-	state := i18nui.T(ctx, i18nui.KeyEntityNotSet)
+	state := i18nui.EntityNotSet.Text(ctx)
 	if v := fb.value(f); v != "" {
-		state = i18nui.T(ctx, i18nui.KeyEntitySet)
+		state = i18nui.EntitySet.Text(ctx)
 	}
-	help = state + " · " + i18nui.T(ctx, i18nui.KeyEntityKeepValue)
+	help = state + " · " + i18nui.EntityKeepValue.Text(ctx)
 	switch f.Type {
 	case schema.Enum:
 		return ui.Select(ui.SelectConfig{
 			Name: f.Name, Label: label, ID: id, Help: help,
-			Placeholder: i18nui.T(ctx, i18nui.KeyEntityUnchanged),
+			Placeholder: i18nui.EntityUnchanged.Text(ctx),
 			Options:     enumOptions(ctx, fb.m, f, ""),
 		})
 	case schema.Bool:
 		return ui.Select(ui.SelectConfig{
 			Name: f.Name, Label: label, ID: id, Help: help,
-			Placeholder: i18nui.T(ctx, i18nui.KeyEntityUnchanged),
+			Placeholder: i18nui.EntityUnchanged.Text(ctx),
 			Options: []ui.SelectOption{
-				{Value: "true", Text: i18nui.T(ctx, i18nui.KeyEntityYes)},
-				{Value: "false", Text: i18nui.T(ctx, i18nui.KeyEntityNo)},
+				{Value: "true", Text: i18nui.EntityYes.Text(ctx)},
+				{Value: "false", Text: i18nui.EntityNo.Text(ctx)},
 			},
 		})
 	case schema.Relation:
@@ -647,8 +647,8 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 		// that form writes this one field, and only a typed value.
 		formID := fb.replaceFormID(f.Name)
 		fb.replace = append(fb.replace, f.Name)
-		help = state + " · " + i18nui.T(ctx, i18nui.KeyEntityReplaceHint)
-		ph := i18nui.T(ctx, i18nui.KeyEntityNewValue)
+		help = state + " · " + i18nui.EntityReplaceHint.Text(ctx)
+		ph := i18nui.EntityNewValue.Text(ctx)
 		owner := html.Attrs{"form": formID}
 		var input render.HTML
 		if f.Type == schema.Text || f.Type == schema.JSON {
@@ -669,7 +669,7 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 		}
 		return ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, input,
 			ui.Button(ui.ButtonConfig{
-				Label: i18nui.T(ctx, i18nui.KeyEntityReplace), Type: "submit",
+				Label: i18nui.EntityReplace.Text(ctx), Type: "submit",
 				Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall, ExtraAttrs: owner,
 			}))
 	}
@@ -813,7 +813,7 @@ func (fb *formBuilder) relationOpen(ctx context.Context, f schema.Field, cur str
 		return ""
 	}
 	return ui.LinkButton(ui.LinkButtonConfig{
-		Label:    i18nui.TVars(ctx, i18nui.KeyEntityOpen, map[string]string{"entity": om.singular(ctx)}),
+		Label:    i18nui.EntityOpen.Text(ctx, map[string]any{"entity": om.singular(ctx)}),
 		Href:     base + "/" + url.PathEscape(cur),
 		Variant:  ui.ButtonSecondary,
 		Icon:     "arrow-up-right",
@@ -933,7 +933,7 @@ func selectPlaceholder(ctx context.Context, f schema.Field, required bool) strin
 	if required || len(f.Values) == 0 {
 		return ""
 	}
-	return i18nui.T(ctx, i18nui.KeyEntitySelect)
+	return i18nui.EntitySelect.Text(ctx)
 }
 
 // formValueText renders a stored value for an <input> of the field's

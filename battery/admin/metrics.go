@@ -125,7 +125,7 @@ func (b *Battery) metricStrip(ctx context.Context) render.HTML {
 	if len(cells) == 0 {
 		return ""
 	}
-	return ui.StatStrip(ui.StatStripConfig{Label: i18nui.T(ctx, i18nui.KeyAdminMetrics), Cells: cells})
+	return ui.StatStrip(ui.StatStripConfig{Label: i18nui.AdminMetrics.Text(ctx), Cells: cells})
 }
 
 // polled is a figure inside the element that re-reads it from src.
@@ -175,13 +175,13 @@ func (b *Battery) jobsFigure(ctx context.Context) render.HTML {
 	if stats, err := b.cfg.Queue.Stats(ctx); err == nil {
 		value = strconv.Itoa(stats["failed"])
 		if stats["failed"] > 0 {
-			trend = i18nui.T(ctx, i18nui.KeyAdminNeedsReplay)
+			trend = i18nui.AdminNeedsReplay.Text(ctx)
 		}
 	} else {
 		b.logger().Error("admin: queue stats", "error", err)
 	}
 	return ui.StatCard(ui.StatCardConfig{
-		Label:     i18nui.T(ctx, i18nui.KeyAdminFailedJobs),
+		Label:     i18nui.AdminFailedJobs.Text(ctx),
 		Value:     value,
 		Trend:     trend,
 		Direction: ui.TrendDown,

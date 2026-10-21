@@ -15,7 +15,7 @@ func TestComboboxRendersTheARIAContract(t *testing.T) {
 	}})
 	for _, want := range []string{
 		`<input aria-autocomplete="list" aria-controls="q-listbox" aria-expanded="false" autocomplete="off" data-hui-combobox-input="" id="q" name="q" role="combobox"`,
-		`<ul aria-label="Search results" data-cui-internal="" data-hui-combobox-count="{n} results" data-hui-combobox-listbox="" data-hui-combobox-static="" hidden="" id="q-listbox" role="listbox">`,
+		`<ul aria-label="Search results" data-cui-internal="" data-hui-combobox-count="{{n}} results" data-hui-combobox-listbox="" data-hui-combobox-static="" hidden="" id="q-listbox" role="listbox">`,
 		`<li data-value="Docs" id="q-listbox-opt-0" role="option"><span>Docs</span><span>/docs</span></li>`,
 		`<li data-cui-push-state="/examples" data-value="Examples"`,
 		`<li data-value="ex" id="q-listbox-opt-2" role="option">`,
@@ -41,7 +41,7 @@ func TestComboboxIslandRendersRPCAndNoScriptForm(t *testing.T) {
 	for _, want := range []string{
 		`<form action="/search" method="GET" role="none">`,
 		`data-cui-rpc="/island/search" data-cui-rpc-debounce-ms="250" data-cui-rpc-method="POST" data-cui-rpc-signal="search" data-cui-rpc-trigger="input" data-hui-combobox-loader="" data-hui-combobox-loading="Loading…"`,
-		`data-cui-signal="search" data-cui-signal-mode="html" data-hui-combobox-count="{n} results" data-hui-combobox-listbox=""`,
+		`data-cui-signal="search" data-cui-signal-mode="html" data-hui-combobox-count="{{n}} results" data-hui-combobox-listbox=""`,
 	} {
 		if !strings.Contains(h, want) {
 			t.Errorf("island combobox missing %q:\n%s", want, h)

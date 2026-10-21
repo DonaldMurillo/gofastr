@@ -69,7 +69,7 @@ func ShortcutSheet(cfg ShortcutSheetConfig) (render.HTML, *widget.Builder) {
 	}
 	label := cfg.TriggerLabel
 	if label == "" {
-		label = i18nui.T(ctx, i18nui.KeyShortcutSheetTitle)
+		label = i18nui.ShortcutSheetTitle.Text(ctx)
 	}
 	cls := "fui-visually-hidden"
 	if cfg.TriggerVisible {
@@ -91,21 +91,22 @@ func ShortcutSheet(cfg ShortcutSheetConfig) (render.HTML, *widget.Builder) {
 	body := &shortcutSheetSlot{
 		name:  name,
 		title: label,
-		close: i18nui.T(ctx, i18nui.KeyCommandPaletteClose),
+		close: i18nui.CommandPaletteClose.Text(ctx),
 		items: append([]ShortcutItem{}, cfg.Items...),
+		ctx:   ctx,
 	}
 	return trigger, preset.Modal(name).Hidden().Role("dialog").LabelledBy(name+"-title").Slot("body", body)
 }
 
 // ShortcutList draws the rows a sheet holds, for a page of its own (the
 // sheet's FallbackHref) or anywhere else: each chord as keycaps beside
-// its label.
-func ShortcutList(items []ShortcutItem) render.HTML {
+// its label, the keycaps said in ctx's language.
+func ShortcutList(ctx context.Context, items []ShortcutItem) render.HTML {
 	rows := make([]render.HTML, 0, len(items))
 	for _, it := range items {
 		rows = append(rows, render.Tag("div", map[string]string{"class": "fui-shortcut-list__row", "data-cui-internal": ""},
 			render.Tag("dt", map[string]string{"class": "fui-shortcut-list__label"}, render.Text(it.Label)),
-			render.Tag("dd", map[string]string{"class": "fui-shortcut-list__keys"}, ShortcutHint(ShortcutHintConfig{Chord: it.Chord})),
+			render.Tag("dd", map[string]string{"class": "fui-shortcut-list__keys"}, ShortcutHint(ShortcutHintConfig{Chord: it.Chord, Ctx: ctx})),
 		))
 	}
 	return shortcutListStyle.WrapHTML(render.Tag("dl", map[string]string{"class": "fui-shortcut-list"}, rows...))
@@ -114,6 +115,7 @@ func ShortcutList(items []ShortcutItem) render.HTML {
 type shortcutSheetSlot struct {
 	name, title, close string
 	items              []ShortcutItem
+	ctx                context.Context
 }
 
 func (s *shortcutSheetSlot) Render() render.HTML {
@@ -126,7 +128,7 @@ func (s *shortcutSheetSlot) Render() render.HTML {
 			"aria-label":      s.close,
 		}, Icon("close", IconConfig{Size: "16"})),
 	)
-	return shortcutSheetStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-shortcut-sheet"}, head, ShortcutList(s.items)))
+	return shortcutSheetStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-shortcut-sheet"}, head, ShortcutList(s.ctx, s.items)))
 }
 
 var (

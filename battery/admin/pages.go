@@ -10,6 +10,7 @@ import (
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -88,7 +89,7 @@ func reservedPagePath(p string) bool {
 // policy, so a refused caller is answered before Build runs.
 func (b *Battery) mountPages(group *appui.ScreenGroup) {
 	for _, p := range b.cfg.Pages {
-		s := b.screen(group, p.Path, "", false, func(ctx context.Context, _ map[string]string) render.HTML {
+		s := b.screen(group, p.Path, i18n.Phrase{}, false, func(ctx context.Context, _ map[string]string) render.HTML {
 			return b.buildSlot(ctx, "page "+p.Path, p.Build)
 		})
 		as := s.Component.(*adminScreen)
@@ -123,7 +124,7 @@ func (b *Battery) pageAllows(ctx context.Context, p Page) bool {
 func (b *Battery) buildSlot(ctx context.Context, slot string, build func(*http.Request) (component.Component, error)) (out render.HTML) {
 	failed := func(reason string) render.HTML {
 		b.logger().Error("admin: app slot failed", "slot", slot, "reason", reason)
-		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminFailed)))
+		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminFailed.Text(ctx)))
 	}
 	ctx = crud.WithoutElevation(ctx)
 	r := appui.RequestFromContext(ctx)

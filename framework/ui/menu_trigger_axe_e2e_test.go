@@ -9,13 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/chromedp"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/testkit/axetest"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
-	"github.com/chromedp/chromedp"
 )
 
 // The axe suite lives in the EXTERNAL runtime_test package on purpose:

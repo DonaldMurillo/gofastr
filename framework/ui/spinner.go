@@ -93,7 +93,7 @@ func Spinner(cfg SpinnerConfig) render.HTML {
 	}
 	label := cfg.Label
 	if label == "" {
-		label = i18nui.T(ctx, i18nui.KeyLoading)
+		label = i18nui.Loading.Text(ctx)
 	}
 	cls := cfg.Class
 	if cfg.Inline {

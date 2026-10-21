@@ -7,7 +7,6 @@ package headless
 // to live here; heights, borders and class structure live in the class map.
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -395,7 +394,7 @@ func Color(p ColorProps, s Classes) render.HTML {
 		"type":                  "color",
 		"value":                 value,
 		"tabindex":              "-1",
-		"aria-label":            fmt.Sprintf(p.Strings.Resolve().PickColor, p.Name),
+		"aria-label":            fill(p.Strings.Resolve().PickColor, "name", p.Name),
 	}
 	if p.ID != "" {
 		swatch["id"] = p.ID + "-picker"

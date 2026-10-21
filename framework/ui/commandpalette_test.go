@@ -255,7 +255,7 @@ func TestCommandPaletteSearchPageMarks(t *testing.T) {
 	cmds := []PaletteCommand{{Label: "Docs", Href: "/docs"}}
 	_, b := CommandPalette(CommandPaletteConfig{Commands: cmds, Search: true, SearchPage: "/search", FallbackHref: "/search"})
 	h := string(b.Definition().Slots[0].Component.Render())
-	for _, want := range []string{`data-search-all="/search"`, `data-search-all-label="See all results for “{q}”"`} {
+	for _, want := range []string{`data-search-all="/search"`, `data-search-all-label="See all results for “{{q}}”"`} {
 		if !strings.Contains(h, want) {
 			t.Errorf("listbox lacks %s", want)
 		}

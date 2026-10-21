@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
 // Hard rule 9: whether two fields share the same surface is a computed

@@ -295,7 +295,7 @@ func TestEmptyStateOffersNew(t *testing.T) {
 // wins over the built-in English.
 func TestChromeComesFromTranslator(t *testing.T) {
 	cat := i18n.NewMapCatalog()
-	cat.Set("en", "ui.entity.count", i18n.Message{Text: "TOTAL {count}"})
+	cat.Set("en", "ui.entity.count", i18n.Message{Text: "TOTAL {{count}}"})
 	cat.Set("en", "entity.orders.plural", i18n.Message{Text: "Ordres"})
 	x := newTestUI(t,
 		map[string]entity.EntityConfig{"orders": ordersConfig()},

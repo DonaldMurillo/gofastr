@@ -10,9 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/chromedp"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
-	"github.com/chromedp/chromedp"
 )
 
 // A compact docs rail with several groups read as one flat list: the

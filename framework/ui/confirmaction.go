@@ -136,11 +136,11 @@ func ConfirmAction(cfg ConfirmActionConfig) (render.HTML, *widget.Builder) {
 	}
 	confirm := cfg.ConfirmLabel
 	if confirm == "" {
-		confirm = i18nui.T(ctx, i18nui.KeyDialogConfirm)
+		confirm = i18nui.DialogConfirm.Text(ctx)
 	}
 	cancel := cfg.CancelLabel
 	if cancel == "" {
-		cancel = i18nui.T(ctx, i18nui.KeyDialogCancel)
+		cancel = i18nui.DialogCancel.Text(ctx)
 	}
 	method := cfg.RPCMethod
 	if method == "" {

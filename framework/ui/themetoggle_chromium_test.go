@@ -16,10 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/chromedp"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
-	"github.com/chromedp/chromedp"
 )
 
 func themeToggleTestPage(t *testing.T, body string, extra ...func(mux *http.ServeMux)) *httptest.Server {

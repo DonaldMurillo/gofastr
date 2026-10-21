@@ -91,7 +91,7 @@ func (s *searchScreen) RenderCtx(ctx context.Context) render.HTML {
 	// app frame's content area supplies itself.
 	return ui.Container(ui.ContainerConfig{Width: ui.ContainerPage, Pad: ui.ContainerPadPage},
 		ui.Stack(ui.StackConfig{Gap: ui.GapLG},
-			ui.PageHeader(ui.PageHeaderConfig{Title: i18nui.T(ctx, i18nui.KeySearchLabel)}),
+			ui.PageHeader(ui.PageHeaderConfig{Title: i18nui.SearchLabel.Text(ctx)}),
 			ui.SearchResults(cfg),
 		),
 	)

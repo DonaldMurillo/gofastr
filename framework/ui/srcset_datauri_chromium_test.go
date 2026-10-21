@@ -8,8 +8,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // Settles, against a real browser, whether a comma inside an

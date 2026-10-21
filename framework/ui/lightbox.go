@@ -69,7 +69,7 @@ type LightboxConfig struct {
 	// data-cui-open="<this Name>" opens the overlay.
 	Name string
 	// Label is the accessible name for the open modal. Defaults to
-	// "Image viewer" (i18nui.KeyLightboxLabel through the strings
+	// "Image viewer" (i18nui.LightboxLabel through the strings
 	// bridge).
 	Label string
 	// NavArrows renders Prev/Next buttons inside the modal AND wires

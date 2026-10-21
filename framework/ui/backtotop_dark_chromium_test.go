@@ -10,10 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
-	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
 )
 
 // A dark-scheme block for the variants used to sit after the hover rule

@@ -2,7 +2,6 @@ package headless
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
@@ -149,7 +148,7 @@ func Tag(p TagProps, s Classes) render.HTML {
 	if p.DismissHref != "" {
 		aria := p.DismissAriaLabel
 		if aria == "" {
-			aria = fmt.Sprintf(p.Strings.Resolve().RemoveLabelled, p.Label)
+			aria = fill(p.Strings.Resolve().RemoveLabelled, "label", p.Label)
 		}
 		requireIsland("Tag with DismissHref", p.Island)
 		if urlsafe.CleanAnchor(p.DismissHref) == "" {

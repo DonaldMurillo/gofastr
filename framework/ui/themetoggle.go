@@ -119,7 +119,7 @@ func renderThemeToggleButton(cfg ThemeToggleConfig, cls string, variant ThemeTog
 	// loads the module and the button does nothing.
 	attrs["data-hui-theme-toggle"] = ""
 	attrs["data-hui-theme-cycle"] = ""
-	attrs["aria-label"] = i18nui.T(ctx, i18nui.KeyThemeToggle)
+	attrs["aria-label"] = i18nui.ThemeToggle.Text(ctx)
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
@@ -134,11 +134,11 @@ func renderThemeToggleButton(cfg ThemeToggleConfig, cls string, variant ThemeTog
 	default: // label
 		lightLabel := cfg.LightLabel
 		if lightLabel == "" {
-			lightLabel = i18nui.T(ctx, i18nui.KeyThemeLight)
+			lightLabel = i18nui.ThemeLight.Text(ctx)
 		}
 		darkLabel := cfg.DarkLabel
 		if darkLabel == "" {
-			darkLabel = i18nui.T(ctx, i18nui.KeyThemeDark)
+			darkLabel = i18nui.ThemeDark.Text(ctx)
 		}
 		attrs["class"] = strings.TrimSpace("fui-theme-toggle fui-theme-toggle--label " + cfg.Class)
 		return render.Tag("button", attrs,
@@ -155,15 +155,15 @@ func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
 	}
 	lightLabel := cfg.LightLabel
 	if lightLabel == "" {
-		lightLabel = i18nui.T(ctx, i18nui.KeyThemeLight)
+		lightLabel = i18nui.ThemeLight.Text(ctx)
 	}
 	darkLabel := cfg.DarkLabel
 	if darkLabel == "" {
-		darkLabel = i18nui.T(ctx, i18nui.KeyThemeDark)
+		darkLabel = i18nui.ThemeDark.Text(ctx)
 	}
 	autoLabel := cfg.AutoLabel
 	if autoLabel == "" {
-		autoLabel = i18nui.T(ctx, i18nui.KeyThemeAuto)
+		autoLabel = i18nui.ThemeAuto.Text(ctx)
 	}
 
 	rootAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "type", "role", "aria-label")
@@ -173,7 +173,7 @@ func renderThemeTogglePill(cfg ThemeToggleConfig, cls string) render.HTML {
 	rootAttrs["class"] = "fui-theme-toggle fui-theme-toggle--pill " + modifierClass("fui-theme-toggle--fill", cfg.Fill) + " " + cfg.Class
 	rootAttrs["data-hui-theme-toggle"] = ""
 	rootAttrs["role"] = "radiogroup"
-	rootAttrs["aria-label"] = i18nui.T(ctx, i18nui.KeyThemeColorScheme)
+	rootAttrs["aria-label"] = i18nui.ThemeColorScheme.Text(ctx)
 	if cfg.ID != "" {
 		rootAttrs["id"] = cfg.ID
 	}

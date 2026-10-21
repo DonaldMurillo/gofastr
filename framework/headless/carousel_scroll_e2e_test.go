@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 // carouselLayout lays a bare carousel out the way a styled one is: a

@@ -49,7 +49,7 @@
   // fill substitutes the announcement's tokens: {label} the row's
   // name, {list} the list's own name, {position} the 1-based place.
   function fill(tpl, map) {
-    return tpl.replace(/\{(label|list|position)\}/g, function (_, k) {
+    return tpl.replace(/\{\{(label|list|position)\}\}/g, function (_, k) {
       return map[k] !== undefined ? String(map[k]) : '';
     });
   }
