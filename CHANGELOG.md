@@ -25,6 +25,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   dequeue and lane indexes got the same name and the second was never
   created. A name over the limit now ends in a hash of the table name.
 
+### Security
+- The repo builds with Go 1.27.3 (`toolchain go1.27.3` in go.mod, and in
+  the go.mod `gofastr init` writes; the `go 1.27.0` floor is unchanged).
+  1.27.3 fixes GO-2026-6809 in crypto/x509, which govulncheck reaches
+  through the SMTP sender's TLS handshake. Build apps with 1.27.3.
+
 ## [0.93.0] - 2026-10-20
 
 **BREAKING** for generated clients, endpoints and SQLite decimals.
