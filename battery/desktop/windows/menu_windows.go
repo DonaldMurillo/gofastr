@@ -245,18 +245,28 @@ func (s *winShell) ScriptPrompts(ds ...desktop.Decision) {
 	s.promptMu.Unlock()
 }
 
+// ClickPrompt finds the prompt by the words it was shown with, which
+// follow the request's language, not the shell's. A button named in
+// English maps onto the dialog's own label, and onto the message-box
+// fallback's Yes/No/Cancel.
 func (s *winShell) ClickPrompt(button string) error {
+	s.promptMu.Lock()
+	words := s.promptWords
+	s.promptMu.Unlock()
+	if words.Title == "" {
+		words = desktop.PromptText(s.text(), desktop.PermissionRequest{})
+	}
 	names := []string{button}
 	switch strings.ToLower(button) {
 	case "allow":
-		names = append(names, "Yes")
+		names = append(names, words.Allow, "Yes")
 	case "allow once":
-		names = append(names, "No")
+		names = append(names, words.AllowOnce, "No")
 	case "deny":
-		names = append(names, "Cancel")
+		names = append(names, words.Deny, "Cancel")
 	}
 	for i := 0; i < 100; i++ {
-		dlg := win32.FindWindow("#32770", desktop.PromptText(s.text(), desktop.PermissionRequest{}).Title)
+		dlg := win32.FindWindow("#32770", words.Title)
 		if dlg != 0 {
 			for _, name := range names {
 				buttonName, _ := win32.UTF16Ptr(name)

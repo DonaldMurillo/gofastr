@@ -248,10 +248,14 @@ func (s *winShell) Prompt(ctx context.Context, req desktop.PermissionRequest) (d
 		return desktop.DecisionDeny, desktop.ErrCancelled
 	}
 	var decision desktop.Decision
+	// ctx is the bridge request's: the dialog speaks the page's language.
+	words := desktop.PromptText(ctx, req)
+	s.promptMu.Lock()
+	s.promptWords = words
+	s.promptMu.Unlock()
 	err := s.runNativeModal(ctx, func(op *modalOperation) error {
 		var promptErr error
-		// ctx is the bridge request's: the dialog speaks the page's language.
-		decision, promptErr = showPermissionPrompt(s.hwnd, req, desktop.PromptText(ctx, req), op)
+		decision, promptErr = showPermissionPrompt(s.hwnd, req, words, op)
 		return promptErr
 	})
 	if err != nil {

@@ -127,9 +127,13 @@ type winShell struct {
 	ready       func(desktop.Window)
 	runErr      error
 
-	promptMu     sync.Mutex
-	promptQueue  []desktop.Decision
-	promptGate   chan struct{}
+	promptMu    sync.Mutex
+	promptQueue []desktop.Decision
+	promptGate  chan struct{}
+	// promptWords are the words of the prompt on screen, in the
+	// request's language: ClickPrompt finds the dialog and its buttons
+	// by them.
+	promptWords  desktop.PromptWords
 	modalMu      sync.Mutex
 	modalCancels map[uintptr]func()
 	notifyMu     sync.Mutex
