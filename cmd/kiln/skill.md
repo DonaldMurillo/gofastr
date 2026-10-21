@@ -115,7 +115,7 @@ Use `set_scaffold` to replace navigation and owned-Go stubs:
 ```json
 {
   "nav": [{"label":"Dashboard","href":"/dashboard"}],
-  "endpoints": [{"name":"health","method":"GET","path":"/healthz"}],
+  "endpoints": [{"name":"post_summary","entity":"posts","method":"GET","path":"summary","handler":"PostSummary"}],
   "middleware": [{"name":"request_logger"}],
   "plugins": [{"name":"metrics"}],
   "helpers": [{"name":"slug"}]
@@ -123,7 +123,9 @@ Use `set_scaffold` to replace navigation and owned-Go stubs:
 ```
 
 Navigation renders live. Endpoint/middleware/plugin/helper declarations become
-editable Go stubs in the generated scaffold.
+editable Go stubs in the generated scaffold. An endpoint hangs under an
+entity: its `path` is relative to the entity's route (`summary` serves
+`/api/posts/summary`), and freeze refuses one with no `entity`.
 
 ## Behavior: hooks, routes, seeds
 
@@ -134,7 +136,10 @@ Declarative behavior uses these tools (same dispatcher as everything else):
   `before_delete`, `after_delete`, `before_list`, `after_list`. A hook has an
   `id`, an `entity`, a `when`, an optional `condition` (expression), and an
   `action`.
-- `add_route(route)` / `delete_route(method, path)`: declarative HTTP routes.
+- `add_route(route)` / `delete_route(method, path)`: declarative HTTP routes
+  for the live preview. They hang under no entity, so freeze refuses a world
+  that still has one: delete it before freezing and register the route in
+  owned Go after generation.
 - `add_seed(seed)`: insert seed rows `{"entity":"posts","rows":[{...}]}`.
 - `undo`: revert the most recent journal entry.
 

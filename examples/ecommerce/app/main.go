@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=fea7619edad190a1
+//gofastr:generated generator=app kind=scaffold version=dev sum=a4fc53c14debac91
 
 package main
 
@@ -83,6 +83,11 @@ func main() {
 	// a production /mcp is reachable solely by trusted callers.
 	fwApp.RegisterPlugin(gflog.New(gflog.Config{}))
 	entities.RegisterAll(fwApp)
+	// An entity declares states and the seed writes rows: seeded rows may
+	// start at any state under the audited state override below, and an
+	// override is refused on an entity with no audit log, so enable it
+	// here (WithAuditLog creates audit_log when it does not exist).
+	fwApp.WithAuditLog(framework.AuditConfig{})
 	fwApp.HookRegistry("orders").RegisterHook(framework.AfterCreate, recomputeOrderTotalsOnCreateHook)
 	fwApp.HookRegistry("orders").RegisterHook(framework.AfterUpdate, recomputeOrderTotalsOnUpdateHook)
 	fwApp.HookRegistry("order_items").RegisterHook(framework.AfterCreate, recomputeOrderFromItemCreateHook)

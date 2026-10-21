@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=f55a297c60a75c92
+//gofastr:generated generator=app kind=scaffold version=dev sum=4bda3376b546eb37
 
 package entities
 
@@ -43,6 +43,18 @@ const (
 	OrdersStatusRefunded   OrdersStatusValue = "refunded"
 )
 
+// OrdersMove names one of the orders moves; pass it to OrdersRepo.Transition.
+type OrdersMove string
+
+const (
+	OrdersMoveConfirm OrdersMove = "confirm"
+	OrdersMoveProcess OrdersMove = "process"
+	OrdersMoveShip    OrdersMove = "ship"
+	OrdersMoveDeliver OrdersMove = "deliver"
+	OrdersMoveCancel  OrdersMove = "cancel"
+	OrdersMoveRefund  OrdersMove = "refund"
+)
+
 // OrdersInput is the create payload for OrdersRepo. A required field with no
 // default is always sent; a nil field takes its default, and new(false)
 // stores false.
@@ -59,8 +71,6 @@ type OrdersInput struct {
 	ShippingCost    *string            `json:"shippingCost,omitempty"`
 	Total           string             `json:"total"`
 	Notes           *string            `json:"notes,omitempty"`
-	ShippedAt       *string            `json:"shippedAt,omitempty"`
-	DeliveredAt     *string            `json:"deliveredAt,omitempty"`
 }
 
 // OrdersPatch is the update payload for OrdersRepo: a nil field is left as
@@ -68,19 +78,16 @@ type OrdersInput struct {
 // float, string or text field. "" for any other type is not a value:
 // absent on an optional field, a validation error on a required one.
 type OrdersPatch struct {
-	Status          *OrdersStatusValue `json:"status,omitempty"`
-	CustomerName    *string            `json:"customerName,omitempty"`
-	CustomerEmail   *string            `json:"customerEmail,omitempty"`
-	CustomerPhone   *string            `json:"customerPhone,omitempty"`
-	ShippingAddress *map[string]any    `json:"shippingAddress,omitempty"`
-	BillingAddress  *map[string]any    `json:"billingAddress,omitempty"`
-	Subtotal        *string            `json:"subtotal,omitempty"`
-	Tax             *string            `json:"tax,omitempty"`
-	ShippingCost    *string            `json:"shippingCost,omitempty"`
-	Total           *string            `json:"total,omitempty"`
-	Notes           *string            `json:"notes,omitempty"`
-	ShippedAt       *string            `json:"shippedAt,omitempty"`
-	DeliveredAt     *string            `json:"deliveredAt,omitempty"`
+	CustomerName    *string         `json:"customerName,omitempty"`
+	CustomerEmail   *string         `json:"customerEmail,omitempty"`
+	CustomerPhone   *string         `json:"customerPhone,omitempty"`
+	ShippingAddress *map[string]any `json:"shippingAddress,omitempty"`
+	BillingAddress  *map[string]any `json:"billingAddress,omitempty"`
+	Subtotal        *string         `json:"subtotal,omitempty"`
+	Tax             *string         `json:"tax,omitempty"`
+	ShippingCost    *string         `json:"shippingCost,omitempty"`
+	Total           *string         `json:"total,omitempty"`
+	Notes           *string         `json:"notes,omitempty"`
 }
 
 // ====== Orders column references ======
@@ -281,6 +288,18 @@ func (r *OrdersRepo) BatchDelete(ctx context.Context, ids []string) error {
 	return err
 }
 
+// Transition runs move on the row with this id and returns the row as
+// stored afterwards: the one way an enforced state field changes. It runs
+// as CrudHandler.RunTransition does, so a System move skips the permission
+// check and a row outside the move's From answers a conflict.
+func (r *OrdersRepo) Transition(ctx context.Context, id string, move OrdersMove) (*Orders, error) {
+	out, err := r.handler.RunTransition(ctx, id, string(move))
+	if err != nil {
+		return nil, err
+	}
+	return r.row(out)
+}
+
 // OnOrdersCreated subscribes to entity.created events scoped to "orders".
 // Returns a cancel func; call it to remove the handler.
 func OnOrdersCreated(app *framework.App, fn func(ctx context.Context, row *Orders) error) func() {
@@ -344,6 +363,7 @@ func registerOrders(app *framework.App) {
 			{Name: "idx_orders_status", Columns: []string{"status"}},
 			{Name: "idx_orders_user", Columns: []string{"user_id"}},
 		},
+		States:     &framework.StatesConfig{Field: "status", Initial: []string{"pending"}, Transitions: []framework.Transition{{Key: "confirm", Label: "Confirm", From: []string{"pending"}, To: "confirmed", Variant: "primary"}, {Key: "process", Label: "Start processing", From: []string{"confirmed"}, To: "processing"}, {Key: "ship", Label: "Ship", From: []string{"confirmed", "processing"}, To: "shipped", Stamp: "shipped_at", Variant: "primary"}, {Key: "deliver", Label: "Mark delivered", From: []string{"shipped"}, To: "delivered", Stamp: "delivered_at"}, {Key: "cancel", Label: "Cancel", From: []string{"pending", "confirmed", "processing"}, To: "cancelled", Variant: "danger"}, {Key: "refund", Label: "Refund", From: []string{"delivered"}, To: "refunded", Variant: "danger"}}},
 		Properties: map[string]any{"icon": "shopping-cart", "label": "Orders"},
 	})
 	_ = Orders{}

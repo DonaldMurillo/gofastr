@@ -243,6 +243,43 @@ entities:
         name: items
         entity: order_items
         foreign_key: order_id
+    # An order moves through these steps only: a PATCH that sets status or
+    # a stamp directly is refused, and each move is its own route, MCP tool
+    # and client call (POST /api/orders/{id}/transitions/ship).
+    states:
+      field: status
+      initial: [pending]
+      transitions:
+        - key: confirm
+          label: Confirm
+          from: [pending]
+          to: confirmed
+          variant: primary
+        - key: process
+          label: Start processing
+          from: [confirmed]
+          to: processing
+        - key: ship
+          label: Ship
+          from: [confirmed, processing]
+          to: shipped
+          stamp: shipped_at
+          variant: primary
+        - key: deliver
+          label: Mark delivered
+          from: [shipped]
+          to: delivered
+          stamp: delivered_at
+        - key: cancel
+          label: Cancel
+          from: [pending, confirmed, processing]
+          to: cancelled
+          variant: danger
+        - key: refund
+          label: Refund
+          from: [delivered]
+          to: refunded
+          variant: danger
 
   - name: order_items
     crud: true
@@ -448,9 +485,7 @@ screens:
         level: 1
         text: Product Details
       - kind: entity_detail
-        text: Product
         entity: products
-        fields: [name, slug, sku, description, price, stock, status, featured]
 
   - name: order_detail
     route: /orders/{id}
@@ -461,22 +496,7 @@ screens:
         level: 1
         text: Order Details
       - kind: entity_detail
-        text: Order
         entity: orders
-        fields: [order_number, customer_name, customer_email, status, total, notes]
-endpoints:
-  - name: confirm_order
-    method: POST
-    path: /orders/{id}/confirm
-    entity: orders
-    handler: confirmOrder
-    description: Confirm a pending order
-  - name: ship_order
-    method: POST
-    path: /orders/{id}/ship
-    entity: orders
-    handler: shipOrder
-    description: Mark an order as shipped
 
 middleware:
   - request_logger

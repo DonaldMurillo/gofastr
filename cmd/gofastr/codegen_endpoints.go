@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"go/types"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -77,6 +78,12 @@ func readAppEndpoints(dir string, decls []framework.EntityDeclaration) ([]appEnd
 	if err != nil {
 		return nil, err
 	}
+	return src.resolveAll(f.Path, entries, decls)
+}
+
+// resolveAll resolves every entry against the source. at names where the
+// entries came from in errors.
+func (src *entitiesSource) resolveAll(at string, entries []settings.Endpoint, decls []framework.EntityDeclaration) ([]appEndpoint, error) {
 	entities := map[string]framework.EntityDeclaration{}
 	byStruct := map[string]string{}
 	for _, d := range decls {
@@ -90,12 +97,12 @@ func readAppEndpoints(dir string, decls []framework.EntityDeclaration) ([]appEnd
 	calls := map[string]string{}
 	for _, e := range entries {
 		if prev, ok := calls[toCamelCase(e.Name)]; ok {
-			return nil, fmt.Errorf("%s: endpoints %s and %s both become the call %s: rename one", f.Path, prev, e.Name, toCamelCase(e.Name))
+			return nil, fmt.Errorf("%s: endpoints %s and %s both become the call %s: rename one", at, prev, e.Name, toCamelCase(e.Name))
 		}
 		calls[toCamelCase(e.Name)] = e.Name
 		ep, err := src.resolve(e, entities, byStruct)
 		if err != nil {
-			return nil, fmt.Errorf("%s: endpoint %s: %w", f.Path, e.Name, err)
+			return nil, fmt.Errorf("%s: endpoint %s: %w", at, e.Name, err)
 		}
 		out = append(out, ep)
 	}
@@ -111,6 +118,16 @@ type entitiesSource struct {
 // readEntitiesSource parses every non-test Go file of dir/entities through
 // an *os.Root, so a symlinked leaf pointing out of the project is never read.
 func readEntitiesSource(dir string) (*entitiesSource, error) {
+	files, err := readEntitiesFiles(dir)
+	if err != nil {
+		return nil, err
+	}
+	return parseEntitiesSource(files)
+}
+
+// readEntitiesFiles reads the Go files of dir's entities package, tests
+// left out, keyed by path (entities/<name>.go).
+func readEntitiesFiles(dir string) (map[string]string, error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		return nil, err
@@ -120,8 +137,7 @@ func readEntitiesSource(dir string) (*entitiesSource, error) {
 	if err != nil {
 		return nil, fmt.Errorf("endpoints need the entities package: %w", err)
 	}
-	src := &entitiesSource{files: map[string]*ast.File{}, types: map[string]*ast.TypeSpec{}}
-	fset := token.NewFileSet()
+	files := map[string]string{}
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -132,7 +148,19 @@ func readEntitiesSource(dir string) (*entitiesSource, error) {
 		if err != nil {
 			continue // a leaf outside the root: never parsed
 		}
-		file, err := parser.ParseFile(fset, rel, data, parser.SkipObjectResolution)
+		files[rel] = string(data)
+	}
+	return files, nil
+}
+
+// parseEntitiesSource parses the entities package from files, keyed by
+// path (entities/<name>.go). generate app resolves an app spec's endpoints
+// against the package it is about to write, before any of it is on disk.
+func parseEntitiesSource(files map[string]string) (*entitiesSource, error) {
+	src := &entitiesSource{files: map[string]*ast.File{}, types: map[string]*ast.TypeSpec{}}
+	fset := token.NewFileSet()
+	for _, rel := range slices.Sorted(maps.Keys(files)) {
+		file, err := parser.ParseFile(fset, rel, files[rel], parser.SkipObjectResolution)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", rel, err)
 		}

@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
+	"github.com/DonaldMurillo/gofastr/core/settings"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
@@ -115,15 +117,7 @@ func appSpecToMap(bp AppSpec) map[string]any {
 	if len(bp.Endpoints) > 0 {
 		eps := make([]any, len(bp.Endpoints))
 		for i, e := range bp.Endpoints {
-			em := map[string]any{}
-			putStr(em, "name", e.Name)
-			putStr(em, "method", e.Method)
-			putStr(em, "path", e.Path)
-			putStr(em, "entity", e.Entity)
-			putStr(em, "handler", e.Handler)
-			putStr(em, "description", e.Description)
-			putBool(em, "mcp", e.MCP)
-			eps[i] = em
+			eps[i] = endpointToMap(e)
 		}
 		m["endpoints"] = eps
 	}
@@ -583,6 +577,21 @@ func strsToAny(values []string) []any {
 	return out
 }
 
+// endpointToMap writes one endpoint with the keys of the settings
+// file's endpoints: section.
+func endpointToMap(e settings.Endpoint) map[string]any {
+	m := map[string]any{}
+	putStr(m, "name", e.Name)
+	putStr(m, "entity", e.Entity)
+	putStr(m, "method", e.Method)
+	putStr(m, "path", e.Path)
+	putStr(m, "handler", e.Handler)
+	putStr(m, "description", e.Description)
+	putBool(m, "mcp", e.MCP)
+	putBool(m, "public", e.Public)
+	return m
+}
+
 func statesToMap(st *fwentity.StatesConfig) map[string]any {
 	m := map[string]any{}
 	putStr(m, "field", st.Field)
@@ -993,7 +1002,7 @@ var (
 	dbOrder        = []string{"driver", "url"}
 	authOrder      = []string{"enabled", "dev_mode", "base_path", "jwt_secret"}
 	adminOrder     = []string{"path", "role", "enabled", "login_path", "seed_email", "seed_password"}
-	endpointOrder  = []string{"name", "method", "path", "entity", "handler", "description", "mcp"}
+	endpointOrder  = []string{"name", "entity", "method", "path", "handler", "description", "mcp", "public"}
 	actionOrder    = []string{"name", "event", "client_js"}
 	stubOrder      = []string{"name", "description"}
 	seedOrder      = []string{"entity", "count", "weights", "rows"}
@@ -1885,6 +1894,158 @@ func assignedLiteral(body []ast.Stmt, name string) ast.Expr {
 	return found
 }
 
+// packHookStubComment matches the line renderAppSpecStubs writes above a
+// hook stub: `// <handler> implements hook "<id>" (entity <e>, <when>): <desc>`.
+var packHookStubComment = regexp.MustCompile(`^// (\w+) implements hook ("(?:[^"\\]|\\.)*") \(entity [^,]*, [^)]*\): ?(.*)$`)
+
+// packHelperStubComment matches the body of a helper stub:
+// `// TODO: implement helper "<name>".`
+var packHelperStubComment = regexp.MustCompile(`^// TODO: implement helper ("(?:[^"\\]|\\.)*")\.$`)
+
+// packStubName turns the CamelCase root a stub was emitted under back into
+// a spec name. The emitter applied toCamelCase, which is lossy, so pack
+// keeps whichever spelling toCamelCase maps back to the same root.
+func packStubName(camel string) string {
+	if snake := toSnakeCase(camel); toCamelCase(snake) == camel {
+		return snake
+	}
+	return camel
+}
+
+// packReadStubs reconstructs middleware:, plugins:, helpers: and hooks:
+// from their wiring (app.go's Use and RegisterPlugin calls, main.go's
+// RegisterHook calls) and the stubs renderAppSpecStubs wrote in stubs.go.
+// The wiring decides what exists and in which order; stubs.go only adds
+// the names and descriptions the wiring cannot carry. A stub whose body
+// the author has since written still packs, since its wiring is unchanged.
+func packReadStubs(dir string, bp *AppSpec) error {
+	stubs, stubComments := map[string]*ast.FuncDecl{}, map[string]string{}
+	var helpers []AppSpecNamedStub
+	stubsPath := filepath.Join(dir, "stubs.go")
+	if _, err := os.Stat(stubsPath); err == nil {
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, stubsPath, nil, parser.ParseComments)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", stubsPath, err)
+		}
+		for _, d := range file.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			key := fn.Name.Name
+			if fn.Recv != nil && len(fn.Recv.List) == 1 {
+				key = astSelLast(fn.Recv.List[0].Type) + "." + key
+			}
+			stubs[key] = fn
+			if fn.Doc != nil {
+				for _, c := range fn.Doc.List {
+					if m := packHookStubComment.FindStringSubmatch(c.Text); m != nil && m[1] == fn.Name.Name {
+						stubComments[fn.Name.Name] = c.Text
+					}
+				}
+			}
+			if fn.Recv == nil && fn.Type.Params.NumFields() == 0 && fn.Type.Results.NumFields() == 0 && fn.Body != nil {
+				name := packStubName(fn.Name.Name)
+				for _, cg := range file.Comments {
+					if cg.Pos() < fn.Body.Lbrace || cg.End() > fn.Body.Rbrace {
+						continue
+					}
+					if m := packHelperStubComment.FindStringSubmatch(cg.List[0].Text); m != nil {
+						if s, err := strconv.Unquote(m[1]); err == nil && toCamelCase(s) == fn.Name.Name {
+							name = s
+						}
+					}
+				}
+				helpers = append(helpers, AppSpecNamedStub{Name: name})
+			}
+		}
+	}
+	bp.Helpers = helpers
+
+	if appFile, err := packParseFile(filepath.Join(dir, "app.go")); err == nil {
+		ast.Inspect(appFile, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || len(call.Args) != 1 {
+				return true
+			}
+			switch astSelLast(call.Fun) {
+			case "Use":
+				id, ok := call.Args[0].(*ast.Ident)
+				if !ok {
+					return true
+				}
+				root, isStub := strings.CutSuffix(id.Name, "Middleware")
+				if isStub && stubs[id.Name] != nil {
+					bp.Middleware = append(bp.Middleware, AppSpecNamedStub{Name: packStubName(root)})
+				}
+			case "RegisterPlugin":
+				lit, ok := call.Args[0].(*ast.CompositeLit)
+				if !ok {
+					return true
+				}
+				typ := astSelLast(lit.Type)
+				root, isStub := strings.CutSuffix(typ, "Plugin")
+				if !isStub || stubs[typ+".Init"] == nil {
+					return true
+				}
+				name := packStubName(root)
+				if fn := stubs[typ+".Name"]; fn != nil && len(fn.Body.List) == 1 {
+					if ret, ok := fn.Body.List[0].(*ast.ReturnStmt); ok && len(ret.Results) == 1 {
+						if s := astString(ret.Results[0]); s != "" {
+							name = s
+						}
+					}
+				}
+				bp.Plugins = append(bp.Plugins, AppSpecNamedStub{Name: name})
+			}
+			return true
+		})
+	}
+
+	mainFile, err := packParseFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		return nil
+	}
+	lifecycles := map[string]string{}
+	for when, expr := range appSpecHookTypes {
+		lifecycles[strings.TrimPrefix(expr, "framework.")] = when
+	}
+	// A hook owns its stub, so a handler registered twice by hand packs as
+	// its first registration; the check then names main.go.
+	seen := map[string]bool{}
+	ast.Inspect(mainFile, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || astSelLast(call.Fun) != "RegisterHook" || len(call.Args) != 2 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		reg, ok := sel.X.(*ast.CallExpr)
+		if !ok || astSelLast(reg.Fun) != "HookRegistry" || len(reg.Args) != 1 {
+			return true
+		}
+		handler, ok := call.Args[1].(*ast.Ident)
+		when, known := lifecycles[astSelLast(call.Args[0])]
+		if !ok || !known || stubs[handler.Name] == nil || seen[handler.Name] {
+			return true
+		}
+		seen[handler.Name] = true
+		hook := AppSpecHook{ID: handler.Name, Entity: astString(reg.Args[0]), When: when, Handler: handler.Name}
+		if m := packHookStubComment.FindStringSubmatch(stubComments[handler.Name]); m != nil {
+			if id, err := strconv.Unquote(m[2]); err == nil {
+				hook.ID = id
+			}
+			hook.Description = m[3]
+		}
+		bp.Hooks = append(bp.Hooks, hook)
+		return true
+	})
+	return nil
+}
+
 // packReadSeed reconstructs seed data from stubs.go seedData().
 func packReadSeed(dir string) ([]AppSpecSeedEntity, error) {
 	path := filepath.Join(dir, "stubs.go")
@@ -1930,10 +2091,15 @@ func packReadNav(dir string) ([]AppSpecNavItem, error) {
 	if !ok {
 		return nil, nil
 	}
-	itemsExpr := fieldVals(cfg)["Items"]
-	itemsLit, ok := itemsExpr.(*ast.CompositeLit)
+	return packNavItems(fieldVals(cfg)["Items"]), nil
+}
+
+// packNavItems reads one []ui.SidebarItem literal, and each item's
+// Children the same way.
+func packNavItems(e ast.Expr) []AppSpecNavItem {
+	itemsLit, ok := e.(*ast.CompositeLit)
 	if !ok {
-		return nil, nil
+		return nil
 	}
 	var out []AppSpecNavItem
 	for _, el := range itemsLit.Elts {
@@ -1945,11 +2111,45 @@ func packReadNav(dir string) ([]AppSpecNavItem, error) {
 		out = append(out, AppSpecNavItem{
 			Label: astString(iv["Label"]),
 			Href:  astString(iv["Href"]),
-			Icon:  astString(iv["Icon"]),
+			Icon:  packIconName(iv["Icon"]),
 			Role:  role,
+			Items: packNavItems(iv["Children"]),
 		})
 	}
-	return out, nil
+	return out
+}
+
+// packOutputDir recovers app.output_dir from main.go's import of the
+// entities package: renderAppSpecMain imports <module>/<output_dir>/entities,
+// so whatever sits between the module and /entities is the output dir.
+func packOutputDir(mainFile *ast.File, module string) string {
+	if module == "" {
+		return ""
+	}
+	for _, imp := range mainFile.Imports {
+		p, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			continue
+		}
+		rest, ok := strings.CutPrefix(p, module+"/")
+		if !ok {
+			continue
+		}
+		if dir, ok := strings.CutSuffix(rest, "/entities"); ok {
+			return dir
+		}
+	}
+	return ""
+}
+
+// packIconName reads the icon name out of the ui.Icon("name",
+// ui.IconConfig{}) call renderNavItemGo emits.
+func packIconName(e ast.Expr) string {
+	call, ok := e.(*ast.CallExpr)
+	if !ok || astSelLast(call.Fun) != "Icon" || len(call.Args) == 0 {
+		return ""
+	}
+	return astString(call.Args[0])
 }
 
 // ----- P3: app config + theme + auth + admin --------------------------------
@@ -2018,6 +2218,7 @@ func packReadApp(dir string) (AppSpecApp, error) {
 
 	// Admin, PWA, and LLM-markdown config live in main.go.
 	if mainFile, err := packParseFile(filepath.Join(dir, "main.go")); err == nil {
+		app.OutputDir = packOutputDir(mainFile, app.Module)
 		ast.Inspect(mainFile, func(n ast.Node) bool {
 			switch t := n.(type) {
 			case *ast.CompositeLit:
@@ -2897,11 +3098,76 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (AppSpecBlock, bool) 
 		if n, ok := astInt(c["Level"]); ok {
 			lvl = n
 		}
-		return AppSpecBlock{Type: "heading", Level: lvl, Text: renderTextArg(call.Args[len(call.Args)-1])}, true
+		return AppSpecBlock{Type: "heading", Level: lvl, Class: astString(c["Class"]), Text: renderTextArg(call.Args[len(call.Args)-1])}, true
+	case "render.Join":
+		if b, ok := reverseEntityForm(call); ok {
+			return b, true
+		}
+	case "html.Paragraph":
+		return AppSpecBlock{Type: "paragraph", Class: astString(cfgOf(call, 0)["Class"]), Text: renderTextArg(call.Args[len(call.Args)-1])}, true
 	case "render.Tag":
 		return reverseRenderTag(call)
 	}
 	return AppSpecBlock{}, false
+}
+
+// reverseEntityForm reads the entity_form block appSpecEntityFormExpr
+// emits: render.Join(ui.PageHeader{Title}, ui.Form(cfg, <one control per
+// field>)), whose ExtraAttrs carry the data-entity-form and
+// data-entity-mode markers. Each control names its field in a Name key,
+// directly or inside ui.FormField's Input func, in the order the form
+// lists them, which is the allowlist that reproduces the form.
+func reverseEntityForm(call *ast.CallExpr) (AppSpecBlock, bool) {
+	if len(call.Args) != 2 {
+		return AppSpecBlock{}, false
+	}
+	header, ok := call.Args[0].(*ast.CallExpr)
+	if !ok || callSel(header) != "ui.PageHeader" {
+		return AppSpecBlock{}, false
+	}
+	form, ok := call.Args[1].(*ast.CallExpr)
+	if !ok || callSel(form) != "ui.Form" || len(form.Args) == 0 {
+		return AppSpecBlock{}, false
+	}
+	merge, ok := cfgOf(form, 0)["ExtraAttrs"].(*ast.CallExpr)
+	if !ok || callSel(merge) != "html.MergeAttrs" || len(merge.Args) == 0 {
+		return AppSpecBlock{}, false
+	}
+	markers := map[string]string{}
+	if lit, ok := merge.Args[0].(*ast.CompositeLit); ok {
+		for _, el := range lit.Elts {
+			if kv, ok := el.(*ast.KeyValueExpr); ok {
+				markers[astString(kv.Key)] = astString(kv.Value)
+			}
+		}
+	}
+	if markers["data-entity-form"] == "" {
+		return AppSpecBlock{}, false
+	}
+	b := AppSpecBlock{
+		Kind:   "entity_form",
+		Entity: markers["data-entity-form"],
+		Mode:   markers["data-entity-mode"],
+		Text:   astString(cfgOf(header, 0)["Title"]),
+	}
+	for _, arg := range form.Args[1:] {
+		name := ""
+		ast.Inspect(arg, func(n ast.Node) bool {
+			kv, ok := n.(*ast.KeyValueExpr)
+			if name != "" || !ok {
+				return name == ""
+			}
+			if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "Name" {
+				name = astString(kv.Value)
+			}
+			return name == ""
+		})
+		if name == "" {
+			return AppSpecBlock{}, false
+		}
+		b.Fields = append(b.Fields, name)
+	}
+	return b, true
 }
 
 func reverseLayoutBlock(kind string, call *ast.CallExpr, helpers map[string]ast.Expr) AppSpecBlock {
@@ -3456,6 +3722,13 @@ func packAppSpec(dir string) (AppSpec, error) {
 	if bp.Seed, err = packReadSeed(dir); err != nil {
 		return bp, err
 	}
+	if err = packReadStubs(dir, &bp); err != nil {
+		return bp, err
+	}
+	// Endpoints live in the settings file generate app wrote them to.
+	if bp.Endpoints, err = existingEndpoints(dir); err != nil {
+		return bp, err
+	}
 	return bp, nil
 }
 
@@ -3499,6 +3772,12 @@ func runPack(args []string) {
 	if err != nil {
 		packFail(toStderr, "pack: %v", err)
 		return
+	}
+	// The seed password lives only in .env. Without it the packed spec
+	// seeds no admin, and the check below then names app.go and main.go;
+	// say why first.
+	if bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword == "" {
+		packNote(toStderr, "pack: the app seeds admin %s, but %s holds no ADMIN_SEED_PASSWORD, so the packed spec seeds no admin; add seed_password under app.admin before generating from it", bp.App.Admin.SeedEmail, filepath.Join(dir, ".env"))
 	}
 	// The check regenerates from the packed spec and names every file it
 	// does not reproduce, so the loss is reported instead of silent.

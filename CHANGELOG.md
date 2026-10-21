@@ -31,6 +31,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Calling it after registration panics, and `Start` fails while endpoints
   wait on a name nothing registered. See `gofastr docs
   entity-declarations` → Endpoints from another file.
+- **`gofastr pack` recovers `hooks`, `middleware`, `plugins`, `helpers`
+  and `endpoints`.** The first four come back from their wiring in
+  `app.go` and `main.go` plus the names and descriptions in `stubs.go`, so
+  a stub whose body you wrote still packs; endpoints come back from the
+  `endpoints:` section of `gofastr.settings.yml`, and the check counts a
+  linked handler file as hand-written. Pack also recovers nav icons,
+  `app.output_dir`, `paragraph` blocks and `entity_form` blocks.
+  `examples/ecommerce/app` packs with nothing unrecovered. When the
+  app's `.env` is missing, pack says the spec has no admin seed password
+  instead of leaving the check to report `app.go` and `main.go` as
+  changed. See `gofastr docs app-spec` → Packing.
 - **`App.InTx` takes transaction options.** `framework.TxIsolation(level)`
   sets the isolation level and `framework.TxReadOnly()` makes writes
   fail. The SQLite driver ignores the read-only flag, so on SQLite the
@@ -77,6 +88,31 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   A failed call's span records the error's type, never its message.
 
 ### Changed
+- **BREAKING: an app spec's `endpoints:` entries are `gofastr.settings.yml`
+  endpoints.** Each takes `name`, `entity` (required), `method`, a `path`
+  relative to the entity's route (`{id}/publish`), a `handler` link
+  (`entities/posts_endpoints.go#PublishPost`), `description`, `mcp` and
+  `public`. `generate app` merges them into the settings file, writes each
+  linked handler as a typed stub that answers 501 until you write it, and
+  writes `entities/endpoints.gen.go` and the client calls; it no longer
+  writes `http.HandlerFunc` stubs into `stubs.go` or `Router().Handle`
+  lines into `app.go`. An entity's own `endpoints:` list is refused with
+  the move to make. `gofastr upgrade` finds both spellings. A route with no
+  entity belongs in owned Go (`fwApp.Router().Handle`). `--add` merges a
+  fragment's endpoints into the settings file, and its `--json` report
+  lists the settings file and the rebuilt `endpoints.gen.go` and
+  `client.go` under a new `updated` key instead of `skipped_existing`. See
+  `gofastr docs app-spec` → Custom endpoints.
+- **BREAKING: `kiln freeze` writes endpoints in the settings shape and
+  refuses what has none.** Entity and scaffold endpoints freeze to the
+  top-level list with a relative path and an
+  `entities/<entity>_endpoints.go#<Name>` link. A world route, a scaffold
+  endpoint with no entity, one whose path sits outside its entity's route
+  (`/<table>/…`), or one that repeats another's route stops the freeze,
+  naming it; delete it and register the route in
+  owned Go after generation. See `gofastr docs kiln`.
+- **`entity_detail` refuses `text:` and `fields:`.** The record page draws
+  the entity's `display:` block, so both were accepted and never rendered.
 - **BREAKING: `Endpoint` routes require a signed-in caller unless the
   endpoint sets `Public`.** The HTTP route answers 401 with no user on the
   request and sends `Cache-Control: no-store` when gated. Public or not,

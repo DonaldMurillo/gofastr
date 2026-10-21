@@ -644,9 +644,7 @@ screens:
         level: 1
         text: Course Details
       - kind: entity_detail
-        text: Course
         entity: courses
-        fields: [title, slug, category, level, status, price, is_free, duration_hours]
 
   - name: student_new
     route: /new-student
@@ -664,22 +662,22 @@ screens:
 
 endpoints:
   - name: enroll_student
-    method: POST
-    path: /courses/{id}/enroll
     entity: courses
-    handler: enrollStudent
+    method: POST
+    path: "{id}/enroll"
+    handler: entities/courses_endpoints.go#EnrollStudent
     description: Enroll a student in a course
   - name: complete_lesson
-    method: POST
-    path: /lessons/{id}/complete
     entity: lessons
-    handler: completeLesson
+    method: POST
+    path: "{id}/complete"
+    handler: entities/lessons_endpoints.go#CompleteLesson
     description: Mark a lesson as completed for a student
   - name: issue_certificate
-    method: POST
-    path: /enrollments/{id}/certificate
     entity: enrollments
-    handler: issueCertificate
+    method: POST
+    path: "{id}/certificate"
+    handler: entities/enrollments_endpoints.go#IssueCertificate
     description: Issue a completion certificate
 
 middleware:

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -927,5 +928,66 @@ func TestAddRefusesAggregatedScreensLayout(t *testing.T) {
 	}
 	if fileExists(dir, "screen_contact.go") {
 		t.Error("screen_contact.go written into a legacy layout — output would not compile")
+	}
+}
+
+// A fragment endpoint whose handler file the project already has gets no
+// stub there, since --add writes no existing file. Unless the file already
+// declares the handler, --add refuses before writing anything; once it
+// does, the endpoint joins the settings file and the registration.
+func TestAddEndpointIntoExistingHandlerFile(t *testing.T) {
+	base := addTestAppSpec("example.com/addtest") + `endpoints:
+  - name: publish_post
+    entity: posts
+    method: POST
+    path: "{id}/publish"
+    handler: entities/posts_endpoints.go#PublishPost
+`
+	dir, bp := addSetup(t, base)
+	covT_capStdout(t, func() { generateFromAppSpec(generateOptions{spec: bp}) })
+	settingsBefore := readFile(t, dir, "gofastr.settings.yml")
+	frag := filepath.Join(dir, "fragment.yml")
+	os.WriteFile(frag, []byte(`endpoints:
+  - name: archive_post
+    entity: posts
+    method: POST
+    path: "{id}/archive"
+    handler: entities/posts_endpoints.go#ArchivePost
+`), 0o644)
+	code := covT_capExit(t, func() {
+		covT_capStdout(t, func() { generateFromAppSpec(generateOptions{spec: frag, add: true}) })
+	})
+	if code != 1 {
+		t.Fatalf("exit = %d, want 1 for a handler the existing file lacks", code)
+	}
+	if readFile(t, dir, "gofastr.settings.yml") != settingsBefore {
+		t.Fatal("the refused --add rewrote gofastr.settings.yml")
+	}
+
+	handlers := filepath.Join(dir, "entities", "posts_endpoints.go")
+	src := readFile(t, dir, "entities/posts_endpoints.go") + "\nfunc ArchivePost(ctx context.Context, in PublishPostInput) (*Posts, error) {\n\treturn nil, nil\n}\n"
+	if err := os.WriteFile(handlers, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := covT_capStdout(t, func() { generateFromAppSpec(generateOptions{spec: frag, add: true, json: true}) })
+	if s := readFile(t, dir, "gofastr.settings.yml"); !strings.Contains(s, `name: "archive_post"`) || !strings.Contains(s, `name: "publish_post"`) {
+		t.Fatalf("settings after --add:\n%s", s)
+	}
+	if !strings.Contains(readFile(t, dir, "entities/endpoints.gen.go"), "ArchivePost") {
+		t.Fatal("endpoints.gen.go does not register ArchivePost")
+	}
+	// The report names what the run changed, and never calls a rebuilt
+	// file skipped.
+	var doc struct {
+		Skipped []string `json:"skipped_existing"`
+		Updated []string `json:"updated"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("--add --json is not JSON: %v\n%s", err, out)
+	}
+	for _, name := range []string{"gofastr.settings.yml", filepath.FromSlash(appEndpointsPath), filepath.FromSlash(appClientPath)} {
+		if !slices.Contains(doc.Updated, name) || slices.Contains(doc.Skipped, name) {
+			t.Errorf("%s: updated = %v, skipped = %v", name, doc.Updated, doc.Skipped)
+		}
 	}
 }

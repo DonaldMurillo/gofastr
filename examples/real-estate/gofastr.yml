@@ -507,9 +507,7 @@ screens:
         level: 1
         text: Property Details
       - kind: entity_detail
-        text: Property
         entity: properties
-        fields: [title, property_type, listing_type, price, address, city, bedrooms, bathrooms, sqft, status]
 
   - name: tour_schedule
     route: /schedule-tour
@@ -526,22 +524,22 @@ screens:
         fields: [visitor_name, visitor_email, visitor_phone, scheduled_at, duration_minutes]
 endpoints:
   - name: schedule_tour
-    method: POST
-    path: /properties/{id}/tour
     entity: properties
-    handler: scheduleTour
+    method: POST
+    path: "{id}/tour"
+    handler: entities/properties_endpoints.go#ScheduleTour
     description: Schedule a property tour
   - name: submit_inquiry
-    method: POST
-    path: /properties/{id}/inquire
     entity: properties
-    handler: submitInquiry
+    method: POST
+    path: "{id}/inquire"
+    handler: entities/properties_endpoints.go#SubmitInquiry
     description: Submit a property inquiry
   - name: feature_property
-    method: POST
-    path: /properties/{id}/feature
     entity: properties
-    handler: featureProperty
+    method: POST
+    path: "{id}/feature"
+    handler: entities/properties_endpoints.go#FeatureProperty
     description: Toggle featured status on a property
 
 middleware:

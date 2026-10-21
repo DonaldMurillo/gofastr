@@ -35,7 +35,9 @@ type packFileNote struct {
 // was recovered. The marker says why one was not: edited since it was
 // generated, untouched and still different (pack lost part of it), or
 // unmarked (written before markers, or by hand). An unmarked file the spec
-// does not generate at all is hand-written and outside the spec. Files
+// does not generate at all is hand-written and outside the spec, and so is
+// a file an endpoint links: the spec names the handler, the body is the
+// developer's. Files
 // another generator marked are not the app generator's to recover. Line
 // endings and a byte order mark are not differences: a Windows checkout
 // holds the same code.
@@ -49,11 +51,12 @@ func checkPack(dir string, bp AppSpec) (packCheck, error) {
 		return c, fmt.Errorf("regenerate from the packed spec: %w", err)
 	}
 	want := map[string]string{}
+	handlers := endpointHandlerFiles(bp)
 	for _, f := range rendered {
 		// The renderer joins with the OS separator; the check walks the
 		// app with slash paths.
 		name := filepath.ToSlash(f.name)
-		if !packCheckScope(name) || !slices.Contains(packCheckDirs, path.Dir(name)) {
+		if !packCheckScope(name) || !slices.Contains(packCheckDirs, path.Dir(name)) || handlers[name] {
 			continue
 		}
 		want[name] = codegen.StripMarker(name, f.content)
@@ -71,6 +74,11 @@ func checkPack(dir string, bp AppSpec) (packCheck, error) {
 	}
 	for _, rel := range files {
 		seen[rel] = true
+		if handlers[rel] {
+			// The spec links the handler; its body is the developer's.
+			c.HandWritten = append(c.HandWritten, rel)
+			continue
+		}
 		_, generated := want[rel]
 		content, err := readPackCheckFile(root, rel, generated)
 		if err != nil {

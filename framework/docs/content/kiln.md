@@ -237,13 +237,18 @@ freeze writes a `${DATABASE_URL}` reference instead, and the generated
 app refuses to boot until the variable is supplied (credential-free DSNs,
 like SQLite file paths, stay verbatim).
 
-Declarative Kiln hook/route actions remain exact in `world.json`. Where the
+Declarative Kiln hook actions remain exact in `world.json`. Where the
 current app spec requires a Go function, freeze emits an owned-Go handler
 stub with a description naming the declarative action; implement that behavior
-after generation. Entity endpoints graduate the same way: they are part of the
-world IR but are not served by the live build-mode app (rendering one needs
-run-then-respond semantics kiln/effect does not provide), so they surface as
-owned-Go handler stubs after generation. The removed pre-v0.1 `entities/*.json`
+after generation. Endpoints graduate the same way, into the app spec's
+top-level `endpoints:` list: each under its entity, its path relative to the
+entity's route, linking `entities/<entity>_endpoints.go#<Name>`. Entity
+endpoints are part of the world IR but are not served by the live build-mode
+app (rendering one needs run-then-respond semantics kiln/effect does not
+provide). Freeze refuses a world route, a scaffold endpoint with no entity,
+and an endpoint whose path sits outside its entity's route: none has an app
+spec spelling, so delete it and register the route in owned Go after
+generation. The removed pre-v0.1 `entities/*.json`
 format is not emitted.
 
 Freeze fails loudly, naming the offending key, when world data cannot
