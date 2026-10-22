@@ -2257,6 +2257,13 @@ func renderRelationLiteral(rel framework.Relation) string {
 	if rel.ForeignKey != "" {
 		parts = append(parts, fmt.Sprintf("ForeignKey: %q", rel.ForeignKey))
 	}
+	if len(rel.ForeignKeys) > 0 {
+		quoted := make([]string, len(rel.ForeignKeys))
+		for i, c := range rel.ForeignKeys {
+			quoted[i] = fmt.Sprintf("%q", c)
+		}
+		parts = append(parts, "ForeignKeys: []string{"+strings.Join(quoted, ", ")+"}")
+	}
 	if rel.Through != "" {
 		parts = append(parts, fmt.Sprintf("Through: %q", rel.Through))
 	}

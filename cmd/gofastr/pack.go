@@ -339,6 +339,7 @@ func entityToMap(e framework.EntityDeclaration) map[string]any {
 			putStr(rm, "name", r.Name)
 			putStr(rm, "entity", r.Entity)
 			putStr(rm, "foreign_key", r.ForeignKey)
+			putStrs(rm, "foreign_key", r.ForeignKeys)
 			putStr(rm, "through", r.Through)
 			putStr(rm, "local_key", r.LocalKey)
 			putStr(rm, "foreign_key_target", r.ForeignKeyTarget)
@@ -1846,6 +1847,7 @@ func packReadRelations(e ast.Expr) ([]framework.Relation, error) {
 			Name:             astString(rv["Name"]),
 			Entity:           astString(rv["Entity"]),
 			ForeignKey:       astString(rv["ForeignKey"]),
+			ForeignKeys:      astStringSlice(rv["ForeignKeys"]),
 			Through:          astString(rv["Through"]),
 			LocalKey:         astString(rv["LocalKey"]),
 			ForeignKeyTarget: astString(rv["ForeignKeyTarget"]),
