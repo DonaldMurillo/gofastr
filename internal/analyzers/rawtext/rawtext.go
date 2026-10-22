@@ -173,7 +173,18 @@ func run(pass *analysis.Pass) (any, error) {
 			case *ast.FuncDecl:
 				checkParams(pass, n.Type, n.Name.Name)
 				checkScreenText(pass, n, ui)
-				checkCtxless(pass, n, ui)
+				checkCtxless(pass, n.Type, n.Body, n.Recv, ui)
+			case *ast.GenDecl:
+				// A func literal at package level (var h = func(w, r) …)
+				// belongs to no declared function, so ctxless reads it here;
+				// the walk covers the literals nested in it.
+				ast.Inspect(n, func(m ast.Node) bool {
+					if fl, ok := m.(*ast.FuncLit); ok {
+						checkCtxless(pass, fl.Type, fl.Body, nil, ui)
+						return false
+					}
+					return true
+				})
 			case *ast.FuncLit:
 				checkParams(pass, n.Type, "func literal")
 			case *ast.AssignStmt:
@@ -281,7 +292,10 @@ func checkCall(pass *analysis.Pass, call *ast.CallExpr, bodies []*ast.BlockStmt,
 // through NSString), with the argument positions that carry it. The
 // shell renders its words in the OS language, so a constant here is
 // English on every machine. Keys and selectors passed to NSString
-// ("CFBundleShortVersionString") are not prose and stay quiet.
+// ("CFBundleShortVersionString") are not prose and stay quiet. The
+// Linux shell has no entry yet: internal/gtk only resolves symbols and
+// nothing calls gtk_menu_item_new_with_label or gtk_window_set_title,
+// so the wrappers that do add their rows here.
 var nativeSinks = map[string]map[string][]int{
 	module + "battery/desktop/internal/objc": {
 		"NSString": {0}, "NSStringErr": {0},

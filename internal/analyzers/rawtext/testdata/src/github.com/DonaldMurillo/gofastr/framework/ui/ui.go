@@ -9,6 +9,17 @@ type TagConfig struct {
 	Label string
 }
 
+// BaseConfig carries Ctx for the configs that embed it.
+type BaseConfig struct {
+	Ctx context.Context
+}
+
+// ChipConfig reaches Ctx through BaseConfig.
+type ChipConfig struct {
+	BaseConfig
+	Text string
+}
+
 type ButtonConfig struct {
 	Label       string
 	SubmitLabel string

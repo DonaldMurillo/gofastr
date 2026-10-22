@@ -49,3 +49,32 @@ func tagsFromRequest(_ http.ResponseWriter, r *http.Request) {
 func tagsWithoutContext() {
 	_ = ui.TagConfig{}
 }
+
+func tagsFromLocal(r *http.Request) {
+	lctx := r.Context()
+	unset := ui.TagConfig{} // want `set Ctx: lctx`
+	_, _ = unset, lctx
+	_ = func(inner context.Context) {
+		_ = ui.TagConfig{} // want `set Ctx: inner`
+	}
+}
+
+type header struct {
+	Ctx context.Context
+}
+
+func (h header) render() {
+	_ = ui.TagConfig{} // want `set Ctx: h.Ctx`
+}
+
+// A Ctx promoted from an embedded config is the component's Ctx too.
+func chips(ctx context.Context) {
+	_ = ui.ChipConfig{Text: welcome.Text(ctx)} // want `ui.ChipConfig leaves Ctx unset.*set Ctx: ctx`
+	_ = ui.ChipConfig{BaseConfig: ui.BaseConfig{Ctx: ctx}}
+}
+
+// A handler declared as a package-level func literal has r.Context()
+// in scope like a declared one.
+var handle = func(_ http.ResponseWriter, r *http.Request) {
+	_ = ui.TagConfig{} // want `set Ctx: r.Context\(\)`
+}

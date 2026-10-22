@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"slices"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -20,8 +21,11 @@ import (
 // or an *http.Request parameter (r.Context()). The report names the
 // first of those it finds, in that order. A literal bound to a
 // variable whose Ctx is assigned later in the function is set.
-func checkCtxless(pass *analysis.Pass, fn *ast.FuncDecl, ui uiReporter) {
-	if fn.Body == nil {
+//
+// fn is a declared function, or a func literal outside any (a handler
+// bound to a package-level var); recv is nil for a literal.
+func checkCtxless(pass *analysis.Pass, ft *ast.FuncType, body *ast.BlockStmt, recv *ast.FieldList, ui uiReporter) {
+	if body == nil {
 		return
 	}
 	var walk func(body ast.Node, expr string)
@@ -47,7 +51,7 @@ func checkCtxless(pass *analysis.Pass, fn *ast.FuncDecl, ui uiReporter) {
 			return true
 		})
 	}
-	walk(fn.Body, ctxExpr(pass, fn.Type, fn.Body, fn.Recv))
+	walk(body, ctxExpr(pass, ft, body, recv))
 }
 
 func reportCtxless(pass *analysis.Pass, lit *ast.CompositeLit, expr string, setLater map[types.Object]bool, bound map[*ast.CompositeLit]types.Object, ui uiReporter) {
@@ -56,7 +60,11 @@ func reportCtxless(pass *analysis.Pass, lit *ast.CompositeLit, expr string, setL
 		return
 	}
 	st, ok := named.Underlying().(*types.Struct)
-	if !ok || !hasCtxField(st) {
+	if !ok {
+		return
+	}
+	keys := ctxKeys(st, 0)
+	if len(keys) == 0 {
 		return
 	}
 	for _, e := range lit.Elts {
@@ -64,7 +72,7 @@ func reportCtxless(pass *analysis.Pass, lit *ast.CompositeLit, expr string, setL
 		if !ok {
 			return // positional: every field is written
 		}
-		if id, ok := kv.Key.(*ast.Ident); ok && id.Name == "Ctx" {
+		if id, ok := kv.Key.(*ast.Ident); ok && slices.Contains(keys, id.Name) {
 			return
 		}
 	}
@@ -74,14 +82,37 @@ func reportCtxless(pass *analysis.Pass, lit *ast.CompositeLit, expr string, setL
 	ui.reportf(lit, "%s.%s leaves Ctx unset while a request context is in scope: the component says its words through Ctx, so they render in English in every other locale; set Ctx: %s", named.Obj().Pkg().Name(), named.Obj().Name(), expr)
 }
 
-// hasCtxField reports whether st has a field Ctx of type context.Context.
+// hasCtxField reports whether st has a field Ctx of type
+// context.Context, its own or promoted from an embedded struct.
 func hasCtxField(st *types.Struct) bool {
+	return len(ctxKeys(st, 0)) > 0
+}
+
+// ctxKeys returns the keys a literal of st writes Ctx through: "Ctx"
+// itself, or the embedded field that carries it (a literal cannot key
+// a promoted field). depth stops a struct that embeds a pointer to
+// itself.
+func ctxKeys(st *types.Struct, depth int) []string {
+	if depth > 4 {
+		return nil
+	}
+	var out []string
 	for i := range st.NumFields() {
-		if f := st.Field(i); f.Name() == "Ctx" && isContext(f.Type()) {
-			return true
+		f := st.Field(i)
+		switch {
+		case f.Name() == "Ctx" && isContext(f.Type()):
+			out = append(out, "Ctx")
+		case f.Embedded():
+			t := f.Type()
+			if p, ok := t.(*types.Pointer); ok {
+				t = p.Elem()
+			}
+			if inner, ok := t.Underlying().(*types.Struct); ok && len(ctxKeys(inner, depth+1)) > 0 {
+				out = append(out, f.Name())
+			}
 		}
 	}
-	return false
+	return out
 }
 
 func isContext(t types.Type) bool {
