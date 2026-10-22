@@ -121,7 +121,11 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			if err := entity.CheckRelationKeys(currentEntity, rel, target); err != nil {
 				return nil, i18n.Wrap(reasonNestedCompositeKey, err, map[string]any{"key": strconv.Quote(key)})
 			}
-			hops = append(hops, newRelationHop(registry, currentEntity, rel, target))
+			hop, err := newRelationHop(registry, currentEntity, rel, target)
+			if err != nil {
+				return nil, i18n.Wrap(reasonNestedTargetFailed, err, map[string]any{"key": strconv.Quote(key), "target": strconv.Quote(rel.Entity)})
+			}
+			hops = append(hops, hop)
 			currentEntity = target
 		}
 
@@ -244,7 +248,11 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 			if err := entity.CheckRelationKeys(currentEntity, rel, target); err != nil {
 				return nil, fmt.Errorf("nested filter %q.%q: %w", spec.Relation, spec.Field, err)
 			}
-			hops = append(hops, newRelationHop(registry, currentEntity, rel, target))
+			hop, err := newRelationHop(registry, currentEntity, rel, target)
+			if err != nil {
+				return nil, fmt.Errorf("nested filter %q.%q: %w", spec.Relation, spec.Field, err)
+			}
+			hops = append(hops, hop)
 			currentEntity = target
 		}
 
@@ -639,7 +647,7 @@ func (ch *CrudHandler) scopeNestedFilters(ctx context.Context, filters []nestedF
 
 // newRelationHop is the hop following rel from source to target, with the
 // many_to_many join entity resolved from the registry.
-func newRelationHop(registry entity.Registry, source *entity.Entity, rel entity.Relation, target *entity.Entity) relationHop {
+func newRelationHop(registry entity.Registry, source *entity.Entity, rel entity.Relation, target *entity.Entity) (relationHop, error) {
 	hop := relationHop{
 		Relation:   rel,
 		Target:     target,
@@ -647,9 +655,13 @@ func newRelationHop(registry entity.Registry, source *entity.Entity, rel entity.
 		SoftDelete: target.Config.Scope.SoftDelete,
 	}
 	if rel.Type == entity.RelManyToMany {
-		hop.Pivot = entity.PivotEntity(registry, source, rel.Through)
+		pivot, err := entity.PivotEntity(registry, source, rel.Through)
+		if err != nil {
+			return relationHop{}, err
+		}
+		hop.Pivot = pivot
 	}
-	return hop
+	return hop, nil
 }
 
 func resolvedTable(target *entity.Entity, rel entity.Relation) string {

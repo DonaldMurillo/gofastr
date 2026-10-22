@@ -311,7 +311,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   same for a three-way association. When a registered entity owns a
   `many_to_many`'s pivot table, reads through the pivot apply its soft
   delete and owner, tenant and read scopes, and boot refuses the
-  relation if that entity lacks either link column. A `cascade_write`
+  relation if that entity lacks either link column. When several
+  versions own the pivot and none is the source's version or
+  unversioned, the read is an error rather than a pick. A `cascade_write`
   into a composite-keyed child is refused at boot. A key that is a
   relation to an integer key holds that integer: ids, writes and
   cascade links take it in canonical decimal on both dialects. New:
@@ -511,6 +513,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   names each field still set to a string.
 
 ### Fixed
+- **Postgres text-to-integer retypes apply.** A column whose declared
+  type moved from text to an integer rendered
+  `ALTER COLUMN ... TYPE INTEGER` with no `USING` clause, which Postgres
+  refuses. The change casts the column now: numeric text converts, and
+  anything else fails the migration.
 - **App spec edit forms load their record.** An `entity_form` with
   `mode: edit` PUT to a literal `{id}`, drew its fields empty, and could
   not submit while a required field stayed blank. It renders the record

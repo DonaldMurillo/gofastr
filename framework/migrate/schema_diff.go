@@ -465,8 +465,8 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		}
 		changes = append(changes, SchemaChange{
 			Summary:     fmt.Sprintf("%s: change column %s type %s → %s (destructive: data conversion may be required)", ent.GetName(), f.Name, liveType, declaredType),
-			SQL:         alterColumnTypeSQL(qtable, qcol, declaredType),
-			Down:        alterColumnTypeSQL(qtable, qcol, liveType),
+			SQL:         alterColumnTypeSQL(qtable, qcol, liveType, declaredType),
+			Down:        alterColumnTypeSQL(qtable, qcol, declaredType, liveType),
 			Destructive: true,
 		})
 	}
@@ -632,13 +632,38 @@ func typesEquivalent(declared, live string, dialect Dialect) bool {
 }
 
 // alterColumnTypeSQL renders the Postgres DDL for a column type change: an
-// in-place ALTER COLUMN TYPE (a data-specific USING clause may be required
-// and is left for the reviewer). SQLite never reaches this function — its
-// retypes are rendered by sqliteRebuildChange, because SQLite has no
-// in-place ALTER COLUMN TYPE and a rendered comment would execute as a
-// no-op while being counted as applied.
-func alterColumnTypeSQL(qtable, qcol, newType string) string {
-	return fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE %s", qtable, qcol, newType)
+// in-place ALTER COLUMN TYPE. Text to an integer type has no assignment
+// cast, so Postgres refuses it without a USING clause; that one gets an
+// explicit cast, which converts numeric text and fails on anything else.
+// Other changes keep the assignment cast, which refuses what an explicit
+// cast would truncate (TEXT to VARCHAR(n)). SQLite never reaches this
+// function — its retypes are rendered by sqliteRebuildChange, because
+// SQLite has no in-place ALTER COLUMN TYPE and a rendered comment would
+// execute as a no-op while being counted as applied.
+func alterColumnTypeSQL(qtable, qcol, fromType, newType string) string {
+	sql := fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE %s", qtable, qcol, newType)
+	if isTextType(fromType) && isIntegerType(newType) {
+		sql += fmt.Sprintf(" USING %s::%s", qcol, newType)
+	}
+	return sql
+}
+
+// isTextType reports whether a Postgres column type holds text.
+func isTextType(t string) bool {
+	switch canonicalType(t, DialectPostgres) {
+	case "text", "varchar", "char", "character":
+		return true
+	}
+	return false
+}
+
+// isIntegerType reports whether a Postgres column type is an integer.
+func isIntegerType(t string) bool {
+	switch canonicalType(t, DialectPostgres) {
+	case "smallint", "integer", "int", "int2", "int4", "int8", "bigint":
+		return true
+	}
+	return false
 }
 
 // retypeCol is one column whose declared type drifted from the live/snapshot

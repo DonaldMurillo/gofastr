@@ -242,7 +242,11 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 					childMap: map[string]*IncludeNode{},
 				}
 				if rel.Type == entity.RelManyToMany {
-					node.Pivot = entity.PivotEntity(registry, currentEntity, rel.Through)
+					pivot, err := entity.PivotEntity(registry, currentEntity, rel.Through)
+					if err != nil {
+						return nil, i18n.Wrap(reasonIncludePivot, err, map[string]any{"include": strconv.Quote(path)})
+					}
+					node.Pivot = pivot
 				}
 				siblingMap[seg] = node
 				*siblings = append(*siblings, node)

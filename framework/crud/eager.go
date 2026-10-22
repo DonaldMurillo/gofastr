@@ -186,7 +186,10 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 				// `deleted_at` would be ambiguous, qualify it with the target.
 				mtmSoftDelete = " AND " + safeRelEntity + ".deleted_at IS NULL"
 			}
-			pivot := entity.PivotEntity(registry, ent, rel.Through)
+			pivot, err := entity.PivotEntity(registry, ent, rel.Through)
+			if err != nil {
+				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
+			}
 			if err := eagerLoadManyToMany(ctx, db, safeRelEntity, rel, ids, targetPK, result, mtmSoftDelete, scopeFilters, readPreds, pivot, pivotScopes(ctx, pivot), served, target); err != nil {
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}

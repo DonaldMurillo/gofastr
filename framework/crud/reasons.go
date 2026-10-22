@@ -39,6 +39,7 @@ var (
 	reasonNestedFilter         = i18n.Define("error.nested_filter", "nested filter {{key}}: {{detail}}")
 	reasonNestedCompositeKey   = i18n.Define("error.nested_composite_key", "nested filter {{key}}: {{detail}}")
 	reasonIncludeCompositeKey  = i18n.Define("error.include_composite_key", "include {{include}}: {{detail}}")
+	reasonIncludePivot         = i18n.Define("error.include_pivot", "include {{include}}: {{detail}}")
 	reasonNestedInListOverCap  = i18n.Define("error.nested_in_over_cap", "nested filter {{key}}: in-list on {{field}} has {{count}} entries (max {{max}})")
 	reasonIncludeNoRegistry    = i18n.Define("error.include_no_registry", "include {{include}} requires an entity registry: set CrudHandler.Registry (framework apps do this automatically)")
 	reasonIncludeTooManyPaths  = i18n.Define("error.include_too_many_paths", "too many include paths: {{count}} (max {{max}})")
