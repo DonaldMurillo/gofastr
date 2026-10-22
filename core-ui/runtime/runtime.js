@@ -1577,6 +1577,9 @@
         // resolvePath keeps the search string, the cache key and the
         // URL bar must carry a redirect-added query (e.g. ?next=/admin).
         if (fr.redirected && fr.url) dest = resolvePath(fr.url);
+        // fetch followed the redirect, so only its URL names the page:
+        // one in another document loads in place of the swap.
+        if (dest !== path && _docRedirect(dest)) return;
         if (dest !== path) { _pushPub(dest, { replace: true }); currentPath = dest; }
         const t = pdoc.querySelector('title')?.textContent || document.title;
         // The full fetch re-renders chrome under the CURRENT session,

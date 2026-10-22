@@ -48,6 +48,10 @@
     } catch (_) { return bare(p); }
   };
   const key = (u) => { const i = u.indexOf('?'); return i < 0 ? pathKey(u) : pathKey(u.slice(0, i)) + u.slice(i); };
+  // The path without its locale prefix, and the site root a static
+  // export's base puts in front of every page.
+  const unloc = (p) => (G._unlocalize ? G._unlocalize(p) : p);
+  const root = () => pathKey((window.__gofastr_locales?.base || '') + '/');
   const update = (path, navigated, scope) => {
     const pathOnly = (path || '').split('?')[0].split('#')[0];
     // Whether the link's nav (or the document, outside one) also holds
@@ -87,10 +91,11 @@
         // left the ordinary case permanently dark. /docs-old shares a
         // text prefix with /docs but not a segment, so it stays out.
         // "/" is never used as a prefix, otherwise every nav link
-        // would match every page.
-        const hrefBase = pathKey(hrefPath);
-        const currentBase = pathKey(pathOnly);
-        if (hrefBase !== '/' && hrefBase !== '' && (currentBase === hrefBase || currentBase.startsWith(hrefBase + '/'))) {
+        // would match every page. Both sides drop the locale prefix
+        // first: a home link under /es is /es, the root all the same.
+        const hrefBase = pathKey(unloc(hrefPath));
+        const currentBase = pathKey(unloc(pathOnly));
+        if (hrefBase !== '/' && hrefBase !== '' && hrefBase !== root() && (currentBase === hrefBase || currentBase.startsWith(hrefBase + '/'))) {
           active = true;
         }
       }

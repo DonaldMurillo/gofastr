@@ -891,6 +891,8 @@
         if (!NS._navLive(myEpoch)) return;
         let dest = path;
         if (fr.redirected && fr.url) dest = _resolvePath(fr.url);
+        // A followed redirect into another document loads it (nav.js).
+        if (dest !== path && NS._docRedirect(dest)) return;
         if (dest !== path) { NS._pushURL(dest, { replace: true }); NS._setCurrentPath(dest); }
         if (!(await cssWait(myEpoch, pdoc.body))) return;
         const t = pdoc.querySelector('title')?.textContent || document.title;
@@ -1039,6 +1041,7 @@
         if (docEnv && docResolved) {
           let dest = path;
           if (resp.redirected && resp.url) dest = _resolvePath(resp.url);
+          if (dest !== path && NS._docRedirect(dest)) return;
           if (dest !== path) { NS._pushURL(dest, { replace: true }); NS._setCurrentPath(dest); }
           if (!(await cssWait(myEpoch, docEnv.html, docEnv.fills, null, load))) return;
           document.title = docEnv.title;
@@ -1276,8 +1279,11 @@
     for (const s of sels) {
       if (s === '*') { screenCache.clear(); break; }
       if (!s || s[0] !== '/') continue;
-      if (s.includes('?')) { screenCache.delete(s); continue; }
-      for (const k of screenCache.keys()) if (k === s || k.startsWith(s + '?')) screenCache.delete(k);
+      // Keys keep the locale prefix; selectors never carry one.
+      for (const k of screenCache.keys()) {
+        const u = NS._unlocalize?.(k) ?? k;
+        if (s.includes('?') ? u === s : u === s || u.startsWith(s + '?')) screenCache.delete(k);
+      }
     }
     return _origInval.apply(this, arguments);
   };

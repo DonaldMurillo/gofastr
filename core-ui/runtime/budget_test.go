@@ -598,15 +598,16 @@ const (
 	//        failed (500)" through say() instead of a literal "Error: 500"
 	//        (TestNavSwapsRuntimeStrings). Measured 14371 → 14374.
 	//        (l1: 13)
-	//   +328 locale prefixes (2026-10-21): /es/pricing is the /pricing
+	//   +338 locale prefixes (2026-10-21): /es/pricing is the /pricing
 	//        screen in Spanish (framework.WithLocalePrefixes). The kernel
 	//        reads #gofastr-locales and splits the prefix off; the plain
 	//        navigator looks routes up and evicts cache keys without it,
 	//        and a link or a server redirect that changes the locale
-	//        loads a document (TestRedirectToLocaleLoadsDocument); the
+	//        loads a document, a redirect fetch followed included
+	//        (TestRedirectToLocaleLoadsDocument); the
 	//        server action and widget discovery fetches carry the page's
 	//        prefix. Every one of them runs before a demand module could
-	//        load, so no carve exists. Measured 14374 → 14702. (l1: 442)
+	//        load, so no carve exists. Measured 14374 → 14712. (l1: 442)
 	//
 	// HALT NOTE: the bundle measures 13391 at level 6 — 291 over the
 	// 13100 target (the Back/Forward leave capture every page runs is
@@ -619,7 +620,7 @@ const (
 	// spelling) plus the fixes and boot rows named with their tests.
 	// The line is the measurement plus clearance (moved DOWN from
 	// 13527, never up).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 328 + 8
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 338 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1011,7 +1012,7 @@ const (
 	// 2026-10-21, locale prefixes: route lookups and cache eviction read
 	// the path without its /<tag>/ prefix, a locale change (a link or a
 	// server redirect) loads a document, and the action and widget
-	// discovery fetches carry the prefix. Core measures 14702/17078. The navigator runs these on
+	// discovery fetches carry the prefix. Core measures 14712/17078. The navigator runs these on
 	// every click, before any module could load, so the line moves to
 	// 17078, the smallest that fits.
 	coreCongestionWindowGZ = 17078
@@ -1067,7 +1068,7 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"runtime strings follow the destination on soft nav (data-cui-strings)":    49,  // (l1: -9)
 		"Back keeps the page's runtime strings (live carrier, full-fetch cache)":   11,  // (l1: 35)
 		"failed-RPC signal text through say()":                                     3,   // (l1: 13)
-		"locale prefixes: unprefixed route lookups, prefixed fetches":              328, // (l1: 442)
+		"locale prefixes: unprefixed route lookups, prefixed fetches":              338, // (l1: 442)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1234,7 +1235,7 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 7889 measured (7887 + 2) after its route lookup reads the path
 		// without the locale prefix and a redirect into another locale
 		// loads a document (2026-10-21, locale prefixes).
-		"envelope": 7889,
+		"envelope": 7903,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for

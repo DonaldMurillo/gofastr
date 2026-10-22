@@ -27,7 +27,9 @@ func localePrefixSrv(t *testing.T) (*httptest.Server, func(string) (int, bool)) 
 
 // localePrefixSrvWith puts outlet in each document's main, so a
 // non-empty one hands navigation to the envelope module. /es/redir is
-// a server policy redirect to the English /b.
+// a server policy redirect to the English /b, and /es/hop an HTTP 303
+// there from a route on another layout chain, whose navigation fetches
+// the whole page and follows the redirect inside fetch.
 func localePrefixSrvWith(t *testing.T, outlet string) (*httptest.Server, func(string) (int, bool)) {
 	t.Helper()
 	js, err := RuntimeJS()
@@ -45,13 +47,16 @@ func localePrefixSrvWith(t *testing.T, outlet string) (*httptest.Server, func(st
 	})
 	content := func(path string, n int) string {
 		return fmt.Sprintf(`<h1 id="v">%s %d</h1>`+
-			`<a id="to-a" href="/es/a">a</a><a id="to-b" href="/es/b">b</a><a id="to-en" href="/b">en</a><a id="to-redir" href="/es/redir">r</a>`, path, n)
+			`<a id="to-a" href="/es/a">a</a><a id="to-b" href="/es/b">b</a><a id="to-en" href="/b">en</a><a id="to-redir" href="/es/redir">r</a><a id="to-hop" href="/es/hop">h</a>`, path, n)
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/es/redir":
 			w.Header().Set("X-Gofastr-Location", "/b")
 			w.WriteHeader(http.StatusOK)
+			return
+		case "/es/hop":
+			http.Redirect(w, r, "/b", http.StatusSeeOther)
 			return
 		case "/a", "/b", "/es/a", "/es/b":
 		default:
@@ -75,13 +80,18 @@ func localePrefixSrvWith(t *testing.T, outlet string) (*httptest.Server, func(st
 		// link and another site's alternate.
 		page := strings.TrimPrefix(r.URL.Path, "/es")
 		fmt.Fprint(w, `<!doctype html><html><head><title>t</title>`+
-			`<script type="application/json" id="gofastr-routes">[{"path":"/a"},{"path":"/b"},{"path":"/redir"}]</script>`+
+			`<script type="application/json" id="gofastr-routes">[{"path":"/a"},{"path":"/b"},{"path":"/redir"},{"path":"/hop","layouts":["l:other"]}]</script>`+
 			`<script type="application/json" id="gofastr-locales">{"default":"en","prefixes":["es"],"base":""}</script>`+
 			`</head><body><header>`+
 			`<a id="alt-en" rel="alternate" hreflang="en" href="`+page+`">English</a>`+
 			`<a id="alt-es" rel="alternate" hreflang="ES" href="/es`+page+`">Español</a>`+
 			`<a id="plain-es" hreflang="es" href="/es/a">Leer</a>`+
 			`<a id="alt-de" rel="alternate" hreflang="de" href="https://de.example/a">Deutsch</a>`+
+			// The rewriter writes a home link as /es, its match prefix
+			// too; sec owns the /b section.
+			`<a id="home" href="/es" data-cui-match-prefix="/es">Inicio</a>`+
+			`<a id="home-bare" href="/es" data-cui-match-prefix>Inicio</a>`+
+			`<a id="sec" href="/es/b/start" data-cui-match-prefix="/es/b">B</a>`+
 			`</header><main role="main" tabindex="-1">`+outlet+content(r.URL.Path, n)+
 			`</main><script src="/__gofastr/runtime.js"></script></body></html>`)
 	})
@@ -152,46 +162,58 @@ func TestLocaleSwitchLoadsDocument(t *testing.T) {
 	}
 }
 
+// The navigators under test: a non-empty outlet hands navigation to the
+// envelope module.
+var localeNavigators = map[string]string{
+	"plain":    "",
+	"envelope": `<div data-cui-outlet="l:site#aside" id="aside">ASIDE</div>`,
+}
+
 // A server redirect from /es/redir to the English /b crosses into
 // another locale, so it loads a document like a link there would. The
 // redirect leg replaced the URL before checking, and the check then
 // compared /b with itself and swapped English into the Spanish page.
+// /es/hop answers a 303 that fetch follows on the whole-page leg, where
+// only the response URL says where the reader landed.
 func TestRedirectToLocaleLoadsDocument(t *testing.T) {
-	for name, outlet := range map[string]string{
-		"plain":    "",
-		"envelope": `<div data-cui-outlet="l:site#aside" id="aside">ASIDE</div>`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			srv, seen := localePrefixSrvWith(t, outlet)
-			ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
-			if err := chromedp.Run(ctx,
-				chromedp.Navigate(srv.URL+"/es/a"),
-				waitText("#v", "/es/a 1"),
-				chromedp.Evaluate(`window.__mark = 1`, nil),
-				chromedp.Click("#to-redir", chromedp.ByID),
-			); err != nil {
-				t.Fatal(err)
-			}
-			var mark bool
-			var v, path string
-			for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-				err := chromedp.Run(ctx,
-					chromedp.Evaluate(`document.querySelector('#v')?.textContent ?? ''`, &v),
-					chromedp.Evaluate(`location.pathname`, &path),
-					chromedp.Evaluate(`window.__mark === 1`, &mark))
-				if err == nil && strings.HasPrefix(v, "/b ") {
-					break
-				}
-				if time.Now().After(deadline) {
-					var body string
-					_ = chromedp.Run(ctx, chromedp.Evaluate(`location.href + ' ' + document.body.innerHTML.slice(0, 600)`, &body))
-					t.Fatalf("/b never rendered: %q %v\n%s", v, err, body)
-				}
-			}
-			if _, nav := seen("/b"); nav || mark || path != "/b" {
-				t.Errorf("es → en redirect swapped in place (navigate header %v, mark kept %v, path %q)", nav, mark, path)
-			}
-		})
+	for name, outlet := range localeNavigators {
+		for _, link := range []string{"to-redir", "to-hop"} {
+			t.Run(name+"/"+link, func(t *testing.T) {
+				redirectLoadsDocument(t, outlet, link)
+			})
+		}
+	}
+}
+
+func redirectLoadsDocument(t *testing.T, outlet, link string) {
+	srv, seen := localePrefixSrvWith(t, outlet)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/es/a"),
+		waitText("#v", "/es/a 1"),
+		chromedp.Evaluate(`window.__mark = 1`, nil),
+		chromedp.Click("#"+link, chromedp.ByID),
+	); err != nil {
+		t.Fatal(err)
+	}
+	var mark bool
+	var v, path string
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		err := chromedp.Run(ctx,
+			chromedp.Evaluate(`document.querySelector('#v')?.textContent ?? ''`, &v),
+			chromedp.Evaluate(`location.pathname`, &path),
+			chromedp.Evaluate(`window.__mark === 1`, &mark))
+		if err == nil && strings.HasPrefix(v, "/b ") {
+			break
+		}
+		if time.Now().After(deadline) {
+			var body string
+			_ = chromedp.Run(ctx, chromedp.Evaluate(`location.href + ' ' + document.body.innerHTML.slice(0, 600)`, &body))
+			t.Fatalf("/b never rendered: %q %v\n%s", v, err, body)
+		}
+	}
+	if _, nav := seen("/b"); nav || mark || path != "/b" {
+		t.Errorf("es → en redirect swapped in place (navigate header %v, mark kept %v, path %q)", nav, mark, path)
 	}
 }
 
@@ -217,7 +239,33 @@ func TestSwitcherFollowsSoftNav(t *testing.T) {
 	t.Fatalf("after /es/a → /es/b the header links are %q, want %q", got, want)
 }
 
+// Each navigator keeps its own screen cache, keyed with the prefix; the
+// server names screens without one.
 func TestInvalidateMatchesPrefixedKey(t *testing.T) {
+	for name, outlet := range localeNavigators {
+		t.Run(name, func(t *testing.T) {
+			srv, _ := localePrefixSrvWith(t, outlet)
+			ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+			if err := chromedp.Run(ctx,
+				chromedp.Navigate(srv.URL+"/es/a"),
+				waitText("#v", "/es/a 1"),
+				chromedp.Click("#to-b", chromedp.ByID),
+				waitText("#v", "/es/b 1"),
+				chromedp.Click("#to-a", chromedp.ByID),
+				waitText("#v", "/es/a 1"),
+				chromedp.Evaluate(`__gofastr.invalidate('/b')`, nil),
+				chromedp.Click("#to-b", chromedp.ByID),
+				waitText("#v", "/es/b 2"),
+			); err != nil {
+				t.Fatalf("invalidate('/b') left the cached /es/b: %v", err)
+			}
+		})
+	}
+}
+
+// A home link under a prefix is /es, which is no section: it must not
+// light up on every Spanish page the way "/" never does.
+func TestPrefixedHomeIsNoSection(t *testing.T) {
 	srv, _ := localePrefixSrv(t)
 	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
 	if err := chromedp.Run(ctx,
@@ -225,14 +273,29 @@ func TestInvalidateMatchesPrefixedKey(t *testing.T) {
 		waitText("#v", "/es/a 1"),
 		chromedp.Click("#to-b", chromedp.ByID),
 		waitText("#v", "/es/b 1"),
-		chromedp.Click("#to-a", chromedp.ByID),
-		waitText("#v", "/es/a 1"),
-		// The server names screens without a prefix.
-		chromedp.Evaluate(`__gofastr.invalidate('/b')`, nil),
-		chromedp.Click("#to-b", chromedp.ByID),
-		waitText("#v", "/es/b 2"),
 	); err != nil {
-		t.Fatalf("invalidate('/b') left the cached /es/b: %v", err)
+		t.Fatal(err)
+	}
+	const read = `['home','home-bare','sec'].map((id) => document.getElementById(id).getAttribute('aria-current') || '-').join(' ')`
+	const want = "- - page"
+	var got string
+	for deadline := time.Now().Add(10 * time.Second); got != want && time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		_ = chromedp.Run(ctx, chromedp.Evaluate(read, &got))
+	}
+	if got != want {
+		t.Fatalf("on /es/b home, bare home and the /b section read %q, want %q", got, want)
+	}
+	// A static export under /site writes the same links behind its base,
+	// and /site is that export's root.
+	const based = `window.__gofastr_locales.base = '/site';` +
+		`for (const [id, h, m] of [['home', '/site/es', '/site/es'], ['home-bare', '/site/es/', null], ['sec', '/site/es/b/start', '/site/es/b']]) {` +
+		` const a = document.getElementById(id); a.setAttribute('href', h); if (m) a.setAttribute('data-cui-match-prefix', m); a.removeAttribute('aria-current'); }` +
+		`__gofastr._updateActiveLink('/site/es/b', true);`
+	if err := chromedp.Run(ctx, chromedp.Evaluate(based, nil), chromedp.Evaluate(read, &got)); err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Errorf("under base /site on /site/es/b the links read %q, want %q", got, want)
 	}
 }
 
