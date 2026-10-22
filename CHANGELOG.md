@@ -472,6 +472,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   names each field still set to a string.
 
 ### Fixed
+- **The admin layout renders with no signed-in user.** Its account menu
+  panicked with "Avatar requires Name" when uihost's strict boot check
+  drew the layout with no one signed in; the menu is left out instead.
 - **entityui reads a field by its `WireName`.** crud returns a field
   that sets `WireName` under that name, and entityui looked it up by the
   field's `Name`, so lists, record screens, titles and exports drew it

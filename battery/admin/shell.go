@@ -475,6 +475,11 @@ func (s brand) RenderCtx(ctx context.Context) render.HTML {
 // this one holds the theme switches too.
 func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 	name := b.displayName(ctx)
+	if name == "" {
+		// No one is signed in, as when the host checks the chrome at
+		// boot: there is no account to show.
+		return ""
+	}
 	var who []string
 	if email := userEmail(ctx); email != "" && email != name {
 		who = append(who, email)
