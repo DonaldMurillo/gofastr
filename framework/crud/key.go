@@ -9,8 +9,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
-// keyCols returns the handler's primary-key columns in declared order.
+// keyCols returns the handler's primary-key columns in declared order. A
+// handler built by hand with no PrimaryKey reads its entity's key.
 func (ch *CrudHandler) keyCols() []string {
+	if ch.PrimaryKey == "" {
+		return ch.Entity.KeyColumns()
+	}
 	return []string{ch.PrimaryKey}
 }
 

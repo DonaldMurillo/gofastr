@@ -1,9 +1,33 @@
 package crud
 
 import (
+	"context"
 	"slices"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
+
+func TestKeyColsDefaultToEntityKey(t *testing.T) {
+	ch := &CrudHandler{Entity: &entity.Entity{PrimaryKey: "code"}}
+	if cond, _ := ch.keyCond([]any{"x"}); cond != "code = $1" {
+		t.Errorf("keyCond = %q, want the entity's key column", cond)
+	}
+}
+
+func TestAuditRecordIDForGuards(t *testing.T) {
+	ctx := context.WithValue(context.Background(), auditRecordKey{}, auditRecord{entity: "posts", id: "7"})
+	if id, ok := AuditRecordIDFor(ctx, "posts"); !ok || id != "7" {
+		t.Fatalf("matching entity: got %q %v", id, ok)
+	}
+	if id, ok := AuditRecordIDFor(ctx, "users"); ok || id != "" {
+		t.Errorf("other entity: got %q %v, want none", id, ok)
+	}
+	empty := context.WithValue(context.Background(), auditRecordKey{}, auditRecord{entity: "posts"})
+	if id, ok := AuditRecordIDFor(empty, "posts"); ok || id != "" {
+		t.Errorf("empty id: got %q %v, want none", id, ok)
+	}
+}
 
 func TestKeyCondNamesEachColumn(t *testing.T) {
 	ch := &CrudHandler{PrimaryKey: "code"}

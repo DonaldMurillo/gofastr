@@ -372,6 +372,9 @@ func TestAuditKeyID(t *testing.T) {
 	}})
 	secret.PrimaryKey = "user_code"
 	var cfg AuditConfig
+	if got := cfg.keyID(versionKey(secret), "\n"); got != "" {
+		t.Fatalf("an id with nothing left after sanitizing: got %q, want empty", got)
+	}
 	if got := cfg.keyID(versionKey(secret), "sk_live"); !strings.HasPrefix(got, "sha256:") {
 		t.Fatalf("WireName apiKey: record_id = %q, want a sha256 digest", got)
 	}
