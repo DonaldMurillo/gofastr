@@ -181,7 +181,7 @@ func (b *Battery) relatedTo(e *entity.Entity) []string {
 	var out []string
 	for _, other := range b.ents {
 		if slices.ContainsFunc(other.Config.Relations, func(r entity.Relation) bool {
-			return r.Entity == e.GetName() && r.ForeignKey != ""
+			return r.Entity == e.GetName() && len(r.FKColumns()) > 0
 		}) {
 			out = append(out, other.GetName())
 		}
@@ -196,7 +196,7 @@ func (b *Battery) parentRecords(e *entity.Entity) []string {
 	var out []string
 	for _, other := range b.ents {
 		if slices.ContainsFunc(e.Config.Relations, func(r entity.Relation) bool {
-			return r.Entity == other.GetName() && r.ForeignKey != ""
+			return r.Entity == other.GetName() && len(r.FKColumns()) > 0
 		}) {
 			out = append(out, b.entityBase(other)+recordPattern(other))
 		}

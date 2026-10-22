@@ -77,7 +77,10 @@ func SchemaHash(named []NamedConfig) string {
 		Name       string `json:"name"`
 		Entity     string `json:"entity"`
 		ForeignKey string `json:"foreignKey,omitempty"`
-		Through    string `json:"through,omitempty"`
+		// ForeignKeys is omitted for a one-column key, so a schema with
+		// none hashes as it did before multi-column foreign keys.
+		ForeignKeys []string `json:"foreignKeys,omitempty"`
+		Through     string   `json:"through,omitempty"`
 	}
 	type hashTransition struct {
 		Key        string   `json:"key"`
@@ -183,11 +186,12 @@ func SchemaHash(named []NamedConfig) string {
 
 		for _, r := range cfg.Relations {
 			he.Relations = append(he.Relations, hashRelation{
-				Type:       int(r.Type),
-				Name:       r.Name,
-				Entity:     r.Entity,
-				ForeignKey: r.ForeignKey,
-				Through:    r.Through,
+				Type:        int(r.Type),
+				Name:        r.Name,
+				Entity:      r.Entity,
+				ForeignKey:  r.ForeignKey,
+				ForeignKeys: r.ForeignKeys,
+				Through:     r.Through,
 			})
 		}
 		sort.Slice(he.Relations, func(i, j int) bool { return he.Relations[i].Name < he.Relations[j].Name })
