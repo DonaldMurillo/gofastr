@@ -1147,6 +1147,11 @@ startup with the entity named in the error. The idempotency check would
 otherwise mark a partially-seeded entity as done, so a silently dropped row
 would never retry; the app would report ready with bootstrap data missing.
 
+A relation value written as `"@currencies.label=Euro"` is a reference: the
+seed looks up the first `currencies` row whose `label` is `Euro` and stores
+that row's key, the target's `primary_key` column when it declares one and
+`id` otherwise.
+
 When any entity declares `owner_field` (per-user scoping) **and** an admin
 account is bootstrapped (`app.admin.seed_email` / `seed_password`), the seed
 runs *as that admin*: the generated hook looks the admin up and stamps every

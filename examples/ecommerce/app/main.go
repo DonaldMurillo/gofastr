@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=e8be326dd8c18b11
+//gofastr:generated generator=app kind=scaffold version=dev sum=6f962477915732b6
 
 package main
 
@@ -223,7 +223,11 @@ func resolveSeedRefs(ctx context.Context, fwApp *framework.App, row map[string]a
 		if err != nil || len(rows) == 0 {
 			continue
 		}
-		if id, ok := rows[0]["id"]; ok {
+		pk, err := ch.Entity.KeyColumn()
+		if err != nil {
+			continue
+		}
+		if id, ok := rows[0][ch.WireKey(pk)]; ok {
 			row[k] = id
 		}
 	}
