@@ -475,6 +475,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **The admin layout renders with no signed-in user.** Its account menu
   panicked with "Avatar requires Name" when uihost's strict boot check
   drew the layout with no one signed in; the menu is left out instead.
+- **Lists and records mounted at the root render.** entityui joined its
+  links as `base + "/" + id`, so a list or record whose base is `/`
+  built `//create` and `//42`, which the link guards refuse, and the
+  section drew "Couldn't load this section". Links join with one slash
+  now.
 - **entityui reads a field by its `WireName`.** crud returns a field
   that sets `WireName` under that name, and entityui looked it up by the
   field's `Name`, so lists, record screens, titles and exports drew it

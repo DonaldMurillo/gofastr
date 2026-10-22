@@ -105,7 +105,7 @@ func (b *RecordBuilder) overridePanel(ctx context.Context, m *meta, row map[stri
 		})
 	}
 	action := m.api + "/" + m.idPath(b.id) + "/_override"
-	back := base + "/" + m.idPath(b.id)
+	back := under(base, m.idPath(b.id))
 	form := ui.Form(ui.FormConfig{
 		Ctx:    ctx,
 		Action: action,

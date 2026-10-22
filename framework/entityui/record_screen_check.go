@@ -46,7 +46,7 @@ func (u *UI) checkRecordScreen(ctx context.Context, entityName, base, idPath str
 	if u.screens.n.Add(1) > maxCheckedBases {
 		return
 	}
-	has, known := u.screens.host.HasScreen(base + "/" + idPath)
+	has, known := u.screens.host.HasScreen(under(base, idPath))
 	if _, seen := u.screens.checked.LoadOrStore(base, struct{}{}); seen || !known || has {
 		return
 	}
