@@ -113,7 +113,8 @@ func interceptFullPage(key string) string {
 		// list with the record in a drawer; the second link names a
 		// route that does not open over /list.
 		body = `<a id="to-panel" href="/list" data-cui-intercept-panel="/rec/a">panel</a>` +
-			`<a id="to-panel-bad" href="/list" data-cui-intercept-panel="/rel/r1">panel</a>FULL /rec/a`
+			`<a id="to-panel-bad" href="/list" data-cui-intercept-panel="/rel/r1">panel</a>` +
+			`<a id="to-panel-old" href="/list" data-cui-intercept-panel="/rec/old">panel</a>FULL /rec/a`
 	}
 	return `<!doctype html><html><head><title>stack</title>` +
 		`<script type="application/json" id="gofastr-routes">` + interceptStackRoutes + `</script>` +
@@ -699,6 +700,27 @@ func TestInterceptRedirectLeavesOverlay(t *testing.T) {
 	}
 	if snap := readStack(ctx); snap.URL != "/rec/a" {
 		t.Errorf("the redirect left the address bar at %q (%d layers), want /rec/a", snap.URL, len(snap.Layers))
+	}
+}
+
+// The panel link's record redirects, so it cannot open over the list;
+// it opens as its own page, where the redirect lands, instead of
+// leaving the reader on the list without it.
+func TestInterceptPanelRedirectOpensPage(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/rec/a"),
+		chromedp.WaitVisible(`#to-panel-old`, chromedp.ByID),
+		chromedp.Evaluate(`window.__mark = 1; document.getElementById('to-panel-old').dataset.stale = '1'`, nil),
+		chromedp.Click("#to-panel-old", chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	// The page starts on /rec/a too, so it has to be a fresh render of
+	// it, reached without a reload.
+	if !interceptWait(ctx, `location.pathname === '/rec/a' && window.__mark === 1 && (document.getElementById('to-panel-old')||{dataset:{stale:'1'}}).dataset.stale !== '1'`) {
+		t.Fatalf("the redirected record never opened: %+v", readStack(ctx))
 	}
 }
 
