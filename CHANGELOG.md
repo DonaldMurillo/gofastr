@@ -409,6 +409,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   badges, view tabs and entity names fell back to plain English under
   `i18nui.AddPseudo`'s tag, so overflow checks never measured them. Their
   English fallback is now pseudo-localized there too.
+- **Bar chart labels stay inside their slot.** The wrap budget assumed
+  6.2px a character at 12px text; accented or capitalized labels run
+  wider and spilled into the next label or off the plot edge. Lines now
+  wrap at 7px a character with 4px of air between neighbours.
 
 ### Security
 - The repo builds with Go 1.27.3 (`toolchain go1.27.3` in go.mod, and in
