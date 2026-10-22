@@ -171,6 +171,10 @@ screens:
 		"standalone vs crud file": {"  - name: Posts Crud\n    route: /a\n" + text + "  - name: Posts\n    route: /b\n" + list("posts"), "screen file"},
 		"one name, two entities":  {"  - name: Overview\n    route: /a\n" + list("posts") + "  - name: Overview\n    route: /b\n" + list("customers"), "OverviewScreen"},
 		"one name, one entity":    {"  - name: Overview\n    route: /a\n" + list("posts") + "  - name: Overview\n    route: /b\n" + list("posts"), "OverviewScreen"},
+		// A list with create: true adds a posts_create screen at
+		// /posts/create, unless a screen already holds that route.
+		"authored vs synthesized create": {"  - name: posts_create\n    route: /new\n" + text + "  - name: Posts\n    route: /posts\n" + list("posts") + "        create: true\n", "PostsCreateScreen"},
+		"authored create route":          {"  - name: posts_create\n    route: /posts/create\n" + text + "  - name: Posts\n    route: /posts\n" + list("posts") + "        create: true\n", ""},
 		// Both write screen_posts_crud.go, as one file, as two types.
 		"one entity's screens": {"  - name: API\n    route: /a\n" + list("posts") + "  - name: Api\n    route: /b\n" + list("posts"), ""},
 	} {

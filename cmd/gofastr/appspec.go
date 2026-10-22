@@ -2704,6 +2704,14 @@ func validateAppSpec(bp AppSpec) error {
 		}
 		errs.add(validateAppSpecActions(screen.Name, screen.Body))
 	}
+	// The render adds a create screen per writable list; its type joins
+	// the same package as the authored ones.
+	for _, screen := range appSpecSynthesizeCRUDScreens(bp).Screens[len(bp.Screens):] {
+		typeName := toCamelCase(screen.Name) + "Screen"
+		if prev, dup := screenTypes[typeName]; dup {
+			errs.add(fmt.Errorf("app spec: screen %q (%s) and the create screen a writable %s list adds at %s both generate the type %s, so the app would not build; rename the screen", prev, routesOf[prev], screen.Body[0].Entity, screen.Route, typeName))
+		}
+	}
 	errs.add(validateAppSpecEndpoints(bp))
 	// Hooks are the sibling construct of endpoints: a surface the generated
 	// app must implement in owned Go (the handler stub) and the registry
