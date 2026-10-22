@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
@@ -60,23 +62,35 @@ func TestCovClientIP(t *testing.T) {
 
 // stringifyPK: nil row, missing pk with case-insensitive fallback, total miss.
 func TestCovStringifyPK(t *testing.T) {
-	if got := stringifyPK(nil, []string{"id"}); got != "" {
+	camel := auditWireKey(entity.Define("t", entity.EntityConfig{}))
+	if got := stringifyPK(nil, []string{"id"}, camel); got != "" {
 		t.Fatalf("nil row: got %q", got)
 	}
 	// pk present directly
-	if got := stringifyPK(map[string]any{"id": 7}, []string{"id"}); got != "7" {
+	if got := stringifyPK(map[string]any{"id": 7}, []string{"id"}, camel); got != "7" {
 		t.Fatalf("direct pk: got %q", got)
 	}
 	// a renamed pk under its camelCase wire key, the shape hook rows carry
-	if got := stringifyPK(map[string]any{"userCode": 7}, []string{"user_code"}); got != "7" {
+	if got := stringifyPK(map[string]any{"userCode": 7}, []string{"user_code"}, camel); got != "7" {
 		t.Fatalf("wire-keyed pk: got %q", got)
 	}
+	// a CaseSnake row carries the column itself
+	if got := stringifyPK(map[string]any{"user_code": 7}, []string{"user_code"}, camel); got != "7" {
+		t.Fatalf("snake pk: got %q", got)
+	}
+	// a WireName on the key column is the row's key, in either casing
+	renamed := entity.Define("r", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "user_code", Type: schema.String, WireName: "code"},
+	}})
+	if got := stringifyPK(map[string]any{"code": 7, "id": "row-1"}, []string{"user_code"}, auditWireKey(renamed)); got != "7" {
+		t.Fatalf("WireName pk: got %q", got)
+	}
 	// fallback: requested pk absent, but "ID" present
-	if got := stringifyPK(map[string]any{"ID": "abc"}, []string{"uid"}); got != "abc" {
+	if got := stringifyPK(map[string]any{"ID": "abc"}, []string{"uid"}, camel); got != "abc" {
 		t.Fatalf("fallback ID: got %q", got)
 	}
 	// total miss
-	if got := stringifyPK(map[string]any{"name": "x"}, []string{"uid"}); got != "" {
+	if got := stringifyPK(map[string]any{"name": "x"}, []string{"uid"}, camel); got != "" {
 		t.Fatalf("total miss: got %q", got)
 	}
 }

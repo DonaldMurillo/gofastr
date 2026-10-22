@@ -190,6 +190,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			continue
 		}
 		ent := ent
+		wire := auditWireKey(ent)
 		hr := a.HookRegistry(name)
 
 		hr.RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
@@ -199,7 +200,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 				// audit row keyed on a zero row (silent forensics gap).
 				return fmt.Errorf("audit: AfterCreate payload type = %T, want map[string]any (framework contract drift?)", data)
 			}
-			id := stringifyPK(row, ent.KeyColumns())
+			id := stringifyPK(row, ent.KeyColumns(), wire)
 			redacted := cfg.applyRedact(ent.GetName(), row)
 			diff := buildAuditCreateDiff(redacted, row, auditMeta(ctx))
 			// crud.UpsertOne fires AfterCreate for both arms; an override
@@ -216,7 +217,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			if !ok {
 				return fmt.Errorf("audit: AfterUpdate payload type = %T, want map[string]any (framework contract drift?)", data)
 			}
-			id := stringifyPK(row, ent.KeyColumns())
+			id := stringifyPK(row, ent.KeyColumns(), wire)
 			redactedNew := cfg.applyRedact(ent.GetName(), row)
 			var redactedOld map[string]any
 			var originalOld map[string]any
@@ -568,13 +569,13 @@ func (c AuditConfig) applyRedact(entity string, row map[string]any) map[string]a
 }
 
 // stringifyPK is the audit row's record_id: the record's key columns,
-// read under their camelCase wire keys or as named, joined as the
+// read under their wire keys (wire) or as named, joined as the
 // framework's id.
-func stringifyPK(row map[string]any, cols []string) string {
+func stringifyPK(row map[string]any, cols []string, wire func(string) string) string {
 	if row == nil {
 		return ""
 	}
-	if id, ok := entity.RowKey(row, cols, casing.ToCamel); ok {
+	if id, ok := entity.RowKey(row, cols, wire); ok {
 		return id
 	}
 	if len(cols) == 1 {
@@ -585,6 +586,24 @@ func stringifyPK(row map[string]any, cols []string) string {
 		}
 	}
 	return ""
+}
+
+// auditWireKey is the key a hook row carries for one of ent's columns:
+// the field's WireName when it sets one, else the camelCase form. A
+// CaseSnake app's rows carry the column itself, which RowKey tries next.
+func auditWireKey(ent *entity.Entity) func(string) string {
+	names := map[string]string{}
+	for _, f := range ent.GetFields() {
+		if f.WireName != "" {
+			names[f.Name] = f.WireName
+		}
+	}
+	return func(col string) string {
+		if w, ok := names[col]; ok {
+			return w
+		}
+		return casing.ToCamel(col)
+	}
 }
 
 func writeAuditRow(ctx context.Context, db *sql.DB, table, ent string, op auditOp, recordID, actor string, diff []byte) error {

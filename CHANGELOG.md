@@ -414,10 +414,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   fetch, and the runtime loads it as a page after checking it is
   http(s). A document load still gets the 303.
 - **Audit rows name records whose key column is not `id`.** The audit
-  trail read the record id from the hook row by column name, but hook
-  rows carry camelCase wire keys, so an entity keyed on `user_code`
-  wrote every create and update with an empty `record_id`. It now
-  reads `userCode` first.
+  trail's create and update rows always read an `id` column for
+  `record_id`, so an entity keyed on `user_code` logged its `id` column,
+  or nothing when it had none, while its delete rows and the Activity
+  tab used the `user_code` value. Every row now reads the key column,
+  under its `WireName`, its camelCase form, or its own name.
 - **`DBQueue` index names on long table names.** Postgres cuts
   identifiers at 63 bytes, so with a table name of 62 or 63 bytes the
   dequeue and lane indexes got the same name and the second was never
