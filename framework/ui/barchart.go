@@ -449,10 +449,12 @@ func plausibleCSSColor(s string) bool {
 
 // wrapChartLabel greedily word-wraps label to at most two lines that each
 // fit within maxChars runes. A single word longer than a line is
-// ellipsized; the full text is preserved by the caller in <title>.
+// ellipsized; the full text is preserved by the caller in <title>. A slot
+// too narrow for any rune still gets one, the ellipsis: a wider floor
+// spilled the label past its slot, and the last one past the plot edge.
 func wrapChartLabel(label string, maxChars int) []string {
-	if maxChars < 4 {
-		maxChars = 4
+	if maxChars < 1 {
+		maxChars = 1
 	}
 	if len([]rune(label)) <= maxChars {
 		return []string{label}

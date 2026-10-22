@@ -218,15 +218,19 @@ func TestBarChartLongLabelsWrap(t *testing.T) {
 // ran past its 82px slot into its neighbour and off the plot. 6.5px is
 // that line's measured width per rune.
 func TestBarChartLabelsFitSlot(t *testing.T) {
-	var bars []BarChartBar
-	for _, l := range []string{"Trialing", "Active", "Past due", "Canceled"} {
-		bars = append(bars, BarChartBar{Label: i18nui.Pseudo(l), Value: 3})
-	}
-	h := string(BarChart(BarChartConfig{Bars: bars, ShowLabels: true, Width: 320}))
-	room := (320.0-3*8)/4 + 8 - 4
-	for _, m := range regexp.MustCompile(`<tspan[^>]*>([^<]*)</tspan>`).FindAllStringSubmatch(h, -1) {
-		if w := float64(utf8.RuneCountInString(stdhtml.UnescapeString(m[1]))) * 6.5; w > room {
-			t.Errorf("label line %q is about %.0fpx, over the %.0fpx its slot leaves", m[1], w, room)
+	labels := []string{"Trialing", "Active", "Past due", "Canceled"}
+	// Narrow slots too: 12 and 20 bars leave room for under four runes.
+	for _, n := range []int{4, 12, 20} {
+		var bars []BarChartBar
+		for i := range n {
+			bars = append(bars, BarChartBar{Label: i18nui.Pseudo(labels[i%len(labels)]), Value: 3})
+		}
+		h := string(BarChart(BarChartConfig{Bars: bars, ShowLabels: true, Width: 320}))
+		room := (320.0-float64(n-1)*8)/float64(n) + 8 - 4
+		for _, m := range regexp.MustCompile(`<tspan[^>]*>([^<]*)</tspan>`).FindAllStringSubmatch(h, -1) {
+			if w := float64(utf8.RuneCountInString(stdhtml.UnescapeString(m[1]))) * 6.5; w > room {
+				t.Errorf("%d bars: label line %q is about %.0fpx, over the %.0fpx its slot leaves", n, m[1], w, room)
+			}
 		}
 	}
 }
