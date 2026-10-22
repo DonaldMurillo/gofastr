@@ -384,7 +384,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if err != nil {
 			return nil, fmt.Errorf("invalid column name %q: %w", f.Name, err)
 		}
-		colType := SQLType(f, dialect)
+		colType := columnSQLType(ent, f, all, dialect)
 		defaultClause := ColumnDefaultClause(f, dialect)
 		// A NOT NULL ADD COLUMN with no default fails on a populated table
 		// (every existing row would violate the constraint) on both Postgres
@@ -451,7 +451,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if !ok {
 			continue // absent from live → handled by ADD COLUMN above
 		}
-		declaredType := SQLType(f, dialect)
+		declaredType := columnSQLType(ent, f, all, dialect)
 		if typesEquivalent(declaredType, liveType, dialect) {
 			continue
 		}
@@ -913,7 +913,7 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if err != nil {
 			return nil, fmt.Errorf("invalid column name %q: %w", f.Name, err)
 		}
-		col := fmt.Sprintf("%s %s", safeCol, SQLType(f, dialect))
+		col := fmt.Sprintf("%s %s", safeCol, columnSQLType(ent, f, all, dialect))
 		inKey := slices.Contains(keys, f.Name)
 		if inKey && len(keys) == 1 {
 			col += " PRIMARY KEY"

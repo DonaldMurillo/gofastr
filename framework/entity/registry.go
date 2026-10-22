@@ -1,6 +1,9 @@
 package entity
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Registry is the minimal contract subpackages need from the framework's
 // entity registry: enumerate every registered entity.
@@ -51,6 +54,38 @@ type VersionedRegistry interface {
 	// version (the route-group prefix it was mounted at; "" for the
 	// unversioned App.Entity registration).
 	GetVersioned(name, version string) (*Entity, error)
+}
+
+// PivotEntity returns the registered entity that owns a many_to_many's
+// Through table, or nil when no entity does and the migrator creates the
+// table itself. Tables match ignoring case. Of several versions sharing
+// the table it prefers the source's own version, then the unversioned
+// declaration, then the first by name: the migrator requires one key for
+// all of them, and each scopes its rows the same way or the caller picks
+// the stricter by declaring one version only.
+func PivotEntity(reg Registry, source *Entity, table string) *Entity {
+	if reg == nil || table == "" {
+		return nil
+	}
+	var first, unversioned *Entity
+	for _, e := range reg.AllSorted() {
+		if !strings.EqualFold(e.GetTable(), table) {
+			continue
+		}
+		if source != nil && source.Version != "" && e.Version == source.Version {
+			return e
+		}
+		if e.Version == "" && unversioned == nil {
+			unversioned = e
+		}
+		if first == nil {
+			first = e
+		}
+	}
+	if unversioned != nil {
+		return unversioned
+	}
+	return first
 }
 
 // ResolveTarget resolves a relation target for a source entity, preferring the

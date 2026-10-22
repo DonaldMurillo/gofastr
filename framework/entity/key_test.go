@@ -200,3 +200,34 @@ func TestKeyValues(t *testing.T) {
 		t.Errorf("KeyValues on a keyless table = %v, want ErrBadKey", err)
 	}
 }
+
+// Only the end a foreign key references needs a one-column key.
+func TestCheckRelationKeys(t *testing.T) {
+	one := Define("course", EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}})
+	two := Define("enrollment", EntityConfig{
+		PrimaryKey: []string{"student_id", "course_id"},
+		Fields:     []schema.Field{{Name: "student_id", Type: schema.String}, {Name: "course_id", Type: schema.String}},
+	})
+	for _, c := range []struct {
+		name          string
+		source        *Entity
+		rel           Relation
+		target        *Entity
+		wantComposite bool
+	}{
+		{"belongs_to from a composite", two, BelongsTo("course", "course", "course_id"), one, false},
+		{"belongs_to to a composite", one, BelongsTo("e", "enrollment", "e_id"), two, true},
+		{"has_many to a composite", one, HasMany("es", "enrollment", "course_id"), two, false},
+		{"cascade has_many to a composite", one, HasMany("es", "enrollment", "course_id").WithCascadeWrite(true), two, true},
+		{"has_many from a composite", two, HasMany("cs", "course", "e_id"), one, true},
+		{"has_one from a composite", two, HasOne("c", "course", "e_id"), one, true},
+		{"m2m from a composite", two, ManyToMany("cs", "course", "p", "a", "b"), one, true},
+		{"m2m to a composite", one, ManyToMany("es", "enrollment", "p", "a", "b"), two, true},
+		{"m2m to an unknown target", one, ManyToMany("xs", "x", "p", "a", "b"), nil, false},
+	} {
+		err := CheckRelationKeys(c.source, c.rel, c.target)
+		if got := errors.Is(err, ErrCompositeKey); got != c.wantComposite {
+			t.Errorf("%s: err = %v, want composite refusal %v", c.name, err, c.wantComposite)
+		}
+	}
+}

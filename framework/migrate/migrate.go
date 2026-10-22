@@ -1014,27 +1014,22 @@ func topoSortEntities(all map[string]*entity.Entity) ([]*entity.Entity, error) {
 		ent := all[name]
 		tempMark[name] = true
 		for _, rel := range ent.Config.Relations {
-			// A foreign key names one column on each end. Checked here, for
-			// every table and not only a new one, so a target whose key
+			// A foreign key is one column, so the end it references needs a
+			// one-column key; the end holding it may have any. Checked here,
+			// for every table and not only a new one, so a target whose key
 			// turns composite is refused while an existing child still
 			// references its old key.
+			if err := entity.CheckRelationKeys(ent, rel, all[rel.Entity]); err != nil {
+				return fmt.Errorf("entity %q relation %q: %w", name, rel.Name, err)
+			}
 			if rel.Type == entity.RelManyToMany {
-				if _, err := ent.KeyColumn(); err != nil {
-					return fmt.Errorf("entity %q relation %q: %w", name, rel.Name, err)
-				}
-				if target, ok := all[rel.Entity]; ok {
-					if _, err := target.KeyColumn(); err != nil {
-						return fmt.Errorf("entity %q relation %q: %w", name, rel.Name, err)
-					}
+				if err := checkPivotEntity(ent, rel, all); err != nil {
+					return err
 				}
 			}
 			if rel.Type == entity.RelManyToOne {
-				target, ok := all[rel.Entity]
-				if !ok {
+				if _, ok := all[rel.Entity]; !ok {
 					return fmt.Errorf("entity %q has BelongsTo to unknown entity %q", name, rel.Entity)
-				}
-				if _, err := target.KeyColumn(); err != nil {
-					return fmt.Errorf("entity %q relation %q: %w", name, rel.Name, err)
 				}
 				if err := visit(rel.Entity); err != nil {
 					return err
@@ -1219,10 +1214,15 @@ func quoteSQLLiteral(s string) string {
 
 // fkColumnSQLType resolves the SQL column type for a foreign key referencing ent's pkName.
 // In PostgreSQL, if the primary key is SERIAL or BIGSERIAL, the referencing column must be INTEGER or BIGINT.
-func fkColumnSQLType(ent *entity.Entity, pkName string, dialect Dialect) string {
+// A key that is itself a Relation column takes the type columnSQLType gives it.
+func fkColumnSQLType(ent *entity.Entity, pkName string, all map[string]*entity.Entity, dialect Dialect) string {
+	return keyColumnType(ent, pkName, all, dialect, map[columnRef]bool{})
+}
+
+func keyColumnType(ent *entity.Entity, pkName string, all map[string]*entity.Entity, dialect Dialect, seen map[columnRef]bool) string {
 	for _, f := range ent.GetFields() {
 		if strings.EqualFold(f.Name, pkName) {
-			t := SQLType(f, dialect)
+			t := relationColumnType(ent, f, all, dialect, seen)
 			if dialect == DialectPostgres {
 				if strings.EqualFold(t, "SERIAL") {
 					return "INTEGER"
@@ -1235,6 +1235,54 @@ func fkColumnSQLType(ent *entity.Entity, pkName string, dialect Dialect) string 
 		}
 	}
 	return "TEXT"
+}
+
+// columnSQLType is SQLType for a column of ent. A Relation field is TEXT,
+// which Postgres refuses as a foreign key to an integer key ("foreign key
+// constraint cannot be implemented") and refuses to join against one. When
+// the field is a belongs_to's foreign key and the target's one-column key
+// is an integer, the column takes that integer type on Postgres, following
+// a target key that is itself such a Relation. SQLite compares TEXT and
+// INTEGER by affinity, so it keeps TEXT and an existing table sees no
+// retype.
+func columnSQLType(ent *entity.Entity, f schema.Field, all map[string]*entity.Entity, dialect Dialect) string {
+	return relationColumnType(ent, f, all, dialect, map[columnRef]bool{})
+}
+
+// columnRef names one column of one entity: the cycle guard of a walk
+// along relation keys, which may pass through two columns of one entity
+// (a self-reference to a key that is itself a reference).
+type columnRef struct {
+	e   *entity.Entity
+	col string
+}
+
+func relationColumnType(ent *entity.Entity, f schema.Field, all map[string]*entity.Entity, dialect Dialect, seen map[columnRef]bool) string {
+	t := SQLType(f, dialect)
+	ref := columnRef{ent, f.Name}
+	if f.Type != schema.Relation || f.RawType != "" || dialect != DialectPostgres || all == nil || seen[ref] {
+		return t
+	}
+	seen[ref] = true
+	for _, rel := range ent.Config.Relations {
+		if rel.Type != entity.RelManyToOne || !strings.EqualFold(rel.ForeignKey, f.Name) {
+			continue
+		}
+		target, ok := all[rel.Entity]
+		if !ok {
+			return t
+		}
+		pk, err := target.KeyColumn()
+		if err != nil {
+			return t
+		}
+		switch ft := keyColumnType(target, pk, all, dialect, seen); ft {
+		case "INTEGER", "BIGINT":
+			return ft
+		}
+		return t
+	}
+	return t
 }
 
 // generatedPivots yields each many_to_many relation whose Through table the
@@ -1264,6 +1312,25 @@ func generatedPivots(ordered []*entity.Entity, all map[string]*entity.Entity) it
 			}
 		}
 	}
+}
+
+// checkPivotEntity refuses a many_to_many whose Through table a registered
+// entity owns but whose two link columns that entity does not declare: the
+// migrator creates no pivot then, and every read of the relation would
+// name a column the table lacks.
+func checkPivotEntity(ent *entity.Entity, rel entity.Relation, all map[string]*entity.Entity) error {
+	for _, name := range slices.Sorted(maps.Keys(all)) {
+		e := all[name]
+		if !strings.EqualFold(e.GetTable(), rel.Through) {
+			continue
+		}
+		for _, col := range []string{rel.LocalKey, rel.ForeignKeyTarget} {
+			if !slices.ContainsFunc(e.GetFields(), func(f schema.Field) bool { return strings.EqualFold(f.Name, col) }) {
+				return fmt.Errorf("entity %q relation %q: join entity %q declares no column %q", ent.GetName(), rel.Name, e.GetName(), col)
+			}
+		}
+	}
+	return nil
 }
 
 func pivotHasEntity(table string, all map[string]*entity.Entity) bool {
@@ -1333,8 +1400,8 @@ func buildPivotSpec(ent *entity.Entity, rel entity.Relation, all map[string]*ent
 		return pivotSpec{}, fmt.Errorf("relation %q: invalid target PK %q: %w", rel.Name, targetPK, err)
 	}
 
-	sourcePKType := fkColumnSQLType(ent, sourcePK, dialect)
-	targetPKType := fkColumnSQLType(target, targetPK, dialect)
+	sourcePKType := fkColumnSQLType(ent, sourcePK, all, dialect)
+	targetPKType := fkColumnSQLType(target, targetPK, all, dialect)
 	idxName := fmt.Sprintf("idx_%s_%s", safeThrough, safeTargetKey)
 	return pivotSpec{
 		Safe: safeThrough,
