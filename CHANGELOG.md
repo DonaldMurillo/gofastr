@@ -193,6 +193,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   arm reports a constant passed to `objc.NSString` or used as the title
   or text of a Win32 menu row, window or message box: the shell speaks
   the OS language, so it passes a phrase's text.
+- **`rawtext` refuses components left without Ctx.** Its `ctxless` arm
+  reports a UI component literal whose `Ctx context.Context` field is
+  unset while the function holds a request context (a `ctx`, a
+  `cfg.Ctx`, or `r.Context()`). Such a component says its own words in
+  English on every locale's page. It found 55 sites in the admin,
+  setup, entityui, `framework/ui` and Meridian, Meridian's header theme
+  toggle and sign-out among them; each now passes its context.
 - **Generated apps translate.** Every word an app spec writes for a
   reader is an `i18n.Phrase` declared at the top of the file that says
   it, keyed `<app>.screens.<screen>.<slug>`, `<app>.chrome.<slug>` or

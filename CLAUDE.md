@@ -427,8 +427,12 @@ expose them to agents connected to a live app.**
   OpenAPI), `headless.Spec` examples and the `headless.Strings`
   defaults table are exempt. Its `nativetext` arm covers the desktop
   shells: a constant into `objc.NSString` or a Win32 menu, window or
-  message-box title is English on every OS language. The runtime's JS
-  twin is
+  message-box title is English on every OS language. Its `ctxless` arm
+  fires on a UI component literal with a `Ctx context.Context` field left
+  unset while a request context is in scope (a ctx, `cfg.Ctx`, or
+  `r.Context()`): the component says its own words through Ctx, so
+  Meridian's header ThemeToggle and SignOut read English on /es/. The
+  runtime's JS twin is
   `core-ui/check.LintRuntimeProse`: literal prose into a toast,
   `textContent`, `aria-label` or `title` goes through `say()` and a
   phrase registered with `runtime.RegisterStrings`.

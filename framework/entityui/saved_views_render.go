@@ -130,6 +130,7 @@ func (b *ListBuilder) saveViewTool(ctx context.Context, s *listState) render.HTM
 	}
 	m := s.m
 	return ui.Dropdown(ui.DropdownConfig{
+		Ctx:   ctx,
 		Label: i18nui.EntitySavedSave.Text(ctx),
 		Icon:  "bookmark",
 		Align: ui.DropdownEnd,
@@ -189,6 +190,7 @@ func (b *ListBuilder) deleteViewTool(ctx context.Context, s *listState) render.H
 		hiddenInput("back", listHref(s.path, s.carry(s.p.saved, s.p.filter, s.p.cols, s.p.page))),
 		hiddenInput("key", s.key),
 		ui.Button(ui.ButtonConfig{
+			Ctx:     ctx,
 			Label:   i18nui.EntitySavedDelete.Text(ctx, map[string]any{"view": name}),
 			Variant: ui.ButtonGhost,
 			Size:    ui.ButtonSizeSmall,

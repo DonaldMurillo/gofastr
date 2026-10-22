@@ -40,7 +40,7 @@ func (s *CustomersScreen) RenderCtx(ctx context.Context) render.HTML {
 		// facets in gofastr.yml), not per-screen config. Quick add is
 		// the app's own action beside New: it opens the quick-add modal.
 		appUI.List("customers").Columns("name", "email", "company", "status", "mrr").PageSize(8).Heading(customersCrudTextCustomers.Text(ctx), 1).Empty(customersCrudTextNoCustomersYetAdd.Text(ctx)).
-			Actions(interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Label: quickAddOpen.Text(ctx), Variant: ui.ButtonSecondary}), "customer-quick-add")).
+			Actions(interactive.OpenOnClick(ui.Button(ui.ButtonConfig{Ctx: ctx, Label: quickAddOpen.Text(ctx), Variant: ui.ButtonSecondary}), "customer-quick-add")).
 			RenderCtx(ctx),
 	)
 }

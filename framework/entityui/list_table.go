@@ -322,7 +322,7 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 			// A title the caller read links to its record where the UI
 			// knows the related entity's screens.
 			if base, ok := s.relBase[name]; ok {
-				return ui.Tag(ui.TagConfig{Label: t, Href: base + "/" + url.PathEscape(val)})
+				return ui.Tag(ui.TagConfig{Ctx: ctx, Label: t, Href: base + "/" + url.PathEscape(val)})
 			}
 			return render.Text(t)
 		}

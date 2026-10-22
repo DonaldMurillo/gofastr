@@ -78,6 +78,16 @@
 //     pick the plural form from it, so ASCII digits read wrong both ways.
 //     Pass the number, or write it with i18n.Number. A machine value a
 //     person copies (an id, a port, a code) carries the allow marker.
+//   - ctxless: a UI-package component literal whose type has a
+//     Ctx context.Context field, left unset in a function that holds a
+//     request context: a context.Context parameter or local, a
+//     parameter or receiver carrying Ctx (cfg.Ctx), or an *http.Request
+//     (r.Context()). The component says its own words (a toggle's
+//     label, a form's submit button) through Ctx, so without it they
+//     render in English on every locale's page. Meridian's header
+//     ThemeToggle and SignOut did, on /es/. A literal bound to a
+//     variable whose Ctx the function assigns later, and a positional
+//     literal, stay quiet.
 //
 // Silent postures, deliberately:
 //   - _test.go files, and every package outside the four roots
@@ -111,7 +121,7 @@ import (
 
 var Analyzer = &analysis.Analyzer{
 	Name: "rawtext",
-	Doc:  "forbids framework responses written outside the i18n catalog: http.Error, i18n.Define off package level or with non-constant text, handler.Errorf/Message, response helpers taking a msg string, prose or err.Error() in error envelopes and raw JSON bodies, English written into markup (render.Text, label attributes, reader-facing component fields), and numbers stringified into phrase params or markup",
+	Doc:  "forbids framework responses written outside the i18n catalog: http.Error, i18n.Define off package level or with non-constant text, handler.Errorf/Message, response helpers taking a msg string, prose or err.Error() in error envelopes and raw JSON bodies, English written into markup (render.Text, label attributes, reader-facing component fields), numbers stringified into phrase params or markup, and UI components left without Ctx while a request context is in scope",
 	Run:  run,
 }
 
@@ -163,6 +173,7 @@ func run(pass *analysis.Pass) (any, error) {
 			case *ast.FuncDecl:
 				checkParams(pass, n.Type, n.Name.Name)
 				checkScreenText(pass, n, ui)
+				checkCtxless(pass, n, ui)
 			case *ast.FuncLit:
 				checkParams(pass, n.Type, "func literal")
 			case *ast.AssignStmt:

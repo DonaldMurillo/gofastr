@@ -136,7 +136,7 @@ func (b *Battery) emailDetail(ctx context.Context, p EmailPreview) render.HTML {
 	}
 	textBody := none(i18nui.AdminEmailNoText)
 	if msg.TextBody != "" {
-		textBody = ui.CodeBlock(ui.CodeBlockConfig{Code: msg.TextBody, Language: "text", Scroll: true, Wrap: true})
+		textBody = ui.CodeBlock(ui.CodeBlockConfig{Ctx: ctx, Code: msg.TextBody, Language: "text", Scroll: true, Wrap: true})
 	}
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{

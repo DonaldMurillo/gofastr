@@ -107,6 +107,7 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 				Options:     scopes,
 			}),
 			ui.Button(ui.ButtonConfig{
+				Ctx:     ctx,
 				Label:   i18nui.EntityBulkApply.Text(ctx),
 				Type:    "submit",
 				Variant: ui.ButtonSecondary,

@@ -88,7 +88,7 @@ func deletedWriteForm(ctx context.Context, action, label string, variant ui.Butt
 		ExtraAttrs: rpc.Attrs(),
 	},
 		hiddenInput("back", back),
-		ui.Button(ui.ButtonConfig{Label: label, Type: "submit", Variant: variant}),
+		ui.Button(ui.ButtonConfig{Ctx: ctx, Label: label, Type: "submit", Variant: variant}),
 	)
 }
 

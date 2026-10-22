@@ -247,6 +247,7 @@ func drawerBar(ctx context.Context, prev, next string) render.HTML {
 // and Mod+S clicks it. It reads as idle until the form has edits.
 func saveButton(ctx context.Context, m *meta, create bool) render.HTML {
 	return ui.Button(ui.ButtonConfig{
+		Ctx:             ctx,
 		Label:           submitLabel(ctx, m, create),
 		Type:            "submit",
 		ID:              "eui-" + m.name + "-save",
@@ -325,7 +326,7 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 				danger = append(danger, ui.MenuItem{Label: label, Danger: true, Do: &act})
 				continue
 			}
-			out = append(out, ui.Button(ui.ButtonConfig{Label: label, Variant: variant, ExtraAttrs: act.Attrs()}))
+			out = append(out, ui.Button(ui.ButtonConfig{Ctx: ctx, Label: label, Variant: variant, ExtraAttrs: act.Attrs()}))
 		}
 	}
 	buttons, dangerActs := b.appActions(ctx, m, title, save)
@@ -372,7 +373,7 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta, title string, s
 			danger = append(danger, ui.MenuItem{Label: act.label, Danger: true, Do: &run})
 			continue
 		}
-		out = append(out, ui.Button(ui.ButtonConfig{Label: act.label, Variant: variant, ExtraAttrs: run.Attrs()}))
+		out = append(out, ui.Button(ui.ButtonConfig{Ctx: ctx, Label: act.label, Variant: variant, ExtraAttrs: run.Attrs()}))
 	}
 	return out, danger
 }

@@ -82,7 +82,7 @@ func InlineEdit(cfg InlineEditConfig) render.HTML {
 		ExtraAttrs: attrs,
 	}, Cluster(ClusterConfig{Gap: GapSM, Align: AlignCenter, NoWrap: true},
 		cfg.Control,
-		headless.Own(Button(ButtonConfig{Label: save, Type: "submit", Variant: ButtonPrimary, Size: ButtonSizeSmall})),
+		headless.Own(Button(ButtonConfig{Ctx: ctx, Label: save, Type: "submit", Variant: ButtonPrimary, Size: ButtonSizeSmall})),
 	))
 	// The value is the caller's; its name is ours.
 	summary := render.Join(

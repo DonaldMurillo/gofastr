@@ -49,6 +49,7 @@ func builtinKind(name string) Kind {
 	case "markdown", "code":
 		return Kind{Input: func(ic InputContext) render.HTML {
 			return ui.TextArea(ui.TextAreaConfig{
+				Ctx:  ic.Ctx,
 				Name: ic.Name, Label: ic.Label, ID: ic.Control.ID, Value: ic.Value,
 				Rows: 8, Placeholder: ic.Placeholder, Help: ic.Help, Monospace: true,
 				Required:  ic.Control.Required,
@@ -137,7 +138,7 @@ func (fb *formBuilder) display(ctx context.Context, f schema.Field, row map[stri
 		return muted()
 	case schema.JSON:
 		if s := cell(v); s != "" {
-			return ui.JSONViewer(ui.JSONViewerConfig{Value: s, OpenDepth: 1})
+			return ui.JSONViewer(ui.JSONViewerConfig{Ctx: ctx, Value: s, OpenDepth: 1})
 		}
 	default:
 		if s := cell(v); s != "" {

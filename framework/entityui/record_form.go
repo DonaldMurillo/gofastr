@@ -653,6 +653,7 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 		var input render.HTML
 		if f.Type == schema.Text || f.Type == schema.JSON {
 			input = ui.TextArea(ui.TextAreaConfig{
+				Ctx:  ctx,
 				Name: f.Name, Label: label, ID: id, Rows: 4, Help: help, Placeholder: ph,
 				Required: true, ExtraAttrs: owner,
 			})
@@ -669,6 +670,7 @@ func (fb *formBuilder) maskedControl(ctx context.Context, f schema.Field, label,
 		}
 		return ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart}, input,
 			ui.Button(ui.ButtonConfig{
+				Ctx:   ctx,
 				Label: i18nui.EntityReplace.Text(ctx), Type: "submit",
 				Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall, ExtraAttrs: owner,
 			}))
@@ -690,6 +692,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		})
 	case schema.Text:
 		return ui.TextArea(ui.TextAreaConfig{
+			Ctx:  ctx,
 			Name: f.Name, Label: label, ID: id, Value: val, Rows: 4, Placeholder: ph,
 			Help: help, Required: required,
 			MinLength: minLength(f.Min), MaxLength: maxLength(f.Max),

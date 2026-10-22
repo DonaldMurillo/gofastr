@@ -212,6 +212,7 @@ func (b *Battery) layout() *appui.Layout {
 		)
 		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
 			ui.ContentRow(ui.ContentRowConfig{
+				Ctx:          ctx,
 				Sidebar:      nav,
 				NavLabel:     i18nui.AdminSidebar.Text(ctx),
 				Toolbar:      toolbar,
@@ -319,6 +320,7 @@ func (b *Battery) sidebarWith(ctx context.Context, count func(*entity.Entity) re
 		items = append(items, ui.SidebarItem{Label: i18nui.AdminSystemNav.Text(ctx), Children: ops, Open: true})
 	}
 	return ui.SidebarConfig{
+		Ctx:                   ctx,
 		NavLabel:              i18nui.AdminNav.Text(ctx),
 		Items:                 items,
 		CurrentPath:           path,
@@ -513,6 +515,7 @@ func (b *Battery) accountMenu(ctx context.Context) render.HTML {
 	}
 	parts = append(parts, ui.Divider(ui.DividerConfig{}), ui.ActionList(ui.ActionListConfig{Items: rows}))
 	return ui.Dropdown(ui.DropdownConfig{
+		Ctx:     ctx,
 		Label:   i18nui.AdminAccount.Text(ctx),
 		Avatar:  &ui.AvatarConfig{Name: name},
 		Align:   ui.DropdownEnd,

@@ -146,6 +146,7 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 		// Every chip is built from FilterChip's strings, so the whole
 		// Tag is the component's own.
 		items = append(items, headless.Own(Tag(TagConfig{
+			Ctx:           ctx,
 			Label:         f.Label,
 			Variant:       f.Variant,
 			Dismiss:       f.DismissPath,

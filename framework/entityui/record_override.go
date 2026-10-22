@@ -108,6 +108,7 @@ func (b *RecordBuilder) overridePanel(ctx context.Context, m *meta, row map[stri
 	action := m.api + "/" + url.PathEscape(b.id) + "/_override"
 	back := base + "/" + url.PathEscape(b.id)
 	form := ui.Form(ui.FormConfig{
+		Ctx:    ctx,
 		Action: action,
 		Method: http.MethodPost,
 		ID:     "eui-" + m.name + "-override",
@@ -129,6 +130,7 @@ func (b *RecordBuilder) overridePanel(ctx context.Context, m *meta, row map[stri
 			Required: true,
 		}),
 		ui.TextArea(ui.TextAreaConfig{
+			Ctx:       ctx,
 			Name:      overrideReasonField,
 			Label:     i18nui.EntityOverrideReason.Text(ctx),
 			Required:  true,

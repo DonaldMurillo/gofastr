@@ -157,7 +157,7 @@ func AnchoredRail(cfg AnchoredRailConfig) render.HTML {
 	if cfg.ID != "" {
 		sheetID = cfg.ID + "-sheet"
 	}
-	return interactive.PhoneSheet(interactive.PhoneSheetConfig{ID: sheetID, Title: cfg.Label, SwapAt: cfg.SwapAt, Top: cfg.PhoneSheetTop}, rail)
+	return interactive.PhoneSheet(interactive.PhoneSheetConfig{Ctx: cfg.Ctx, ID: sheetID, Title: cfg.Label, SwapAt: cfg.SwapAt, Top: cfg.PhoneSheetTop}, rail)
 }
 
 var anchoredRailStyle = registry.RegisterStyle("ui-anchored-rail", anchoredRailCSS)

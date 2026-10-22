@@ -696,6 +696,7 @@ func (b *Builder) applyStaticMode(ctx context.Context, page string) string {
 	page = applyStaticCSP(page)
 	page = b.rewriteBaseURLs(page)
 	notice := string(ui.Banner(ui.BannerConfig{
+		Ctx:         ctx,
 		Title:       pageStaticTitle.Text(ctx),
 		Body:        pageStaticBody.Text(ctx),
 		Variant:     ui.BannerInfo,

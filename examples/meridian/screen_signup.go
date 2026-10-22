@@ -35,7 +35,7 @@ func (s *SignupScreen) ScreenType() app.ScreenType                   { return ap
 
 func (s *SignupScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
-		ui.AuthCard(ui.AuthCardConfig{Title: signupScreenTextCreateYourMeridianAccount.Text(ctx), Alert: authError(ctx), Body: ui.Form(ui.FormConfig{Action: "/auth/register", Method: "POST", SubmitLabel: signupScreenTextCreateAccount.Text(ctx), SubmitFullWidth: true}, html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/app"}), ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthEmail.Text(ctx), For: "auth-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
+		ui.AuthCard(ui.AuthCardConfig{Title: signupScreenTextCreateYourMeridianAccount.Text(ctx), Alert: authError(ctx), Body: ui.Form(ui.FormConfig{Ctx: ctx, Action: "/auth/register", Method: "POST", SubmitLabel: signupScreenTextCreateAccount.Text(ctx), SubmitFullWidth: true}, html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/app"}), ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthEmail.Text(ctx), For: "auth-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "email"})
 		}}), ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthPassword.Text(ctx), For: "auth-password", Required: true, Input: func(c headless.FieldControl) render.HTML {
 			return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password", AutoComplete: "new-password", MinLength: 8})
