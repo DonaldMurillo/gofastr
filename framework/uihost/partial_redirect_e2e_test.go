@@ -121,11 +121,13 @@ func TestPartialRedirect_ExternalLoadsPage(t *testing.T) {
 	}
 	var href string
 	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
-		var text string
-		err := chromedp.Run(ctx,
-			chromedp.Evaluate(`location.href`, &href),
-			chromedp.Evaluate(`document.getElementById('idp')?.textContent ?? ''`, &text))
-		if err == nil && text == "idp login" {
+		// One evaluation: two could straddle the page change and pair
+		// the provider's text with the URL of the page before it.
+		var got struct{ Href, Text string }
+		err := chromedp.Run(ctx, chromedp.Evaluate(
+			`({Href: location.href, Text: document.getElementById('idp')?.textContent ?? ''})`, &got))
+		href = got.Href
+		if err == nil && got.Text == "idp login" {
 			break
 		}
 		if time.Now().After(deadline) {
