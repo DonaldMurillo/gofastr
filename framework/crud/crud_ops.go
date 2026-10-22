@@ -199,7 +199,8 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	}
 	// A storage key in a file field must be one this request uploaded or
 	// one already on this row (media_provenance.go).
-	if err := ch.checkMediaProvenance(ctx, body, ch.currentMediaKeys(ctx, r, id)); err != nil {
+	idKey, _ := ch.idVals(id)
+	if err := ch.checkMediaProvenance(ctx, body, ch.currentMediaKeys(ctx, r, idKey)); err != nil {
 		return nil, err
 	}
 	// Snapshot the pre-change row inside the same transaction so the audit
@@ -260,7 +261,7 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	anySet := false
 	ownerField := ch.Entity.Config.Scope.OwnerField
 	for _, f := range ch.Entity.GetFields() {
-		if f.Name == ch.PrimaryKey || f.AutoGenerate != schema.AutoNone {
+		if ch.isKeyCol(f.Name) || f.AutoGenerate != schema.AutoNone {
 			continue
 		}
 		// ReadOnly/Hidden fields are client-unsettable and skipped unless
@@ -316,7 +317,8 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 			ub.Set(col, generateFieldValue(schema.AutoTimestamp))
 		}
 
-		ub.Where(ch.PrimaryKey+" = $1", id)
+		kc, ka := ch.keyWhere(id)
+		ub.Where(kc, ka...)
 		ch.ApplyTenantScopeUpdate(ub, r)
 		ch.ApplyOwnerScopeUpdate(ub, r)
 		// A soft-deleted row is logically gone: the read paths hide it
@@ -484,16 +486,14 @@ func (ch *CrudHandler) readScopeHidesRow(ctx context.Context, row map[string]any
 	if len(preds) == 0 {
 		return false, nil
 	}
-	pk, ok := row[ch.convertKey(ch.PrimaryKey)]
+	vals, ok := ch.rowKeyVals(row)
 	if !ok {
-		pk, ok = row[ch.PrimaryKey]
-	}
-	if !ok || pk == nil {
 		return true, nil // cannot name the row: fail closed
 	}
-	qb := query.Select(ch.PrimaryKey).
+	kc, ka := ch.keyCond(vals)
+	qb := query.Select(ch.keyCols()[0]).
 		From(ch.Entity.GetTable()).
-		Where(ch.PrimaryKey+" = $1", pk)
+		Where(kc, ka...)
 	applyReadScopeWhere(func(sql string, args ...any) { qb.Where(sql, args...) }, preds)
 	sqlStr, args := qb.Build()
 	var hit any
@@ -548,10 +548,11 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 	}
 
 	var affected int64
+	kc, ka := ch.keyWhere(id)
 	if ch.Entity.Config.Scope.SoftDelete {
 		ub := query.Update(ch.Entity.GetTable()).
 			Set("deleted_at", time.Now().UTC()).
-			Where(ch.PrimaryKey+" = $1", id)
+			Where(kc, ka...)
 		ch.ApplyTenantScopeUpdate(ub, r)
 		ch.ApplyOwnerScopeUpdate(ub, r)
 		// Don't re-soft-delete an already-deleted row: without this the
@@ -568,7 +569,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 		affected, _ = res.RowsAffected()
 	} else {
 		db := query.Delete(ch.Entity.GetTable()).
-			Where(ch.PrimaryKey+" = $1", id)
+			Where(kc, ka...)
 		ch.ApplyTenantScopeDelete(db, r)
 		ch.ApplyOwnerScopeDelete(db, r)
 		sqlStr, args := db.Build()
@@ -587,7 +588,7 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 			return fmt.Errorf("after-delete hook: %w", err)
 		}
 	}
-	if err := ch.StageEvent(ctx, event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id}); err != nil {
+	if err := ch.StageEvent(ctx, event.EntityDeleted, ch.keyPayload(id)); err != nil {
 		return fmt.Errorf("stage event: %w", err)
 	}
 	return nil
@@ -600,9 +601,10 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 // "no snapshot available" rather than aborting the surrounding mutation.
 func (ch *CrudHandler) selectPreImage(ctx context.Context, r *http.Request, id string) (map[string]any, error) {
 	cols := ch.visibleFields()
+	kc, ka := ch.keyWhere(id)
 	qb := query.Select(cols...).
 		From(ch.Entity.GetTable()).
-		Where(ch.PrimaryKey+" = $1", id)
+		Where(kc, ka...)
 	ch.ApplyTenantScope(qb, r)
 	ch.ApplyOwnerScope(qb, r)
 	ch.ApplySoftDeleteFilter(qb, r)
@@ -622,9 +624,10 @@ func (ch *CrudHandler) selectPreImage(ctx context.Context, r *http.Request, id s
 // children or pivot links to it.
 func (ch *CrudHandler) selectWriteTarget(ctx context.Context, r *http.Request, id string) (map[string]any, error) {
 	cols := ch.visibleFields()
+	kc, ka := ch.keyWhere(id)
 	qb := query.Select(cols...).
 		From(ch.Entity.GetTable()).
-		Where(ch.PrimaryKey+" = $1", id)
+		Where(kc, ka...)
 	ch.ApplyTenantScope(qb, r)
 	applyOwnerScope(ch, qb, r, false)
 	if ch.Entity.Config.Scope.SoftDelete {

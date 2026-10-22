@@ -60,19 +60,19 @@ func TestCovClientIP(t *testing.T) {
 
 // stringifyPK: nil row, missing pk with case-insensitive fallback, total miss.
 func TestCovStringifyPK(t *testing.T) {
-	if got := stringifyPK(nil, "id"); got != "" {
+	if got := stringifyPK(nil, []string{"id"}); got != "" {
 		t.Fatalf("nil row: got %q", got)
 	}
 	// pk present directly
-	if got := stringifyPK(map[string]any{"id": 7}, "id"); got != "7" {
+	if got := stringifyPK(map[string]any{"id": 7}, []string{"id"}); got != "7" {
 		t.Fatalf("direct pk: got %q", got)
 	}
 	// fallback: requested pk absent, but "ID" present
-	if got := stringifyPK(map[string]any{"ID": "abc"}, "uid"); got != "abc" {
+	if got := stringifyPK(map[string]any{"ID": "abc"}, []string{"uid"}); got != "abc" {
 		t.Fatalf("fallback ID: got %q", got)
 	}
 	// total miss
-	if got := stringifyPK(map[string]any{"name": "x"}, "uid"); got != "" {
+	if got := stringifyPK(map[string]any{"name": "x"}, []string{"uid"}); got != "" {
 		t.Fatalf("total miss: got %q", got)
 	}
 }

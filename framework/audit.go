@@ -16,7 +16,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
@@ -184,7 +186,6 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			continue
 		}
 		ent := ent
-		pk := "id"
 		hr := a.HookRegistry(name)
 
 		hr.RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
@@ -194,7 +195,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 				// audit row keyed on a zero row (silent forensics gap).
 				return fmt.Errorf("audit: AfterCreate payload type = %T, want map[string]any (framework contract drift?)", data)
 			}
-			id := stringifyPK(row, pk)
+			id := stringifyPK(row, ent.KeyColumns())
 			redacted := cfg.applyRedact(ent.GetName(), row)
 			diff := buildAuditCreateDiff(redacted, row, auditMeta(ctx))
 			// crud.UpsertOne fires AfterCreate for both arms; an override
@@ -211,7 +212,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			if !ok {
 				return fmt.Errorf("audit: AfterUpdate payload type = %T, want map[string]any (framework contract drift?)", data)
 			}
-			id := stringifyPK(row, pk)
+			id := stringifyPK(row, ent.KeyColumns())
 			redactedNew := cfg.applyRedact(ent.GetName(), row)
 			var redactedOld map[string]any
 			var originalOld map[string]any
@@ -552,17 +553,21 @@ func (c AuditConfig) applyRedact(entity string, row map[string]any) map[string]a
 	return out
 }
 
-func stringifyPK(row map[string]any, pk string) string {
+// stringifyPK is the audit row's record_id: the record's key columns,
+// read under their camelCase wire keys or as named, joined as the
+// framework's id.
+func stringifyPK(row map[string]any, cols []string) string {
 	if row == nil {
 		return ""
 	}
-	if v, ok := row[pk]; ok {
-		return fmt.Sprintf("%v", v)
+	if id, ok := entity.RowKey(row, cols, casing.ToCamel); ok {
+		return id
 	}
-	// Case-insensitive fallback: handlers may return camelCase keys.
-	for k, v := range row {
-		if k == pk || k == "id" || k == "ID" {
-			return fmt.Sprintf("%v", v)
+	if len(cols) == 1 {
+		for _, k := range []string{"id", "ID"} {
+			if v, ok := row[k]; ok {
+				return fmt.Sprintf("%v", v)
+			}
 		}
 	}
 	return ""

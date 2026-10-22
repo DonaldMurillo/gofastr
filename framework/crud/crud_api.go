@@ -132,7 +132,7 @@ func (ch *CrudHandler) DeleteOne(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	ch.EmitEvent(ctx, event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
+	ch.EmitEvent(ctx, event.EntityDeleted, ch.keyPayload(id))
 	return nil
 }
 
@@ -147,9 +147,10 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 		return nil, err
 	}
 	cols := ch.visibleFields()
+	kc, ka := ch.keyWhere(id)
 	qb := query.Select(cols...).
 		From(ch.Entity.GetTable()).
-		Where(ch.PrimaryKey+" = $1", id)
+		Where(kc, ka...)
 	req := syntheticRequest(ctx, http.MethodGet, "/")
 	ch.ApplyTenantScope(qb, req)
 	ch.ApplyOwnerScope(qb, req)
@@ -470,7 +471,7 @@ func (ch *CrudHandler) BatchDeleteMany(ctx context.Context, ids []string) ([]str
 		return nil, txErr
 	}
 	for _, id := range ids {
-		ch.EmitEvent(ctx, event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
+		ch.EmitEvent(ctx, event.EntityDeleted, ch.keyPayload(id))
 	}
 	return ids, nil
 }

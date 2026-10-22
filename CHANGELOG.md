@@ -246,6 +246,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   live in a header or footer that stays on screen. Generated apps with
   `app.locale_prefixes` put it in the marketing footer (sitefooter
   gains a `Language` slot), and so does Meridian.
+- **Record ids name every key column.** `Entity.KeyColumns()` lists an
+  entity's primary-key columns, and crud reads, writes, upserts, the
+  keyset cursor's tiebreak, event payloads, audit `record_id`s and hook
+  ids all name a record through them. A string id is `entity.JoinKey` of
+  the key values (`entity.SplitKey` and `entity.RowKey` read it back),
+  which for a one-column key is the value itself, so nothing changes for
+  existing entities. See `gofastr docs entity-declarations` → "Record
+  ids".
 
 ### Changed
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,

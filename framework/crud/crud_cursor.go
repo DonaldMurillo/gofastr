@@ -24,20 +24,21 @@ import (
 //
 // Composite cursors should end in a guaranteed-unique tiebreak column
 // (typically the primary key) so paging never stalls on ties, the
-// framework appends PrimaryKey automatically if it isn't already listed.
+// framework appends each key column that isn't already listed.
 func (ch *CrudHandler) cursorFields() []string {
 	if len(ch.Entity.Config.Pagination.CursorFields) > 0 {
 		fields := append([]string{}, ch.Entity.Config.Pagination.CursorFields...)
-		hasPK := slices.Contains(fields, ch.PrimaryKey)
-		if !hasPK {
-			fields = append(fields, ch.PrimaryKey)
+		for _, k := range ch.keyCols() {
+			if !slices.Contains(fields, k) {
+				fields = append(fields, k)
+			}
 		}
 		return fields
 	}
 	if ch.Entity.Config.Pagination.CursorField != "" {
 		return []string{ch.Entity.Config.Pagination.CursorField}
 	}
-	return []string{ch.PrimaryKey}
+	return ch.keyCols()
 }
 
 // serveCursorList handles a cursor-paginated List request. It uses keyset

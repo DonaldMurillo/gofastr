@@ -281,12 +281,15 @@ func BuildDSLQuery(registry entity.Registry, input string) (*query.QueryBuilder,
 		if len(ent.Config.Pagination.CursorFields) > 0 {
 			return nil, i18n.NewError(reasonAfterComposite, map[string]any{"entity": parsed.Entity})
 		}
+		// The default cursor is the primary key; a key of more than one
+		// column is a composite cursor, refused the same way.
 		cursorField := ent.Config.Pagination.CursorField
 		if cursorField == "" {
-			cursorField = ent.PrimaryKey
-		}
-		if cursorField == "" {
-			cursorField = "id"
+			keys := ent.KeyColumns()
+			if len(keys) > 1 {
+				return nil, i18n.NewError(reasonAfterComposite, map[string]any{"entity": parsed.Entity})
+			}
+			cursorField = keys[0]
 		}
 		cf, ok := entitySchema.FieldByName(cursorField)
 		if !ok || cf.Hidden {

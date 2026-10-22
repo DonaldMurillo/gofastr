@@ -937,7 +937,8 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		}
 		qb := query.Select(cols...)
 		qb.From(ch.Entity.GetTable())
-		qb.Where(ch.PrimaryKey+" = $1", id)
+		kc, ka := ch.keyWhere(id)
+		qb.Where(kc, ka...)
 		ch.ApplyTenantScope(qb, r)
 		ch.ApplyOwnerScope(qb, r)
 		// A row outside the read scope must 404, not 403: the filter lives
@@ -1201,7 +1202,7 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 			return
 		}
 
-		ch.EmitEvent(r.Context(), event.EntityDeleted, map[string]any{ch.convertKey(ch.PrimaryKey): id})
+		ch.EmitEvent(r.Context(), event.EntityDeleted, ch.keyPayload(id))
 
 		w.WriteHeader(http.StatusNoContent)
 	}

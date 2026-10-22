@@ -14,6 +14,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 )
 
@@ -372,16 +373,14 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		txErr := ch.inTx(r.Context(), func(ctx context.Context, ch *CrudHandler) error {
 			for i, item := range req.Items {
 				body := ch.unconvertMapKeys(item)
-				idVal, ok := body[ch.PrimaryKey]
+				id, ok := entity.RowKey(body, ch.keyCols(), nil)
 				if !ok {
-					results[i] = batchResult{Index: i, Error: fmt.Sprintf("missing %q", ch.PrimaryKey)}
+					results[i] = batchResult{Index: i, Error: fmt.Sprintf("missing %q", strings.Join(ch.keyCols(), ", "))}
 					return errBatchAborted
 				}
-				id, ok := idVal.(string)
-				if !ok {
-					id = fmt.Sprintf("%v", idVal)
+				for _, c := range ch.keyCols() {
+					delete(body, c)
 				}
-				delete(body, ch.PrimaryKey)
 				if !ch.itemPermitted(ctx, opUpdate, id) {
 					results[i] = batchResult{Index: i, Error: reasonAccessDenied.Text(ctx), Reason: reasonAccessDenied.Code()}
 					return errBatchAborted
@@ -495,7 +494,7 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 					results[i] = classifyDoErr(ctx, i, err)
 					return errBatchAborted
 				}
-				results[i] = batchResult{Index: i, Data: map[string]any{ch.convertKey(ch.PrimaryKey): id}}
+				results[i] = batchResult{Index: i, Data: ch.keyPayload(id)}
 			}
 			return nil
 		})
