@@ -67,6 +67,10 @@ func TestCovStringifyPK(t *testing.T) {
 	if got := stringifyPK(map[string]any{"id": 7}, []string{"id"}); got != "7" {
 		t.Fatalf("direct pk: got %q", got)
 	}
+	// a renamed pk under its camelCase wire key, the shape hook rows carry
+	if got := stringifyPK(map[string]any{"userCode": 7}, []string{"user_code"}); got != "7" {
+		t.Fatalf("wire-keyed pk: got %q", got)
+	}
 	// fallback: requested pk absent, but "ID" present
 	if got := stringifyPK(map[string]any{"ID": "abc"}, []string{"uid"}); got != "abc" {
 		t.Fatalf("fallback ID: got %q", got)
