@@ -2625,7 +2625,7 @@ func validateAppSpec(bp AppSpec) error {
 	errs.add(validateAppSpecSeedTypes(bp, entitiesByName))
 	errs.add(validateAppSpecSeedStructure(bp, entitiesByName))
 	routes := map[string]bool{}
-	screenFiles := map[string]string{} // file name → declaring screen
+	screenFiles := map[string]string{} // file name → what writes it
 	for _, screen := range bp.Screens {
 		if screen.Name == "" {
 			errs.add(fmt.Errorf("app spec: screen name is required"))
@@ -2644,14 +2644,20 @@ func validateAppSpec(bp AppSpec) error {
 			continue
 		}
 		routes[screen.Route] = true
-		// Two screens whose names normalize to the same file name would
-		// emit one screen_<snake>.go twice; the second write silently
-		// replaces the first and its route never mounts.
-		if file := screenFileName(screen.Name); file != "" {
-			if prev, dup := screenFiles[file]; dup {
-				errs.add(fmt.Errorf("app spec: screens %q and %q both normalize to the screen file %s: the second write would replace the first and its route would never mount; rename one", prev, screen.Name, file))
+		// Two writers of one generated file emit it twice; the second
+		// write silently replaces the first and its routes never mount. A
+		// standalone screen writes screen_<name>.go, and an entity's
+		// screens share screen_<entity>_crud.go, so a screen named
+		// "Posts Crud" collides with the posts screens.
+		file, owner := screenFileName(screen.Name), fmt.Sprintf("screen %q", screen.Name)
+		if e, ok := screenEntityRef(screen); ok {
+			file, owner = screenFileName(e+"_crud"), fmt.Sprintf("the %s entity's screens", e)
+		}
+		if file != "" {
+			if prev, dup := screenFiles[file]; dup && prev != owner {
+				errs.add(fmt.Errorf("app spec: %s and %s both write the screen file %s: the second write would replace the first and its routes would never mount; rename the screen", prev, owner, file))
 			} else {
-				screenFiles[file] = screen.Name
+				screenFiles[file] = owner
 			}
 		}
 		if _, err := screenTypeConst(screen.Type); err != nil {

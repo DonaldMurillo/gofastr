@@ -412,7 +412,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **Bar chart labels stay inside their slot.** The wrap budget assumed
   6.2px a character at 12px text; accented or capitalized labels run
   wider and spilled into the next label or off the plot edge. Lines now
-  wrap at 7px a character with 4px of air between neighbours.
+  wrap at 7px a character with 4px of air between neighbours, and a
+  slot too narrow for four characters (12 bars at 320px) keeps fewer
+  instead of overflowing; the bar's `<title>` holds the full label.
+- **App spec screens never overwrite each other's file.** An entity's
+  screens all write `screen_<entity>_crud.go`, but the file-name check
+  read each screen's own name: it refused two screens of one entity
+  whose names differ only in case, and let a standalone screen named
+  "Posts Crud" replace the posts screens' file. It now checks the file
+  each screen writes.
 
 ### Security
 - The repo builds with Go 1.27.3 (`toolchain go1.27.3` in go.mod, and in

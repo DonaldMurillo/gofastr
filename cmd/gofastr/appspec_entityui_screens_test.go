@@ -132,13 +132,13 @@ screens:
 	}
 }
 
-// Two screens whose names normalize to the same file name would emit one
-// screen_<snake>.go twice; the second write silently replaces the first and
-// its route never mounts. Refused at validate time.
+// Two screens that land in the same generated file would emit it twice;
+// the second write silently replaces the first and its route never
+// mounts. A standalone screen writes screen_<name>.go and an entity's
+// screens share screen_<entity>_crud.go, so "Posts Crud" collides with
+// the posts screens' file. Refused at validate time.
 func TestAppSpecRejectsCollidingScreenFiles(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "gofastr.yml")
-	writeTestFile(t, path, `app:
+	const head = `app:
   name: Collide
   module: example.com/collide
 entities:
@@ -148,25 +148,36 @@ entities:
       - name: title
         type: string
 screens:
-  - name: API
-    route: /a
-    body:
+`
+	const list = `    body:
       - kind: entity_list
         entity: posts
         fields: [title]
-  - name: Api
-    route: /b
-    body:
-      - kind: entity_list
-        entity: posts
-        fields: [title]
-`)
-	_, err := loadAppSpec(path)
-	if err == nil {
-		t.Fatal("two screens whose file names collide must be rejected")
-	}
-	if !strings.Contains(err.Error(), "screen file") {
-		t.Fatalf("error should name the colliding screen file, got: %v", err)
+`
+	const text = `    body:
+      - kind: heading
+        text: Hi
+`
+	for name, c := range map[string]struct {
+		screens string
+		collide bool
+	}{
+		"two standalone":          {"  - name: API\n    route: /a\n" + text + "  - name: Api\n    route: /b\n" + text, true},
+		"standalone vs crud file": {"  - name: Posts Crud\n    route: /a\n" + text + "  - name: Posts\n    route: /b\n" + list, true},
+		// Both write screen_posts_crud.go, as one file.
+		"one entity's screens": {"  - name: API\n    route: /a\n" + list + "  - name: Api\n    route: /b\n" + list, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "gofastr.yml")
+			writeTestFile(t, path, head+c.screens)
+			_, err := loadAppSpec(path)
+			switch {
+			case c.collide && (err == nil || !strings.Contains(err.Error(), "screen file")):
+				t.Fatalf("want a screen file collision, got: %v", err)
+			case !c.collide && err != nil:
+				t.Fatalf("one entity's screens share their file: %v", err)
+			}
+		})
 	}
 }
 
