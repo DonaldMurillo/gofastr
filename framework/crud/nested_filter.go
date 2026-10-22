@@ -112,6 +112,9 @@ func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.
 			if target == nil {
 				return nil, i18n.NewError(reasonNestedTargetMissing, map[string]any{"key": strconv.Quote(key), "target": strconv.Quote(rel.Entity)})
 			}
+			if err := oneColumnKeys(currentEntity, target); err != nil {
+				return nil, i18n.Wrap(reasonNestedCompositeKey, err, map[string]any{"key": strconv.Quote(key)})
+			}
 			hops = append(hops, relationHop{
 				Relation:   rel,
 				Target:     target,
@@ -316,11 +319,30 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 // addWhere mirrors the Where signature shared by QueryBuilder and
 // CountBuilder so a single call site can wire the same filter chain into
 // both the data and count queries.
-func applyNestedFilters(addWhere func(sql string, args ...any), parentTable, parentPK string, filters []nestedFilter) {
+//
+// A nested filter joins on one parent key column. parseNestedFilters
+// refuses a composite-key parent, and a key that still is not one column
+// matches nothing.
+func applyNestedFilters(addWhere func(sql string, args ...any), parentTable string, parentKey []string, filters []nestedFilter) {
 	for _, nf := range filters {
-		sql, args := buildExistsSubquery(parentTable, parentPK, nf)
+		if len(parentKey) != 1 {
+			addWhere("1 = 0")
+			continue
+		}
+		sql, args := buildExistsSubquery(parentTable, parentKey[0], nf)
 		addWhere(sql, args...)
 	}
+}
+
+// oneColumnKeys reports the first of a relation's two ends whose primary
+// key is not one column. Includes and nested filters join on it.
+func oneColumnKeys(source, target *entity.Entity) error {
+	for _, e := range []*entity.Entity{source, target} {
+		if _, err := e.KeyColumn(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // buildExistsSubquery returns the WHERE fragment for one nested filter.
@@ -381,8 +403,12 @@ func buildHopSubquery(parentTable, parentPK string, hops []relationHop, nf neste
 		relTable = rel.Entity
 	}
 	targetPK := "id"
-	if hop.Target != nil && hop.Target.PrimaryKey != "" {
-		targetPK = hop.Target.PrimaryKey
+	if hop.Target != nil {
+		pk, err := hop.Target.KeyColumn()
+		if err != nil {
+			return "1 = 0", nil
+		}
+		targetPK = pk
 	}
 
 	if parentPK == "" {

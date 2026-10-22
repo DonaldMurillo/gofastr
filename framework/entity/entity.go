@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -20,10 +21,19 @@ import (
 // Name is set via Define(); Fields declare the schema.
 // Timestamps is nil by default; Define resolves nil to true.
 type EntityConfig struct {
-	Name       string            // entity name (e.g. "users")
-	Table      string            // DB table name (defaults to snake_case of Name)
-	Fields     []schema.Field    // typed field definitions
-	Relations  []Relation        // entity relationships
+	Name      string         // entity name (e.g. "users")
+	Table     string         // DB table name (defaults to snake_case of Name)
+	Fields    []schema.Field // typed field definitions
+	Relations []Relation     // entity relationships
+
+	// PrimaryKey names the primary-key columns in order. Nil means the one
+	// column "id", which Define injects as a generated UUID unless Fields
+	// declares it. More than one column is a composite key: a join table
+	// keyed on the rows it links, (student_id, course_id). Define injects
+	// no "id" column when PrimaryKey leaves it out, and panics when a
+	// column is repeated or is not a declared field.
+	PrimaryKey []string
+
 	Endpoints  []Endpoint        // custom HTTP endpoints for this entity
 	Scope      *ScopeConfig      // ownership, tenancy, and soft-delete behavior
 	Pagination *PaginationConfig // list limits and keyset cursor shape
@@ -316,9 +326,8 @@ func (c EntityConfig) WithTimestamps(v bool) EntityConfig {
 
 // Entity represents a registered domain entity with its config and DB handle.
 type Entity struct {
-	Config     EntityConfig
-	DB         *sql.DB
-	PrimaryKey string // defaults to "id"
+	Config EntityConfig
+	DB     *sql.DB
 
 	// Version identifies the API version this entity is mounted under, when
 	// registered via App.GroupEntity. It is the route group's full prefix
@@ -354,7 +363,10 @@ func Define(name string, config EntityConfig) *Entity {
 		config.Table = toSnake(name)
 	}
 
-	// Inject id field if not already defined by user
+	config.PrimaryKey = slices.Clone(config.PrimaryKey)
+	keyCols := config.keyColumns()
+
+	// Inject the id field when the key uses it and Fields does not declare it.
 	hasID := false
 	for _, f := range config.Fields {
 		if f.Name == "id" {
@@ -362,7 +374,7 @@ func Define(name string, config EntityConfig) *Entity {
 			break
 		}
 	}
-	if !hasID {
+	if !hasID && slices.Contains(keyCols, "id") {
 		idField := schema.Field{
 			Name:         "id",
 			Type:         schema.UUID,
@@ -590,6 +602,8 @@ func Define(name string, config EntityConfig) *Entity {
 		}
 	}
 
+	config.checkKeyColumns()
+
 	// Cursor columns are a query surface too: they land in ORDER BY and in the
 	// keyset WHERE, and the emitted cursor token is base64 JSON of the raw
 	// value, reversible, not secret. A Hidden or NoQuery keyset column
@@ -608,21 +622,20 @@ func Define(name string, config EntityConfig) *Entity {
 	// less lets a column reach ORDER BY and the token without being checked:
 	// a composite silently gains the primary key as its tiebreak, so
 	// validating only the declared members missed a NoQuery `id` entirely.
-	// EntityConfig carries no primary key of its own; Entity.PrimaryKey and
-	// CrudHandler both default to "id", so that is the effective column.
+	// The key columns are the tiebreak and the default.
 	// normalizeSubConfigs has populated Pagination by here.
 	var cursorCols []string
 	switch {
 	case len(config.Pagination.CursorFields) > 0:
 		cursorCols = append(cursorCols, config.Pagination.CursorFields...)
-		cursorCols = append(cursorCols, "id") // auto-appended tiebreak
+		cursorCols = append(cursorCols, keyCols...) // auto-appended tiebreak
 	case config.Pagination.CursorField != "":
 		cursorCols = append(cursorCols, config.Pagination.CursorField)
 	default:
-		cursorCols = append(cursorCols, "id")
+		cursorCols = append(cursorCols, keyCols...)
 	}
 	for _, cf := range cursorCols {
-		declared := cf == "id" // the implicit primary key needs no declaration
+		declared := false
 		for i := range config.Fields {
 			f := config.Fields[i]
 			if f.Name != cf {
@@ -671,13 +684,35 @@ func Define(name string, config EntityConfig) *Entity {
 		}
 	}
 
-	e := &Entity{
-		Config: config,
+	return &Entity{Config: config}
+}
+
+// keyColumns is PrimaryKey, or "id" when it is nil. Only a raw
+// migrate.Table, which skips Define, holds an empty non-nil PrimaryKey:
+// a table with no key.
+func (c EntityConfig) keyColumns() []string {
+	if c.PrimaryKey == nil {
+		return []string{"id"}
 	}
-	if e.PrimaryKey == "" {
-		e.PrimaryKey = "id"
+	return c.PrimaryKey
+}
+
+// checkKeyColumns refuses a primary key that names no column, repeats a
+// column, or names one Fields does not declare.
+func (c EntityConfig) checkKeyColumns() {
+	if c.PrimaryKey != nil && len(c.PrimaryKey) == 0 {
+		panic(fmt.Sprintf("entity %q: PrimaryKey names no column; leave it nil for \"id\"", c.Name))
 	}
-	return e
+	seen := make(map[string]bool, len(c.PrimaryKey))
+	for _, col := range c.keyColumns() {
+		if seen[col] {
+			panic(fmt.Sprintf("entity %q: primary key names %q twice", c.Name, col))
+		}
+		seen[col] = true
+		if !slices.ContainsFunc(c.Fields, func(f schema.Field) bool { return f.Name == col }) {
+			panic(fmt.Sprintf("entity %q: primary key column %q is not a declared field", c.Name, col))
+		}
+	}
 }
 
 func (c EntityConfig) normalizeSubConfigs() EntityConfig {
@@ -862,7 +897,7 @@ func (e *Entity) Validate() error {
 		}
 	}
 	if e.Config.States != nil {
-		if err := e.Config.States.validate(e.Config, e.PrimaryKey); err != nil {
+		if err := e.Config.States.validate(e.Config); err != nil {
 			return err
 		}
 	}

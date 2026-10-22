@@ -361,7 +361,7 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 	}
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },
-		ch.Entity.GetTable(), ch.PrimaryKey, nested,
+		ch.Entity.GetTable(), ch.keyCols(), nested,
 	)
 	for _, c := range searchConds {
 		qb.Where(c.SQL, c.Args...)
@@ -538,7 +538,7 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	}
 	applyNestedFilters(
 		func(sql string, args ...any) { cb.Where(sql, args...) },
-		ch.Entity.GetTable(), ch.PrimaryKey, nested,
+		ch.Entity.GetTable(), ch.keyCols(), nested,
 	)
 	for _, c := range searchConds {
 		cb.Where(c.SQL, c.Args...)

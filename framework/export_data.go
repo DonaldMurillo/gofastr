@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -94,7 +95,7 @@ type manifestEntry struct {
 	Name       string   `json:"name"`        // archive key + ndjson stem
 	Source     string   `json:"source"`      // "entity" | battery name
 	Table      string   `json:"table"`       // physical table (provenance)
-	PrimaryKey string   `json:"primary_key"` // keyset column
+	PrimaryKey string   `json:"primary_key"` // keyset columns, comma-joined
 	RowCount   int      `json:"row_count"`
 	SHA256     string   `json:"sha256"` // hex sha256 of the ndjson file bytes
 	Columns    []string `json:"columns"`
@@ -106,7 +107,7 @@ type exportSource struct {
 	name       string
 	source     string
 	table      string
-	primaryKey string
+	primaryKey []string
 	columns    []string
 }
 
@@ -161,8 +162,8 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 		// query.MustIdent, a misconfigured registration fails loud (panic)
 		// there rather than silently interpolating an unsafe name.
 		pk := src.primaryKey
-		if pk == "" {
-			pk = "id"
+		if len(pk) == 0 {
+			pk = []string{"id"}
 		}
 		cols := src.columns
 
@@ -173,7 +174,7 @@ func (a *App) ExportData(ctx context.Context, dir string, opts ...ExportOption) 
 		ndjsonPath := filepath.Join(dir, src.name+".ndjson")
 		entry := manifestEntry{
 			Name: src.name, Source: src.source, Table: src.table,
-			PrimaryKey: pk, Columns: cols,
+			PrimaryKey: strings.Join(pk, ","), Columns: cols,
 		}
 		if !exists {
 			// A registered table that isn't present in this DB (e.g. the auth
@@ -342,17 +343,13 @@ func (a *App) collectSources() []exportSource {
 		sort.Strings(names)
 		tableCols := map[string][]string{} // table → unioned column names
 		tableName := map[string]string{}   // table → lex-first entity name
-		tablePK := map[string]string{}     // table → primary-key column
+		tablePK := map[string][]string{}   // table → primary-key columns
 		for _, n := range names {
 			ent := merged[n]
 			table := ent.GetTable()
 			if _, first := tableCols[table]; !first {
 				tableName[table] = n
-				pk := ent.PrimaryKey
-				if pk == "" {
-					pk = "id"
-				}
-				tablePK[table] = pk
+				tablePK[table] = ent.KeyColumns()
 				tableCols[table] = []string{}
 			}
 			// Union this entity's columns into the table's set. Duplicates are
@@ -392,9 +389,9 @@ func (a *App) collectSources() []exportSource {
 			// Already covered by an entity (or a name collision), registry wins.
 			continue
 		}
-		pk := ex.PrimaryKey
-		if pk == "" {
-			pk = "id"
+		pk := []string{ex.PrimaryKey}
+		if ex.PrimaryKey == "" {
+			pk = []string{"id"}
 		}
 		out = append(out, exportSource{
 			name: ex.Name, source: ex.Source,
@@ -419,43 +416,55 @@ func (a *App) registryView() entity.Registry {
 // by primary-key keyset. No soft-delete filter, no owner/tenant scope, a full
 // backup. Scanned values are normalized so the JSON form round-trips: []byte →
 // string, time.Time → RFC3339 string; int64/float64/bool/nil pass through.
-func rawReadAll(ctx context.Context, db *sql.DB, table string, columns []string, pk string, pageSize int) ([]map[string]any, error) {
+//
+// A composite key pages by row value, (a, b) > ($1, $2), which Postgres and
+// SQLite both compare column by column.
+func rawReadAll(ctx context.Context, db *sql.DB, table string, columns []string, keys []string, pageSize int) ([]map[string]any, error) {
 	// Identifiers are registry-derived; MustIdent validates + fails fast on the
 	// impossible (a malformed name never reaches here from a valid registry).
 	qt := query.MustIdent(table)
-	qpk := query.MustIdent(pk)
 	// readCols is the column list we SELECT. It always includes the keyset
-	// column; if pk isn't a declared column we append it for paging only and
-	// keep it OUT of the emitted row map.
+	// columns; a key column that isn't declared is appended for paging only
+	// and kept OUT of the emitted row map.
 	readCols := append([]string(nil), columns...)
-	hasPK := slices.Contains(columns, pk)
-	if !hasPK {
-		readCols = append(readCols, pk)
+	for _, k := range keys {
+		if !slices.Contains(readCols, k) {
+			readCols = append(readCols, k)
+		}
 	}
 	selList := make([]string, len(readCols))
 	for i, c := range readCols {
 		selList[i] = query.QuoteIdent(query.MustIdent(c))
 	}
 	colList := strings.Join(selList, ", ")
-	pkSelectIndex := len(readCols) - 1
-	if hasPK {
-		pkSelectIndex = indexOf(readCols, pk)
+	keyIdx := make([]int, len(keys))
+	quotedKeys := make([]string, len(keys))
+	marks := make([]string, len(keys))
+	for i, k := range keys {
+		keyIdx[i] = indexOf(readCols, k)
+		quotedKeys[i] = query.QuoteIdent(query.MustIdent(k))
+		marks[i] = "$" + strconv.Itoa(i+1)
+	}
+	orderBy := strings.Join(quotedKeys, ", ")
+	after := quotedKeys[0] + " > " + marks[0]
+	if len(keys) > 1 {
+		after = "(" + orderBy + ") > (" + strings.Join(marks, ", ") + ")"
 	}
 
 	var out []map[string]any
-	var lastVal any
+	lastVals := make([]any, len(keys))
 	first := true
 	for {
 		var q string
 		var args []any
 		if first {
 			q = fmt.Sprintf("SELECT %s FROM %s ORDER BY %s LIMIT $1",
-				colList, query.QuoteIdent(qt), query.QuoteIdent(qpk))
+				colList, query.QuoteIdent(qt), orderBy)
 			args = []any{pageSize}
 		} else {
-			q = fmt.Sprintf("SELECT %s FROM %s WHERE %s > $1 ORDER BY %s LIMIT $2",
-				colList, query.QuoteIdent(qt), query.QuoteIdent(qpk), query.QuoteIdent(qpk))
-			args = []any{lastVal, pageSize}
+			q = fmt.Sprintf("SELECT %s FROM %s WHERE %s ORDER BY %s LIMIT $%d",
+				colList, query.QuoteIdent(qt), after, orderBy, len(keys)+1)
+			args = append(slices.Clone(lastVals), pageSize)
 		}
 		rows, err := db.QueryContext(ctx, q, args...)
 		if err != nil {
@@ -476,7 +485,9 @@ func rawReadAll(ctx context.Context, db *sql.DB, table string, columns []string,
 			for i, c := range columns {
 				row[c] = normalizeScan(vals[i])
 			}
-			lastVal = vals[pkSelectIndex]
+			for i, ki := range keyIdx {
+				lastVals[i] = vals[ki]
+			}
 			out = append(out, row)
 			n++
 		}

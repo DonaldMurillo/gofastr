@@ -1,8 +1,6 @@
 package migrate
 
 import (
-	"fmt"
-
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -37,7 +35,7 @@ type Column struct {
 	RawType      string              // explicit SQL type, overrides Type (e.g. "NUMERIC(10,2)")
 	NotNull      bool                // emit NOT NULL
 	Unique       bool                // emit UNIQUE
-	PrimaryKey   bool                // single-column PRIMARY KEY marker
+	PrimaryKey   bool                // a primary-key column; several make a composite key, in column order
 	Default      any                 // default value (rendered via the same SQLDefault path)
 	AutoGenerate schema.AutoGenerate // e.g. AutoUUID → DEFAULT gen_random_uuid() on Postgres
 }
@@ -51,13 +49,13 @@ type ForeignKey struct {
 }
 
 // ToEntity adapts the raw Table into an *entity.Entity with no auto-injection,
-// suitable for registering alongside real entities. Mark exactly one column
-// PrimaryKey for FK targets; a table with no primary key is allowed but cannot
-// be referenced by a foreign key.
+// suitable for registering alongside real entities. The columns marked
+// PrimaryKey make the key, in column order. A foreign key can reference a
+// table keyed on one column only; a table with no primary key is allowed
+// but cannot be referenced.
 func (t Table) ToEntity() *entity.Entity {
 	fields := make([]schema.Field, 0, len(t.Columns))
-	pk := ""
-	pkCount := 0
+	pk := []string{}
 	for _, c := range t.Columns {
 		fields = append(fields, schema.Field{
 			Name:         c.Name,
@@ -69,13 +67,8 @@ func (t Table) ToEntity() *entity.Entity {
 			AutoGenerate: c.AutoGenerate,
 		})
 		if c.PrimaryKey {
-			pk = c.Name
-			pkCount++
+			pk = append(pk, c.Name)
 		}
-	}
-	// Fail loud rather than silently keeping only the last PK column.
-	if pkCount > 1 {
-		panic(fmt.Sprintf("migrate: table %q marks %d columns PrimaryKey: composite primary keys are not supported on a raw Table; use a single PK plus a Unique index", t.Name, pkCount))
 	}
 	var relations []entity.Relation
 	for _, fk := range t.ForeignKeys {
@@ -91,6 +84,7 @@ func (t Table) ToEntity() *entity.Entity {
 		Name:       t.Name,
 		Table:      t.Name,
 		Fields:     fields,
+		PrimaryKey: pk,
 		Indices:    t.Indices,
 		Relations:  relations,
 		Timestamps: &timestamps,
@@ -103,6 +97,5 @@ func (t Table) ToEntity() *entity.Entity {
 		Pagination: &entity.PaginationConfig{},
 		Exposure:   &entity.ExposureConfig{},
 	}}
-	ent.PrimaryKey = pk
 	return ent
 }

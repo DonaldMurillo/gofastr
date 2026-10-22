@@ -150,19 +150,20 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		return nil, fmt.Errorf("insert: %w", err)
 	}
 
-	parentPK := ch.PrimaryKey
-	if parentPK == "" {
-		parentPK = "id"
-	}
-	parentID := result[parentPK]
-	if parentID == nil {
-		parentID = result[ch.convertKey(parentPK)]
-	}
-	if parentID == nil {
-		if idVal, ok := body[parentPK]; ok && idVal != nil {
-			parentID = idVal
-		} else if idVal, ok := body[ch.convertKey(parentPK)]; ok && idVal != nil {
-			parentID = idVal
+	// A dependent cascade joins on one parent key column; a composite
+	// parent has none, and processDependentCascadeWrites refuses it.
+	var parentID any
+	if parentPK, err := ch.keyColumn(); err == nil {
+		parentID = result[parentPK]
+		if parentID == nil {
+			parentID = result[ch.convertKey(parentPK)]
+		}
+		if parentID == nil {
+			if idVal, ok := body[parentPK]; ok && idVal != nil {
+				parentID = idVal
+			} else if idVal, ok := body[ch.convertKey(parentPK)]; ok && idVal != nil {
+				parentID = idVal
+			}
 		}
 	}
 
@@ -432,9 +433,9 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, body map[string]
 		if err != nil {
 			return fmt.Errorf("relation %q target table %q: %w", rel.Name, target.GetTable(), err)
 		}
-		targetPK := target.PrimaryKey
-		if targetPK == "" {
-			targetPK = "id"
+		targetPK, err := target.KeyColumn()
+		if err != nil {
+			return fmt.Errorf("check belongs_to %q: %w", rel.Name, err)
 		}
 		pkCol, err := query.SafeIdent(targetPK)
 		if err != nil {

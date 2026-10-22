@@ -254,8 +254,29 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   which for a one-column key is the value itself, so nothing changes for
   existing entities. See `gofastr docs entity-declarations` → "Record
   ids".
+- **Composite primary keys.** `EntityConfig.PrimaryKey: []string{"student_id",
+  "course_id"}` keys a table on several columns: each gets `NOT NULL` and
+  the table a `PRIMARY KEY (student_id, course_id)` constraint, with no
+  injected `id`. A raw `migrate.Table` marks several columns `PrimaryKey:
+  true` for the same key. Relations and admin screens still need a
+  one-column key and return `entity.ErrCompositeKey` for now. Two versions
+  of one entity must declare the same key. `ExportData` pages a composite
+  key by row value, and the manifest's `primary_key` joins its columns
+  with commas.
+- **Primary-key change migrations.** The schema diff detects a changed
+  key and emits it as destructive: Postgres swaps the key constraint,
+  SQLite rebuilds the table. Boot changes the key of an empty table only
+  and refuses a populated one, pointing at `gofastr migrate generate`.
+  The snapshot records `primary_keys`. See `gofastr docs migrations` →
+  "Primary-key changes".
 
 ### Changed
+- **BREAKING: `EntityConfig.PrimaryKey` holds the key.** `Entity.PrimaryKey
+  string` is gone; set `EntityConfig.PrimaryKey []string` (nil means
+  `id`) and read `Entity.KeyColumns()`, or `Entity.KeyColumn()` where one
+  column is needed. `CrudHandler.PrimaryKey` is `[]string`, and a handler
+  that leaves it empty reads its entity's key. A raw `migrate.Table` with
+  several `PrimaryKey` columns no longer panics.
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,
   reason, err)` takes an `i18n.Phrase`; `handler.Fail(code, reason,
   params)` builds one. `handler.ValidationError` and
@@ -405,6 +426,17 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   names each field still set to a string.
 
 ### Fixed
+- **`EagerLoad` joins on each entity's own key.** It assumed every parent
+  and every belongs_to or many_to_many target was keyed on `id`, so an
+  entity keyed on another column loaded nothing for those relations. It
+  now reads the key from the entity and the registry, and returns
+  `entity.ErrCompositeKey` for a composite one. Included and eager-loaded
+  rows also keep a mixed-case field (`Sku`) on Postgres, which reports
+  the folded column name (`sku`) the allow-list used to miss.
+- **A generated SQLite rebuild migration had a partial `Down`.** The
+  rebuild has no inverse, but the other changes in the same file kept
+  theirs, so a rollback "succeeded" into a table matching neither schema.
+  A migration holding a rebuild now ships no `Down`.
 - **A screen policy can send a client-side navigation to another
   site.** A policy redirecting to an absolute URL, an identity
   provider's login for instance, answered the runtime's fetch with a

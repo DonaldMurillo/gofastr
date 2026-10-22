@@ -4,6 +4,8 @@ import (
 	"errors"
 	"slices"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 func TestJoinKeySingleIsRaw(t *testing.T) {
@@ -66,7 +68,44 @@ func TestKeyColumnsDefault(t *testing.T) {
 	if got := (&Entity{}).KeyColumns(); !slices.Equal(got, []string{"id"}) {
 		t.Errorf("KeyColumns() = %q", got)
 	}
-	if got := (&Entity{PrimaryKey: "code"}).KeyColumns(); !slices.Equal(got, []string{"code"}) {
+	if got := (&Entity{Config: EntityConfig{PrimaryKey: []string{"code"}}}).KeyColumns(); !slices.Equal(got, []string{"code"}) {
 		t.Errorf("KeyColumns() = %q", got)
+	}
+}
+
+func TestCompositeKeyNoID(t *testing.T) {
+	e := Define("enrollments", EntityConfig{
+		PrimaryKey: []string{"student_id", "course_id"},
+		Fields: []schema.Field{
+			{Name: "student_id", Type: schema.String},
+			{Name: "course_id", Type: schema.String},
+		},
+	})
+	if got := e.KeyColumns(); !slices.Equal(got, []string{"student_id", "course_id"}) {
+		t.Fatalf("KeyColumns() = %q", got)
+	}
+	for _, f := range e.GetFields() {
+		if f.Name == "id" {
+			t.Fatal("a composite key without id still got an id column")
+		}
+	}
+}
+
+func TestPrimaryKeyRefusals(t *testing.T) {
+	for name, pk := range map[string][]string{
+		"undeclared": {"student_id", "nope"},
+		"repeated":   {"student_id", "student_id"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Fatalf("Define accepted PrimaryKey %q", pk)
+				}
+			}()
+			Define("enrollments", EntityConfig{
+				PrimaryKey: pk,
+				Fields:     []schema.Field{{Name: "student_id", Type: schema.String}},
+			})
+		})
 	}
 }

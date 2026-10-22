@@ -101,10 +101,25 @@ func loadIncludeNode(ctx context.Context, db DBExecutor, parentTable, parentPK s
 // servedCols is the allow-list of columns an eager-loaded row may carry. A nil
 // set keeps every column: that is EagerLoad called with no registry, where the
 // target schema is unknown and the documented contract is the raw row.
+//
+// Names are folded the way Postgres folds the unquoted identifiers the DDL
+// writes, so a declared "Sku" serves the column Postgres reports as "sku".
 type servedCols map[string]bool
 
 // drop reports whether column c must be left out of an eager-loaded row.
-func (s servedCols) drop(c string) bool { return s != nil && !s[c] }
+func (s servedCols) drop(c string) bool { return s != nil && !s[foldIdent(c)] }
+
+// foldIdent lowercases ASCII letters only, as Postgres folds an unquoted
+// identifier; identifiers are SafeIdent-validated ASCII.
+func foldIdent(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
+}
 
 // servedColumns returns the columns an included row may carry: the target's
 // declared, non-Hidden fields plus its primary key. It is the same allow-list
@@ -121,14 +136,13 @@ func servedColumns(target *entity.Entity) servedCols {
 	if target == nil {
 		return nil
 	}
-	pk := target.PrimaryKey
-	if pk == "" {
-		pk = "id"
+	set := servedCols{}
+	for _, k := range target.KeyColumns() {
+		set[foldIdent(k)] = true
 	}
-	set := servedCols{pk: true}
 	for _, f := range target.GetFields() {
 		if !f.Hidden {
-			set[f.Name] = true
+			set[foldIdent(f.Name)] = true
 		}
 	}
 	return set

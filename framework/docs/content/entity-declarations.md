@@ -1434,6 +1434,33 @@ translation keys Display's names produce (`entity.<entity>.*`,
 
 ## Record ids
 
+`EntityConfig.PrimaryKey` names the primary-key columns in order. Left
+nil, the key is the one column `id`, which `Define` injects as a generated
+UUID unless `Fields` declares it. Name more than one column for a
+composite key, the usual shape for a join table keyed on the rows it
+links:
+
+```go
+app.Entity("enrollments", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "student_id", Type: schema.String, Required: true},
+        {Name: "course_id", Type: schema.String, Required: true},
+        {Name: "grade", Type: schema.String},
+    },
+    PrimaryKey: []string{"student_id", "course_id"},
+})
+```
+
+`Define` injects no `id` column when `PrimaryKey` leaves it out, and panics
+when a key column is repeated or is not a declared field. The table gets
+each key column `NOT NULL` and a `PRIMARY KEY (student_id, course_id)`
+constraint. Changing the key of an existing table is a migration; see
+[Primary-key changes](migrations.md#primary-key-changes).
+
+A relation needs a one-column key on both ends for now: a `belongs_to`,
+`has_many` or `many_to_many` to or from a composite-key entity, and the
+admin pages for one, return `entity.ErrCompositeKey`.
+
 The framework names a record by its primary-key columns,
 `Entity.KeyColumns()`, in declared order. Reads, writes, the keyset
 cursor's tiebreak, `UpsertOne`'s conflict target, event payloads, audit

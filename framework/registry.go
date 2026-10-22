@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -319,6 +320,16 @@ func (r *Registry) checkColumnConflicts(newKey entityKey, newEnt *entity.Entity)
 //   - To/Many        (relation metadata, not column-level DDL)
 //   - field ordering (declaration order is irrelevant to the schema)
 func conflictingColumns(a, b *entity.Entity) error {
+	// One table has one primary key: the versions must name the same key
+	// columns in the same order, or the composite constraint differs.
+	// Case is folded, as it is for the columns below.
+	if ka, kb := a.KeyColumns(), b.KeyColumns(); !slices.EqualFunc(ka, kb, strings.EqualFold) {
+		return fmt.Errorf(
+			"registry: entity %q (table %q): %s is keyed on (%s) but %s on (%s); two versions share one table so they must declare the same primary key",
+			a.Config.Name, a.Config.Table,
+			versionLabel(a.Version), strings.Join(ka, ", "), versionLabel(b.Version), strings.Join(kb, ", "),
+		)
+	}
 	// Index a's fields by lowercased name (Postgres folds unquoted identifiers
 	// to lowercase, so a mixed-case column name is physically the same column
 	// in both versions even if the declarations differ in case).
@@ -331,7 +342,8 @@ func conflictingColumns(a, b *entity.Entity) error {
 		if !ok {
 			continue // column only b declares, additive, handled by the union
 		}
-		if columnSchemaEqual(fa, a.PrimaryKey, fb, b.PrimaryKey) {
+		aKey, bKey := slices.Contains(a.KeyColumns(), fa.Name), slices.Contains(b.KeyColumns(), fb.Name)
+		if columnSchemaEqual(fa, aKey, fb, bKey) {
 			continue
 		}
 		return fmt.Errorf(
@@ -339,8 +351,8 @@ func conflictingColumns(a, b *entity.Entity) error {
 				"%s declares %s, %s declares %s; two versions share one table so the column definitions must match exactly "+
 				"(type, nullability, uniqueness, default, auto/PK). Make both versions identical or rename the column in one version",
 			a.Config.Name, a.Config.Table, fb.Name,
-			versionLabel(a.Version), describeColumnSchema(fa, fa.Name == a.PrimaryKey),
-			versionLabel(b.Version), describeColumnSchema(fb, fb.Name == b.PrimaryKey),
+			versionLabel(a.Version), describeColumnSchema(fa, aKey),
+			versionLabel(b.Version), describeColumnSchema(fb, bKey),
 		)
 	}
 	return nil
@@ -353,7 +365,7 @@ func conflictingColumns(a, b *entity.Entity) error {
 // and can never drift from the DDL the way a hand-listed attribute set would.
 // Both dialects are compared as a belt-and-braces guard against a future
 // dialect-specific type rendering.
-func columnSchemaEqual(a schema.Field, aPK string, b schema.Field, bPK string) bool {
+func columnSchemaEqual(a schema.Field, aKey bool, b schema.Field, bKey bool) bool {
 	if migrate.SQLType(a, migrate.DialectPostgres) != migrate.SQLType(b, migrate.DialectPostgres) {
 		return false
 	}
@@ -369,7 +381,7 @@ func columnSchemaEqual(a schema.Field, aPK string, b schema.Field, bPK string) b
 	if a.AutoGenerate != b.AutoGenerate {
 		return false
 	}
-	if (a.Name == aPK) != (b.Name == bPK) {
+	if aKey != bKey {
 		return false
 	}
 	if !reflect.DeepEqual(a.Default, b.Default) {
@@ -672,7 +684,7 @@ func findExclusiveMandatory(have, lack *entity.Entity) error {
 				"a NOT NULL column with no default cannot be supplied by the other version's writes. "+
 				"Give it a default, make it auto-generated, or declare it in both versions",
 			have.Config.Name, have.Config.Table, f.Name,
-			describeColumnSchema(f, f.Name == have.PrimaryKey),
+			describeColumnSchema(f, slices.Contains(have.KeyColumns(), f.Name)),
 			versionLabel(have.Version), versionLabel(lack.Version))
 	}
 	return nil

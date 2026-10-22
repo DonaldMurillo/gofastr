@@ -288,7 +288,7 @@ func auditKeyedApp(t *testing.T, db *sql.DB, redact func(string, map[string]any)
 			{Name: "label", Type: schema.String},
 		},
 	}.WithTimestamps(false))
-	keys.PrimaryKey = "api_key"
+	keys.Config.PrimaryKey = []string{"api_key"}
 	if err := app.Registry.Register(keys); err != nil {
 		t.Fatal(err)
 	}
@@ -366,11 +366,11 @@ func TestAuditKeyID(t *testing.T) {
 	plain := entity.Define("p", entity.EntityConfig{Fields: []schema.Field{
 		{Name: "user_code", Type: schema.String},
 	}})
-	plain.PrimaryKey = "user_code"
+	plain.Config.PrimaryKey = []string{"user_code"}
 	secret := entity.Define("s", entity.EntityConfig{Fields: []schema.Field{
 		{Name: "user_code", Type: schema.String, WireName: "apiKey"},
 	}})
-	secret.PrimaryKey = "user_code"
+	secret.Config.PrimaryKey = []string{"user_code"}
 	var cfg AuditConfig
 	if got := cfg.keyID(versionKey(secret), "\n"); got != "" {
 		t.Fatalf("an id with nothing left after sanitizing: got %q, want empty", got)

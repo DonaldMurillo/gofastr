@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -23,7 +24,9 @@ func rawEnt(name, table string, fields []schema.Field, rels []entity.Relation, p
 		Pagination: &entity.PaginationConfig{},
 		Exposure:   &entity.ExposureConfig{},
 	}}
-	e.PrimaryKey = pk
+	if pk != "" {
+		e.Config.PrimaryKey = []string{pk}
+	}
 	return e
 }
 
@@ -219,7 +222,7 @@ func TestView_RenderAndToEntityBranches(t *testing.T) {
 		t.Error("ToEntity with no columns should be nil")
 	}
 	ent := View{Name: "v", Select: "SELECT 1", Columns: []Column{{Name: "id", Type: schema.String, PrimaryKey: true}}}.ToEntity()
-	if ent == nil || !ent.Config.Unmanaged || ent.PrimaryKey != "id" {
+	if ent == nil || !ent.Config.Unmanaged || !slices.Equal(ent.KeyColumns(), []string{"id"}) {
 		t.Fatalf("ToEntity with columns: %+v", ent)
 	}
 }
@@ -318,7 +321,7 @@ func TestMigrateEntity_InvalidTableExisting(t *testing.T) {
 	// A live set matching the declared fields yields no column adds, so the
 	// executor is never touched and a nil execQueryer is safe here.
 	ent := rawEnt("e", "bad table", []schema.Field{{Name: "x", Type: schema.String}}, nil, "")
-	if err := migrateEntity(context.Background(), nil, ent, nil, DialectSQLite, map[string]string{"x": "TEXT", "id": "TEXT"}); err == nil {
+	if err := migrateEntity(context.Background(), nil, ent, nil, DialectSQLite, map[string]string{"x": "TEXT", "id": "TEXT"}, nil); err == nil {
 		t.Error("expected invalid table name error in migrateEntity")
 	}
 }

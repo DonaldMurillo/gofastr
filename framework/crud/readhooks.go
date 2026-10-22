@@ -276,7 +276,11 @@ func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*Include
 			if err := runHooks(reg, hookCtx(ctx), hook.AfterList, payload); err != nil {
 				return fmt.Errorf("include %s: after-list hook: %w", node.Relation.Name, err)
 			}
-			if err := reattachHookResults(node.Relation.Name, ch.convertKey(node.Target.PrimaryKey), before, payload.Results); err != nil {
+			targetPK, err := node.Target.KeyColumn()
+			if err != nil {
+				return err
+			}
+			if err := reattachHookResults(node.Relation.Name, ch.convertKey(targetPK), before, payload.Results); err != nil {
 				return err
 			}
 			// Recurse over the ORIGINAL maps: those are what the parents
@@ -295,7 +299,11 @@ func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*Include
 		toOne := node.Relation.Type == entity.RelHasOne || node.Relation.Type == entity.RelManyToOne
 		if toOne && len(reg.HooksFor(hook.AfterGet)) > 0 {
 			req := ch.requestFrom(ctx)
-			pkKey := ch.convertKey(node.Target.PrimaryKey)
+			targetPK, err := node.Target.KeyColumn()
+			if err != nil {
+				return err
+			}
+			pkKey := ch.convertKey(targetPK)
 			for i, child := range childRows {
 				id := ""
 				if v, ok := child[pkKey]; ok {

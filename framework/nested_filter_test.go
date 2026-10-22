@@ -278,7 +278,7 @@ func TestNestedFilter_CustomPrimaryKey(t *testing.T) {
 				{Name: "name", Type: schema.String, Required: true},
 			},
 		}.WithTimestamps(false))
-		pubEnt.PrimaryKey = "pub_code"
+		pubEnt.Config.PrimaryKey = []string{"pub_code"}
 		app.Registry.Register(pubEnt)
 
 		app.Entity("books", entity.EntityConfig{

@@ -4,18 +4,34 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 )
 
-// KeyColumns returns the entity's primary-key columns in declared order.
-// Every read, write, cursor, event, audit row and search document names
-// a record through these columns, never through PrimaryKey directly, so
-// a key of more than one column reaches all of them at once.
+// KeyColumns returns the entity's primary-key columns in declared order:
+// EntityConfig.PrimaryKey, or "id" when it is nil. Every read, write,
+// cursor, event, audit row and search document names a record through
+// these columns.
 func (e *Entity) KeyColumns() []string {
-	if e == nil || e.PrimaryKey == "" {
+	if e == nil {
 		return []string{"id"}
 	}
-	return []string{e.PrimaryKey}
+	return slices.Clone(e.Config.keyColumns())
+}
+
+// ErrCompositeKey reports a relation to or from an entity whose primary
+// key is not one column. A relation joins on one key column.
+var ErrCompositeKey = errors.New("entity: a relation needs a one-column primary key")
+
+// KeyColumn returns the entity's one primary-key column, the column a
+// relation to or from it joins on. An entity keyed on several columns,
+// or on none, has no such column: KeyColumn returns ErrCompositeKey.
+func (e *Entity) KeyColumn() (string, error) {
+	cols := e.KeyColumns()
+	if len(cols) != 1 {
+		return "", fmt.Errorf("%w: %s is keyed on (%s)", ErrCompositeKey, e.GetName(), strings.Join(cols, ", "))
+	}
+	return cols[0], nil
 }
 
 // ErrBadKey reports a record id that does not split into the entity's

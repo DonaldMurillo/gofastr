@@ -28,7 +28,7 @@ func seededEntityBuilder(name string, seed func(context.Context, *sql.DB) error)
 			Fields: []schema.Field{{Name: "x", Type: schema.String}},
 		},
 	}
-	e.PrimaryKey = "x"
+	e.Config.PrimaryKey = []string{"x"}
 	e.Config.Seed = seed
 	return e
 }

@@ -34,7 +34,7 @@ func rhHandler(t *testing.T, parent *entity.Entity, childName string, reg *hook.
 	t.Helper()
 	return &CrudHandler{
 		Entity:     parent,
-		PrimaryKey: "id",
+		PrimaryKey: []string{"id"},
 		ChildHooks: func(name string) *hook.HookRegistry {
 			if name == childName {
 				return reg
@@ -205,7 +205,7 @@ func TestFoldHookRowRejectsNil(t *testing.T) {
 // The degraded write response carries the primary key and nothing else, under
 // the JSON casing the rest of the body uses.
 func TestIdentityOnlyKeepsOnlyThePrimaryKey(t *testing.T) {
-	ch := &CrudHandler{PrimaryKey: "id"}
+	ch := &CrudHandler{PrimaryKey: []string{"id"}}
 	got := ch.identityOnly(map[string]any{"id": "r1", "secret": "S", "other": 2})
 	if len(got) != 1 || got["id"] != "r1" {
 		t.Fatalf("identityOnly = %#v, want only the id", got)
@@ -213,7 +213,7 @@ func TestIdentityOnlyKeepsOnlyThePrimaryKey(t *testing.T) {
 }
 
 func TestIdentityOnlyWithoutAPrimaryKeyIsEmpty(t *testing.T) {
-	ch := &CrudHandler{PrimaryKey: "id"}
+	ch := &CrudHandler{PrimaryKey: []string{"id"}}
 	if got := ch.identityOnly(map[string]any{"secret": "S"}); len(got) != 0 {
 		t.Fatalf("identityOnly = %#v; with no id present it must not fall back to the row", got)
 	}
@@ -222,7 +222,7 @@ func TestIdentityOnlyWithoutAPrimaryKeyIsEmpty(t *testing.T) {
 // ---- requestFrom / hookRequest --------------------------------------------
 
 func TestRequestFromPrefersTheInFlightRequest(t *testing.T) {
-	ch := &CrudHandler{PrimaryKey: "id"}
+	ch := &CrudHandler{PrimaryKey: []string{"id"}}
 	real := httptest.NewRequest(http.MethodGet, "/things?role=admin", nil)
 	got := ch.requestFrom(withRealRequest(context.Background(), real))
 	if got != real {
@@ -234,7 +234,7 @@ func TestRequestFromPrefersTheInFlightRequest(t *testing.T) {
 // The synthetic fallback must not carry the read-hook opt-in, or a hook that
 // reads through p.Request.Context() re-enters itself.
 func TestRequestFromStripsTheOptIn(t *testing.T) {
-	ch := &CrudHandler{PrimaryKey: "id"}
+	ch := &CrudHandler{PrimaryKey: []string{"id"}}
 	got := ch.requestFrom(WithReadHooks(context.Background()))
 	if readHooksEnabled(got.Context()) {
 		t.Fatal("the synthetic request carried the opt-in; a hook reading through it recurses")
@@ -530,7 +530,7 @@ func TestApplyChildReadHooksHandlesMissingRegistry(t *testing.T) {
 
 	ch := &CrudHandler{
 		Entity:     parent,
-		PrimaryKey: "id",
+		PrimaryKey: []string{"id"},
 		ChildHooks: func(string) *hook.HookRegistry { return nil },
 	}
 	rows := []map[string]any{{"id": "p1", "kids": []map[string]any{{"id": "k1"}}}}
