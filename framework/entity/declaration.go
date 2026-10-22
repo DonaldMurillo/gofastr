@@ -13,9 +13,13 @@ import (
 // decoding. The decoder also accepts flat shorthand keys and moves them into
 // Scope, Pagination, or Exposure before returning the declaration.
 type EntityDeclaration struct {
-	Name         string                 `json:"name"`
-	Table        string                 `json:"table,omitempty"`
-	Fields       []FieldDeclaration     `json:"fields"`
+	Name   string             `json:"name"`
+	Table  string             `json:"table,omitempty"`
+	Fields []FieldDeclaration `json:"fields"`
+	// PrimaryKey is the declaration mirror of EntityConfig.PrimaryKey,
+	// spelled `primary_key`: the key columns in order, each a declared
+	// field. Absent means the generated "id".
+	PrimaryKey   []string               `json:"primary_key,omitempty"`
 	Relations    []Relation             `json:"relations,omitempty"`
 	Endpoints    []Endpoint             `json:"endpoints,omitempty"`
 	Scope        *ScopeDeclaration      `json:"scope,omitempty"`
@@ -329,10 +333,15 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 			exposure.ReadScope = rs
 		}
 	}
+	var primaryKey []string
+	if d.PrimaryKey != nil {
+		primaryKey = append([]string{}, d.PrimaryKey...)
+	}
 	cfg := EntityConfig{
 		Name:         d.Name,
 		Table:        d.Table,
 		Fields:       fields,
+		PrimaryKey:   primaryKey,
 		Relations:    d.Relations,
 		Endpoints:    d.Endpoints,
 		Scope:        scope,
@@ -348,6 +357,17 @@ func (d EntityDeclaration) Config() (EntityConfig, error) {
 		// backing arrays.
 		Display: d.Display,
 		States:  d.States,
+	}
+	// A declared key is checked here, the way Define checks it, so a spec
+	// names its mistake at generate time instead of panicking at boot. A
+	// nil key is the "id" Define injects, which Fields does not declare.
+	if primaryKey != nil {
+		if err := cfg.keyColumnsErr(); err != nil {
+			return EntityConfig{}, err
+		}
+		if err := cfg.keyServedErr(); err != nil {
+			return EntityConfig{}, err
+		}
 	}
 	return cfg, nil
 }
