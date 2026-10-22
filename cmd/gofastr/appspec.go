@@ -2628,6 +2628,25 @@ func validateAppSpec(bp AppSpec) error {
 	screenFiles := map[string]string{} // file name → what writes it
 	screenTypes := map[string]string{} // generated type name → screen name
 	routesOf := map[string]string{}    // screen name → its route, for the error
+	// Two writers of one generated file emit it twice; the second write
+	// silently replaces the first and its routes never mount. A
+	// standalone screen writes screen_<name>.go, and an entity's screens
+	// share screen_<entity>_crud.go, so a screen named "Posts Crud"
+	// collides with the posts screens.
+	claimFile := func(screen AppSpecScreen) {
+		file, owner := screenFileName(screen.Name), fmt.Sprintf("screen %q", screen.Name)
+		if e, ok := screenEntityRef(screen); ok {
+			file, owner = screenFileName(e+"_crud"), fmt.Sprintf("the %s entity's screens", e)
+		}
+		if file == "" {
+			return
+		}
+		if prev, dup := screenFiles[file]; dup && prev != owner {
+			errs.add(fmt.Errorf("app spec: %s and %s both write the screen file %s: the second write would replace the first and its routes would never mount; rename the screen", prev, owner, file))
+		} else {
+			screenFiles[file] = owner
+		}
+	}
 	for _, screen := range bp.Screens {
 		if screen.Name == "" {
 			errs.add(fmt.Errorf("app spec: screen name is required"))
@@ -2646,22 +2665,7 @@ func validateAppSpec(bp AppSpec) error {
 			continue
 		}
 		routes[screen.Route] = true
-		// Two writers of one generated file emit it twice; the second
-		// write silently replaces the first and its routes never mount. A
-		// standalone screen writes screen_<name>.go, and an entity's
-		// screens share screen_<entity>_crud.go, so a screen named
-		// "Posts Crud" collides with the posts screens.
-		file, owner := screenFileName(screen.Name), fmt.Sprintf("screen %q", screen.Name)
-		if e, ok := screenEntityRef(screen); ok {
-			file, owner = screenFileName(e+"_crud"), fmt.Sprintf("the %s entity's screens", e)
-		}
-		if file != "" {
-			if prev, dup := screenFiles[file]; dup && prev != owner {
-				errs.add(fmt.Errorf("app spec: %s and %s both write the screen file %s: the second write would replace the first and its routes would never mount; rename the screen", prev, owner, file))
-			} else {
-				screenFiles[file] = owner
-			}
-		}
+		claimFile(screen)
 		// Every screen declares <Name>Screen and mount<Name>Screen in one
 		// package, whichever file it lands in, so the name is the app's.
 		typeName := toCamelCase(screen.Name) + "Screen"
@@ -2704,9 +2708,10 @@ func validateAppSpec(bp AppSpec) error {
 		}
 		errs.add(validateAppSpecActions(screen.Name, screen.Body))
 	}
-	// The render adds a create screen per writable list; its type joins
-	// the same package as the authored ones.
+	// The render adds a create screen per writable list; its file and its
+	// type join the same package as the authored ones.
 	for _, screen := range appSpecSynthesizeCRUDScreens(bp).Screens[len(bp.Screens):] {
+		claimFile(screen)
 		typeName := toCamelCase(screen.Name) + "Screen"
 		if prev, dup := screenTypes[typeName]; dup {
 			errs.add(fmt.Errorf("app spec: screen %q (%s) and the create screen a writable %s list adds at %s both generate the type %s, so the app would not build; rename the screen", prev, routesOf[prev], screen.Body[0].Entity, screen.Route, typeName))

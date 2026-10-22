@@ -174,7 +174,11 @@ screens:
 		// A list with create: true adds a posts_create screen at
 		// /posts/create, unless a screen already holds that route.
 		"authored vs synthesized create": {"  - name: posts_create\n    route: /new\n" + text + "  - name: Posts\n    route: /posts\n" + list("posts") + "        create: true\n", "PostsCreateScreen"},
-		"authored create route":          {"  - name: posts_create\n    route: /posts/create\n" + text + "  - name: Posts\n    route: /posts\n" + list("posts") + "        create: true\n", ""},
+		// The dashboard files under posts, its first list; the create
+		// screen it adds for customers writes screen_customers_crud.go.
+		"authored vs synthesized file": {"  - name: Dash\n    route: /dash\n" + list("posts") + "      - kind: entity_list\n        entity: customers\n        fields: [title]\n        create: true\n" +
+			"  - name: customers_crud\n    route: /c\n" + text, "screen_customers_crud.go"},
+		"authored create route": {"  - name: posts_create\n    route: /posts/create\n" + text + "  - name: Posts\n    route: /posts\n" + list("posts") + "        create: true\n", ""},
 		// Both write screen_posts_crud.go, as one file, as two types.
 		"one entity's screens": {"  - name: API\n    route: /a\n" + list("posts") + "  - name: Api\n    route: /b\n" + list("posts"), ""},
 	} {

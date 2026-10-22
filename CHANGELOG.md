@@ -420,9 +420,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   read each screen's own name: it refused two screens of one entity
   whose names differ only in case, and let a standalone screen named
   "Posts Crud" replace the posts screens' file. It now checks the file
-  each screen writes, and refuses two screens that share a name and
-  so would declare one Go type, the `<entity>_create` screen a
-  `create: true` list adds included.
+  each screen writes, refuses two screens that share a name and so
+  would declare one Go type, and counts the `<entity>_create` screen a
+  `create: true` list adds in both checks.
 - **Sidebar sections stay current in a static export under a base
   path.** `gofastr export` with a `BasePath` prefixed a link's href but
   not its `data-cui-match-prefix`, so after the first client-side
