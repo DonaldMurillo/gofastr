@@ -1190,6 +1190,17 @@ use explicit `rows:` (with `@entity.field=value` refs) instead; a generated
 row can't fabricate a valid foreign key. `count` and explicit `rows:` can be
 combined: the explicit rows are seeded first, then the generated ones.
 
+Generated rows never repeat a `primary_key`: an integer key column counts
+up from 1001, or from just above `min` (and never 1, which the generated
+e2e test creates) when the column sets bounds, and a uuid key takes one
+value per row. A key made only of enums has as many keys as distinct value
+combinations, less the one the e2e test creates. The generator refuses a
+`count` that would run past those combinations or an integer key's bounds,
+generate a key an explicit row already holds, or leave a key column empty:
+a relation, file or image key, or a declared `id` without `auto_generate`,
+takes explicit `rows:`. A key the server fills (`auto_generate`, or the
+`id` the entity adds) is the server's to make unique.
+
 ### Auth (`app.auth`)
 
 ```yaml

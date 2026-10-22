@@ -294,7 +294,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   batch deletes and lifecycle subscriptions use. `gofastr generate cli
   --from-openapi` reads such an app's document: a body property named
   exactly like a path parameter, as the key columns are in the PUT body,
-  takes no flag of its own. New:
+  takes no flag of its own. `seed.count` rows never repeat a key, and
+  the generator refuses a count an enum-only key cannot cover. New:
   `framework.JoinKey` and `framework.RowKey`. An entity keyed on `id`
   keeps every generated signature. See `gofastr docs app-spec` →
   "Composite keys (`primary_key`)".
@@ -500,7 +501,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   instead of `/posts/<id>/<id>`.
 - **`auto_generate: none` is no generation in an app spec.** The
   generated form left the field out and seed rows skipped it, as if the
-  server filled it. Both read `none` the way the entity does now.
+  server filled it. Both read `none` the way the entity does now. Seed
+  rows also fill a field with no `type`, which is a string; a required
+  one left out aborted startup.
 - **The admin layout renders with no signed-in user.** Its account menu
   panicked with "Avatar requires Name" when uihost's strict boot check
   drew the layout with no one signed in; the menu is left out instead.

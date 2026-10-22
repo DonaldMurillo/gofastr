@@ -1,12 +1,17 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework"
 )
 
 // compositeScreensSpec gives a composite-key entity the screens an app
@@ -278,6 +283,152 @@ func TestE2EReadsDeclaredKey(t *testing.T) {
 	// The app seeds before the e2e test creates: the two keys differ.
 	if create, _, _ := appSpecE2ECreateBody(decl); strings.Contains(create, `"`+rows[0]["student_id"].(string)+`"`) {
 		t.Errorf("seed key %v collides with the e2e create %s", rows[0]["student_id"], create)
+	}
+}
+
+// Count-seeded rows never repeat a key, nor take the one the e2e create
+// sends; a count an enum-only key cannot cover is refused.
+func TestSeedCountKeysDistinct(t *testing.T) {
+	type F = framework.FieldDeclaration
+	keyOf := func(decl framework.EntityDeclaration, row map[string]any) string {
+		parts := []string{}
+		for _, c := range decl.PrimaryKey {
+			parts = append(parts, fmt.Sprint(row[c]))
+		}
+		return strings.Join(parts, "|")
+	}
+	refuses := func(decl framework.EntityDeclaration, count int) bool {
+		bp := AppSpec{Seed: []AppSpecSeedEntity{{Entity: decl.Name, Count: count}}}
+		return validateAppSpecSeedStructure(bp, map[string]framework.EntityDeclaration{decl.Name: decl}) != nil
+	}
+	ints := framework.EntityDeclaration{Name: "widgets", PrimaryKey: []string{"code"},
+		Fields: []F{{Name: "code", Type: "int", Required: true}, {Name: "title", Type: "string"}}}
+	enums := framework.EntityDeclaration{Name: "slots", PrimaryKey: []string{"day", "shift"},
+		Fields: []F{{Name: "day", Type: "enum", Values: []string{"mon", "tue"}}, {Name: "shift", Type: "enum", Values: []string{"am", "pm", "eve"}}}}
+	for _, c := range []struct {
+		decl framework.EntityDeclaration
+		n    int
+	}{{ints, 100}, {enums, 5}} {
+		create, _, _ := appSpecE2ECreateBody(c.decl)
+		e2eKey := map[string]any{}
+		_ = json.Unmarshal([]byte(create), &e2eKey)
+		seen := map[string]bool{keyOf(c.decl, e2eKey): true}
+		for _, row := range appSpecGenerateSeedRows(c.decl, c.n, nil) {
+			if k := keyOf(c.decl, row); seen[k] {
+				t.Errorf("%s: seed key %s repeats (e2e create %s)", c.decl.Name, k, create)
+			} else {
+				seen[k] = true
+			}
+		}
+	}
+	if refuses(enums, 5) || !refuses(enums, 6) {
+		t.Error("slots has 6 key combinations, one kept for e2e: want 5 accepted, 6 refused")
+	}
+	// Another key column makes each row distinct: no limit.
+	mixed := enums
+	mixed.PrimaryKey = []string{"day", "label"}
+	mixed.Fields = append(slices.Clone(enums.Fields), F{Name: "label", Type: "string"})
+	if refuses(mixed, 50) {
+		t.Error("a string key column refused a count of 50")
+	}
+	// Count seeding never fills a relation, so a relation key is refused.
+	rel := framework.EntityDeclaration{Name: "members", PrimaryKey: []string{"team", "role"},
+		Fields: []F{{Name: "team", Type: "relation", To: "teams"}, {Name: "role", Type: "string"}}}
+	if !refuses(rel, 1) {
+		t.Error("count seeding accepted a relation key column")
+	}
+	shared := framework.EntityDeclaration{Name: "profiles", PrimaryKey: []string{"id"},
+		Fields: []F{{Name: "id", Type: "relation", To: "users"}}}
+	sharedSeed := AppSpec{Seed: []AppSpecSeedEntity{{Entity: "profiles", Count: 1}}}
+	if err := validateAppSpecSeedStructure(sharedSeed, map[string]framework.EntityDeclaration{"profiles": shared}); err == nil || !strings.Contains(err.Error(), "cannot fabricate the required relation") {
+		t.Errorf("relation key named id: %v, want the relation refusal", err)
+	}
+	if !refuses(enums, math.MaxInt) {
+		t.Error("a count of MaxInt passed the enum key limit")
+	}
+	// Repeated enum values are one value: [A, B, B] has two, one for e2e.
+	dup := framework.EntityDeclaration{Name: "codes", PrimaryKey: []string{"code"},
+		Fields: []F{{Name: "code", Type: "enum", Values: []string{"A", "B", "B"}}}}
+	if refuses(dup, 1) || !refuses(dup, 2) {
+		t.Error("codes has two distinct values: want 1 accepted, 2 refused")
+	}
+	bp := AppSpec{Seed: []AppSpecSeedEntity{{Entity: "codes", Count: 2}}}
+	if err := validateAppSpecSeedStructure(bp, map[string]framework.EntityDeclaration{"codes": dup}); err == nil || !strings.Contains(err.Error(), "Lower the count to 1") {
+		t.Errorf("codes count 2: %v, want the limit of 1", err)
+	}
+	// A generated key an explicit row already holds is refused.
+	abc := dup
+	abc.Fields = []F{{Name: "code", Type: "enum", Values: []string{"A", "B", "C"}}}
+	for _, c := range []struct {
+		decl framework.EntityDeclaration
+		row  map[string]any
+	}{{abc, map[string]any{"code": "B"}}, {ints, map[string]any{"code": 1001, "title": "x"}}} {
+		bp := AppSpec{Seed: []AppSpecSeedEntity{{Entity: c.decl.Name, Count: 1, Rows: []map[string]any{c.row}}}}
+		if validateAppSpecSeedStructure(bp, map[string]framework.EntityDeclaration{c.decl.Name: c.decl}) == nil {
+			t.Errorf("%s: a generated key repeating explicit row %v passed", c.decl.Name, c.row)
+		}
+	}
+	// A bounded integer key stays inside its bounds, clear of e2e's 1.
+	lo, hi := 1.0, 100.0
+	bounded := ints
+	bounded.Fields = []F{{Name: "code", Type: "int", Min: &lo, Max: &hi}, {Name: "title", Type: "string"}}
+	if rows := appSpecGenerateSeedRows(bounded, 1, nil); rows[0]["code"] != 2 {
+		t.Errorf("bounded key seeded %v, want 2", rows[0]["code"])
+	}
+	if refuses(bounded, 99) || !refuses(bounded, 100) {
+		t.Error("code in [1, 100] less e2e's 1: want 99 accepted, 100 refused")
+	}
+	// An untyped key column is a string and gets a value; a file key
+	// gets none and is refused.
+	untyped := framework.EntityDeclaration{Name: "tags", PrimaryKey: []string{"code"},
+		Fields: []F{{Name: "code", Required: true}}}
+	if refuses(untyped, 3) {
+		t.Error("count seeding refused an untyped (string) key")
+	}
+	filed := untyped
+	filed.Fields = []F{{Name: "code", Type: "file"}}
+	if !refuses(filed, 1) {
+		t.Error("count seeding accepted a key column it cannot fill")
+	}
+	// A key the server fills is not the seed's to fill.
+	served := untyped
+	served.Fields = []F{{Name: "code", Type: "uuid", AutoGenerate: "uuid"}, {Name: "title", Type: "string"}}
+	if refuses(served, 3) {
+		t.Error("count seeding refused a key the server generates")
+	}
+	// A declared id the server does not fill is a key the seed leaves empty.
+	ownID := framework.EntityDeclaration{Name: "notes", Fields: []F{{Name: "id", Type: "uuid", Required: true}, {Name: "body", Type: "string"}}}
+	if !refuses(ownID, 1) {
+		t.Error("count seeding accepted a declared id it cannot fill")
+	}
+	// "01001" is the integer 1001.
+	bp = AppSpec{Seed: []AppSpecSeedEntity{{Entity: "widgets", Count: 1, Rows: []map[string]any{{"code": "01001", "title": "x"}}}}}
+	if validateAppSpecSeedStructure(bp, map[string]framework.EntityDeclaration{"widgets": ints}) == nil {
+		t.Error(`a generated 1001 repeating explicit "01001" passed`)
+	}
+	// A large min is honoured exactly, and one past int64 is refused.
+	big, huge := 4503599627370497.0, 1e19
+	bigMin := ints
+	bigMin.Fields = []F{{Name: "code", Type: "int", Min: &big}, {Name: "title", Type: "string"}}
+	if rows := appSpecGenerateSeedRows(bigMin, 1, nil); rows[0]["code"] != 4503599627370497 || refuses(bigMin, 1) {
+		t.Errorf("min %v seeded %v", big, rows[0]["code"])
+	}
+	bigMin.Fields[0].Min = &huge
+	if !refuses(bigMin, 1) {
+		t.Error("a key min past int64 passed")
+	}
+	// Bounds compare as integers: 2^53+1 is past a max of 2^53.
+	near, top := 9007199254740990.0, 9007199254740992.0
+	bigMin.Fields[0].Min, bigMin.Fields[0].Max = &near, &top
+	if refuses(bigMin, 3) || !refuses(bigMin, 4) {
+		t.Error("key in [2^53-2, 2^53]: want 3 accepted, 4 refused")
+	}
+	// 1000000.0 is the integer 1000000.
+	million := 1000000.0
+	bigMin.Fields[0].Min, bigMin.Fields[0].Max = &million, nil
+	bp = AppSpec{Seed: []AppSpecSeedEntity{{Entity: "widgets", Count: 1, Rows: []map[string]any{{"code": 1000000.0, "title": "x"}}}}}
+	if validateAppSpecSeedStructure(bp, map[string]framework.EntityDeclaration{"widgets": bigMin}) == nil {
+		t.Error("a generated 1000000 repeating explicit 1000000.0 passed")
 	}
 }
 
