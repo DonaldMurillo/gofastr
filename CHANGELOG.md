@@ -405,6 +405,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   transition's declared English; it now reads the
   `entity.<entity>.transitions.<key>` catalog entry, as the record page
   does.
+- **The pseudo-locale covers entity labels.** Column headers, status
+  badges, view tabs and entity names fell back to plain English under
+  `i18nui.AddPseudo`'s tag, so overflow checks never measured them. Their
+  English fallback is now pseudo-localized there too.
 
 ### Security
 - The repo builds with Go 1.27.3 (`toolchain go1.27.3` in go.mod, and in
