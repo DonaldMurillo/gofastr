@@ -224,10 +224,94 @@ func TestCheckRelationKeys(t *testing.T) {
 		{"m2m from a composite", two, ManyToMany("cs", "course", "p", "a", "b"), one, true},
 		{"m2m to a composite", one, ManyToMany("es", "enrollment", "p", "a", "b"), two, true},
 		{"m2m to an unknown target", one, ManyToMany("xs", "x", "p", "a", "b"), nil, false},
+		{"cascade belongs_to on two columns", line, BelongsTo("e", "enrollment", "s", "c").WithCascadeWrite(true), two, true},
 	} {
 		err := CheckRelationKeys(c.source, c.rel, c.target)
 		if got := errors.Is(err, ErrCompositeKey); got != c.wantComposite {
 			t.Errorf("%s: err = %v, want composite refusal %v", c.name, err, c.wantComposite)
 		}
+	}
+}
+
+// staged is line with states on field, whose one move stamps stamp.
+func staged(field, stamp string) *Entity {
+	return Define("line", EntityConfig{
+		Fields: line.GetFields(),
+		States: &StatesConfig{Field: field, Transitions: []Transition{{Key: "go", From: []string{"a"}, To: "b", Stamp: stamp}}},
+	})
+}
+
+// line references enrollment's (student_id, course_id) key through
+// (s, c).
+var line = Define("line", EntityConfig{Fields: []schema.Field{
+	{Name: "s", Type: schema.String}, {Name: "c", Type: schema.String}, {Name: "note", Type: schema.String},
+}})
+
+// A foreign key of several columns names one declared column per column
+// of the key it references.
+func TestCompositeForeignKey(t *testing.T) {
+	one := Define("course", EntityConfig{Fields: []schema.Field{{Name: "title", Type: schema.String}}})
+	two := Define("enrollment", EntityConfig{
+		PrimaryKey: []string{"student_id", "course_id"},
+		Fields:     []schema.Field{{Name: "student_id", Type: schema.String}, {Name: "course_id", Type: schema.String}},
+	})
+	for _, c := range []struct {
+		name           string
+		source, target *Entity
+		rel            Relation
+		want           error
+	}{
+		{"belongs_to", line, two, BelongsTo("e", "enrollment", "s", "c"), nil},
+		{"case differs from the field", line, two, BelongsTo("e", "enrollment", "S", "C"), ErrForeignKeyShape},
+		{"has_many", two, line, HasMany("lines", "line", "s", "c"), nil},
+		{"has_one", two, line, HasOne("line", "line", "s", "c"), nil},
+		{"too many columns", line, two, BelongsTo("e", "enrollment", "s", "c", "note"), ErrForeignKeyShape},
+		{"to a one-column key", line, one, BelongsTo("c", "course", "s", "c"), ErrForeignKeyShape},
+		{"has_many from a one-column key", one, line, HasMany("lines", "line", "s", "c"), ErrForeignKeyShape},
+		{"repeated column", line, two, BelongsTo("e", "enrollment", "s", "s"), ErrForeignKeyShape},
+		{"undeclared column", line, two, BelongsTo("e", "enrollment", "s", "x"), ErrForeignKeyShape},
+		{"has_many undeclared on the child", two, line, HasMany("lines", "line", "s", "x"), ErrForeignKeyShape},
+		{"unknown target", line, nil, BelongsTo("e", "enrollment", "s", "c"), ErrForeignKeyShape},
+		{"m2m with ForeignKeys", one, one, Relation{Type: RelManyToMany, Name: "x", ForeignKeys: []string{"a", "b"}}, ErrForeignKeyShape},
+		{"cascade has_many", two, line, HasMany("lines", "line", "s", "c").WithCascadeWrite(true), ErrCompositeKey},
+		{"state field", staged("s", ""), two, BelongsTo("e", "enrollment", "s", "c"), ErrForeignKeyShape},
+		{"transition stamp", staged("note", "c"), two, BelongsTo("e", "enrollment", "s", "c"), ErrForeignKeyShape},
+		{"states elsewhere", staged("note", "note"), two, BelongsTo("e", "enrollment", "s", "c"), nil},
+	} {
+		err := CheckRelationKeys(c.source, c.rel, c.target)
+		if (c.want == nil) != (err == nil) || (c.want != nil && !errors.Is(err, c.want)) {
+			t.Errorf("%s: err = %v, want %v", c.name, err, c.want)
+		}
+	}
+}
+
+// The constructors put one column in ForeignKey and several in
+// ForeignKeys; FKColumns reads either.
+func TestForeignKeySpellings(t *testing.T) {
+	one := BelongsTo("a", "t", "x")
+	if one.ForeignKey != "x" || one.ForeignKeys != nil || !slices.Equal(one.FKColumns(), []string{"x"}) {
+		t.Errorf("one column = %+v", one)
+	}
+	two := HasMany("a", "t", "x", "y")
+	if two.ForeignKey != "" || !slices.Equal(two.FKColumns(), []string{"x", "y"}) {
+		t.Errorf("two columns = %+v", two)
+	}
+	if got := ManyToMany("a", "t", "p", "l", "f").FKColumns(); got != nil {
+		t.Errorf("many_to_many FKColumns = %v, want none", got)
+	}
+
+	rels := []Relation{{Type: RelManyToOne, Name: "a", Entity: "t", ForeignKeys: []string{"x"}}}
+	e := Define("n", EntityConfig{Fields: []schema.Field{{Name: "x", Type: schema.String}}, Relations: rels})
+	if r := e.Config.Relations[0]; r.ForeignKey != "x" || r.ForeignKeys != nil {
+		t.Errorf("one column in ForeignKeys = %+v, want it in ForeignKey", r)
+	}
+	if rels[0].ForeignKeys == nil {
+		t.Error("Define rewrote the caller's relations")
+	}
+	both := Define("b", EntityConfig{Fields: []schema.Field{{Name: "x", Type: schema.String}}, Relations: []Relation{
+		{Type: RelManyToOne, Name: "a", Entity: "t", ForeignKey: "x", ForeignKeys: []string{"x", "y"}},
+	}})
+	if err := both.Validate(); err == nil || !strings.Contains(err.Error(), "both ForeignKey and ForeignKeys") {
+		t.Errorf("Validate with both spellings = %v", err)
 	}
 }

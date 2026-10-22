@@ -729,16 +729,20 @@ func sanitizeIndexExpression(expr string) string {
 }
 
 // foreignKeyClauses produces "FOREIGN KEY (col) REFERENCES target(id)"
-// fragments for every BelongsTo relation declared on the entity. Targets
-// must exist in `all` or the function returns an error.
+// fragments for every BelongsTo relation declared on the entity, naming
+// every column of a foreign key that references a composite key:
+// "FOREIGN KEY (order_store, order_no) REFERENCES orders(store, no)".
+// Targets must exist in `all` or the function returns an error.
 func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]string, error) {
 	var out []string
 	seen := make(map[string]bool)
 	for _, rel := range ent.Config.Relations {
-		if rel.Type != entity.RelManyToOne || rel.ForeignKey == "" {
+		fks := rel.FKColumns()
+		if rel.Type != entity.RelManyToOne || len(fks) == 0 {
 			continue
 		}
-		if seen[rel.ForeignKey] {
+		dedup := strings.Join(fks, ",")
+		if seen[dedup] {
 			continue
 		}
 		// The owner column is stamped by the framework from the session's
@@ -753,37 +757,36 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 		// the clause rather than emit a constraint we guarantee to break; the
 		// relation still resolves for reads if the app does keep the two
 		// tables in sync.
-		if ent.Config.Scope.OwnerField != "" && strings.EqualFold(rel.ForeignKey, ent.Config.Scope.OwnerField) {
-			seen[rel.ForeignKey] = true
+		if len(fks) == 1 && ent.Config.Scope.OwnerField != "" && strings.EqualFold(fks[0], ent.Config.Scope.OwnerField) {
+			seen[dedup] = true
 			continue
 		}
-		seen[rel.ForeignKey] = true
+		seen[dedup] = true
 		target, ok := all[rel.Entity]
 		if !ok {
 			return nil, fmt.Errorf("relation %q references unknown entity %q", rel.Name, rel.Entity)
 		}
-		safeRelFK, err := query.SafeIdent(rel.ForeignKey)
+		if err := entity.CheckRelationKeys(ent, rel, target); err != nil {
+			return nil, fmt.Errorf("relation %q: %w", rel.Name, err)
+		}
+		safeFKs, err := safeIdents(fks)
 		if err != nil {
-			return nil, fmt.Errorf("relation %q: invalid FK %q: %w", rel.Name, rel.ForeignKey, err)
+			return nil, fmt.Errorf("relation %q: invalid FK: %w", rel.Name, err)
 		}
 		safeTargetTable, err := query.SafeIdent(target.GetTable())
 		if err != nil {
 			return nil, fmt.Errorf("relation %q: invalid target table %q: %w", rel.Name, target.GetTable(), err)
 		}
-		targetPK, err := target.KeyColumn()
+		safeTargetKey, err := safeIdents(target.KeyColumns())
 		if err != nil {
-			return nil, fmt.Errorf("relation %q: %w", rel.Name, err)
-		}
-		safeTargetPK, err := query.SafeIdent(targetPK)
-		if err != nil {
-			return nil, fmt.Errorf("relation %q: invalid target PK %q: %w", rel.Name, targetPK, err)
+			return nil, fmt.Errorf("relation %q: invalid target key: %w", rel.Name, err)
 		}
 		// Validated but UNQUOTED, same convention as columnDefs. Quoting would
 		// preserve case on Postgres while the referenced CREATE TABLE folded its
 		// identifiers to lowercase, so a mixed-case target like "MixedAccount"
 		// would resolve to a relation that doesn't exist.
 		fkClause := fmt.Sprintf("FOREIGN KEY (%s) REFERENCES %s(%s)",
-			safeRelFK, safeTargetTable, safeTargetPK)
+			strings.Join(safeFKs, ", "), safeTargetTable, strings.Join(safeTargetKey, ", "))
 		if rel.OnDelete != "" {
 			switch rel.OnDelete {
 			case entity.OnDeleteCascade, entity.OnDeleteSetNull, entity.OnDeleteRestrict, entity.OnDeleteNoAction:
@@ -793,6 +796,66 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 			}
 		}
 		out = append(out, fkClause)
+	}
+	return out, nil
+}
+
+// checkForeignKeyTypes refuses a foreign key of several columns whose
+// columns differ in type from the key columns they reference. Each such
+// column is a plain field typed by its own declaration, where a one-column
+// Relation field takes its target's key type: Postgres refuses the
+// constraint when TEXT references an integer, and SQLite compares the two
+// under different affinities, so a join matches nothing. The types are
+// compared as Postgres would declare them, on either dialect, so an app
+// that boots on SQLite boots on Postgres.
+func checkForeignKeyTypes(ent *entity.Entity, rel entity.Relation, all map[string]*entity.Entity) error {
+	fks := rel.FKColumns()
+	if len(fks) < 2 {
+		return nil
+	}
+	holder, ref := ent, all[rel.Entity]
+	if rel.Type == entity.RelHasOne || rel.Type == entity.RelHasMany {
+		holder, ref = ref, ent
+	}
+	if holder == nil || ref == nil {
+		return nil
+	}
+	for i, k := range ref.KeyColumns() {
+		ft := keyColumnType(holder, fks[i], all, DialectPostgres, map[columnRef]bool{})
+		kt := keyColumnType(ref, k, all, DialectPostgres, map[columnRef]bool{})
+		if typeFamily(ft) != typeFamily(kt) {
+			return fmt.Errorf("%w: %s.%s is %s and references %s.%s, which is %s",
+				entity.ErrForeignKeyShape, holder.GetName(), fks[i], ft, ref.GetName(), k, kt)
+		}
+	}
+	return nil
+}
+
+// typeFamily folds the Postgres column types a foreign key may join
+// across: every integer width, and text of any length.
+func typeFamily(t string) string {
+	t = strings.ToUpper(t)
+	if i := strings.IndexByte(t, '('); i >= 0 {
+		t = t[:i]
+	}
+	switch t {
+	case "SMALLINT", "INTEGER", "INT", "BIGINT":
+		return "INTEGER"
+	case "TEXT", "VARCHAR", "CHAR", "CHARACTER VARYING":
+		return "TEXT"
+	}
+	return t
+}
+
+// safeIdents validates each column name with query.SafeIdent.
+func safeIdents(cols []string) ([]string, error) {
+	out := make([]string, len(cols))
+	for i, c := range cols {
+		s, err := query.SafeIdent(c)
+		if err != nil {
+			return nil, fmt.Errorf("%q: %w", c, err)
+		}
+		out[i] = s
 	}
 	return out, nil
 }
@@ -815,7 +878,7 @@ func mutatingFKReferrers(ent *entity.Entity, all map[string]*entity.Entity) []st
 					seen[rel.Through] = true
 				}
 			case entity.RelManyToOne:
-				if all[rel.Entity] != ent || rel.ForeignKey == "" {
+				if all[rel.Entity] != ent || len(rel.FKColumns()) == 0 {
 					continue
 				}
 				// foreignKeyClauses emits no key on the owner column.
@@ -954,9 +1017,9 @@ func mergeEntityConfig(base entity.EntityConfig, versions []*entity.Entity) enti
 	var rels []entity.Relation
 	for _, v := range versions {
 		for _, rel := range v.Config.Relations {
-			key := rel.ForeignKey
+			key := strings.Join(rel.FKColumns(), ",")
 			if key == "" {
-				key = rel.Name // HasMany/HasOne with no FK column, dedupe by logical name
+				key = rel.Name // a relation with no FK column (many_to_many), dedupe by logical name
 			}
 			if seenRel[key] {
 				continue
@@ -1014,12 +1077,15 @@ func topoSortEntities(all map[string]*entity.Entity) ([]*entity.Entity, error) {
 		ent := all[name]
 		tempMark[name] = true
 		for _, rel := range ent.Config.Relations {
-			// A foreign key is one column, so the end it references needs a
-			// one-column key; the end holding it may have any. Checked here,
+			// A foreign key names one column per column of the key it
+			// references; the end holding it may have any key. Checked here,
 			// for every table and not only a new one, so a target whose key
-			// turns composite is refused while an existing child still
+			// changes shape is refused while an existing child still
 			// references its old key.
 			if err := entity.CheckRelationKeys(ent, rel, all[rel.Entity]); err != nil {
+				return fmt.Errorf("entity %q relation %q: %w", name, rel.Name, err)
+			}
+			if err := checkForeignKeyTypes(ent, rel, all); err != nil {
 				return fmt.Errorf("entity %q relation %q: %w", name, rel.Name, err)
 			}
 			if rel.Type == entity.RelManyToMany {

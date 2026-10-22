@@ -528,8 +528,11 @@ app.Table(migrate.Table{
 
 Only the columns you declare are emitted. Nothing is injected. A foreign key
 references the target table's primary key (the target may be an entity or
-another raw table) and needs a one-column key there. Mark several columns
-`PrimaryKey: true` for a composite key; the key takes them in column order.
+another raw table): `Column` names the local column for a one-column key,
+and `Columns` names one local column per key column, in key order, for a
+composite one (`{Columns: []string{"order_store", "order_no"}, RefTable:
+"orders"}`). Mark several columns `PrimaryKey: true` for a composite key;
+the key takes them in column order.
 A table with no primary key is allowed but cannot be referenced. `RawType` on a column overrides
 the portable type with an exact SQL type (`NUMERIC(10,2)`, `INET`, …) and works
 on entity fields too. A raw table has no CRUD routes, and the admin's

@@ -22,42 +22,108 @@ func (e *Entity) KeyColumns() []string {
 	return slices.Clone(e.Config.keyColumns())
 }
 
-// ErrCompositeKey reports a relation whose foreign key names an entity
-// keyed on more than one column. A foreign key is one column, so the end
-// it references needs a one-column key.
-var ErrCompositeKey = errors.New("entity: a relation needs a one-column primary key")
+// ErrCompositeKey reports an entity keyed on several columns where one
+// is needed: a relation naming one foreign-key column for that key, a
+// many_to_many end, or a cascade write's child.
+var ErrCompositeKey = errors.New("entity: the key has several columns where one is needed")
+
+// ErrForeignKeyShape reports a relation whose foreign-key columns do not
+// line up with the key they reference: a different count, a repeated
+// column, or one the entity holding them does not declare.
+var ErrForeignKeyShape = errors.New("entity: foreign key does not match the key it references")
 
 // CheckRelationKeys reports whether rel, declared on source, can join to
-// target: the end its foreign key references must be keyed on one column.
-// A belongs_to references target, a has_one or has_many references
-// source, and a many_to_many's pivot references both. The end holding the
-// foreign key may have any key, so a join table keyed on the pair it
-// links belongs to both sides, and each side has many of it. A cascade
-// write into a has_one or has_many child tells an existing child from a
-// new one by the child's one key column, so that child needs one too. A
-// nil end is not checked.
+// target. Its foreign key (Relation.FKColumns) names one column per
+// column of the key it references, in that key's order: a belongs_to
+// references target's key from columns on source, a has_one or has_many
+// references source's key from columns on target. A foreign key of
+// several columns names columns its holder declares. So a join table
+// keyed on the pair it links belongs to both sides, and an order line
+// belongs to an order keyed on (store, no) through two columns.
+//
+// A many_to_many's pivot holds one link column per side, so both ends
+// need a one-column key; a join entity with two belongs_to relations
+// links composite-keyed ends instead. A cascade write stamps one
+// foreign-key column and tells an existing child from a new one by the
+// child's one key column, so it needs both to be one column. A nil end
+// is not checked, except that a foreign key of several columns needs
+// the key it references.
 func CheckRelationKeys(source *Entity, rel Relation, target *Entity) error {
-	var ends []*Entity
+	if fks := rel.FKColumns(); rel.CascadeWrite && len(fks) > 1 {
+		return fmt.Errorf("%w: relation %q: a cascade write stamps one foreign-key column, and (%s) are several",
+			ErrCompositeKey, rel.Name, strings.Join(fks, ", "))
+	}
 	switch rel.Type {
 	case RelManyToOne:
-		ends = []*Entity{target}
+		return checkForeignKey(rel, source, target)
 	case RelHasOne, RelHasMany:
-		ends = []*Entity{source}
-		if rel.CascadeWrite {
-			ends = append(ends, target)
+		if err := checkForeignKey(rel, target, source); err != nil {
+			return err
+		}
+		if rel.CascadeWrite && target != nil {
+			if _, err := target.KeyColumn(); err != nil {
+				return err
+			}
 		}
 	case RelManyToMany:
-		ends = []*Entity{source, target}
-	}
-	for _, e := range ends {
-		if e == nil {
-			continue
+		if len(rel.ForeignKeys) > 0 {
+			return fmt.Errorf("%w: relation %q: a many_to_many links through LocalKey and ForeignKeyTarget, not ForeignKeys",
+				ErrForeignKeyShape, rel.Name)
 		}
-		if _, err := e.KeyColumn(); err != nil {
-			return err
+		for _, e := range []*Entity{source, target} {
+			if e == nil {
+				continue
+			}
+			if _, err := e.KeyColumn(); err != nil {
+				return fmt.Errorf("%w; link it through a join entity that belongs to both sides", err)
+			}
 		}
 	}
 	return nil
+}
+
+// checkForeignKey checks rel's foreign-key columns, held by holder,
+// against the key of ref, the entity they reference.
+func checkForeignKey(rel Relation, holder, ref *Entity) error {
+	fks := rel.FKColumns()
+	if len(fks) > 1 {
+		for i, c := range fks {
+			if slices.IndexFunc(fks[:i], func(p string) bool { return strings.EqualFold(p, c) }) >= 0 {
+				return fmt.Errorf("%w: relation %q names column %q twice", ErrForeignKeyShape, rel.Name, c)
+			}
+			// Exact, not folded: writes read each column from the body by
+			// its field name, so "ORDER_NO" over a field "order_no" would
+			// pass the database and skip every write-side check.
+			if holder != nil && slices.IndexFunc(holder.GetFields(), func(f schema.Field) bool { return f.Name == c }) < 0 {
+				return fmt.Errorf("%w: relation %q: %s declares no field %q", ErrForeignKeyShape, rel.Name, holder.GetName(), c)
+			}
+			// A transition writes its column with no reference check, so
+			// with the caller's other columns it could land on any row.
+			if holder != nil && transitionWrites(holder.Config.States, c) {
+				return fmt.Errorf("%w: relation %q: %s's transitions write %q, one column of its foreign key (%s)",
+					ErrForeignKeyShape, rel.Name, holder.GetName(), c, strings.Join(fks, ", "))
+			}
+		}
+	}
+	if ref == nil {
+		if len(fks) > 1 {
+			return fmt.Errorf("%w: relation %q: the entity its foreign key (%s) references is unknown",
+				ErrForeignKeyShape, rel.Name, strings.Join(fks, ", "))
+		}
+		return nil
+	}
+	key := ref.KeyColumns()
+	n := max(len(fks), 1)
+	switch {
+	case n == len(key):
+		return nil
+	case n == 1:
+		return fmt.Errorf("%w: %s is keyed on (%s), so relation %q needs one foreign-key column per key column",
+			ErrCompositeKey, ref.GetName(), strings.Join(key, ", "), rel.Name)
+	default:
+		return fmt.Errorf("%w: relation %q names foreign-key columns (%s) and %s is keyed on (%s)",
+			ErrForeignKeyShape, rel.Name, strings.Join(fks, ", "), ref.GetName(), strings.Join(key, ", "))
+	}
 }
 
 // KeyColumn returns the entity's one primary-key column, the column a

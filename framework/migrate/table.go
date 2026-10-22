@@ -1,6 +1,9 @@
 package migrate
 
 import (
+	"slices"
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
@@ -44,15 +47,19 @@ type Column struct {
 // primary key. RefTable is the registered name of the target (an entity name
 // or another Table's Name); the reference targets that table's primary key.
 type ForeignKey struct {
-	Column   string // local column
+	Column string // local column
+	// Columns names the local columns of a foreign key to a table keyed on
+	// several columns, one per key column in key order; Column is empty
+	// then.
+	Columns  []string
 	RefTable string // target table/entity name (references its primary key)
 }
 
 // ToEntity adapts the raw Table into an *entity.Entity with no auto-injection,
 // suitable for registering alongside real entities. The columns marked
-// PrimaryKey make the key, in column order. A foreign key can reference a
-// table keyed on one column only; a table with no primary key is allowed
-// but cannot be referenced.
+// PrimaryKey make the key, in column order. A foreign key names one column
+// per key column of the table it references; a table with no primary key
+// is allowed but cannot be referenced.
 func (t Table) ToEntity() *entity.Entity {
 	fields := make([]schema.Field, 0, len(t.Columns))
 	pk := []string{}
@@ -72,6 +79,15 @@ func (t Table) ToEntity() *entity.Entity {
 	}
 	var relations []entity.Relation
 	for _, fk := range t.ForeignKeys {
+		if len(fk.Columns) > 0 {
+			relations = append(relations, entity.Relation{
+				Type:        entity.RelManyToOne,
+				Name:        strings.Join(fk.Columns, "_"),
+				Entity:      fk.RefTable,
+				ForeignKeys: slices.Clone(fk.Columns),
+			})
+			continue
+		}
 		relations = append(relations, entity.Relation{
 			Type:       entity.RelManyToOne,
 			Name:       fk.Column,

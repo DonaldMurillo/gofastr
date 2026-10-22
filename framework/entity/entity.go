@@ -685,6 +685,16 @@ func Define(name string, config EntityConfig) *Entity {
 			config.Relations = append(config.Relations, BelongsTo(f.Name, f.To, f.Name))
 		}
 	}
+	// One column in ForeignKeys is a one-column foreign key, which every
+	// reader finds in ForeignKey. The caller's slice is left alone.
+	if slices.ContainsFunc(config.Relations, func(r Relation) bool { return len(r.ForeignKeys) == 1 && r.ForeignKey == "" }) {
+		config.Relations = slices.Clone(config.Relations)
+		for i, r := range config.Relations {
+			if len(r.ForeignKeys) == 1 && r.ForeignKey == "" {
+				config.Relations[i].ForeignKey, config.Relations[i].ForeignKeys = r.ForeignKeys[0], nil
+			}
+		}
+	}
 
 	return &Entity{Config: config}
 }
@@ -893,6 +903,11 @@ func (e *Entity) Validate() error {
 	}
 	if len(e.Config.Fields) == 0 {
 		return fmt.Errorf("entity %q: must have at least one field", e.Config.Name)
+	}
+	for _, r := range e.Config.Relations {
+		if r.ForeignKey != "" && len(r.ForeignKeys) > 0 {
+			return fmt.Errorf("entity %q: relation %q sets both ForeignKey and ForeignKeys; name every column in ForeignKeys", e.Config.Name, r.Name)
+		}
 	}
 
 	seen := make(map[string]bool, len(e.Config.Fields))
