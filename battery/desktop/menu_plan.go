@@ -179,15 +179,19 @@ func editMenu(ctx context.Context) MenuPlan {
 // name a native test driver matches.
 func PlanMenuBar(ctx context.Context, appTitle string, m *Menu, hasSettings bool) (plans []MenuPlan, actionIDs []string) {
 	plans, actionIDs = planMenuBar(ctx, appTitle, m, hasSettings)
-	// A bare context renders every phrase in English; planning twice
-	// keeps the two trees the same shape by construction.
-	en, _ := planMenuBar(context.Background(), appTitle, m, hasSettings)
+	// planning twice keeps the two trees the same shape by construction.
+	en, _ := planMenuBar(englishContext, appTitle, m, hasSettings)
 	for i := range plans {
 		plans[i].English = en[i].Title
 		withEnglish(plans[i].Items, en[i].Items)
 	}
 	return plans, actionIDs
 }
+
+// englishContext renders every phrase in its own English. A bare
+// context is not that: a phrase then asks the process's default
+// translator, whose fallback locale need not be English.
+var englishContext = i18n.WithTranslator(context.Background(), i18n.NewTranslator(i18n.NewMapCatalog(), "en"))
 
 // withEnglish copies en's titles into rows' English fields, row for
 // row; both come from planRows over the same items.
@@ -297,6 +301,6 @@ func PlanTrayMenu(ctx context.Context, t *Tray, appTitle string, actionIDs *[]st
 	}
 	rows := planRows(ctx, t.Menu.Items, appTitle, actionIDs)
 	scratch := append([]string(nil), (*actionIDs)...)
-	withEnglish(rows, planRows(context.Background(), t.Menu.Items, appTitle, &scratch))
+	withEnglish(rows, planRows(englishContext, t.Menu.Items, appTitle, &scratch))
 	return rows
 }

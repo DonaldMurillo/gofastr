@@ -62,6 +62,25 @@ func TestPlanMenuBarSpeaksLocale(t *testing.T) {
 	}
 }
 
+// The English names are the phrases' own English, whatever translator
+// the process installed: one whose fallback locale is French answered
+// the English pass in French.
+func TestPlanEnglishIgnoresDefault(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("fr", "desktop.menu_quit", i18n.Message{Text: "Quitter {{app}}"})
+	prev := i18n.Default()
+	i18n.SetDefault(i18n.NewTranslator(cat, "fr"))
+	t.Cleanup(func() { i18n.SetDefault(prev) })
+	plans, ids := PlanMenuBar(frShellCtx(), "Notes", nil, false)
+	if got := plans[0].Items[len(plans[0].Items)-1].English; got != "Quit Notes" {
+		t.Errorf("Quit's English = %q", got)
+	}
+	tray := PlanTrayMenu(frShellCtx(), &Tray{Menu: &Menu{Items: []MenuItem{{Role: RoleQuit}}}}, "Notes", &ids)
+	if len(tray) != 1 || tray[0].English != "Quit Notes" {
+		t.Errorf("tray Quit's English = %+v", tray)
+	}
+}
+
 // A French plan still names every row in English, the name the native
 // drivers match, so a desktoptest suite passes on any OS language.
 func TestPlanKeepsEnglishNames(t *testing.T) {
