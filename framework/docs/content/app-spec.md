@@ -806,6 +806,14 @@ partial and keeps the shell).
   (enum → `<select>` of values; relation → `<select>` populated from the
   related entity) for forms not bound to one entity. The record form on
   the entityui screens is drawn from the entity's `display: form:`.
+- `entity_form` with `mode: edit` on an `{id}` route renders the record
+  page, `appUI.Record("<entity>", id)`, without Delete or Duplicate. It
+  loads the record into its form, keeps the key read-only, and Save PUTs
+  it. `fields:` keeps the listed fields and passes the rest to
+  `.Omit(...)`. A `text:` title is not drawn: the page heads itself with
+  the record's title. On a route that continues past `{id}`
+  (`/posts/{id}/edit`), the screen passes `.Base(...)` the route up to
+  `{id}`, so Save lands on `/posts/<id>`.
 
 **Removed screen keys.** `filters:`, `transitions:`, `island:`, `widget:`
 and `search:` are no longer block keys; the decoder refuses each with the
@@ -917,6 +925,33 @@ thread, follow
 a hand-written island, end to end" (it covers the traps: the posted JSON
 key is the input's `name`, the two route-param syntaxes, and manual route
 registration) and "Themed confirmation (`ui.ConfirmAction`)".
+
+#### Composite keys (`primary_key`)
+
+`primary_key:` names an entity's key columns in order. Leave it out for
+the usual generated `id`. A join table keys on the rows it joins:
+
+```yaml
+entities:
+  - name: enrollments
+    crud: true
+    primary_key: [student_id, course_id]
+    fields:
+      - {name: student_id, type: string, required: true}
+      - {name: course_id, type: string, required: true}
+      - {name: grade, type: string}
+```
+
+The rules are `EntityConfig.PrimaryKey`'s
+([Record ids](entity-declarations.md#record-ids)). On a record screen
+(`entity_detail`, or an `entity_form` with `mode: edit`), `{id}` stands
+for the whole key: `/enrollments/{id}` mounts as
+`/enrollments/:student_id/:course_id`, one segment per key column, the
+path entityui links records at. The screen's `SetParams` joins the
+values with `framework.JoinKey`. Validation refuses another route param
+named after a key column; rename it. The generated `e2e_test.go` reads
+every key column out of the create response to address the record, and
+`gofastr pack` folds the expanded route back to `{id}`.
 
 #### RBAC for writable APIs
 
