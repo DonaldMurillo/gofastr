@@ -157,6 +157,18 @@
     return true;
   };
   window.__gofastr._docRedirect = _docRedirect;
+  // fetch follows a 3xx itself (uihost answers one for any target that
+  // is not a safe relative path), so only the response URL says where
+  // the reader landed. Another origin or another document loads as a
+  // document (null: handled); a page in this document comes back as its
+  // path, for the X-Gofastr-Location leg; '' when nothing redirected.
+  const _followed = (r, path) => {
+    if (!r.redirected || !r.url) return '';
+    if (!window.__gofastr._sameOrigin(r.url)) { location.replace(r.url); return null; }
+    const to = resolvePath(r.url);
+    return to === path ? '' : _docRedirect(to) ? null : to;
+  };
+  window.__gofastr._followed = _followed;
 
   // Page-owned metadata travels with cached page content, independently of
   // the layout boundaries the navigator keeps. Scripts are never copied.
@@ -628,14 +640,12 @@
         window.__gofastr._inval(fr);
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
       if (!_navLive(myEpoch)) return;
-        let dest = path;
-        // resolvePath keeps the search string, the cache key and the
-        // URL bar must carry a redirect-added query (e.g. ?next=/admin).
-        if (fr.redirected && fr.url) dest = resolvePath(fr.url);
-        // fetch followed the redirect, so only its URL names the page:
-        // one in another document loads in place of the swap.
-        if (dest !== path && _docRedirect(dest)) return;
-        if (dest !== path) { _pushPub(dest, { replace: true }); currentPath = dest; }
+        // The path keeps the search string: the cache key and the URL
+        // bar must carry a redirect-added query (e.g. ?next=/admin).
+        const to = _followed(fr, path);
+        if (to === null) return;
+        const dest = to || path;
+        if (to) { _pushPub(dest, { replace: true }); currentPath = dest; }
         const t = pdoc.querySelector('title')?.textContent || document.title;
         // The full fetch re-renders chrome under the CURRENT session,
         // if the server re-minted (restart/rotation/expiry), the fresh
@@ -695,7 +705,10 @@
       // outcome. The fetch above won't see a 303 (we deliberately use
       // 200 + header to survive redirect:'follow').
       // (Session rollover already applied above, before the ok-check.)
-      const redirectTo = resp.headers.get('X-Gofastr-Location');
+      // A followed 3xx takes the same leg as the header.
+      const followed = _followed(resp, path);
+      if (followed === null) return;
+      const redirectTo = resp.headers.get('X-Gofastr-Location') || followed;
       if (redirectTo) {
         _pendingNav.delete(path);
         if (_docRedirect(redirectTo)) return;

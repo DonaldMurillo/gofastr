@@ -27,15 +27,27 @@ func localePrefixSrv(t *testing.T) (*httptest.Server, func(string) (int, bool)) 
 
 // localePrefixSrvWith puts outlet in each document's main, so a
 // non-empty one hands navigation to the envelope module. /es/redir is
-// a server policy redirect to the English /b, and /es/hop an HTTP 303
-// there from a route on another layout chain, whose navigation fetches
-// the whole page and follows the redirect inside fetch.
+// a server policy redirect to the English /b. The rest are HTTP 303s,
+// which fetch follows itself: /es/hop to /b from a route on another
+// layout chain (the whole-page fetch), /es/jump to /b on the partial
+// fetch, /es/stay to /es/b in this document, and /es/out and
+// /es/hop-out to a page on another origin, one per leg.
 func localePrefixSrvWith(t *testing.T, outlet string) (*httptest.Server, func(string) (int, bool)) {
 	t.Helper()
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
 	}
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Readable cross-origin, preflight included, the worst case: the
+		// runtime must load it as a document, never swap it into this
+		// one. A target that refuses CORS fails the fetch instead.
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!doctype html><html><head><title>o</title></head><body><main><h1 id="v">/x out</h1></main></body></html>`)
+	}))
+	t.Cleanup(other.Close)
 	var mu sync.Mutex
 	counts := map[string]int{}
 	soft := map[string]bool{}
@@ -47,7 +59,9 @@ func localePrefixSrvWith(t *testing.T, outlet string) (*httptest.Server, func(st
 	})
 	content := func(path string, n int) string {
 		return fmt.Sprintf(`<h1 id="v">%s %d</h1>`+
-			`<a id="to-a" href="/es/a">a</a><a id="to-b" href="/es/b">b</a><a id="to-en" href="/b">en</a><a id="to-redir" href="/es/redir">r</a><a id="to-hop" href="/es/hop">h</a>`, path, n)
+			`<a id="to-a" href="/es/a">a</a><a id="to-b" href="/es/b">b</a><a id="to-en" href="/b">en</a><a id="to-redir" href="/es/redir">r</a>`+
+			`<a id="to-hop" href="/es/hop">h</a><a id="to-jump" href="/es/jump">j</a><a id="to-stay" href="/es/stay">s</a>`+
+			`<a id="to-out" href="/es/out">o</a><a id="to-hop-out" href="/es/hop-out">ho</a>`, path, n)
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -55,8 +69,14 @@ func localePrefixSrvWith(t *testing.T, outlet string) (*httptest.Server, func(st
 			w.Header().Set("X-Gofastr-Location", "/b")
 			w.WriteHeader(http.StatusOK)
 			return
-		case "/es/hop":
+		case "/es/hop", "/es/jump":
 			http.Redirect(w, r, "/b", http.StatusSeeOther)
+			return
+		case "/es/stay":
+			http.Redirect(w, r, "/es/b", http.StatusSeeOther)
+			return
+		case "/es/out", "/es/hop-out":
+			http.Redirect(w, r, other.URL+"/x", http.StatusSeeOther)
 			return
 		case "/a", "/b", "/es/a", "/es/b":
 		default:
@@ -80,7 +100,8 @@ func localePrefixSrvWith(t *testing.T, outlet string) (*httptest.Server, func(st
 		// link and another site's alternate.
 		page := strings.TrimPrefix(r.URL.Path, "/es")
 		fmt.Fprint(w, `<!doctype html><html><head><title>t</title>`+
-			`<script type="application/json" id="gofastr-routes">[{"path":"/a"},{"path":"/b"},{"path":"/redir"},{"path":"/hop","layouts":["l:other"]}]</script>`+
+			`<script type="application/json" id="gofastr-routes">[{"path":"/a"},{"path":"/b"},{"path":"/redir"},{"path":"/hop","layouts":["l:other"]},`+
+			`{"path":"/jump"},{"path":"/stay"},{"path":"/out"},{"path":"/hop-out","layouts":["l:other"]}]</script>`+
 			`<script type="application/json" id="gofastr-locales">{"default":"en","prefixes":["es"],"base":""}</script>`+
 			`</head><body><header>`+
 			`<a id="alt-en" rel="alternate" hreflang="en" href="`+page+`">English</a>`+
@@ -173,20 +194,33 @@ var localeNavigators = map[string]string{
 // another locale, so it loads a document like a link there would. The
 // redirect leg replaced the URL before checking, and the check then
 // compared /b with itself and swapped English into the Spanish page.
-// /es/hop answers a 303 that fetch follows on the whole-page leg, where
-// only the response URL says where the reader landed.
+// The 303s are followed inside fetch, where only the response URL says
+// where the reader landed: /es/hop on the whole-page leg, /es/jump on
+// the partial one. /es/stay lands in this locale and stays soft, and a
+// redirect to another origin loads that origin's page on either leg.
 func TestRedirectToLocaleLoadsDocument(t *testing.T) {
+	cases := []struct {
+		link, text string
+		soft       bool
+	}{
+		{"to-redir", "/b ", false},
+		{"to-hop", "/b ", false},
+		{"to-jump", "/b ", false},
+		{"to-stay", "/es/b ", true},
+		{"to-out", "/x out", false},
+		{"to-hop-out", "/x out", false},
+	}
 	for name, outlet := range localeNavigators {
-		for _, link := range []string{"to-redir", "to-hop"} {
-			t.Run(name+"/"+link, func(t *testing.T) {
-				redirectLoadsDocument(t, outlet, link)
+		for _, c := range cases {
+			t.Run(name+"/"+c.link, func(t *testing.T) {
+				redirectLands(t, outlet, c.link, c.text, c.soft)
 			})
 		}
 	}
 }
 
-func redirectLoadsDocument(t *testing.T, outlet, link string) {
-	srv, seen := localePrefixSrvWith(t, outlet)
+func redirectLands(t *testing.T, outlet, link, text string, soft bool) {
+	srv, _ := localePrefixSrvWith(t, outlet)
 	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(srv.URL+"/es/a"),
@@ -197,23 +231,26 @@ func redirectLoadsDocument(t *testing.T, outlet, link string) {
 		t.Fatal(err)
 	}
 	var mark bool
-	var v, path string
+	var v, origin string
 	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
 		err := chromedp.Run(ctx,
 			chromedp.Evaluate(`document.querySelector('#v')?.textContent ?? ''`, &v),
-			chromedp.Evaluate(`location.pathname`, &path),
+			chromedp.Evaluate(`location.origin`, &origin),
 			chromedp.Evaluate(`window.__mark === 1`, &mark))
-		if err == nil && strings.HasPrefix(v, "/b ") {
+		if err == nil && strings.HasPrefix(v, text) {
 			break
 		}
 		if time.Now().After(deadline) {
 			var body string
 			_ = chromedp.Run(ctx, chromedp.Evaluate(`location.href + ' ' + document.body.innerHTML.slice(0, 600)`, &body))
-			t.Fatalf("/b never rendered: %q %v\n%s", v, err, body)
+			t.Fatalf("%q never rendered: %q %v\n%s", text, v, err, body)
 		}
 	}
-	if _, nav := seen("/b"); nav || mark || path != "/b" {
-		t.Errorf("es → en redirect swapped in place (navigate header %v, mark kept %v, path %q)", nav, mark, path)
+	if mark != soft {
+		t.Errorf("%s landed on %q with mark kept %v, want a soft navigation %v", link, v, mark, soft)
+	}
+	if out := strings.HasPrefix(text, "/x"); out == (origin == srv.URL) {
+		t.Errorf("%s landed on origin %s (this server %s)", link, origin, srv.URL)
 	}
 }
 
