@@ -9,7 +9,8 @@
 // The rewrite reaches the navigation and request URLs of an HTML
 // response (anchor and area href, form action, button formaction, and
 // the URL-valued data-cui-* attributes) and the Location,
-// X-Gofastr-Location and X-Gofastr-Push-State headers. It leaves assets alone (src, srcset,
+// X-Gofastr-Location, X-Gofastr-Push-State and X-Gofastr-Document
+// headers. It leaves assets alone (src, srcset,
 // <link>), the runtime's /__gofastr/ endpoints, external and
 // protocol-relative URLs, fragments, query-only and relative URLs, an
 // anchor with hreflang (a language switcher, already built with
@@ -167,8 +168,8 @@ func urlAttr(tag, key string) bool {
 
 // Middleware rewrites the responses to a request whose URL named a
 // prefixed locale (i18n.PathPrefix is not empty): text/html bodies
-// through [HTML] and the Location, X-Gofastr-Location and
-// X-Gofastr-Push-State headers through [Path]. Any other request passes straight through. An HTML
+// through [HTML] and the Location, X-Gofastr-Location,
+// X-Gofastr-Push-State and X-Gofastr-Document headers through [Path]. Any other request passes straight through. An HTML
 // body is buffered until the handler returns, so Flush waits for it;
 // other bodies stream. A body that is already encoded (gzip) passes
 // through as written: the framework places this middleware inside
@@ -207,7 +208,7 @@ type writer struct {
 
 func (w *writer) rewriteHeaders() {
 	h := w.ResponseWriter.Header()
-	for _, k := range []string{"Location", "X-Gofastr-Location", "X-Gofastr-Push-State"} {
+	for _, k := range []string{"Location", "X-Gofastr-Location", "X-Gofastr-Push-State", "X-Gofastr-Document"} {
 		if v := h.Get(k); v != "" {
 			h.Set(k, Path(v, w.rule))
 		}

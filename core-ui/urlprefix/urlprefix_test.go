@@ -221,6 +221,26 @@ func TestLocationWithoutBody(t *testing.T) {
 	}
 }
 
+// X-Gofastr-Document carries an absolute URL; one on this app keeps the
+// locale a document load's rewritten Location would, another site's is
+// left alone.
+func TestDocumentHeaderGainsPrefix(t *testing.T) {
+	for _, c := range [][2]string{
+		{"http://example.com/login", "http://example.com/es/login"},
+		{"https://idp.example/login", "https://idp.example/login"},
+	} {
+		in, want := c[0], c[1]
+		h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Gofastr-Document", in)
+		}))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, esRequest("GET", "/x"))
+		if got := rec.Header().Get("X-Gofastr-Document"); got != want {
+			t.Errorf("X-Gofastr-Document %q -> %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestMiddlewareIdleWithoutPrefix(t *testing.T) {
 	in := `<a href="/pricing">p</a>`
 	h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

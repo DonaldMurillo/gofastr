@@ -1,8 +1,10 @@
 package uihost
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 // writeDocumentRedirect answers a runtime fetch whose policy sends the
@@ -18,9 +20,24 @@ func writeDocumentRedirect(w http.ResponseWriter, target string) bool {
 		return false
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Gofastr-Document", scrubCtl(target))
+	w.Header().Set("X-Gofastr-Document", escapeNonASCII(scrubCtl(target)))
 	w.WriteHeader(http.StatusOK)
 	return true
+}
+
+// escapeNonASCII percent-encodes every byte >= 0x80, as http.Redirect
+// does for Location. fetch decodes a header value as Latin-1, so raw
+// UTF-8 would reach location.replace as different characters.
+func escapeNonASCII(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		if c := s[i]; c >= 0x80 {
+			fmt.Fprintf(&b, "%%%02X", c)
+		} else {
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // scriptFetch reports whether a request came from a script's fetch

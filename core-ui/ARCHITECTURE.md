@@ -875,8 +875,8 @@ rules:
 The server side of the same contract rewrites root-relative URLs in a
 prefixed HTML response (`core-ui/urlprefix`: `href`, form actions and
 the URL-valued `data-cui-*` attributes listed in `urlprefix.URLAttrs`)
-and the `Location`, `X-Gofastr-Location` and `X-Gofastr-Push-State`
-headers. Markup never spells a
+and the `Location`, `X-Gofastr-Location`, `X-Gofastr-Push-State` and
+`X-Gofastr-Document` headers. Markup never spells a
 prefix itself. A new URL-valued `data-cui-*` attribute joins
 `urlprefix.URLAttrs`, or `TestURLAttrsAllCovered` fails.
 

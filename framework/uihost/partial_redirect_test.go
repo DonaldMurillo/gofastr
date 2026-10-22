@@ -190,6 +190,8 @@ func TestFullPageFetchExternalRedirect(t *testing.T) {
 	}{
 		{"fetch, external", "https://idp.example/x", "same-origin", "https://idp.example/x", 200},
 		{"cors fetch, external", "https://idp.example/x", "cors", "https://idp.example/x", 200},
+		// fetch reads a header as Latin-1; raw UTF-8 would load /cafÃ©.
+		{"fetch, non-ASCII", "https://idp.example/café?q=ñ", "same-origin", "https://idp.example/caf%C3%A9?q=%C3%B1", 200},
 		{"document load, external", "https://idp.example/x", "navigate", "", 303},
 		{"no fetch metadata, external", "https://idp.example/x", "", "", 303},
 		{"fetch, relative", "/login", "same-origin", "", 303},
