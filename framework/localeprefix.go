@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
@@ -60,10 +61,24 @@ func routeLocale(set i18n.PathLocales) func(*http.Request) (*http.Request, strin
 	return func(r *http.Request) (*http.Request, string) {
 		tag, rest := set.Split(r.URL.Path)
 		if tag == set.Default {
-			if r.URL.RawQuery != "" {
-				rest += "?" + r.URL.RawQuery
+			// The target is the escaped path past its first segment, the
+			// tag however it was spelled (/%65n/ is /en/ too; splitting
+			// the escaped path missed it and answered with the request
+			// itself), since a decoded %3F would start a query. Only a
+			// same-site one: /en//evil.com must not answer //evil.com.
+			target := "/"
+			if esc := r.URL.EscapedPath(); len(esc) > 1 {
+				if i := strings.IndexByte(esc[1:], '/'); i >= 0 {
+					target = esc[1+i:]
+				}
 			}
-			return nil, rest
+			if !handler.IsSafeRelativePath(target) {
+				return nil, "/"
+			}
+			if r.URL.RawQuery != "" {
+				target += "?" + r.URL.RawQuery
+			}
+			return nil, target
 		}
 		r2 := r.WithContext(i18n.WithPathLocale(r.Context(), set, cmp.Or(tag, set.Default)))
 		if from := r.Header.Get("X-Gofastr-From"); from != "" {
