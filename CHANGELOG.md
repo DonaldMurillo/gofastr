@@ -223,14 +223,22 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   Pages carry an `hreflang` alternate per locale plus `x-default`, the
   sitemap lists each page once per locale, robots rules repeat under
   every prefix, and `gofastr export` writes a tree per locale. A
-  language switcher links with `i18n.LocalePath`. Boot refuses it
-  without `WithI18n`, beside `WithLocaleResolver`, and with a route under
+  one-off link to another language uses `i18n.LocalePath`. Boot refuses
+  it without `WithI18n`, beside `WithLocaleResolver`, and with a route under
   a locale segment. Lower-level pieces: `i18n.PathLocales`,
   `i18n.WithPathLocale`, `i18n.PathLocale`, `i18n.PathPrefix`,
   `Router.PreRoute`, `urlprefix.Middleware` and
   `UIHost.SetPathLocales`. App specs turn it on with
   `app.locale_prefixes: true`; Meridian does, so its Spanish lives
   under `/es/`. See `gofastr docs i18n` → "Locale in the URL".
+- **A language switcher.** `ui.LanguageMenu` lists every catalog locale,
+  each named in its own language (`i18n.LanguageName`: "Español",
+  "Português (Brasil)"), and links the current page in each. Its rows
+  are `rel="alternate" hreflang` links, which the runtime re-points at
+  the current page after each client-side navigation, so the menu can
+  live in a header or footer that stays on screen. Generated apps with
+  `app.locale_prefixes` put it in the marketing footer (sitefooter
+  gains a `Language` slot), and so does Meridian.
 
 ### Changed
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,

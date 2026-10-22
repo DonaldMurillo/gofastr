@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=2b1cfec10a6e8f1c
+//gofastr:generated generator=app kind=scaffold version=dev sum=8d058d42ee8f11fb
 
 package main
 
@@ -84,7 +84,7 @@ func sidebarConfig(ctx context.Context) ui.SidebarConfig {
 	}}
 	var authAction render.HTML
 	if u, ok := handler.GetUser(ctx); ok && u != nil {
-		authAction = ui.SignOut(ui.SignOutConfig{Next: "/"})
+		authAction = ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: "/"})
 	}
 	cfg.Footer = authAction
 	return cfg

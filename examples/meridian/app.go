@@ -113,13 +113,13 @@ func marketingHeader(ctx context.Context) render.HTML {
 	var actions, persistent render.HTML
 	if u, ok := handler.GetUser(ctx); ok && u != nil {
 		links = append(links, siteheader.Link{Label: chromeTextDashboard.Text(ctx), Href: "/app"})
-		actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true}, ui.SignOut(ui.SignOutConfig{Next: "/"}), ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}))
+		actions = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true}, ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: "/"}), ui.ThemeToggle(ui.ThemeToggleConfig{Ctx: ctx, Variant: ui.ThemeToggleIcon}))
 	} else {
 		// Sign in is the journey-critical CTA: it rides the header's
 		// persistent slot, so it stays in the bar on phones instead of
 		// folding into the menu.
 		persistent = ui.LinkButton(ui.LinkButtonConfig{Label: chromeTextSignIn.Text(ctx), Href: "/login", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall})
-		actions = ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})
+		actions = ui.ThemeToggle(ui.ThemeToggleConfig{Ctx: ctx, Variant: ui.ThemeToggleIcon})
 	}
 	return siteheader.Render(siteheader.Config{
 		Ctx:        ctx,
@@ -141,6 +141,7 @@ func marketingFooter(ctx context.Context) render.HTML {
 			{Title: chromeTextCompany.Text(ctx), Links: []sitefooter.Link{{Label: chromeTextAbout.Text(ctx), Href: "/about"}}},
 			{Title: chromeTextLegal.Text(ctx), Links: []sitefooter.Link{{Label: chromeTextTerms.Text(ctx), Href: "/terms"}, {Label: chromeTextPrivacy.Text(ctx), Href: "/privacy"}}},
 		},
+		Language: ui.LanguageMenu(ui.LanguageMenuConfig{Ctx: ctx, Position: ui.MenuTopStart}),
 	})
 }
 
@@ -246,7 +247,7 @@ var inkBand = style.RegisterThemeOverride(inkTheme())
 func quickAddCustomerModal() widget.Definition {
 	body := app.NewContextComponent(func(ctx context.Context) render.HTML {
 		heading := html.Heading(html.HeadingConfig{Level: 2, ID: "customer-quick-add-title"}, render.Text(quickAddTitle.Text(ctx)))
-		form := ui.Form(ui.FormConfig{Action: "/api/customers", Method: "POST", SubmitLabel: quickAddSubmit.Text(ctx), ExtraAttrs: interactive.Post("/api/customers").
+		form := ui.Form(ui.FormConfig{Ctx: ctx, Action: "/api/customers", Method: "POST", SubmitLabel: quickAddSubmit.Text(ctx), ExtraAttrs: interactive.Post("/api/customers").
 			OnSuccess(interactive.CloseWidget(), interactive.ResetForm(), interactive.Navigate("/app/customers")).Attrs()},
 			ui.TextField(ui.TextFieldConfig{Name: "name", Label: quickAddName.Text(ctx), ID: "qa-name", Required: true}),
 			ui.FormField(ui.FormFieldConfig{Label: quickAddEmail.Text(ctx), For: "qa-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
@@ -299,9 +300,9 @@ func sidebarConfig(ctx context.Context) ui.SidebarConfig {
 	}}
 	var authAction render.HTML
 	if u, ok := handler.GetUser(ctx); ok && u != nil {
-		authAction = ui.SignOut(ui.SignOutConfig{Next: "/"})
+		authAction = ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: "/"})
 	}
-	cfg.Footer = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Justify: ui.JustifyBetween, NoWrap: true}, authAction, ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}))
+	cfg.Footer = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, Justify: ui.JustifyBetween, NoWrap: true}, authAction, ui.ThemeToggle(ui.ThemeToggleConfig{Ctx: ctx, Variant: ui.ThemeToggleIcon}))
 	return cfg
 }
 
@@ -344,7 +345,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	appLayout = app.NewLayout("app", app.LayoutSpec{}, func(ctx context.Context, l *app.LayoutTree) render.HTML {
 		nav, _ := component.SafeRenderCtx(ctx, sb)
 		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
-			ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary()))
+			ui.ContentRow(ui.ContentRowConfig{Ctx: ctx, Sidebar: nav}, l.Primary()))
 	})
 	site.SetDefaultLayout(appLayout)
 	ui.MountSidebarFunc(routerMounter{fwApp.Router()}, sidebarConfig)

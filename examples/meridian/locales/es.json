@@ -955,6 +955,9 @@
       "tab": "Tab",
       "up": "Arriba"
     },
+    "languageMenu": {
+      "label": "Idioma"
+    },
     "lightbox": {
       "download": "Descargar imagen",
       "label": "Visor de imágenes",

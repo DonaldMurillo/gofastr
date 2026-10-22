@@ -67,7 +67,10 @@ func TestE2E(t *testing.T) {
 	if code, body := e2eDo(t, http.DefaultClient, "GET", base+"/es/pricing", ""); code != http.StatusOK {
 		t.Errorf("/es/pricing = %d, want 200", code)
 	} else {
-		for _, want := range []string{"Contactar con ventas", `href="/es/about"`, `hreflang="es"`, `hreflang="x-default"`} {
+		// The footer's language switcher links this page in English
+		// and names itself in Spanish.
+		for _, want := range []string{"Contactar con ventas", `href="/es/about"`, `hreflang="es"`, `hreflang="x-default"`,
+			`href="/pricing" hreflang="en" lang="en" rel="alternate"`, ">Idioma<", ">Español<"} {
 			if !strings.Contains(body, want) {
 				t.Errorf("/es/pricing lacks %s", want)
 			}

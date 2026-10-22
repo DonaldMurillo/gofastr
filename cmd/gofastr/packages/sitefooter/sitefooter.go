@@ -32,6 +32,9 @@ type Config struct {
 	// Tagline is one line under the name. Empty draws none.
 	Tagline string
 	Columns []Column
+	// Language sits under the name: the language switcher
+	// (ui.LanguageMenu). Zero draws none.
+	Language render.HTML
 	// Note is the bottom line (the copyright). Empty draws none.
 	Note string
 }
@@ -43,6 +46,9 @@ func Render(cfg Config) render.HTML {
 	}
 	if cfg.Tagline != "" {
 		lead = append(lead, html.Paragraph(html.TextConfig{Class: Style.Tagline()}, render.Text(cfg.Tagline)))
+	}
+	if cfg.Language != "" {
+		lead = append(lead, html.Div(html.DivConfig{Class: Style.Language()}, cfg.Language))
 	}
 
 	cols := make([]render.HTML, 0, len(cfg.Columns))

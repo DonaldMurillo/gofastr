@@ -141,9 +141,28 @@
     }
   };
 
+  // A rel=alternate hreflang link names this page in another locale (a
+  // language switcher, ui.LanguageMenu). Chrome that outlives a swap
+  // still points at the page it was rendered on, so every sweep points
+  // it at the page the reader is on now, the way the server builds it
+  // (i18n.PathLocales.Path): the default locale plain, the others under
+  // /<tag> after the export's base. A tag outside the app's locale set
+  // is an alternate on another site and is left alone.
+  const alternates = () => {
+    const L = window.__gofastr_locales;
+    if (!L || !G._unlocalize) return;
+    const b = L.base || '', p = G._unlocalize(location.pathname).slice(b.length) || '/';
+    for (const a of document.querySelectorAll('a[rel~="alternate"][hreflang]')) {
+      const t = a.getAttribute('hreflang').toLowerCase();
+      if (t === L.default) a.setAttribute('href', b + p + location.search);
+      else if (L.prefixes.includes(t)) a.setAttribute('href', b + '/' + t + (p === '/' ? '' : p) + location.search);
+    }
+  };
+
   G._updateActiveLink = update;
   window.addEventListener('gofastr:navigate', (e) => {
     update((e.detail && e.detail.path) || location.pathname + location.search, true);
+    alternates();
   });
   // Widget chrome (the sidebar's phone drawer) mounts after load and is
   // served without the page's current path, and no navigation follows
@@ -152,12 +171,14 @@
   document.addEventListener('fui:widget-open', (e) => {
     const root = e.detail && e.detail.root;
     if (root && root.querySelectorAll) update(location.pathname + location.search, true, root);
+    alternates();
   });
   // Correct the highlight for wherever the page is NOW, SSR covered the
   // initial URL, but a navigation may have happened before idle load.
   // Boot's navigate listener records one in G._navigated; without it
   // the sweep only stamps matches and leaves the handed-over marks.
   update(location.pathname + location.search, !!G._navigated);
+  alternates();
 
   (G.loadedModules ||= {}).activelink = true;
 })();

@@ -58,10 +58,19 @@ func localePrefixSrv(t *testing.T) (*httptest.Server, func(string) (int, bool)) 
 			fmt.Fprint(w, content(r.URL.Path, n))
 			return
 		}
+		// The header outlives a soft navigation: a language switcher
+		// built for the page that loaded the document, a plain hreflang
+		// link and another site's alternate.
+		page := strings.TrimPrefix(r.URL.Path, "/es")
 		fmt.Fprint(w, `<!doctype html><html><head><title>t</title>`+
 			`<script type="application/json" id="gofastr-routes">[{"path":"/a"},{"path":"/b"}]</script>`+
 			`<script type="application/json" id="gofastr-locales">{"default":"en","prefixes":["es"],"base":""}</script>`+
-			`</head><body><main role="main" tabindex="-1">`+content(r.URL.Path, n)+
+			`</head><body><header>`+
+			`<a id="alt-en" rel="alternate" hreflang="en" href="`+page+`">English</a>`+
+			`<a id="alt-es" rel="alternate" hreflang="ES" href="/es`+page+`">Español</a>`+
+			`<a id="plain-es" hreflang="es" href="/es/a">Leer</a>`+
+			`<a id="alt-de" rel="alternate" hreflang="de" href="https://de.example/a">Deutsch</a>`+
+			`</header><main role="main" tabindex="-1">`+content(r.URL.Path, n)+
 			`</main><script src="/__gofastr/runtime.js"></script></body></html>`)
 	})
 	srv := httptest.NewServer(mux)
@@ -129,6 +138,28 @@ func TestLocaleSwitchLoadsDocument(t *testing.T) {
 	if _, nav := seen("/b"); nav || mark {
 		t.Errorf("es → en swapped in place (navigate header %v, mark kept %v); a locale change is a document", nav, mark)
 	}
+}
+
+func TestSwitcherFollowsSoftNav(t *testing.T) {
+	srv, _ := localePrefixSrv(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+	const read = `['alt-en','alt-es','plain-es','alt-de'].map((id) => document.getElementById(id).getAttribute('href')).join(' ')`
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/es/a"),
+		waitText("#v", "/es/a 1"),
+		chromedp.Click("#to-b", chromedp.ByID),
+		waitText("#v", "/es/b 1"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	const want = "/b /es/b /es/a https://de.example/a"
+	var got string
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(read, &got)); err == nil && got == want {
+			return
+		}
+	}
+	t.Fatalf("after /es/a → /es/b the header links are %q, want %q", got, want)
 }
 
 func TestInvalidateMatchesPrefixedKey(t *testing.T) {

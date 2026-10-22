@@ -878,6 +878,18 @@ and the `Location` / `X-Gofastr-Location` headers. Markup never spells a
 prefix itself. A new URL-valued `data-cui-*` attribute joins
 `urlprefix.URLAttrs`, or `TestURLAttrsAllCovered` fails.
 
+The rewriter leaves an anchor with `hreflang` alone: it already names
+its locale. An `<a rel="alternate" hreflang>` means "this page in that
+language" (a language switcher, `ui.LanguageMenu`), so the active-link
+module (`src/activelink.js`) re-points every one whose tag is in the
+locale set at the current page after each navigation, at idle load and
+when widget chrome opens: the default locale at the plain path, the
+others under `/<tag>` after `base`. Chrome that outlives a swap then
+never links the page the reader left. An alternate naming a tag outside
+the set (another site's translation) and an `hreflang` link without
+`rel="alternate"` keep their `href`. No attribute marks the switcher:
+`rel` and `hreflang` are the HTML spelling of the contract.
+
 ### First-load order
 
 A live page paints from its document and stylesheets alone. The one

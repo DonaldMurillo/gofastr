@@ -273,6 +273,9 @@ var (
 	ThemeAuto        = i18n.Define("ui.themeToggle.auto", "Auto")
 	ThemeColorScheme = i18n.Define("ui.themeToggle.colorScheme", "Color scheme")
 
+	// LanguageMenu's trigger, read before the current language's name.
+	LanguageMenu = i18n.Define("ui.languageMenu.label", "Language")
+
 	// ThemePicker
 	ThemePicker  = i18n.Define("ui.themePicker.label", "Theme")
 	ThemeDefault = i18n.Define("ui.themePicker.default", "Default")

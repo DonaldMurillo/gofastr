@@ -1402,7 +1402,9 @@ app:
 Emits `framework.WithLocalePrefixes()`. English keeps the plain paths and
 each `locales/<tag>.json` is served under `/<tag>/`: `/es/pricing` is the
 pricing screen in Spanish, with `hreflang` alternates on every page, a sitemap
-entry per locale, and robots rules repeated under each prefix. Off by default,
+entry per locale, and robots rules repeated under each prefix. A marketing
+footer gets `ui.LanguageMenu` in its `Language` slot, so a reader can switch
+from any page. Off by default,
 because it pins the plain paths to English: without it the browser's
 `Accept-Language` picks the locale. The [i18n guide](i18n.md#locale-in-the-url)
 covers the routing rules and the language switcher.

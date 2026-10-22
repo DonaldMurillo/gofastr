@@ -7729,7 +7729,7 @@ func renderAppSpecApp(bp AppSpec) string {
 			sb.WriteString("\tvar actions render.HTML\n")
 			sb.WriteString("\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
 			sb.WriteString(fmt.Sprintf("\t\tlinks = append(links, siteheader.Link{Label: %s, Href: %q})\n", tx("Dashboard"), appHome))
-			sb.WriteString("\t\tactions = " + barActions("ui.SignOut(ui.SignOutConfig{Next: \"/\"})", themeToggle) + "\n")
+			sb.WriteString("\t\tactions = " + barActions("ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: \"/\"})", themeToggle) + "\n")
 			sb.WriteString("\t} else {\n")
 			// appSpecLoginRoute, not a hardcoded "/login": the app-shell
 			// sidebar had the same literal and it pointed at a route six of
@@ -7756,7 +7756,7 @@ func renderAppSpecApp(bp AppSpec) string {
 				sb.WriteString(fmt.Sprintf("\t\tLinks: []siteheader.Link{%s},\n", strings.Join(navLinks, ", ")))
 			}
 			if themeToggle {
-				sb.WriteString("\t\tActions: ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}),\n")
+				sb.WriteString("\t\tActions: ui.ThemeToggle(ui.ThemeToggleConfig{Ctx: ctx, Variant: ui.ThemeToggleIcon}),\n")
 			}
 			sb.WriteString("\t})\n}\n\n")
 		}
@@ -7791,6 +7791,12 @@ func renderAppSpecApp(bp AppSpec) string {
 				sb.WriteString(fmt.Sprintf("\t\t\t{Title: %s, Links: []sitefooter.Link{%s}},\n", tx(col.title), strings.Join(col.links, ", ")))
 			}
 			sb.WriteString("\t\t},\n")
+		}
+		// A reader reaches another language from any marketing page.
+		// The footer renders once per page, where the header's actions
+		// render twice (bar and phone menu).
+		if bp.App.LocalePrefixes {
+			sb.WriteString("\t\tLanguage: ui.LanguageMenu(ui.LanguageMenuConfig{Ctx: ctx, Position: ui.MenuTopStart}),\n")
 		}
 		sb.WriteString(fmt.Sprintf("\t\tNote: %s,\n", tx(fmt.Sprintf("© %d %s.", time.Now().Year(), name))))
 		sb.WriteString("\t})\n}\n\n")
@@ -7881,13 +7887,13 @@ func renderAppSpecApp(bp AppSpec) string {
 		// plain Items slice.
 		themeToggle := ""
 		if len(bp.App.ThemeDark) > 0 {
-			themeToggle = "ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})"
+			themeToggle = "ui.ThemeToggle(ui.ThemeToggleConfig{Ctx: ctx, Variant: ui.ThemeToggleIcon})"
 		}
 		switch {
 		case bp.App.Auth.Enabled:
 			sb.WriteString("\tvar authAction render.HTML\n")
 			sb.WriteString("\tif u, ok := handler.GetUser(ctx); ok && u != nil {\n")
-			sb.WriteString("\t\tauthAction = ui.SignOut(ui.SignOutConfig{Next: \"/\"})\n")
+			sb.WriteString("\t\tauthAction = ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: \"/\"})\n")
 			// Only offer Sign in when a screen actually hosts the login form.
 			// Six of the seven shipped app specs never route /login, so an
 			// unconditional button would make the app shell's only auth
@@ -8506,7 +8512,7 @@ func barActions(action string, toggle bool) string {
 	if !toggle {
 		return action
 	}
-	return fmt.Sprintf("render.Join(\n\t\t\t%s,\n\t\t\tui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}),\n\t\t)", action)
+	return fmt.Sprintf("render.Join(\n\t\t\t%s,\n\t\t\tui.ThemeToggle(ui.ThemeToggleConfig{Ctx: ctx, Variant: ui.ThemeToggleIcon}),\n\t\t)", action)
 }
 
 // chromePackageImport returns the import-path base of the app's chrome

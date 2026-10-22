@@ -715,6 +715,8 @@ var kitComponents = []kitComponent{
 	{name: "InlineCodeDanger", fn: InlineCodeDanger},
 	{name: "InputGroup", fn: InputGroup, required: []string{"Input"}},
 	{name: "JSONViewer", fn: JSONViewer},
+	// Without path locales on Ctx the switcher renders nothing.
+	{name: "LanguageMenu", fn: LanguageMenu, prep: prepSet("Ctx", languageMenuCtx("es", "/pricing"))},
 	{name: "LineChart", fn: LineChart},
 	{name: "Link", fn: Link},
 	{name: "LinkButton", fn: LinkButton},
