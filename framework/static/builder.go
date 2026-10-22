@@ -724,18 +724,20 @@ func stampStatic(page string) string {
 	return page
 }
 
-// baseAttrURL matches a whitespace-delimited src="…", href="…", action="…"
-// or data-cui-push-state="…" whose value is root-absolute (leading "/") but
-// NOT protocol-relative ("//"). data-cui-push-state is included so combobox/
-// palette selection targets get base-prefixed on subpath deploys (otherwise
-// selecting a command navigates to the apex path and 404s), and action so
-// a GET form (the search page's) submits under the base. The leading
-// ([\s]) anchor ensures only real attributes match, never "data-src" /
+// baseAttrURL matches a whitespace-delimited src="…", href="…", action="…",
+// data-cui-push-state="…" or data-cui-match-prefix="…" whose value is
+// root-absolute (leading "/") but NOT protocol-relative ("//").
+// data-cui-push-state is included so combobox/palette selection targets get
+// base-prefixed on subpath deploys (otherwise selecting a command navigates
+// to the apex path and 404s), action so a GET form (the search page's)
+// submits under the base, and data-cui-match-prefix because the runtime
+// compares the section it names with the page path, which carries the base.
+// The leading ([\s]) anchor ensures only real attributes match, never "data-src" /
 // "srcset", and code samples are safe because core/markdown escapes quotes
 // inside <code> to &quot; (so the ="… pattern never appears in rendered code
 // text). Group 3 is the first path byte, re-emitted so the prefix is inserted
 // after the leading slash.
-var baseAttrURL = regexp.MustCompile(`([\s])(src|href|action|data-cui-push-state)="/([^/])`)
+var baseAttrURL = regexp.MustCompile(`([\s])(src|href|action|data-cui-push-state|data-cui-match-prefix)="/([^/])`)
 
 // pageLinkAttr matches a root-absolute href, action or
 // data-cui-push-state value (the attributes baseAttrURL prefixes), split

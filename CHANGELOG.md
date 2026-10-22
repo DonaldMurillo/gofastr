@@ -421,6 +421,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   whose names differ only in case, and let a standalone screen named
   "Posts Crud" replace the posts screens' file. It now checks the file
   each screen writes.
+- **Sidebar sections stay current in a static export under a base
+  path.** `gofastr export` with a `BasePath` prefixed a link's href but
+  not its `data-cui-match-prefix`, so after the first client-side
+  navigation the section the link owns never read as current.
 
 ### Security
 - The repo builds with Go 1.27.3 (`toolchain go1.27.3` in go.mod, and in
