@@ -3,6 +3,7 @@ package crud
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -75,5 +76,24 @@ func TestMCPToolsTakeCompositeKey(t *testing.T) {
 	s := idToolSchema(ch.toolKeyArgs())
 	if req := s["required"].([]string); !slices.Equal(req, []string{"student_id", "course_id"}) {
 		t.Errorf("get schema required = %v", req)
+	}
+}
+
+// llm.md's batch-update example names every key column an item carries,
+// the columns its sentence lists, never a bare "id".
+func TestLLMMDBatchItemNamesKey(t *testing.T) {
+	ent := entity.Define("enrollments", entity.EntityConfig{
+		Table: "enrollments",
+		Fields: []schema.Field{
+			{Name: "student_id", Type: schema.String, Required: true},
+			{Name: "course_id", Type: schema.String, Required: true},
+			{Name: "grade", Type: schema.String},
+		},
+		PrimaryKey: []string{"student_id", "course_id"},
+	}.WithTimestamps(false))
+	doc := EntityLLMMD(ent)
+	want := `"items": [ {"student_id": "...", "course_id": "...", "...": "..."} ]`
+	if !strings.Contains(doc, want) || strings.Contains(doc, `{"id": "..."`) {
+		t.Errorf("batch-update example lacks %s:\n%s", want, doc)
 	}
 }

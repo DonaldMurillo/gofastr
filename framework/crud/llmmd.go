@@ -305,7 +305,11 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 
 		fmt.Fprintf(&b, "### PATCH %s/_batch\n\n", resourcePath)
 		fmt.Fprintf(&b, "Batch update (atomic). Each item must include `%s` plus fields to update.\n\n", strings.Join(keyCols, "`, `"))
-		b.WriteString("```json\n{\n  \"items\": [ {\"id\": \"...\", \"...\": \"...\"} ]\n}\n```\n\n")
+		itemKeys := make([]string, len(keyCols))
+		for i, c := range keyCols {
+			itemKeys[i] = fmt.Sprintf("%q: \"...\"", c)
+		}
+		fmt.Fprintf(&b, "```json\n{\n  \"items\": [ {%s, \"...\": \"...\"} ]\n}\n```\n\n", strings.Join(itemKeys, ", "))
 
 		fmt.Fprintf(&b, "### DELETE %s/_batch\n\n", resourcePath)
 		b.WriteString("Batch delete (atomic).\n\n")
