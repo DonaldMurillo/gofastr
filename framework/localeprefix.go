@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -66,12 +67,7 @@ func routeLocale(set i18n.PathLocales) func(*http.Request) (*http.Request, strin
 			// the escaped path missed it and answered with the request
 			// itself), since a decoded %3F would start a query. Only a
 			// same-site one: /en//evil.com must not answer //evil.com.
-			target := "/"
-			if esc := r.URL.EscapedPath(); len(esc) > 1 {
-				if i := strings.IndexByte(esc[1:], '/'); i >= 0 {
-					target = esc[1+i:]
-				}
-			}
+			target := escapedRest(r.URL)
 			if !handler.IsSafeRelativePath(target) {
 				return nil, "/"
 			}
@@ -100,14 +96,25 @@ func routeLocale(set i18n.PathLocales) func(*http.Request) (*http.Request, strin
 		}
 		u := *r.URL
 		u.Path = rest
-		if raw, ok := strings.CutPrefix(u.RawPath, "/"+tag); ok && (raw == "" || raw[0] == '/') {
-			u.RawPath = cmp.Or(raw, "/")
-		} else {
-			u.RawPath = ""
+		// Cut the escaped path at the same segment, however the tag was
+		// spelled: /%65s/files/a%2Fb keeps its %2F as /es/... does.
+		if u.RawPath != "" {
+			u.RawPath = escapedRest(r.URL)
 		}
 		r2.URL = &u
 		return r2, ""
 	}
+}
+
+// escapedRest returns u's escaped path past its first segment, "/" when
+// nothing follows it.
+func escapedRest(u *url.URL) string {
+	if esc := u.EscapedPath(); len(esc) > 1 {
+		if i := strings.IndexByte(esc[1:], '/'); i >= 0 {
+			return esc[1+i:]
+		}
+	}
+	return "/"
 }
 
 // pathLocaleFor returns r with the locale its path names on the

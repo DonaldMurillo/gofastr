@@ -111,9 +111,13 @@ func TestRawPathStrippedToo(t *testing.T) {
 	app.Router().Get("/files/{name}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, r.PathValue("name"))
 	}))
-	rec := servePrefixed(app, httptest.NewRequest("GET", "/es/files/a%2Fb", nil))
-	if rec.Body.String() != "a/b" {
-		t.Fatalf("got %d %q", rec.Code, rec.Body.String())
+	// /%65s/ is /es/ too: an escaped tag must not cost the rest of the
+	// path its escaping.
+	for _, p := range []string{"/es/files/a%2Fb", "/%65s/files/a%2Fb"} {
+		rec := servePrefixed(app, httptest.NewRequest("GET", p, nil))
+		if rec.Body.String() != "a/b" {
+			t.Errorf("%s: got %d %q", p, rec.Code, rec.Body.String())
+		}
 	}
 }
 
