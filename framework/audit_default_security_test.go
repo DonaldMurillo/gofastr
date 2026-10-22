@@ -2,7 +2,9 @@ package framework
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -386,12 +388,17 @@ func TestAuditKeyID(t *testing.T) {
 }
 
 // The hooks are keyed by name, so a v2 row reaches the hook v1's fields
-// built: the key is read under each version's wire key.
+// built: the key is read under each version's wire key, and a version's
+// alias that is another version's ordinary field does not win.
 func TestAuditKeyEveryVersion(t *testing.T) {
 	reg := NewRegistry()
-	for v, wire := range map[string]string{"/api/v1": "legacyId", "/api/v2": "newId"} {
+	for v, wires := range map[string][2]string{
+		"/api/v1": {"legacyId", "externalId"},
+		"/api/v2": {"newId", "legacyId"},
+	} {
 		e := entity.Define("records", entity.EntityConfig{Fields: []schema.Field{
-			{Name: "id", Type: schema.String, WireName: wire},
+			{Name: "id", Type: schema.String, WireName: wires[0]},
+			{Name: "external_id", Type: schema.String, WireName: wires[1]},
 		}}.WithTimestamps(false))
 		e.Version = v
 		if err := reg.Register(e); err != nil {
@@ -399,9 +406,25 @@ func TestAuditKeyEveryVersion(t *testing.T) {
 		}
 	}
 	k := auditKeyOf(reg, "records")
-	for _, row := range []map[string]any{{"legacyId": "r1"}, {"newId": "r1"}} {
+	for _, row := range []map[string]any{
+		{"legacyId": "r1", "externalId": "x9"},
+		{"newId": "r1", "legacyId": "x9"},
+	} {
 		if got := stringifyPK(row, k); got != "r1" {
 			t.Fatalf("stringifyPK(%v) = %q, want r1", row, got)
+		}
+	}
+}
+
+func TestAuditDigestID(t *testing.T) {
+	sum := sha256.Sum256([]byte("k1"))
+	digest := "sha256:" + hex.EncodeToString(sum[:])
+	if !AuditDigestID(digest) {
+		t.Fatalf("%q is not read as a digest", digest)
+	}
+	for _, id := range []string{"k1", "sha256:", "sha256:zz", digest + "0", digest[:len(digest)-1]} {
+		if AuditDigestID(id) {
+			t.Fatalf("%q is read as a digest", id)
 		}
 	}
 }

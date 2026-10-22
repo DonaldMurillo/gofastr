@@ -466,6 +466,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   show in that tab. Create and update rows now strip control bytes from
   `record_id` the way delete rows already did, and the key is found
   under every API version's wire name, not one version's.
+  `framework.AuditDigestID` tells a digest from a record id; the admin
+  audit page uses it so a digest is never looked up, and so never
+  titles or links a record whose own id is that digest string.
 
 ## [0.93.0] - 2026-10-20
 

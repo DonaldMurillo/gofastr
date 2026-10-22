@@ -11,6 +11,7 @@ import (
 	"maps"
 	"net/http"
 
+	"slices"
 	"strings"
 	"time"
 
@@ -286,11 +287,13 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 
 // auditKey is how the audit hooks find an entity's record id: its key
 // columns and, per registered version, the wire key each one travels
-// under (wires[v][i] names cols[i]). The hooks are keyed by name, so
-// every version's rows reach them.
+// under (wires[v][i] names cols[i]) and every wire key that version's
+// rows carry (fields[v]). The hooks are keyed by name, so every
+// version's rows reach them.
 type auditKey struct {
-	cols  []string
-	wires [][]string
+	cols   []string
+	wires  [][]string
+	fields []map[string]bool
 }
 
 // versionKey is one entity version's auditKey.
@@ -300,7 +303,11 @@ func versionKey(ent *entity.Entity) auditKey {
 	for i, c := range cols {
 		names[i] = wireKeyOf(ent, c)
 	}
-	return auditKey{cols: cols, wires: [][]string{names}}
+	fields := map[string]bool{}
+	for _, f := range ent.GetFields() {
+		fields[wireKeyOf(ent, f.Name)] = true
+	}
+	return auditKey{cols: cols, wires: [][]string{names}, fields: []map[string]bool{fields}}
 }
 
 // auditKeyOf collects name's key across every registered version.
@@ -315,6 +322,7 @@ func auditKeyOf(reg *Registry, name string) auditKey {
 			k.cols = v.cols
 		}
 		k.wires = append(k.wires, v.wires...)
+		k.fields = append(k.fields, v.fields...)
 	}
 	return k
 }
@@ -347,6 +355,19 @@ func (c AuditConfig) keyID(k auditKey, id string) string {
 	}
 	sum := sha256.Sum256([]byte(id))
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// AuditDigestID reports whether recordID is the "sha256:<hex>" digest
+// WithAuditLog stores in place of a sensitive key (see AuditConfig.Redact).
+// A digest names no live record: a reader that looks it up as a record
+// id can only reach a record whose own id is that digest string.
+func AuditDigestID(recordID string) bool {
+	hexPart, ok := strings.CutPrefix(recordID, "sha256:")
+	if !ok || len(hexPart) != 2*sha256.Size {
+		return false
+	}
+	_, err := hex.DecodeString(hexPart)
+	return err == nil
 }
 
 // actor returns the resolved actor id, recovering from any panic in the
@@ -624,12 +645,28 @@ func (c AuditConfig) applyRedact(entity string, row map[string]any) map[string]a
 
 // stringifyPK is the audit row's record id: the record's key columns,
 // read under one version's wire keys or as named, joined as the
-// framework's id.
+// framework's id. The row does not say which version wrote it, and one
+// version's key alias can be another's ordinary field, so the versions
+// are tried in order of how many of the row's keys each one names.
 func stringifyPK(row map[string]any, k auditKey) string {
 	if row == nil {
 		return ""
 	}
-	for _, names := range k.wires {
+	order := make([]int, len(k.wires))
+	score := make([]int, len(k.wires))
+	for v := range k.wires {
+		order[v] = v
+		if v < len(k.fields) {
+			for key := range row {
+				if k.fields[v][key] {
+					score[v]++
+				}
+			}
+		}
+	}
+	slices.SortStableFunc(order, func(a, b int) int { return score[b] - score[a] })
+	for _, v := range order {
+		names := k.wires[v]
 		wire := map[string]string{}
 		for i, c := range k.cols {
 			if i < len(names) {
