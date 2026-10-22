@@ -1,12 +1,18 @@
 package framework
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 func TestAudit_DefaultCreateRedactsSensitiveFields(t *testing.T) {
@@ -262,6 +268,87 @@ func TestAudit_DeleteIncludesUserAgent(t *testing.T) {
 		diff, _ := last["diff"].(string)
 		if !strings.Contains(diff, "security-test-agent/3.0") {
 			t.Fatalf("SECURITY: [audit] delete audit row omitted user-agent metadata: %+v", last)
+		}
+	})
+}
+
+// auditKeyedApp registers "keys", an entity whose primary key is a
+// credential, so the audit trail's record_id is the secret itself.
+func auditKeyedApp(t *testing.T, db *sql.DB, redact func(string, map[string]any) map[string]any) *App {
+	t.Helper()
+	app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+	// App.Entity always keys on "id", so the handler is wired by hand.
+	keys := entity.Define("keys", entity.EntityConfig{
+		Table:    "keys",
+		Exposure: &entity.ExposureConfig{Public: true},
+		Fields: []schema.Field{
+			{Name: "api_key", Type: schema.String, Required: true},
+			{Name: "label", Type: schema.String},
+		},
+	}.WithTimestamps(false))
+	keys.PrimaryKey = "api_key"
+	if err := app.Registry.Register(keys); err != nil {
+		t.Fatal(err)
+	}
+	if err := AutoMigrate(db, app.Registry); err != nil {
+		t.Fatalf("automigrate: %v", err)
+	}
+	ch := crud.NewCrudHandler(keys, db)
+	ch.Hooks = app.HookRegistry("keys")
+	crud.RegisterCrudRoutes(app.router, ch, "/keys", crud.CrudRouteOptions{})
+	app.WithAuditLog(AuditConfig{Redact: redact})
+	return app
+}
+
+func TestAudit_SecretKeyStaysOutOfRecordID(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := auditKeyedApp(t, db, nil)
+		ta := TestHarness(t, app)
+		ta.Post("/keys", map[string]any{"api_key": "sk_live_secret", "label": "a"}).AssertStatus(t, http.StatusCreated)
+		ta.Put("/keys/sk_live_secret", map[string]any{"label": "b"}).AssertStatus(t, http.StatusOK)
+		ta.Delete("/keys/sk_live_secret").AssertStatus(t, http.StatusNoContent)
+
+		rows := readAuditRows(t, db)
+		if len(rows) != 3 {
+			t.Fatalf("expected 3 audit rows, got %d", len(rows))
+		}
+		for _, r := range rows {
+			if strings.Contains(fmt.Sprint(r), "sk_live_secret") {
+				t.Fatalf("SECURITY: [audit] %s row leaked the key: %+v", r["op"], r)
+			}
+			if r["record_id"] != rows[0]["record_id"] {
+				t.Fatalf("record ids differ across ops: %+v", rows)
+			}
+		}
+		trail, err := entityUIHost{a: app}.Audit().Trail(context.Background(), "keys", "sk_live_secret", 0)
+		if err != nil || len(trail) != 3 {
+			t.Fatalf("Activity tab found %d rows (%v), want 3", len(trail), err)
+		}
+	})
+}
+
+func TestAudit_RedactNamesEveryOp(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		pseudo := func(_ string, row map[string]any) map[string]any {
+			if id, ok := row["id"].(string); ok && len(row) == 1 {
+				row["id"] = "p:" + strings.ToUpper(id)
+			}
+			return row
+		}
+		app := auditKeyedApp(t, db, pseudo)
+		ta := TestHarness(t, app)
+		ta.Post("/keys", map[string]any{"api_key": "k1", "label": "a"}).AssertStatus(t, http.StatusCreated)
+		ta.Put("/keys/k1", map[string]any{"label": "b"}).AssertStatus(t, http.StatusOK)
+		ta.Delete("/keys/k1").AssertStatus(t, http.StatusNoContent)
+
+		for _, r := range readAuditRows(t, db) {
+			if r["record_id"] != "p:K1" {
+				t.Fatalf("%s row record_id = %q, want p:K1", r["op"], r["record_id"])
+			}
+		}
+		trail, err := entityUIHost{a: app}.Audit().Trail(context.Background(), "keys", "k1", 0)
+		if err != nil || len(trail) != 3 {
+			t.Fatalf("Activity tab found %d rows (%v), want 3", len(trail), err)
 		}
 	})
 }

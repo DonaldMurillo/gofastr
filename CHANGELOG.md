@@ -454,6 +454,16 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the go.mod `gofastr init` writes; the `go 1.27.0` floor is unchanged).
   1.27.3 fixes GO-2026-6809 in crypto/x509, which govulncheck reaches
   through the SMTP sender's TLS handshake. Build apps with 1.27.3.
+- **A sensitive primary key stays out of the audit log's `record_id`.**
+  The default scrub dropped an `api_key` or `token` column from the
+  audit diff, but the same value went into `record_id` unchanged when it
+  was the record's key, on delete always and on create and update for a
+  one-word name. Without a `Redact` callback such a key is now stored as
+  `sha256:<hex>`. With one, the callback's `{"id": ...}` mapping, which
+  only delete used to apply, now covers create and update as well, so a
+  pseudonymised key no longer appears raw in the record's create and
+  update rows. The Activity tab maps the id the same way and still
+  finds the record's rows.
 
 ## [0.93.0] - 2026-10-20
 

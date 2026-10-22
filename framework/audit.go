@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	cryptorand "crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -55,12 +56,14 @@ type AuditConfig struct {
 	// stream credentials into the audit log.
 	//
 	// Redact is invoked for AfterCreate, AfterUpdate, AND AfterDelete.
-	// On delete the input is `map[string]any{"id": <record_id>}`; the
-	// returned map's "id" value (if any) becomes the audit row's
-	// record_id, letting hosts pseudonymise the natural key on delete
-	// too. If the callback returns a map with no `id` key the framework
-	// falls back to the original, silently erasing the record_id is
-	// an audit-forensics erasure primitive we don't want to expose.
+	// Each of them also calls it with `map[string]any{"id": <record id>}`;
+	// the returned map's "id" value (if any) becomes the audit row's
+	// record_id, letting hosts pseudonymise the natural key across the
+	// record's whole history. If the callback returns a map with no `id`
+	// key the framework falls back to the original, silently erasing the
+	// record_id is an audit-forensics erasure primitive we don't want to
+	// expose. With Redact nil, a key column the default scrub treats as
+	// sensitive is stored as "sha256:<hex>" of the id instead.
 	//
 	// Returning nil is equivalent to returning an empty map. A panic
 	// inside Redact is recovered: the audit row is still written using
@@ -166,6 +169,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 	}
 	a.auditTable = table
 	a.auditActor = cfg.actor
+	a.auditCfg = &cfg
 
 	want := map[string]bool{}
 	for _, name := range cfg.Entities {
@@ -205,7 +209,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			if o := crud.AuditOperationFor(ctx, ent.GetName(), id); o != "" {
 				op = auditOp(sanitizeAuditField(o))
 			}
-			return writeAuditRow(ctx, a.DB, table, ent.GetName(), op, id, cfg.actor(ctx), diff)
+			return writeAuditRow(ctx, a.DB, table, ent.GetName(), op, cfg.recordID(ent.GetName(), ent.KeyColumns(), id), cfg.actor(ctx), diff)
 		})
 		hr.RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
 			row, ok := data.(map[string]any)
@@ -230,30 +234,14 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			if o := crud.AuditOperationFor(ctx, ent.GetName(), id); o != "" {
 				op = auditOp(sanitizeAuditField(o))
 			}
-			return writeAuditRow(ctx, a.DB, table, ent.GetName(), op, id, cfg.actor(ctx), diff)
+			return writeAuditRow(ctx, a.DB, table, ent.GetName(), op, cfg.recordID(ent.GetName(), ent.KeyColumns(), id), cfg.actor(ctx), diff)
 		})
 		hr.RegisterHook(hook.AfterDelete, func(ctx context.Context, data any) error {
 			originalID, ok := data.(string)
 			if !ok {
 				return fmt.Errorf("audit: AfterDelete payload type = %T, want string (framework contract drift?)", data)
 			}
-			recordID := originalID
-			// Let Redact substitute the natural-key record_id for
-			// PHI-bearing tables. Input shape mirrors what the doc
-			// describes: a one-key map the host can transform.
-			//
-			// If the callback omits the "id" key entirely, fall back
-			// to the original, silently erasing the natural key
-			// gives a malformed redact callback an audit-forensics
-			// erasure primitive (see
-			// TestAudit_DeleteRedactOmittedIDKeepsOriginalRecordID).
-			if cfg.Redact != nil {
-				redacted := cfg.applyRedact(ent.GetName(), map[string]any{"id": originalID})
-				if v, ok := redacted["id"]; ok {
-					recordID = fmt.Sprintf("%v", v)
-				}
-				// else: keep recordID = originalID
-			}
+			recordID := cfg.recordID(ent.GetName(), ent.KeyColumns(), originalID)
 			// Snapshot the deleted row's pre-image (if doDelete
 			// captured one) so the audit row records WHAT was
 			// deleted, not just WHO did it. The pre-image goes
@@ -278,6 +266,32 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 		})
 	}
 	return a
+}
+
+// recordID is the record_id an audit row stores for a record's id. A
+// Redact callback sees {"id": id} on create, update and delete alike, so
+// a pseudonymised key reads the same across a record's history; a result
+// without "id" keeps the original, since erasing it would let a bad
+// callback wipe the trail. With no Redact, a key column the default
+// scrub treats as sensitive (an api_key, a token) is stored as its
+// SHA-256: the history still lines up and the secret stays out of it.
+func (c AuditConfig) recordID(entName string, cols []string, id string) string {
+	if c.Redact != nil {
+		if v, ok := c.applyRedact(entName, map[string]any{"id": id})["id"]; ok {
+			return fmt.Sprintf("%v", v)
+		}
+		return id
+	}
+	if id == "" {
+		return id
+	}
+	for _, col := range cols {
+		if isDefaultSensitiveField(col) {
+			sum := sha256.Sum256([]byte(id))
+			return "sha256:" + hex.EncodeToString(sum[:])
+		}
+	}
+	return id
 }
 
 // actor returns the resolved actor id, recovering from any panic in the

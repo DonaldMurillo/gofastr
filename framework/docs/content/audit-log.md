@@ -104,6 +104,20 @@ pre-delete row. These snapshots are captured by the CRUD handler inside the
 write transaction; callers that invoke hooks directly without CRUD may have a
 null old image.
 
+`record_id` is the record's id, the same string its URL carries. When the
+key itself is sensitive, the id is kept out of the log:
+
+- A `Redact` callback receives `{"id": <record id>}` for every create,
+  update and delete. The `"id"` it returns becomes `record_id`, so a
+  pseudonymised key reads the same across the record's whole history. A
+  result with no `"id"` keeps the original.
+- With no `Redact`, a key column whose name the default scrub treats as
+  sensitive (`api_key`, `token`, `secret`, ...) is stored as
+  `sha256:<hex digest>` of the id.
+
+The admin Activity tab applies the same mapping when it looks a record's
+rows up, so it still finds them.
+
 ## Transactional behaviour
 
 Audit hooks resolve the active CRUD transaction via
