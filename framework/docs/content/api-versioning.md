@@ -236,6 +236,16 @@ ordering for indices; target table, key, and relation type for FKs) must
 match. Otherwise the union would keep one and silently violate the
 other's declared invariant.
 
+A relation resolves its target at the source's own version, then the
+unversioned declaration, then the only version registered
+(`entity.ResolveTarget`). A `many_to_many`'s `Through` table resolves
+the same way to the entity that owns it (`entity.PivotEntity`), because
+that entity's owner, tenant, read and soft-delete scopes decide which
+links an include reads. When several versions match and none is the
+source's or unversioned, both refuse rather than pick one, since each
+version can scope its rows differently: an `?include=` across such a
+pivot is refused with the code `include_pivot`.
+
 > **See also:** [migrations](migrations.md) for the full additive-only
 > contract: boot never drops, renames, or retypes; destructive changes
 > require a reviewed migration file (`migrate generate`).

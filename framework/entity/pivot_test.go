@@ -43,21 +43,46 @@ func TestPivotEntityPicksVersion(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := PivotEntity(tc.reg, v1, "Enrollments")
-			if tc.err {
-				if err == nil || !strings.Contains(err.Error(), "2 versions") {
-					t.Fatalf("PivotEntity = %v, %v; want an ambiguity error", got, err)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			switch {
-			case tc.want == "-" && got != nil:
-				t.Fatalf("PivotEntity = %q, want nil", got.Version)
-			case tc.want != "-" && (got == nil || got.Version != tc.want):
-				t.Fatalf("PivotEntity = %v, want version %q", got, tc.want)
-			}
+			checkPivot(t, got, err, tc.want, tc.err)
 		})
+	}
+	// The guards: no registry or no table names no pivot, and a source
+	// with no version takes the unversioned one.
+	two := pivotReg{pivotAt("/v1"), pivotAt("")}
+	for name, tc := range map[string]struct {
+		reg   Registry
+		src   *Entity
+		table string
+		want  string
+	}{
+		"nil registry": {nil, v1, "Enrollments", "-"},
+		"empty table":  {two, v1, "", "-"},
+		"nil source":   {two, nil, "Enrollments", ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := PivotEntity(tc.reg, tc.src, tc.table)
+			checkPivot(t, got, err, tc.want, false)
+		})
+	}
+}
+
+// checkPivot fails unless PivotEntity picked the pivot at version want
+// ("-" for none), or failed on an ambiguity when wantErr.
+func checkPivot(t *testing.T, got *Entity, err error, want string, wantErr bool) {
+	t.Helper()
+	if wantErr {
+		if err == nil || !strings.Contains(err.Error(), "2 versions") {
+			t.Fatalf("PivotEntity = %v, %v; want an ambiguity error", got, err)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	switch {
+	case want == "-" && got != nil:
+		t.Fatalf("PivotEntity = %q, want nil", got.Version)
+	case want != "-" && (got == nil || got.Version != want):
+		t.Fatalf("PivotEntity = %v, want version %q", got, want)
 	}
 }
