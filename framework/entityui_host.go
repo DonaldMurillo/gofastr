@@ -206,11 +206,7 @@ func (t auditTrail) Trail(ctx context.Context, ent, recordID string, limit int) 
 	}
 	q := fmt.Sprintf("SELECT op, actor_id, created_at, diff, reason FROM %s WHERE entity = $1 AND record_id = $2", query.QuoteIdent(safe))
 	if t.cfg != nil {
-		var cols []string
-		if e, err := t.reg.Get(ent); err == nil {
-			cols = e.KeyColumns()
-		}
-		recordID = t.cfg.recordID(ent, cols, recordID)
+		recordID = t.cfg.keyID(auditKeyOf(t.reg, ent), recordID)
 	}
 	args := []any{ent, recordID}
 	if tid := tenant.GetTenantID(ctx); tid != "" {

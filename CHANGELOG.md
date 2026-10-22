@@ -459,12 +459,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   The default scrub dropped an `api_key` or `token` column from the
   audit diff, but the same value went into `record_id` unchanged when it
   was the record's key, on delete always and on create and update for a
-  one-word name. Without a `Redact` callback such a key is now stored as
-  `sha256:<hex>`. With one, the callback's `{"id": ...}` mapping, which
-  only delete used to apply, now covers create and update as well, so a
-  pseudonymised key no longer appears raw in the record's create and
-  update rows. The Activity tab maps the id the same way and still
-  finds the record's rows.
+  one-word name. Without a `Redact` callback, a key whose column or wire
+  name the scrub treats as sensitive is now stored as `sha256:<hex>` on
+  every row, and the Activity tab hashes the id the same way to find
+  them. Rows written before the change keep the raw id and no longer
+  show in that tab. Create and update rows now strip control bytes from
+  `record_id` the way delete rows already did, and the key is found
+  under every API version's wire name, not one version's.
 
 ## [0.93.0] - 2026-10-20
 

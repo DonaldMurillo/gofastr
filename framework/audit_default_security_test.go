@@ -327,7 +327,10 @@ func TestAudit_SecretKeyStaysOutOfRecordID(t *testing.T) {
 	})
 }
 
-func TestAudit_RedactNamesEveryOp(t *testing.T) {
+// A host Redact remaps the delete row's id and nothing else: create and
+// update rows keep the raw id the Activity tab and the admin's live
+// record link look up, as rows written before this change did.
+func TestAudit_RedactRemapsDeleteOnly(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		pseudo := func(_ string, row map[string]any) map[string]any {
 			if id, ok := row["id"].(string); ok && len(row) == 1 {
@@ -341,14 +344,64 @@ func TestAudit_RedactNamesEveryOp(t *testing.T) {
 		ta.Put("/keys/k1", map[string]any{"label": "b"}).AssertStatus(t, http.StatusOK)
 		ta.Delete("/keys/k1").AssertStatus(t, http.StatusNoContent)
 
+		want := map[string]string{"create": "k1", "update": "k1", "delete": "p:K1"}
 		for _, r := range readAuditRows(t, db) {
-			if r["record_id"] != "p:K1" {
-				t.Fatalf("%s row record_id = %q, want p:K1", r["op"], r["record_id"])
+			if r["record_id"] != want[r["op"].(string)] {
+				t.Fatalf("%s row record_id = %q, want %q", r["op"], r["record_id"], want[r["op"].(string)])
 			}
 		}
 		trail, err := entityUIHost{a: app}.Audit().Trail(context.Background(), "keys", "k1", 0)
-		if err != nil || len(trail) != 3 {
-			t.Fatalf("Activity tab found %d rows (%v), want 3", len(trail), err)
+		if err != nil || len(trail) != 2 {
+			t.Fatalf("Activity tab found %d rows (%v), want 2", len(trail), err)
 		}
 	})
+}
+
+// A key column is sensitive under its WireName too, and every mapped id
+// loses its control bytes, hashed or not, so the Activity tab's lookup
+// matches what the hooks wrote.
+func TestAuditKeyID(t *testing.T) {
+	plain := entity.Define("p", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "user_code", Type: schema.String},
+	}})
+	plain.PrimaryKey = "user_code"
+	secret := entity.Define("s", entity.EntityConfig{Fields: []schema.Field{
+		{Name: "user_code", Type: schema.String, WireName: "apiKey"},
+	}})
+	secret.PrimaryKey = "user_code"
+	var cfg AuditConfig
+	if got := cfg.keyID(versionKey(secret), "sk_live"); !strings.HasPrefix(got, "sha256:") {
+		t.Fatalf("WireName apiKey: record_id = %q, want a sha256 digest", got)
+	}
+	if got := cfg.keyID(versionKey(plain), "a\nb\x00c"); got != "abc" {
+		t.Fatalf("control bytes: got %q", got)
+	}
+	if cfg.keyID(versionKey(secret), "a\nb") != cfg.keyID(versionKey(secret), "ab") {
+		t.Fatal("a hashed id keeps the control bytes the plain path strips")
+	}
+	cfg.Redact = func(_ string, row map[string]any) map[string]any { return row }
+	if got := cfg.keyID(versionKey(secret), "k\n1"); got != "k1" {
+		t.Fatalf("with Redact: got %q, want the sanitized raw id", got)
+	}
+}
+
+// The hooks are keyed by name, so a v2 row reaches the hook v1's fields
+// built: the key is read under each version's wire key.
+func TestAuditKeyEveryVersion(t *testing.T) {
+	reg := NewRegistry()
+	for v, wire := range map[string]string{"/api/v1": "legacyId", "/api/v2": "newId"} {
+		e := entity.Define("records", entity.EntityConfig{Fields: []schema.Field{
+			{Name: "id", Type: schema.String, WireName: wire},
+		}}.WithTimestamps(false))
+		e.Version = v
+		if err := reg.Register(e); err != nil {
+			t.Fatalf("register %s: %v", v, err)
+		}
+	}
+	k := auditKeyOf(reg, "records")
+	for _, row := range []map[string]any{{"legacyId": "r1"}, {"newId": "r1"}} {
+		if got := stringifyPK(row, k); got != "r1" {
+			t.Fatalf("stringifyPK(%v) = %q, want r1", row, got)
+		}
+	}
 }
