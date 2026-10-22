@@ -246,7 +246,7 @@ func (ch *CrudHandler) doRestore(ctx context.Context, r *http.Request, id string
 	}
 
 	if ch.Hooks != nil {
-		if err := runHooks(ch.Hooks, ctx, hook.AfterUpdate, result); err != nil {
+		if err := ch.afterRow(ctx, hook.AfterUpdate, result); err != nil {
 			return nil, fmt.Errorf("after-update hook: %w", err)
 		}
 	}

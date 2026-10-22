@@ -307,7 +307,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		result = res
 
 		if ch.Hooks != nil {
-			if err := runHooks(ch.Hooks, ctx, hook.AfterCreate, result); err != nil {
+			if err := ch.afterRow(ctx, hook.AfterCreate, result); err != nil {
 				return fmt.Errorf("after-create hook: %w", err)
 			}
 		}

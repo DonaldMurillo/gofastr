@@ -416,6 +416,55 @@ func TestAuditKeyEveryVersion(t *testing.T) {
 	}
 }
 
+// Two versions that give the key and another column each other's wire
+// names write rows no reading can tell apart. The handler names the
+// record from its own key columns, so the audit row does too.
+func TestAuditSwappedWireNames(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		app := NewApp(WithDB(db), WithoutDefaultMiddleware())
+		var v2 *entity.Entity
+		for v, wires := range map[string][2]string{
+			"/api/v1": {"legacyId", "newId"},
+			"/api/v2": {"newId", "legacyId"},
+		} {
+			e := entity.Define("records", entity.EntityConfig{
+				Table:    "records",
+				Exposure: &entity.ExposureConfig{Public: true},
+				Fields: []schema.Field{
+					{Name: "id", Type: schema.String, Required: true, WireName: wires[0]},
+					{Name: "external_id", Type: schema.String, WireName: wires[1]},
+				},
+			}.WithTimestamps(false))
+			e.Version = v
+			if err := app.Registry.Register(e); err != nil {
+				t.Fatalf("register %s: %v", v, err)
+			}
+			if v == "/api/v2" {
+				v2 = e
+			}
+		}
+		if err := AutoMigrate(db, app.Registry); err != nil {
+			t.Fatalf("automigrate: %v", err)
+		}
+		ch := crud.NewCrudHandler(v2, db)
+		ch.Hooks = app.HookRegistry("records")
+		crud.RegisterCrudRoutes(app.router, ch, "/records", crud.CrudRouteOptions{})
+		app.WithAuditLog(AuditConfig{})
+		ta := TestHarness(t, app)
+		ta.Post("/records", map[string]any{"newId": "r1", "legacyId": "x9"}).AssertStatus(t, http.StatusCreated)
+		ta.Put("/records/r1", map[string]any{"legacyId": "x8"}).AssertStatus(t, http.StatusOK)
+		rows := readAuditRows(t, db)
+		if len(rows) != 2 {
+			t.Fatalf("expected 2 audit rows, got %d", len(rows))
+		}
+		for _, r := range rows {
+			if r["record_id"] != "r1" {
+				t.Fatalf("%s row names %v, want r1", r["op"], r["record_id"])
+			}
+		}
+	})
+}
+
 func TestAuditDigestID(t *testing.T) {
 	sum := sha256.Sum256([]byte("k1"))
 	digest := "sha256:" + hex.EncodeToString(sum[:])

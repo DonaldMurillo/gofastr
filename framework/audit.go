@@ -201,7 +201,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 				// audit row keyed on a zero row (silent forensics gap).
 				return fmt.Errorf("audit: AfterCreate payload type = %T, want map[string]any (framework contract drift?)", data)
 			}
-			id := stringifyPK(row, key)
+			id := recordIDOf(ctx, ent.GetName(), row, key)
 			redacted := cfg.applyRedact(ent.GetName(), row)
 			diff := buildAuditCreateDiff(redacted, row, auditMeta(ctx))
 			// crud.UpsertOne fires AfterCreate for both arms; an override
@@ -218,7 +218,7 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 			if !ok {
 				return fmt.Errorf("audit: AfterUpdate payload type = %T, want map[string]any (framework contract drift?)", data)
 			}
-			id := stringifyPK(row, key)
+			id := recordIDOf(ctx, ent.GetName(), row, key)
 			redactedNew := cfg.applyRedact(ent.GetName(), row)
 			var redactedOld map[string]any
 			var originalOld map[string]any
@@ -641,6 +641,16 @@ func (c AuditConfig) applyRedact(entity string, row map[string]any) map[string]a
 		return map[string]any{}
 	}
 	return out
+}
+
+// recordIDOf is the record id an After hook names: the id the crud
+// handler read from its own key columns when it ran the hook, else the
+// one stringifyPK reads from the row (a hook chain run outside crud).
+func recordIDOf(ctx context.Context, entity string, row map[string]any, k auditKey) string {
+	if id, ok := crud.AuditRecordIDFor(ctx, entity); ok {
+		return id
+	}
+	return stringifyPK(row, k)
 }
 
 // stringifyPK is the audit row's record id: the record's key columns,

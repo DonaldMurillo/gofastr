@@ -1,10 +1,12 @@
 package crud
 
 import (
+	"context"
 	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
 // keyCols returns the handler's primary-key columns in declared order.
@@ -115,4 +117,15 @@ func (ch *CrudHandler) keyPayload(id string) map[string]any {
 		out[ch.convertKey(c)] = parts[i]
 	}
 	return out
+}
+
+// afterRow runs the typ hooks on a written row with the row's record id
+// on ctx (AuditRecordIDFor). It always sets the value, so a write a hook
+// starts never answers with the id of the write that started it.
+func (ch *CrudHandler) afterRow(ctx context.Context, typ hook.HookType, row map[string]any) error {
+	if ch.Entity != nil {
+		id, _ := ch.rowID(row)
+		ctx = context.WithValue(ctx, auditRecordKey{}, auditRecord{entity: ch.Entity.GetName(), id: id})
+	}
+	return runHooks(ch.Hooks, ctx, typ, row)
 }

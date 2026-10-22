@@ -15,7 +15,26 @@ import (
 type (
 	auditRequestKey  struct{}
 	auditPreImageKey struct{}
+	auditRecordKey   struct{}
 )
+
+// auditRecord is the record an After hook chain is running for: its
+// entity and its record id as the handler's own key columns name it.
+type auditRecord struct{ entity, id string }
+
+// AuditRecordIDFor returns the record id of the row the running
+// AfterCreate/AfterUpdate chain was handed, when that chain runs for
+// entity, or false otherwise. The handler reads it from its own key
+// columns, so it holds where the row cannot say which wire key is the
+// key: two API versions may give the same columns each other's wire
+// names.
+func AuditRecordIDFor(ctx context.Context, entity string) (string, bool) {
+	r, ok := ctx.Value(auditRecordKey{}).(auditRecord)
+	if !ok || r.entity != entity || r.id == "" {
+		return "", false
+	}
+	return r.id, true
+}
 
 // WithAuditRequest returns ctx with r attached so audit hooks can read
 // client-IP / user-agent / headers in their AfterCreate/Update/Delete

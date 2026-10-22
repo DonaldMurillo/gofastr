@@ -105,7 +105,12 @@ write transaction; callers that invoke hooks directly without CRUD may have a
 null old image.
 
 `record_id` is the record's id, the same string its URL carries, with
-control bytes stripped. Two cases change it:
+control bytes stripped. The CRUD handler reads it from its own key
+columns and puts it on the AfterCreate/AfterUpdate hook context; a hook
+of your own reads it with `crud.AuditRecordIDFor(ctx, entityName)`.
+That holds where the row cannot say which key is the key: two API
+versions may give the key and another column each other's wire names.
+Two cases change it:
 
 - With no `Redact`, a key column whose name or wire name the default
   scrub treats as sensitive (`api_key`, `token`, `secret`, ...) is stored

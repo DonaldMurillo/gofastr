@@ -464,8 +464,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   every row, and the Activity tab hashes the id the same way to find
   them. Rows written before the change keep the raw id and no longer
   show in that tab. Create and update rows now strip control bytes from
-  `record_id` the way delete rows already did, and the key is found
-  under every API version's wire name, not one version's.
+  `record_id` the way delete rows already did. The CRUD handler hands
+  its After hooks the record id it read from its own key columns
+  (`crud.AuditRecordIDFor`), so a key two API versions give different
+  wire names, even each other's, still names the right record, and a
+  key sensitive under any version's wire name is hashed.
   `framework.AuditDigestID` tells a digest from a record id; the admin
   audit page uses it so a digest is never looked up, and so never
   titles or links a record whose own id is that digest string.
