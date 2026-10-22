@@ -45,6 +45,11 @@ func TestPathRule(t *testing.T) {
 	if got := Path("/x", Rule{}); got != "/x" {
 		t.Errorf("empty rule changed %q", got)
 	}
+	// A prefix that names no locale (a mount base) still holds its own
+	// URLs: the Locales list must not be what spares them.
+	if got := Path("/base/x", Rule{Prefix: "/base"}); got != "/base/x" {
+		t.Errorf("Path(/base/x) under /base = %q", got)
+	}
 }
 
 func TestPathOnOrigin(t *testing.T) {
@@ -66,12 +71,16 @@ func TestPathOnOrigin(t *testing.T) {
 func TestPageLinksKeepPrefix(t *testing.T) {
 	in := `<nav><a href="/pricing" class="x">P</a><a href='/about?x=1&amp;y=2'>A</a></nav>` +
 		`<form action="/search"><button formaction="/save">S</button></form>` +
-		`<div data-cui-rpc="/cart/add" data-cui-poll-src="/stats" data-cui-push-state="/list?page=2" data-cui-rpc-navigate="/done" data-cui-intercept-panel="/orders/7"></div>`
+		`<div data-cui-rpc="/cart/add" data-cui-poll-src="/stats" data-cui-push-state="/list?page=2" data-cui-rpc-navigate="/done" data-cui-intercept-panel="/orders/7"></div>` +
+		`<a href="/docs/start" data-cui-match-prefix="/docs">D</a><a href="/blog" data-cui-match-prefix="">B</a>`
 	got := string(HTML([]byte(in), es))
 	for _, want := range []string{
 		`href="/es/pricing"`, `href="/es/about?x=1&amp;y=2"`, `action="/es/search"`, `formaction="/es/save"`,
 		`data-cui-rpc="/es/cart/add"`, `data-cui-poll-src="/es/stats"`, `data-cui-push-state="/es/list?page=2"`,
 		`data-cui-rpc-navigate="/es/done"`, `data-cui-intercept-panel="/es/orders/7"`,
+		// The runtime compares the section prefix with the browser's
+		// path, which carries the locale.
+		`data-cui-match-prefix="/es/docs"`, `data-cui-match-prefix=""`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %s in\n%s", want, got)
@@ -185,6 +194,19 @@ func TestLocationGainsPrefix(t *testing.T) {
 	}
 	if got := rec.Header().Get("X-Gofastr-Location"); got != "/es/orders/7" {
 		t.Fatalf("X-Gofastr-Location = %q", got)
+	}
+}
+
+// The runtime applies X-Gofastr-Push-State to the URL bar as given, so
+// an unprefixed one moves a Spanish page to the English URL.
+func TestPushStateGainsPrefix(t *testing.T) {
+	h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Gofastr-Push-State", "/orders?page=2")
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, esRequest("POST", "/x"))
+	if got := rec.Header().Get("X-Gofastr-Push-State"); got != "/es/orders?page=2" {
+		t.Fatalf("X-Gofastr-Push-State = %q", got)
 	}
 }
 
