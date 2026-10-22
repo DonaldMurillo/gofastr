@@ -9,6 +9,20 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
+// Alternates name the page they stand for: the path arrives decoded, so
+// a %3F in it is a literal "?" that stays part of the path, escaped.
+func TestLocaleLinksEscapePath(t *testing.T) {
+	set := i18n.PathLocales{Default: "en", Prefixed: []string{"es"}}
+	var got []string
+	for _, l := range localeLinks(set, "https://x.test", "/docs/a?b c") {
+		got = append(got, l.Lang+" "+l.URL)
+	}
+	want := "en https://x.test/docs/a%3Fb%20c|es https://x.test/es/docs/a%3Fb%20c|x-default https://x.test/docs/a%3Fb%20c"
+	if strings.Join(got, "|") != want {
+		t.Fatalf("got  %s\nwant %s", strings.Join(got, "|"), want)
+	}
+}
+
 // A language switcher in the chrome links /es/, which the router serves
 // as / in Spanish; strict boot must resolve it as /. A prefixed link to
 // a page nobody serves is still a dead link.
