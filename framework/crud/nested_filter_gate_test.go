@@ -200,7 +200,7 @@ func TestBuildExistsSubqueryEmitsScopePredicates(t *testing.T) {
 				},
 			}
 			sql, args := buildExistsSubquery("boards", "id", nf)
-			for _, want := range []string{`"note_rows"."owner_id" = $`, `"note_rows"."tenant_id" = $`} {
+			for _, want := range []string{`note_rows.owner_id = $`, `note_rows.tenant_id = $`} {
 				if !strings.Contains(sql, want) {
 					t.Errorf("missing %q — the subquery counts every row:\n%s", want, sql)
 				}

@@ -205,7 +205,7 @@ func mustDeepConvert(t *testing.T, ch *CrudHandler, in map[string]any) map[strin
 
 func mustFormatDeep(t *testing.T, ch *CrudHandler, rel entity.Relation, val any, present bool) any {
 	t.Helper()
-	out, err := ch.formatRelationValueDeep(rel, val, present, map[uintptr]*convertedSubtree{}, newIncludeBudget())
+	out, err := ch.formatRelationValueDeep(rel, nil, val, present, map[uintptr]*convertedSubtree{}, newIncludeBudget())
 	if err != nil {
 		t.Fatalf("formatRelationValueDeep: %v", err)
 	}
