@@ -45,7 +45,7 @@ func TestJSSDKUploadGuards(t *testing.T) {
 	// A batch goes as JSON, so its item types take no Blob.
 	for _, want := range []string{
 		"batchCreate(items: Array<NoBlob<TInput>>)",
-		"batchUpdate(items: Array<NoBlob<TPatch> & { id: string }>)",
+		"batchUpdate(items: Array<NoBlob<TPatch> & TItemKey>)",
 	} {
 		if !strings.Contains(clientDTS, want) {
 			t.Errorf("client.d.ts missing %q", want)

@@ -570,16 +570,20 @@ func (sc *entityScreen) fieldsTable(cfg entity.EntityConfig) render.HTML {
 func (sc *entityScreen) endpointsTable(e *entity.Entity) render.HTML {
 	cfg := e.Config
 	base := sc.site.entityBase(e)
+	// A record's path has one segment per key column: /{id}, or
+	// /{student_id}/{course_id} for a composite key.
+	keys := e.KeyColumns()
+	record := base + "/{" + strings.Join(keys, "}/{") + "}"
 	type op struct{ method, path, desc string }
 	ops := []op{
 		{"GET", base, "List (offset or cursor pagination)"},
-		{"GET", base + "/{id}", "Get one record"},
+		{"GET", record, "Get one record"},
 		{"POST", base, "Create"},
-		{"PUT", base + "/{id}", "Full update"},
-		{"PATCH", base + "/{id}", "Partial update: only keys present in the body change"},
-		{"DELETE", base + "/{id}", "Delete"},
+		{"PUT", record, "Full update"},
+		{"PATCH", record, "Partial update: only keys present in the body change"},
+		{"DELETE", record, "Delete"},
 		{"POST", base + "/_batch", "Atomic batch create ({\"items\": […]})"},
-		{"PATCH", base + "/_batch", "Atomic batch update (items carry id)"},
+		{"PATCH", base + "/_batch", "Atomic batch update (items carry " + strings.Join(keys, " and ") + ")"},
 		{"DELETE", base + "/_batch", "Atomic batch delete ({\"ids\": […]})"},
 		{"GET", base + "/_events", "Live SSE feed: entity.created / updated / deleted"},
 	}
@@ -590,7 +594,7 @@ func (sc *entityScreen) endpointsTable(e *entity.Entity) render.HTML {
 		if t.Stamp != "" {
 			desc += ", stamps " + t.Stamp
 		}
-		ops = append(ops, op{"POST", base + "/{id}/transitions/" + t.Key, desc})
+		ops = append(ops, op{"POST", record + "/transitions/" + t.Key, desc})
 	}
 	for _, ep := range cfg.Endpoints {
 		path := ep.Path

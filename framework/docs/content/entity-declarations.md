@@ -1538,6 +1538,14 @@ blank, as it does a unique index's fields. Screen routes match the
 decoded path, so a record whose key value holds `/` is reachable over
 REST and MCP but its screen answers 404.
 
+The `framework` package re-exports `JoinKey` and `RowKey` for app code
+that builds ids without importing `framework/entity`. The generators
+take the key the same way the routes do: an app spec's
+[`primary_key:`](app-spec.md#composite-keys-primary_key), the
+[typed repository](#the-typed-repository), the [Go and JS SDKs](sdk.md)
+and the [app CLI](app-cli.md) each name a record by one value per key
+column.
+
 ## States (a state machine)
 
 `EntityConfig.States` names the Enum field holding a record's state and the
@@ -1637,6 +1645,13 @@ live, err := posts.Query().Where(entities.PostsStatus.Eq(entities.PostsStatusLiv
   System moves are included, since the repo is the Go caller they exist
   for. With enforced States, stamps leave both payloads and the state
   field leaves the patch ([States](states.md)).
+- A composite-key entity's record methods take one argument per key
+  column, in key order: `Get(ctx, studentId, courseId)`, and likewise
+  `Update`, `Delete`, `Exists` and `Transition`. The model has no `ID`
+  field; its key columns are ordinary fields. `EnrollmentsID(studentId,
+  courseId)` spells the record id (`framework.JoinKey` of the values)
+  that `BatchUpdate`, `BatchDelete` and the lifecycle subscriptions
+  (`OnEnrollmentsDeleted`'s `id`) use.
 
 Hidden and ReadOnly fields stay in both payloads. The pipeline skips them
 unless ctx carries `crud.WithServerWrites`, the same rule
