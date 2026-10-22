@@ -19,7 +19,7 @@ import (
 // the host beside the entity's write routes:
 //
 //	POST <write base>/_views                  save the current view
-//	POST <write base>/_views/_delete/{id}     delete one of the caller's
+//	POST <write base>/_views/_delete?id=<id>  delete one of the caller's
 //
 // The save form carries a name, the active filter text, the shown
 // columns, the list's key and the list's URL to return to. The filter
@@ -80,8 +80,10 @@ func (u *UI) SavedViewsHandler(entityName string) http.Handler {
 			writeBulkError(w, r, http.StatusBadRequest, reasonMissingReturnPath)
 			return
 		}
-		// The delete route is the one that carries an id.
-		if r.PathValue("id") != "" {
+		// The delete route ends in _delete. Its id rides the query, so the
+		// route stays clear of every record route a composite key draws
+		// (<write base>/{a}/{b}/_restore matches no literal _delete).
+		if strings.HasSuffix(r.URL.Path, "/_views/_delete") {
 			u.deleteSavedView(ctx, w, r, m, body, back, ok, jsonCall)
 			return
 		}
@@ -178,7 +180,7 @@ func (u *UI) createSavedView(ctx context.Context, w http.ResponseWriter, r *http
 // deleteSavedView removes one of the caller's views and answers: 303 to
 // the list with no saved view open (plain), or a toast (RPC).
 func (u *UI) deleteSavedView(ctx context.Context, w http.ResponseWriter, r *http.Request, m *meta, body savedViewBody, back string, backOK, jsonCall bool) {
-	id := r.PathValue("id")
+	id := r.URL.Query().Get("id")
 	if id == "" {
 		writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 		return

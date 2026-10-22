@@ -146,7 +146,7 @@ func (u *UI) pickerOptions(ctx context.Context, f schema.Field, q string) (opts 
 	titles := u.rowTitles(ctx, om, rows, 0)
 	needle := strings.ToLower(q)
 	for i, r := range rows {
-		oid := cell(rowValue(r, om.pk))
+		oid := cell(om.rowValue(r, om.pk))
 		if oid == "" {
 			continue
 		}

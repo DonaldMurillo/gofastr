@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -658,6 +659,7 @@ func Define(name string, config EntityConfig) *Entity {
 			panic(fmt.Sprintf("entity %q: cursor field %q is not a declared field", name, cf))
 		}
 	}
+	config.checkKeyServed()
 
 	// Derive a BelongsTo relation for every {Type: Relation} field that points
 	// at a target entity. Without this the field is only consumed for an
@@ -711,6 +713,82 @@ func (c EntityConfig) checkKeyColumns() {
 		seen[col] = true
 		if !slices.ContainsFunc(c.Fields, func(f schema.Field) bool { return f.Name == col }) {
 			panic(fmt.Sprintf("entity %q: primary key column %q is not a declared field", c.Name, col))
+		}
+	}
+	if err := c.checkRecordKey(); err != nil {
+		panic(err.Error())
+	}
+}
+
+// CheckRecordKey reports whether the entity's key can name its records
+// by id: it has one, and every key column is keyable. Define panics on a
+// declared entity that fails it. A raw table registered for migration
+// (App.Table) skips Define and may key on any SQL type, so a surface
+// that serves such an entity's records by id checks it first.
+func (e *Entity) CheckRecordKey() error { return e.Config.checkRecordKey() }
+
+func (c EntityConfig) checkRecordKey() error {
+	keys := c.keyColumns()
+	if len(keys) == 0 {
+		return fmt.Errorf("entity %q has no primary key, so no id names one of its records", c.Name)
+	}
+	for _, col := range keys {
+		i := slices.IndexFunc(c.Fields, func(f schema.Field) bool { return f.Name == col })
+		if i >= 0 && !keyable(c.Fields[i]) {
+			return fmt.Errorf("entity %q: primary key column %q has a type whose values have more than one spelling, so one record would answer to several ids; key on a string, integer, enum, UUID or relation column with no RawType (an integer column may set an integer RawType)", c.Name, col)
+		}
+	}
+	return nil
+}
+
+// keyable reports whether column f can name a record. A record id is the
+// key's text, so each value needs exactly one spelling: text columns
+// match byte for byte and integer ids must be canonical decimal. A
+// float, decimal, bool, date, timestamp or JSON value does not: Postgres
+// reads 2024-1-2 as a DATE equal to 2024-01-02, and scans it back as a
+// time.Time that prints as neither. A RawType decides equality where
+// the portable type cannot see it (CITEXT folds case, a Postgres UUID
+// reads upper and lower case as one value), so only an integer column
+// may set one, and only to an integer type.
+func keyable(f schema.Field) bool {
+	switch f.Type {
+	case schema.String, schema.Text, schema.Int, schema.Enum, schema.UUID, schema.Relation, schema.Image, schema.File:
+	case schema.Float, schema.Decimal, schema.Bool, schema.Date, schema.Timestamp, schema.JSON:
+		return false
+	default:
+		return false
+	}
+	if f.RawType == "" {
+		return true
+	}
+	raw := strings.TrimSpace(f.RawType)
+	if f.Type != schema.Int || strings.ContainsFunc(raw, func(r rune) bool { return r > unicode.MaxASCII }) {
+		return false
+	}
+	switch strings.ToUpper(raw) {
+	case "INTEGER", "INT", "BIGINT", "SMALLINT", "INT2", "INT4", "INT8", "SERIAL", "BIGSERIAL", "SMALLSERIAL":
+		return true
+	}
+	return false
+}
+
+// checkKeyServed refuses a Hidden or NoQuery column in a composite key:
+// the API names such a record by every key value, and reads a set of
+// them back through key filters, so a row served without one, or a
+// filter refused on one, leaves the record unnamed. The default cursor
+// check already refuses one, since the key is its tiebreak; this covers
+// an entity paging on Pagination.CursorField. A one-column key routes by
+// path alone, and keeps its own posture. A MultiTenant table unique per
+// tenant keeps a generated id and enforces (tenant_id, code) with a
+// unique index instead.
+func (c EntityConfig) checkKeyServed() {
+	keys := c.keyColumns()
+	if len(keys) < 2 {
+		return
+	}
+	for _, f := range c.Fields {
+		if (f.Hidden || f.NoQuery) && slices.Contains(keys, f.Name) {
+			panic(fmt.Sprintf("entity %q: composite key column %q is Hidden or NoQuery, so the API cannot name its records; key on columns the API returns and filters, and enforce other uniqueness with a unique index", c.Name, f.Name))
 		}
 	}
 }
@@ -849,6 +927,21 @@ func (e *Entity) Validate() error {
 					"entity %q: fields %q and %q both resolve to wire key %q: a wire key addresses exactly one column; change one field's WireName",
 					e.Config.Name, owner, f.Name, wk)
 			}
+		}
+		// A column name is a key too: entityui's forms post fields by
+		// name, and a body key resolves through the wire-key map first. A
+		// column named as another field's wire key would write that field.
+		for _, wk := range claims {
+			if wk != f.Name && seen[wk] {
+				return fmt.Errorf(
+					"entity %q: field %q's wire key %q is field %q's column name: a body naming that column would write %q; change one of them",
+					e.Config.Name, f.Name, wk, wk, f.Name)
+			}
+		}
+		if owner, clash := wireKeys[f.Name]; clash && owner != f.Name {
+			return fmt.Errorf(
+				"entity %q: field %q's wire key %q is field %q's column name: a body naming that column would write %q; change one of them",
+				e.Config.Name, owner, f.Name, f.Name, owner)
 		}
 		for _, wk := range claims {
 			wireKeys[wk] = f.Name

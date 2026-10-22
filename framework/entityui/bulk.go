@@ -22,7 +22,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
-	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -348,10 +347,8 @@ func (u *UI) readIDs(ctx context.Context, m *meta, ids []string, deleted bool) (
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	rows, err := m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{
-		Where:   &filter.Predicate{Field: m.pk, Op: filter.OpIn, Values: ids},
-		Fields:  []string{m.pk},
-		Limit:   len(ids),
+	rows, err := m.listByIDs(crud.WithReadHooks(ctx), ids, crud.ListOptions{
+		Fields:  m.keys,
 		Deleted: deleted,
 	})
 	if err != nil {
@@ -359,7 +356,7 @@ func (u *UI) readIDs(ctx context.Context, m *meta, ids []string, deleted bool) (
 	}
 	found := make(map[string]bool, len(rows))
 	for _, row := range rows {
-		found[cell(rowValue(row, m.pk))] = true
+		found[m.rowID(row)] = true
 	}
 	out := make([]string, 0, len(rows))
 	for _, id := range ids {
@@ -393,13 +390,13 @@ func (u *UI) everyMatch(ctx context.Context, m *meta, body bulkBody) ([]string, 
 
 // matchIDs is matchRows reduced to the primary keys.
 func (u *UI) matchIDs(ctx context.Context, m *meta, key string, q url.Values) ([]string, error) {
-	rows, err := u.matchRows(ctx, m, key, q, []string{m.pk})
+	rows, err := u.matchRows(ctx, m, key, q, m.keys)
 	if err != nil {
 		return nil, err
 	}
 	ids := make([]string, 0, len(rows))
 	for _, row := range rows {
-		ids = append(ids, cell(rowValue(row, m.pk)))
+		ids = append(ids, m.rowID(row))
 	}
 	return ids, nil
 }
@@ -439,7 +436,7 @@ func (u *UI) matchRows(ctx context.Context, m *meta, key string, q url.Values, f
 		Filters: s.facetFilters(),
 		Search:  s.search,
 		Fields:  fields,
-		Sorts:   []filter.ParsedSort{{Field: m.pk}},
+		Sorts:   m.keySorts(),
 		Limit:   EveryMatchCap + 1,
 	})
 	if err != nil {

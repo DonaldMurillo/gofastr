@@ -152,7 +152,7 @@ func (u *UI) relationTarget(ctx context.Context, m *meta, col string) (*entity.E
 // readTitleFields are the columns a title read asks for: the primary key
 // plus the title fields, nothing else.
 func (m *meta) readTitleFields() []string {
-	fields := []string{m.pk}
+	fields := slices.Clone(m.keys)
 	for _, tf := range m.titleFields() {
 		if !slices.Contains(fields, tf) {
 			fields = append(fields, tf)

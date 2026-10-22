@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"net/url"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/handler"
@@ -41,19 +40,19 @@ const deletedViewKey = "deleted"
 // delete it. A row neither gate allows draws nothing.
 func (b *ListBuilder) deletedActions(ctx context.Context, s *listState, row map[string]any) render.HTML {
 	m := s.m
-	id := cell(rowValue(row, m.pk))
+	id := m.rowID(row)
 	back := listHref(s.path, s.q)
 	var forms []render.HTML
 	if canUpdate(ctx, m, id) {
 		forms = append(forms, deletedWriteForm(ctx,
-			m.api+"/"+url.PathEscape(id)+"/_restore",
+			m.api+"/"+m.idPath(id)+"/_restore",
 			i18nui.EntityRestore.Text(ctx), ui.ButtonSecondary, interactive.Confirm{},
 			back,
 		))
 	}
 	if canDelete(ctx, m, id) {
 		forms = append(forms, deletedWriteForm(ctx,
-			m.api+"/"+url.PathEscape(id)+"/_purge",
+			m.api+"/"+m.idPath(id)+"/_purge",
 			i18nui.EntityPurge.Text(ctx), ui.ButtonDanger,
 			interactive.Confirm{
 				Title:   i18nui.EntityPurgeTitle.Text(ctx, map[string]any{"entity": m.noun(ctx, false)}),
@@ -146,7 +145,7 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
-		id := r.PathValue("id")
+		id := crud.PathRecordID(r, m.keys)
 		if id == "" {
 			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return

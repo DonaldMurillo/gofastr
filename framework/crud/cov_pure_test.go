@@ -149,7 +149,7 @@ func TestMcpFieldSchema_AllTypes(t *testing.T) {
 
 func TestMcpSchemas_Shapes(t *testing.T) {
 	ent := covRelEntity()
-	if s := idToolSchema(); s["type"] != "object" {
+	if s := idToolSchema([]string{"id"}); s["type"] != "object" {
 		t.Error("idToolSchema bad shape")
 	}
 	ls := listToolSchema(ent)
@@ -160,7 +160,7 @@ func TestMcpSchemas_Shapes(t *testing.T) {
 	if _, ok := props["title"]; !ok {
 		t.Error("listToolSchema missing visible field")
 	}
-	us := updateToolSchema(ent)
+	us := updateToolSchema(ent, []string{"id"})
 	uprops := us["properties"].(map[string]any)
 	if _, ok := uprops["id"]; !ok {
 		t.Error("updateToolSchema missing id")

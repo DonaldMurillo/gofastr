@@ -75,7 +75,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// or one already on the row it is writing (media_provenance.go).
 		// Checked on the caller's body, before hooks add their own values.
 		if err := ch.checkMediaProvenance(ctx, body,
-			ch.currentMediaKeys(ctx, req, ch.colKeyVals(body))); err != nil {
+			ch.currentMediaKeys(ctx, req, "", ch.colKeyVals(body))); err != nil {
 			return err
 		}
 		ch.InjectTenant(body, ctx)

@@ -79,7 +79,7 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 
 	fields := make([]render.HTML, 0, len(rows)+6)
 	for _, row := range rows {
-		fields = append(fields, hiddenInput("page", cell(rowValue(row, m.pk))))
+		fields = append(fields, hiddenInput("page", m.rowID(row)))
 	}
 	if every {
 		fields = append(fields, hiddenInput("match", match))
@@ -139,7 +139,7 @@ func selectCell(ctx context.Context, s *listState, lb *listBulk, row map[string]
 	return ui.Checkbox(ui.ToggleConfig{
 		Name:        "ids",
 		ID:          lb.form + "-sel-" + strconv.Itoa(i),
-		Value:       cell(rowValue(row, s.m.pk)),
+		Value:       s.m.rowID(row),
 		Label:       i18nui.EntityBulkSelect.Text(ctx, map[string]any{"title": s.rowTitle(ctx, row)}),
 		LabelHidden: true,
 		ExtraAttrs:  html.Attrs{"form": lb.form},

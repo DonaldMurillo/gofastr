@@ -60,7 +60,7 @@ func TestWriteToolSchemaNarrowsStates(t *testing.T) {
 		t.Error("create tool offers the paid_on stamp; the pay move sets it, never a create")
 	}
 
-	update := updateToolSchema(invoicesEntity(false))
+	update := updateToolSchema(invoicesEntity(false), []string{"id"})
 	uprops := schemaProps(t, update)
 	if _, has := uprops["status"]; has {
 		t.Error("update tool offers the state field; it changes only through the move tools")

@@ -923,3 +923,34 @@ notes:
         - symbol: gofastr/framework/crud.CrudHandler.PrimaryKey
           type: '^string$'
     guidance: "Set PrimaryKey: []string{\"code\"}, or leave it empty and the handler reads its entity's key."
+  - change: "the saved-view delete route is POST <write base>/_views/_delete?id=<id> instead of POST <write base>/_views/_delete/{id}"
+    breaking: true
+    hits: edit
+    find:
+      strings:
+        match: '_views/_delete/'
+    guidance: "Mount entityui's SavedViewsHandler at \"POST <write base>/_views/_delete\"; the delete form now carries the view's id in its query string. A path id would collide with a composite key's record routes, <write base>/{a}/{b}/_restore."
+  - change: "an entity whose field's WireName is another field's column name panics at Define"
+    breaking: true
+    nodetect: "the clash is between two values in one EntityConfig; Define names both fields at boot"
+    guidance: "Rename one of the two: give the column a name no field publishes as, or pick another WireName. A body naming the column wrote the field whose wire key it is."
+  - change: "a record id for an integer key column answers 404 unless it is canonical decimal (01, +1 and 1.0 no longer name the row keyed 1)"
+    breaking: true
+    nodetect: "the change is in how a request path or batch item is read; the spelling lives in clients, not the app"
+    guidance: "Send integer ids as the API returns them, in plain decimal with no leading zeros or sign."
+  - change: "an entity keyed on a Float, Decimal, Bool, Date, Timestamp or JSON column, or on a column with a RawType other than an integer type on an Int field, panics at Define"
+    breaking: true
+    nodetect: "the key column's type is a value in an EntityConfig; Define names the entity and column at boot"
+    guidance: "Key on a String, Int, Enum or UUID column instead: store a date key as its ISO text in a String column, or keep a generated id and enforce the natural key with a unique index."
+  - change: "App.View with Columns panics, and admin Config.Entities fails Init, on a key column of a type Define refuses (a RawType other than an integer type, a date, a float, ...)"
+    breaking: true
+    nodetect: "the key column's type is a value in a migrate.Column; App.View and the admin name the view or table at boot"
+    guidance: "Mark a text or integer column PrimaryKey on the view, or drop the RawType from the key column. A raw App.Table stays migration-only: remove it from admin Config.Entities, or declare it as an entity with app.Entity."
+  - change: "a record id on an Unmanaged entity matches only its row's own spelling of the key: an uppercase UUID, a different case on a CITEXT, NOCASE or nondeterministic-collation key column, or a CHAR(n) value without its padding, answers 404"
+    breaking: true
+    nodetect: "the change is in how a request path is matched; the spelling lives in clients, not the app"
+    guidance: "Send record ids exactly as the API returns them in a row's key fields."
+  - change: "a raw App.Table's entity has Exposure.CRUD false, so admin AllEntities no longer lists it and App.EntityCRUDMounted reports it unmounted"
+    breaking: true
+    nodetect: "the change is in which tables the admin lists; nothing in an app's source spells it"
+    guidance: "To manage a table in the admin, declare it with app.Entity and name it in Config.Entities."

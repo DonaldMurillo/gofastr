@@ -3,7 +3,6 @@ package admin
 import (
 	"context"
 	"encoding/json"
-	"net/url"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -111,7 +110,7 @@ func (b *Battery) activityRecord(ctx context.Context, r auditRow, before, after 
 	t, live := b.auditTitle(ctx, e, r, before, after)
 	switch {
 	case live:
-		return b.singular(ctx, e), t, b.entityBase(e) + "/" + url.PathEscape(r.RecordID)
+		return b.singular(ctx, e), t, b.recordHref(e, r.RecordID)
 	case t != "":
 		return b.singular(ctx, e), t, ""
 	}

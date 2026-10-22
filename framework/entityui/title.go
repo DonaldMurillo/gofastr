@@ -37,14 +37,14 @@ func (u *UI) rowTitles(ctx context.Context, m *meta, rows []map[string]any, hops
 			if hops >= maxTitleHops {
 				continue
 			}
-			labels = u.resolveLabelsAt(ctx, m, name, columnIDs(rows, name), hops+1)
+			labels = u.resolveLabelsAt(ctx, m, name, columnIDs(m, rows, name), hops+1)
 			if labels == nil {
 				// Refused: the caller may not read the related entity.
 				continue
 			}
 		}
 		for i, row := range rows {
-			v := cell(rowValue(row, name))
+			v := cell(m.rowValue(row, name))
 			if labels != nil {
 				v = labels[v]
 			}
@@ -75,7 +75,7 @@ func (u *UI) titleMap(ctx context.Context, m *meta, rows []map[string]any, hops 
 	titles := u.rowTitles(ctx, m, rows, hops)
 	labels := make(map[string]string, len(rows))
 	for i, row := range rows {
-		id := cell(rowValue(row, m.pk))
+		id := m.rowID(row)
 		if id == "" {
 			continue
 		}
@@ -88,11 +88,11 @@ func (u *UI) titleMap(ctx context.Context, m *meta, rows []map[string]any, hops 
 }
 
 // columnIDs is the distinct non-empty values of one column over rows.
-func columnIDs(rows []map[string]any, col string) []string {
+func columnIDs(m *meta, rows []map[string]any, col string) []string {
 	ids := make([]string, 0, len(rows))
 	seen := make(map[string]bool, len(rows))
 	for _, row := range rows {
-		if v := cell(rowValue(row, col)); v != "" && !seen[v] {
+		if v := cell(m.rowValue(row, col)); v != "" && !seen[v] {
 			seen[v] = true
 			ids = append(ids, v)
 		}
@@ -106,13 +106,13 @@ func (u *UI) pageTitles(ctx context.Context, s *listState, rows []map[string]any
 	titles := u.rowTitles(ctx, s.m, rows, 0)
 	s.titles = make(map[string]string, len(rows))
 	for i, row := range rows {
-		s.titles[cell(rowValue(row, s.m.pk))] = titles[i]
+		s.titles[s.m.rowID(row)] = titles[i]
 	}
 }
 
 // rowTitle is a page row's title from pageTitles, else the singular.
 func (s *listState) rowTitle(ctx context.Context, row map[string]any) string {
-	if t := s.titles[cell(rowValue(row, s.m.pk))]; t != "" {
+	if t := s.titles[s.m.rowID(row)]; t != "" {
 		return t
 	}
 	return s.m.singular(ctx)

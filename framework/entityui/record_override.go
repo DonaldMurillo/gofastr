@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -96,7 +95,7 @@ func (b *RecordBuilder) overridePanel(ctx context.Context, m *meta, row map[stri
 	if !b.mayOverride(ctx, m, b.id) {
 		return ""
 	}
-	current := cell(rowValue(row, m.states.Field))
+	current := cell(m.rowValue(row, m.states.Field))
 	opts := make([]ui.SelectOption, 0, len(stateValues(m)))
 	for _, v := range stateValues(m) {
 		opts = append(opts, ui.SelectOption{
@@ -105,8 +104,8 @@ func (b *RecordBuilder) overridePanel(ctx context.Context, m *meta, row map[stri
 			Selected: v == current,
 		})
 	}
-	action := m.api + "/" + url.PathEscape(b.id) + "/_override"
-	back := base + "/" + url.PathEscape(b.id)
+	action := m.api + "/" + m.idPath(b.id) + "/_override"
+	back := base + "/" + m.idPath(b.id)
 	form := ui.Form(ui.FormConfig{
 		Ctx:    ctx,
 		Action: action,
@@ -189,7 +188,10 @@ func (u *UI) OverrideHandler(entityName string) http.Handler {
 			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
-		id := overrideID(r)
+		id := crud.PathRecordID(r, m.keys)
+		if len(m.keys) == 1 && id == "" {
+			id = overrideID(r)
+		}
 		if id == "" {
 			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return

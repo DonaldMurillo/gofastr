@@ -46,6 +46,10 @@ For `List("deals").Base("/deals")`, the default contract is:
 | Create | `/deals/create` | `appUI.Create("deals").Base("/deals")` |
 | Record | `/deals/{id}` | `appUI.Record("deals", id).Base("/deals")` |
 
+An entity with a composite `PrimaryKey` links its records as one segment
+per key column, `/enrollments/{student_id}/{course_id}`; register that
+screen and pass `entity.JoinKey` of the params as the id.
+
 Mount the exact create route: the default New, Duplicate, Create another,
 related-list Add and relation-picker New links use `<base>/create`.
 Mounting only `/deals/new` leaves those links pointing at a missing screen;
@@ -647,7 +651,7 @@ _ = list.RenderCtx(ctx)
   revealing nothing. The save form ("Save view", a name; shown once the
   filter or the columns differ from the open view) and the open view's
   delete form post to `POST <write base>/_views` and
-  `POST <write base>/_views/_delete/{id}`, served by
+  `POST <write base>/_views/_delete?id=<id>`, served by
   `appUI.SavedViewsHandler(entity)`. The handler re-checks the filter
   and columns against the entity's fields before storing anything;
   owner and tenant come only from the caller's context, which the

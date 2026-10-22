@@ -362,9 +362,10 @@ func (b *Battery) auditRecord(ctx context.Context, r auditRow, before, after map
 		return render.Join(render.Text(r.Entity+" "), id), ui.EmptyValue()
 	}
 	var title render.HTML
+	href := b.recordHref(e, r.RecordID)
 	switch t, live := b.auditTitle(ctx, e, r, before, after); {
-	case live:
-		title = ui.Link(ui.LinkConfig{Href: b.entityBase(e) + "/" + pathSegment(r.RecordID), Text: t, Variant: ui.LinkTitle})
+	case live && href != "":
+		title = ui.Link(ui.LinkConfig{Href: href, Text: t, Variant: ui.LinkTitle})
 	case t != "":
 		title = render.Text(t)
 	default:

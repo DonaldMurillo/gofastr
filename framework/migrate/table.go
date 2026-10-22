@@ -79,7 +79,7 @@ func (t Table) ToEntity() *entity.Entity {
 			ForeignKey: fk.Column,
 		})
 	}
-	timestamps := false
+	timestamps, crud := false, false
 	ent := &entity.Entity{Config: entity.EntityConfig{
 		Name:       t.Name,
 		Table:      t.Name,
@@ -95,7 +95,10 @@ func (t Table) ToEntity() *entity.Entity {
 		// diff engine reads Config.Scope directly.
 		Scope:      &entity.ScopeConfig{},
 		Pagination: &entity.PaginationConfig{},
-		Exposure:   &entity.ExposureConfig{},
+		// CRUD off: a raw table is registered for migration only, so
+		// nothing that reads Exposure (the admin's AllEntities, the
+		// route index, openapi.json) serves or advertises its rows.
+		Exposure: &entity.ExposureConfig{CRUD: &crud},
 	}}
 	return ent
 }

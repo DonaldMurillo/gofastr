@@ -235,7 +235,7 @@ func (u *UI) changes(ctx context.Context, s *listState, labels labelResolver, be
 // changeValue is one side of a change: the cell the list draws, or ""
 // for an empty value, which the change list draws as the empty mark.
 func (u *UI) changeValue(ctx context.Context, s *listState, labels labelResolver, f schema.Field, row map[string]any) render.HTML {
-	if cell(rowValue(row, f.Name)) == "" {
+	if cell(s.m.rowValue(row, f.Name)) == "" {
 		return ""
 	}
 	return u.cellHTML(ctx, s, labels, f, row, f.Name)
@@ -250,10 +250,10 @@ func (u *UI) changeValue(ctx context.Context, s *listState, labels labelResolver
 func (m *meta) changeFields(before, after map[string]any) []schema.Field {
 	var out []schema.Field
 	for _, f := range m.fields {
-		if f.Name == m.pk || f.AutoGenerate != schema.AutoNone || m.hiddenFromCaller(f) {
+		if m.isKey(f.Name) || f.AutoGenerate != schema.AutoNone || m.hiddenFromCaller(f) {
 			continue
 		}
-		if cell(rowValue(before, f.Name)) == cell(rowValue(after, f.Name)) {
+		if cell(m.rowValue(before, f.Name)) == cell(m.rowValue(after, f.Name)) {
 			continue
 		}
 		out = append(out, f)

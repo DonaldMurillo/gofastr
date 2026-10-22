@@ -39,7 +39,13 @@ func (b *RecordBuilder) render(ctx context.Context) (render.HTML, error) {
 	ctx = i18n.WithTranslator(ctx, m.tr)
 	base := b.base
 	if base == "" {
-		base = requestBase(ctx)
+		// The create screen's path ends in one segment, a record's in
+		// one per key column.
+		n := len(m.keys)
+		if b.id == "" {
+			n = 1
+		}
+		base = requestBase(ctx, n)
 	}
 	if b.id == "" {
 		return b.createScreen(ctx, m, base), nil
@@ -114,14 +120,20 @@ func relationTo(other *entity.Entity, target string) (rel entity.Relation, fk st
 }
 
 // requestBase is the record's default base path: the current request
-// path with its last segment removed, so /admin/entities/invoices/42
-// bases at /admin/entities/invoices.
-func requestBase(ctx context.Context) string {
+// path with its last n segments removed, so /admin/entities/invoices/42
+// bases at /admin/entities/invoices, and so does
+// /admin/entities/enrollments/s1/c1 under a two-column key. A trailing
+// slash, which the screen router matches the same, is no segment.
+func requestBase(ctx context.Context, n int) string {
 	r := appui.RequestFromContext(ctx)
 	if r == nil || r.URL == nil || r.URL.Path == "" || r.URL.Path == "/" {
 		return "/"
 	}
-	return path.Dir(r.URL.Path)
+	p := path.Clean(r.URL.Path)
+	for range n {
+		p = path.Dir(p)
+	}
+	return p
 }
 
 // currentURL is the page's own URL, path and query, the destination a
@@ -206,7 +218,7 @@ func (b *RecordBuilder) header(ctx context.Context, m *meta, row map[string]any,
 	title := b.ui.recordTitle(ctx, m, row)
 	cfg := ui.PageHeaderConfig{Title: title, Subtitle: stampLine(ctx, m, row)}
 	if m.states != nil {
-		if v := cell(rowValue(row, m.states.Field)); v != "" {
+		if v := cell(m.rowValue(row, m.states.Field)); v != "" {
 			cfg.Badge = ui.StatusBadge(ui.StatusBadgeConfig{
 				Label:   m.valueLabel(ctx, m.states.Field, v),
 				Variant: enumVariant(v),
@@ -273,7 +285,7 @@ func stampLine(ctx context.Context, m *meta, row map[string]any) string {
 		if !ok || f.Hidden {
 			continue
 		}
-		if t, ok := parseTime(rowValue(row, s.col)); ok {
+		if t, ok := parseTime(m.rowValue(row, s.col)); ok {
 			parts = append(parts, s.key.Text(ctx, map[string]any{"date": i18n.Date(ctx, t, i18n.DateMedium)}))
 		}
 	}
@@ -289,7 +301,7 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 	// button: it goes in the menu, above Delete, behind a confirm.
 	var danger []ui.MenuItem
 	if m.states != nil && canUpdate(ctx, m, b.id) {
-		current := cell(rowValue(row, m.states.Field))
+		current := cell(m.rowValue(row, m.states.Field))
 		for _, t := range m.states.Transitions {
 			if t.System || !slices.Contains(t.From, current) {
 				continue
@@ -306,7 +318,7 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 			if !ok || variant == "" || (save && variant == ui.ButtonPrimary) {
 				variant = ui.ButtonSecondary
 			}
-			act := interactive.Post(m.api + "/" + url.PathEscape(b.id) + "/transitions/" + url.PathEscape(t.Key)).
+			act := interactive.Post(m.api + "/" + m.idPath(b.id) + "/transitions/" + url.PathEscape(t.Key)).
 				OnSuccessToast(i18nui.EntityMoved.Text(ctx, map[string]any{"entity": m.singular(ctx)})).
 				OnSuccess(interactive.Navigate(currentURL(ctx))).
 				OnErrorToast(i18nui.EntityMoveFailed.Text(ctx, map[string]any{"action": strings.ToLower(label)}))
@@ -458,7 +470,7 @@ func (b *RecordBuilder) copyAPIURL(ctx context.Context, m *meta) (render.HTML, [
 		return "", nil
 	}
 	id := "eui-rec-api"
-	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(origin+base+"/"+url.PathEscape(b.id))),
+	return html.Span(html.TextConfig{ID: id, Class: "cui-visually-hidden"}, render.Text(origin+base+"/"+m.idPath(b.id))),
 		[]ui.MenuItem{{Label: i18nui.EntityCopyAPIURL.Text(ctx), Copy: &ui.MenuCopy{Target: id, Toast: i18nui.CopyCopied.Text(ctx)}}}
 }
 
@@ -674,14 +686,14 @@ func checkForm(m *meta, f *entity.EntityForm) error {
 // and returns to back, and the restore handler's answer is its toast.
 func deleteAction(ctx context.Context, m *meta, id, back string, undo bool) interactive.Action {
 	vars := map[string]any{"entity": m.singular(ctx)}
-	del := interactive.Delete(m.api + "/" + url.PathEscape(id)).
+	del := interactive.Delete(m.api + "/" + m.idPath(id)).
 		WithConfirmDialog(deleteConfirm(ctx, m)).
 		OnSuccessToast(i18nui.EntityDeleted.Text(ctx, vars)).
 		OnSuccess(interactive.Navigate(back)).
 		OnErrorToast(i18nui.EntityDeleteFailed.Text(ctx, vars))
 	if undo && m.e.Config.Scope.SoftDelete && canUpdate(ctx, m, id) {
 		del = del.OnSuccessToastAction(i18nui.EntityUndo.Text(ctx),
-			interactive.Post(m.api+"/"+url.PathEscape(id)+"/_restore").WithBody(`{}`).
+			interactive.Post(m.api+"/"+m.idPath(id)+"/_restore").WithBody(`{}`).
 				OnSuccess(interactive.Navigate(back)).
 				OnErrorToast(i18nui.EntityRestoreFailed.Text(ctx)))
 	}

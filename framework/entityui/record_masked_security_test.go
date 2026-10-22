@@ -134,7 +134,7 @@ func storedToken(t *testing.T, x *testUI) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return cell(rowValue(row, "token"))
+	return cell((&meta{}).rowValue(row, "token"))
 }
 
 // Saving the record form with a hook-masked text field leaves the

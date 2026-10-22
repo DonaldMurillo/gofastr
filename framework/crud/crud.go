@@ -906,7 +906,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		id := r.PathValue("id")
+		id := ch.pathID(r)
 		if id == "" {
 			writeJSONError(w, r, http.StatusBadRequest, reasonMissingID)
 			return
@@ -931,7 +931,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
 		}
-		qb := query.Select(cols...)
+		qb := query.Select(ch.keyedCols(cols)...)
 		qb.From(ch.Entity.GetTable())
 		kc, ka := ch.keyWhere(id)
 		qb.Where(kc, ka...)
@@ -947,9 +947,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		}
 
 		sqlStr, args := qb.Build()
-		row := ch.DB.QueryRowContext(ctx, sqlStr, args...)
-
-		result, err := ch.scanOne(row, cols)
+		result, err := ch.scanOwn(ctx, id, cols, sqlStr, args)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				writeJSONError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
@@ -1099,7 +1097,7 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 		if !ch.requireScope(w, r, opUpdate) {
 			return
 		}
-		id := r.PathValue("id")
+		id := ch.pathID(r)
 		if id == "" {
 			writeJSONError(w, r, http.StatusBadRequest, reasonMissingID)
 			return
@@ -1184,7 +1182,7 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 		if !ch.requireScope(w, r, opDelete) {
 			return
 		}
-		id := r.PathValue("id")
+		id := ch.pathID(r)
 		if id == "" {
 			writeJSONError(w, r, http.StatusBadRequest, reasonMissingID)
 			return

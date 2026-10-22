@@ -163,8 +163,11 @@ func (ch *CrudHandler) checkMediaProvenance(ctx context.Context, body map[string
 // currentMediaKeys returns a reader for the storage keys on the row whose
 // key values are key (nil when the write names no row yet), under the
 // same tenant, owner and soft-delete WHERE the UPDATE applies, so "the
-// row's current value" never means a row this caller cannot write.
-func (ch *CrudHandler) currentMediaKeys(ctx context.Context, r *http.Request, key []any) func() (map[string]bool, error) {
+// row's current value" never means a row this caller cannot write. An
+// update passes the record id it names, and a row whose own id is not
+// that one has no keys (see keyWhere); an upsert, which writes the row
+// its key values match, passes "".
+func (ch *CrudHandler) currentMediaKeys(ctx context.Context, r *http.Request, id string, key []any) func() (map[string]bool, error) {
 	return func() (map[string]bool, error) {
 		var cols []string
 		variant := map[string]bool{}
@@ -186,8 +189,12 @@ func (ch *CrudHandler) currentMediaKeys(ctx context.Context, r *http.Request, ke
 				return nil, nil
 			}
 		}
+		sel := cols
+		if id != "" {
+			sel = ch.keyedCols(cols)
+		}
 		kc, ka := ch.keyCond(key)
-		qb := query.Select(cols...).
+		qb := query.Select(sel...).
 			From(ch.Entity.GetTable()).
 			Where(kc, ka...)
 		ch.ApplyTenantScope(qb, r)
@@ -196,8 +203,8 @@ func (ch *CrudHandler) currentMediaKeys(ctx context.Context, r *http.Request, ke
 			qb.Where("deleted_at IS NULL")
 		}
 		sqlStr, args := qb.Build()
-		vals := make([]sql.NullString, len(cols))
-		dest := make([]any, len(cols))
+		vals := make([]sql.NullString, len(sel))
+		dest := make([]any, len(sel))
 		for i := range vals {
 			dest[i] = &vals[i]
 		}
@@ -207,6 +214,15 @@ func (ch *CrudHandler) currentMediaKeys(ctx context.Context, r *http.Request, ke
 		}
 		if err != nil {
 			return nil, fmt.Errorf("read current file columns: %w", err)
+		}
+		if id != "" {
+			row := make(map[string]any, len(sel))
+			for i, c := range sel {
+				row[ch.convertKey(c)] = vals[i].String
+			}
+			if !ch.ownRow(id, row, cols) {
+				return nil, nil
+			}
 		}
 		keys := map[string]bool{}
 		for i, c := range cols {

@@ -85,10 +85,10 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 			if !mayCreateSet(m, f) || blank[f.Name] {
 				continue
 			}
-			if cell(rowValue(row, f.Name)) != cell(rowValue(hooked, f.Name)) {
+			if cell(m.rowValue(row, f.Name)) != cell(m.rowValue(hooked, f.Name)) {
 				continue
 			}
-			if v := formValueText(f, rowValue(row, f.Name)); v != "" {
+			if v := formValueText(f, m.rowValue(row, f.Name)); v != "" {
 				values[f.Name] = v
 			}
 		}
@@ -113,7 +113,8 @@ func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) 
 // unique column index. A relation in a mixed index keeps its value,
 // since the other fields alone make the copy distinct (an invoice
 // copied under the same customer needs only a new number); an index
-// of relations alone blanks them all.
+// of relations alone blanks them all. A composite primary key counts as
+// one more unique index.
 func uniqueBlank(m *meta) map[string]bool {
 	out := map[string]bool{}
 	for _, f := range m.fields {
@@ -121,15 +122,21 @@ func uniqueBlank(m *meta) map[string]bool {
 			out[f.Name] = true
 		}
 	}
+	var sets [][]string
+	if len(m.keys) > 1 {
+		sets = append(sets, m.keys)
+	}
 	for _, ix := range m.e.Config.Indices {
-		if !ix.Unique || ix.Expression != "" {
-			continue
+		if ix.Unique && ix.Expression == "" {
+			sets = append(sets, ix.Columns)
 		}
-		onlyRelations := !slices.ContainsFunc(ix.Columns, func(c string) bool {
+	}
+	for _, cols := range sets {
+		onlyRelations := !slices.ContainsFunc(cols, func(c string) bool {
 			f, ok := m.field(c)
 			return ok && f.Type != schema.Relation
 		})
-		for _, c := range ix.Columns {
+		for _, c := range cols {
 			if f, ok := m.field(c); ok && (onlyRelations || f.Type != schema.Relation) {
 				out[c] = true
 			}
@@ -149,10 +156,7 @@ func readOnlyNotice(ctx context.Context, m *meta) render.HTML {
 // not system, not Locked, not Omit, not guarded (the state field and
 // stamps change only through a move).
 func mayCreateSet(m *meta, f schema.Field) bool {
-	if f.Hidden || m.system(f) || m.locked(f) || m.omitted(f.Name) {
-		return false
-	}
-	return true
+	return !f.Hidden && !m.createLocked(f) && !m.omitted(f.Name)
 }
 
 // editTab draws the record's Edit tab: the form, or the read-only
@@ -229,10 +233,10 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		dest = o
 	}
 	if !fb.create {
-		action = m.api + "/" + url.PathEscape(b.id)
+		action = m.api + "/" + m.idPath(b.id)
 		rpc = interactive.Put(action)
 		toast = i18nui.EntitySaved.Text(ctx)
-		dest = base + "/" + url.PathEscape(b.id)
+		dest = base + "/" + m.idPath(b.id)
 	}
 	attrs := rpc.
 		OnSuccessToast(toast).
@@ -392,7 +396,7 @@ func (fb *formBuilder) details(ctx context.Context) render.HTML {
 		return ""
 	}
 	var items []ui.DetailItem
-	if id := cell(rowValue(row, m.pk)); id != "" {
+	if id := cell(m.rowValue(row, m.pk)); m.pk != "" && id != "" {
 		target := "eui-" + m.name + "-id"
 		items = append(items, ui.DetailItem{
 			Label: i18nui.EntityID.Text(ctx),
@@ -506,7 +510,7 @@ func (fb *formBuilder) value(f schema.Field) string {
 	if fb.row == nil {
 		return ""
 	}
-	return formValueText(f, rowValue(fb.row, f.Name))
+	return formValueText(f, fb.m.rowValue(fb.row, f.Name))
 }
 
 // field renders one field: read-only when locked or masked-write-only,
@@ -527,7 +531,7 @@ func (fb *formBuilder) field(ctx context.Context, f schema.Field) render.HTML {
 		if err == nil && cond.field == fb.m.states.Field {
 			current := ""
 			if fb.row != nil {
-				current = cell(rowValue(fb.row, fb.m.states.Field))
+				current = cell(fb.m.rowValue(fb.row, fb.m.states.Field))
 			} else if fb.create && fb.values != nil {
 				current = fb.values[cond.field]
 			}
@@ -559,7 +563,7 @@ func (fb *formBuilder) control(ctx context.Context, f schema.Field, label string
 	help := fb.m.help(ctx, f.Name)
 	id := "eui-f-" + f.Name
 
-	if fb.locked[f.Name] || fb.m.locked(f) {
+	if fb.locked[f.Name] || (fb.create && fb.m.createLocked(f)) || (!fb.create && fb.m.locked(f)) {
 		return fb.readOnly(ctx, f, label)
 	}
 	if fb.masked[f.Name] && !fb.create {
@@ -581,7 +585,7 @@ func (fb *formBuilder) readOnly(ctx context.Context, f schema.Field, label strin
 		// Only an editable input gets the raw row.
 		row, val := fb.row, fb.value(f)
 		if !fb.create && fb.displayRow != nil {
-			row, val = fb.displayRow, formValueText(f, rowValue(fb.displayRow, f.Name))
+			row, val = fb.displayRow, formValueText(f, fb.m.rowValue(fb.displayRow, f.Name))
 		}
 		if f.Type == schema.Relation && val != "" && !fb.relationReadable(ctx, f, val) {
 			return ui.DetailList(ui.DetailListConfig{Stacked: true, Items: []ui.DetailItem{{Label: label, Value: muted()}}})
@@ -874,7 +878,7 @@ func maskedFields(m *meta, raw, hooked map[string]any) map[string]bool {
 		if m.system(f) || m.locked(f) {
 			continue
 		}
-		if cell(rowValue(raw, f.Name)) != cell(rowValue(hooked, f.Name)) {
+		if cell(m.rowValue(raw, f.Name)) != cell(m.rowValue(hooked, f.Name)) {
 			masked[f.Name] = true
 		}
 	}

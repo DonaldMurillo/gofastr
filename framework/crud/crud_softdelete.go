@@ -175,13 +175,13 @@ func (ch *CrudHandler) PurgeOne(ctx context.Context, id string) error {
 func (ch *CrudHandler) selectTrashedRow(ctx context.Context, r *http.Request, id string) (map[string]any, error) {
 	cols := withDeletedAtColumn(ch.visibleFields())
 	kc, ka := ch.keyWhere(id)
-	qb := query.Select(cols...).
+	qb := query.Select(ch.keyedCols(cols)...).
 		From(ch.Entity.GetTable()).
 		Where(kc, ka...)
 	ch.ApplyTenantScope(qb, r)
 	applyOwnerScope(ch, qb, r, false)
 	sqlStr, args := qb.Build()
-	return ch.scanOne(ch.DB.QueryRowContext(ctx, sqlStr, args...), cols)
+	return ch.scanOwn(ctx, id, cols, sqlStr, args)
 }
 
 // withDeletedAtColumn appends the soft-delete marker to a projection
@@ -235,9 +235,9 @@ func (ch *CrudHandler) doRestore(ctx context.Context, r *http.Request, id string
 	if col := autoUpdatedAtColumn(ch.Entity); col != "" {
 		ub.Set(col, generateFieldValue(schema.AutoTimestamp))
 	}
-	ub.Returning(ch.visibleFields()...)
+	ub.Returning(ch.keyedCols(ch.visibleFields())...)
 	sqlStr, args := ub.Build()
-	result, err := ch.scanOne(ch.DB.QueryRowContext(ctx, sqlStr, args...), ch.visibleFields())
+	result, err := ch.writeOwn(ctx, id, ch.visibleFields(), sqlStr, args)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, errNotFound
@@ -288,12 +288,13 @@ func (ch *CrudHandler) doPurge(ctx context.Context, r *http.Request, id string) 
 	// Purge never skips the soft delete: the DELETE only matches rows the
 	// soft-delete marker already covers.
 	db.Where("deleted_at IS NOT NULL")
-	sqlStr, args := db.Build()
-	res, err := ch.DB.ExecContext(ctx, sqlStr, args...)
+	affected, err := ch.execOwn(ctx, id, db.Matching, func(returning []string) (string, []any) {
+		return db.Returning(returning...).Build()
+	})
 	if err != nil {
 		return fmt.Errorf("purge: %w", err)
 	}
-	if affected, _ := res.RowsAffected(); affected == 0 {
+	if affected == 0 {
 		return errNotFound
 	}
 
