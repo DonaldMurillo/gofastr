@@ -106,7 +106,7 @@ func interceptFullPage(key string) string {
 	body := "FULL " + key
 	if key == "/list" {
 		id = "list-main"
-		body = `<a id="to-a" href="/rec/a">rec a</a><a id="to-s" href="/rec/s">rec s</a>LIST`
+		body = `<a id="to-a" href="/rec/a">rec a</a><a id="to-s" href="/rec/s">rec s</a><a id="to-old" href="/rec/old">rec old</a>LIST`
 	}
 	if key == "/rec/a" {
 		// The record as its own page: Open in panel goes back to the
@@ -176,6 +176,11 @@ func startInterceptStackServer(t *testing.T) *interceptStackServer {
 		key := r.URL.Path
 		if r.URL.RawQuery != "" {
 			key += "?" + r.URL.RawQuery
+		}
+		if r.URL.Path == "/rec/old" {
+			// A moved record: every variant redirects to /rec/a.
+			http.Redirect(w, r, "/rec/a", http.StatusSeeOther)
+			return
 		}
 		switch {
 		case r.Header.Get("X-Gofastr-Intercept") != "":
@@ -673,6 +678,27 @@ func TestInterceptStacksWithoutLinkFocus(t *testing.T) {
 	snap := readStack(ctx)
 	if len(snap.Layers) != 2 || snap.Main != "list-main" {
 		t.Fatalf("want 2 layers over the list, got %d layers, main %q (%s)", len(snap.Layers), snap.Main, snap.URL)
+	}
+}
+
+// A record whose route redirects: fetch followed the 303 and the overlay
+// of /rec/a mounted under /rec/old's URL. A followed redirect is the
+// navigator's to take, so the address bar ends at /rec/a.
+func TestInterceptRedirectLeavesOverlay(t *testing.T) {
+	s := startInterceptStackServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(s.srv.URL+"/list"),
+		chromedp.WaitVisible(`#to-old`, chromedp.ByID),
+		chromedp.Click(`#to-old`, chromedp.ByID),
+	); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !interceptWait(ctx, `!!document.getElementById('rec-a') || !!document.getElementById('plain-screen')`) {
+		t.Fatal("the redirect target never rendered")
+	}
+	if snap := readStack(ctx); snap.URL != "/rec/a" {
+		t.Errorf("the redirect left the address bar at %q (%d layers), want /rec/a", snap.URL, len(snap.Layers))
 	}
 }
 

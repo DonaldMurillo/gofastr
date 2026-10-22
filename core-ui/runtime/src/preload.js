@@ -115,7 +115,8 @@
     // would serialize them (spike/layout-parts).
     fetch(path, { headers: hdrs, credentials: 'same-origin', cache: 'no-store' })
       .then((r) => {
-        if (!r.ok || r.headers.get('X-Gofastr-Location')) return null;
+        // A redirect, signalled or followed, is the click's to take.
+        if (!r.ok || r.redirected || r.headers.get('X-Gofastr-Location')) return null;
         if (r.headers.get('X-Gofastr-Partial') !== 'true') return null;
         return r.text().then((html) => ({
           html,

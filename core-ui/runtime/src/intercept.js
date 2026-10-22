@@ -193,7 +193,9 @@
       // though the overlay itself is never cached.
       if (r.ok) NS._inval?.(r);
       const as = r.headers.get('X-Gofastr-Overlay');
-      if (!r.ok || !as || r.headers.get('X-Gofastr-Location')) return null;
+      // A redirect, signalled or followed, falls back to the navigator,
+      // which takes it.
+      if (!r.ok || !as || r.redirected || r.headers.get('X-Gofastr-Location')) return null;
       return r.text().then((html) => Promise.resolve(NS._cssReady && NS._cssReady(html)).then(() => ({ html, as })));
     }).then((v) => n === NS._navEpoch ? v : new Promise(() => {}), (err) => {
       if (n !== NS._navEpoch) return new Promise(() => {});

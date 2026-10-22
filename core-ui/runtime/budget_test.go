@@ -1285,7 +1285,10 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// through say() with its {{n}} (2026-10-21, runtime strings).
 		// 3468 measured (3466 + 2) after its route lookup reads the path
 		// without the locale prefix (2026-10-21, locale prefixes).
-		"intercept": 3468,
+		// 3476 measured (3474 + 2) after an overlay fetch that followed
+		// a redirect falls back to the navigator
+		// (TestInterceptRedirectLeavesOverlay).
+		"intercept": 3476,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
