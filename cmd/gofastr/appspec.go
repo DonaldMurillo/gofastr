@@ -2626,6 +2626,8 @@ func validateAppSpec(bp AppSpec) error {
 	errs.add(validateAppSpecSeedStructure(bp, entitiesByName))
 	routes := map[string]bool{}
 	screenFiles := map[string]string{} // file name → what writes it
+	screenTypes := map[string]string{} // generated type name → screen name
+	routesOf := map[string]string{}    // screen name → its route, for the error
 	for _, screen := range bp.Screens {
 		if screen.Name == "" {
 			errs.add(fmt.Errorf("app spec: screen name is required"))
@@ -2659,6 +2661,15 @@ func validateAppSpec(bp AppSpec) error {
 			} else {
 				screenFiles[file] = owner
 			}
+		}
+		// Every screen declares <Name>Screen and mount<Name>Screen in one
+		// package, whichever file it lands in, so the name is the app's.
+		typeName := toCamelCase(screen.Name) + "Screen"
+		if prev, dup := screenTypes[typeName]; dup {
+			errs.add(fmt.Errorf("app spec: screens %q (%s) and %q (%s) both generate the type %s, so the app would not build; rename one", prev, routesOf[prev], screen.Name, screen.Route, typeName))
+		} else {
+			screenTypes[typeName] = screen.Name
+			routesOf[screen.Name] = screen.Route
 		}
 		if _, err := screenTypeConst(screen.Type); err != nil {
 			errs.add(err)

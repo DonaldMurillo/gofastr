@@ -136,7 +136,9 @@ screens:
 // the second write silently replaces the first and its route never
 // mounts. A standalone screen writes screen_<name>.go and an entity's
 // screens share screen_<entity>_crud.go, so "Posts Crud" collides with
-// the posts screens' file. Refused at validate time.
+// the posts screens' file. Two screens with one name in different
+// files would each declare <Name>Screen, and the app would not build.
+// Refused at validate time.
 func TestAppSpecRejectsCollidingScreenFiles(t *testing.T) {
 	const head = `app:
   name: Collide
@@ -147,34 +149,39 @@ entities:
     fields:
       - name: title
         type: string
+  - name: customers
+    crud: true
+    fields:
+      - name: title
+        type: string
 screens:
 `
-	const list = `    body:
-      - kind: entity_list
-        entity: posts
-        fields: [title]
-`
+	list := func(entity string) string {
+		return "    body:\n      - kind: entity_list\n        entity: " + entity + "\n        fields: [title]\n"
+	}
 	const text = `    body:
       - kind: heading
         text: Hi
 `
 	for name, c := range map[string]struct {
 		screens string
-		collide bool
+		want    string // "" when the spec is valid
 	}{
-		"two standalone":          {"  - name: API\n    route: /a\n" + text + "  - name: Api\n    route: /b\n" + text, true},
-		"standalone vs crud file": {"  - name: Posts Crud\n    route: /a\n" + text + "  - name: Posts\n    route: /b\n" + list, true},
-		// Both write screen_posts_crud.go, as one file.
-		"one entity's screens": {"  - name: API\n    route: /a\n" + list + "  - name: Api\n    route: /b\n" + list, false},
+		"two standalone":          {"  - name: API\n    route: /a\n" + text + "  - name: Api\n    route: /b\n" + text, "screen file"},
+		"standalone vs crud file": {"  - name: Posts Crud\n    route: /a\n" + text + "  - name: Posts\n    route: /b\n" + list("posts"), "screen file"},
+		"one name, two entities":  {"  - name: Overview\n    route: /a\n" + list("posts") + "  - name: Overview\n    route: /b\n" + list("customers"), "OverviewScreen"},
+		"one name, one entity":    {"  - name: Overview\n    route: /a\n" + list("posts") + "  - name: Overview\n    route: /b\n" + list("posts"), "OverviewScreen"},
+		// Both write screen_posts_crud.go, as one file, as two types.
+		"one entity's screens": {"  - name: API\n    route: /a\n" + list("posts") + "  - name: Api\n    route: /b\n" + list("posts"), ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "gofastr.yml")
 			writeTestFile(t, path, head+c.screens)
 			_, err := loadAppSpec(path)
 			switch {
-			case c.collide && (err == nil || !strings.Contains(err.Error(), "screen file")):
-				t.Fatalf("want a screen file collision, got: %v", err)
-			case !c.collide && err != nil:
+			case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
+				t.Fatalf("want an error naming %q, got: %v", c.want, err)
+			case c.want == "" && err != nil:
 				t.Fatalf("one entity's screens share their file: %v", err)
 			}
 		})
