@@ -58,6 +58,8 @@ func TestPathOnOrigin(t *testing.T) {
 	for in, want := range map[string]string{
 		"https://shop.example/x":   "https://shop.example/es/x",
 		"https://shop.example":     "https://shop.example/es",
+		"https://shop.example?q=1": "https://shop.example/es?q=1",
+		"https://shop.example#top": "https://shop.example/es#top",
 		"https://shop.example/es/": "https://shop.example/es/",
 		"https://shop.examplex/x":  "https://shop.examplex/x",
 		"https://other.example/x":  "https://other.example/x",

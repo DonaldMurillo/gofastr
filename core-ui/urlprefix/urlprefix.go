@@ -69,8 +69,11 @@ func Path(u string, rule Rule) string {
 			if rest == "" {
 				return o + rule.Prefix
 			}
-			if rest[0] == '/' {
+			switch rest[0] {
+			case '/':
 				return o + Path(rest, rule)
+			case '?', '#':
+				return o + rule.Prefix + rest
 			}
 			return u
 		}
