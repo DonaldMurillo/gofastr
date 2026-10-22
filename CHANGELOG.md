@@ -300,10 +300,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `framework.JoinKey` and `framework.RowKey`. An entity keyed on `id`
   keeps every generated signature. See `gofastr docs app-spec` →
   "Composite keys (`primary_key`)".
-- **Join entities and three-way associations.** Only the end a foreign
-  key references needs a one-column key now (`entity.CheckRelationKeys`):
+- **Join entities and three-way associations.** A foreign key has one
+  column per column of the key it references (`entity.CheckRelationKeys`):
   a `belongs_to` checks its target, a `has_one` or `has_many` its source,
-  a `many_to_many` both. An enrollments entity keyed on
+  and a `many_to_many` needs one-column keys on both ends. An enrollments
+  entity keyed on
   `(student_id, course_id)` with a `grade` column belongs to students and
   courses, each side has many of it, and `students` can declare a
   `many_to_many` to courses through it; `?include=`, nested filters and
@@ -311,7 +312,9 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   same for a three-way association. When a registered entity owns a
   `many_to_many`'s pivot table, reads through the pivot apply its soft
   delete and owner, tenant and read scopes, and boot refuses the
-  relation if that entity lacks either link column. When several
+  relation if that entity lacks either link column. A `cascade_write`
+  link inserts the pivot row through that entity's `belongs_to` scope
+  checks. When several
   versions own the pivot and none is the source's version or
   unversioned, the read is an error rather than a pick. A `cascade_write`
   into a composite-keyed child is refused at boot. A key that is a
@@ -321,6 +324,33 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `entity.RelationHoldsInt`, `crud.CrudHandler.WireKey`.
   See `gofastr docs entity-declarations` → "Relations and composite
   keys".
+- **Foreign keys to composite keys.** A relation names one column per
+  key column of the end it references:
+  `entity.BelongsTo("order", "orders", "order_store", "order_no")` fills
+  `Relation.ForeignKeys`, and `Relation.FKColumns()` returns the columns
+  for a one-column key too. The migrator emits one `FOREIGN KEY` over
+  the tuple and an index on it; boot refuses a column count that differs
+  from the key's, a repeated or undeclared column, a column typed
+  unlike its key column, and a column a transition of any declaration
+  over the table writes, at registration. `?include=`, nested filters, `EagerLoad`, the
+  record page's related tabs and the admin's related lists join on the
+  whole tuple. A write that sets some of the columns and not the others,
+  or nulls only some, is a 400 `validation.partial_foreign_key`, and the
+  scope check on a reference looks up the whole tuple as the row will
+  hold it: a column the write does not take from the body reads the
+  field's default or the caller's tenant on create and the stored value
+  on PATCH, an upsert checks both its insert and its conflict update,
+  and a write that cannot know such a column (the upsert's conflict
+  update, the bulk `UpdateAll`, a create through an `AutoIncrement`
+  column) refuses moving part of the reference with a 400
+  `validation.kept_foreign_key`. A tuple with a null column names no
+  row. The columns are spelled as their
+  fields are declared. An app spec
+  names the columns as a list, `foreign_key: [order_store, order_no]`.
+  A `cascade_write` over several columns and a `many_to_many` with a
+  composite-keyed end are refused at boot; link the latter through a
+  join entity. New: `entity.ErrForeignKeyShape`,
+  `migrate.ForeignKey.Columns`.
 - **Primary-key change migrations.** The schema diff detects a changed
   key and emits it as destructive: Postgres swaps the key constraint,
   SQLite rebuilds the table. Boot changes the key of an empty table only
@@ -660,6 +690,10 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   navigation the section the link owns never read as current.
 
 ### Security
+- **A blank reference skipped the belongs_to scope check.** A write
+  whose foreign key was the empty string was treated as naming no row,
+  so it could point at a row keyed on `''` that the caller cannot read.
+  Only a null reference skips the check now.
 - The repo builds with Go 1.27.3 (`toolchain go1.27.3` in go.mod, and in
   the go.mod `gofastr init` writes; the `go 1.27.0` floor is unchanged).
   1.27.3 fixes GO-2026-6809 in crypto/x509, which govulncheck reaches
