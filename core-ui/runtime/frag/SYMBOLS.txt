@@ -216,6 +216,7 @@ nav	12	m
 nav	2	MAX_CACHE_SIZE
 nav	2	SCROLL_KEY
 nav	2	_announceTimer
+nav	2	_docRedirect
 nav	2	_entryId
 nav	2	_entrySeq
 nav	2	_focusSwapTarget

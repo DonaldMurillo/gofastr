@@ -963,6 +963,11 @@
       NS._inval(resp);
       const redirectTo = resp.headers.get('X-Gofastr-Location');
       if (redirectTo) {
+        if (NS._docRedirect(redirectTo)) {
+          _pend.delete(path);
+          if (P && parts) P.kill(parts);
+          return;
+        }
         NS._pushURL(redirectTo, { replace: true });
         NS._setCurrentPath(redirectTo);
         _pend.delete(path);

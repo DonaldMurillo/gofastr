@@ -148,6 +148,15 @@
     srcs.sort();
     return srcs.join('\n') !== dest.join('\n');
   };
+  // A server redirect (X-Gofastr-Location) into another document loads
+  // it in place of the requested URL. Both navigators ask before they
+  // replace the URL: the boundary reads the locale off location.
+  const _docRedirect = (to) => {
+    if (!window.__gofastr._originOK(to) || !crossesDocBoundary(to)) return false;
+    location.replace(to);
+    return true;
+  };
+  window.__gofastr._docRedirect = _docRedirect;
 
   // Page-owned metadata travels with cached page content, independently of
   // the layout boundaries the navigator keeps. Scripts are never copied.
@@ -685,12 +694,13 @@
       // (Session rollover already applied above, before the ok-check.)
       const redirectTo = resp.headers.get('X-Gofastr-Location');
       if (redirectTo) {
+        _pendingNav.delete(path);
+        if (_docRedirect(redirectTo)) return;
         // pushState was already called by the click handler with the
         // requested path; replace it with the redirect destination so
         // the URL bar matches what we're about to load.
         _pushPub(redirectTo, { replace: true });
         currentPath = redirectTo;
-        _pendingNav.delete(path);
         doc.removeHtmlAttr('aria-busy');
         // Keep bypassCache across the redirect: a post-mutation nav
         // must not serve the redirect target from the screen cache,
