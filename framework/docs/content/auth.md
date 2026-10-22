@@ -628,7 +628,7 @@ The dispatcher resolves each request as one of four outcomes:
 | Decision     | What happens                                                    |
 |--------------|-----------------------------------------------------------------|
 | Allow        | Normal Load + Render.                                           |
-| Redirect     | 303 to `WithRedirect(url)`, default `/login?next=<path>`.        |
+| Redirect     | 303 to `WithRedirect(url)`, default `/login?next=<path>`. A client-side navigation gets the same destination: a relative path in `X-Gofastr-Location`, an absolute http(s) URL (an identity provider's login) in `X-Gofastr-Document`, which the runtime loads as a page. |
 | RenderAlt    | The alt component takes the screen's place; its Load runs.      |
 | Block        | HTTP status from `WithBlock(status)`, default 401/403. The body is the status's phrase, or `WithBlockReason(status, phrase)`'s, in the request's locale. |
 

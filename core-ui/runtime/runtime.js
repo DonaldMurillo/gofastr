@@ -1108,6 +1108,14 @@
   // document (null: handled); a page in this document comes back as its
   // path, for the X-Gofastr-Location leg; '' when nothing redirected.
   const _followed = (r, path) => {
+    // A policy sending the reader off the app: fetch could not follow
+    // it there, so the server names it and the page goes.
+    const doc = r.headers.get('X-Gofastr-Document');
+    if (doc) {
+      if (!/^https?:\/\//i.test(doc)) throw new Error('HTTP 303');
+      location.replace(doc);
+      return null;
+    }
     if (!r.redirected || !r.url) return '';
     if (!window.__gofastr._sameOrigin(r.url)) { location.replace(r.url); return null; }
     const to = resolvePath(r.url);

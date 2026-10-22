@@ -42,13 +42,20 @@ func TestPartialEarlyExitsCarryNoStore(t *testing.T) {
 		}
 	}
 
-	// (b) Live session + policy redirect with an unsafe URL: the re-mint
-	// block is skipped (no second no-store) and the hard 303 arm returns
-	// before the unconditional one; a cached 303 replays its Location
+	// (b) Live session + policy redirect with a URL that is not a safe
+	// relative path: the re-mint block is skipped (no second no-store)
+	// and both the hard 303 arm and the X-Gofastr-Document arm return
+	// before the unconditional one; a cached answer replays its target
 	// onto later visitors' navigations of that URL.
-	{
+	for _, tc := range []struct {
+		target string
+		status int
+	}{
+		{"//evil.example/login", http.StatusSeeOther},
+		{"https://evil.example/login", http.StatusOK},
+	} {
 		pol := app.PolicyFunc(func(ctx context.Context) app.Decision {
-			return app.Decision{Kind: app.DecisionRedirect, URL: "https://evil.example/login"}
+			return app.Decision{Kind: app.DecisionRedirect, URL: tc.target}
 		})
 		application := app.NewApp("t")
 		application.RegisterScreen(
@@ -64,14 +71,14 @@ func TestPartialEarlyExitsCarryNoStore(t *testing.T) {
 		req.AddCookie(&http.Cookie{Name: sessionCookieDevName, Value: sess.Token})
 		w := httptest.NewRecorder()
 		ds.ServeHTTP(w, req)
-		if w.Code != http.StatusSeeOther {
-			t.Fatalf("policy redirect partial: status %d, want 303 (unsafe redirect URL falls back to a hard redirect)", w.Code)
+		if w.Code != tc.status {
+			t.Fatalf("policy redirect partial to %s: status %d, want %d", tc.target, w.Code, tc.status)
 		}
 		if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
-			t.Errorf("SECURITY: [uihost] partial 303 Cache-Control = %q, want no-store — "+
+			t.Errorf("SECURITY: [uihost] partial redirect to %s: Cache-Control = %q, want no-store — "+
 				"with a live session the re-mint no-store never runs and the 303 arm returns "+
 				"before the unconditional one, so the redirect ships with no cache suppression "+
-				"and a shared cache can replay its Location onto later visitors' navigations", cc)
+				"and a shared cache can replay its Location onto later visitors' navigations", tc.target, cc)
 		}
 	}
 }

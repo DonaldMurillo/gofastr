@@ -397,6 +397,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   names each field still set to a string.
 
 ### Fixed
+- **A screen policy can send a client-side navigation to another
+  site.** A policy redirecting to an absolute URL, an identity
+  provider's login for instance, answered the runtime's fetch with a
+  303. fetch follows that itself, the provider refuses CORS, and the
+  reader got a "could not load" toast and stayed put. uihost now names
+  the URL in `X-Gofastr-Document` on the partial and the whole-page
+  fetch, and the runtime loads it as a page after checking it is
+  http(s). A document load still gets the 303.
 - **`DBQueue` index names on long table names.** Postgres cuts
   identifiers at 63 bytes, so with a table name of 62 or 63 bytes the
   dequeue and lane indexes got the same name and the second was never

@@ -2,10 +2,13 @@ package uihost
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chromedp/chromedp"
 
@@ -87,6 +90,51 @@ func TestPartialRedirect_RuntimeFollowsXGofastrLocation(t *testing.T) {
 	// can inspect. PNG bytes; non-fatal if write fails.
 	_ = os.WriteFile("/tmp/gofastr-vis-partial-redirect-before.png", beforeShot, 0o644)
 	_ = os.WriteFile("/tmp/gofastr-vis-partial-redirect-after.png", afterShot, 0o644)
+}
+
+// A policy sending a soft navigation to another site, an identity
+// provider that answers no CORS: fetch could not follow the 303 there
+// and the reader got a "could not load" toast. The host names the URL
+// and the runtime loads it as a page.
+func TestPartialRedirect_ExternalLoadsPage(t *testing.T) {
+	idp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!doctype html><title>idp</title><p id="idp">idp login</p>`)
+	}))
+	t.Cleanup(idp.Close)
+	application := app.NewApp("e2e")
+	application.RegisterScreen(app.NewScreen("/", &textComp{tag: "landing"}).WithTitle("Landing"), nil)
+	application.RegisterScreen(app.NewScreen("/away", &textComp{tag: "away"}).WithTitle("Away").
+		WithPolicy(app.PolicyFunc(func(ctx context.Context) app.Decision {
+			return decide.Redirect(idp.URL + "/login")
+		})), nil)
+	srv := httptest.NewServer(New(application))
+	t.Cleanup(srv.Close)
+
+	ctx := chromedptest.Context(t, chromedptest.AllocatorOptions(chromedp.ExecPath(browserExecutable(t))))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`[data-text="landing"]`, chromedp.ByQuery),
+		chromedp.Evaluate(`window.__gofastr.navigate("/away")`, nil),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	var href string
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		var text string
+		err := chromedp.Run(ctx,
+			chromedp.Evaluate(`location.href`, &href),
+			chromedp.Evaluate(`document.getElementById('idp')?.textContent ?? ''`, &text))
+		if err == nil && text == "idp login" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the identity provider never loaded: at %q (%v)", href, err)
+		}
+	}
+	if href != idp.URL+"/login" {
+		t.Errorf("landed on %q, want %s/login", href, idp.URL)
+	}
 }
 
 // textComp is a minimal component for the e2e harness: renders a div
