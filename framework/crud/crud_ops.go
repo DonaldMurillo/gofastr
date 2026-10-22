@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -71,7 +73,7 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	// relation onto an owner/tenant-scoped entity is a write-side trust
 	// boundary exactly as ?include= is a read-side one (issue: order_items
 	// targeting another customer's order).
-	if err := ch.checkBelongsToScope(ctx, body); err != nil {
+	if err := ch.checkBelongsToScope(ctx, ch.createWrite(ctx, body)); err != nil {
 		return nil, err
 	}
 	// The state field starts at an Initial value and no stamp is set
@@ -246,42 +248,28 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		return nil, &ValidationError{fields: vr.Errors}
 	}
 
-	// Same write-side trust boundary as doCreate: a PATCH may retarget a
-	// belongs_to FK at a foreign row as freely as a POST could.
-	if err := ch.checkBelongsToScope(ctx, body); err != nil {
-		return nil, err
-	}
 	// The state field and stamps change only through a move: the stored
 	// value written back is dropped, any other is refused (states.go).
 	ctx, err = ch.checkStateUpdate(ctx, r, id, body)
 	if err != nil {
 		return nil, err
 	}
+	// Same write-side trust boundary as doCreate: a PATCH may retarget a
+	// belongs_to FK at a foreign row as freely as a POST could. It checks
+	// the reference the row will hold, after the SET below drops what it
+	// does not write.
+	w, err := ch.updateWrite(ctx, r, id, body)
+	if err != nil {
+		return nil, err
+	}
+	if err := ch.checkBelongsToScope(ctx, w); err != nil {
+		return nil, err
+	}
 
 	ub := query.Update(ch.Entity.GetTable())
 	anySet := false
-	ownerField := ch.Entity.Config.Scope.OwnerField
 	for _, f := range ch.Entity.GetFields() {
-		if ch.isKeyCol(f.Name) || f.AutoGenerate != schema.AutoNone {
-			continue
-		}
-		// ReadOnly/Hidden fields are client-unsettable and skipped unless
-		// the caller opted in via WithServerWrites(ctx), or a state
-		// override releases them.
-		if (f.ReadOnly || f.Hidden) && !serverWrites(ctx) && !ch.stateOverrideColumn(ctx, f.Name) {
-			continue
-		}
-		// Refuse to let a client reassign ownership through an update body.
-		// The owner scope already pins the WHERE to the caller's id, but
-		// permitting `user_id` in the SET clause would still allow a
-		// legitimate-owner update to hand the row off to another user
-		// ("transfer-by-tamper"). Always skip the owner field, the
-		// framework manages it.
-		if ownerField != "" && f.Name == ownerField {
-			continue
-		}
-		// Same hazard for tenant_id when MultiTenant is on.
-		if ch.Entity.Config.Scope.MultiTenant && f.Name == ch.Entity.Config.TenantColumn() {
+		if !ch.updateSets(ctx, f, true) {
 			continue
 		}
 		val, ok := body[f.Name]
@@ -387,7 +375,10 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 // writes and owns the reference. A NULL/absent FK, an unscoped target,
 // or a target the registry does not know is skipped — no registry means
 // no read-side resolver either.
-func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, body map[string]any) error {
+func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, w fkWrite) error {
+	if err := ch.checkForeignKeyTuples(w); err != nil {
+		return err
+	}
 	if serverWrites(ctx) {
 		return nil
 	}
@@ -400,14 +391,22 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, body map[string]
 		if rel.Type != entity.RelManyToOne {
 			continue
 		}
-		raw, ok := body[rel.ForeignKey]
-		if !ok || raw == nil {
+		// A reference the write does not name does not move.
+		raws, named := w.tuple(ch, rel)
+		if !named {
 			continue
 		}
-		fk := fmt.Sprint(raw)
-		if fk == "" {
+		// A key with a null column names no row, as a join on it matches
+		// none. A blank string is a value: a row keyed on it is someone's
+		// row.
+		if slices.Contains(raws, nil) {
 			continue
 		}
+		parts := make([]string, len(raws))
+		for i, v := range raws {
+			parts[i] = fmt.Sprint(v)
+		}
+		fk := entity.JoinKey(parts)
 		// An unknown name is skipped (see above); only a name the registry
 		// holds but cannot resolve (several versions) is refused.
 		if registered == nil {
@@ -431,27 +430,32 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, body map[string]
 		if err != nil {
 			return fmt.Errorf("relation %q target table %q: %w", rel.Name, target.GetTable(), err)
 		}
-		targetPK, err := target.KeyColumn()
-		if err != nil {
+		if err := entity.CheckRelationKeys(ch.Entity, rel, target); err != nil {
 			return fmt.Errorf("check belongs_to %q: %w", rel.Name, err)
 		}
-		pkCol, err := query.SafeIdent(targetPK)
+		targetKey := target.KeyColumns()
+		keyCols, err := safeColumns(targetKey)
 		if err != nil {
-			return fmt.Errorf("relation %q target key %q: %w", rel.Name, targetPK, err)
+			return fmt.Errorf("relation %q target key: %w", rel.Name, err)
+		}
+		conds := make([]string, len(keyCols))
+		allArgs := make([]any, len(keyCols))
+		for i, c := range keyCols {
+			conds[i] = fmt.Sprintf("%s = $%d", c, i+1)
+			allArgs[i] = coercePKValue(ch.Registry, target, targetKey[i], raws[i])
 		}
 		preds := eagerScopeFilters(ctx, target)
 		readPreds := readScopeFilters(ctx, target)
-		clause, args := filterClause(preds, 2)
-		readClause, readArgs := renderReadScope(readPreds, "", 2+len(args))
+		clause, args := filterClause(preds, len(allArgs)+1)
+		readClause, readArgs := renderReadScope(readPreds, "", len(allArgs)+1+len(args))
 		if readClause != "" {
 			readClause = " AND " + readClause
 		}
-		q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1%s%s", pkCol, table, pkCol, clause, readClause)
+		q := fmt.Sprintf("SELECT %s FROM %s WHERE %s%s%s", keyCols[0], table, strings.Join(conds, " AND "), clause, readClause)
 		if target.Config.Scope.SoftDelete {
 			q += " AND deleted_at IS NULL"
 		}
-		coercedFK := coercePKValue(ch.Registry, target, targetPK, raw)
-		allArgs := append([]any{coercedFK}, args...)
+		allArgs = append(allArgs, args...)
 		allArgs = append(allArgs, readArgs...)
 		var hit any
 		if err := ch.DB.QueryRowContext(ctx, q, allArgs...).Scan(&hit); err != nil {
@@ -460,6 +464,216 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, body map[string]
 			}
 			return fmt.Errorf("relation %q target lookup: %w", rel.Name, err)
 		}
+	}
+	return nil
+}
+
+// updateSets reports whether an update writes f from the body. Key
+// columns and generated fields never change. ReadOnly and Hidden fields
+// are client-unsettable unless the caller opted in via
+// WithServerWrites(ctx), or, where overrides apply, a state override
+// releases them. The owner field is the framework's: the owner scope pins
+// the WHERE to the caller's id, but a SET would still let a legitimate
+// owner hand the row to another user ("transfer-by-tamper"). The tenant
+// column has the same hazard when MultiTenant is on.
+func (ch *CrudHandler) updateSets(ctx context.Context, f schema.Field, overrides bool) bool {
+	if ch.isKeyCol(f.Name) || f.AutoGenerate != schema.AutoNone {
+		return false
+	}
+	if (f.ReadOnly || f.Hidden) && !serverWrites(ctx) && !(overrides && ch.stateOverrideColumn(ctx, f.Name)) {
+		return false
+	}
+	if owner := ch.Entity.Config.Scope.OwnerField; owner != "" && f.Name == owner {
+		return false
+	}
+	return !ch.Entity.Config.Scope.MultiTenant || f.Name != ch.Entity.Config.TenantColumn()
+}
+
+// fkWrite is one write as the foreign-key checks read it: the body, the
+// columns the write takes from it, and what a column it does not take
+// holds afterwards. The checks read each reference as the row will hold
+// it, never as the body spells it: a column the write drops from the
+// body keeps its stored value, its default, or the caller's tenant.
+type fkWrite struct {
+	body map[string]any
+	// sets reports whether the write takes f from the body.
+	sets func(f schema.Field) bool
+	// holds returns the value column c holds after the write when the
+	// write does not take it from the body, or false when the write
+	// cannot know it: an upsert's two arms and a bulk update's rows can
+	// each leave a different value there.
+	holds func(c string) (any, bool)
+}
+
+// takes reports whether the write takes column c from the body and the
+// body names it.
+func (w fkWrite) takes(ch *CrudHandler, c string) bool {
+	_, ok := w.body[c]
+	return ok && w.sets(ch.fieldByName(c))
+}
+
+// tuple returns rel's foreign key as the row will hold it, and whether
+// the write names it at all. A column the write cannot know reads nil;
+// checkForeignKeyTuples refuses such a write before anything reads it.
+func (w fkWrite) tuple(ch *CrudHandler, rel entity.Relation) ([]any, bool) {
+	fks := rel.FKColumns()
+	if !slices.ContainsFunc(fks, func(c string) bool { return w.takes(ch, c) }) {
+		return nil, false
+	}
+	vals := make([]any, len(fks))
+	for i, c := range fks {
+		if w.takes(ch, c) {
+			vals[i] = w.body[c]
+		} else {
+			vals[i], _ = w.holds(c)
+		}
+	}
+	return vals, true
+}
+
+// unknownHeld is fkWrite.holds for the writes that cannot read one stored
+// row: the upsert and the bulk update.
+func unknownHeld(string) (any, bool) { return nil, false }
+
+// createWrite reads a create as the INSERT writes it. It takes a field
+// from the body under the rules of doCreate's column loop; a column it
+// skips holds its default, or the caller's tenant for the tenant column.
+// The database assigns an AutoIncrement column, so its value is unknown
+// until the row exists.
+func (ch *CrudHandler) createWrite(ctx context.Context, body map[string]any) fkWrite {
+	return fkWrite{
+		body: body,
+		sets: func(f schema.Field) bool {
+			switch {
+			case f.AutoGenerate == schema.AutoIncrement:
+				return false
+			case f.AutoGenerate != schema.AutoNone:
+				return true
+			case ch.Entity.Config.Scope.MultiTenant && f.Name == ch.Entity.Config.TenantColumn():
+				return false
+			case (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.Scope.OwnerField:
+				return serverWrites(ctx) || ch.stateOverrideColumn(ctx, f.Name)
+			}
+			return true
+		},
+		holds: func(c string) (any, bool) {
+			if ch.Entity.Config.Scope.MultiTenant && c == ch.Entity.Config.TenantColumn() {
+				return tenant.GetTenantID(ctx), true
+			}
+			f := ch.fieldByName(c)
+			if f.AutoGenerate == schema.AutoIncrement {
+				return nil, false
+			}
+			return f.Default, true
+		},
+	}
+}
+
+// updateWrite reads a PATCH as its SET writes it. A column the SET does
+// not write (a key column, a ReadOnly one, the tenant) holds its stored
+// value, read once for every reference the body names in part.
+func (ch *CrudHandler) updateWrite(ctx context.Context, r *http.Request, id string, body map[string]any) (fkWrite, error) {
+	w := fkWrite{
+		body:  body,
+		sets:  func(f schema.Field) bool { return ch.updateSets(ctx, f, true) },
+		holds: unknownHeld,
+	}
+	var read []string
+	for _, rel := range ch.Entity.Config.Relations {
+		if rel.Type != entity.RelManyToOne {
+			continue
+		}
+		if _, named := w.tuple(ch, rel); !named {
+			continue
+		}
+		for _, c := range rel.FKColumns() {
+			if !w.takes(ch, c) && !slices.Contains(read, c) {
+				read = append(read, c)
+			}
+		}
+	}
+	if len(read) == 0 {
+		return w, nil
+	}
+	stored, err := ch.selectStored(ctx, r, id, read)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && stored == nil) {
+		return fkWrite{}, errNotFound
+	}
+	if err != nil {
+		return fkWrite{}, err
+	}
+	w.holds = func(c string) (any, bool) {
+		v, ok := stored[ch.convertKey(c)] // rows are keyed by wire name
+		return v, ok
+	}
+	return w, nil
+}
+
+// checkForeignKeyTuples refuses a write that sets part of a multi-column
+// foreign key. Among the columns the write takes from the body it names
+// some and not others, or sets some to null and others to a value: the
+// row would point at a reference nobody wrote, half old and half new. A
+// write that names the key while it cannot know what a column it does
+// not take holds is refused too (validation.kept_foreign_key): the upsert
+// and the bulk update cannot read one stored tuple to check. It runs for
+// every caller, server writes included, because the shape is wrong
+// whoever sends it.
+func (ch *CrudHandler) checkForeignKeyTuples(w fkWrite) error {
+	var fields map[string][]schema.Violation
+	add := func(c string, v schema.Violation) {
+		if fields == nil {
+			fields = map[string][]schema.Violation{}
+		}
+		fields[c] = append(fields[c], v)
+	}
+	for _, rel := range ch.Entity.Config.Relations {
+		fks := rel.FKColumns()
+		if rel.Type != entity.RelManyToOne || len(fks) < 2 {
+			continue
+		}
+		var settable, named, null int
+		var kept []string
+		for _, c := range fks {
+			switch {
+			case w.takes(ch, c):
+				named++
+				settable++
+				if w.body[c] == nil {
+					null++
+				}
+			case w.sets(ch.fieldByName(c)):
+				settable++
+			default:
+				if _, known := w.holds(c); !known {
+					kept = append(kept, c)
+				}
+			}
+		}
+		if named == 0 {
+			continue
+		}
+		if named != settable || (null != 0 && null != named) {
+			for _, c := range fks {
+				add(c, schema.Violation{Reason: reasonPartialKey, Params: map[string]any{
+					"relation": rel.Name,
+					"columns":  strings.Join(fks, ", "),
+				}})
+			}
+			continue
+		}
+		if len(kept) > 0 {
+			for _, c := range fks {
+				if w.takes(ch, c) {
+					add(c, schema.Violation{Reason: reasonKeptKey, Params: map[string]any{
+						"relation": rel.Name,
+						"kept":     strings.Join(kept, ", "),
+					}})
+				}
+			}
+		}
+	}
+	if fields != nil {
+		return &ValidationError{fields: fields}
 	}
 	return nil
 }
@@ -619,7 +833,12 @@ func (ch *CrudHandler) selectPreImage(ctx context.Context, r *http.Request, id s
 // selectPreImage let a caller who may read another owner's row attach
 // children or pivot links to it.
 func (ch *CrudHandler) selectWriteTarget(ctx context.Context, r *http.Request, id string) (map[string]any, error) {
-	cols := ch.visibleFields()
+	return ch.selectStored(ctx, r, id, ch.visibleFields())
+}
+
+// selectStored reads cols of id's record under the caller's tenant and
+// owner scopes, skipping a soft-deleted row, as the update will find it.
+func (ch *CrudHandler) selectStored(ctx context.Context, r *http.Request, id string, cols []string) (map[string]any, error) {
 	kc, ka := ch.keyWhere(id)
 	qb := query.Select(ch.keyedCols(cols)...).
 		From(ch.Entity.GetTable()).

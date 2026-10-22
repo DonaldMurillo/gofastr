@@ -241,7 +241,7 @@ func TestResolveNestedFiltersCarriesNoCallerScope(t *testing.T) {
 	if len(got[0].scopes) != 0 {
 		t.Errorf("the in-process path gained caller scopes %+v — a typed repo acts on its own authority", got[0].scopes)
 	}
-	sql, _ := buildExistsSubquery("boards", "id", got[0])
+	sql, _ := buildExistsSubquery("boards", []string{"id"}, got[0])
 	if strings.Contains(sql, "owner_id") {
 		t.Errorf("an in-process subquery was narrowed by owner:\n%s", sql)
 	}

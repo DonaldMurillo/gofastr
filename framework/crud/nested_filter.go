@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -327,17 +328,14 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 // CountBuilder so a single call site can wire the same filter chain into
 // both the data and count queries.
 //
-// A has_one, has_many or many_to_many hop joins on the parent's one key
-// column; a composite-key parent has none, passes "", and such a hop
-// matches nothing (parseNestedFilters refuses it first). A belongs_to hop
-// joins on the parent's foreign key, so any parent key serves.
+// A has_one or has_many hop joins the child's foreign key to the parent's
+// key, column by column; a many_to_many hop joins on the parent's one key
+// column; a belongs_to hop joins the parent's foreign key to the target's
+// key. A hop whose columns do not line up matches nothing
+// (parseNestedFilters refuses it first).
 func applyNestedFilters(addWhere func(sql string, args ...any), parentTable string, parentKey []string, filters []nestedFilter) {
-	parentPK := ""
-	if len(parentKey) == 1 {
-		parentPK = parentKey[0]
-	}
 	for _, nf := range filters {
-		sql, args := buildExistsSubquery(parentTable, parentPK, nf)
+		sql, args := buildExistsSubquery(parentTable, parentKey, nf)
 		addWhere(sql, args...)
 	}
 }
@@ -353,11 +351,11 @@ func applyNestedFilters(addWhere func(sql string, args ...any), parentTable stri
 // payloads like `name OR 1=1 --` can't smuggle SQL fragments through
 // parseNestedFilters when the registry can't validate the field.
 //
-// Relation metadata (parentTable, parentPK, rel.Entity, rel.ForeignKey, rel.Through,
+// Relation metadata (parentTable, parentKey, rel.Entity, rel.FKColumns, rel.Through,
 // rel.LocalKey, rel.ForeignKeyTarget) may originate from dynamic definitions or API endpoints
 // (e.g. kiln add_entity/update_entity), so defense-in-depth isSafeIdentifier gates apply
 // across buildHopSubquery as well.
-func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string, []any) {
+func buildExistsSubquery(parentTable string, parentKey []string, nf nestedFilter) (string, []any) {
 	hops := nf.Hops
 	if len(hops) == 0 {
 		relTable := nf.table
@@ -385,10 +383,27 @@ func buildExistsSubquery(parentTable, parentPK string, nf nestedFilter) (string,
 		}
 	}
 
-	return buildHopSubquery(parentTable, parentPK, hops, nf)
+	return buildHopSubquery(parentTable, parentKey, hops, nf)
 }
 
-func buildHopSubquery(parentTable, parentPK string, hops []relationHop, nf nestedFilter) (string, []any) {
+// keyJoin renders the condition pairing columns lcols of table lt with
+// rcols of table rt: "lt.a = rt.x AND lt.b = rt.y". The callers have
+// checked every name and that the lists are the same length.
+func keyJoin(lt string, lcols []string, rt string, rcols []string) string {
+	conds := make([]string, len(lcols))
+	for i := range lcols {
+		conds[i] = fmt.Sprintf("%s.%s = %s.%s", lt, lcols[i], rt, rcols[i])
+	}
+	return strings.Join(conds, " AND ")
+}
+
+// safeIdentifiers reports whether every name in cols is a plain
+// identifier, and cols is not empty.
+func safeIdentifiers(cols []string) bool {
+	return len(cols) > 0 && !slices.ContainsFunc(cols, func(c string) bool { return !isSafeIdentifier(c) })
+}
+
+func buildHopSubquery(parentTable string, parentKey []string, hops []relationHop, nf nestedFilter) (string, []any) {
 	if len(hops) == 0 {
 		return "1 = 1", nil
 	}
@@ -399,22 +414,23 @@ func buildHopSubquery(parentTable, parentPK string, hops []relationHop, nf neste
 	if relTable == "" {
 		relTable = rel.Entity
 	}
-	// A key that is not one column is "": the hop that would join on it
-	// matches nothing.
-	targetPK := "id"
-	if hop.Target != nil {
-		pk, err := hop.Target.KeyColumn()
-		if err != nil {
-			pk = ""
-		}
-		targetPK = pk
+	// The hop joins column by column; one whose columns do not line up
+	// with the key they reference matches nothing.
+	targetKey := hop.Target.KeyColumns()
+	fks := rel.FKColumns()
+	var joinable bool
+	switch rel.Type {
+	case entity.RelManyToOne:
+		joinable = len(fks) == len(targetKey)
+	case entity.RelHasOne, entity.RelHasMany:
+		joinable = len(fks) == len(parentKey)
+	case entity.RelManyToMany:
+		joinable = len(parentKey) == 1 && len(targetKey) == 1
 	}
-	if (targetPK == "" && (rel.Type == entity.RelManyToOne || rel.Type == entity.RelManyToMany)) ||
-		(parentPK == "" && rel.Type != entity.RelManyToOne) {
+	if !joinable || !isSafeIdentifier(parentTable) || !safeIdentifiers(parentKey) || !isSafeIdentifier(relTable) || !safeIdentifiers(targetKey) {
 		return "1 = 0", nil
 	}
-
-	if !isSafeIdentifier(parentTable) || (parentPK != "" && !isSafeIdentifier(parentPK)) || !isSafeIdentifier(relTable) || (targetPK != "" && !isSafeIdentifier(targetPK)) {
+	if rel.Type != entity.RelManyToMany && !safeIdentifiers(fks) {
 		return "1 = 0", nil
 	}
 
@@ -459,7 +475,7 @@ func buildHopSubquery(parentTable, parentPK string, hops []relationHop, nf neste
 		}
 		innerPredicate = fieldPred
 	} else {
-		subSQL, subArgs := buildHopSubquery(subTable, targetPK, hops[1:], nf)
+		subSQL, subArgs := buildHopSubquery(subTable, targetKey, hops[1:], nf)
 		args = append(args, subArgs...)
 		innerPredicate = subSQL
 	}
@@ -473,20 +489,14 @@ func buildHopSubquery(parentTable, parentPK string, hops []relationHop, nf neste
 
 	switch rel.Type {
 	case entity.RelManyToOne:
-		if !isSafeIdentifier(rel.ForeignKey) {
-			return "1 = 0", nil
-		}
 		return fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM %s WHERE %s.%s = %s.%s AND %s)",
-			aliasClause, subTable, targetPK, parentTable, rel.ForeignKey, innerPredicate,
+			"EXISTS (SELECT 1 FROM %s WHERE %s AND %s)",
+			aliasClause, keyJoin(subTable, targetKey, parentTable, fks), innerPredicate,
 		), args
 	case entity.RelHasOne, entity.RelHasMany:
-		if !isSafeIdentifier(rel.ForeignKey) {
-			return "1 = 0", nil
-		}
 		return fmt.Sprintf(
-			"EXISTS (SELECT 1 FROM %s WHERE %s.%s = %s.%s AND %s)",
-			aliasClause, subTable, rel.ForeignKey, parentTable, parentPK, innerPredicate,
+			"EXISTS (SELECT 1 FROM %s WHERE %s AND %s)",
+			aliasClause, keyJoin(subTable, fks, parentTable, parentKey), innerPredicate,
 		), args
 	case entity.RelManyToMany:
 		if !isSafeIdentifier(rel.Through) || !isSafeIdentifier(rel.ForeignKeyTarget) || !isSafeIdentifier(rel.LocalKey) {
@@ -500,8 +510,8 @@ func buildHopSubquery(parentTable, parentPK string, hops []relationHop, nf neste
 		return fmt.Sprintf(
 			"EXISTS (SELECT 1 FROM %s JOIN %s ON %s.%s = %s.%s WHERE %s.%s = %s.%s AND %s%s)",
 			aliasClause, rel.Through,
-			subTable, targetPK, rel.Through, rel.ForeignKeyTarget,
-			rel.Through, rel.LocalKey, parentTable, parentPK,
+			subTable, targetKey[0], rel.Through, rel.ForeignKeyTarget,
+			rel.Through, rel.LocalKey, parentTable, parentKey[0],
 			innerPredicate,
 			pivotWhere,
 		), args

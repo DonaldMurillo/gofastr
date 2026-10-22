@@ -1486,17 +1486,90 @@ constraint. Changing the key of an existing table is a migration; see
 
 ### Relations and composite keys
 
-A foreign key here is one column, so the end it references needs a
-one-column key; the end that holds it may have any key.
+A foreign key has one column per column of the key it references, in key
+order. A one-column foreign key is the relation's `ForeignKey`; a longer
+one is `ForeignKeys`, which the constructors fill when they get more than
+one column, and `Relation.FKColumns()` returns the columns either way:
+
+```go
+app.Entity("orders", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "store", Type: schema.String, Required: true},
+        {Name: "no", Type: schema.Int, Required: true},
+    },
+    PrimaryKey: []string{"store", "no"},
+    Relations:  []entity.Relation{entity.HasMany("lines", "lines", "order_store", "order_no")},
+})
+app.Entity("lines", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "order_store", Type: schema.String},
+        {Name: "order_no", Type: schema.Int},
+        {Name: "sku", Type: schema.String},
+    },
+    Relations: []entity.Relation{entity.BelongsTo("order", "orders", "order_store", "order_no")},
+})
+```
+
+- a `belongs_to` references its target, and its own entity holds the
+  columns;
+- a `has_one` or `has_many` references its own entity, and the target
+  holds the columns;
+- a `many_to_many` links two one-column keys through its pivot. Link a
+  composite-keyed end through a join entity instead (below).
+
 `entity.CheckRelationKeys` applies the rule, and boot, `?include=`,
-nested filters and `EagerLoad` refuse a relation that breaks it with
-`entity.ErrCompositeKey`:
+nested filters, `EagerLoad` and writes refuse a relation that breaks it:
+one column against a composite key is `entity.ErrCompositeKey`, any
+other mismatch `entity.ErrForeignKeyShape`. The columns of a longer
+foreign key are fields the holding entity declares, spelled as declared
+and each typed like the key column it references; boot refuses a
+repeated column, an undeclared one (`ORDER_NO` over a field `order_no`
+included), a column whose type differs from its key column's (`string`
+against `int`), or a column a transition writes (the `states` field or a
+move's stamp, since a move changes the reference with no check) before
+any DDL runs. The transition rule covers every declaration over the
+table, another version or another entity name sharing it included, and
+registration applies it, so an app that skips migrations gets it too. The migrator emits one constraint,
+`FOREIGN KEY (order_store, order_no) REFERENCES orders(store, no)`, and
+an index on the column tuple.
 
-- a `belongs_to` references its target;
-- a `has_one` or `has_many` references its source;
-- a `many_to_many` references both ends through its pivot.
+A write sets a `belongs_to`'s multi-column reference whole or not at
+all. (A reference only the parent's `has_many` declares gets no foreign
+key constraint and no write-side checks, one column or several: declare
+the `belongs_to` on the child to have them.) Among the columns the
+write takes from the body, one that names some and not the others, or
+sets some to null and others to a value, is a 400 carrying
+`validation.partial_foreign_key` on each column, server writes
+included, so a PATCH cannot leave a line pointing half at its old order
+and half at a new one. The check that refuses a reference to a row the
+caller cannot read (404) looks the target up by the whole tuple. A
+tuple with a null column names no row, as a join on it matches none,
+and a blank string is a value.
 
-So a join table keyed on the pair it links is an entity of its own, with
+The check reads each reference as the row will hold it, not as the
+body spells it. A column the write does not take from the body (a key
+column on update, a `ReadOnly` or `Hidden` field, the owner and tenant
+columns) keeps what the row would have without it: a create holds the
+field's default, or the caller's tenant for the tenant column, and a
+PATCH holds the stored value. An `AutoIncrement` column holds nothing
+known until the database assigns it, so a create naming the rest of a
+reference through one is refused. So a line keyed on `(order_store,
+line_id)` keeps its store on every update: a PATCH of `order_no` alone
+moves the line within its stored store, and a PATCH naming both columns
+is checked against the stored store, the reference the row ends up
+with. A reference keyed through the tenant, `(tenant_id, order_no)`,
+reads the caller's tenant. A write that names only columns it does not
+take moves nothing, and each reference is read on its own, so moving
+one leaves another that shares its kept column alone. An upsert
+ends as an insert or a conflict update, so it checks both: the insert
+as a create, and the update, which cannot know what a column it keeps
+holds (it keeps a generated column's stored value). The bulk
+`TypedQuery.UpdateAll` cannot know either, since its rows each hold
+their own. Either way, a body that moves part of a reference while the
+write keeps another of its columns is a 400 carrying
+`validation.kept_foreign_key`.
+
+A join table keyed on the pair it links is an entity of its own, with
 a payload: it belongs to each side, each side has many of it, and a
 `many_to_many` can read through it.
 
@@ -1533,14 +1606,19 @@ read through the pivot applies that entity's soft delete and its owner,
 tenant and read scopes: a soft-deleted enrollment, or another owner's,
 links nothing. Boot refuses the relation when the entity does not
 declare both `LocalKey` and `ForeignKeyTarget`, since the migrator then
-creates no pivot of its own.
+creates no pivot of its own. A `cascade_write` link inserts its pivot
+row through that entity's `belongs_to` checks, reading the row as the
+two link columns (matched to its fields ignoring case, as the database
+matches them) with every other column at its default: a tagging
+that belongs to a grant keyed on its `(post_id, tag_id)` links a tag
+only through the caller's grant.
 
 An `AfterList` hook on a composite-keyed child that replaces rows in an
 include is matched back to them by the whole key. A `cascade_write`
 `has_one` or `has_many` into a composite-keyed child is refused at boot:
 it tells an existing child from a new one by the child's one key column.
-A foreign key to a composite-keyed target needs one column per key
-column, which a relation cannot declare yet.
+For the same reason a `cascade_write` relation over a multi-column
+foreign key is refused at boot.
 
 The framework names a record by its primary-key columns,
 `Entity.KeyColumns()`, in declared order. Reads, writes, the keyset

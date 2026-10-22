@@ -145,7 +145,7 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString("| Name | Type | Target | Key |\n")
 		b.WriteString("|------|------|--------|-----|\n")
 		for _, rel := range ent.Config.Relations {
-			fmt.Fprintf(&b, "| `%s` | %s | `%s` | `%s` |\n", rel.Name, relationTypeLabel(rel.Type), rel.Entity, rel.ForeignKey)
+			fmt.Fprintf(&b, "| `%s` | %s | `%s` | `%s` |\n", rel.Name, relationTypeLabel(rel.Type), rel.Entity, strings.Join(rel.FKColumns(), ", "))
 		}
 		b.WriteString("\n")
 		b.WriteString("Examples:\n")

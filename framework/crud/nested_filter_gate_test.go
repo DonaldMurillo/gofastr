@@ -199,7 +199,7 @@ func TestBuildExistsSubqueryEmitsScopePredicates(t *testing.T) {
 					{Field: "tenant_id", Op: filter.OpEq, Value: "t1"},
 				},
 			}
-			sql, args := buildExistsSubquery("boards", "id", nf)
+			sql, args := buildExistsSubquery("boards", []string{"id"}, nf)
 			for _, want := range []string{`note_rows.owner_id = $`, `note_rows.tenant_id = $`} {
 				if !strings.Contains(sql, want) {
 					t.Errorf("missing %q — the subquery counts every row:\n%s", want, sql)
@@ -232,7 +232,7 @@ func TestBuildExistsSubqueryEmitsScopePredicates(t *testing.T) {
 		Field:    "body", Op: filter.OpEq, Value: "x", table: "notes",
 		scopes: []filter.ParsedFilter{{Field: "owner_id; DROP TABLE notes --", Op: filter.OpEq, Value: "u1"}},
 	}
-	if sql, _ := buildExistsSubquery("boards", "id", nf); sql != "1 = 0" {
+	if sql, _ := buildExistsSubquery("boards", []string{"id"}, nf); sql != "1 = 0" {
 		t.Errorf("an unsafe scope column produced %q, want an unconditionally-false predicate", sql)
 	}
 }
@@ -273,7 +273,7 @@ func TestBuildExistsSubqueryHidesSoftDeletedInEveryShape(t *testing.T) {
 	for _, sh := range shapes {
 		t.Run(sh.name, func(t *testing.T) {
 			nf := nestedFilter{Relation: sh.rel, Field: "body", Op: "eq", Value: "x", softDelete: true, table: "note_rows"}
-			sql, _ := buildExistsSubquery("boards", "id", nf)
+			sql, _ := buildExistsSubquery("boards", []string{"id"}, nf)
 			if !strings.Contains(sql, "note_rows.deleted_at IS NULL") {
 				t.Errorf("no soft-delete predicate on the target table:\n%s", sql)
 			}
@@ -282,7 +282,7 @@ func TestBuildExistsSubqueryHidesSoftDeletedInEveryShape(t *testing.T) {
 			}
 			// And without the flag it must not appear.
 			nf.softDelete = false
-			plain, _ := buildExistsSubquery("boards", "id", nf)
+			plain, _ := buildExistsSubquery("boards", []string{"id"}, nf)
 			if strings.Contains(plain, "deleted_at") {
 				t.Errorf("soft-delete predicate emitted for an entity that does not soft delete:\n%s", plain)
 			}

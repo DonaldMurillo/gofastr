@@ -383,29 +383,17 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 		return 0, &ValidationError{fields: vr.Errors}
 	}
 
-	if err := q.handler.checkBelongsToScope(ctx, body); err != nil {
+	// The rows it matches can hold different stored values in a column
+	// it keeps, so part of a multi-column reference cannot move here.
+	sets := func(f schema.Field) bool { return q.handler.updateSets(ctx, f, false) }
+	if err := q.handler.checkBelongsToScope(ctx, fkWrite{body: body, sets: sets, holds: unknownHeld}); err != nil {
 		return 0, err
 	}
 	ub := query.Update(q.handler.Entity.GetTable())
-	ownerField := q.handler.Entity.Config.Scope.OwnerField
-	tenantCol := ""
-	if q.handler.Entity.Config.Scope.MultiTenant {
-		tenantCol = q.handler.Entity.Config.TenantColumn()
-	}
 	anySet := false
 	for _, f := range q.handler.Entity.GetFields() {
-		if q.handler.isKeyCol(f.Name) || f.AutoGenerate != schema.AutoNone {
-			continue
-		}
-		if (f.ReadOnly || f.Hidden) && !serverWrites(ctx) {
-			continue
-		}
-		// Mirror doUpdate: refuse to let callers reassign ownership or
-		// tenant via a bulk update (transfer-by-tamper).
-		if ownerField != "" && f.Name == ownerField {
-			continue
-		}
-		if tenantCol != "" && f.Name == tenantCol {
+		// Mirror doUpdate, owner and tenant included (transfer-by-tamper).
+		if !sets(f) {
 			continue
 		}
 		val, ok := body[f.Name]

@@ -49,7 +49,7 @@ func TestServeStreamingList_DBErrorsDoNotLeakDriverText(t *testing.T) {
 }
 
 func TestNestedFilter_ManyToOneRejectsUnsafeFieldName(t *testing.T) {
-	sqlStr, _ := buildExistsSubquery("posts", "id", nestedFilter{
+	sqlStr, _ := buildExistsSubquery("posts", []string{"id"}, nestedFilter{
 		Relation: entity.Relation{
 			Type:       entity.RelManyToOne,
 			Entity:     "users",
@@ -65,7 +65,7 @@ func TestNestedFilter_ManyToOneRejectsUnsafeFieldName(t *testing.T) {
 }
 
 func TestNestedFilter_HasManyRejectsUnsafeFieldName(t *testing.T) {
-	sqlStr, _ := buildExistsSubquery("posts", "id", nestedFilter{
+	sqlStr, _ := buildExistsSubquery("posts", []string{"id"}, nestedFilter{
 		Relation: entity.Relation{
 			Type:       entity.RelHasMany,
 			Entity:     "comments",
@@ -81,7 +81,7 @@ func TestNestedFilter_HasManyRejectsUnsafeFieldName(t *testing.T) {
 }
 
 func TestNestedFilter_ManyToManyRejectsUnsafeFieldName(t *testing.T) {
-	sqlStr, _ := buildExistsSubquery("posts", "id", nestedFilter{
+	sqlStr, _ := buildExistsSubquery("posts", []string{"id"}, nestedFilter{
 		Relation: entity.Relation{
 			Type:             entity.RelManyToMany,
 			Entity:           "tags",

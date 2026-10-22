@@ -19,7 +19,7 @@ func TestNestedIn_BelongsToCoalescesToIN(t *testing.T) {
 		Op:       filter.OpIn,
 		Values:   []string{"alice", "bob"},
 	}
-	sql, args := buildExistsSubquery("posts", "id", nf)
+	sql, args := buildExistsSubquery("posts", []string{"id"}, nf)
 
 	if !strings.Contains(sql, "users.name IN ($1,$2)") {
 		t.Errorf("expected coalesced IN, got: %s", sql)

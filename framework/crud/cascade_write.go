@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -31,6 +33,32 @@ func (ch *CrudHandler) childHandlerFor(target *entity.Entity) *CrudHandler {
 	}
 	child.BasePath = ch.BasePath
 	return child
+}
+
+// linkWrite reads the pivot row a ManyToMany cascade inserts: it writes
+// the two link columns, and every other column holds its DDL default, or
+// nothing known for an AutoIncrement one. A link column is keyed by the
+// pivot field it names: the INSERT's unquoted identifier reaches that
+// column in any case, so "POST_ID" over a field post_id is post_id.
+func (ch *CrudHandler) linkWrite(cols map[string]any) fkWrite {
+	link := make(map[string]any, len(cols))
+	for c, v := range cols {
+		if i := slices.IndexFunc(ch.Entity.GetFields(), func(f schema.Field) bool { return strings.EqualFold(f.Name, c) }); i >= 0 {
+			c = ch.Entity.GetFields()[i].Name
+		}
+		link[c] = v
+	}
+	return fkWrite{
+		body: link,
+		sets: func(f schema.Field) bool {
+			_, ok := link[f.Name]
+			return ok
+		},
+		holds: func(c string) (any, bool) {
+			f := ch.fieldByName(c)
+			return f.Default, f.AutoGenerate != schema.AutoIncrement
+		},
+	}
 }
 
 // coerceLinkPK validates and coerces an ID for ManyToMany linking.
@@ -575,6 +603,14 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 			if err != nil {
 				return nil, fmt.Errorf("relation %q foreign key target %q: %w", rel.Name, rel.ForeignKeyTarget, err)
 			}
+			pivot, err := entity.PivotEntity(ch.Registry, ch.Entity, rel.Through)
+			if err != nil {
+				return nil, fmt.Errorf("relation %q: %w", rel.Name, err)
+			}
+			var pivotHandler *CrudHandler
+			if pivot != nil {
+				pivotHandler = ch.childHandlerFor(pivot)
+			}
 			for idx, item := range slice {
 				var childID any
 				var childResult map[string]any
@@ -665,6 +701,16 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 				err := ch.DB.QueryRowContext(ctx, checkQ, coercedParentID, coercedChildID).Scan(&exists)
 				if err != nil {
 					if errors.Is(err, sql.ErrNoRows) {
+						if pivotHandler != nil {
+							link := map[string]any{rel.LocalKey: coercedParentID, rel.ForeignKeyTarget: coercedChildID}
+							if err := pivotHandler.checkBelongsToScope(ctx, pivotHandler.linkWrite(link)); err != nil {
+								var ve *ValidationError
+								if errors.As(err, &ve) {
+									return nil, &ValidationError{fields: prefixValidationErrors(fieldPrefix, ve.fields)}
+								}
+								return nil, fmt.Errorf("%s: %w", fieldPrefix, err)
+							}
+						}
 						insQ := fmt.Sprintf("INSERT INTO %s (%s, %s) VALUES ($1, $2)",
 							through, localKey, fkTarget)
 						if _, insErr := ch.DB.ExecContext(ctx, insQ, coercedParentID, coercedChildID); insErr != nil {

@@ -45,7 +45,7 @@ func TestNestedBoolFilterBindsBool(t *testing.T) {
 	if len(nfs) != 1 {
 		t.Fatalf("filters = %v, want 1", nfs)
 	}
-	_, args := buildExistsSubquery("posts", "id", nfs[0])
+	_, args := buildExistsSubquery("posts", []string{"id"}, nfs[0])
 	if len(args) != 1 {
 		t.Fatalf("args = %v, want 1", args)
 	}
@@ -64,7 +64,7 @@ func TestNestedBoolInFilterBindsBools(t *testing.T) {
 	if len(nfs) != 1 {
 		t.Fatalf("filters = %v, want 1", nfs)
 	}
-	_, args := buildExistsSubquery("posts", "id", nfs[0])
+	_, args := buildExistsSubquery("posts", []string{"id"}, nfs[0])
 	if len(args) != 2 || args[0] != true || args[1] != false {
 		t.Fatalf("args = %#v, want [true false]", args)
 	}
@@ -77,7 +77,7 @@ func TestNestedNonBoolFilterStaysString(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseNestedFiltersValues: %v", err)
 	}
-	_, args := buildExistsSubquery("posts", "id", nfs[0])
+	_, args := buildExistsSubquery("posts", []string{"id"}, nfs[0])
 	if len(args) != 1 || args[0] != "true" {
 		t.Fatalf("args = %#v, want [\"true\"] (string, not coerced)", args)
 	}
