@@ -33,6 +33,15 @@ func TestLanguageMenuLinksThisPage(t *testing.T) {
 	}
 }
 
+// An escaped byte in the path stays escaped: a decoded %3F would turn
+// the rest of the path into a query string.
+func TestLanguageMenuKeepsEscapedPath(t *testing.T) {
+	out := string(LanguageMenu(LanguageMenuConfig{Ctx: languageMenuCtx("es", "/docs/a%3Fb?x=1")}))
+	if !strings.Contains(out, `href="/fr/docs/a%3Fb?x=1"`) {
+		t.Errorf("menu lost the escaped path:\n%s", out)
+	}
+}
+
 func TestLanguageMenuChecksCurrent(t *testing.T) {
 	out := string(LanguageMenu(LanguageMenuConfig{Ctx: languageMenuCtx("es", "/about")}))
 	at := strings.Index(out, `href="/es/about"`)

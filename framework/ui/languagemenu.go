@@ -53,11 +53,13 @@ func LanguageMenu(cfg LanguageMenuConfig) render.HTML {
 	page := "/"
 	if r := app.RequestFromContext(cfg.Ctx); r != nil {
 		// The router strips the prefix before the screen renders; a
-		// wrapper that runs before it sees the prefixed path.
-		if tag, rest := set.Split(r.URL.Path); tag != "" {
+		// wrapper that runs before it sees the prefixed path. The path
+		// stays escaped: a decoded %3F would start a query string.
+		p := r.URL.EscapedPath()
+		if tag, rest := set.Split(p); tag != "" {
 			page = rest
-		} else if r.URL.Path != "" {
-			page = r.URL.Path
+		} else if p != "" {
+			page = p
 		}
 		if r.URL.RawQuery != "" {
 			page += "?" + r.URL.RawQuery
