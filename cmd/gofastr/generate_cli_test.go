@@ -190,8 +190,8 @@ func TestRenderCLI_FlagsFromSchema(t *testing.T) {
 		`fs.String(f.flag, "", f.usage)`,
 		`body[f.wire] = *strVals[i]`,
 		`runCreateVerb("posts create", "/posts", postsMutationFields, args)`,
-		`runUpdateVerb("posts update", "/posts", postsMutationFields, args)`,
-		`runPatchVerb("posts patch", "/posts", postsMutationFields, args)`,
+		`runUpdateVerb("posts update", "/posts", []string{"id"}, postsMutationFields, args)`,
+		`runPatchVerb("posts patch", "/posts", []string{"id"}, postsMutationFields, args)`,
 	} {
 		if !strings.Contains(posts, w) && !strings.Contains(verbs, w) {
 			t.Errorf("mutation table wiring missing %q", w)
@@ -303,15 +303,15 @@ func TestRenderCLI_VerbAllowList(t *testing.T) {
 
 // A delete-only (or any narrow) verb selection must still emit code that
 // compiles: the shared delete body lands in verbs.go with its net/http
-// and net/url imports, and the entity file's wrapper needs no imports at
-// all (format.Source cannot add missing imports, so a stray reference
+// import (takeKey, in output.go, escapes the key), and the entity file's
+// wrapper needs no imports at all (format.Source cannot add missing imports, so a stray reference
 // would be a broken file).
 func TestRenderCLI_NarrowVerbImports(t *testing.T) {
 	opts := defaultCLIOptions()
 	opts.verbs = "delete"
 	files := renderedCLI(t, opts)
 	posts := files["posts.gen.go"]
-	for _, w := range []string{"runPostsDelete(", `runDeleteVerb("posts delete", "/posts", args)`} {
+	for _, w := range []string{"runPostsDelete(", `runDeleteVerb("posts delete", "/posts", []string{"id"}, args)`} {
 		if !strings.Contains(posts, w) {
 			t.Errorf("delete-only posts.go missing %q\n%s", w, posts)
 		}
@@ -320,7 +320,7 @@ func TestRenderCLI_NarrowVerbImports(t *testing.T) {
 		t.Errorf("delete-only posts.go should need no imports:\n%s", posts)
 	}
 	verbs := files["verbs.gen.go"]
-	for _, w := range []string{`"fmt"`, `"net/http"`, `"net/url"`, "url.PathEscape(id)"} {
+	for _, w := range []string{`"fmt"`, `"net/http"`, "takeKey(cmd, keys, args)"} {
 		if !strings.Contains(verbs, w) {
 			t.Errorf("delete-only verbs.go missing %q\n%s", w, verbs)
 		}
@@ -334,7 +334,7 @@ func TestRenderCLI_NarrowVerbImports(t *testing.T) {
 // the table-driven mutation verbs: the entity file carries just the field
 // table and one-line wrappers (no imports at all: no flag plumbing, no
 // http method identifiers, no path building), while verbs.go gains the
-// encoding/json, fmt, net/http, and net/url its shared body needs.
+// encoding/json, fmt and net/http its shared body needs.
 func TestRenderCLI_MutationOnlyImports(t *testing.T) {
 	opts := defaultCLIOptions()
 	opts.verbs = "create,update,patch"
@@ -343,8 +343,8 @@ func TestRenderCLI_MutationOnlyImports(t *testing.T) {
 	for _, w := range []string{
 		"var postsMutationFields = []mutationField{",
 		`runCreateVerb("posts create", "/posts", postsMutationFields, args)`,
-		`runUpdateVerb("posts update", "/posts", postsMutationFields, args)`,
-		`runPatchVerb("posts patch", "/posts", postsMutationFields, args)`,
+		`runUpdateVerb("posts update", "/posts", []string{"id"}, postsMutationFields, args)`,
+		`runPatchVerb("posts patch", "/posts", []string{"id"}, postsMutationFields, args)`,
 	} {
 		if !strings.Contains(posts, w) {
 			t.Errorf("mutation-only posts.go missing %q\n%s", w, posts)
@@ -354,7 +354,7 @@ func TestRenderCLI_MutationOnlyImports(t *testing.T) {
 		t.Errorf("mutation-only posts.go should need no imports:\n%s", posts)
 	}
 	verbs := files["verbs.gen.go"]
-	for _, w := range []string{`"encoding/json"`, `"fmt"`, `"net/http"`, `"net/url"`, "func runMutationVerb("} {
+	for _, w := range []string{`"encoding/json"`, `"fmt"`, `"net/http"`, "func runMutationVerb("} {
 		if !strings.Contains(verbs, w) {
 			t.Errorf("mutation-only verbs.go missing %q\n%s", w, verbs)
 		}
@@ -369,15 +369,19 @@ func TestRenderCLI_MutationOnlyImports(t *testing.T) {
 // Positional ids are path-escaped in every id-addressed verb, matching the
 // typed client: a '/' or '?' in an id must not rewrite the route. The
 // shared bodies in verbs.go (get, delete, and the mutation with-id form
-// behind update/patch) each escape the id where they build their path;
+// behind update/patch) each take the key through takeKey, which escapes
+// every value as its own segment;
 // the entity files bind only the pre-escaped base path.
 func TestRenderCLI_PathEscapesIDs(t *testing.T) {
 	files := renderedCLI(t, defaultCLIOptions())
 	if got := strings.Count(files["posts.gen.go"], "url.PathEscape(id)"); got != 0 {
 		t.Errorf("entity file should bind only the base path, got %d url.PathEscape(id) uses in posts.gen.go", got)
 	}
-	if got := strings.Count(files["verbs.gen.go"], "url.PathEscape(id)"); got != 3 { // get + delete + mutation
-		t.Errorf("want 3 url.PathEscape(id) uses in verbs.go (get/delete/mutation), got %d", got)
+	if got := strings.Count(files["verbs.gen.go"], "takeKey("); got != 3 { // get + delete + mutation
+		t.Errorf("want 3 takeKey uses in verbs.go (get/delete/mutation), got %d", got)
+	}
+	if !strings.Contains(files["output.gen.go"], "segs[i] = url.PathEscape(args[i])") {
+		t.Error("takeKey does not escape each key value as its own segment")
 	}
 }
 
