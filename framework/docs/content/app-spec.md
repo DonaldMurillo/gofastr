@@ -1191,9 +1191,9 @@ row can't fabricate a valid foreign key. `count` and explicit `rows:` can be
 combined: the explicit rows are seeded first, then the generated ones.
 
 Generated rows never repeat a `primary_key`: an integer key column counts
-up from 1001, or from just above `min` (and never 1, which the generated
-e2e test creates) when the column sets bounds, and a uuid key takes one
-value per row. A key made only of enums has as many keys as distinct value
+up from 1001, or, when the column sets bounds, from `min` but never below
+2 (the generated e2e test creates 1), and a uuid key takes one value per
+row. A key made only of enums has as many keys as distinct value
 combinations, less the one the e2e test creates. The generator refuses a
 `count` that would run past those combinations or an integer key's bounds,
 generate a key an explicit row already holds, or leave a key column empty:
