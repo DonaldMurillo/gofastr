@@ -327,8 +327,9 @@ func AvailableOn(path string) []*Definition {
 // registered Skeleton or the framework's defaultSkeleton. Exported so SSR hosts
 // can inline chrome without instantiating `server` themselves.
 //
-// It renders with context.Background(): use it for build-time dumps (the static
-// exporter) where no request exists. For SSR first paint, prefer
+// It renders with context.Background(), so a slot that reads the locale or the
+// user renders for nobody in particular; the static exporter passes each locale
+// tree's context to [RenderChromeCtx] instead. For SSR first paint, prefer
 // [RenderChromeCtx] so context-aware slots (role-aware nav, tenant-scoped
 // chrome) see the signed-in user instead of rendering anonymous.
 func RenderChrome(d *Definition) string {

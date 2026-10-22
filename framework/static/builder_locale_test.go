@@ -9,8 +9,10 @@ import (
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
@@ -26,6 +28,8 @@ func (helloScreen) RenderCtx(ctx context.Context) render.HTML {
 // prefixed locale: /es/about/index.html in Spanish, its links under
 // /es/, and the runtime told the base the prefix sits behind.
 func TestExportWritesLocaleTrees(t *testing.T) {
+	def := widget.New("ssg-locale-test").Hidden().Slot("body", helloScreen{}).Build()
+	widget.Mount(router.New(), &def)
 	a := coreapp.NewApp("SSGLocale")
 	a.Register("/", &helloScreen{}, nil)
 	a.Register("/about", &helloScreen{}, nil)
@@ -65,6 +69,14 @@ func TestExportWritesLocaleTrees(t *testing.T) {
 	}
 	if !strings.Contains(read("es/index.html"), "Hola") {
 		t.Error("es/index.html is not Spanish")
+	}
+	// A hidden widget's chrome is fetched when it opens, so each locale
+	// tree carries its own copy, rendered in that locale.
+	if got := read("es/core-ui/widget/ssg-locale-test/chrome"); !strings.Contains(got, "Hola") {
+		t.Errorf("the /es/ widget chrome is not Spanish:\n%s", got)
+	}
+	if got := read("core-ui/widget/ssg-locale-test/chrome"); !strings.Contains(got, "Hello") {
+		t.Errorf("the widget chrome is not English:\n%s", got)
 	}
 	if got := strings.Join(res.Pages, " "); !strings.Contains(got, "/es/about") {
 		t.Errorf("Result.Pages = %s, want the /es/ pages listed", got)

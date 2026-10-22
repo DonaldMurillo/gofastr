@@ -140,7 +140,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	for _, tag := range tags {
 		lctx, rule := ctx, urlprefix.Rule{}
 		if byPrefix {
-			lctx = i18n.WithPathLocale(i18n.WithContext(ctx, i18n.Locale{Tag: tag}), locales, tag)
+			lctx = localeContext(ctx, locales, tag)
 			rule = urlprefix.Rule{Prefix: i18n.PathPrefix(lctx), Locales: locales.All()}
 		}
 		err := walk(lctx, b.Host, b.routeExcluded, nil, b.log, nil, func(route, p, page string) error {
@@ -375,7 +375,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// instead of 404'ing against the live widget endpoints. Recorded in
 	// res.Assets so the full-site worker precaches them. Overlays must
 	// keep opening offline.
-	if err := b.dumpWidgetAssets(&res); err != nil {
+	if err := b.dumpWidgetAssets(ctx, &res); err != nil {
 		return res, err
 	}
 
@@ -872,7 +872,7 @@ var baseRouteGraph = regexp.MustCompile(`(?s)(<script type="application/json" id
 // the runtime fetches their chrome from cfg.chromePath on open, which 404s
 // on a serverless host. Dumping the same bytes as files lets openWidget
 // resolve against the static tree, so every data-cui-open overlay works.
-func (b *Builder) dumpWidgetAssets(res *Result) error {
+func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 	defs := widget.AllForSSR()
 	if len(defs) == 0 {
 		return nil
@@ -892,22 +892,29 @@ func (b *Builder) dumpWidgetAssets(res *Result) error {
 	res.Assets = append(res.Assets, "/__gofastr/widgets.json")
 	b.log("wrote %s", "/__gofastr/widgets.json")
 	pages := pageSet(res.Pages)
+	locales, byPrefix := b.Host.PathLocales()
 	for _, d := range defs {
 		// Chrome HTML may carry root-absolute nav links (/docs/…); rewrite
 		// them the same way page HTML is rewritten for a subpath deploy,
 		// and slash its page links the way slashLinks does a page's (a
-		// section menu's links live here).
-		chrome := b.slashPageLinks(b.rewriteBaseURLs(widget.RenderChrome(d)), pages)
+		// section menu's links live here). Its slots render in the
+		// locale of the tree it lands in, like the pages beside it.
+		dctx := ctx
+		if byPrefix {
+			dctx = localeContext(ctx, locales, locales.Default)
+		}
+		chrome := b.slashPageLinks(b.rewriteBaseURLs(widget.RenderChromeCtx(dctx, d)), pages)
 		if err := b.writeRawAsset("/core-ui/widget/"+d.Name+"/chrome", []byte(chrome)); err != nil {
 			return err
 		}
 		res.Assets = append(res.Assets, "/core-ui/widget/"+d.Name+"/chrome")
 		// On a /<tag>/ page the runtime asks for the chrome under the
 		// same prefix, the way the live router serves it.
-		if locales, ok := b.Host.PathLocales(); ok {
+		if byPrefix {
 			for _, tag := range locales.Prefixed {
 				rule := urlprefix.Rule{Prefix: "/" + tag, Locales: locales.All()}
-				local := b.slashPageLinks(b.rewriteBaseURLs(string(urlprefix.HTML([]byte(widget.RenderChrome(d)), rule))), pages)
+				raw := widget.RenderChromeCtx(localeContext(ctx, locales, tag), d)
+				local := b.slashPageLinks(b.rewriteBaseURLs(string(urlprefix.HTML([]byte(raw), rule))), pages)
 				at := "/" + tag + "/core-ui/widget/" + d.Name + "/chrome"
 				if err := b.writeRawAsset(at, []byte(local)); err != nil {
 					return err
@@ -922,6 +929,12 @@ func (b *Builder) dumpWidgetAssets(res *Result) error {
 		b.log("wrote widget %s (chrome + css)", d.Name)
 	}
 	return nil
+}
+
+// localeContext is ctx as a request for the locale tag reads it: the
+// translator's locale and the path locale the router would set.
+func localeContext(ctx context.Context, locales i18n.PathLocales, tag string) context.Context {
+	return i18n.WithPathLocale(i18n.WithContext(ctx, i18n.Locale{Tag: tag}), locales, tag)
 }
 
 // dumpSEOAssets writes sitemap.xml and robots.txt when the host
