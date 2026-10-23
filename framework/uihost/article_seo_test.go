@@ -62,7 +62,7 @@ func (*articleWithSchemaComp) Render() render.HTML { return render.Raw("<p>x</p>
 func (*articleWithSchemaComp) ScreenArticle() app.ArticleMeta {
 	return app.ArticleMeta{Headline: "From Meta"}
 }
-func (*articleWithSchemaComp) ScreenSchema() []seo.Thing {
+func (*articleWithSchemaComp) ScreenSchema(ctx context.Context) []seo.Thing {
 	a := seo.NewArticle()
 	a.Headline = "From Schema"
 	return []seo.Thing{a}
@@ -97,7 +97,7 @@ func (*articleWithOGComp) Render() render.HTML { return render.Raw("<p>x</p>") }
 func (*articleWithOGComp) ScreenArticle() app.ArticleMeta {
 	return app.ArticleMeta{Headline: "From Meta", Description: "From Meta Desc"}
 }
-func (*articleWithOGComp) ScreenSEO() SEO {
+func (*articleWithOGComp) ScreenSEO(ctx context.Context) SEO {
 	return SEO{OG: &OG{Type: "website", Title: "Custom Title"}}
 }
 

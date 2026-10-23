@@ -169,7 +169,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 		if submitLabel == "" {
 			submitLabel = i18nui.FormSave.Text(ctx)
 		}
-		actions = headless.Own(Button(ButtonConfig{Label: submitLabel, Type: "submit"}))
+		actions = headless.Own(Button(ButtonConfig{Ctx: ctx, Label: submitLabel, Type: "submit"}))
 	}
 
 	// The summary, when there is one, renders above the body and marks

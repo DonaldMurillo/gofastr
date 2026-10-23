@@ -78,7 +78,7 @@ type App struct {
 // WithNotFoundBody sets the body the 404-outlet outcome renders and
 // returns the app for chaining (see App.NotFound).
 func (a *App) WithNotFoundBody(c component.Component) *App {
-	RefuseRetiredTitle("not-found body", c)
+	RefuseRetiredScreenMethods("not-found body", c)
 	a.NotFound = c
 	return a
 }
@@ -566,7 +566,7 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 // exactly like a registered screen (per-request instance, DI, Load,
 // article wrap, the default layout chain).
 func notFoundScreenFor(ctx context.Context, comp component.Component) *Screen {
-	RefuseRetiredTitle("not-found body", comp)
+	RefuseRetiredScreenMethods("not-found body", comp)
 	return NewScreen("/__gofastr_not_found__", comp).WithTitle(pageNotFoundDocTitle.Text(ctx))
 }
 
@@ -605,7 +605,7 @@ func (a *App) RenderNotFoundFromResult(ctx context.Context, path, fromPath strin
 // the default layout chain) so the error body renders inside the root
 // layout like every page..
 func errorScreenFor(ctx context.Context, comp component.Component) *Screen {
-	RefuseRetiredTitle("error body", comp)
+	RefuseRetiredScreenMethods("error body", comp)
 	return NewScreen("/__gofastr_error__", comp).WithTitle(pageErrorDocTitle.Text(ctx))
 }
 
@@ -717,7 +717,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 	comp := screen.newInstance()
 	if decision.Kind == DecisionRenderAlt && decision.AltFactory != nil {
 		comp = decision.AltFactory()
-		RefuseRetiredTitle("screen "+screen.Path+" RenderAlt", comp)
+		RefuseRetiredScreenMethods("screen "+screen.Path+" RenderAlt", comp)
 	}
 
 	// Inject route params into ParamSetter components
@@ -1392,7 +1392,7 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 	comp := screen.newInstance()
 	if decision.Kind == DecisionRenderAlt && decision.AltFactory != nil {
 		comp = decision.AltFactory()
-		RefuseRetiredTitle("screen "+screen.Path+" RenderAlt", comp)
+		RefuseRetiredScreenMethods("screen "+screen.Path+" RenderAlt", comp)
 	}
 
 	if len(params) > 0 {

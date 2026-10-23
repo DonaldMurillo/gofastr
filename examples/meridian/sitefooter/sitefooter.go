@@ -11,6 +11,7 @@ package sitefooter
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // Link is one destination.
@@ -29,6 +30,9 @@ type Config struct {
 	// Name is the product name; it links home.
 	Name    string
 	Columns []Column
+	// Language sits under the wordmark: the language switcher
+	// (ui.LanguageMenu). Zero draws none.
+	Language render.HTML
 }
 
 // Render builds the footer.
@@ -49,8 +53,8 @@ func Render(cfg Config) render.HTML {
 	return Style.Scope(html.Footer(html.FooterConfig{ContentInfo: true},
 		html.Div(html.DivConfig{Class: Style.Inner()},
 			html.Div(html.DivConfig{Class: Style.Top()},
-				html.Div(html.DivConfig{},
-					html.Link(html.LinkConfig{Href: "/", Text: cfg.Name, Class: Style.Brand()})),
+				ui.Stack(ui.StackConfig{Gap: ui.GapMD, Align: ui.AlignStart},
+					html.Link(html.LinkConfig{Href: "/", Text: cfg.Name, Class: Style.Brand()}), cfg.Language),
 				html.Div(html.DivConfig{Class: Style.Columns()}, cols...),
 			),
 		)))

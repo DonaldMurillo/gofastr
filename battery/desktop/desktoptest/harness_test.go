@@ -55,16 +55,16 @@ func newTestApp(t *testing.T, cfg desktop.Config) testApp {
 	}
 	if cfg.Menu == nil {
 		cfg.Menu = &desktop.Menu{Items: []desktop.MenuItem{
-			{Title: "Go", Children: []desktop.MenuItem{
-				{Title: "Two", Key: "cmd+2", Navigate: "/two"},
-				{Title: "Ping", Handler: func(context.Context) error {
+			{Title: testPhrase("Go"), Children: []desktop.MenuItem{
+				{Title: testPhrase("Two"), Key: "cmd+2", Navigate: "/two"},
+				{Title: testPhrase("Ping"), Handler: func(context.Context) error {
 					select {
 					case ran <- struct{}{}:
 					default:
 					}
 					return nil
 				}},
-				{Title: "Prefs", Role: desktop.RoleSettings},
+				{Title: testPhrase("Prefs"), Role: desktop.RoleSettings},
 				{Role: desktop.RoleSeparator},
 				{Role: desktop.RoleQuit},
 			}},
@@ -197,7 +197,7 @@ func TestCloseMainWindowHonoursTray(t *testing.T) {
 	ta := newTestApp(t, desktop.Config{Tray: &desktop.Tray{
 		Title:            "T",
 		CloseHidesWindow: true,
-		Menu:             &desktop.Menu{Items: []desktop.MenuItem{{Title: "Show", Role: desktop.RoleShow}}},
+		Menu:             &desktop.Menu{Items: []desktop.MenuItem{{Title: testPhrase("Show"), Role: desktop.RoleShow}}},
 	}})
 	h := desktoptest.Run(t, ta.app, ta.d)
 

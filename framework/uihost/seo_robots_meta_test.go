@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -29,9 +30,9 @@ func TestScreenRobotsEmitsMeta(t *testing.T) {
 
 type robotsBundleComp struct{}
 
-func (robotsBundleComp) Render() render.HTML  { return html.Div(html.DivConfig{}, render.Text("hi")) }
-func (robotsBundleComp) ScreenRobots() string { return "from-interface" }
-func (robotsBundleComp) ScreenSEO() SEO       { return SEO{Robots: "noindex"} }
+func (robotsBundleComp) Render() render.HTML               { return html.Div(html.DivConfig{}, render.Text("hi")) }
+func (robotsBundleComp) ScreenRobots() string              { return "from-interface" }
+func (robotsBundleComp) ScreenSEO(ctx context.Context) SEO { return SEO{Robots: "noindex"} }
 
 func TestSEOBundleRobotsBeatsScreenRobots(t *testing.T) {
 	a := app.NewApp("x")

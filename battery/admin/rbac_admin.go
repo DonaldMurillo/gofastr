@@ -244,7 +244,7 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 		}
 		held := make([]render.HTML, 0, len(labels))
 		for _, l := range labels {
-			held = append(held, ui.Tag(ui.TagConfig{Label: l}))
+			held = append(held, ui.Tag(ui.TagConfig{Ctx: ctx, Label: l}))
 		}
 		heldCell := ui.Muted(render.Text("—"))
 		if len(held) > 0 {
@@ -254,6 +254,7 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 			"user":  render.Text(u.GetEmail()),
 			"roles": heldCell,
 			"set": ui.Dropdown(ui.DropdownConfig{
+				Ctx:   ctx,
 				ID:    "admin-roles-edit-" + u.GetID(),
 				Label: i18nui.AdminEditRoles.Text(ctx),
 				Align: ui.DropdownEnd,

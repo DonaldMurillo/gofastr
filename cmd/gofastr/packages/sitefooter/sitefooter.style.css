@@ -32,6 +32,10 @@
   font-size: var(--text-sm);
   line-height: var(--leading-relaxed);
 }
+/* The language switcher sits under the name and the tagline. */
+.language {
+  margin-block-start: var(--spacing-md);
+}
 
 .columns {
   display: grid;

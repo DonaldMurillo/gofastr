@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=845525a0954939a6
+//gofastr:generated generator=app kind=scaffold version=dev sum=8d058d42ee8f11fb
 
 package main
 
@@ -16,12 +16,23 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+)
+
+// The words this file says, in English. The app's catalog
+// (locales/*.json) translates them by key.
+var (
+	chromeTextHome       = i18n.Define("shopfront.chrome.home", "Home")
+	chromeTextProducts   = i18n.Define("shopfront.chrome.products", "Products")
+	chromeTextCategories = i18n.Define("shopfront.chrome.categories", "Categories")
+	chromeTextOrders     = i18n.Define("shopfront.chrome.orders", "Orders")
+	chromeTextReviews    = i18n.Define("shopfront.chrome.reviews", "Reviews")
 )
 
 const (
@@ -65,15 +76,15 @@ var fontFaceCSS = style.FontFaceCSS("")
 // sidebarConfig returns the navigation sidebar configuration.
 func sidebarConfig(ctx context.Context) ui.SidebarConfig {
 	cfg := ui.SidebarConfig{Title: "ShopFront", Items: []ui.SidebarItem{
-		{Label: "Home", Href: "/", Icon: ui.Icon("home", ui.IconConfig{})},
-		{Label: "Products", Href: "/products", Icon: ui.Icon("package", ui.IconConfig{})},
-		{Label: "Categories", Href: "/categories", Icon: ui.Icon("folder", ui.IconConfig{})},
-		{Label: "Orders", Href: "/orders", Icon: ui.Icon("shopping-cart", ui.IconConfig{})},
-		{Label: "Reviews", Href: "/reviews", Icon: ui.Icon("star", ui.IconConfig{})},
+		{Label: chromeTextHome.Text(ctx), Href: "/", Icon: ui.Icon("home", ui.IconConfig{})},
+		{Label: chromeTextProducts.Text(ctx), Href: "/products", Icon: ui.Icon("package", ui.IconConfig{})},
+		{Label: chromeTextCategories.Text(ctx), Href: "/categories", Icon: ui.Icon("folder", ui.IconConfig{})},
+		{Label: chromeTextOrders.Text(ctx), Href: "/orders", Icon: ui.Icon("shopping-cart", ui.IconConfig{})},
+		{Label: chromeTextReviews.Text(ctx), Href: "/reviews", Icon: ui.Icon("star", ui.IconConfig{})},
 	}}
 	var authAction render.HTML
 	if u, ok := handler.GetUser(ctx); ok && u != nil {
-		authAction = ui.SignOut(ui.SignOutConfig{Next: "/"})
+		authAction = ui.SignOut(ui.SignOutConfig{Ctx: ctx, Next: "/"})
 	}
 	cfg.Footer = authAction
 	return cfg

@@ -71,6 +71,7 @@ func Selection(cfg SelectionConfig) render.HTML {
 	var copyBtn render.HTML
 	if cfg.Copy != "" && cfg.Floating {
 		copyBtn = headless.Own(Button(ButtonConfig{
+			Ctx:     ctx,
 			Label:   w.Resolve().SelectionCopy,
 			Icon:    "copy",
 			Variant: ButtonSecondary,

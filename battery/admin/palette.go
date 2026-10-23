@@ -95,7 +95,7 @@ func (b *Battery) paletteCommands(ctx context.Context, q string) []ui.PaletteCom
 	}
 	for _, p := range b.cfg.Pages {
 		if b.pageAllows(ctx, p) {
-			add(ui.PaletteCommand{Label: p.Title, Href: b.cfg.PathPrefix + p.Path, Meta: page})
+			add(ui.PaletteCommand{Label: p.Title.Text(ctx), Href: b.cfg.PathPrefix + p.Path, Meta: page})
 		}
 	}
 	for _, e := range b.ents {

@@ -247,6 +247,7 @@ func drawerBar(ctx context.Context, prev, next string) render.HTML {
 // and Mod+S clicks it. It reads as idle until the form has edits.
 func saveButton(ctx context.Context, m *meta, create bool) render.HTML {
 	return ui.Button(ui.ButtonConfig{
+		Ctx:             ctx,
 		Label:           submitLabel(ctx, m, create),
 		Type:            "submit",
 		ID:              "eui-" + m.name + "-save",
@@ -325,7 +326,7 @@ func (b *RecordBuilder) actions(ctx context.Context, m *meta, row map[string]any
 				danger = append(danger, ui.MenuItem{Label: label, Danger: true, Do: &act})
 				continue
 			}
-			out = append(out, ui.Button(ui.ButtonConfig{Label: label, Variant: variant, ExtraAttrs: act.Attrs()}))
+			out = append(out, ui.Button(ui.ButtonConfig{Ctx: ctx, Label: label, Variant: variant, ExtraAttrs: act.Attrs()}))
 		}
 	}
 	buttons, dangerActs := b.appActions(ctx, m, title, save)
@@ -345,7 +346,7 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta, title string, s
 	if !m.hasAPI {
 		return nil, nil
 	}
-	for _, act := range recordActions(m) {
+	for _, act := range recordActions(ctx, m) {
 		if !mayRun(ctx, m, act, b.id) {
 			continue
 		}
@@ -372,7 +373,7 @@ func (b *RecordBuilder) appActions(ctx context.Context, m *meta, title string, s
 			danger = append(danger, ui.MenuItem{Label: act.label, Danger: true, Do: &run})
 			continue
 		}
-		out = append(out, ui.Button(ui.ButtonConfig{Label: act.label, Variant: variant, ExtraAttrs: run.Attrs()}))
+		out = append(out, ui.Button(ui.ButtonConfig{Ctx: ctx, Label: act.label, Variant: variant, ExtraAttrs: run.Attrs()}))
 	}
 	return out, danger
 }
@@ -518,9 +519,9 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 	// empty tab fails that tab alone, never the page.
 	for _, xt := range slices.Concat(m.ext.Tabs, b.tabs) {
 		key, build := xt.Key, xt.Build
-		label := xt.Label
-		if label == "" {
-			label = key
+		label := key
+		if !xt.Label.IsZero() {
+			label = xt.Label.Text(ctx)
 		}
 		tabs = append(tabs, tab{key: key, label: label, build: func() (render.HTML, error) {
 			return contain(ctx, m.name, "tab "+key, func() (render.HTML, error) {

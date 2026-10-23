@@ -1,11 +1,28 @@
 package ui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
+
+// A theme's label is drawn in the request's language.
+func TestThemePickerLabelTranslates(t *testing.T) {
+	brutal := testPhrase("Brutal look")
+	cat := i18n.NewMapCatalog()
+	cat.Set("es", brutal.Key(), i18n.Message{Text: "Aspecto brutal"})
+	ctx := i18n.WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "es"}), i18n.NewTranslator(cat, "en"))
+	out := string(ThemePicker(ThemePickerConfig{
+		Ctx:    ctx,
+		Themes: []ThemeChoice{{Label: brutal, Theme: style.RegisterThemeOverride(style.DefaultTheme())}},
+	}))
+	if !strings.Contains(out, ">Aspecto brutal</button>") || strings.Contains(out, "Brutal look") {
+		t.Errorf("the theme's label is not translated:\n%s", out)
+	}
+}
 
 // The picker is a radiogroup of one option per theme plus the default,
 // each naming the class the module puts on <html>; the default names
@@ -18,7 +35,7 @@ func TestThemePickerRendersOneOptionPerTheme(t *testing.T) {
 	ref := style.RegisterThemeOverride(th)
 	out := string(ThemePicker(ThemePickerConfig{
 		ID:         "tp",
-		Themes:     []ThemeChoice{{Label: "Brutal", Theme: ref}},
+		Themes:     []ThemeChoice{{Label: testPhrase("Brutal"), Theme: ref}},
 		ExtraAttrs: map[string]string{"data-test": "hook", "data-hui-theme-pick": "evil"},
 	}))
 	for _, want := range []string{
@@ -53,5 +70,5 @@ func TestThemePickerRefusesZeroTheme(t *testing.T) {
 			t.Fatalf("recover() = %v, want the zero-ThemeRef panic", r)
 		}
 	}()
-	ThemePicker(ThemePickerConfig{Themes: []ThemeChoice{{Label: "Nope"}}})
+	ThemePicker(ThemePickerConfig{Themes: []ThemeChoice{{Label: testPhrase("Nope")}}})
 }

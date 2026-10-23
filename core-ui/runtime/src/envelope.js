@@ -567,7 +567,9 @@
   // the params; names the pattern did not capture stay literal.
   const _segName = (seg) => seg.slice(1).split(':')[0].replace(/\*$/, '');
   const routeInfo = (path) => {
-    const clean = path.split('?')[0].split('#')[0];
+    // Routes register unprefixed: /es/pricing resolves as /pricing.
+    const bare = path.split('?')[0].split('#')[0];
+    const clean = NS._unlocalize?.(bare) ?? bare;
     const list = window.__gofastr_routes || [];
     for (const e of list) {
       const pattern = (e && (e.path || e.Path)) || '';
@@ -642,12 +644,6 @@
   };
   const sseMeta = (d) => (d || document).querySelector('meta[name="gofastr-sse"]');
   const respIsHTML = (r) => (r.headers.get('Content-Type') || '').toLowerCase().startsWith('text/html');
-  const _resolvePath = (href) => {
-    try {
-      const u = new URL(href, location.href);
-      return u.pathname + u.search;
-    } catch (_) { return href; }
-  };
   const routeLayouts = (path) => {
     const m = routeInfo(path);
     const ls = ((m && m.entry && m.entry.layouts) || []);
@@ -887,9 +883,11 @@
         NS._inval(fr);
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
         if (!NS._navLive(myEpoch)) return;
-        let dest = path;
-        if (fr.redirected && fr.url) dest = _resolvePath(fr.url);
-        if (dest !== path) { NS._pushURL(dest, { replace: true }); NS._setCurrentPath(dest); }
+        // A followed redirect into another document loads it (nav.js).
+        const to = NS._followed(fr, path);
+        if (to === null) return;
+        const dest = to || path;
+        if (to) { NS._pushURL(dest, { replace: true }); NS._setCurrentPath(dest); }
         if (!(await cssWait(myEpoch, pdoc.body))) return;
         const t = pdoc.querySelector('title')?.textContent || document.title;
         document.title = t;
@@ -959,8 +957,16 @@
       if (!resp.ok && !respIsHTML(resp)) throw new Error(`HTTP ${resp.status}`);
       const notOk = !resp.ok;
       NS._inval(resp);
-      const redirectTo = resp.headers.get('X-Gofastr-Location');
+      // A followed 3xx takes the same leg as the header (nav.js).
+      const followed = NS._followed(resp, path);
+      if (followed === null) { if (P && parts) P.kill(parts); return; }
+      const redirectTo = resp.headers.get('X-Gofastr-Location') || followed;
       if (redirectTo) {
+        if (NS._docRedirect(redirectTo)) {
+          _pend.delete(path);
+          if (P && parts) P.kill(parts);
+          return;
+        }
         NS._pushURL(redirectTo, { replace: true });
         NS._setCurrentPath(redirectTo);
         _pend.delete(path);
@@ -1029,21 +1035,19 @@
         // Any miss falls through to the whole-main swap below.
         const docEnv = readDocEnvelope(pdoc);
         const docResolved = docEnv ? resolveFillTargets(docEnv.fills) : null;
+        // A redirected answer never gets here: the leg above took it.
         if (docEnv && docResolved) {
-          let dest = path;
-          if (resp.redirected && resp.url) dest = _resolvePath(resp.url);
-          if (dest !== path) { NS._pushURL(dest, { replace: true }); NS._setCurrentPath(dest); }
           if (!(await cssWait(myEpoch, docEnv.html, docEnv.fills, null, load))) return;
           document.title = docEnv.title;
           announceRoute(docEnv.title);
           if (parts) parts.pending = true;
-          swapCommit(myEpoch, prevPath, dest, () => {
+          swapCommit(myEpoch, prevPath, path, () => {
             applyEnvelope(docEnv.slot, docEnv.html, docResolved, docEnv.seed);
             _applied(docEnv.slot, docResolved);
             if (load) load.sweep();
             if (P && parts) { parts.committed = true; P.kill(parts); }
-            if (!notOk) cacheScreen(dest, docEnv.html, docEnv.title, docEnv.swapKey, docEnv.fills, docEnv.seed);
-            _done(dest, prevPath, false, docEnv.slot, ps, notOk);
+            if (!notOk) cacheScreen(path, docEnv.html, docEnv.title, docEnv.swapKey, docEnv.fills, docEnv.seed);
+            _done(path, prevPath, false, docEnv.slot, ps, notOk);
           }, null);
           return;
         }
@@ -1269,8 +1273,11 @@
     for (const s of sels) {
       if (s === '*') { screenCache.clear(); break; }
       if (!s || s[0] !== '/') continue;
-      if (s.includes('?')) { screenCache.delete(s); continue; }
-      for (const k of screenCache.keys()) if (k === s || k.startsWith(s + '?')) screenCache.delete(k);
+      // Keys keep the locale prefix; selectors never carry one.
+      for (const k of screenCache.keys()) {
+        const u = NS._unlocalize?.(k) ?? k;
+        if (s.includes('?') ? u === s : u === s || u.startsWith(s + '?')) screenCache.delete(k);
+      }
     }
     return _origInval.apply(this, arguments);
   };

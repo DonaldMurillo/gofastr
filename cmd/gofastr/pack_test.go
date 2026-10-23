@@ -315,6 +315,9 @@ func TestPackSerializerCoversEveryAppSpecField(t *testing.T) {
 	emitted := map[string]bool{}
 	zero := appSpecToMap(AppSpec{})
 	for i := range rt.NumField() {
+		if !rt.Field(i).IsExported() {
+			continue // render state (the file's phrase collector), never in the spec
+		}
 		bpv := reflect.New(rt).Elem()
 		probeLeafValue(t, bpv.Field(i))
 		keys := appSpecToMap(bpv.Interface().(AppSpec))

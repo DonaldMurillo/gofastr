@@ -305,7 +305,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-embed-state` *(on the embed root)* | Lifecycle of an embedded surface. The server writes `loading` into the shell HTML; the `boot-embed` fragment writes every later value, and ships **only** in the `embed` bundle served at `/__gofastr/embed-runtime.js`. `ready` once the handshake completed and the surface's server-rendered content was injected. `error` when there is no parent to hand over a nonce, no token arrived within 15s, the exchange was refused, or the content fetch failed. `expired` when the grant's absolute lifetime ran out and refresh could not renew it. Nothing in the runtime branches on it; it exists so tests can see the frame's state. The host page is cross-origin and can neither read nor style inside the frame. See `framework/docs/content/embed.md`. |
 | `data-cui-toast-fallback` | Marks the degraded inline container core injects when the `headless-feedback` module fails to load (transient 5xx, network hiccup). Used by `__gofastr._fallbackToast(cfg)` so an X-Gofastr-Toast payload still reaches the user even when the full module is unavailable. Unstyled-but-visible; no TTL, no animation. |
 | `data-hui-menu` / `data-hui-menu-trigger="<id>"` / `data-hui-menu-panel` / `data-hui-menu-radio="<group>"` / `data-hui-menu-lazy` | On a `framework/ui.Menu` (headless.Menu anatomy): the dropdown and its submenus are disclosures (`data-hui-disclosure` beside `data-hui-menu`), `headless-menu` (a registered behaviour of `framework/headless`, `Requires("headless-disclosure", "widgets")`) owns the keyboard contract — roving focus scoped to the item's own panel, wrapping arrows, Home/End, bounded type-ahead, RTL-aware submenu open/close, Tab closing the chain, radio arbitration across the whole menu, focus-on-open, and the lazy template's inflation. The retired menu-module attribute family is gone with the `menu` module. |
-| `data-cui-match-prefix` | On an `<a>` link, inside a `<nav>` landmark or not: opts the link into prefix-matching for active-route highlighting. The attribute's VALUE, when non-empty, names the section prefix — a link can own a section it does not live at (`framework/ui.Sidebar` emits its items' `MatchPath` there, which is how a section stays lit across client navigations into it); an empty value falls back to the href. The runtime tags it `aria-current="page"` + `.active` when the current path equals the prefix or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact matching only (a query-less href matches the URL's path, a trailing slash aside, since a screen's sort, page and filter live in its query, unless its nav also links that path with a query, a tab strip whose current tab the server picks; an href with a query must equal the URL, again a trailing slash on its path aside), so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
+| `data-cui-match-prefix="<path>"` | On an `<a>` link, inside a `<nav>` landmark or not: opts the link into prefix-matching for active-route highlighting. The attribute's VALUE, when non-empty, names the section prefix — a link can own a section it does not live at (`framework/ui.Sidebar` emits its items' `MatchPath` there, which is how a section stays lit across client navigations into it); an empty value falls back to the href. The runtime tags it `aria-current="page"` + `.active` when the current path equals the prefix or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact matching only (a query-less href matches the URL's path, a trailing slash aside, since a screen's sort, page and filter live in its query, unless its nav also links that path with a query, a tab strip whose current tab the server picks; an href with a query must equal the URL, again a trailing slash on its path aside), so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
 | `data-cui-activelink` | On an `<a>` link, inside a `<nav>` landmark or not: hands the link's current-state to the `activelink` module without changing how it matches (exact, as above, unless `data-cui-match-prefix` is present too). `headless.Sidebar` marks every leaf with it, so the `aria-current="page"` the server settled for first paint is the module's to clear after a client navigation. The module loads idle, so a navigation can land before it ever stamped `.active` on the old link; without the handover the stale first-paint mark survived beside the fresh one, two lit entries. The handover covers navigations only: on a document that has not navigated client-side, the load-time sweep stamps matches and leaves these marks alone, so `Active` on `/orders` served at `/orders?page=2` or on a detail page keeps its mark. Links with neither handover attribute nor the module's `.active` class keep owning their attributes. |
 | `data-cui-activelink-skip` | On a `<nav> <a>` link: opts OUT of active-route highlighting entirely. The `activelink` runtime module neither sets nor clears `aria-current` or `.active` on it, at load or after SPA navigation. The escape hatch for a link whose current-state is owned by something else: a hand-set attribute (`aria-current="location"` on an in-page anchor), app JS, a signal binding. Same hands-off treatment as href-less links. |
 | `data-cui-popover-anchor` | On a `data-cui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side: `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances: popovers are click-driven and don't deep-link. |
@@ -838,6 +838,58 @@ Never write prose straight into a toast, `textContent`, `aria-label` or
 call to a registered phrase with the same English. A client-side
 navigation keeps the block it booted with, so a reader who switches
 locale mid-session sees the old runtime words until the next full load.
+
+### Locale prefixes (`#gofastr-locales`, `__gofastr_locales`)
+
+An app built with `framework.WithLocalePrefixes` serves `/es/pricing` as
+the `/pricing` screen in Spanish. The router strips the prefix before
+matching, so the server's route table, the manifest
+(`window.__gofastr_routes`) and the screen cache all hold unprefixed
+paths. The host writes the locale set into an inert
+`<script type="application/json" id="gofastr-locales">{"default":"en","prefixes":["es"],"base":""}</script>`
+on full pages (`base` is a static export's mount path, which sits in
+front of the prefix); the kernel reads it once into
+`window.__gofastr_locales`. The id is reserved: `registry.DataBlock`
+refuses it.
+
+Three kernel helpers, exported on `__gofastr` for modules, carry the
+rules:
+
+- `_unlocalize(path)` strips a prefix. Route lookups (`routeEntry`, the
+  preload and intercept route matchers, the envelope's route info) and
+  cache invalidation compare unprefixed paths, so a `/es/` link resolves
+  to the same route and the same cache entry family as its English
+  twin.
+- `_localeOf(path)` names a path's locale (`''` for the default). A
+  navigation whose destination locale differs from the current page's
+  crosses a document boundary (`crossesDocBoundary`): the whole
+  document loads, so `<html lang>`, the shell and the runtime strings
+  change with it.
+- `_lp(url)` puts the current page's prefix on a root-relative URL that
+  has none. Every runtime fetch goes through it: the action endpoint,
+  widget discovery and chrome, poll and RPC URLs, the action module and
+  eager preloads. The server then answers in the reader's locale, and
+  the `page` the action endpoint receives is the unprefixed path.
+
+The server side of the same contract rewrites root-relative URLs in a
+prefixed HTML response (`core-ui/urlprefix`: `href`, form actions and
+the URL-valued `data-cui-*` attributes listed in `urlprefix.URLAttrs`)
+and the `Location`, `X-Gofastr-Location` and `X-Gofastr-Push-State`
+headers. Markup never spells a
+prefix itself. A new URL-valued `data-cui-*` attribute joins
+`urlprefix.URLAttrs`, or `TestURLAttrsAllCovered` fails.
+
+The rewriter leaves an anchor with `hreflang` alone: it already names
+its locale. An `<a rel="alternate" hreflang>` means "this page in that
+language" (a language switcher, `ui.LanguageMenu`), so the active-link
+module (`src/activelink.js`) re-points every one whose tag is in the
+locale set at the current page after each navigation, at idle load and
+when widget chrome opens: the default locale at the plain path, the
+others under `/<tag>` after `base`. Chrome that outlives a swap then
+never links the page the reader left. An alternate naming a tag outside
+the set (another site's translation) and an `hreflang` link without
+`rel="alternate"` keep their `href`. No attribute marks the switcher:
+`rel` and `hreflang` are the HTML spelling of the contract.
 
 ### First-load order
 

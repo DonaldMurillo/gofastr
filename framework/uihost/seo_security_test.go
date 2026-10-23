@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -166,8 +167,8 @@ func TestSEO_TypedURLsRejectUnsafeSchemes(t *testing.T) {
 // sitewide WithCanonicalURL/WithOpenGraph allow-list.
 type seoBundleComp struct{ seo SEO }
 
-func (c *seoBundleComp) Render() render.HTML { return html.Div(html.DivConfig{}, render.Text("SEO")) }
-func (c *seoBundleComp) ScreenSEO() SEO      { return c.seo }
+func (c *seoBundleComp) Render() render.HTML               { return html.Div(html.DivConfig{}, render.Text("SEO")) }
+func (c *seoBundleComp) ScreenSEO(ctx context.Context) SEO { return c.seo }
 
 func renderBundleSEOPage(t *testing.T, s SEO) string {
 	t.Helper()

@@ -229,6 +229,173 @@
     "saved_bad_cols": "Las columnas no se aplican a esta lista.",
     "saved_bad_filter": "El filtro no se aplica a esta lista."
   },
+  "meridian": {
+    "admin": {
+      "metrics": {
+        "active_customers": "Clientes activos",
+        "mrr": "MRR",
+        "outstanding": "pendiente",
+        "past_due_invoices": "Facturas con atraso",
+        "trialing": "en prueba"
+      },
+      "revenue": {
+        "collected": "Cobrado",
+        "failed_payments": "Pagos fallidos",
+        "invoices_by_status": "Facturas por estado",
+        "outstanding": "Pendiente",
+        "payment_success": "Pagos completados",
+        "payments_by_method": "Pagos por método",
+        "payments_grid": "Pagos por método y estado",
+        "subscriptions_by_status": "Suscripciones por estado",
+        "subtitle": "Lo que entra, lo que se debe y lo que falló.",
+        "title": "Ingresos",
+        "went_through": "Pagos que se completaron"
+      },
+      "themes": {
+        "brutal": "Brutal"
+      }
+    },
+    "auth": {
+      "credentials_required": "Introduce tu correo electrónico y tu contraseña.",
+      "email_taken": "Ese correo electrónico ya está registrado.",
+      "invalid_credentials": "Correo electrónico o contraseña incorrectos.",
+      "rate_limit": "Demasiados intentos. Espera un momento y vuelve a intentarlo.",
+      "unknown": "Lo sentimos, algo salió mal. Vuelve a intentarlo."
+    },
+    "chrome": {
+      "about": "Acerca de",
+      "admin": "Administración",
+      "company": "Empresa",
+      "customers": "Clientes",
+      "dashboard": "Panel",
+      "invoices": "Facturas",
+      "legal": "Legal",
+      "overview": "Resumen",
+      "pricing": "Precios",
+      "privacy": "Privacidad",
+      "product": "Producto",
+      "sign_in": "Iniciar sesión",
+      "subscriptions": "Suscripciones",
+      "terms": "Términos"
+    },
+    "customers": {
+      "billing": {
+        "invoices": "Facturas",
+        "outstanding": "Pendiente",
+        "paid_to_date": "Pagado hasta la fecha",
+        "title": "Facturación"
+      }
+    },
+    "quick_add": {
+      "company": "Empresa",
+      "email": "Correo electrónico",
+      "name": "Nombre",
+      "open": "Alta rápida",
+      "submit": "Añadir cliente",
+      "title": "Nuevo cliente"
+    },
+    "screens": {
+      "about": {
+        "about_meridian": "Acerca de Meridian",
+        "meridian_is_a_demonstration": "Meridian es un producto de demostración creado por completo a partir de una especificación de app de GoFastr, un único archivo declarativo que genera este sitio de marketing, la consola autenticada, la autenticación, los roles y un panel de administración, todo renderizado en el servidor.\n\nExiste para mostrar que un framework puede generar una aplicación web real y pulida, no un andamiaje CRUD.",
+        "we_think_billing_should": "Creemos que facturar debería ser algo tranquilo.",
+        "why_we_built_a": "Por qué creamos una consola de facturación más tranquila."
+      },
+      "customers_crud": {
+        "customer": "Cliente",
+        "customers": "Clientes",
+        "new_customer": "Nuevo cliente",
+        "no_customers_yet_add": "Aún no hay clientes. Añade el primero para empezar."
+      },
+      "home": {
+        "billing_revenue": "Facturación e ingresos",
+        "compare_plans": "Comparar planes",
+        "everything_you_need_to": "Todo lo que necesitas para gestionar tus ingresos",
+        "invoices_handled": "Facturas resueltas",
+        "live_mrr_churn": "MRR y bajas en directo",
+        "meridian_billing_that_runs": "Meridian: facturación que funciona sola",
+        "meridian_gives_saas_teams": "Meridian da a los equipos SaaS un lugar tranquilo para gestionar clientes, suscripciones y facturas, con las métricas que importan, en directo.",
+        "open_paid_void_track": "Abierta, pagada, anulada: sigue cada factura y márcala como pagada con un clic.",
+        "see_pricing": "Ver precios",
+        "see_your_revenue_the": "Ve tus ingresos en cuanto cambian.",
+        "simple_honest_pricing": "Precios simples y honestos",
+        "start_free": "Empieza gratis",
+        "start_free_upgrade": "Empieza gratis. Mejora tu plan cuando crezcan tus ingresos.",
+        "subscriptions_that_flow": "Suscripciones que fluyen",
+        "the_revenue_console_for": "La consola de ingresos para el SaaS moderno.",
+        "trialing_active_past_due": "En prueba, activa, con atraso, cancelada: gestiona todo el ciclo de vida desde una sola pantalla.",
+        "watch_monthly_recurring_revenue": "Mira cómo se actualizan los ingresos recurrentes mensuales, el crecimiento y las bajas a medida que los clientes se registran y pagan.",
+        "why_meridian": "Por qué Meridian"
+      },
+      "invoices_crud": {
+        "active_customers": "Clientes activos",
+        "customers_by_status": "Clientes por estado",
+        "invoice": "Factura",
+        "invoices": "Facturas",
+        "mrr": "MRR",
+        "new_invoice": "Nueva factura",
+        "no_invoices_yet": "Aún no hay facturas.",
+        "overview": "Resumen",
+        "past_due_invoices": "Facturas con atraso",
+        "plans": "Planes",
+        "recent_invoices": "Facturas recientes",
+        "revenue_at_a_glance": "Ingresos de un vistazo",
+        "your_revenue_at_a": "Tus ingresos de un vistazo."
+      },
+      "login": {
+        "create_an_account": "Crear una cuenta",
+        "sign_in": "Iniciar sesión",
+        "sign_in_to_meridian": "Inicia sesión en Meridian"
+      },
+      "pricing": {
+        "contact_sales": "Contactar con ventas",
+        "core_billing_invoices": "Facturación básica y facturas",
+        "dedicated_success_manager": "Gestor de cuenta dedicado",
+        "email_support": "Soporte por correo electrónico",
+        "everything_in_pro": "Todo lo de Pro",
+        "for_growing_teams_that": "Para equipos en crecimiento que viven pendientes de sus ingresos.",
+        "for_high_volume_revenue": "Para equipos financieros y de ingresos de gran volumen.",
+        "for_solo_founders_finding": "Para fundadores en solitario que buscan sus primeros clientes.",
+        "mo": "/mes",
+        "mrr_churn_analytics": "Análisis de MRR y bajas",
+        "n99_9_uptime_sla": "SLA de disponibilidad del 99,9 %",
+        "og_description": "Planes para equipos de cualquier tamaño. Mejora tu plan cuando crezcan tus ingresos.",
+        "og_title": "Precios de Meridian: empieza gratis",
+        "plans_for_teams_of": "Planes para equipos de cualquier tamaño.",
+        "pricing": "Precios",
+        "priority_support": "Soporte prioritario",
+        "pro": "Pro",
+        "scale": "Escala",
+        "sso_audit_log": "SSO y registro de auditoría",
+        "start_free": "Empieza gratis",
+        "start_free_upgrade_when": "Empieza gratis. Mejora tu plan cuando crezcan tus ingresos.",
+        "starter": "Inicial",
+        "subscription_workflows": "Flujos de suscripción",
+        "unlimited_customers": "Clientes ilimitados",
+        "up_to_100_customers": "Hasta 100 clientes"
+      },
+      "privacy": {
+        "privacy_policy": "Política de privacidad",
+        "privacy_policy_meridian_is": "# Política de privacidad\n\nMeridian es una demostración y solo guarda los datos de ejemplo que creas mientras la exploras. El contenido siguiente es Markdown de relleno.\n\n## Qué recopilamos\n\nNada personal. Una cuenta de demostración y los registros que añadas en la consola, que se restablecen periódicamente.\n\n## Qué compartimos\n\nNada. Esta aplicación de demostración no tiene terceros, rastreadores ni analítica."
+      },
+      "signup": {
+        "already_have_an_account": "¿Ya tienes una cuenta? Inicia sesión",
+        "create_account": "Crear cuenta",
+        "create_your_account": "Crea tu cuenta",
+        "create_your_meridian_account": "Crea tu cuenta de Meridian"
+      },
+      "subscriptions_crud": {
+        "new_subscription": "Nueva suscripción",
+        "no_subscriptions_yet": "Aún no hay suscripciones.",
+        "subscription": "Suscripción",
+        "subscriptions": "Suscripciones"
+      },
+      "terms": {
+        "terms_of_service": "Términos del servicio",
+        "terms_of_service_this": "# Términos del servicio\n\nEsta es una aplicación de demostración. El texto siguiente es contenido de relleno que muestra tipografía extensa y **legible** renderizada desde Markdown en el diseño de marketing.\n\n## Aceptación\n\nAl usar Meridian aceptas que estos términos son solo ilustrativos: no hay ningún servicio, cobro ni obligación reales.\n\n## Uso del servicio\n\n- Evalúa Meridian libremente con cualquier fin.\n- Los datos de ejemplo se restablecen periódicamente sin aviso.\n- No confíes en ella para nada importante.\n\n## Responsabilidad\n\nMeridian se ofrece *tal cual*, sin garantía de ningún tipo."
+      }
+    }
+  },
   "ui": {
     "action": {
       "failed": "No se pudo guardar. Inténtalo de nuevo."
@@ -787,6 +954,9 @@
       "space": "Espacio",
       "tab": "Tab",
       "up": "Arriba"
+    },
+    "languageMenu": {
+      "label": "Idioma"
     },
     "lightbox": {
       "download": "Descargar imagen",

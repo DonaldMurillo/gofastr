@@ -1,6 +1,7 @@
 package i18nui
 
 import (
+	"context"
 	"maps"
 	"slices"
 	"strings"
@@ -63,13 +64,33 @@ func Pseudo(s string) string {
 	return b.String()
 }
 
+// pseudoKey marks a catalog locale AddPseudo filled, so the label
+// resolvers know to pseudo-localize their English fallbacks there.
+const pseudoKey = "i18nui.pseudo"
+
 // AddPseudo puts Pseudo of every defined phrase ([i18n.Phrases]) into c
 // under tag (en-XA is the usual pseudo-locale tag), so a page rendered in
 // that locale shows any text that skipped the catalog as plain English
-// and any layout that cannot take longer words as overflow.
+// and any layout that cannot take longer words as overflow. Entity, field,
+// value and view labels with no catalog entry fall back to their English,
+// and in this locale that English is pseudo-localized as well: it is the
+// text a translator would replace, so it takes the same longer words.
 func AddPseudo(c *i18n.MapCatalog, tag string) {
 	phrases := i18n.Phrases()
 	for _, k := range slices.Sorted(maps.Keys(phrases)) {
 		c.Set(tag, k, i18n.Message{Text: Pseudo(phrases[k])})
 	}
+	c.Set(tag, pseudoKey, i18n.Message{Text: "true"})
+}
+
+// fallback returns s, the English a label resolver settled on when the
+// catalog had no entry, pseudo-localized in a locale AddPseudo filled.
+func fallback(ctx context.Context, tr *i18n.Translator, s string) string {
+	if s == "" {
+		return s
+	}
+	if v, ok := catalogString(ctx, tr, pseudoKey); ok && v == "true" {
+		return Pseudo(s)
+	}
+	return s
 }

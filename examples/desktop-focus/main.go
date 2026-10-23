@@ -148,11 +148,11 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, *Engine, e
 		// at /settings. The sound preference is the choice-kind demo;
 		// nothing plays it.
 		Preferences: []desktop.Preference{
-			{Key: "work_minutes", Label: "Work minutes", Help: "Length of one work session.", Kind: desktop.PreferenceInt, Default: 25, Min: intPtr(1), Max: intPtr(180)},
-			{Key: "break_minutes", Label: "Break minutes", Kind: desktop.PreferenceInt, Default: 5, Min: intPtr(1), Max: intPtr(60)},
-			{Key: "notify_on_done", Label: "Notify when a session ends", Kind: desktop.PreferenceBool, Default: true},
-			{Key: "tray_countdown", Label: "Countdown in the menu bar", Kind: desktop.PreferenceBool, Default: true},
-			{Key: "sound", Label: "Session sound", Kind: desktop.PreferenceChoice, Default: "chime", Choices: []string{"none", "chime", "bell"}},
+			{Key: "work_minutes", Label: prefWorkMinutes, Help: prefWorkMinutesTip, Kind: desktop.PreferenceInt, Default: 25, Min: intPtr(1), Max: intPtr(180)},
+			{Key: "break_minutes", Label: prefBreakMinutes, Kind: desktop.PreferenceInt, Default: 5, Min: intPtr(1), Max: intPtr(60)},
+			{Key: "notify_on_done", Label: prefNotifyOnDone, Kind: desktop.PreferenceBool, Default: true},
+			{Key: "tray_countdown", Label: prefTrayCountdown, Kind: desktop.PreferenceBool, Default: true},
+			{Key: "sound", Label: prefSound, Kind: desktop.PreferenceChoice, Default: "chime", Choices: []string{"none", "chime", "bell"}},
 		},
 		// gofastr-focus://start?task=<id> starts that task; anything
 		// else maps like the default (host+path, query kept).
@@ -169,14 +169,14 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, *Engine, e
 			// menu bar. The title doubles as the countdown the engine
 			// writes while a session runs.
 			Title:   "Focus",
-			Tooltip: "Focus timer",
+			Tooltip: trayTooltip,
 			Icon:    appIconPNG(),
 			Menu: &desktop.Menu{Items: []desktop.MenuItem{
-				{Title: "Show Focus", Role: desktop.RoleShow},
-				{Title: "Start / Pause", Handler: func(ctx context.Context) error {
+				{Title: menuShow, Role: desktop.RoleShow},
+				{Title: menuStartPause, Handler: func(ctx context.Context) error {
 					return toggleTimer(ctx, eng)
 				}},
-				{Title: "Timer widget", Handler: func(ctx context.Context) error {
+				{Title: menuTimerWidget, Handler: func(ctx context.Context) error {
 					spec := desktop.Widget("/widget", 320, 300)
 					spec.Style.AllSpaces = true
 					if _, err := d.OpenWindow(spec); err != nil {
@@ -184,27 +184,27 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, *Engine, e
 					}
 					return nil
 				}},
-				{Title: "Settings…", Role: desktop.RoleSettings},
+				{Title: menuSettings, Role: desktop.RoleSettings},
 				{Role: desktop.RoleSeparator},
 				{Role: desktop.RoleQuit},
 			}},
 			CloseHidesWindow: true,
 		},
 		Menu: &desktop.Menu{Items: []desktop.MenuItem{
-			{Title: "File", Children: []desktop.MenuItem{
-				{Title: "New task", Key: "cmd+n", Navigate: "/tasks/create"},
-				{Title: "Start / Pause", Key: "cmd+shift+s", Handler: func(ctx context.Context) error {
+			{Title: menuFile, Children: []desktop.MenuItem{
+				{Title: menuNewTask, Key: "cmd+n", Navigate: "/tasks/create"},
+				{Title: menuStartPause, Key: "cmd+shift+s", Handler: func(ctx context.Context) error {
 					return toggleTimer(ctx, eng)
 				}},
-				{Title: "Settings…", Role: desktop.RoleSettings},
+				{Title: menuSettings, Role: desktop.RoleSettings},
 				{Role: desktop.RoleSeparator},
-				{Title: "Check for updates…", Handler: func(ctx context.Context) error {
+				{Title: menuCheckUpdates, Handler: func(ctx context.Context) error {
 					return checkForUpdates(ctx, d)
 				}},
 				{Role: desktop.RoleQuit},
 			}},
-			{Title: "View", Children: []desktop.MenuItem{
-				{Title: "Timer widget", Key: "cmd+t", Handler: func(ctx context.Context) error {
+			{Title: menuView, Children: []desktop.MenuItem{
+				{Title: menuTimerWidget, Key: "cmd+t", Handler: func(ctx context.Context) error {
 					spec := desktop.Widget("/widget", 320, 300)
 					spec.Style.AllSpaces = true
 					if _, err := d.OpenWindow(spec); err != nil {
@@ -212,7 +212,7 @@ func buildApp(shell desktop.Shell) (*framework.App, *desktop.Battery, *Engine, e
 					}
 					return nil
 				}},
-				{Title: "History", Navigate: "/history"},
+				{Title: menuHistory, Navigate: "/history"},
 			}},
 		}},
 		// The updater is opt-in through the environment so the example

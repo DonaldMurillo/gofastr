@@ -26,6 +26,10 @@ import (
 type MenuPlan struct {
 	// Title is the menu-bar title (the app name, "File", "Edit").
 	Title string
+	// English is Title in English: the name a native test driver
+	// matches (desktoptest's ClickMenu), whatever language the shell
+	// renders.
+	English string
 	// Items are the rows, in order.
 	Items []MenuItemPlan
 }
@@ -34,6 +38,9 @@ type MenuPlan struct {
 type MenuItemPlan struct {
 	// Title is the displayed label; empty for separators.
 	Title string
+	// English is Title in English, the name a native test driver
+	// matches.
+	English string
 	// Key is the key-equivalent glyph (the last +-token of the
 	// accelerator); "" when the item has none.
 	Key string
@@ -168,8 +175,34 @@ func editMenu(ctx context.Context) MenuPlan {
 // without a menu bar has no keyboard escape and no standard way to
 // quit. The shell-owned words (the app menu's items, role items'
 // default titles, the Edit menu) are in ctx's locale: see
-// [ShellContext].
+// [ShellContext]. Every menu and row also carries its English, the
+// name a native test driver matches.
 func PlanMenuBar(ctx context.Context, appTitle string, m *Menu, hasSettings bool) (plans []MenuPlan, actionIDs []string) {
+	plans, actionIDs = planMenuBar(ctx, appTitle, m, hasSettings)
+	// planning twice keeps the two trees the same shape by construction.
+	en, _ := planMenuBar(englishContext, appTitle, m, hasSettings)
+	for i := range plans {
+		plans[i].English = en[i].Title
+		withEnglish(plans[i].Items, en[i].Items)
+	}
+	return plans, actionIDs
+}
+
+// englishContext renders every phrase in its own English. A bare
+// context is not that: a phrase then asks the process's default
+// translator, whose fallback locale need not be English.
+var englishContext = i18n.WithTranslator(context.Background(), i18n.NewTranslator(i18n.NewMapCatalog(), "en"))
+
+// withEnglish copies en's titles into rows' English fields, row for
+// row; both come from planRows over the same items.
+func withEnglish(rows, en []MenuItemPlan) {
+	for i := range rows {
+		rows[i].English = en[i].Title
+		withEnglish(rows[i].Submenu, en[i].Submenu)
+	}
+}
+
+func planMenuBar(ctx context.Context, appTitle string, m *Menu, hasSettings bool) (plans []MenuPlan, actionIDs []string) {
 	app := map[string]any{"app": appTitle}
 	appItems := []MenuItemPlan{{Title: menuAbout.Text(ctx, app), Role: RoleAbout}}
 	if hasSettings {
@@ -213,7 +246,7 @@ func planRows(ctx context.Context, items []MenuItem, appTitle string, actionIDs 
 			continue
 		}
 		eq, mask := keyEquivalent(it.Key)
-		row := MenuItemPlan{Title: it.Title, Key: eq, Mask: mask, Role: it.Role}
+		row := MenuItemPlan{Title: itemTitle(ctx, it), Key: eq, Mask: mask, Role: it.Role}
 		switch {
 		case it.Role == RoleQuit || it.Role == RoleAbout || it.Role == RoleSettings || it.Role == RoleShow:
 			row.Title = defaultRoleTitle(ctx, it, appTitle)
@@ -233,8 +266,8 @@ func planRows(ctx context.Context, items []MenuItem, appTitle string, actionIDs 
 // defaultRoleTitle fills the OS-standard label, in ctx's locale, for a
 // role item whose Title is empty.
 func defaultRoleTitle(ctx context.Context, it MenuItem, appTitle string) string {
-	if it.Title != "" {
-		return it.Title
+	if !it.Title.IsZero() {
+		return it.Title.Text(ctx)
 	}
 	app := map[string]any{"app": appTitle}
 	switch it.Role {
@@ -247,7 +280,15 @@ func defaultRoleTitle(ctx context.Context, it MenuItem, appTitle string) string 
 	case RoleShow:
 		return menuShow.Text(ctx, app)
 	}
-	return it.Title
+	return ""
+}
+
+// itemTitle is an item's label in ctx's locale, "" when it has none.
+func itemTitle(ctx context.Context, it MenuItem) string {
+	if it.Title.IsZero() {
+		return ""
+	}
+	return it.Title.Text(ctx)
 }
 
 // PlanTrayMenu plans the tray menu's rows for a platform shell. It
@@ -258,5 +299,8 @@ func PlanTrayMenu(ctx context.Context, t *Tray, appTitle string, actionIDs *[]st
 	if t == nil || t.Menu == nil {
 		return nil
 	}
-	return planRows(ctx, t.Menu.Items, appTitle, actionIDs)
+	rows := planRows(ctx, t.Menu.Items, appTitle, actionIDs)
+	scratch := append([]string(nil), (*actionIDs)...)
+	withEnglish(rows, planRows(englishContext, t.Menu.Items, appTitle, &scratch))
+	return rows
 }

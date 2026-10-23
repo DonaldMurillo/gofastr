@@ -321,7 +321,10 @@ type darwinShell struct {
 	onSettings func(context.Context)
 	// textCtx is the locale context the shell's own words speak,
 	// resolved once in Run (desktop.ShellContext).
-	textCtx        context.Context
+	textCtx context.Context
+	// menuNames maps each built menu item to the English title and role
+	// the native driver matches (nameMenuItem).
+	menuNames      map[objc.ID]menuName
 	onWindowClosed func(id string)
 	// onWindowFrame reports user moves and resizes (the windowDidMove:
 	// and windowDidEndLiveResize: delegates), on a goroutine.

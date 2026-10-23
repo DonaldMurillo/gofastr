@@ -25,16 +25,14 @@ import (
 // page, view) rides the page's own query string; saves are form RPCs
 // to the entity's REST routes.
 
-// notesUI is the app's entity screen set, built once in buildSite
-// after the entity registers. App.EntityUI checks every name the
-// builders read against the declaration.
-var notesUI *entityui.UI
-
 // notesListScreen is "/" (and "/notes", the search form's target): the
 // notes table with its search box, view tabs and New button. The
-// builder draws it all from the entity's Display.
+// builder draws it all from the entity's Display. ui is the app's
+// entity screen set (buildSite); a field, not a package variable, so a
+// second app built in the same process never swaps in its own database.
 type notesListScreen struct {
 	component.ContextOnly
+	ui *entityui.UI
 }
 
 func (s *notesListScreen) ScreenTitle(ctx context.Context) string       { return "Notes" }
@@ -43,7 +41,7 @@ func (s *notesListScreen) ScreenDescription(ctx context.Context) string { return
 func (s *notesListScreen) RenderCtx(ctx context.Context) render.HTML {
 	// Base keeps record links and the New button on /notes even when
 	// the list renders at "/".
-	return notesUI.List("notes").Base("/notes").RenderCtx(ctx)
+	return s.ui.List("notes").Base("/notes").RenderCtx(ctx)
 }
 
 // noteDetailScreen is "/notes/{id}": the record page. Its Edit tab
@@ -55,6 +53,7 @@ func (s *notesListScreen) RenderCtx(ctx context.Context) render.HTML {
 type noteDetailScreen struct {
 	component.ContextOnly
 	ch    *crud.CrudHandler
+	ui    *entityui.UI
 	id    string
 	title string
 }
@@ -85,20 +84,21 @@ func (s *noteDetailScreen) ScreenDescription(ctx context.Context) string { retur
 func (s *noteDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 	// Delete is the one record action the notes app turns on; the
 	// header's copy link and back come with the page.
-	return notesUI.Record("notes", s.id).Base("/notes").Delete().RenderCtx(ctx)
+	return s.ui.Record("notes", s.id).Base("/notes").Delete().RenderCtx(ctx)
 }
 
 // noteCreateScreen is "/notes/create": the create form, posting to the
 // entity's REST route and navigating back to the list on success.
 type noteCreateScreen struct {
 	component.ContextOnly
+	ui *entityui.UI
 }
 
 func (s *noteCreateScreen) ScreenTitle(ctx context.Context) string       { return "New note" }
 func (s *noteCreateScreen) ScreenDescription(ctx context.Context) string { return "Create a note" }
 
 func (s *noteCreateScreen) RenderCtx(ctx context.Context) render.HTML {
-	return notesUI.Create("notes").Base("/notes").RenderCtx(ctx)
+	return s.ui.Create("notes").Base("/notes").RenderCtx(ctx)
 }
 
 // The settings screen is not hand-built here: the battery's
@@ -170,13 +170,13 @@ func buildSite(app *framework.App, d *desktop.Battery) (*appui.App, error) {
 	site := appui.NewApp("desktop-notes")
 	layout := containerLayout("app")
 
-	notesUI = app.EntityUI(entityui.Extensions{})
+	notesUI := app.EntityUI(entityui.Extensions{})
 	notes := app.MustCrudHandler("notes")
 
-	site.Register("/", &notesListScreen{}, layout)
-	site.Register("/notes", &notesListScreen{}, layout)
-	site.Register("/notes/create", &noteCreateScreen{}, layout)
-	site.Register("/notes/{id}", &noteDetailScreen{ch: notes}, layout)
+	site.Register("/", &notesListScreen{ui: notesUI}, layout)
+	site.Register("/notes", &notesListScreen{ui: notesUI}, layout)
+	site.Register("/notes/create", &noteCreateScreen{ui: notesUI}, layout)
+	site.Register("/notes/{id}", &noteDetailScreen{ch: notes, ui: notesUI}, layout)
 	// The widget window is borderless and transparent: its screen
 	// renders in the chrome-less, transparent widget layout, never in
 	// the app layout with its header and padded column.

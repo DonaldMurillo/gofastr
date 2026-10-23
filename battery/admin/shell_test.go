@@ -207,7 +207,7 @@ func TestShortcutHelpSheet(t *testing.T) {
 // Themes, the toggle alone.
 func TestThemePickerOnAccountPage(t *testing.T) {
 	brutal := style.RegisterThemeOverride(theme.Brutal())
-	x := setup(t, nil, Config{Themes: []ui.ThemeChoice{{Label: "Brutal", Theme: brutal}}}, nil)
+	x := setup(t, nil, Config{Themes: []ui.ThemeChoice{{Label: testPhrase("Brutal"), Theme: brutal}}}, nil)
 	account := get(x.as(theAdmin), "/admin/account").Body.String()
 	if !strings.Contains(account, `data-hui-theme-picker=""`) || !strings.Contains(account, ">Brutal<") || !strings.Contains(account, ">Look<") {
 		t.Errorf("no Look row on the account page")

@@ -571,13 +571,19 @@ To let a visitor switch the whole page between themes, register each
 extra theme as an override and render a picker:
 
 ```go
-var Brutal = style.RegisterThemeOverride(theme.Brutal())
+var (
+    Brutal     = style.RegisterThemeOverride(theme.Brutal())
+    brutalName = i18n.Define("myapp.themes.brutal", "Brutal")
+)
 
 ui.ThemePicker(ui.ThemePickerConfig{
     Ctx:    ctx,
-    Themes: []ui.ThemeChoice{{Label: "Brutal", Theme: Brutal}},
+    Themes: []ui.ThemeChoice{{Label: brutalName, Theme: Brutal}},
 })
 ```
+
+A choice's `Label` is an `i18n.Phrase`: the picker draws it in the
+language of `Ctx`.
 
 The picker draws as `ui.ThemeToggle`'s pill: a **Default** option for
 the app's own theme, then one option per choice. Picking one puts the

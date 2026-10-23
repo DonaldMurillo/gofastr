@@ -38,6 +38,7 @@ func (b *RecordBuilder) apiTabBody(ctx context.Context, m *meta, row map[string]
 		b.mcpSection(ctx, m),
 		ui.Section(ui.SectionConfig{Heading: i18nui.EntityApiJsonTitle.Text(ctx)},
 			ui.CodeBlock(ui.CodeBlockConfig{
+				Ctx:      ctx,
 				Language: "json",
 				Code:     string(pretty),
 				ShowCopy: true,
@@ -90,7 +91,7 @@ func (b *RecordBuilder) mcpSection(ctx context.Context, m *meta) render.HTML {
 		return ""
 	}
 	return ui.Section(ui.SectionConfig{Heading: i18nui.EntityApiMcpTitle.Text(ctx)},
-		ui.CodeBlock(ui.CodeBlockConfig{Code: strings.Join(names, "\n"), Language: "text", Scroll: true}))
+		ui.CodeBlock(ui.CodeBlockConfig{Ctx: ctx, Code: strings.Join(names, "\n"), Language: "text", Scroll: true}))
 }
 
 // restBase is the entity's own REST base: the innermost host's answer,

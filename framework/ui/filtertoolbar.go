@@ -288,6 +288,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	}
 	actionsKids := []render.HTML{
 		Button(ButtonConfig{
+			Ctx:     ctx,
 			Label:   applyLabel,
 			Variant: ButtonPrimary,
 			Type:    "submit",
@@ -441,6 +442,7 @@ func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 	id := "filter-search-" + slug(s.Name)
 	wrap := html.Attrs{"data-cui-internal": ""}
 	kids := []render.HTML{SearchInput(SearchInputConfig{
+		Ctx:         ctx,
 		Name:        s.Name,
 		ID:          id,
 		Placeholder: placeholder,

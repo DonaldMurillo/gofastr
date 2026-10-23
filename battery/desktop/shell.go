@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // Error codes for the bridge's closed set. A handler returning *Error
@@ -230,8 +232,9 @@ type Tray struct {
 	// Title is the text in the menu bar (may be empty when Icon is
 	// set).
 	Title string
-	// Tooltip is the hover help on the tray item.
-	Tooltip string
+	// Tooltip is the hover help on the tray item, in the OS language
+	// the shell reads.
+	Tooltip i18n.Phrase
 	// Icon is a PNG rendered as a template image at 18x18 points.
 	Icon []byte
 	// Menu is the tray menu; same model as Config.Menu.

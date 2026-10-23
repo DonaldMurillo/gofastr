@@ -189,6 +189,65 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `LintRuntimeProse` also reads a toast called with the optional-call
   spelling (`_toastOrFallback?.(`), a `+=` text write and a lone word
   ending in a colon (`'Error: '`).
+- **`rawtext` reads the desktop shells' native text.** Its `nativetext`
+  arm reports a constant passed to `objc.NSString` or used as the title
+  or text of a Win32 menu row, window or message box: the shell speaks
+  the OS language, so it passes a phrase's text.
+- **`rawtext` refuses components left without Ctx.** Its `ctxless` arm
+  reports a UI component literal whose `Ctx context.Context` field is
+  unset while the function holds a request context (a `ctx`, a
+  `cfg.Ctx`, or `r.Context()`). Such a component says its own words in
+  English on every locale's page. It found 55 sites in the admin,
+  setup, entityui, `framework/ui` and Meridian, Meridian's header theme
+  toggle and sign-out among them; each now passes its context.
+- **Generated apps translate.** Every word an app spec writes for a
+  reader is an `i18n.Phrase` declared at the top of the file that says
+  it, keyed `<app>.screens.<screen>.<slug>`, `<app>.chrome.<slug>` or
+  `<app>.auth.<code>`; field labels and enum values read the `entity.*`
+  keys through `i18nui`. Screens render with `RenderCtx(ctx)`, and the
+  header, footer and sidebar take the request context. The generator
+  writes `i18n.go`, whose `translatorOption()` loads `locales/<tag>.json`
+  and adds the `en-XA` pseudo-locale under `GOFASTR_PSEUDO_LOCALE=1`,
+  `i18n_test.go`, which runs `i18n.CheckCatalog` over every locale file
+  so `go test` fails on a stray key or a dropped `{{placeholder}}`,
+  and `locales/README.md`. It never writes a `<tag>.json`, so
+  `generate --force` keeps translations. `gofastr pack` reads each
+  phrase back as its English. Meridian's pseudo-locale switch is
+  `GOFASTR_PSEUDO_LOCALE` too. See `gofastr docs app-spec` →
+  "Translations".
+- **Meridian's screens speak Spanish.** Every word its screens and
+  chrome show is a phrase, from the marketing pages to the admin's
+  revenue report, and `locales/es.json` translates all of them; its catalog test fails
+  on a `meridian.*` phrase with no Spanish. `rawtext` now covers
+  `examples/meridian` as well as the framework.
+- **The language in the URL.** `framework.WithLocalePrefixes()` serves
+  each catalog locale under its own path: `/es/pricing` is the pricing
+  screen in Spanish, the fallback locale keeps the plain paths, and
+  `/en/pricing` answers 308 to `/pricing`. The router strips the prefix
+  before matching, so routes and screens are written once. Links, form
+  actions, island and poll URLs and redirects in a `/es/` response gain
+  the prefix on the way out (`core-ui/urlprefix`); the runtime keeps
+  navigation inside a locale client-side, sends its own requests under
+  the page's prefix, and loads a new document when the locale changes.
+  Pages carry an `hreflang` alternate per locale plus `x-default`, the
+  sitemap lists each page once per locale, robots rules repeat under
+  every prefix, and `gofastr export` writes a tree per locale. A
+  one-off link to another language uses `i18n.LocalePath`. Boot refuses
+  it without `WithI18n`, beside `WithLocaleResolver`, and with a route under
+  a locale segment. Lower-level pieces: `i18n.PathLocales`,
+  `i18n.WithPathLocale`, `i18n.PathLocale`, `i18n.PathPrefix`,
+  `Router.PreRoute`, `urlprefix.Middleware` and
+  `UIHost.SetPathLocales`. App specs turn it on with
+  `app.locale_prefixes: true`; Meridian does, so its Spanish lives
+  under `/es/`. See `gofastr docs i18n` → "Locale in the URL".
+- **A language switcher.** `ui.LanguageMenu` lists every catalog locale,
+  each named in its own language (`i18n.LanguageName`: "Español",
+  "Português (Brasil)"), and links the current page in each. Its rows
+  are `rel="alternate" hreflang` links, which the runtime re-points at
+  the current page after each client-side navigation, so the menu can
+  live in a header or footer that stays on screen. Generated apps with
+  `app.locale_prefixes` put it in the marketing footer (sitefooter
+  gains a `Language` slot), and so does Meridian.
 
 ### Changed
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,
@@ -284,16 +343,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the logical property. An app override written with the physical
   property still lands on a left-to-right page but hits the wrong side
   on a right-to-left one; write the logical property instead.
-- **BREAKING: screen titles and descriptions take the request
+- **BREAKING: screen titles, descriptions and SEO take the request
   context.** `app.ScreenTitler` is `ScreenTitle(ctx context.Context)
-  string` and `app.ScreenDescriber` is `ScreenDescription(ctx
-  context.Context) string`. Add the parameter to every screen; `gofastr
-  upgrade` names each one. `App.Register` reads them once with a bare
-  context, which gives the English. A component still declaring the
-  no-argument method panics at registration, or at its first render
-  when no registration sees it (a `RenderAlt` result, a not-found or
-  error body, `RenderScreen`): that method compiles, but the page would
-  lose its title without a word. `app.RefuseRetiredTitle` is the check, for code that
+  string`, `app.ScreenDescriber` is `ScreenDescription(ctx
+  context.Context) string`, `uihost.ScreenSEO` is `ScreenSEO(ctx
+  context.Context) uihost.SEO` and `uihost.ScreenSchema` is
+  `ScreenSchema(ctx context.Context) []seo.Thing`, so an OG title or a
+  JSON-LD description can be a phrase. Add the parameter to every
+  screen; `gofastr upgrade` names each one. `App.Register` reads titles
+  and descriptions once with a bare context, which gives the English. A
+  component still declaring a no-argument method panics at
+  registration, or at its first render when no registration sees it (a
+  `RenderAlt` result, a not-found or error body, `RenderScreen`): that
+  method compiles, but the page would lose its title or SEO without a
+  word. `app.RefuseRetiredScreenMethods` is the check, for code that
   holds a component outside the router.
 - **BREAKING: battery text callbacks take a context.** `BodyTemplate`
   on `auth.PasswordResetConfig`, `auth.EmailVerificationConfig` and
@@ -304,6 +367,18 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   takes one, and `desktop.WindowConfig.OnSettings` is `func(ctx
   context.Context)`. `gofastr upgrade` names each callback still
   written with the old signature.
+- **BREAKING: desktop menu, tray and preference words are phrases.**
+  `desktop.MenuItem.Title`, `desktop.Tray.Tooltip`,
+  `desktop.Preference.Label` and `desktop.Preference.Help` are
+  `i18n.Phrase`. The shell renders titles and the tooltip in the OS
+  language it already uses for its own menus; the preferences screen
+  and the `preferences` capability render label and help in the
+  request's language. `Tray.Title` stays a string: apps write a live
+  countdown there. `desktoptest` `ClickMenu` and `ClickTray` match a
+  title's English on every shell, the fake and the native drivers
+  alike, so a suite passes whatever language the machine is set to;
+  `desktop.MenuPlan` and `MenuItemPlan` carry that `English` beside the
+  drawn `Title`.
 - **BREAKING: setup wizard words are phrases.** `setup.Field.Label`,
   `setup.Config.Title` and the new `setup.Step.Title` are `i18n.Phrase`;
   the zero Phrase shows the field's or step's `Name`, or "Setup".
@@ -311,12 +386,45 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   are `*i18n.Error`.** `errors.Is` still matches them; their text is
   "password is empty" and "password too short", without the `auth:`
   prefix.
+- **BREAKING: admin, entityui and theme picker words are phrases.**
+  `admin.Page.Title`, `admin.Card.Title`, `admin.Link.Label`,
+  `admin.Metric.Label`, `entityui.Tab.Label`, `entityui.SidePanel.Title`,
+  `entityui.Action.Label` and `ui.ThemeChoice.Label` are `i18n.Phrase`,
+  drawn in the request's language. An extension whose label is the zero
+  Phrase shows its `Key`, as an empty string did. `gofastr upgrade`
+  names each field still set to a string.
 
 ### Fixed
 - **`DBQueue` index names on long table names.** Postgres cuts
   identifiers at 63 bytes, so with a table name of 62 or 63 bytes the
   dequeue and lane indexes got the same name and the second was never
   created. A name over the limit now ends in a hash of the table name.
+- **The bulk bar names a move in the reader's language.** It drew the
+  transition's declared English; it now reads the
+  `entity.<entity>.transitions.<key>` catalog entry, as the record page
+  does.
+- **The pseudo-locale covers entity labels.** Column headers, status
+  badges, view tabs and entity names fell back to plain English under
+  `i18nui.AddPseudo`'s tag, so overflow checks never measured them. Their
+  English fallback is now pseudo-localized there too.
+- **Bar chart labels stay inside their slot.** The wrap budget assumed
+  6.2px a character at 12px text; accented or capitalized labels run
+  wider and spilled into the next label or off the plot edge. Lines now
+  wrap at 7px a character with 4px of air between neighbours, and a
+  slot too narrow for four characters (12 bars at 320px) keeps fewer
+  instead of overflowing; the bar's `<title>` holds the full label.
+- **App spec screens never overwrite each other's file.** An entity's
+  screens all write `screen_<entity>_crud.go`, but the file-name check
+  read each screen's own name: it refused two screens of one entity
+  whose names differ only in case, and let a standalone screen named
+  "Posts Crud" replace the posts screens' file. It now checks the file
+  each screen writes, refuses two screens that share a name and so
+  would declare one Go type, and counts the `<entity>_create` screen a
+  `create: true` list adds in both checks.
+- **Sidebar sections stay current in a static export under a base
+  path.** `gofastr export` with a `BasePath` prefixed a link's href but
+  not its `data-cui-match-prefix`, so after the first client-side
+  navigation the section the link owns never read as current.
 
 ### Security
 - The repo builds with Go 1.27.3 (`toolchain go1.27.3` in go.mod, and in

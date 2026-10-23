@@ -108,13 +108,13 @@ func (s *preferencesScreen) RenderCtx(ctx context.Context) render.HTML {
 		var field render.HTML
 		switch d.Kind {
 		case PreferenceBool:
-			field = boolField(d, p.Bool(d.Key))
+			field = boolField(ctx, d, p.Bool(d.Key))
 		case PreferenceInt:
 			field = intField(ctx, d, p.Int(d.Key))
 		case PreferenceChoice:
-			field = choiceField(d, p.String(d.Key))
+			field = choiceField(ctx, d, p.String(d.Key))
 		default: // PreferenceString; the kinds are a closed set validated at New
-			field = stringField(d, p.String(d.Key))
+			field = stringField(ctx, d, p.String(d.Key))
 		}
 		fields = append(fields, field)
 	}
@@ -135,7 +135,7 @@ func (s *preferencesScreen) RenderCtx(ctx context.Context) render.HTML {
 // stored-or-default value the typed reader (Preferences.Bool)
 // answers: the hidden+checkbox pair. Field ids follow the
 // "f-<key>" shape this screen has always used.
-func boolField(d Preference, v bool) render.HTML {
+func boolField(ctx context.Context, d Preference, v bool) render.HTML {
 	id := "f-" + d.Key
 	// A bare checkbox cannot round-trip a bool through the form
 	// intercept, so the hidden "false" comes first and the checked
@@ -144,7 +144,7 @@ func boolField(d Preference, v bool) render.HTML {
 	// core-ui/runtime/src/rpc.js).
 	return render.Join(
 		html.Input(html.InputConfig{Type: "hidden", Name: d.Key, Value: "false"}),
-		ui.Checkbox(ui.ToggleConfig{Name: d.Key, Label: d.Label, ID: id, Value: "true", Checked: v, Help: d.Help}),
+		ui.Checkbox(ui.ToggleConfig{Name: d.Key, Label: d.Label.Text(ctx), ID: id, Value: "true", Checked: v, Help: helpText(ctx, d)}),
 	)
 }
 
@@ -162,7 +162,7 @@ func intField(ctx context.Context, d Preference, v int) render.HTML {
 		max = &f
 	}
 	return ui.NumberField(ui.NumberFieldConfig{
-		Name: d.Key, Label: d.Label, ID: id,
+		Name: d.Key, Label: d.Label.Text(ctx), ID: id,
 		Value: strconv.Itoa(v), Min: min, Max: max,
 		Help: intHelp(ctx, d),
 	})
@@ -171,24 +171,24 @@ func intField(ctx context.Context, d Preference, v int) render.HTML {
 // choiceField builds a choice preference's select from cur, the
 // stored-or-default value the typed reader (Preferences.String)
 // answers.
-func choiceField(d Preference, cur string) render.HTML {
+func choiceField(ctx context.Context, d Preference, cur string) render.HTML {
 	id := "f-" + d.Key
 	opts := make([]ui.SelectOption, 0, len(d.Choices))
 	for _, c := range d.Choices {
 		opts = append(opts, ui.SelectOption{Value: c, Text: choiceLabel(c), Selected: c == cur})
 	}
 	return ui.Select(ui.SelectConfig{
-		Name: d.Key, Label: d.Label, ID: id, Options: opts, Help: d.Help,
+		Name: d.Key, Label: d.Label.Text(ctx), ID: id, Options: opts, Help: helpText(ctx, d),
 	})
 }
 
 // stringField builds a string preference's text input from text, the
 // stored-or-default value the typed reader (Preferences.String)
 // answers.
-func stringField(d Preference, text string) render.HTML {
+func stringField(ctx context.Context, d Preference, text string) render.HTML {
 	id := "f-" + d.Key
 	return ui.TextField(ui.TextFieldConfig{
-		Name: d.Key, Label: d.Label, ID: id, Value: text, Help: d.Help,
+		Name: d.Key, Label: d.Label.Text(ctx), ID: id, Value: text, Help: helpText(ctx, d),
 	})
 }
 
@@ -205,13 +205,22 @@ func intHelp(ctx context.Context, d Preference) string {
 	case d.Max != nil:
 		hint = hintPrefAtMost.Text(ctx, map[string]any{"max": *d.Max})
 	}
-	if d.Help == "" {
+	help := helpText(ctx, d)
+	if help == "" {
 		return hint
 	}
 	if hint == "" {
-		return d.Help
+		return help
 	}
-	return d.Help + " " + hint
+	return help + " " + hint
+}
+
+// helpText is the declaration's help in ctx's locale, "" when unset.
+func helpText(ctx context.Context, d Preference) string {
+	if d.Help.IsZero() {
+		return ""
+	}
+	return d.Help.Text(ctx)
 }
 
 // choiceLabel titles one choice the way the resource engine titles

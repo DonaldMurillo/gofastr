@@ -402,7 +402,8 @@ expose them to agents connected to a live app.**
   and the check-csp ignore directive are anchored comment-initial
   now: prose that merely mentions either no longer silences anything.
   The 2026-10 i18n round added `rawtext`: framework code under
-  core/, framework/, battery/ and core-ui/ sends every user-facing
+  core/, framework/, battery/ and core-ui/, and the Meridian
+  flagship (examples/meridian), sends every user-facing
   message through an `i18n.Phrase`, so a catalog translates it and
   the body carries its code. It fires on a bare `http.Error` (use
   `i18n.HTTPError`), `i18n.Define` inside a function or with
@@ -424,7 +425,14 @@ expose them to agents connected to a live app.**
   sink was the shape 23 kit sites hid. The
   gallery, `framework/sdkdocs` (the API reference, English like
   OpenAPI), `headless.Spec` examples and the `headless.Strings`
-  defaults table are exempt. The runtime's JS twin is
+  defaults table are exempt. Its `nativetext` arm covers the desktop
+  shells: a constant into `objc.NSString` or a Win32 menu, window or
+  message-box title is English on every OS language. Its `ctxless` arm
+  fires on a UI component literal with a `Ctx context.Context` field left
+  unset while a request context is in scope (a ctx, `cfg.Ctx`, or
+  `r.Context()`): the component says its own words through Ctx, so
+  Meridian's header ThemeToggle and SignOut read English on /es/. The
+  runtime's JS twin is
   `core-ui/check.LintRuntimeProse`: literal prose into a toast,
   `textContent`, `aria-label` or `title` goes through `say()` and a
   phrase registered with `runtime.RegisterStrings`.

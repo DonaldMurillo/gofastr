@@ -40,17 +40,18 @@ func flatCatalog(t *testing.T, name string) map[string]string {
 	return out
 }
 
-// The Spanish catalog names only phrases the framework defines, keeps
-// every {{placeholder}} of each phrase's English, and covers every ui.*
-// phrase that is words. Entity keys name the app's data rather than a
-// defined phrase (the next test holds those), and ui.json.* are JSON
-// literals that stay as written.
+// The Spanish catalog names only phrases the framework and the app
+// define, keeps every {{placeholder}} of each phrase's English, and
+// covers every ui.* phrase that is words and every word Meridian says
+// (meridian.*). Entity keys name the app's data rather than a defined
+// phrase (the next test holds those), and ui.json.* are JSON literals
+// that stay as written.
 func TestSpanishCatalogMatchesPhrases(t *testing.T) {
 	c, err := i18n.LoadJSONCatalog(localeFS, "locales")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, is := range i18n.CheckCatalog(c, "es", i18n.Skip("entity.", "ui.json."), i18n.Require("ui.")) {
+	for _, is := range i18n.CheckCatalog(c, "es", i18n.Skip("entity.", "ui.json."), i18n.Require("ui.", "meridian.")) {
 		t.Errorf("%s: %s (English %q, Spanish %q)", is.Key, is.Problem, is.English, is.Text)
 	}
 }

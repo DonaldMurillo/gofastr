@@ -150,6 +150,34 @@
     const c = _readInlineJSON('gofastr-catalog');
     if (c) window.__gofastr_catalog = c;
   }
+  if (!window.__gofastr_locales) {
+    const l = _readInlineJSON('gofastr-locales');
+    if (l) window.__gofastr_locales = l;
+  }
+
+  // Locale prefixes (framework.WithLocalePrefixes): /es/pricing is the
+  // /pricing screen in Spanish. Route tables and cache keys hold the
+  // unprefixed path, so every lookup strips the prefix first; every
+  // runtime fetch of a /__gofastr endpoint or the page itself gains the
+  // current page's prefix (_lp) so the server answers in its locale. A
+  // link that changes the locale crosses a document boundary (nav.js).
+  // _splitLocale returns [tag, path without the prefix]; tag is '' for
+  // the default locale or an app without prefixes. base is the static
+  // export's BasePath, which sits in front of the prefix.
+  const _locBase = () => window.__gofastr_locales?.base || '';
+  const _splitLocale = (p) => {
+    p = String(p ?? '');
+    const L = window.__gofastr_locales, b = _locBase();
+    const m = L?.prefixes?.length && p.startsWith(b + '/') && /^\/([^/?#]+)(.*)$/.exec(p.slice(b.length));
+    return m && L.prefixes.includes(m[1]) ? [m[1], b + (m[2][0] === '/' ? m[2] : '/' + m[2])] : ['', p];
+  };
+  const _unlocalize = (p) => _splitLocale(p)[1];
+  const _localeOf = (p) => _splitLocale(p)[0];
+  const _lp = (u) => {
+    u = String(u ?? '');
+    const t = _localeOf(location.pathname), b = _locBase();
+    return t && u[1] !== '/' && u.startsWith(b + '/') && !_localeOf(u) ? b + '/' + t + u.slice(b.length) : u;
+  };
 
   // Signal store seed: server-provided initial values for the signal
   // bus (core-ui/store). Stashed now; applied to _signals right after
@@ -221,6 +249,9 @@
         reach it via NS.doc for every persistent <html>/<body> write. */
     doc,
     say,
+    _lp,
+    _unlocalize,
+    _localeOf,
 
     /* DOM attributes name fetch targets throughout the runtime. Keep these
        guards in kernel so navigation cannot race the RPC demand module that
@@ -399,11 +430,11 @@
     async _serverActionFor(componentId, action, params = {}) {
       const sessionCookie = document.cookie.match(/gofastr-session=([^;]+)/);
       const session = sessionCookie ? sessionCookie[1] : '';
-      const resp = await fetch('/__gofastr/action', {
+      const resp = await fetch(_lp('/__gofastr/action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // page: the owning screen's Policy reads this page's route params.
-        body: JSON.stringify({ action, params, session, componentId, page: location.pathname }),
+        body: JSON.stringify({ action, params, session, componentId, page: _unlocalize(location.pathname) }),
       });
       if (resp.ok) {
         const result = await resp.json();

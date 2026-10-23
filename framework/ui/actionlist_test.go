@@ -77,7 +77,7 @@ func TestThemePillFill(t *testing.T) {
 	}
 	th := style.DefaultTheme()
 	th.Colors.Primary = style.Color{Name: "primary", Value: "#654321"}
-	if out := string(ThemePicker(ThemePickerConfig{Themes: []ThemeChoice{{Label: "Brutal", Theme: style.RegisterThemeOverride(th)}}, Fill: true})); !strings.Contains(out, "fui-theme-toggle--fill") {
+	if out := string(ThemePicker(ThemePickerConfig{Themes: []ThemeChoice{{Label: testPhrase("Brutal"), Theme: style.RegisterThemeOverride(th)}}, Fill: true})); !strings.Contains(out, "fui-theme-toggle--fill") {
 		t.Errorf("the picker has no fill modifier:\n%s", out)
 	}
 	if css := themeToggleCSS(style.Theme{}); !strings.Contains(css, `.fui-theme-toggle--fill .fui-theme-toggle__option { flex: 1 1 0; }`) {

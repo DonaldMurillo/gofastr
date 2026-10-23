@@ -61,7 +61,7 @@ func TestAppSpecScreenWithoutDescriptionOptsOutViaScreenSEO(t *testing.T) {
 		},
 	}
 	got := renderAppSpecScreens(bp)
-	assertContains(t, got, `func (s *AboutScreen) ScreenSEO() uihost.SEO { return uihost.SEO{} }`)
+	assertContains(t, got, `func (s *AboutScreen) ScreenSEO(ctx context.Context) uihost.SEO { return uihost.SEO{} }`)
 	assertContains(t, got, `"github.com/DonaldMurillo/gofastr/framework/uihost"`)
 	if strings.Contains(got, `func (s *AboutScreen) ScreenDescription()`) {
 		t.Fatal("description-less screen must opt out, not declare an empty description")
@@ -75,9 +75,9 @@ func TestAppSpecScreenWithDescriptionKeepsDescriber(t *testing.T) {
 			{Name: "about", Route: "/about", Title: "About", Description: "Who we are."},
 		},
 	}
-	got := renderAppSpecScreens(bp)
+	got := inlinePhrases(renderAppSpecScreens(bp))
 	assertContains(t, got, `func (s *AboutScreen) ScreenDescription(ctx context.Context) string { return "Who we are." }`)
-	if strings.Contains(got, `func (s *AboutScreen) ScreenSEO()`) {
+	if strings.Contains(got, `func (s *AboutScreen) ScreenSEO(`) {
 		t.Fatal("described screen must not also emit the opt-out")
 	}
 }

@@ -28,6 +28,7 @@ func confirmDialogTemplate(ctx context.Context) render.HTML {
 	confirm := i18nui.DialogConfirm.Text(ctx)
 	button := func(label string, v ButtonVariant, part string) render.HTML {
 		return Button(ButtonConfig{
+			Ctx:        ctx,
 			Label:      label,
 			Variant:    v,
 			ExtraAttrs: html.Attrs{"data-cui-confirm-part": part},

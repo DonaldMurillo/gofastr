@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	stdhtml "html"
@@ -24,7 +25,9 @@ import (
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime/minify"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlprefix"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
@@ -126,30 +129,48 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 		}
 	}
 
-	// Pages.
-	err := walk(ctx, b.Host, b.routeExcluded, nil, b.log, nil, func(route, p, page string) error {
-		for _, c := range b.Contributors {
-			if err := c.ExportPage(p, page); err != nil {
-				return fmt.Errorf("static: contributor on %q: %w", p, err)
+	// Pages: once, or once per locale for an app that routes by locale
+	// prefix (framework.WithLocalePrefixes), each prefixed locale into
+	// its own /<tag>/ tree the way the live router serves it.
+	locales, byPrefix := b.Host.PathLocales()
+	tags := []string{""}
+	if byPrefix {
+		tags = locales.All()
+	}
+	for _, tag := range tags {
+		lctx, rule := ctx, urlprefix.Rule{}
+		if byPrefix {
+			lctx = localeContext(ctx, locales, tag)
+			rule = urlprefix.Rule{Prefix: i18n.PathPrefix(lctx), Locales: locales.All()}
+		}
+		err := walk(lctx, b.Host, b.routeExcluded, nil, b.log, nil, func(route, p, page string) error {
+			if rule.Prefix != "" {
+				p = locales.Path(tag, p)
+				page = string(urlprefix.HTML([]byte(page), rule))
 			}
+			for _, c := range b.Contributors {
+				if err := c.ExportPage(p, page); err != nil {
+					return fmt.Errorf("static: contributor on %q: %w", p, err)
+				}
+			}
+			html := b.applyStaticMode(lctx, page)
+			dst := filepath.Join(b.OutDir, pathToFile(p))
+			if err := b.ensureContained(dst); err != nil {
+				return err
+			}
+			if err := writeFile(dst, []byte(html)); err != nil {
+				return err
+			}
+			b.log("rendered %s -> %s", p, dst)
+			res.Pages = append(res.Pages, p)
+			if !slices.Contains(renderedRoutes, route) {
+				renderedRoutes = append(renderedRoutes, route)
+			}
+			return nil
+		})
+		if err != nil {
+			return res, err
 		}
-		html := b.applyStaticMode(ctx, page)
-		dst := filepath.Join(b.OutDir, pathToFile(p))
-		if err := b.ensureContained(dst); err != nil {
-			return err
-		}
-		if err := writeFile(dst, []byte(html)); err != nil {
-			return err
-		}
-		b.log("rendered %s -> %s", p, dst)
-		res.Pages = append(res.Pages, p)
-		if len(renderedRoutes) == 0 || renderedRoutes[len(renderedRoutes)-1] != route {
-			renderedRoutes = append(renderedRoutes, route)
-		}
-		return nil
-	})
-	if err != nil {
-		return res, err
 	}
 
 	// Contributor files (a search index, a feed), written after every
@@ -354,7 +375,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	// instead of 404'ing against the live widget endpoints. Recorded in
 	// res.Assets so the full-site worker precaches them. Overlays must
 	// keep opening offline.
-	if err := b.dumpWidgetAssets(&res); err != nil {
+	if err := b.dumpWidgetAssets(ctx, &res); err != nil {
 		return res, err
 	}
 
@@ -675,6 +696,7 @@ func (b *Builder) applyStaticMode(ctx context.Context, page string) string {
 	page = applyStaticCSP(page)
 	page = b.rewriteBaseURLs(page)
 	notice := string(ui.Banner(ui.BannerConfig{
+		Ctx:         ctx,
 		Title:       pageStaticTitle.Text(ctx),
 		Body:        pageStaticBody.Text(ctx),
 		Variant:     ui.BannerInfo,
@@ -702,18 +724,20 @@ func stampStatic(page string) string {
 	return page
 }
 
-// baseAttrURL matches a whitespace-delimited src="…", href="…", action="…"
-// or data-cui-push-state="…" whose value is root-absolute (leading "/") but
-// NOT protocol-relative ("//"). data-cui-push-state is included so combobox/
-// palette selection targets get base-prefixed on subpath deploys (otherwise
-// selecting a command navigates to the apex path and 404s), and action so
-// a GET form (the search page's) submits under the base. The leading
-// ([\s]) anchor ensures only real attributes match, never "data-src" /
+// baseAttrURL matches a whitespace-delimited src="…", href="…", action="…",
+// data-cui-push-state="…" or data-cui-match-prefix="…" whose value is
+// root-absolute (leading "/") but NOT protocol-relative ("//").
+// data-cui-push-state is included so combobox/palette selection targets get
+// base-prefixed on subpath deploys (otherwise selecting a command navigates
+// to the apex path and 404s), action so a GET form (the search page's)
+// submits under the base, and data-cui-match-prefix because the runtime
+// compares the section it names with the page path, which carries the base.
+// The leading ([\s]) anchor ensures only real attributes match, never "data-src" /
 // "srcset", and code samples are safe because core/markdown escapes quotes
 // inside <code> to &quot; (so the ="… pattern never appears in rendered code
 // text). Group 3 is the first path byte, re-emitted so the prefix is inserted
 // after the leading slash.
-var baseAttrURL = regexp.MustCompile(`([\s])(src|href|action|data-cui-push-state)="/([^/])`)
+var baseAttrURL = regexp.MustCompile(`([\s])(src|href|action|data-cui-push-state|data-cui-match-prefix)="/([^/])`)
 
 // pageLinkAttr matches a root-absolute href, action or
 // data-cui-push-state value (the attributes baseAttrURL prefixes), split
@@ -825,8 +849,19 @@ func (b *Builder) rewriteBaseURLs(page string) string {
 		m := baseRouteGraph.FindStringSubmatch(block)
 		return m[1] + strings.ReplaceAll(m[2], `"path":"/`, `"path":"`+b.BasePath+`/`) + m[3]
 	})
+	// 4. The locale set: the runtime finds a link's locale prefix behind
+	// the base, so it has to know the base.
+	// json.Marshal escapes < > &, so the value cannot close the script.
+	base, _ := json.Marshal(b.BasePath)
+	page = baseLocales.ReplaceAllStringFunc(page, func(m string) string {
+		return baseLocales.FindStringSubmatch(m)[1] + `"base":` + string(base)
+	})
 	return page
 }
+
+// baseLocales matches the base field of the locale set a page of an app
+// that routes by locale prefix embeds.
+var baseLocales = regexp.MustCompile(`(<script type="application/json" id="gofastr-locales">[^<]*?)"base":""`)
 
 // baseRouteGraph matches the route graph the host embeds in every page,
 // whose "path" values are the keys the runtime's navigation looks links
@@ -839,7 +874,7 @@ var baseRouteGraph = regexp.MustCompile(`(?s)(<script type="application/json" id
 // the runtime fetches their chrome from cfg.chromePath on open, which 404s
 // on a serverless host. Dumping the same bytes as files lets openWidget
 // resolve against the static tree, so every data-cui-open overlay works.
-func (b *Builder) dumpWidgetAssets(res *Result) error {
+func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 	defs := widget.AllForSSR()
 	if len(defs) == 0 {
 		return nil
@@ -859,16 +894,36 @@ func (b *Builder) dumpWidgetAssets(res *Result) error {
 	res.Assets = append(res.Assets, "/__gofastr/widgets.json")
 	b.log("wrote %s", "/__gofastr/widgets.json")
 	pages := pageSet(res.Pages)
+	locales, byPrefix := b.Host.PathLocales()
 	for _, d := range defs {
 		// Chrome HTML may carry root-absolute nav links (/docs/…); rewrite
 		// them the same way page HTML is rewritten for a subpath deploy,
 		// and slash its page links the way slashLinks does a page's (a
-		// section menu's links live here).
-		chrome := b.slashPageLinks(b.rewriteBaseURLs(widget.RenderChrome(d)), pages)
+		// section menu's links live here). Its slots render in the
+		// locale of the tree it lands in, like the pages beside it.
+		dctx := ctx
+		if byPrefix {
+			dctx = localeContext(ctx, locales, locales.Default)
+		}
+		chrome := b.slashPageLinks(b.rewriteBaseURLs(widget.RenderChromeCtx(dctx, d)), pages)
 		if err := b.writeRawAsset("/core-ui/widget/"+d.Name+"/chrome", []byte(chrome)); err != nil {
 			return err
 		}
 		res.Assets = append(res.Assets, "/core-ui/widget/"+d.Name+"/chrome")
+		// On a /<tag>/ page the runtime asks for the chrome under the
+		// same prefix, the way the live router serves it.
+		if byPrefix {
+			for _, tag := range locales.Prefixed {
+				rule := urlprefix.Rule{Prefix: "/" + tag, Locales: locales.All()}
+				raw := widget.RenderChromeCtx(localeContext(ctx, locales, tag), d)
+				local := b.slashPageLinks(b.rewriteBaseURLs(string(urlprefix.HTML([]byte(raw), rule))), pages)
+				at := "/" + tag + "/core-ui/widget/" + d.Name + "/chrome"
+				if err := b.writeRawAsset(at, []byte(local)); err != nil {
+					return err
+				}
+				res.Assets = append(res.Assets, at)
+			}
+		}
 		if err := b.writeRawAsset("/core-ui/widget/"+d.Name+"/style.css", []byte(widget.RenderCSS(d))); err != nil {
 			return err
 		}
@@ -876,6 +931,12 @@ func (b *Builder) dumpWidgetAssets(res *Result) error {
 		b.log("wrote widget %s (chrome + css)", d.Name)
 	}
 	return nil
+}
+
+// localeContext is ctx as a request for the locale tag reads it: the
+// translator's locale and the path locale the router would set.
+func localeContext(ctx context.Context, locales i18n.PathLocales, tag string) context.Context {
+	return i18n.WithPathLocale(i18n.WithContext(ctx, i18n.Locale{Tag: tag}), locales, tag)
 }
 
 // dumpSEOAssets writes sitemap.xml and robots.txt when the host

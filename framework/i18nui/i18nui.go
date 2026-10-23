@@ -273,6 +273,9 @@ var (
 	ThemeAuto        = i18n.Define("ui.themeToggle.auto", "Auto")
 	ThemeColorScheme = i18n.Define("ui.themeToggle.colorScheme", "Color scheme")
 
+	// LanguageMenu's trigger, read before the current language's name.
+	LanguageMenu = i18n.Define("ui.languageMenu.label", "Language")
+
 	// ThemePicker
 	ThemePicker  = i18n.Define("ui.themePicker.label", "Theme")
 	ThemeDefault = i18n.Define("ui.themePicker.default", "Default")
@@ -489,7 +492,7 @@ func EntityNoun(ctx context.Context, tr *i18n.Translator, entityName, display st
 			words[i] = string(runes)
 		}
 	}
-	return strings.Join(words, " ")
+	return fallback(ctx, tr, strings.Join(words, " "))
 }
 
 // EntityDescription returns the one-line description shown under a list
@@ -508,9 +511,9 @@ func FieldLabel(ctx context.Context, tr *i18n.Translator, entityName, fieldName,
 		return got
 	}
 	if display != "" {
-		return display
+		return fallback(ctx, tr, display)
 	}
-	return humanize(fieldName)
+	return fallback(ctx, tr, humanize(fieldName))
 }
 
 // RelationLabel is FieldLabel for a Relation field. Its humanized
@@ -583,9 +586,9 @@ func displayLabel(ctx context.Context, tr *i18n.Translator, key, display, slug s
 		return got
 	}
 	if display != "" {
-		return display
+		return fallback(ctx, tr, display)
 	}
-	return titleCase(slug)
+	return fallback(ctx, tr, titleCase(slug))
 }
 
 // catalogString returns the catalog text for key and true when the catalog

@@ -14,6 +14,7 @@ import (
 
 // preloadSite: /hub declares hover-preload for /detail and an eager route
 // /eager; /pop is an intercepting route from /hub (must never prefetch).
+// /moved is a hover route that answers with a 303 to /detail.
 type preloadReq struct {
 	Path     string
 	Prefetch bool
@@ -41,6 +42,7 @@ func newPreloadSite(t *testing.T) (*httptest.Server, func() []preloadReq) {
 	routes := `<script type="application/json" id="gofastr-routes">[` +
 		`{"path":"/hub","layouts":["l:site"]},` +
 		`{"path":"/detail","layouts":["l:site"],"preload":"hover"},` +
+		`{"path":"/moved","layouts":["l:site"],"preload":"hover"},` +
 		`{"path":"/eager","layouts":["l:site"],"preload":"eager"},` +
 		`{"path":"/pop","layouts":["l:site"],"preload":"hover","intercept":{"from":"/hub","as":"drawer"}}` +
 		`]</script>`
@@ -52,7 +54,8 @@ func newPreloadSite(t *testing.T) (*httptest.Server, func() []preloadReq) {
 	}
 	hubInner := `<h1 id="hub-screen">Hub</h1>` +
 		`<a id="to-detail" href="/detail">Detail</a>` +
-		`<a id="to-pop" href="/pop">Pop</a>`
+		`<a id="to-pop" href="/pop">Pop</a>` +
+		`<a id="to-moved" href="/moved">Moved</a>`
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
@@ -103,6 +106,10 @@ func newPreloadSite(t *testing.T) (*httptest.Server, func() []preloadReq) {
 		}
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, page(`<h1 id="eager-screen">Eager</h1>`))
+	})
+	mux.HandleFunc("/moved", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		http.Redirect(w, r, "/detail", http.StatusSeeOther)
 	})
 	mux.HandleFunc("/pop", func(w http.ResponseWriter, r *http.Request) {
 		record(r)
@@ -161,6 +168,34 @@ func TestHoverPrefetchServesClick(t *testing.T) {
 		t.Error("eager route was never prefetched at idle")
 	} else if _, ep := countReqs(reqs, "/eager"); ep != et {
 		t.Error("eager requests must all be prefetch-marked")
+	}
+}
+
+// A prefetch that fetch followed through a 303 holds another page's
+// body; kept under the link's path, the click painted /detail with
+// /moved in the address bar. The prefetch drops it and the click's own
+// fetch takes the redirect.
+func TestPrefetchedRedirectNotCached(t *testing.T) {
+	srv, requests := newPreloadSite(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	var path string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/hub"),
+		chromedp.WaitVisible(`#hub-screen`, chromedp.ByID),
+		chromedp.Sleep(400*time.Millisecond),
+		chromedp.Evaluate(`document.getElementById('to-moved').dispatchEvent(new PointerEvent('pointerover', {bubbles: true}))`, nil),
+		chromedp.Sleep(400*time.Millisecond),
+		chromedp.Click(`#to-moved`, chromedp.ByID),
+		chromedp.WaitVisible(`#detail-screen`, chromedp.ByID),
+		chromedp.Evaluate(`location.pathname`, &path),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if _, pf := countReqs(requests(), "/moved"); pf != 1 {
+		t.Fatalf("/moved prefetch requests = %d, want 1", pf)
+	}
+	if path != "/detail" {
+		t.Errorf("redirected click left the address bar at %q, want /detail", path)
 	}
 }
 

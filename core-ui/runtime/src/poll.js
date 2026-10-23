@@ -132,7 +132,7 @@
       if (s.inFlight) return;
       s.inFlight = true;
       if (!NS._originOK?.(src)) { s.inFlight = false; return; }
-      fetch(src, {
+      fetch(NS._lp?.(src) ?? src, {
         headers: { 'Accept': 'text/html' },
         credentials: 'same-origin',
       })
@@ -240,7 +240,7 @@
       if (inFlight) return;
       inFlight = true;
       if (!NS._originOK?.(cfg.statePath)) { inFlight = false; return; }
-      fetch(cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
+      fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
         .then((r) => {
           // HTTP errors must reach .catch so back-off applies.
           if (!r.ok) throw new Error('poll ' + r.status);

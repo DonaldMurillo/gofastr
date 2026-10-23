@@ -49,9 +49,9 @@ func TestPlanMenuBarSynthesizesAppAndEditMenus(t *testing.T) {
 		t.Fatalf("app menu title = %q, want Notes", app.Title)
 	}
 	want := []MenuItemPlan{
-		{Title: "About Notes", Role: RoleAbout},
+		{Title: "About Notes", English: "About Notes", Role: RoleAbout},
 		{Sep: true},
-		{Title: "Quit Notes", Role: RoleQuit, Key: "q", Mask: nsModifierCommand},
+		{Title: "Quit Notes", English: "Quit Notes", Role: RoleQuit, Key: "q", Mask: nsModifierCommand},
 	}
 	if !reflect.DeepEqual(app.Items, want) {
 		t.Fatalf("app menu items = %+v, want %+v", app.Items, want)
@@ -80,15 +80,15 @@ func TestPlanMenuBarSynthesizesAppAndEditMenus(t *testing.T) {
 
 func TestPlanMenuBarUserMenusAndTags(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
-		{Title: "File", Children: []MenuItem{
-			{Title: "New", Navigate: "/new", Key: "cmd+n"},
-			{ID: "open", Title: "Open", Navigate: "/open"},
+		{Title: testPhrase("File"), Children: []MenuItem{
+			{Title: testPhrase("New"), Navigate: "/new", Key: "cmd+n"},
+			{ID: "open", Title: testPhrase("Open"), Navigate: "/open"},
 			{Role: RoleSeparator},
-			{Title: "Bye", Role: RoleQuit},
+			{Title: testPhrase("Bye"), Role: RoleQuit},
 		}},
-		{Title: "Go", Children: []MenuItem{
-			{Title: "Two", Navigate: "/two"},
-			{Title: "Ping", Handler: func(context.Context) error { return nil }},
+		{Title: testPhrase("Go"), Children: []MenuItem{
+			{Title: testPhrase("Two"), Navigate: "/two"},
+			{Title: testPhrase("Ping"), Handler: func(context.Context) error { return nil }},
 		}},
 	}}
 	validated, err := validateMenu(menu)
@@ -112,10 +112,10 @@ func TestPlanMenuBarUserMenusAndTags(t *testing.T) {
 	}
 	// New (action, cmd+n), Open (action, no key), separator, Bye (quit role).
 	if !reflect.DeepEqual(file.Items, []MenuItemPlan{
-		{Title: "New", Key: "n", Mask: nsModifierCommand, Action: true, Tag: 0},
-		{Title: "Open", Action: true, Tag: 1},
+		{Title: "New", English: "New", Key: "n", Mask: nsModifierCommand, Action: true, Tag: 0},
+		{Title: "Open", English: "Open", Action: true, Tag: 1},
 		{Sep: true},
-		{Title: "Bye", Role: RoleQuit},
+		{Title: "Bye", English: "Bye", Role: RoleQuit},
 	}) {
 		t.Fatalf("file rows = %+v", file.Items)
 	}
@@ -128,10 +128,10 @@ func TestPlanMenuBarUserMenusAndTags(t *testing.T) {
 
 func TestPlanMenuBarNestedSubmenus(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
-		{Title: "File", Children: []MenuItem{
-			{Title: "Export", Children: []MenuItem{
-				{Title: "PDF", Navigate: "/export/pdf"},
-				{Title: "Markdown", Navigate: "/export/md"},
+		{Title: testPhrase("File"), Children: []MenuItem{
+			{Title: testPhrase("Export"), Children: []MenuItem{
+				{Title: testPhrase("PDF"), Navigate: "/export/pdf"},
+				{Title: testPhrase("Markdown"), Navigate: "/export/md"},
 			}},
 		}},
 	}}
@@ -155,7 +155,7 @@ func TestPlanMenuBarNestedSubmenus(t *testing.T) {
 
 func TestPlanMenuBarChildlessTopLevelActionStaysReachable(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
-		{Title: "Standalone", Navigate: "/solo"},
+		{Title: testPhrase("Standalone"), Navigate: "/solo"},
 	}}
 	validated, err := validateMenu(menu)
 	if err != nil {
@@ -177,7 +177,7 @@ func TestPlanMenuBarChildlessTopLevelActionStaysReachable(t *testing.T) {
 
 func TestPlanMenuBarRoleTitleDefaults(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
-		{Title: "File", Children: []MenuItem{{Role: RoleQuit}, {Role: RoleAbout}}},
+		{Title: testPhrase("File"), Children: []MenuItem{{Role: RoleQuit}, {Role: RoleAbout}}},
 	}}
 	plans, _ := PlanMenuBar(context.Background(), "Notes", menu, false)
 	rows := plans[1].Items
@@ -202,10 +202,10 @@ func TestPlanMenuBarSettingsRowOnlyWhenConfigured(t *testing.T) {
 	plans, _ = PlanMenuBar(context.Background(), "Notes", nil, true)
 	app = plans[0]
 	want := []MenuItemPlan{
-		{Title: "About Notes", Role: RoleAbout},
-		{Title: "Settings…", Role: RoleSettings, Key: ",", Mask: nsModifierCommand},
+		{Title: "About Notes", English: "About Notes", Role: RoleAbout},
+		{Title: "Settings…", English: "Settings…", Role: RoleSettings, Key: ",", Mask: nsModifierCommand},
 		{Sep: true},
-		{Title: "Quit Notes", Role: RoleQuit, Key: "q", Mask: nsModifierCommand},
+		{Title: "Quit Notes", English: "Quit Notes", Role: RoleQuit, Key: "q", Mask: nsModifierCommand},
 	}
 	if !reflect.DeepEqual(app.Items, want) {
 		t.Fatalf("app menu items = %+v, want %+v", app.Items, want)
@@ -214,14 +214,14 @@ func TestPlanMenuBarSettingsRowOnlyWhenConfigured(t *testing.T) {
 
 func TestPlanTrayMenuSharesActionIDTable(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
-		{Title: "File", Children: []MenuItem{
-			{Title: "New", Navigate: "/new", Key: "cmd+n"},
+		{Title: testPhrase("File"), Children: []MenuItem{
+			{Title: testPhrase("New"), Navigate: "/new", Key: "cmd+n"},
 		}},
 	}}
 	tray := &Menu{Items: []MenuItem{
-		{Title: "Show Notes", Role: RoleShow},
-		{Title: "New", Navigate: "/new"},
-		{Title: "Settings…", Role: RoleSettings},
+		{Title: testPhrase("Show Notes"), Role: RoleShow},
+		{Title: testPhrase("New"), Navigate: "/new"},
+		{Title: testPhrase("Settings…"), Role: RoleSettings},
 		{Role: RoleSeparator},
 		{Role: RoleQuit},
 	}}
@@ -238,11 +238,11 @@ func TestPlanTrayMenuSharesActionIDTable(t *testing.T) {
 	// The tray rows: show (role), new (action, tag 1: the NEXT index in
 	// the shared table), settings (role), separator, quit (role).
 	wantTray := []MenuItemPlan{
-		{Title: "Show Notes", Role: RoleShow},
-		{Title: "New", Action: true, Tag: 1},
-		{Title: "Settings…", Role: RoleSettings},
+		{Title: "Show Notes", English: "Show Notes", Role: RoleShow},
+		{Title: "New", English: "New", Action: true, Tag: 1},
+		{Title: "Settings…", English: "Settings…", Role: RoleSettings},
 		{Sep: true},
-		{Title: "Quit Notes", Role: RoleQuit},
+		{Title: "Quit Notes", English: "Quit Notes", Role: RoleQuit},
 	}
 	if !reflect.DeepEqual(trayRows, wantTray) {
 		t.Fatalf("tray rows = %+v, want %+v", trayRows, wantTray)
@@ -266,7 +266,7 @@ func TestPlanTrayMenuSharesActionIDTable(t *testing.T) {
 
 func TestPlanRowsRoleDefaultsForSettingsAndShow(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
-		{Title: "Tray", Children: []MenuItem{
+		{Title: testPhrase("Tray"), Children: []MenuItem{
 			{Role: RoleShow},
 			{Role: RoleSettings},
 		}},

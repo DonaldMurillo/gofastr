@@ -10,7 +10,7 @@ import (
 
 // sidePanel is a side panel that draws the record's number.
 func sidePanel(seen *Record) SidePanel {
-	return SidePanel{Key: "billing", Title: "Billing contact", Build: func(rc RecordContext) (component.Component, error) {
+	return SidePanel{Key: "billing", Title: testPhrase("Billing contact"), Build: func(rc RecordContext) (component.Component, error) {
 		*seen = rc.Record
 		return staticComp("<p>panel for " + rc.Record.ID + "</p>"), nil
 	}}
@@ -63,7 +63,7 @@ func TestRecordSidePanelNotOnCreate(t *testing.T) {
 // the page and the form renders on.
 func TestRecordPanickingSidePanelFailsPanelOnly(t *testing.T) {
 	x := newTestUIExt(t, invoiceEntities(), invoiceRows(), Extensions{Entities: map[string]Extension{
-		"invoices": {Side: []SidePanel{{Key: "boom", Title: "Boom", Build: func(RecordContext) (component.Component, error) {
+		"invoices": {Side: []SidePanel{{Key: "boom", Title: testPhrase("Boom"), Build: func(RecordContext) (component.Component, error) {
 			panic("kaboom")
 		}}}},
 	}}, withAPI(map[string]string{"invoices": "/api/invoices"}))

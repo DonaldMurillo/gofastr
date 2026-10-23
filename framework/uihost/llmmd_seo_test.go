@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -17,7 +18,7 @@ import (
 type llmmdSEOComp struct{}
 
 func (llmmdSEOComp) Render() render.HTML { return html.Div(html.DivConfig{}, render.Text("hi")) }
-func (llmmdSEOComp) ScreenSEO() SEO {
+func (llmmdSEOComp) ScreenSEO(ctx context.Context) SEO {
 	return SEO{
 		Description: "Browse the catalog",
 		Canonical:   "https://example.com/products",
