@@ -262,6 +262,12 @@ type ProductScreen struct{ slug string }
 func (s *ProductScreen) SetParams(p map[string]string) { s.slug = p["slug"] }
 ```
 
+The value arrives decoded, and the router splits the escaped path, so a
+segment may hold `/`: `/products/a%2Fb` gives `slug` the value `a/b`.
+`app.RoutePath` turns an escaped path into the form `Router.Resolve`
+matches (decoded, with a segment's `/` and `%` still `%2F` and `%25`),
+and `app.EscapeRoutePath` turns it back.
+
 Both `:slug` and `{slug}` are the same route; the framework normalizes the
 brace form to the colon form at registration. If a dynamic route's screen
 does **not** implement `SetParams`, the app panics at startup; the
@@ -330,7 +336,9 @@ on client-side navigation the runtime follows the redirect. Chains
 target must be a relative same-app path (an absolute URL panics;
 open-redirect guard), and every parameter referenced in `to` must be
 declared in `from`. The `from` pattern obeys the same grammar as a route
-(constraints, trailing catch-all). Substituted parameters arrive
+(constraints, trailing catch-all). A one-segment parameter holding `/`
+or `%` is written back as `%2F` or `%25`, so it stays one segment of
+the target. Substituted parameters arrive
 percent-decoded, so C0/DEL control bytes in the request path are
 percent-encoded back into the `Location` header — a redirect target never
 carries raw control bytes.

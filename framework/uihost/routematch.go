@@ -26,7 +26,7 @@ func (ds *UIHost) RouteMatchMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if ds.App != nil && ds.App.Router != nil && r.URL != nil {
-				if m, ok := ds.App.Router.MatchFor(r.URL.Path); ok {
+				if m, ok := ds.App.Router.MatchFor(routePath(r)); ok {
 					r = r.WithContext(app.WithMatch(r.Context(), m))
 				}
 			}
@@ -35,14 +35,19 @@ func (ds *UIHost) RouteMatchMiddleware() func(http.Handler) http.Handler {
 	}
 }
 
+// routePath is the request's path in the routing form Router.Resolve
+// matches (app.RoutePath), so a key value holding "/" keeps its segment.
+func routePath(r *http.Request) string { return app.RoutePath(r.URL.EscapedPath()) }
+
 // HasScreen reports whether a screen route serves path, by the same
 // resolution RouteMatchMiddleware uses. known is false when the host has
 // no app router to ask. entityui calls it, through the framework's
 // entityui host, to warn when a list's row links lead to no screen.
+// path is escaped, as a link writes it.
 func (ds *UIHost) HasScreen(path string) (has, known bool) {
 	if ds.App == nil || ds.App.Router == nil {
 		return false, false
 	}
-	_, ok := ds.App.Router.MatchFor(path)
+	_, ok := ds.App.Router.MatchFor(app.RoutePath(path))
 	return ok, true
 }

@@ -277,9 +277,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `<base>/<v1>/<v2>`; the create form sets the key columns and later
   edits show them read-only. New: `crud.KeyPath`, `crud.TransitionPath`,
   `crud.PathRecordID`, `CrudRouteOptions.Key`. A key value holding `/`
-  works over REST and MCP; its screen answers 404, since screen routes
-  match the decoded path. See `gofastr docs entity-declarations` →
-  "Composite keys over HTTP and MCP".
+  is escaped in its segment and reaches its screen as it reaches REST
+  and MCP: the screen router splits the escaped path and decodes each
+  segment, and a pattern redirect carries such a value as one segment.
+  The login `next=` from `auth.SessionPolicy` and the admin gate, the
+  stale-markup reload, and `cache.CacheMiddleware`'s key all use the
+  escaped path, so `/a%2Fb` and `/a/b` stay two pages.
+  New: `app.RoutePath` and `app.EscapeRoutePath`. See
+  `gofastr docs entity-declarations` → "Composite keys over HTTP and MCP".
 - **Primary-key change migrations.** The schema diff detects a changed
   key and emits it as destructive: Postgres swaps the key constraint,
   SQLite rebuilds the table. Boot changes the key of an empty table only

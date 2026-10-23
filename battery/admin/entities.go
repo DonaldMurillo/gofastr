@@ -89,10 +89,11 @@ func (b *Battery) apiBase(e *entity.Entity) string {
 }
 
 // entityPath splits an admin-relative path under /entities into the
-// exposed entity and what follows it: "" for the list, "create", or a
-// record id, which for a composite key is one segment per key column,
-// joined as entity.JoinKey renders the id.
-func (b *Battery) entityPath(rest string) (*entity.Entity, string, bool) {
+// exposed entity and what follows it: "" for the list, "create", or the
+// id of the record m, the route match the path resolved to, names,
+// joined as entity.JoinKey renders it. The id comes from m's params and
+// not the path, whose decoded text cannot split a key value holding "/".
+func (b *Battery) entityPath(rest string, m appui.Match) (*entity.Entity, string, bool) {
 	tail, ok := strings.CutPrefix(rest, "/entities/")
 	if !ok {
 		return nil, "", false
@@ -102,17 +103,17 @@ func (b *Battery) entityPath(rest string) (*entity.Entity, string, bool) {
 	if !ok {
 		return nil, "", false
 	}
-	if n := len(e.KeyColumns()); n > 1 && id != "" && id != "create" {
-		parts := strings.Split(id, "/")
-		if len(parts) != n || slices.Contains(parts, "") {
-			return nil, "", false
-		}
-		return e, entity.JoinKey(parts), true
+	if id == "" || id == "create" {
+		return e, id, true
 	}
-	if strings.Contains(id, "/") {
+	if m.ScreenID() != b.entityBase(e)+recordPattern(e) {
 		return nil, "", false
 	}
-	return e, id, true
+	p := map[string]string{"id": m.Param("id")}
+	for _, c := range e.KeyColumns() {
+		p[c] = m.Param(c)
+	}
+	return e, recordID(e, p), true
 }
 
 // recordPattern is the screen pattern tail naming one of e's records:

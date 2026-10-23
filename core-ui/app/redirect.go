@@ -189,6 +189,11 @@ func substituteRedirect(toPattern string, params map[string]string) string {
 			continue
 		}
 		if v, ok := params[segParamName(seg)]; ok {
+			// A one-segment value goes back in routing form, so a
+			// carried "a/b" stays one segment of the target.
+			if !isCatchAllSeg(seg) {
+				v = encodeRouteSeg(v)
+			}
 			parts[i] = v
 		}
 	}

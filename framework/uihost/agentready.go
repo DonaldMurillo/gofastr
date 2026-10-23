@@ -867,7 +867,7 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 	if ds.App == nil {
 		return false
 	}
-	screen, _, ok := ds.App.Router.Resolve(r.URL.Path)
+	screen, _, ok := ds.App.Router.Resolve(routePath(r))
 	if !ok || screen.NoLLMMD {
 		return false
 	}
@@ -878,7 +878,7 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 	// withheld doc instead of leaking the screen's rendered content,
 	// title, or SEO bundle.
 	ctx := app.WithRequest(r.Context(), r)
-	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, r.URL.Path)
+	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, routePath(r))
 	if !ok {
 		return false
 	}
