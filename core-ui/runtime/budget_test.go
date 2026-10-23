@@ -1302,7 +1302,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 3479 measured (3477 + 2) after a panel record that will not
 		// open over the list opens as its own page
 		// (TestInterceptPanelRedirectOpensPage).
-		"intercept": 3479,
+		// 3508 measured (3506 + 2) after a 404/410 overlay drops the
+		// record's cached page before falling back
+		// (TestInterceptMissingRecordSkipsCache,
+		// TestInterceptGoneRefetchWithHash).
+		"intercept": 3508,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and

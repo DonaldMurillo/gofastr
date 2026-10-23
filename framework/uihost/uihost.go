@@ -4300,9 +4300,15 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 	}
 	// Same context the page render gets: policies and Load hooks read the
 	// live request (session, headers, query) through app.WithRequest.
-	ctx := app.WithRequest(r.Context(), r)
+	ctx, recorded := app.TrackStatus(app.WithRequest(r.Context(), r))
 	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, base)
 	if !ok {
+		return "", false
+	}
+	// A page that answers another status (app.SetStatus for a missing
+	// record, a ScreenStatusCode) has no doc to serve: answer 404 the
+	// way a Load's ErrNotFound does, never a 200 doc of its not-found body.
+	if status := pageStatus(app.RenderResult{Component: res.Component}, recorded()); status != 0 && status != http.StatusOK {
 		return "", false
 	}
 	md := res.MD
@@ -4363,6 +4369,21 @@ func (e *NotFoundOutletError) Error() string {
 	return fmt.Sprintf("uihost: static render %q: a FallbackNotFound outlet had no fill, the route's answer is 404", e.Path)
 }
 
+// StatusPageError is the static-render form of a page that answers a
+// status other than 200: a component called app.SetStatus while it
+// drew (entityui's Record for a missing row) or the screen declares
+// ScreenStatusCode. The builder skips the route with a warning, like
+// NotFoundOutletError, because the static host would serve the file
+// with a 200.
+type StatusPageError struct {
+	Path   string
+	Status int
+}
+
+func (e *StatusPageError) Error() string {
+	return fmt.Sprintf("uihost: static render %q: the page answers %d, not 200", e.Path, e.Status)
+}
+
 // PolicyBlockedError reports a static render refused by the screen's
 // policy: a redirect or a block, never a render failure. The static
 // builder skips such routes (with a warning) instead of aborting the
@@ -4414,6 +4435,7 @@ func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (stri
 	// Install the value bag so producer-seeded slice values are captured
 	// during the static render (matches the live handlePage path).
 	ctx = store.WithValues(ctx)
+	ctx, recorded := app.TrackStatus(ctx)
 	// RenderPageResult (not RenderPage) so the loaded per-request
 	// component reaches the chrome injection: a dynamic route's meta
 	// description only exists on the loaded instance.
@@ -4434,6 +4456,12 @@ func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (stri
 	// unexpandable one.
 	if res.NotFoundOutlet {
 		return "", nil, &NotFoundOutletError{Path: path}
+	}
+	// A page that answers another status (app.SetStatus, a
+	// ScreenStatusCode) is skipped the same way: a static host serves
+	// every file 200, so a missing record's page would read as present.
+	if status := pageStatus(res, recorded()); status != 0 && status != http.StatusOK {
+		return "", nil, &StatusPageError{Path: path, Status: status}
 	}
 	// bundle=false: static hosts don't serve query-paramed files, so
 	// emit one <link rel=stylesheet> per registered component instead

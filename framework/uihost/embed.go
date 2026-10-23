@@ -1017,7 +1017,6 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ctx, recorded := app.TrackStatus(ctx)
 	res, err := ds.App.RenderPartialResult(ctx, s.Path())
 	if err != nil {
 		if errors.Is(err, app.ErrScreenPanicked) {
@@ -1071,10 +1070,5 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 	// Rendered for one subject. Never cache, never share.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	// The same status ranking a page runs: a surface whose record is
-	// gone answers 404 with its not-found body, never 200.
-	if status := pageStatus(res, recorded()); status != 0 {
-		w.WriteHeader(status)
-	}
 	_, _ = w.Write([]byte(app.EmbedLayout().WrapCtx(r.Context(), res.HTML)))
 }

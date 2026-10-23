@@ -170,13 +170,21 @@ duplicating a row answer 404 when the row is missing or hidden from the
 caller, so a generated record screen and an admin record page need no
 code for it. The first `SetStatus` in a render wins. A screen's own
 `ScreenStatusCode` outranks it, and a 404-outlet outcome outranks both.
-It applies on the full page, a client navigation, `RenderScreen` and
-the embed content route. Outside a page render (an island RPC, a
-component rendered on its own) the call does nothing.
+It applies on the full page, a client navigation, a drawer and
+`RenderScreen`. A dynamic route's `llm.md` for such a page answers 404,
+the way it does when `Load` returns `app.ErrNotFound`. A static export (`gofastr export`) skips a page that
+answers anything but 200, with a warning, the way it skips a 404
+outlet. The embed content route keeps answering 200 with the body the
+screen drew: the embed loader mounts only a 2xx, and anything else
+shows its "could not load" state instead. Outside a page render (an
+island RPC, a component rendered on its own) the call does nothing.
 
 A drawer opened onto a missing record falls back to an ordinary
 navigation: the runtime mounts an overlay only from a 2xx, so the
-reader lands on the record's own URL and sees its 404 page.
+reader lands on the record's own URL and sees its 404 page. A 404 or
+410 drawer answer also drops the record's cached page first, so the
+fallback fetches the 404 instead of replaying the record from before
+it was deleted.
 
 ## Common mistakes
 

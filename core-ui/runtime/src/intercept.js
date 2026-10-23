@@ -192,6 +192,12 @@
       // An intercepted response can invalidate regular screens even
       // though the overlay itself is never cached.
       if (r.ok) NS._inval?.(r);
+      // A record that is gone (404/410) is gone as a page too: drop any
+      // cached copy so the fallback navigation fetches the 404 page
+      // instead of replaying the record from before it went. The bare
+      // pathname drops every query variant of the record, and a history
+      // refetch's #fragment, which no cache key carries.
+      else if (r.status === 404 || r.status === 410) NS.invalidate(NS._unlocalize?.(pathOf(path)) ?? pathOf(path));
       const as = r.headers.get('X-Gofastr-Overlay');
       // A redirect, signalled or followed, falls back to the navigator,
       // which takes it.

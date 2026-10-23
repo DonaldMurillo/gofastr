@@ -62,6 +62,40 @@ func TestSetStatusReachesPageAndPartial(t *testing.T) {
 	}
 }
 
+// drawsMissingByID and goneByID are the dynamic-route forms.
+type drawsMissingByID struct{ drawsMissing }
+
+func (*drawsMissingByID) SetParams(map[string]string) {}
+
+type goneByID struct{ drawsMissingDeclaresGone }
+
+func (*goneByID) SetParams(map[string]string) {}
+
+// A dynamic route's llm.md for a record that is gone answers 404, the
+// way a Load answering ErrNotFound does, never a 200 doc of the
+// not-found body. A present record still gets its doc.
+func TestDynamicLLMMDSetStatus404(t *testing.T) {
+	a := app.NewApp("status")
+	a.Register("/", &testHomeComp{}, nil)
+	a.Register("/missing/{id}", &drawsMissingByID{}, nil)
+	a.Register("/gone/{id}", &goneByID{}, nil)
+	a.Register("/things/{id}", &loadedTitleComp{}, nil)
+	ds := New(a, WithPublicLLMMD())
+
+	for _, path := range []string{"/missing/1/llm.md", "/gone/1/llm.md"} {
+		rec := httptest.NewRecorder()
+		ds.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "no such record") {
+			t.Errorf("%s = %d, want 404 without the not-found doc:\n%s", path, rec.Code, rec.Body.String())
+		}
+	}
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/things/42/llm.md", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Thing 42") {
+		t.Errorf("present record llm.md = %d, want 200 with its doc", rec.Code)
+	}
+}
+
 // The screen's own ScreenStatusCode outranks a status its render set.
 func TestScreenStatusCodeBeatsSetStatus(t *testing.T) {
 	a := app.NewApp("status")
@@ -94,9 +128,11 @@ func TestRenderScreenSetStatus(t *testing.T) {
 	}
 }
 
-// An embed surface whose record is gone answers 404 with its body, the
-// status a page would answer.
-func TestEmbedContentSetStatus(t *testing.T) {
+// An embed surface whose record is gone still answers 200 with its
+// not-found body: the embed loader (boot-embed.js) mounts only a 2xx
+// and shows "This panel could not load" for anything else, so a 404
+// here would hide the body the screen drew for exactly this case.
+func TestEmbedContentKeeps200(t *testing.T) {
 	application := app.NewApp("Embed Test")
 	missing := app.NewScreen("/missing", drawsMissing{}).WithTitle("Missing")
 	application.RegisterScreen(missing, nil)
@@ -114,7 +150,7 @@ func TestEmbedContentSetStatus(t *testing.T) {
 	rec := f.do(t, http.MethodGet, "/__gofastr/embed/missing/content", "", func(req *http.Request) {
 		req.Header.Set(embedGrantHeader, grant)
 	})
-	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "no such record") {
-		t.Errorf("embed content = %d, want 404 with the body:\n%s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "no such record") {
+		t.Errorf("embed content = %d, want 200 with the not-found body:\n%s", rec.Code, rec.Body.String())
 	}
 }
