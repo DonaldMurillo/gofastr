@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -106,23 +107,21 @@ func TestView_ColumnsWithoutPKPanics(t *testing.T) {
 	}.ToEntity()
 }
 
-// TestView_MultiplePKPanics: more than one PrimaryKey column on a view fails loud.
-func TestView_MultiplePKPanics(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected a panic for multiple PrimaryKey columns")
-		} else if !strings.Contains(r.(string), "exactly one") {
-			t.Fatalf("unexpected panic: %v", r)
-		}
-	}()
-	migrate.View{
+// TestView_CompositeKey: several PrimaryKey columns on a view make its
+// key, in column order.
+func TestView_CompositeKey(t *testing.T) {
+	ent := migrate.View{
 		Name:   "v",
 		Select: "SELECT a, b FROM t",
 		Columns: []migrate.Column{
 			{Name: "a", Type: schema.String, PrimaryKey: true},
 			{Name: "b", Type: schema.String, PrimaryKey: true},
+			{Name: "c", Type: schema.String},
 		},
 	}.ToEntity()
+	if got := ent.KeyColumns(); !slices.Equal(got, []string{"a", "b"}) {
+		t.Fatalf("KeyColumns = %v", got)
+	}
 }
 
 // TestView_GenerateReversible: a generated view migration creates the view

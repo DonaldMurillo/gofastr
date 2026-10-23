@@ -224,6 +224,9 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 			if err != nil {
 				return nil, i18n.Wrap(reasonIncludeUnregistered, err, map[string]any{"include": strconv.Quote(path), "relation": strconv.Quote(seg), "entity": strconv.Quote(rel.Entity)})
 			}
+			if err := oneColumnKeys(currentEntity, target); err != nil {
+				return nil, i18n.Wrap(reasonIncludeCompositeKey, err, map[string]any{"include": strconv.Quote(path)})
+			}
 			node, exists := siblingMap[seg]
 			if !exists {
 				node = &IncludeNode{
@@ -538,7 +541,11 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 	if len(rows) == 0 {
 		return nil
 	}
-	pkKey := ch.convertKey(ch.PrimaryKey)
+	parentPK, err := ch.keyColumn()
+	if err != nil {
+		return err
+	}
+	pkKey := ch.convertKey(parentPK)
 	ids := collectStringIDs(rows, pkKey)
 
 	// Build the result map shape once; loadIncludeNode populates it relation
@@ -552,7 +559,7 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 		applyRelatedOwnerScope(ctx, node)
 		applyRelatedTenantScope(ctx, node)
 		applyRelatedReadScope(ctx, node)
-		if err := loadIncludeNode(ctx, ch.DB, ch.Entity.GetTable(), ch.PrimaryKey, node, ids, loaded, budget); err != nil {
+		if err := loadIncludeNode(ctx, ch.DB, ch.Entity.GetTable(), parentPK, node, ids, loaded, budget); err != nil {
 			if errors.Is(err, errIncludeBudget) {
 				return err
 			}
@@ -603,9 +610,9 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 // nested data EagerLoad produced. It re-runs EagerLoad with each child's
 // target relation against those rows, then recurses again.
 func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.Entity, children []*IncludeNode, rawRows []map[string]any, budget *includeBudget) error {
-	pk := target.PrimaryKey
-	if pk == "" {
-		pk = "id"
+	pk, err := target.KeyColumn()
+	if err != nil {
+		return err
 	}
 	ids := collectStringIDs(rawRows, pk)
 	if len(ids) == 0 {

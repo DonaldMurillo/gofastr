@@ -305,9 +305,10 @@ transaction, where the pragma has no effect: it refuses a rebuild that a
 migration by hand under `-- +migrate NoTransaction`, with `PRAGMA
 foreign_keys=OFF` before the rebuild and `PRAGMA foreign_keys=ON` after it.
 Rows are carried over, not regenerated; a required-but-undefaulted column added in the same
-change still fails loud on a populated table until you backfill it, and the
-change ships no `Down` (the pre-migration constraints are not recoverable),
-so a SQLite retype is forward-only. Renames: declare
+change still fails loud on a populated table until you backfill it, and a
+migration holding a rebuild ships no `Down` (the pre-migration constraints
+are not recoverable, and the other changes' inverses alone would roll back to
+a table matching neither schema), so a SQLite retype is forward-only. Renames: declare
 `EntityConfig.Renames: {"old": "new"}` and the diff emits a non-destructive
 `RENAME COLUMN` instead of a data-losing drop+add. A rename is otherwise
 indistinguishable from a drop plus an add, so it has to be declared.
@@ -341,6 +342,44 @@ whose AutoIncrement PK was created by older code as a plain `INTEGER PRIMARY KEY
 
 The snapshot is offline state. Pick `--driver` to match your production engine so the emitted types are right.
 
+### Primary-key changes
+
+An entity's `PrimaryKey` can change after its table exists, as when a join
+table keyed on a generated `id` moves to the pair it links. The diff
+compares the declared key with the live one (or the snapshot's
+`primary_keys`) and emits the change as destructive, so
+`ApplySchemaDiff` refuses it until `ApplySchemaDiffWithOptions` sets
+`AllowDestructive`:
+
+- Postgres drops the old key constraint, clears the `NOT NULL` the old key
+  gave a column that leaves the key (unless the field is `Required`), and
+  runs `ADD PRIMARY KEY (student_id, course_id)`. The `Down` drops the new
+  constraint, clears the `NOT NULL` the new key gave a column that was not
+  in the old one, and adds the old key back. When an old key column leaves
+  the entity (the injected `id`, say), the diff drops it with its values,
+  so the generated migration has no `Down`.
+- SQLite cannot alter a key in place, so the table is rebuilt the way a
+  retype is, with the same foreign-key handling and no `Down`.
+
+Either way the change fails, and the table keeps its old key and rows, when
+rows repeat the new key or leave a key column `NULL`. Clean those rows up
+first. A key column renamed through `Renames` keeps its place in the key, so
+a rename alone is no key change. Another entity's `belongs_to` or
+`many_to_many` onto a composite key is refused with
+`entity.ErrCompositeKey` before anything runs.
+
+Boot applies a key change only to an empty table. A table with rows and a
+different key fails the boot with an error naming `gofastr migrate
+generate`: rows keyed one way do not satisfy another, and a write on the
+wrong key could touch several rows. A table with rows and no key at all
+fails the same way, since nothing holds the declared key unique. Boot
+never drops the old key column; a
+generated migration does, when the entity no longer declares it.
+
+A snapshot written before `primary_keys` was recorded generates no key
+change. The next generated migration records the keys, and boot catches a
+mismatch in the meantime.
+
 ### Snapshot file format (`schema.snapshot.json`)
 
 The schema snapshot file records the declarative state migrations have been generated up to:
@@ -362,6 +401,9 @@ The schema snapshot file records the declarative state migrations have been gene
       "CREATE INDEX idx_posts_title ON posts(title)"
     ]
   },
+  "primary_keys": {
+    "posts": ["id"]
+  },
   "views": {
     "published_posts": {
       "up": "CREATE VIEW published_posts AS SELECT ...",
@@ -380,6 +422,7 @@ The schema snapshot file records the declarative state migrations have been gene
 - `tables`: Map of table names to column-name-to-SQL-type maps, used for structural column diffing.
 - `table_ddl`: Full table creation DDL for each table, used during rollback (`Down` migrations) to accurately recreate dropped tables with exact constraints.
 - `indices`: Map of table names to arrays of index DDL statements (`CREATE [UNIQUE] INDEX ...`). The diff engine compares these to detect new, modified, or dropped indices without relying on live database index introspection.
+- `primary_keys`: Map of table names to their primary-key columns in key order. The diff compares these to detect a [primary-key change](#primary-key-changes).
 - `views`: Map of view names to `RoutineDef` objects (`up` and `down` DDL strings), tracking view definitions so modified or dropped views can be migrated and rolled back cleanly.
 - `routines`: Map of routine/stored procedure names to `RoutineDef` objects (`up` and `down` DDL strings), tracking stored routines across migration lifecycles.
 
@@ -483,8 +526,9 @@ app.Table(migrate.Table{
 
 Only the columns you declare are emitted. Nothing is injected. A foreign key
 references the target table's primary key (the target may be an entity or
-another raw table). Single-column or no primary key are supported; composite
-primary keys are not yet (use a unique index). `RawType` on a column overrides
+another raw table) and needs a one-column key there. Mark several columns
+`PrimaryKey: true` for a composite key; the key takes them in column order.
+A table with no primary key is allowed but cannot be referenced. `RawType` on a column overrides
 the portable type with an exact SQL type (`NUMERIC(10,2)`, `INET`, …) and works
 on entity fields too.
 
@@ -880,6 +924,8 @@ DDL, so a new field and its index land in one boot. It will **not**:
 - Drop columns or tables.
 - Rename columns (it sees a rename as add+drop).
 - Change a column type when data would be lost.
+- Change the primary key of a table that has rows (see
+  [Primary-key changes](#primary-key-changes)).
 
 Framework-managed columns are created for you: `created_at` /
 `updated_at` (when `Timestamps` is on), `deleted_at` (when `SoftDelete`

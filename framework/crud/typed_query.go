@@ -90,7 +90,7 @@ func (q *TypedQuery[T]) buildSelect(ctx context.Context) (*query.QueryBuilder, e
 		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
 			return nil, err
 		}
-		applyNestedFilters(func(sql string, args ...any) { qb.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
+		applyNestedFilters(func(sql string, args ...any) { qb.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
 	}
 	if q.limit != nil {
 		qb.Limit(*q.limit)
@@ -252,7 +252,7 @@ func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
 		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
 			return 0, err
 		}
-		applyNestedFilters(func(sql string, args ...any) { cb.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
+		applyNestedFilters(func(sql string, args ...any) { cb.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
 	}
 	req := syntheticRequest(ctx, "GET", "/")
 	q.handler.ApplyTenantScopeCount(cb, req)
@@ -441,7 +441,7 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
 			return 0, err
 		}
-		applyNestedFilters(func(sql string, args ...any) { ub.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
+		applyNestedFilters(func(sql string, args ...any) { ub.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
 	}
 	// Soft-deleted rows are logically gone, a bulk UPDATE must not reach
 	// them, mirroring the SELECT/Count paths (ApplySoftDeleteFilter).
@@ -482,7 +482,7 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 			if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
 				return 0, err
 			}
-			applyNestedFilters(func(sql string, args ...any) { ub.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
+			applyNestedFilters(func(sql string, args ...any) { ub.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
 		}
 		// Don't re-stamp rows that are already soft-deleted, they're
 		// logically gone, and re-touching them would resurrect their
@@ -511,7 +511,7 @@ func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 		if err := q.handler.scopeNestedFiltersInProcess(ctx, nested); err != nil {
 			return 0, err
 		}
-		applyNestedFilters(func(sql string, args ...any) { db.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.PrimaryKey, nested)
+		applyNestedFilters(func(sql string, args ...any) { db.Where(sql, args...) }, q.handler.Entity.GetTable(), q.handler.keyCols(), nested)
 	}
 	q.handler.ApplyTenantScopeDelete(db, req)
 	q.handler.ApplyOwnerScopeDelete(db, req)

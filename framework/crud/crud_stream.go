@@ -88,7 +88,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	ch.applySoftDeleteFilterCountQ(countQb, q, r.Context())
 	applyNestedFilters(
 		func(sql string, args ...any) { countQb.Where(sql, args...) },
-		ch.Entity.GetTable(), ch.PrimaryKey, nested,
+		ch.Entity.GetTable(), ch.keyCols(), nested,
 	)
 	for _, c := range extraWhere {
 		countQb.Where(c.SQL, c.Args...)
@@ -109,7 +109,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	ch.applySoftDeleteFilterQ(qb, q, r.Context())
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },
-		ch.Entity.GetTable(), ch.PrimaryKey, nested,
+		ch.Entity.GetTable(), ch.keyCols(), nested,
 	)
 	for _, c := range extraWhere {
 		qb.Where(c.SQL, c.Args...)

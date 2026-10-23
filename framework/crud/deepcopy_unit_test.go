@@ -101,7 +101,7 @@ func TestRedactEventRecordIsolatesEachSubscriber(t *testing.T) {
 		}
 		return nil
 	})
-	ch := &CrudHandler{Entity: ent, PrimaryKey: "id", Hooks: reg}
+	ch := &CrudHandler{Entity: ent, PrimaryKey: []string{"id"}, Hooks: reg}
 
 	record := map[string]any{"id": "r1", "profile": map[string]any{"ssn": "111-22-3333"}}
 	ev := event.Event{
@@ -144,7 +144,7 @@ func TestRedactEventRecordOmitsTheRecordOnHookError(t *testing.T) {
 	reg.RegisterHook(hook.AfterGet, func(ctx context.Context, data any) error {
 		return errors.New("redactor unavailable")
 	})
-	ch := &CrudHandler{Entity: ent, PrimaryKey: "id", Hooks: reg}
+	ch := &CrudHandler{Entity: ent, PrimaryKey: []string{"id"}, Hooks: reg}
 
 	ev := event.Event{
 		Type: event.EntityUpdated,
@@ -180,7 +180,7 @@ func TestRedactEventRecordSurvivesANilRequest(t *testing.T) {
 		}
 		return nil
 	})
-	ch := &CrudHandler{Entity: ent, PrimaryKey: "id", Hooks: reg}
+	ch := &CrudHandler{Entity: ent, PrimaryKey: []string{"id"}, Hooks: reg}
 
 	ev := event.Event{
 		Type: event.EntityUpdated,
@@ -211,7 +211,7 @@ func TestRedactEventRecordPassesDeleteStubsThrough(t *testing.T) {
 	ent := entity.Define("rows", entity.EntityConfig{
 		Fields: []schema.Field{{Name: "id", Type: schema.String}},
 	})
-	ch := &CrudHandler{Entity: ent, PrimaryKey: "id", Hooks: reg}
+	ch := &CrudHandler{Entity: ent, PrimaryKey: []string{"id"}, Hooks: reg}
 	ev := event.Event{
 		Type: event.EntityDeleted,
 		Data: map[string]any{"entity": "rows", "record": map[string]any{"id": "r1"}},

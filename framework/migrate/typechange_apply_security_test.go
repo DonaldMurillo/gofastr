@@ -72,7 +72,7 @@ func widgetsTypeReg(t *testing.T) secTypeReg {
 		t.Fatalf("declaration config: %v", err)
 	}
 	e := &entity.Entity{Config: cfg}
-	e.PrimaryKey = "id"
+	e.Config.PrimaryKey = []string{"id"}
 	return secTypeReg{"widgets": e}
 }
 

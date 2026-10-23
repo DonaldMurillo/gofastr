@@ -32,7 +32,7 @@ func TestRunAfterGetReturnsTheHookError(t *testing.T) {
 	reg.RegisterHook(hook.AfterGet, func(ctx context.Context, data any) error {
 		return errors.New("redactor unavailable")
 	})
-	ch := &CrudHandler{PrimaryKey: "id", Hooks: reg}
+	ch := &CrudHandler{PrimaryKey: []string{"id"}, Hooks: reg}
 
 	got, err := ch.runAfterGet(WithReadHooks(context.Background()), nil, "r1", map[string]any{"secret": "S"})
 	if err == nil {
@@ -163,7 +163,7 @@ func TestApplyChildReadHooksPropagatesFromDepth(t *testing.T) {
 	// registry-is-nil branch and must still recurse.
 	ch := &CrudHandler{
 		Entity:     parent,
-		PrimaryKey: "id",
+		PrimaryKey: []string{"id"},
 		ChildHooks: func(name string) *hook.HookRegistry {
 			if name == "profiles" {
 				return reg
@@ -276,7 +276,7 @@ func TestRedactEventRecordPassesUnexpectedEnvelopes(t *testing.T) {
 	})
 	reg := hook.NewHookRegistry()
 	reg.RegisterHook(hook.AfterGet, func(ctx context.Context, data any) error { return nil })
-	ch := &CrudHandler{Entity: ent, PrimaryKey: "id", Hooks: reg}
+	ch := &CrudHandler{Entity: ent, PrimaryKey: []string{"id"}, Hooks: reg}
 	req := httptest.NewRequest(http.MethodGet, "/rows/_events", nil)
 
 	notAMap := event.Event{Type: event.EntityUpdated, Data: "just a string"}
@@ -295,7 +295,7 @@ func TestRedactEventRecordPassesUnexpectedEnvelopes(t *testing.T) {
 // With no AfterGet registered there is nothing to redact, so the envelope is
 // handed on untouched rather than deep-copied per delivery.
 func TestRedactEventRecordSkipsWithoutHooks(t *testing.T) {
-	ch := &CrudHandler{PrimaryKey: "id", Hooks: hook.NewHookRegistry()}
+	ch := &CrudHandler{PrimaryKey: []string{"id"}, Hooks: hook.NewHookRegistry()}
 	ev := event.Event{Type: event.EntityUpdated, Data: map[string]any{"record": map[string]any{"id": "r1"}}}
 	if got := ch.redactEventRecord(nil, ev); got.Data == nil {
 		t.Fatal("the delivery was dropped when there was nothing to redact")
@@ -328,7 +328,7 @@ func TestApplyCascadeChildReadHooks_RedactsChildren(t *testing.T) {
 
 	ch := &CrudHandler{
 		Entity:     parent,
-		PrimaryKey: "id",
+		PrimaryKey: []string{"id"},
 		Registry:   stubRegistry{byName: map[string]*entity.Entity{"users": parent, "profiles": child}},
 		ChildHooks: func(name string) *hook.HookRegistry {
 			if name == "profiles" {
@@ -379,7 +379,7 @@ func TestStageEventDropsCascadeChildren(t *testing.T) {
 		},
 	})
 	ob := &dataOutbox{}
-	ch := &CrudHandler{Entity: parent, PrimaryKey: "id", Outbox: ob}
+	ch := &CrudHandler{Entity: parent, PrimaryKey: []string{"id"}, Outbox: ob}
 	row := map[string]any{
 		"id":      "u1",
 		"name":    "Ann",

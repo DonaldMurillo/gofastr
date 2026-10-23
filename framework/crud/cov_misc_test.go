@@ -41,7 +41,7 @@ func TestEntityFields(t *testing.T) {
 }
 
 func TestFieldSnapshot_NilEntity(t *testing.T) {
-	ch := &CrudHandler{PrimaryKey: "id", JSONCase: CaseCamel}
+	ch := &CrudHandler{PrimaryKey: []string{"id"}, JSONCase: CaseCamel}
 	s := ch.snapshot()
 	if len(s.visible) != 0 {
 		t.Error("nil entity should yield an empty visible set")

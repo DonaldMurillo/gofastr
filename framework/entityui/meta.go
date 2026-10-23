@@ -53,9 +53,9 @@ func (u *UI) meta(name string) (*meta, error) {
 		m.fields = append(m.fields, f)
 		m.byName[f.Name] = f
 	}
-	m.pk = e.PrimaryKey
-	if m.pk == "" {
-		m.pk = "id"
+	// Screens name a record by one key column.
+	if m.pk, err = e.KeyColumn(); err != nil {
+		return nil, fmt.Errorf("entityui: entity %q: %w", name, err)
 	}
 	return m, nil
 }

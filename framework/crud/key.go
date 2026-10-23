@@ -2,6 +2,7 @@ package crud
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -12,10 +13,25 @@ import (
 // keyCols returns the handler's primary-key columns in declared order. A
 // handler built by hand with no PrimaryKey reads its entity's key.
 func (ch *CrudHandler) keyCols() []string {
-	if ch.PrimaryKey == "" {
+	if len(ch.PrimaryKey) == 0 {
 		return ch.Entity.KeyColumns()
 	}
-	return []string{ch.PrimaryKey}
+	return ch.PrimaryKey
+}
+
+// keyColumn is the handler's one key column, the column a relation from
+// its entity joins on. A handler keyed on several columns has none; see
+// entity.Entity.KeyColumn.
+func (ch *CrudHandler) keyColumn() (string, error) {
+	cols := ch.keyCols()
+	if len(cols) != 1 {
+		name := ""
+		if ch.Entity != nil {
+			name = ch.Entity.GetName()
+		}
+		return "", fmt.Errorf("%w: %s is keyed on (%s)", entity.ErrCompositeKey, name, strings.Join(cols, ", "))
+	}
+	return cols[0], nil
 }
 
 // isKeyCol reports whether col is one of the primary-key columns.
@@ -35,7 +51,7 @@ func (ch *CrudHandler) isKeyCol(col string) bool {
 // no record, and the condition matches nothing.
 func (ch *CrudHandler) keyCond(vals []any) (string, []any) {
 	cols := ch.keyCols()
-	if len(vals) != len(cols) {
+	if len(cols) == 0 || len(vals) != len(cols) {
 		return "1 = 0", nil
 	}
 	conds := make([]string, len(cols))
@@ -70,9 +86,13 @@ func (ch *CrudHandler) idVals(id string) ([]any, bool) {
 }
 
 // rowKeyVals reads the key values out of a row, under either the wire
-// key or the column name. It reports false when any is missing or nil.
+// key or the column name. It reports false when any is missing or nil,
+// and for a keyless table, whose rows have no name.
 func (ch *CrudHandler) rowKeyVals(row map[string]any) ([]any, bool) {
 	cols := ch.keyCols()
+	if len(cols) == 0 {
+		return nil, false
+	}
 	vals := make([]any, len(cols))
 	for i, c := range cols {
 		v, ok := row[ch.convertKey(c)]
