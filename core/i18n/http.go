@@ -8,10 +8,12 @@ import (
 )
 
 // HTTPError is http.Error with a translated message: it writes status
-// and p's text in the request's locale as a text/plain body. A zero p
-// writes the status text. Framework code reaches every plain-text
-// refusal through here, so an app's catalog translates them all; the
-// repo's rawtext analyzer refuses a bare http.Error.
+// and p's text in the request's locale as a text/plain body. A zero p,
+// or status's own [StatusPhrase] that the locale does not translate,
+// writes http.StatusText ("Internal Server Error"), as http.Error does.
+// Framework code reaches every plain-text refusal through here, so an
+// app's catalog translates them all; the repo's rawtext analyzer
+// refuses a bare http.Error.
 func HTTPError(w http.ResponseWriter, r *http.Request, status int, p Phrase, params ...map[string]any) {
 	msg := http.StatusText(status)
 	if !p.IsZero() {
@@ -19,7 +21,9 @@ func HTTPError(w http.ResponseWriter, r *http.Request, status int, p Phrase, par
 		if r != nil {
 			ctx = r.Context()
 		}
-		msg = p.Text(ctx, params...)
+		if s := p.Text(ctx, params...); p.Key() != StatusPhrase(status).Key() || s != p.English() {
+			msg = s
+		}
 	}
 	h := w.Header()
 	h.Del("Content-Length")
