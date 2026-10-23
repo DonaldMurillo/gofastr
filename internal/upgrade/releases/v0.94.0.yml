@@ -102,10 +102,6 @@ notes:
         - glob: "**/*.json"
           match: '"(bulkNone|bulkUnknown|bulkOverCap|bulkNeedsUser|bulkBadFilter|bulkFailed|bulkBadScope|bulkEveryOverCap|bulkStale|savedBadFilter|savedBadCols|overrideFailed|overrideBlank|overrideLong|overrideStateBad|overrideNoAudit|overrideDenied)"\s*:'
     guidance: "In each locale file, move the string from ui.entity.<camelKey> to a top-level entityui section under the snake_case code (bulkOverCap becomes entityui.bulk_over_cap) and write placeholders as {{cap}} and {{entity}}. See gofastr docs i18n."
-  - change: "a plain-text refusal with no message of its own writes its lowercase status phrase (\"internal server error\") instead of http.StatusText (\"Internal Server Error\")"
-    breaking: true
-    nodetect: "the change is in a response body; code that compares it lives in the app's tests or its consumers"
-    guidance: "Compare the status code rather than the body. A test that matched \"Internal Server Error\" matches \"internal server error\", or the catalog's text for error.internal in the locale it sends."
   - change: "a crud list refuses a bad filter, sort, where, DSL filter, include, projection or nested filter with the parser's own message and code (unknown filter \"x\", unknown_filter) instead of wrapping it in \"invalid filters: ...\" or \"invalid query: ...\"; a bad cursor keeps its text and answers the decoder's code (cursor_format)"
     breaking: true
     nodetect: "the change is in a response body; code that reads it lives in the app's consumers"
