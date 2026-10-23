@@ -1479,7 +1479,10 @@ more than one spelling (Postgres reads `2024-1-2` as the date
 `2024-01-02`), so one record would answer to several ids. For the same
 reason a key column sets no `RawType`, except an integer type such as
 `BIGINT` on an `Int` column: `CITEXT` or a Postgres `UUID` matches
-either case. The table gets
+either case. A nil `PrimaryKey` means the one `id` column; an
+empty `[]string{}` names no column and also panics. An entity always has
+a key: only a raw `migrate.Table` describes a table without one. The
+table gets
 each key column `NOT NULL` and a `PRIMARY KEY (student_id, course_id)`
 constraint. Changing the key of an existing table is a migration; see
 [Primary-key changes](migrations.md#primary-key-changes).
@@ -1709,7 +1712,9 @@ live, err := posts.Query().Where(entities.PostsStatus.Eq(entities.PostsStatusLiv
   would repeat `PostsStatusValue`), gets no constant: the file lists it
   in a comment, and `PostsStatusValue("N/A")` still works.
 - An entity with `States` gets one `<Entity>Move` constant per move and
-  `Transition(ctx, id, move)`, which runs `CrudHandler.RunTransition`.
+  `Transition(ctx, id, move)` (on a composite key, one argument per key
+  column in place of `id`, as below), which runs
+  `CrudHandler.RunTransition`.
   System moves are included, since the repo is the Go caller they exist
   for. With enforced States, stamps leave both payloads and the state
   field leaves the patch ([States](states.md)).
