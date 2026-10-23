@@ -567,6 +567,19 @@ v0.94.0 also adds unique jobs.
   names each field still set to a string.
 
 ### Fixed
+- **A record page for a missing or hidden row answers 404.** entityui's
+  Record (a generated record screen, the admin record page) drew its
+  "Not found" state with a 200, while the JSON API gave the same caller
+  404. The page answers 404 now, on the full page, a client navigation
+  and a drawer, and so does a Create duplicating such a row. The status
+  comes from the new `app.SetStatus(ctx, code)`, which any component
+  can call while it draws; a screen's `ScreenStatusCode` still outranks
+  it. A drawer that gets the 404 drops the record's cached page before
+  it falls back to a navigation, so a deleted record never replays from
+  the screen cache. The record's `llm.md` and its negotiated markdown
+  (`Accept: text/markdown`) answer 404 too, and a static
+  export skips such a page the way it skips a 404 outlet. The embed content route keeps answering 200 with the
+  not-found body, because the embed loader mounts only a 2xx.
 - **Postgres text-to-integer retypes apply.** A column whose declared
   type moved from text to an integer rendered
   `ALTER COLUMN ... TYPE INTEGER` with no `USING` clause, which Postgres

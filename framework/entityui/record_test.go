@@ -2,11 +2,13 @@ package entityui
 
 import (
 	"context"
+	"net/http"
 	"regexp"
 	"strings"
 	"testing"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
@@ -317,5 +319,43 @@ func TestRecordDeciderDeniedRowNotFoundIdentical(t *testing.T) {
 	}
 	if strings.Contains(refused, "INV-1") {
 		t.Fatalf("SECURITY: the denied row leaked:\n%s", refused)
+	}
+}
+
+// The not-found body sets 404 on the page: a missing id, another
+// owner's id and a duplicate of a missing id all answer it, and a
+// record the caller can see sets nothing (the implicit 200).
+func TestRecordNotFoundSets404(t *testing.T) {
+	installOwnerExtractor(t)
+	entities := invoiceEntities()
+	cfg := entities["invoices"]
+	cfg.Scope = &entity.ScopeConfig{OwnerField: "user_id"}
+	cfg.Fields = append(cfg.Fields, schema.Field{Name: "user_id", Type: schema.String, Hidden: true})
+	entities["invoices"] = cfg
+	rows := invoiceRows()
+	for _, r := range rows["invoices"] {
+		r["user_id"] = "u1"
+	}
+	x := newTestUI(t, entities, rows, withAPI(map[string]string{"invoices": "/api/invoices"}))
+
+	cases := []struct {
+		name  string
+		c     component.ContextComponent
+		query string
+		user  string
+		want  int
+	}{
+		{"own record", x.ui.Record("invoices", "inv-1").Base("/rec/invoices"), "", "u1", 0},
+		{"missing id", x.ui.Record("invoices", "no-such-id").Base("/rec/invoices"), "", "u1", http.StatusNotFound},
+		{"other owner", x.ui.Record("invoices", "inv-1").Base("/rec/invoices"), "", "u2", http.StatusNotFound},
+		{"duplicate of missing", x.ui.Create("invoices").Base("/rec/invoices"), "?duplicate=no-such-id", "u1", http.StatusNotFound},
+		{"duplicate of own", x.ui.Create("invoices").Base("/rec/invoices"), "?duplicate=inv-1", "u1", 0},
+	}
+	for _, tc := range cases {
+		ctx, recorded := appui.TrackStatus(x.userCtx("/rec/invoices/x", tc.query, tc.user))
+		tc.c.RenderCtx(ctx)
+		if got := recorded(); got != tc.want {
+			t.Errorf("%s: status %d, want %d", tc.name, got, tc.want)
+		}
 	}
 }

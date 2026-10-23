@@ -285,7 +285,7 @@ The caller owns the decision, and with it the status:
 | Situation | Answer |
 |---|---|
 | Authentication failed on a route that exists | 401 / 403 via `RenderScreen` |
-| Route resolved, resource gone or not found for this caller | 410, or a 404 body with `ScreenStatusCode` on the screen itself |
+| Route resolved, resource gone or not found for this caller | 410, or a 404 body with `ScreenStatusCode` on the screen itself, or `app.SetStatus` from the render that found it missing |
 | No route matches | nothing — the `WithNotFoundScreen` 404 stays truthful |
 
 Render the same recovery screen for a missing and an expired session:

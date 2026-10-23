@@ -2,6 +2,7 @@ package static
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,5 +64,42 @@ func TestStaticBuildSkipsNotFoundOutlet(t *testing.T) {
 	page, err := os.ReadFile(filepath.Join(out, "present", "index.html"))
 	if err != nil || !strings.Contains(string(page), "PRESENT") {
 		t.Errorf("the exportable route must still build (err=%v)", err)
+	}
+}
+
+// nfSetStatusScreen draws a not-found body and sets 404 while it draws,
+// the way entityui's Record does for a missing row.
+type nfSetStatusScreen struct{}
+
+func (nfSetStatusScreen) Render() render.HTML { return "" }
+func (nfSetStatusScreen) RenderCtx(ctx context.Context) render.HTML {
+	coreapp.SetStatus(ctx, http.StatusNotFound)
+	return "<p>GONE</p>"
+}
+
+// TestStaticBuildSkipsSetStatusPage: a page that answers 404 through
+// app.SetStatus is skipped with a warning, like a 404-outlet route; a
+// 200 file at its URL would tell every visitor the page is there.
+func TestStaticBuildSkipsSetStatusPage(t *testing.T) {
+	buf := captureSlog(t)
+
+	a := coreapp.NewApp("SSGStatus")
+	a.NoLLMMD = true
+	a.RegisterScreen(coreapp.NewScreen("/present", nfStaticScreen("PRESENT")), nil)
+	a.RegisterScreen(coreapp.NewScreen("/gone", nfSetStatusScreen{}), nil)
+
+	out := t.TempDir()
+	res, err := (&Builder{Host: uihost.New(a), OutDir: out}).Build(context.Background())
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(res.Pages) != 1 || res.Pages[0] != "/present" {
+		t.Fatalf("pages = %v, want only /present", res.Pages)
+	}
+	if logged := buf.String(); !strings.Contains(logged, "/gone") || !strings.Contains(logged, "404") {
+		t.Errorf("the skip must warn naming the route and its status; log was:\n%s", logged)
+	}
+	if _, err := os.Stat(filepath.Join(out, "gone", "index.html")); !os.IsNotExist(err) {
+		t.Errorf("no page may be baked in at a 404 page's URL")
 	}
 }

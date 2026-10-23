@@ -493,6 +493,13 @@ func walk(ctx context.Context, host *uihost.UIHost, excluded, skipPath func(stri
 						"path", nf.Path)
 					continue
 				}
+				// A page that answers another status (app.SetStatus, a
+				// ScreenStatusCode): a static host would serve it 200.
+				if st, ok := errors.AsType[*uihost.StatusPageError](err); ok {
+					slog.Warn("static: skipped page that answers a status other than 200; a static host would serve it as 200, so it stays reachable via the live server",
+						"path", st.Path, "status", st.Status)
+					continue
+				}
 				if err := fail(p, fmt.Errorf("static: render %q: %w", p, err)); err != nil {
 					return err
 				}

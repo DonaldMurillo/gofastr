@@ -501,7 +501,9 @@ JSON API applies live in the builders themselves:
 - The list runs `CanReadScoped` before any read; the record also runs
   `CanReadRecordScoped`, so a resource-aware Decider that allows the
   listing and denies one row answers not-found, byte-identical to a
-  missing id.
+  missing id. The page answers 404 with that body (`app.SetStatus`),
+  the status the JSON API gives the same caller; a Create duplicating
+  such a row answers the same.
 - Every read of a DIFFERENT entity — relation cell labels (one IN read
   per relation column), the create form's relation picker, a relation
   facet's options, the Related tab's lists, the stats and charts — passes

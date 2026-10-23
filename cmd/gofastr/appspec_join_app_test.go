@@ -168,11 +168,11 @@ func TestOwnedJoinRecord(t *testing.T) {
 	if _, out := e2eDo(t, bob, "GET", base+"/api/enrollments", ""); strings.Contains(out, "B-probe") {
 		t.Errorf("another user lists the record: %s", out)
 	}
-	// The record screen draws its not-found state for a row the reader
-	// cannot see.
-	if _, out := e2eDo(t, bob, "GET", base+"/es"+record, ""); strings.Contains(out, "B-probe") || !strings.Contains(out, ` + "`" + `aria-label="Not found"` + "`" + `) {
+	// The record screen answers 404 with its not-found state for a row
+	// the reader cannot see.
+	if code, out := e2eDo(t, bob, "GET", base+"/es"+record, ""); code != http.StatusNotFound || strings.Contains(out, "B-probe") || !strings.Contains(out, ` + "`" + `aria-label="Not found"` + "`" + `) {
 		i := strings.Index(out, "<main")
-		t.Errorf("another user opens the record page: %.1500s", out[max(i, 0):])
+		t.Errorf("another user opens the record page: %d, want 404: %.1500s", code, out[max(i, 0):])
 	}
 }
 `
