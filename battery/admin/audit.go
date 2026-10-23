@@ -474,7 +474,7 @@ func (b *Battery) auditTitle(ctx context.Context, e *entity.Entity, r auditRow, 
 		return "", false
 	}
 	ectx := b.elevate(ctx)
-	if r.RecordID != "" && r.Op != "delete" && r.Op != "purge" {
+	if r.RecordID != "" && r.Op != "delete" && r.Op != "purge" && !framework.AuditDigestID(r.RecordID) {
 		if t, ok := b.ui.RecordTitle(ectx, e.GetName(), r.RecordID); ok && t != "" {
 			return t, true
 		}

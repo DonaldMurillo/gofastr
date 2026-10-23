@@ -160,10 +160,11 @@ func (ch *CrudHandler) checkMediaProvenance(ctx context.Context, body map[string
 	return nil
 }
 
-// currentMediaKeys returns a reader for the storage keys on row id, under
-// the same tenant, owner and soft-delete WHERE the UPDATE applies, so "the
+// currentMediaKeys returns a reader for the storage keys on the row whose
+// key values are key (nil when the write names no row yet), under the
+// same tenant, owner and soft-delete WHERE the UPDATE applies, so "the
 // row's current value" never means a row this caller cannot write.
-func (ch *CrudHandler) currentMediaKeys(ctx context.Context, r *http.Request, id any) func() (map[string]bool, error) {
+func (ch *CrudHandler) currentMediaKeys(ctx context.Context, r *http.Request, key []any) func() (map[string]bool, error) {
 	return func() (map[string]bool, error) {
 		var cols []string
 		variant := map[string]bool{}
@@ -177,12 +178,18 @@ func (ch *CrudHandler) currentMediaKeys(ctx context.Context, r *http.Request, id
 				variant[vc] = true
 			}
 		}
-		if len(cols) == 0 || id == nil || fmt.Sprint(id) == "" {
+		if len(cols) == 0 || len(key) == 0 {
 			return nil, nil
 		}
+		for _, v := range key {
+			if v == nil || fmt.Sprint(v) == "" {
+				return nil, nil
+			}
+		}
+		kc, ka := ch.keyCond(key)
 		qb := query.Select(cols...).
 			From(ch.Entity.GetTable()).
-			Where(ch.PrimaryKey+" = $1", id)
+			Where(kc, ka...)
 		ch.ApplyTenantScope(qb, r)
 		applyOwnerScope(ch, qb, r, false)
 		if ch.Entity.Config.Scope.SoftDelete {

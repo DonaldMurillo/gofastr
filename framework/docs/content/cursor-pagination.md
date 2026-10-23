@@ -67,7 +67,7 @@ framework.EntityConfig{
 ```
 
 Composite cursors guarantee unique ordering by automatically appending
-the primary key if it isn't already the tiebreak column. Without a
+each primary-key column the list does not already name. Without a
 unique tiebreak, two rows with identical sort keys break paging.
 
 ## Wire format

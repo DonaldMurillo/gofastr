@@ -37,8 +37,11 @@ func (ch *CrudHandler) projectFromRequestQ(q url.Values) ([]string, error) {
 		jsonToDB[ch.convertKey(c)] = c
 	}
 
-	out := []string{ch.PrimaryKey}
-	seen := map[string]struct{}{ch.PrimaryKey: {}}
+	out := append([]string{}, ch.keyCols()...)
+	seen := map[string]struct{}{}
+	for _, k := range out {
+		seen[k] = struct{}{}
+	}
 
 	for p := range strings.SplitSeq(raw, ",") {
 		name := strings.TrimSpace(p)
