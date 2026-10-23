@@ -105,9 +105,12 @@ func TestNegotiatedMarkdownSetStatus(t *testing.T) {
 	a.Register("/missing/{id}", &drawsMissingByID{}, nil)
 	a.Register("/gone/{id}", &goneByID{}, nil)
 	a.Register("/things/{id}", &loadedTitleComp{}, nil)
+	// A value screen: DI refuses it, so its markdown is the pattern doc
+	// with no loaded instance, and the declared status still applies.
+	a.Register("/declared", drawsMissingDeclaresGone{}, nil)
 	ds := New(a, WithPublicLLMMD(), WithMarkdownNegotiation())
 
-	for path, want := range map[string]int{"/missing/1": http.StatusNotFound, "/gone/1": http.StatusGone, "/things/42": http.StatusOK} {
+	for path, want := range map[string]int{"/missing/1": http.StatusNotFound, "/gone/1": http.StatusGone, "/things/42": http.StatusOK, "/declared": http.StatusGone} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("Accept", "text/markdown")
 		rec := httptest.NewRecorder()

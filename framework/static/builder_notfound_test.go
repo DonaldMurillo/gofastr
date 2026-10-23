@@ -77,6 +77,12 @@ func (nfSetStatusScreen) RenderCtx(ctx context.Context) render.HTML {
 	return "<p>GONE</p>"
 }
 
+// nfDeclaredGone declares 410 through ScreenStatusCode.
+type nfDeclaredGone struct{}
+
+func (nfDeclaredGone) Render() render.HTML   { return "<p>GONE FOR GOOD</p>" }
+func (nfDeclaredGone) ScreenStatusCode() int { return http.StatusGone }
+
 // TestStaticBuildSkipsSetStatusPage: a page that answers 404 through
 // app.SetStatus is skipped with a warning, like a 404-outlet route; a
 // 200 file at its URL would tell every visitor the page is there.
@@ -88,6 +94,9 @@ func TestStaticBuildSkipsSetStatusPage(t *testing.T) {
 	// A pointer, as a real record screen is: the per-URL llm.md renders
 	// the instance only for an injectable (pointer) component.
 	a.RegisterScreen(coreapp.NewScreen("/gone", &nfSetStatusScreen{}), nil)
+	// A value screen declaring its status: DI refuses it, so its doc is
+	// the pattern doc, and the declaration must still keep it out.
+	a.RegisterScreen(coreapp.NewScreen("/declared", nfDeclaredGone{}), nil)
 
 	out := t.TempDir()
 	res, err := (&Builder{Host: uihost.New(a), OutDir: out}).Build(context.Background())
@@ -108,6 +117,11 @@ func TestStaticBuildSkipsSetStatusPage(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(out, "gone", "llm.md")); !os.IsNotExist(err) {
 		md, _ := os.ReadFile(filepath.Join(out, "gone", "llm.md"))
 		t.Errorf("no llm.md may be written for a 404 page; wrote:\n%s\nlog:\n%s", md, buf.String())
+	}
+	for _, f := range []string{"declared/index.html", "declared/llm.md"} {
+		if _, err := os.Stat(filepath.Join(out, f)); !os.IsNotExist(err) {
+			t.Errorf("%s written for a screen that declares 410", f)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(out, "present", "llm.md")); err != nil {
 		t.Errorf("the present page lost its llm.md: %v", err)
