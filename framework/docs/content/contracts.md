@@ -172,6 +172,26 @@ read (`var()` is invalid there). Dev tooling under `framework/dev/` is
 held to the width, radius, motion and layer rows only: its chrome is not
 an app theme's.
 
+`GOFASTR1824` (error) holds the same trees to the reading direction. A
+page in Arabic, Hebrew or Persian renders `<html dir="rtl">`, and a
+physical side stays where it was: the sidebar border, the list indent
+and the select chevron all stay on the left-to-right side. The rule
+refuses `left`/`right` offsets, `margin-`, `padding-`, `scroll-margin-`,
+`scroll-padding-` and `border-left`/`-right` (with their `-width`,
+`-style` and `-color`), the four corner radii, `text-align`, `float` and
+`clear` set to `left` or `right`, a background position on a side with
+no `:dir(rtl)` mirror in the same file, and a four-value margin,
+padding, inset or border shorthand whose left and right differ. Write
+the logical property: `inset-inline-start`, `margin-inline-end`,
+`border-inline-end`, `border-start-start-radius`, `text-align: start`,
+`float: inline-start`, or `padding-block` plus `padding-inline`. A value
+with no logical spelling (a background position, a `translateX` travel)
+gets a `:dir(rtl)` override beside it. `left: 50%` and `right: 50%`
+(centring with a translate), `auto`, and the declarations of a
+`:dir()` override block, from its selector to its closing brace, pass.
+A comment that mentions `:dir(rtl)` counts as no mirror. Dev tooling
+is exempt.
+
 `GOFASTR1817` reads Go as well as CSS. A class reaches a kit root when
 a handle method is called inside the `Class` field of a `framework/ui`
 config literal, `ui.Card(ui.CardConfig{Class: board.Style.Column()})`,

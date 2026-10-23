@@ -149,5 +149,5 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 	// enter a shared cache), signal seed, widget SSR. The partial arm
 	// above keeps its bare cache policy and mints nothing.
 	ds.finishPageDocument(w, r, ctx,
-		render.HTML(ds.documentShell(r.URL.Path, title, string(body))), r.URL.Path, comp, status)
+		render.HTML(ds.documentShell(ctx, r.URL.Path, title, string(body))), r.URL.Path, comp, status)
 }

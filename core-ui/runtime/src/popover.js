@@ -106,16 +106,19 @@
       const order = (pref === 'auto')
         ? ['bottom', 'top', 'right', 'left']
         : [pref, 'bottom', 'top', 'right', 'left'].filter((s, i, a) => a.indexOf(s) === i);
-      let x = tr.left;
+      // Above or below, the popover lines up with the trigger's start
+      // edge: its left, or its right on a right-to-left page.
+      const startX = getComputedStyle(trigger).direction === 'rtl' ? tr.right - wr.width : tr.left;
+      let x = startX;
       let y = tr.bottom + gap;
       let chosen = order[0];
       for (const side of order) {
         if (side === 'bottom') {
-          x = tr.left;
+          x = startX;
           y = tr.bottom + gap;
           if (y + wr.height <= vh - margin) { chosen = 'bottom'; break; }
         } else if (side === 'top') {
-          x = tr.left;
+          x = startX;
           y = tr.top - gap - wr.height;
           if (y >= margin) { chosen = 'top'; break; }
         } else if (side === 'right') {

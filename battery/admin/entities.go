@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -293,16 +293,15 @@ func (b *Battery) mountCounts(r *router.Router) {
 	}))
 }
 
-// countText formats a count for a card: StatValue's grouped number below
-// manyRows, else "10k+". A refused, failed or late count reads "—"
-// (StatValue's answer) and passes through.
-func countText(ctx context.Context, raw string) string {
-	n, err := strconv.Atoi(strings.ReplaceAll(raw, ",", ""))
-	if err != nil {
-		return raw
+// countText writes a count for a card in the reader's locale below
+// manyRows, else "10,000+". A refused, failed or late count (ok false)
+// reads "—".
+func countText(ctx context.Context, n int, ok bool) string {
+	switch {
+	case !ok:
+		return "—"
+	case n >= manyRows:
+		return i18nui.AdminCountMany.Text(ctx, map[string]any{"count": manyRows})
 	}
-	if n >= manyRows {
-		return i18nui.AdminCountMany.Text(ctx, map[string]any{"count": strconv.Itoa(manyRows/1000) + "k"})
-	}
-	return raw
+	return i18n.Number(ctx, n)
 }

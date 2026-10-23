@@ -99,14 +99,14 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 		}
 		chips = append(chips, b.El("li", PartTagInputTag, html.Attrs{
 			"data-hui-tag-input-remove": "",
-			"aria-label":                fill(w.RemoveLabelled, "label", v),
+			"aria-label":                w.fill(w.RemoveLabelled, "label", v),
 		},
 			render.Text(v),
 			// The remove control keeps its type=button: it edits the
 			// set, it does not submit the form.
 			b.El("button", PartDismiss, html.Attrs{
 				"type":       "button",
-				"aria-label": fill(w.RemoveLabelled, "label", v),
+				"aria-label": w.fill(w.RemoveLabelled, "label", v),
 			}, render.Text("×")),
 			// The value rides inside its chip, the shape the module
 			// builds too: removing the list item removes the value
@@ -134,7 +134,7 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 
 	add := html.Attrs{
 		"type":                   "button",
-		"aria-label":             fill(w.TagInputAdd, "label", p.Label),
+		"aria-label":             w.fill(w.TagInputAdd, "label", p.Label),
 		"data-hui-tag-input-add": "",
 	}
 	Flag(add, "disabled", p.Disabled)
@@ -324,7 +324,7 @@ func Repeater(p RepeaterProps, s Classes) render.HTML {
 		remove := html.Attrs{
 			"type":                     "submit",
 			"data-hui-repeater-action": "remove",
-			"aria-label":               fill(w.RepeaterRemove, "n", strconv.Itoa(i+1)),
+			"aria-label":               w.fill(w.RepeaterRemove, "n", i+1),
 		}
 		if p.RemoveName != "" {
 			remove["name"] = p.RemoveName
@@ -348,7 +348,7 @@ func Repeater(p RepeaterProps, s Classes) render.HTML {
 			b.El("div", PartRepeaterFields, nil, item.Fields...),
 			b.El("div", PartActions, Internal(nil),
 				b.El("button", PartDismiss, remove,
-					render.Text(orDefault(p.RemoveLabel, fill(w.RepeaterRemove, "n", strconv.Itoa(i+1)))))),
+					render.Text(orDefault(p.RemoveLabel, w.fill(w.RepeaterRemove, "n", i+1))))),
 		)
 		rows = append(rows, row)
 	}

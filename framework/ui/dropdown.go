@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
@@ -46,6 +48,9 @@ type DropdownConfig struct {
 	// Count, when above zero, draws a count badge after the label: the
 	// filters applied, the rows chosen.
 	Count int
+	// Ctx carries the per-request context Count is written in
+	// (i18n.Number). When nil, English applies.
+	Ctx context.Context
 	// Avatar draws the trigger as that avatar alone: round, borderless,
 	// 2rem, with a focus ring (an account panel in an app bar). Label
 	// stays the trigger's accessible name, visually hidden. It panics
@@ -123,7 +128,7 @@ func dropdownTextTrigger(cfg DropdownConfig) []render.HTML {
 	trigger = append(trigger, html.Span(html.TextConfig{Class: "fui-dropmenu__label"}, render.Text(cfg.Label)))
 	if cfg.Count > 0 {
 		trigger = append(trigger, html.Span(html.TextConfig{Class: "fui-dropmenu__count"},
-			render.Text(strconv.Itoa(cfg.Count))))
+			render.Text(i18n.Number(cfg.Ctx, cfg.Count))))
 	}
 	return trigger
 }

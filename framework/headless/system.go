@@ -169,9 +169,10 @@ func SystemBanner(p SystemBannerProps, s Classes) render.HTML {
 		kids = append(kids, b.El("div", PartActions, internalIf(ownedSlot(p.Action), nil), p.Action))
 	}
 	if p.Dismiss == nil || *p.Dismiss {
+		w := p.Strings.Resolve()
 		dismiss := Internal(Mark(Attrs(map[string]string{
 			"type":       "button",
-			"aria-label": orDefault(p.DismissLabel, fill(p.Strings.Resolve().DismissTitled, "title", p.Title)),
+			"aria-label": orDefault(p.DismissLabel, w.fill(w.DismissTitled, "title", p.Title)),
 		}), "data-hui-system-dismiss"))
 		kids = append(kids, b.El("button", PartDismiss, dismiss, render.Text("×")))
 	}

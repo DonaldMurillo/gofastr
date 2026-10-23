@@ -965,7 +965,12 @@ const (
 	// needs-the-server toasts, which fire when the network is the thing
 	// that failed, so a demand module could not load to say them; say()
 	// itself reuses _readInlineJSON. 16615, the smallest step that fits.
-	coreCongestionWindowGZ = 16615
+	// 2026-10-21, later: the fallback toast stack sits at the inline end
+	// (inset-inline-end, for right-to-left pages), and the same style
+	// string drops calc() inside min() and the 0 of 0.5rem. Core measures
+	// 14304/16597. The line moves DOWN to 16597, the smallest that fits,
+	// so the padded level-6 fixture crosses it again.
+	coreCongestionWindowGZ = 16597
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation

@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // chartEmpty renders the zero-data placeholder shared by every chart
@@ -20,9 +23,9 @@ import (
 // not the chart's height: the framework forbids inline styles. The
 // caller's ID and ExtraAttrs ride along so a host's anchor or data-* test
 // hook still resolves when the chart renders its zero-data branch.
-func chartEmpty(id, labelledBy, class, message string, extra html.Attrs) render.HTML {
+func chartEmpty(ctx context.Context, id, labelledBy, class, message string, extra html.Attrs) render.HTML {
 	if message == "" {
-		message = "No data yet"
+		message = i18nui.ChartNoData.Text(ctx)
 	}
 	attrs := html.SafeExtraAttrs(extra, "role", "aria-labelledby", "aria-label")
 	if attrs == nil {

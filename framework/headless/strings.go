@@ -29,6 +29,7 @@ package headless
 // which the gates in words_test.go hold.
 
 import (
+	"context"
 	"reflect"
 	"strings"
 
@@ -357,6 +358,36 @@ type Strings struct {
 	// nothing is picked. A short phrase; the chips replace it the
 	// moment one is.
 	MultiSelectPlaceholder string
+
+	// ctx is the request the words were resolved for, set by ForRequest:
+	// a count, a step number or a slider value is written the way its
+	// reader writes numbers. It is the one field that is not a word, so
+	// every walk over the words skips unexported fields.
+	ctx context.Context
+}
+
+// ForRequest returns a copy of w whose numbers follow ctx's locale:
+// framework/ui's StringsFor sets it alongside the words. Safe on a nil
+// receiver, which yields the English words.
+func (w *Strings) ForRequest(ctx context.Context) *Strings {
+	out := w.Resolve()
+	if out == stringsProbe {
+		c := *out
+		out = &c
+	}
+	out.ctx = ctx
+	return out
+}
+
+// Number writes n the way the reader writes numbers: "1 234" in
+// French, "١٬٢٣٤" in Egyptian Arabic. Without a request (ForRequest
+// never ran) it writes English, "1,234".
+func (w *Strings) Number(n int) string {
+	var ctx context.Context
+	if w != nil {
+		ctx = w.ctx
+	}
+	return i18n.Number(ctx, n)
 }
 
 // defaultStrings is the English the components rendered before Strings
@@ -485,9 +516,13 @@ func DefaultStrings() *Strings {
 // English defaults; w itself is left alone.
 func (w *Strings) withDefaults() *Strings {
 	out := DefaultStrings()
+	out.ctx = w.ctx
 	src := reflect.ValueOf(w).Elem()
 	dst := reflect.ValueOf(out).Elem()
 	for i := 0; i < src.NumField(); i++ {
+		if !src.Type().Field(i).IsExported() {
+			continue
+		}
 		v := src.Field(i).String()
 		if v == "" {
 			continue
@@ -511,6 +546,9 @@ func ProbeStrings() *Strings {
 	v := reflect.ValueOf(w).Elem()
 	t := v.Type()
 	for i := 0; i < t.NumField(); i++ {
+		if !t.Field(i).IsExported() {
+			continue
+		}
 		def := v.Field(i).String()
 		probe := "<" + t.Field(i).Name
 		if ph := placeholdersIn(def); len(ph) > 0 {
@@ -544,15 +582,23 @@ func placeholdersIn(s string) []string {
 }
 
 // fill puts each value into its {{name}} placeholder in tpl, through
-// i18n.Fill: kv is name, value pairs. A value is never rescanned, and a
-// placeholder kv does not name is left as text, which is how a probe or
-// a catalog slip stays visible.
-func fill(tpl string, kv ...string) string {
+// i18n.FillContext: kv is name, value pairs, and a number value is
+// written the way w's reader writes numbers, so pass the count, not
+// strconv.Itoa of it. A value is never rescanned, and a placeholder kv
+// does not name is left as text, which is how a probe or a catalog slip
+// stays visible.
+func (w *Strings) fill(tpl string, kv ...any) string {
 	params := make(map[string]any, len(kv)/2)
 	for i := 0; i+1 < len(kv); i += 2 {
-		params[kv[i]] = kv[i+1]
+		if name, ok := kv[i].(string); ok {
+			params[name] = kv[i+1]
+		}
 	}
-	return i18n.Fill(tpl, params)
+	var ctx context.Context
+	if w != nil {
+		ctx = w.ctx
+	}
+	return i18n.FillContext(ctx, tpl, params)
 }
 
 // stringsProbe, when set, is what every component says instead of the

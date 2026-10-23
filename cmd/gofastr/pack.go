@@ -3603,8 +3603,8 @@ func reverseRenderTag(call *ast.CallExpr) (AppSpecBlock, bool) {
 // the corresponding app spec block (without a title; the caller sets it
 // from a wrapping ui.Card heading when present):
 //
-//	ui.BarChart(ui.BarChartConfig{Bars: groupBars(ctx, e, g), …})
-//	ui.PieChart(ui.PieChartConfig{Slices: groupSlices(ctx, e, g)})
+//	ui.BarChart(ui.BarChartConfig{Ctx: ctx, Bars: groupBars(ctx, e, g), …})
+//	ui.PieChart(ui.PieChartConfig{Ctx: ctx, Slices: groupSlices(ctx, e, g)})
 //	lineChart(ctx, e, g)
 func reverseChartCall(call *ast.CallExpr) (AppSpecBlock, bool) {
 	switch callSel(call) {

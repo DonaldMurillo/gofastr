@@ -144,11 +144,13 @@ func selectCSS(_ style.Theme) string {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M3 4.5l3 3 3-3' fill='none' stroke='%2371717A' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
-  padding-right: calc(var(--spacing-sm, 4px) * 9);
+  padding-inline-end: calc(var(--spacing-sm, 4px) * 9);
   cursor: pointer;
   min-block-size: var(--fui-density-control-h);
   max-inline-size: 100%;
 }
+/* The chevron sits at the end of the field: the left, right to left. */
+.fui-select:dir(rtl) { background-position: left 12px center; }
 .fui-select:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);

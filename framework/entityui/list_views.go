@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
@@ -160,7 +161,7 @@ func (b *ListBuilder) viewTabs(ctx context.Context, s *listState, total int, kno
 		case !b.counts:
 			return ""
 		case current && known:
-			return formatNumber(float64(total), 0)
+			return i18n.Number(ctx, total)
 		case current:
 			return ""
 		}
@@ -264,7 +265,7 @@ func (b *ListBuilder) tabCount(ctx context.Context, s *listState, view, filt *fi
 		slog.WarnContext(ctx, "entityui: tab count", "entity", s.m.name, "error", err)
 		return ""
 	}
-	return formatNumber(float64(n), 0)
+	return i18n.Number(ctx, n)
 }
 
 // filterChips draws what narrows the list: a chip per facet set

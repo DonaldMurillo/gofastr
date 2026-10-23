@@ -136,10 +136,10 @@ func NumberInput(p NumberInputProps, s Classes) render.HTML {
 		// content, so the mark sits on the row and not its children.
 		b.El("div", PartFieldRow, Internal(nil),
 			stepper(PartNumberDecrement, "data-hui-number-input-decrement",
-				fill(w.NumberDecrement, "label", p.Label), "−"),
+				w.fill(w.NumberDecrement, "label", p.Label), "−"),
 			b.El("input", PartControl, input),
 			stepper(PartNumberIncrement, "data-hui-number-input-increment",
-				fill(w.NumberIncrement, "label", p.Label), "+"),
+				w.fill(w.NumberIncrement, "label", p.Label), "+"),
 		),
 	}
 	if p.Error != "" {
@@ -218,6 +218,7 @@ func Slider(p SliderProps, s Classes) render.HTML {
 	if strings.TrimSpace(p.Label) == "" {
 		panic("headless: Slider requires Label — the control is named by it")
 	}
+	w := p.Strings.Resolve()
 	min, max := p.Min, p.Max
 	if min == 0 && max == 0 {
 		max = 100
@@ -268,7 +269,7 @@ func Slider(p SliderProps, s Classes) render.HTML {
 		output = b.El("output", PartSliderOutput, Internal(html.Attrs{
 			"for":                    id,
 			"data-hui-slider-output": "",
-		}), render.Text(strconv.Itoa(value)))
+		}), render.Text(w.Number(value)))
 	}
 
 	kids := []render.HTML{
@@ -280,8 +281,8 @@ func Slider(p SliderProps, s Classes) render.HTML {
 		// Neither edge label is caller content, so the mark sits on
 		// the wrapper and not the two spans inside it.
 		kids = append(kids, b.El("div", PartSliderEdges, Internal(nil),
-			b.El("span", PartSliderEdge, nil, render.Text(strconv.Itoa(min))),
-			b.El("span", PartSliderEdge, nil, render.Text(strconv.Itoa(max))),
+			b.El("span", PartSliderEdge, nil, render.Text(w.Number(min))),
+			b.El("span", PartSliderEdge, nil, render.Text(w.Number(max))),
 		))
 	}
 
@@ -418,7 +419,7 @@ func RangeSlider(p RangeSliderProps, s Classes) render.HTML {
 		output = b.El("output", PartRangeOutput, Internal(html.Attrs{
 			"for":                          id + "-min " + id + "-max",
 			"data-hui-range-slider-output": w.RangeValue,
-		}), render.Text(fill(w.RangeValue, "low", strconv.Itoa(lo), "high", strconv.Itoa(hi))))
+		}), render.Text(w.fill(w.RangeValue, "low", lo, "high", hi)))
 	}
 
 	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label", "type", "name",
@@ -438,9 +439,9 @@ func RangeSlider(p RangeSliderProps, s Classes) render.HTML {
 		// track and not the two inputs inside it.
 		b.El("div", PartRangeTrack, Internal(nil),
 			thumb(PartRangeLow, "min", "data-hui-range-slider-low",
-				fill(w.RangeLow, "label", p.Label), lo),
+				w.fill(w.RangeLow, "label", p.Label), lo),
 			thumb(PartRangeHigh, "max", "data-hui-range-slider-high",
-				fill(w.RangeHigh, "label", p.Label), hi),
+				w.fill(w.RangeHigh, "label", p.Label), hi),
 		),
 	)
 }
@@ -537,7 +538,7 @@ func Rating(p RatingProps, s Classes) render.HTML {
 			"name":       p.Name,
 			"id":         idV,
 			"value":      strconv.Itoa(i),
-			"aria-label": fill(w.RatingChoice, "n", strconv.Itoa(i), "max", strconv.Itoa(max)),
+			"aria-label": w.fill(w.RatingChoice, "n", i, "max", max),
 		}
 		if value == i {
 			Mark(radio, "checked")

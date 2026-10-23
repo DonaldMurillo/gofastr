@@ -243,7 +243,7 @@ func TestCodeBlockNumberedBandsReachGutter(t *testing.T) {
 		// -(16 + 28 + 8)px: the body padding, the gutter and its gap.
 		`margin-inline-start: calc(-1 * (var(--spacing-lg, 16px) + var(--ui-code-block-gutter-width, 28px) + var(--spacing-md, 8px)));`,
 		`.fui-code-block--numbered .fui-code-block__line--removed::before`,
-		`left: var(--spacing-lg, 16px);`,
+		`inset-inline-start: var(--spacing-lg, 16px);`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("code-block CSS lacks %q", want)

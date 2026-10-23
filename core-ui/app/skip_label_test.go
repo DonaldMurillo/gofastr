@@ -13,7 +13,7 @@ import (
 // their first string. The label now resolves like the document language:
 // a per-route func, else an app-wide label, else the English default.
 
-func TestSkipLabelForPath(t *testing.T) {
+func TestSkipLabelFor(t *testing.T) {
 	cases := []struct {
 		name string
 		app  *App
@@ -32,14 +32,14 @@ func TestSkipLabelForPath(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := tc.app.SkipLabelForPath(tc.path); got != tc.want {
-				t.Errorf("SkipLabelForPath(%q) = %q, want %q", tc.path, got, tc.want)
+			if got := tc.app.SkipLabelFor(context.Background(), tc.path); got != tc.want {
+				t.Errorf("SkipLabelFor(%q) = %q, want %q", tc.path, got, tc.want)
 			}
 		})
 	}
 }
 
-func TestSkipLinkUsesSkipLabelForPath(t *testing.T) {
+func TestSkipLinkUsesSkipLabelFor(t *testing.T) {
 	a := NewApp("t").WithSkipLabelFunc(func(path string) string {
 		if strings.HasPrefix(path, "/es/") {
 			return "Saltar al contenido principal"

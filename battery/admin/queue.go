@@ -3,7 +3,6 @@ package admin
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -128,7 +127,7 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 			Subtitle: i18nui.AdminQueueSub.Text(ctx),
 			Actions: b.opForm(ctx, opSpec{
 				path: b.cfg.PathPrefix + "/queue/_replay_all", page: page,
-				label:   i18nui.AdminReplayAll.Text(ctx, map[string]any{"n": strconv.Itoa(failed)}),
+				label:   i18nui.AdminReplayAll.Text(ctx, map[string]any{"n": failed}),
 				variant: ui.ButtonSecondary,
 				confirm: i18nui.AdminReplayAllConfirm.Text(ctx),
 			}),
@@ -247,7 +246,7 @@ func (b *Battery) jobsTable(ctx context.Context, jobs []queue.Job, listed, page 
 			"id":       ui.ShortID(ui.ShortIDConfig{Value: j.ID, Ctx: ctx}),
 			"type":     render.Text(j.Type),
 			"status":   jobStatusBadge(ctx, status),
-			"attempts": render.Text(fmt.Sprintf("%d / %d", j.Attempts, j.MaxAttempts)),
+			"attempts": render.Text(i18n.Number(ctx, j.Attempts) + " / " + i18n.Number(ctx, j.MaxAttempts)),
 			"updated":  agoCell(ctx, time.Now(), updated),
 			"error":    lastErr,
 		}

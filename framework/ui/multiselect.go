@@ -111,7 +111,8 @@ func multiselectCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs, 2px);
-  padding: var(--spacing-xs, 2px) var(--spacing-xs, 2px) var(--spacing-xs, 2px) var(--spacing-md, 8px);
+  padding-block: var(--spacing-xs, 2px);
+  padding-inline: var(--spacing-md, 8px) var(--spacing-xs, 2px);
   /* Same soft secondary chip as TagInput. */
   background: var(--color-surface-soft, #F4F4F5);
   color: var(--color-text, #09090B);

@@ -348,6 +348,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 				Label: label,
 				Icon:  "filter",
 				Count: applied,
+				Ctx:   ctx,
 				ID:    id,
 				Class: "fui-filter-toolbar__filters",
 				Content: html.Div(html.DivConfig{

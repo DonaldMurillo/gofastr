@@ -86,7 +86,7 @@ A print document is a legitimately separate, bookmarkable resource, so you
 link to it; you do **not** make it an in-page island or a SPA route swap:
 
 ```go
-pb.PrintLink("invoice", map[string]string{"id": inv.ID}, "Print invoice")
+pb.PrintLink(r.Context(), "invoice", map[string]string{"id": inv.ID}, "Print invoice")
 // → <a href="/print/invoice/42" target="_blank" rel="noopener">Print invoice</a>
 ```
 

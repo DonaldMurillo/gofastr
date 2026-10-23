@@ -99,7 +99,7 @@ func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
 	}
 	label := cfg.Label
 	if label == "" {
-		label = "Active filters"
+		label = i18nui.FilterChipBarLabel.Text(ctx)
 	}
 	clearLabel := cfg.ClearAllLabel
 	if clearLabel == "" {

@@ -179,6 +179,18 @@ var (
 	// Sparkline
 	SparklineNoData = i18n.Define("ui.sparkline.noData", "No trend data")
 
+	// Charts
+	ChartNoData        = i18n.Define("ui.chart.noData", "No data yet")
+	ChartNotEnoughData = i18n.Define("ui.chart.notEnoughData", "Not enough data yet")
+	ChartValue         = i18n.Define("ui.chart.value", "{{label}}: {{value}}")
+	GaugeNoData        = i18n.Define("ui.gauge.noData", "{{label}}: no data yet")
+	ScatterPoint       = i18n.Define("ui.scatter.point", "{{series}}: {{label}} ({{x}}, {{y}})")
+	ScatterPointBare   = i18n.Define("ui.scatter.pointBare", "{{series}}: ({{x}}, {{y}})")
+	HeatmapCell        = i18n.Define("ui.heatmap.cell", "{{row}}, {{col}}: {{value}}")
+	HeatmapNoData      = i18n.Define("ui.heatmap.noData", "no data")
+	HeatmapLess        = i18n.Define("ui.heatmap.less", "Less")
+	HeatmapMore        = i18n.Define("ui.heatmap.more", "More")
+
 	// Auth extras
 	SignOut = i18n.Define("ui.auth.signOut", "Sign out")
 
@@ -191,6 +203,9 @@ var (
 	// FileUpload extras
 	FileUploadDropSingle = i18n.Define("ui.fileUpload.dropzoneSingle", "Drop a file here, or click to browse")
 	FileMaxSize          = i18n.Define("ui.fileUpload.maxSize", "Max {{n}} MB")
+
+	// SkipLink
+	SkipToMain = i18n.Define("ui.skipLink.toMain", "Skip to main content")
 
 	// Notification
 	NotificationDismiss = i18n.Define("ui.notification.dismiss", "Dismiss notification")
@@ -222,6 +237,24 @@ var (
 
 	// ProgressSteps
 	ProgressLabel = i18n.Define("ui.progress.label", "Progress")
+
+	// StepRail
+	StepRailLabel = i18n.Define("ui.stepRail.label", "Page steps")
+
+	// Component landmarks and defaults a caller may leave unnamed
+	AvatarGroupLabel    = i18n.Define("ui.avatarGroup.label", "Avatars")
+	AvatarGroupMore     = i18n.Define("ui.avatarGroup.more", "{{count}} more")
+	ContentRowSidebar   = i18n.Define("ui.contentRow.sidebar", "Sidebar")
+	ContentRowToolbar   = i18n.Define("ui.contentRow.toolbar", "Toolbar")
+	ContentRowAside     = i18n.Define("ui.contentRow.aside", "Context")
+	FilterChipBarLabel  = i18n.Define("ui.filterChipBar.label", "Active filters")
+	GalleryLabel        = i18n.Define("ui.gallery.label", "Image gallery")
+	ListDetailBack      = i18n.Define("ui.listDetail.back", "Back")
+	SidebarOpenDrawer   = i18n.Define("ui.sidebar.openDrawer", "Open navigation")
+	SidebarCloseDrawer  = i18n.Define("ui.sidebar.closeDrawer", "Close navigation")
+	NetworkRetryTitle   = i18n.Define("ui.networkRetry.title", "Connection lost")
+	NetworkRetryText    = i18n.Define("ui.networkRetry.text", "We're having trouble reaching the server. Your changes are paused until the connection comes back.")
+	NetworkRetryNowText = i18n.Define("ui.networkRetry.retry", "Retry now")
 
 	// Tag
 	TagRemove = i18n.Define("ui.tag.remove", "Remove {{label}}")

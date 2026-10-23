@@ -281,7 +281,7 @@ func TestAppRenderPage(t *testing.T) {
 		t.Errorf("expected DOCTYPE, got: %s", s[:50])
 	}
 	// Check html lang.
-	if !strings.Contains(s, `<html lang="en"`) {
+	if !strings.Contains(s, `<html dir="ltr" lang="en"`) {
 		t.Errorf("expected html lang=en, got: %s", s)
 	}
 	// Check charset.

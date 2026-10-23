@@ -22,7 +22,7 @@ func (s *DashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		ui.PageHeader(ui.PageHeaderConfig{Title: "Overview", Subtitle: "Revenue at a glance", Eyebrow: ""}),
 		ui.Grid(ui.GridConfig{Min: "12rem"}, ui.StatCard(ui.StatCardConfig{Label: "MRR", Value: appUI.StatValue(ctx, "subscriptions", "sum", "mrr", `status = "active"`, "money")}), ui.StatCard(ui.StatCardConfig{Label: "Active customers", Value: appUI.StatValue(ctx, "customers", "count", "", `status = "active"`, "")}), ui.StatCard(ui.StatCardConfig{Label: "Past-due invoices", Value: appUI.StatValue(ctx, "invoices", "count", "", `status = "past_due"`, "")}), ui.StatCard(ui.StatCardConfig{Label: "Plans", Value: appUI.StatValue(ctx, "plans", "count", "", "", "")})),
-		ui.Card(ui.CardConfig{Heading: "Customers by status", HeadingLevel: 2}, ui.BarChart(ui.BarChartConfig{Bars: appUI.GroupBars(ctx, "customers", "status"), ShowLabels: true})),
+		ui.Card(ui.CardConfig{Heading: "Customers by status", HeadingLevel: 2}, ui.BarChart(ui.BarChartConfig{Ctx: ctx, Bars: appUI.GroupBars(ctx, "customers", "status"), ShowLabels: true})),
 		// Base pins the record links at the invoices list screen: this
 		// list lives on /app, and its rows belong to /app/invoices/<id>.
 		appUI.List("invoices").Columns("number", "customer_id", "amount", "status", "due_on").PageSize(8).NoCreate().Heading("Recent invoices", 2).Empty("No invoices yet.").Base("/app/invoices").RenderCtx(ctx),

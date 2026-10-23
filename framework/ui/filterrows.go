@@ -7,6 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
@@ -57,8 +58,10 @@ func FilterRows(cfg FilterRowsConfig) render.HTML {
 	out := make([]render.HTML, 0, len(rows)+1)
 	out = append(out, render.Tag("legend", map[string]string{"class": "fui-filter-rows__legend", "data-cui-internal": ""}, render.Text(cfg.Legend)))
 	for i, r := range rows {
-		n := strconv.Itoa(i + 1)
-		id := cfg.ID + "-" + n
+		id := cfg.ID + "-" + strconv.Itoa(i+1)
+		// The row number a reader hears is in their digits; the id keeps
+		// ASCII.
+		n := i18n.Number(cfg.Ctx, i+1)
 		out = append(out, html.Div(html.DivConfig{Class: "fui-filter-rows__row", ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
 			filterRowSelect(id+"-f", cfg.FieldName, cfg.FieldLabel+" "+n, cfg.Fields, r.Field),
 			filterRowSelect(id+"-o", cfg.OpName, cfg.OpLabel+" "+n, cfg.Operators, r.Op),

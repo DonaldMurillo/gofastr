@@ -208,6 +208,12 @@ type SidebarItem struct {
 
 // SidebarConfig describes a navigation sidebar.
 type SidebarConfig struct {
+	// Ctx carries the per-request context a standalone
+	// SidebarDrawerTrigger writes its default label in. When nil,
+	// English applies. The mounted sidebar and drawer speak each
+	// request's language without it.
+	Ctx context.Context
+
 	// Title is rendered as the sidebar's top heading. Empty omits it.
 	Title string
 
@@ -418,7 +424,7 @@ func SidebarDrawerTrigger(cfg SidebarConfig) render.HTML {
 	if cfg.DrawerBreakpoint == StackBelowLG {
 		classes[headless.PartRoot] += " fui-sidebar__hamburger--drawer-below-lg"
 	}
-	drawerLabel := "Open navigation"
+	drawerLabel := i18nui.SidebarOpenDrawer.Text(cfg.Ctx)
 	if cfg.Compact {
 		drawerLabel = cfg.navLabel()
 		classes[headless.PartRoot] += " fui-sidebar__hamburger--labelled"
@@ -526,7 +532,7 @@ func (s sidebarComponent) render(ctx context.Context) render.HTML {
 	// documented default (Sidebar() normalizes it to persistent).
 	cfg := s.cfg
 	classes := sidebarClasses(cfg.Variant)
-	drawerLabel := "Open navigation"
+	drawerLabel := i18nui.SidebarOpenDrawer.Text(ctx)
 	if cfg.SectionLabels {
 		classes[headless.PartRoot] += " fui-sidebar--section-labels"
 	}
@@ -848,7 +854,7 @@ func (h sidebarDrawerHeader) RenderCtx(ctx context.Context) render.HTML {
 		label = h.resolve(ctx).DrawerCloseLabel
 	}
 	if label == "" {
-		label = "Close navigation"
+		label = i18nui.SidebarCloseDrawer.Text(ctx)
 	}
 	// Wrapped in the ui-sidebar marker so the drawer's chrome fetch
 	// pulls this sheet too — the header slot sits in the widget

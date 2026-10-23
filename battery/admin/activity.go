@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -151,7 +150,7 @@ func (b *Battery) bulkLead(ctx context.Context, names map[string]string, r audit
 	return i18nui.HTML(ctx, i18nui.AdminActivityBulkLine, map[string]render.HTML{
 		"actor":  activityActor(ctx, names, r),
 		"verb":   render.Text(verb.Text(ctx)),
-		"count":  render.Text(strconv.Itoa(d.Done)),
+		"count":  render.Text(i18n.Number(ctx, d.Done)),
 		"entity": render.Text(entityNoun(ctx, e, d.Done)),
 	})
 }

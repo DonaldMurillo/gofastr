@@ -652,7 +652,7 @@
         c.setAttribute('data-cui-toast-fallback', '');
         c.setAttribute('role', 'region');
         c.setAttribute('aria-label', say('runtime.notifications', 'Notifications'));
-        c.style.cssText = 'position:fixed;top:1rem;right:1rem;z-index:2147483600;display:grid;gap:0.5rem;max-width:min(360px,calc(100vw - 2rem))';
+        c.style.cssText = 'position:fixed;top:1rem;inset-inline-end:1rem;z-index:2147483600;display:grid;gap:.5rem;max-width:min(360px,100vw - 2rem)';
         return c;
       });
       const isAssertive = cfg.variant === 'warning' || cfg.variant === 'danger';

@@ -22,14 +22,15 @@ var signalToggleStyle = registry.RegisterStyle("fui-toggle", signalToggleCSS)
 // --ui-toggle-thumb-shadow (0 1px 2px rgba(0,0,0,.2)). The track's
 // height and the checked travel are calc() over the width, size and
 // inset knobs, so a resized thumb still centres and still lands
-// inset-from-the-right.
+// inset from the end side (the left, right to left).
 
 func signalToggleCSS(_ style.Theme) string {
 	return `[data-cui-comp="fui-toggle"]{display:inline-flex;align-items:center;gap:var(--spacing-md, .5rem);background:none;border:none;cursor:pointer;padding:0;color:var(--fui-foreground, var(--color-text, #09090B));font:inherit}` +
 		`[data-cui-comp="fui-toggle"] .fui-toggle__track{position:relative;display:inline-block;width:var(--ui-toggle-track-width, 2.5rem);height:calc(var(--ui-toggle-thumb-size, 1.125rem) + var(--ui-toggle-thumb-inset, 2px) * 2);border-radius:var(--radii-full, 9999px);background:var(--fui-border, var(--color-border, #E4E4E7));transition:background var(--duration-fast, 150ms)}` +
-		`[data-cui-comp="fui-toggle"] .fui-toggle__thumb{position:absolute;top:var(--ui-toggle-thumb-inset, 2px);left:var(--ui-toggle-thumb-inset, 2px);width:var(--ui-toggle-thumb-size, 1.125rem);height:var(--ui-toggle-thumb-size, 1.125rem);border-radius:50%;background:var(--ui-toggle-thumb-bg, #fff);box-shadow:var(--ui-toggle-thumb-shadow, 0 1px 2px rgba(0,0,0,.2));transition:transform var(--duration-fast, 150ms)}` +
+		`[data-cui-comp="fui-toggle"] .fui-toggle__thumb{position:absolute;top:var(--ui-toggle-thumb-inset, 2px);inset-inline-start:var(--ui-toggle-thumb-inset, 2px);width:var(--ui-toggle-thumb-size, 1.125rem);height:var(--ui-toggle-thumb-size, 1.125rem);border-radius:50%;background:var(--ui-toggle-thumb-bg, #fff);box-shadow:var(--ui-toggle-thumb-shadow, 0 1px 2px rgba(0,0,0,.2));transition:transform var(--duration-fast, 150ms)}` +
 		`[data-cui-comp="fui-toggle"][aria-checked="true"] .fui-toggle__track{background:var(--fui-primary, var(--color-primary, #18181B))}` +
-		`[data-cui-comp="fui-toggle"][aria-checked="true"] .fui-toggle__thumb{transform:translateX(calc(var(--ui-toggle-track-width, 2.5rem) - var(--ui-toggle-thumb-size, 1.125rem) - var(--ui-toggle-thumb-inset, 2px) * 2));background:var(--color-primary-fg, #fff)}` +
+		`[data-cui-comp="fui-toggle"][aria-checked="true"] .fui-toggle__thumb{transform:translateX(calc(var(--fui-toggle-dir, 1) * (var(--ui-toggle-track-width, 2.5rem) - var(--ui-toggle-thumb-size, 1.125rem) - var(--ui-toggle-thumb-inset, 2px) * 2)));background:var(--color-primary-fg, #fff)}` +
+		`[data-cui-comp="fui-toggle"]:dir(rtl){--fui-toggle-dir:-1}` +
 		`[data-cui-comp="fui-toggle"]:focus-visible{outline:var(--stroke-focus, 2px) solid var(--color-text-subtle);outline-offset:var(--stroke-focus-offset, 2px);border-radius:var(--radii-sm, 6px)}`
 }
 

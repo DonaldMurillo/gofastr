@@ -267,10 +267,12 @@ func commandPalette(cfg CommandPaletteConfig, build func(context.Context) Comman
 			navigateLabel: i18nui.CommandPaletteNavigate.Text(ctx),
 			selectLabel:   i18nui.CommandPaletteSelect.Text(ctx),
 			closeLabel:    i18nui.CommandPaletteClose.Text(ctx),
+			escKey:        i18nui.KeyEsc.Text(ctx),
 			loadingLabel:  i18nui.HuiComboboxLoading.Text(ctx),
 			emptyLabel:    i18nui.HuiComboboxNoResults.Text(ctx),
 			searchPage:    c.SearchPage,
 			allLabel:      i18nui.SearchResultsAll.Text(ctx),
+			words:         StringsFor(ctx),
 			extraAttrs:    html.SafeExtraAttrs(c.ExtraAttrs),
 		}
 	}}
@@ -377,10 +379,12 @@ type commandPaletteSlot struct {
 	navigateLabel string
 	selectLabel   string
 	closeLabel    string
-	loadingLabel  string // search: the row shown while results load
-	emptyLabel    string // search: the row shown when nothing matches
-	searchPage    string // search: the search page the last row opens
-	allLabel      string // search: that row's words
+	escKey        string            // the Esc key's name on its hint chip
+	loadingLabel  string            // search: the row shown while results load
+	emptyLabel    string            // search: the row shown when nothing matches
+	searchPage    string            // search: the search page the last row opens
+	allLabel      string            // search: that row's words
+	words         *headless.Strings // the combobox words, in the reader's language; nil is English
 	extraAttrs    html.Attrs
 }
 
@@ -398,6 +402,10 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	}
 	// closeLabel is resolved alongside title at CommandPalette() call
 	// time; same direct-construction fallback for slots built in tests.
+	escKey := s.escKey
+	if escKey == "" {
+		escKey = i18nui.KeyEsc.Text(context.Background())
+	}
 	closeLabel := s.closeLabel
 	if closeLabel == "" {
 		closeLabel = i18nui.CommandPaletteClose.Text(context.Background())
@@ -440,6 +448,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 		DebounceMS:     s.debounceMs,
 		Options:        opts,
 		Parts:          parts,
+		Strings:        s.words,
 	}, headless.Classes{
 		headless.PartRoot:            "fui-cmd-palette__field",
 		headless.PartLabel:           "fui-visually-hidden",
@@ -478,7 +487,7 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	},
 		hintChip("↑↓", s.navigateLabel),
 		hintChip("↵", s.selectLabel),
-		hintChip("Esc", closeLabel),
+		hintChip(escKey, closeLabel),
 	)
 	footer := html.Div(html.DivConfig{Class: "fui-cmd-palette__footer"},
 		closeBtn,

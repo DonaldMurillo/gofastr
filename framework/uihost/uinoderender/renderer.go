@@ -7,6 +7,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/uinodev1"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	ui "github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
@@ -202,7 +203,7 @@ func (r *Renderer) renderSection(n uinodev1.Node) (render.HTML, error) {
 		label = p.Subtitle
 	}
 	if label == "" {
-		label = "Section"
+		label = i18nui.Section.Text(r.ctx)
 	}
 	parts := make([]render.HTML, 0, len(children)+1)
 	if p.Title != "" {

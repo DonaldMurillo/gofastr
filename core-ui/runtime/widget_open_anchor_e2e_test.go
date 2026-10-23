@@ -62,6 +62,18 @@ func openAnchorServer(t *testing.T, spaFetches *atomic.Int32) *httptest.Server {
 		fmt.Fprint(w, `.cui-widget { position: fixed; }
 .cui-widget[data-cui-popover-side] { max-inline-size: 360px; background: #fff; }`)
 	})
+	// A right-to-left page with the trigger mid-line and a popover wider
+	// than it, so start and left alignment land in different places.
+	mux.HandleFunc("/rtl", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<!doctype html><html dir="rtl"><head><title>rtl</title>
+  <style>.cui-widget[data-cui-popover-side] { inline-size: 240px; }</style>
+</head><body>
+  <div style="display:flex;justify-content:center"><a id="bell" href="/inbox" data-cui-open="notes" data-cui-popover-anchor="bottom">Notifications</a></div>
+  <span id="ready">ready</span>
+  <script src="/__gofastr/runtime.js"></script>
+</body></html>`)
+	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		if r.Header.Get("X-Gofastr-Navigate") == "1" {
@@ -153,5 +165,35 @@ func TestOpenAnchorClickOpensWidgetWithoutNavigating(t *testing.T) {
 	}
 	if got.X < 0 || got.X+got.W > got.VW {
 		t.Errorf("popover box [%d,%d] escapes the %d viewport", got.X, got.X+got.W, got.VW)
+	}
+}
+
+// On a right-to-left page a popover below its trigger lines up with
+// the trigger's right edge, the start of the line, not its left.
+func TestAnchoredPopoverAlignsToStartInRTL(t *testing.T) {
+	var fetches atomic.Int32
+	srv := openAnchorServer(t, &fetches)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+
+	var edges []int
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/rtl"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Click(`#bell`, chromedp.ByID),
+		chromedp.Sleep(700*time.Millisecond),
+		chromedp.Evaluate(`(() => {
+			const w = document.querySelector('[data-cui-widget="notes"]').getBoundingClientRect();
+			const b = document.getElementById('bell').getBoundingClientRect();
+			return [Math.round(w.right), Math.round(b.right), Math.round(w.left), Math.round(b.left)];
+		})()`, &edges),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if len(edges) != 4 {
+		t.Fatalf("edges = %v", edges)
+	}
+	if d := edges[0] - edges[1]; d < -1 || d > 1 {
+		t.Errorf("popover right %d, trigger right %d: an RTL popover lines up with the trigger's start (right) edge; lefts %d, %d",
+			edges[0], edges[1], edges[2], edges[3])
 	}
 }

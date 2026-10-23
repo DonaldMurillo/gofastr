@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -232,14 +233,17 @@ func TestEntityCountReadsAndFormats(t *testing.T) {
 		t.Fatalf("the card lacks its newest write's age:\n%s", body)
 	}
 	ctx := context.Background()
-	if got := countText(ctx, "12,345"); got != "10k+" {
-		t.Errorf("countText(12,345) = %q", got)
+	if got := countText(ctx, 12345, true); got != "10,000+" {
+		t.Errorf("countText(12345) = %q", got)
 	}
-	if got := countText(ctx, "9,999"); got != "9,999" {
-		t.Errorf("countText(9,999) = %q", got)
+	if got := countText(ctx, 9999, true); got != "9,999" {
+		t.Errorf("countText(9999) = %q", got)
 	}
-	if got := countText(ctx, "—"); got != "—" {
-		t.Errorf("countText(—) = %q", got)
+	if got := countText(i18n.WithContext(ctx, i18n.Locale{Tag: "fr"}), 9999, true); got != "9\u202f999" {
+		t.Errorf("French countText(9999) = %q", got)
+	}
+	if got := countText(ctx, 3, false); got != "—" {
+		t.Errorf("a refused count = %q", got)
 	}
 }
 

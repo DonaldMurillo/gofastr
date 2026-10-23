@@ -31,8 +31,8 @@ package interactive
 //	widget.MountBuilder(router, interactive.SectionMenuDrawer(cfg))
 
 import (
+	"context"
 	_ "embed"
-	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
@@ -41,6 +41,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -94,10 +95,10 @@ type SectionMenuConfig struct {
 	// there is no request and no data behind it.
 	Filter bool
 	// FilterPlaceholder is the filter box's placeholder and accessible
-	// name. Default "Filter".
+	// name. Default "Filter", in the reader's language.
 	FilterPlaceholder string
 	// FilterEmpty is the line shown when nothing matches. Default
-	// "No matches".
+	// "No matches", in the reader's language.
 	FilterEmpty string
 	// InlineTrigger keeps the mobile trigger in flow where the menu sits.
 	// By default the pill floats at the bottom of the viewport, which is
@@ -121,6 +122,11 @@ type SectionMenuConfig struct {
 	SwapAt SwapWidth
 	Class  string
 	ID     string
+	// Ctx carries the per-request context the menu's default words and
+	// each group's link count (i18n.Number) are written in. When nil,
+	// English applies. A sheet mounted once with SectionMenuDrawer
+	// speaks the locale of each request that renders it.
+	Ctx context.Context
 }
 
 // SectionMenu renders the desktop rail plus the mobile trigger pill. Mount
@@ -128,7 +134,7 @@ type SectionMenuConfig struct {
 func SectionMenu(cfg SectionMenuConfig) render.HTML {
 	aria := cfg.AriaLabel
 	if aria == "" {
-		aria = "Sections"
+		aria = sectionsLabel.Text(cfg.Ctx)
 	}
 
 	children := []render.HTML{}
@@ -196,7 +202,7 @@ func activeItem(cfg SectionMenuConfig) (SectionItem, string, bool) {
 func sectionMenuFilter(cfg SectionMenuConfig) render.HTML {
 	ph := cfg.FilterPlaceholder
 	if ph == "" {
-		ph = "Filter"
+		ph = filterLabel.Text(cfg.Ctx)
 	}
 	return html.Div(html.DivConfig{Class: "cui-section-menu__filter"},
 		render.Raw(`<svg class="cui-section-menu__filter-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.5" y2="16.5"/></svg>`),
@@ -236,10 +242,18 @@ func sheetTitleID(cfg SectionMenuConfig) string { return cfg.DrawerName + "-titl
 // applies inside the sheet chrome too.
 type sectionMenuDrawerSlot struct{ cfg SectionMenuConfig }
 
-func (s sectionMenuDrawerSlot) Render() render.HTML {
+func (s sectionMenuDrawerSlot) Render() render.HTML { return s.RenderCtx(s.cfg.Ctx) }
+
+// RenderCtx renders the sheet in the locale of the request showing it:
+// the slot is mounted once, so the context it was built with is no
+// reader's.
+func (s sectionMenuDrawerSlot) RenderCtx(ctx context.Context) render.HTML {
+	if ctx != nil {
+		s.cfg.Ctx = ctx
+	}
 	// The close control's data-cui-action="close" is the framework's
 	// declarative widget-dismiss hook: the sheet's own runtime closes it.
-	top := []render.HTML{sheetHead(triggerLabel(s.cfg), sheetTitleID(s.cfg),
+	top := []render.HTML{sheetHead(s.cfg.Ctx, triggerLabel(s.cfg), sheetTitleID(s.cfg),
 		map[string]string{"data-cui-action": "close"})}
 	cls := "cui-section-menu cui-section-menu--drawer"
 	if s.cfg.Filter {
@@ -251,7 +265,7 @@ func (s sectionMenuDrawerSlot) Render() render.HTML {
 	// whenever the sheet is open, so the two never share a name on screen.
 	aria := s.cfg.AriaLabel
 	if aria == "" {
-		aria = "Sections"
+		aria = sectionsLabel.Text(s.cfg.Ctx)
 	}
 	return sectionMenuStyle.WrapHTML(render.Tag("nav",
 		map[string]string{"class": cls, "aria-label": aria},
@@ -272,12 +286,12 @@ func sectionMenuBody(cfg SectionMenuConfig, rail bool) render.HTML {
 		children = append(children, sectionMenuLink(*cfg.Lead, "cui-section-menu__lead"))
 	}
 	for _, g := range cfg.Groups {
-		children = append(children, sectionMenuGroup(g, rail))
+		children = append(children, sectionMenuGroup(cfg.Ctx, g, rail))
 	}
 	if cfg.Filter {
 		empty := cfg.FilterEmpty
 		if empty == "" {
-			empty = "No matches"
+			empty = noMatches.Text(cfg.Ctx)
 		}
 		children = append(children, render.Tag("p", map[string]string{
 			"class": "cui-section-menu__empty", "role": "status", "hidden": "",
@@ -286,7 +300,7 @@ func sectionMenuBody(cfg SectionMenuConfig, rail bool) render.HTML {
 	return html.Div(html.DivConfig{Class: "cui-section-menu__body"}, children...)
 }
 
-func sectionMenuGroup(g SectionGroup, rail bool) render.HTML {
+func sectionMenuGroup(ctx context.Context, g SectionGroup, rail bool) render.HTML {
 	items := make([]render.HTML, 0, len(g.Items))
 	hasActive := false
 	for _, it := range g.Items {
@@ -304,7 +318,7 @@ func sectionMenuGroup(g SectionGroup, rail bool) render.HTML {
 	}
 	labelChildren = append(labelChildren,
 		html.Span(html.TextConfig{Class: "cui-section-menu__group-label"}, render.Text(g.Label)),
-		html.Span(html.TextConfig{Class: "cui-section-menu__count"}, render.Text(strconv.Itoa(len(g.Items)))))
+		html.Span(html.TextConfig{Class: "cui-section-menu__count"}, render.Text(i18n.Number(ctx, len(g.Items)))))
 	list := html.UnorderedList(html.ListConfig{Class: "cui-section-menu__list"}, items...)
 
 	// The rail shows every group, so its groups are labelled regions with

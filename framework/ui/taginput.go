@@ -116,7 +116,8 @@ func tagInputCSS(_ style.Theme) string {
   gap: var(--spacing-sm, 4px);
   align-items: center;
   min-block-size: var(--spacing-touch-target, 44px);
-  padding: var(--spacing-sm, 4px) var(--spacing-sm, 4px) var(--spacing-sm, 4px) var(--spacing-md, 8px);
+  padding-block: var(--spacing-sm, 4px);
+  padding-inline: var(--spacing-md, 8px) var(--spacing-sm, 4px);
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
   background: var(--color-surface, #FFFFFF);
@@ -133,7 +134,8 @@ func tagInputCSS(_ style.Theme) string {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-xs, 2px);
-  padding: var(--spacing-xs, 2px) var(--spacing-xs, 2px) var(--spacing-xs, 2px) var(--spacing-md, 8px);
+  padding-block: var(--spacing-xs, 2px);
+  padding-inline: var(--spacing-md, 8px) var(--spacing-xs, 2px);
   /* A soft secondary chip, the shadcn badge-in-input look: the solid
      primary chip shouted over the value it labels. */
   background: var(--color-surface-soft, #F4F4F5);

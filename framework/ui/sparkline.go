@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
@@ -199,6 +200,13 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 
 	out := `<svg ` + svgAttrs.String() + ` data-cui-comp="ui-sparkline"` + extraAttrs + `>` + body + `</svg>`
 	return sparklineStyle.WrapHTML(render.HTML(out))
+}
+
+// chartNumber writes a value a reader sees (a tick, a bar's value, a
+// gauge reading) in the reader's locale, to the two decimals ftoa keeps
+// for coordinates.
+func chartNumber(ctx context.Context, f float64) string {
+	return i18n.Number(ctx, f, i18n.MaxFraction(2))
 }
 
 func ftoa(f float64) string {

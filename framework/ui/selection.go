@@ -132,7 +132,8 @@ func selectionCSS(_ style.Theme) string {
   gap: var(--spacing-sm, 4px) var(--spacing-md, 8px);
   max-inline-size: 100%;
   box-sizing: border-box;
-  padding: var(--spacing-xs, 2px) var(--spacing-xs, 2px) var(--spacing-xs, 2px) var(--spacing-lg, 16px);
+  padding-block: var(--spacing-xs, 2px);
+  padding-inline: var(--spacing-lg, 16px) var(--spacing-xs, 2px);
   background: var(--color-text);
   color: var(--color-background);
   border-radius: var(--radii-xl, 14px);
@@ -144,7 +145,8 @@ func selectionCSS(_ style.Theme) string {
   [data-cui-comp="ui-selection"].fui-selection--floating > .fui-selection__bar {
     align-self: stretch;
     justify-content: space-between;
-    padding: var(--spacing-xs, 2px) var(--spacing-xs, 2px) var(--spacing-md, 8px) var(--spacing-lg, 16px);
+    padding-block: var(--spacing-xs, 2px) var(--spacing-md, 8px);
+    padding-inline: var(--spacing-lg, 16px) var(--spacing-xs, 2px);
   }
   [data-cui-comp="ui-selection"].fui-selection--floating > .fui-selection__bar > .fui-selection__count { order: 1; }
   [data-cui-comp="ui-selection"].fui-selection--floating > .fui-selection__bar > .fui-selection__clear { order: 2; }

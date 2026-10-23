@@ -60,7 +60,7 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 		scopes = append(scopes, ui.SelectOption{Value: bulkScopeSelected, Text: i18nui.EntityBulkSelected.Text(ctx)})
 	}
 	scopes = append(scopes, ui.SelectOption{Value: bulkScopePage, Text: i18nui.EntityBulkPage.Text(ctx, map[string]any{
-		"count": strconv.Itoa(len(rows)),
+		"count": len(rows),
 	})})
 	// The bar carries the digest of the ids every match covers, so the
 	// run refuses any other set. A list past the cap is not offered it.
@@ -73,7 +73,7 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 	every := match != ""
 	if every {
 		scopes = append(scopes, ui.SelectOption{Value: bulkScopeEvery, Text: i18nui.EntityBulkEvery.Text(ctx, map[string]any{
-			"count": formatNumber(float64(total), 0),
+			"count": total,
 		})})
 	}
 

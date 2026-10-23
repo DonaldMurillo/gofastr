@@ -79,7 +79,7 @@ func newProblem(ctx context.Context, status int, title, detail i18n.Phrase) prob
 func phraseAround(ctx context.Context, p i18n.Phrase, name string, node render.HTML, params map[string]any) render.HTML {
 	before, after, ok := strings.Cut(p.Text(ctx), "{{"+name+"}}")
 	if !ok {
-		return render.Text(i18n.Fill(before, params))
+		return render.Text(i18n.FillContext(ctx, before, params))
 	}
-	return render.Join(render.Text(i18n.Fill(before, params)), node, render.Text(i18n.Fill(after, params)))
+	return render.Join(render.Text(i18n.FillContext(ctx, before, params)), node, render.Text(i18n.FillContext(ctx, after, params)))
 }
