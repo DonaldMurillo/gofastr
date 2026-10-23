@@ -110,6 +110,9 @@ func TestForeignKeyRefusedAtLoad(t *testing.T) {
 		"repeated":   {"foreign_key: [order_store, order_no]", "foreign_key: [order_no, ORDER_NO]", "twice"},
 		"undeclared": {"foreign_key: [order_store, order_no]", "foreign_key: [order_store, order_ref]", `"order_ref", which is not a declared field`},
 		"mistyped":   {"name: order_no\n        type: int", "name: order_no\n        type: string", "type each column like the key column"},
+		"uuid":       {"name: order_no\n        type: int", "name: order_no\n        type: uuid", "type each column like the key column"},
+		"float":      {"name: order_no\n        type: int", "name: order_no\n        type: float", "type each column like the key column"},
+		"int text":   {"name: order_store\n        type: string", "name: order_store\n        type: int", "type each column like the key column"},
 		"many to many": {"type: belongs_to\n        name: order\n        entity: orders\n        foreign_key: [order_store, order_no]",
 			"type: many_to_many\n        name: order\n        entity: orders\n        through: line_orders\n        local_key: line_id\n        foreign_key_target: order_id", "join entity"},
 	} {
@@ -123,6 +126,17 @@ func TestForeignKeyRefusedAtLoad(t *testing.T) {
 				t.Fatalf("load err = %v; want it to name %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// Every text-backed type joins a string key column, as the migrator
+// reads them all as TEXT.
+func TestForeignKeyTextTypesLoad(t *testing.T) {
+	for _, typ := range []string{"text", "uuid", "enum\n        values: [a, b]", "string\n        max: 20"} {
+		spec := strings.Replace(orderLinesYAML, "name: order_store\n        type: string", "name: order_store\n        type: "+typ, 1)
+		if _, err := loadBPWithEntity(t, spec); err != nil {
+			t.Fatalf("order_store typed %s: %v", typ, err)
+		}
 	}
 }
 

@@ -37,6 +37,7 @@ import (
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
+	fwmigrate "github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
@@ -6276,25 +6277,38 @@ func appSpecRelationKeys(decl framework.EntityDeclaration, rel framework.Relatio
 		if f == nil || k == nil {
 			continue
 		}
-		if ft, kt := appSpecTypeFamily(f.Type), appSpecTypeFamily(k.Type); ft != "" && kt != "" && ft != kt {
+		if ft, kt := appSpecTypeFamily(f), appSpecTypeFamily(k); ft != "" && kt != "" && ft != kt {
 			return fmt.Errorf("app spec: entity %q relation %q names foreign-key column %q, typed %s, for key column %q of %q, typed %s: type each column like the key column it references", decl.Name, rel.Name, c, f.Type, key[i], ref.Name, k.Type)
 		}
 	}
 	return nil
 }
 
-// appSpecTypeFamily groups a declared field type by the column the
-// migrator gives it, as its foreign-key type check does: integer or
-// text. Any other type, a relation (which holds its target's key) among
-// them, is "", and the check skips it.
-func appSpecTypeFamily(t string) string {
-	switch {
-	case appSpecIntType(t):
+// appSpecTypeFamily groups a declared field by the Postgres column the
+// migrator gives it, as its foreign-key type check does: every integer
+// width is one family, text of any length (uuid, enum, image and file
+// among it) another, and any other type its own. A relation holds its
+// target's key, and a type the loader refuses elsewhere has no column,
+// so both are "" and the check skips them.
+func appSpecTypeFamily(f *framework.FieldDeclaration) string {
+	if appSpecIntType(f.Type) {
 		return "integer"
-	case strings.EqualFold(strings.TrimSpace(t), "string"), strings.EqualFold(strings.TrimSpace(t), "text"):
+	}
+	sf, err := f.Field()
+	if err != nil || sf.Type == schema.Relation {
+		return ""
+	}
+	t := fwmigrate.SQLType(sf, fwmigrate.DialectPostgres)
+	if i := strings.IndexByte(t, '('); i >= 0 {
+		t = t[:i]
+	}
+	switch strings.ToUpper(t) {
+	case "SMALLINT", "INTEGER", "INT", "BIGINT", "SERIAL", "BIGSERIAL":
+		return "integer"
+	case "TEXT", "VARCHAR", "CHAR", "CHARACTER VARYING":
 		return "text"
 	}
-	return ""
+	return strings.ToLower(t)
 }
 
 // appSpecEntityRelations maps each belongs_to FK column → target entity.

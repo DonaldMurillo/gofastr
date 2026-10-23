@@ -973,9 +973,11 @@ key column, in key order, as a list:
 Each listed column is a declared field of the entity that holds it (the
 `belongs_to` side here, the child for a `has_many`), typed like the key
 column it references. Loading refuses a list whose length differs from
-the referenced key, a repeated or undeclared column, an `int` column
-for a `string` key column or the reverse, a column the entity's
-`states` transitions write, and a
+the referenced key, a repeated or undeclared column, a column typed
+unlike its key column (an `int` column for a `string` or `uuid` key
+column, say; the text types `string`, `text`, `uuid`, `enum`, `image`
+and `file` all join each other), a column the entity's `states`
+transitions write, and a
 `many_to_many` with a composite end; link the last through a join entity
 that belongs to both sides. A one-element list is the plain
 `foreign_key: order_no` spelling. The rules are those of
