@@ -266,7 +266,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 - **Primary-key change migrations.** The schema diff detects a changed
   key and emits it as destructive: Postgres swaps the key constraint,
   SQLite rebuilds the table. Boot changes the key of an empty table only
-  and refuses a populated one, pointing at `gofastr migrate generate`.
+  and refuses a populated one, pointing at `gofastr migrate generate`; a
+  populated table with no primary key at all is refused the same way.
   The snapshot records `primary_keys`. See `gofastr docs migrations` →
   "Primary-key changes".
 
