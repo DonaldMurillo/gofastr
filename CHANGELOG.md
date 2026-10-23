@@ -29,7 +29,9 @@ column, and relations, join entities and foreign keys
 must be a string, text, integer, enum, UUID or relation. The schema
 diff migrates a changed primary key.
 
-v0.94.0 also adds unique jobs.
+v0.94.0 also adds unique jobs, and a record page for a missing or
+hidden row answers 404 where it answered 200: a test that expects 200
+for another user's record now gets 404.
 
 ### Added
 - **Unique jobs.** A job with `Job.UniqueKey` set is refused with
