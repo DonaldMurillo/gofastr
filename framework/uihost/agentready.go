@@ -877,11 +877,15 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 	// request: a non-Allow decision degrades to the metadata-free
 	// withheld doc instead of leaking the screen's rendered content,
 	// title, or SEO bundle.
-	ctx := app.WithRequest(r.Context(), r)
+	ctx, recorded := app.TrackStatus(app.WithRequest(r.Context(), r))
 	res, ok := app.ScreenLLMMDForPath(ctx, ds.App, routePath(r))
 	if !ok {
 		return false
 	}
+	// The markdown is this URL's other representation, so it carries the
+	// status the HTML would (app.SetStatus, ScreenStatusCode): a missing
+	// record answers 404 in either.
+	status := pageStatus(app.RenderResult{Component: res.Component}, recorded())
 	md := res.MD
 	if res.Allowed {
 		title := res.Title
@@ -899,6 +903,9 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 	w.Header().Add("Vary", "Accept")
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
+	if status != 0 {
+		w.WriteHeader(status)
+	}
 	w.Write([]byte(md))
 	return true
 }

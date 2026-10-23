@@ -96,6 +96,28 @@ func TestDynamicLLMMDSetStatus404(t *testing.T) {
 	}
 }
 
+// Negotiated markdown for a record that is gone carries the page's
+// status: the agent asking for markdown gets the same 404 (or the
+// screen's declared 410) a browser gets, with the not-found body.
+func TestNegotiatedMarkdownSetStatus(t *testing.T) {
+	a := app.NewApp("status")
+	a.Register("/", &testHomeComp{}, nil)
+	a.Register("/missing/{id}", &drawsMissingByID{}, nil)
+	a.Register("/gone/{id}", &goneByID{}, nil)
+	a.Register("/things/{id}", &loadedTitleComp{}, nil)
+	ds := New(a, WithPublicLLMMD(), WithMarkdownNegotiation())
+
+	for path, want := range map[string]int{"/missing/1": http.StatusNotFound, "/gone/1": http.StatusGone, "/things/42": http.StatusOK} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Accept", "text/markdown")
+		rec := httptest.NewRecorder()
+		ds.ServeHTTP(rec, req)
+		if rec.Code != want || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/markdown") {
+			t.Errorf("%s = %d (%s), want %d markdown", path, rec.Code, rec.Header().Get("Content-Type"), want)
+		}
+	}
+}
+
 // The screen's own ScreenStatusCode outranks a status its render set.
 func TestScreenStatusCodeBeatsSetStatus(t *testing.T) {
 	a := app.NewApp("status")

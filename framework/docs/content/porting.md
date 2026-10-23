@@ -171,8 +171,10 @@ caller, so a generated record screen and an admin record page need no
 code for it. The first `SetStatus` in a render wins. A screen's own
 `ScreenStatusCode` outranks it, and a 404-outlet outcome outranks both.
 It applies on the full page, a client navigation, a drawer and
-`RenderScreen`. A dynamic route's `llm.md` for such a page answers 404,
-the way it does when `Load` returns `app.ErrNotFound`. A static export (`gofastr export`) skips a page that
+`RenderScreen`, and on the markdown a request with
+`Accept: text/markdown` gets under `WithMarkdownNegotiation`. A dynamic
+route's `llm.md` for such a page answers 404, the way it does when
+`Load` returns `app.ErrNotFound`. A static export (`gofastr export`) skips a page that
 answers anything but 200, with a warning, the way it skips a 404
 outlet. The embed content route keeps answering 200 with the body the
 screen drew: the embed loader mounts only a 2xx, and anything else
