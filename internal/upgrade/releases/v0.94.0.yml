@@ -102,10 +102,6 @@ notes:
         - glob: "**/*.json"
           match: '"(bulkNone|bulkUnknown|bulkOverCap|bulkNeedsUser|bulkBadFilter|bulkFailed|bulkBadScope|bulkEveryOverCap|bulkStale|savedBadFilter|savedBadCols|overrideFailed|overrideBlank|overrideLong|overrideStateBad|overrideNoAudit|overrideDenied)"\s*:'
     guidance: "In each locale file, move the string from ui.entity.<camelKey> to a top-level entityui section under the snake_case code (bulkOverCap becomes entityui.bulk_over_cap) and write placeholders as {{cap}} and {{entity}}. See gofastr docs i18n."
-  - change: "a plain-text refusal with no message of its own writes its lowercase status phrase (\"internal server error\") instead of http.StatusText (\"Internal Server Error\")"
-    breaking: true
-    nodetect: "the change is in a response body; code that compares it lives in the app's tests or its consumers"
-    guidance: "Compare the status code rather than the body. A test that matched \"Internal Server Error\" matches \"internal server error\", or the catalog's text for error.internal in the locale it sends."
   - change: "a crud list refuses a bad filter, sort, where, DSL filter, include, projection or nested filter with the parser's own message and code (unknown filter \"x\", unknown_filter) instead of wrapping it in \"invalid filters: ...\" or \"invalid query: ...\"; a bad cursor keeps its text and answers the decoder's code (cursor_format)"
     breaking: true
     nodetect: "the change is in a response body; code that reads it lives in the app's consumers"
@@ -804,7 +800,7 @@ notes:
           type: '^func\(\) string$'
         - symbol: gofastr/core-ui/app.ScreenDescriber.ScreenDescription
           type: '^func\(\) string$'
-    guidance: "Add the parameter: func (s *HelpScreen) ScreenTitle(ctx context.Context) string. A screen with the old signature no longer satisfies the interface, so its page silently loses its title. To translate it, return a phrase: helpTitle.Text(ctx). App.Register reads it once with a bare context, which gives the English, for the route table."
+    guidance: "Add the parameter: func (s *HelpScreen) ScreenTitle(ctx context.Context) string. A screen still declaring ScreenTitle() string or ScreenDescription() string panics when it is registered, naming the type, so the app does not boot until it moves. To translate it, return a phrase: helpTitle.Text(ctx). App.Register reads it once with a bare context, which gives the English, for the route table."
   - change: "uihost.ScreenSEO and uihost.ScreenSchema take the request context: ScreenSEO(ctx context.Context) uihost.SEO and ScreenSchema(ctx context.Context) []seo.Thing"
     breaking: true
     hits: edit
