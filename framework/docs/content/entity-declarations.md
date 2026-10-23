@@ -1644,7 +1644,9 @@ live, err := posts.Query().Where(entities.PostsStatus.Eq(entities.PostsStatusLiv
   would repeat `PostsStatusValue`), gets no constant: the file lists it
   in a comment, and `PostsStatusValue("N/A")` still works.
 - An entity with `States` gets one `<Entity>Move` constant per move and
-  `Transition(ctx, id, move)`, which runs `CrudHandler.RunTransition`.
+  `Transition(ctx, id, move)` (on a composite key, one argument per key
+  column in place of `id`, as below), which runs
+  `CrudHandler.RunTransition`.
   System moves are included, since the repo is the Go caller they exist
   for. With enforced States, stamps leave both payloads and the state
   field leaves the patch ([States](states.md)).
