@@ -531,9 +531,25 @@ func (w fkWrite) tuple(ch *CrudHandler, rel entity.Relation) ([]any, bool) {
 	return vals, true
 }
 
-// unknownHeld is fkWrite.holds for the writes that cannot read one stored
-// row: the upsert and the bulk update.
+// unknownHeld is fkWrite.holds for a column whose stored value the write
+// has not read.
 func unknownHeld(string) (any, bool) { return nil, false }
+
+// scopedHeld is fkWrite.holds for the writes that cannot read one stored
+// row: the upsert's conflict update and the bulk update. Each row they
+// touch is scoped to the caller's tenant and keeps it, so the tenant
+// column holds that tenant; every other column they keep is unknown. A
+// context with no tenant (a cross-tenant bulk update) leaves it unknown.
+func (ch *CrudHandler) scopedHeld(ctx context.Context) func(string) (any, bool) {
+	return func(c string) (any, bool) {
+		if ch.Entity.Config.Scope.MultiTenant && c == ch.Entity.Config.TenantColumn() {
+			if id := tenant.GetTenantID(ctx); id != "" {
+				return id, true
+			}
+		}
+		return nil, false
+	}
+}
 
 // createWrite reads a create as the INSERT writes it. It takes a field
 // from the body under the rules of doCreate's column loop; a column it

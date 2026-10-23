@@ -147,7 +147,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// the conflict update keeps the stored ones.
 		for _, w := range []fkWrite{
 			ch.createWrite(ctx, body),
-			{body: body, sets: func(f schema.Field) bool { return ch.upsertSets(ctx, f) }, holds: unknownHeld},
+			{body: body, sets: func(f schema.Field) bool { return ch.upsertSets(ctx, f) }, holds: ch.scopedHeld(ctx)},
 		} {
 			if err := ch.checkBelongsToScope(ctx, w); err != nil {
 				return err

@@ -1565,9 +1565,12 @@ ends as an insert or a conflict update, so it checks both: the insert
 as a create, and the update, which cannot know what a column it keeps
 holds (it keeps a generated column's stored value). The bulk
 `TypedQuery.UpdateAll` cannot know either, since its rows each hold
-their own. Either way, a body that moves part of a reference while the
-write keeps another of its columns is a 400 carrying
-`validation.kept_foreign_key`.
+their own. Both do know the tenant column: every row they touch is the
+caller's tenant's and keeps it, so a reference through the tenant reads
+the caller's tenant there too (a bulk update with no tenant in its
+context, run across tenants, does not). Otherwise, a body that moves
+part of a reference while the write keeps another of its columns is a
+400 carrying `validation.kept_foreign_key`.
 
 A join table keyed on the pair it links is an entity of its own, with
 a payload: it belongs to each side, each side has many of it, and a

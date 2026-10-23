@@ -367,6 +367,20 @@ func TestCompositeForeignKeyTenantColumn(t *testing.T) {
 		if _, err := ch.CreateOne(bob, map[string]any{"order_no": "2"}); err != nil {
 			t.Errorf("bob creating a bin on his order (ta, 2): %v", err)
 		}
+		// The upsert's conflict update and the bulk update keep the row's
+		// tenant, the caller's, so they read it as held too.
+		if _, err := ch.UpsertOne(bob, map[string]any{"id": "b1", "order_no": "2"}); err != nil {
+			t.Errorf("bob upserting a bin on his order (ta, 2): %v", err)
+		}
+		if _, err := ch.UpsertOne(bob, map[string]any{"id": "b2", "order_no": "1"}); err == nil {
+			t.Error("bob upserting a bin on alice's order (ta, 1) succeeded; want it refused")
+		}
+		if _, err := NewTypedQuery[struct{}](ch).UpdateAll(bob, map[string]any{"order_no": "2"}); err != nil {
+			t.Errorf("bob moving his bins to his order (ta, 2): %v", err)
+		}
+		if _, err := NewTypedQuery[struct{}](ch).UpdateAll(bob, map[string]any{"order_no": "1"}); err == nil {
+			t.Error("bob moving his bins to alice's order (ta, 1) succeeded; want it refused")
+		}
 	})
 }
 
