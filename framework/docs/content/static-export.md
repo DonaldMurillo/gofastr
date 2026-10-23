@@ -170,7 +170,8 @@ a component called `app.SetStatus` while it drew (entityui's Record
 for a missing row), or the screen declares `ScreenStatusCode`. A
 static host serves every file with a 200, so writing the page would
 tell every visitor it exists. The builder logs a `WARN` naming the
-route and the status (`uihost.StatusPageError`).
+route and the status (`uihost.StatusPageError`), and writes no
+`llm.md` for that page either.
 
 ## Failed fills refuse the export
 

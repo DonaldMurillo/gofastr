@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	coreapp "github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
@@ -69,9 +70,8 @@ func TestStaticBuildSkipsNotFoundOutlet(t *testing.T) {
 
 // nfSetStatusScreen draws a not-found body and sets 404 while it draws,
 // the way entityui's Record does for a missing row.
-type nfSetStatusScreen struct{}
+type nfSetStatusScreen struct{ component.ContextOnly }
 
-func (nfSetStatusScreen) Render() render.HTML { return "" }
 func (nfSetStatusScreen) RenderCtx(ctx context.Context) render.HTML {
 	coreapp.SetStatus(ctx, http.StatusNotFound)
 	return "<p>GONE</p>"
@@ -84,9 +84,10 @@ func TestStaticBuildSkipsSetStatusPage(t *testing.T) {
 	buf := captureSlog(t)
 
 	a := coreapp.NewApp("SSGStatus")
-	a.NoLLMMD = true
 	a.RegisterScreen(coreapp.NewScreen("/present", nfStaticScreen("PRESENT")), nil)
-	a.RegisterScreen(coreapp.NewScreen("/gone", nfSetStatusScreen{}), nil)
+	// A pointer, as a real record screen is: the per-URL llm.md renders
+	// the instance only for an injectable (pointer) component.
+	a.RegisterScreen(coreapp.NewScreen("/gone", &nfSetStatusScreen{}), nil)
 
 	out := t.TempDir()
 	res, err := (&Builder{Host: uihost.New(a), OutDir: out}).Build(context.Background())
@@ -101,5 +102,14 @@ func TestStaticBuildSkipsSetStatusPage(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(out, "gone", "index.html")); !os.IsNotExist(err) {
 		t.Errorf("no page may be baked in at a 404 page's URL")
+	}
+	// Nor its llm.md: the static host would serve the not-found body as
+	// a 200 doc. The present page keeps its doc.
+	if _, err := os.Stat(filepath.Join(out, "gone", "llm.md")); !os.IsNotExist(err) {
+		md, _ := os.ReadFile(filepath.Join(out, "gone", "llm.md"))
+		t.Errorf("no llm.md may be written for a 404 page; wrote:\n%s\nlog:\n%s", md, buf.String())
+	}
+	if _, err := os.Stat(filepath.Join(out, "present", "llm.md")); err != nil {
+		t.Errorf("the present page lost its llm.md: %v", err)
 	}
 }

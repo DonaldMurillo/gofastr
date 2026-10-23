@@ -565,7 +565,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   it falls back to a navigation, so a deleted record never replays from
   the screen cache. The record's `llm.md` and its negotiated markdown
   (`Accept: text/markdown`) answer 404 too, and a static
-  export skips such a page the way it skips a 404 outlet. The embed content route keeps answering 200 with the
+  export skips such a page and its `llm.md` the way it skips a 404 outlet. The embed content route keeps answering 200 with the
   not-found body, because the embed loader mounts only a 2xx.
 - **Postgres text-to-integer retypes apply.** A column whose declared
   type moved from text to an integer rendered
