@@ -1452,7 +1452,10 @@ app.Entity("enrollments", framework.EntityConfig{
 ```
 
 `Define` injects no `id` column when `PrimaryKey` leaves it out, and panics
-when a key column is repeated or is not a declared field. The table gets
+when a key column is repeated or is not a declared field. A nil
+`PrimaryKey` means the one `id` column; an empty `[]string{}` names no
+column and also panics. An entity always has a key: only a raw
+`migrate.Table` describes a table without one. The table gets
 each key column `NOT NULL` and a `PRIMARY KEY (student_id, course_id)`
 constraint. Changing the key of an existing table is a migration; see
 [Primary-key changes](migrations.md#primary-key-changes).
