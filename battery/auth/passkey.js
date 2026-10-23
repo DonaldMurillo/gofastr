@@ -23,6 +23,10 @@
   NS.loadedModules = NS.loadedModules || {};
   NS.loadedModules[NAME] = true;
 
+  // say reads the page's runtime strings (passkey phrases registered in
+  // battery/auth), so a toast speaks the reader's language.
+  const say = function (k, en, p) { return typeof NS.say === 'function' ? NS.say(k, en, p) : en; };
+
   const SEL = '[data-passkey-login], [data-passkey-register], [data-passkey-delete]';
   // An auth base is a same-origin path: "/auth", "/api/auth". Anything
   // else leaves the button inert, so injected markup cannot aim a
@@ -64,13 +68,13 @@
     let data = null;
     try { data = await r.json(); } catch (_) { data = null; }
     if (!r.ok) {
-      const msg = data && typeof data.error === 'string' ? data.error : 'Request failed (' + r.status + ')';
+      const msg = data && typeof data.error === 'string' ? data.error : say('runtime.request_failed_status', 'Request failed ({{status}})', { status: r.status });
       throw new Error(msg);
     }
     return data;
   }
 
-  function say(title, variant) {
+  function toast(title, variant) {
     if (typeof NS._toastOrFallback === 'function') NS._toastOrFallback({ title: title, variant: variant });
   }
 
@@ -118,7 +122,7 @@
       clientDataJSON: toB64(cred.response.clientDataJSON),
       attestationObject: toB64(cred.response.attestationObject),
     });
-    say('Passkey added', 'success');
+    toast(say('auth.passkey_added', 'Passkey added'), 'success');
     refresh();
   }
 
@@ -126,7 +130,7 @@
     const id = btn.getAttribute('data-passkey-id') || '';
     if (!ID.test(id)) return;
     await post(base + '/passkey/delete', { id: id });
-    say('Passkey removed', 'success');
+    toast(say('auth.passkey_removed', 'Passkey removed'), 'success');
     refresh();
   }
 
@@ -138,7 +142,7 @@
       // NotAllowedError is the browser's answer to a cancelled or
       // timed-out prompt: the user already knows.
       if (err && err.name === 'NotAllowedError') return;
-      say(err && err.message ? err.message : 'Passkey request failed', 'error');
+      toast(err && err.message ? err.message : say('auth.passkey_failed', 'Passkey request failed'), 'error');
     }).finally(function () {
       btn.removeAttribute('aria-busy');
       btn.disabled = false;

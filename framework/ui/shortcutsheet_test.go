@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -23,7 +24,7 @@ func TestShortcutSheet(t *testing.T) {
 	if def.Role != "dialog" || def.LabelledBy != "shortcut-sheet-title" {
 		t.Errorf("modal role %q labelled by %q", def.Role, def.LabelledBy)
 	}
-	body := string(ShortcutList([]ShortcutItem{{Chord: "Mod+K", Label: "Open the command palette"}}))
+	body := string(ShortcutList(context.Background(), []ShortcutItem{{Chord: "Mod+K", Label: "Open the command palette"}}))
 	if !strings.Contains(body, "Open the command palette") || !strings.Contains(body, `data-cui-comp="ui-shortcut-hint"`) {
 		t.Errorf("list: %s", body)
 	}

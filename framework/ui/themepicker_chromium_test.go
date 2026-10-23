@@ -12,10 +12,11 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core-ui/style"
-	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
+
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // pickerState reads class|primary|checked: the theme class on <html>,

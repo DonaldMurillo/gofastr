@@ -5,8 +5,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 // A refused save whose error lands inside closed Collapsibles opens every

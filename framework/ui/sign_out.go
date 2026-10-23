@@ -55,7 +55,7 @@ func SignOut(cfg SignOutConfig) render.HTML {
 	}
 	label := cfg.Label
 	if label == "" {
-		label = i18nui.T(ctx, i18nui.KeySignOut)
+		label = i18nui.SignOut.Text(ctx)
 	}
 	variant := cfg.Variant
 	if variant == "" {

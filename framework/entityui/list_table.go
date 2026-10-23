@@ -104,7 +104,7 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 	}
 	if known && total > 0 && len(rows) > 0 && !b.top {
 		from := (page-1)*s.limit + 1
-		dt.Summary = i18nui.TVars(ctx, i18nui.KeyEntityRange, map[string]string{
+		dt.Summary = i18nui.EntityRange.Text(ctx, map[string]any{
 			"from":  formatNumber(float64(from), 0),
 			"to":    formatNumber(float64(from+len(rows)-1), 0),
 			"total": formatNumber(float64(total), 0),
@@ -114,7 +114,7 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 	if s.inlineDrawn {
 		// The cells look like values; the line under the rows says they
 		// edit where they stand.
-		dt.Note = i18nui.T(ctx, i18nui.KeyEntityInlineEditHint)
+		dt.Note = i18nui.EntityInlineEditHint.Text(ctx)
 	}
 	return ui.DataTable(dt)
 }
@@ -133,7 +133,7 @@ func (b *ListBuilder) perPageMenu(ctx context.Context, s *listState, total int) 
 		q.Set(s.p.per, strconv.Itoa(n))
 		items[i] = ui.MenuItem{Label: strconv.Itoa(n), Href: listHref(s.path, q)}
 	}
-	label := i18nui.T(ctx, i18nui.KeyEntityPageSize)
+	label := i18nui.EntityPageSize.Text(ctx)
 	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true},
 		ui.Muted(render.Text(label)),
 		ui.Menu(ui.MenuConfig{
@@ -180,11 +180,11 @@ func (b *ListBuilder) inlineEditor(ctx context.Context, s *listState, f schema.F
 	control := fb.typedInput(ctx, f, label, "", "eui-ie-"+listIDSafe(s.key, s.m.name)+"-"+strconv.Itoa(i)+"-"+f.Name)
 	return ui.InlineEdit(ui.InlineEditConfig{
 		Display: display,
-		Label:   i18nui.TVars(ctx, i18nui.KeyEntityInlineEdit, map[string]string{"field": label, "title": s.rowTitle(ctx, row)}),
+		Label:   i18nui.EntityInlineEdit.Text(ctx, map[string]any{"field": label, "title": s.rowTitle(ctx, row)}),
 		Control: control,
 		Action:  s.m.api + "/" + url.PathEscape(id),
 		Return:  listHref(s.path, s.q),
-		Saved:   i18nui.T(ctx, i18nui.KeyEntitySaved),
+		Saved:   i18nui.EntitySaved.Text(ctx),
 		Ctx:     ctx,
 	})
 }
@@ -333,9 +333,9 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 	switch f.Type {
 	case schema.Bool:
 		if truthy(val) {
-			return ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, i18nui.KeyEntityYes), Variant: ui.StatusSuccess})
+			return ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.EntityYes.Text(ctx), Variant: ui.StatusSuccess})
 		}
-		return ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, i18nui.KeyEntityNo), Variant: ui.StatusNeutral})
+		return ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.EntityNo.Text(ctx), Variant: ui.StatusNeutral})
 	case schema.Enum:
 		if val == "" {
 			return muted()
@@ -466,25 +466,25 @@ func (b *ListBuilder) rowActions(ctx context.Context, s *listState, row map[stri
 	}, render.Text(href))
 
 	items := []ui.MenuItem{
-		{Label: i18nui.T(ctx, i18nui.KeyEntityView), Href: href},
-		{Label: i18nui.T(ctx, i18nui.KeyEntityCopyLink), Copy: &ui.MenuCopy{Target: spanID, Toast: i18nui.T(ctx, i18nui.KeyCopyCopied)}},
+		{Label: i18nui.EntityView.Text(ctx), Href: href},
+		{Label: i18nui.EntityCopyLink.Text(ctx), Copy: &ui.MenuCopy{Target: spanID, Toast: i18nui.CopyCopied.Text(ctx)}},
 	}
 	if b.dup && s.createPath != "" && !m.d.NoDuplicate && canCreate(ctx, m) {
 		items = append(items, ui.MenuItem{
-			Label: i18nui.T(ctx, i18nui.KeyEntityDuplicate),
+			Label: i18nui.EntityDuplicate.Text(ctx),
 			Href:  s.createPath + "?duplicate=" + url.QueryEscape(id),
 		})
 	}
 	if b.delete && canDelete(ctx, m, id) {
 		del := deleteAction(ctx, m, id, listHref(s.path, s.q), b.undo)
 		items = append(items, ui.MenuItem{Separator: true}, ui.MenuItem{
-			Label:  i18nui.T(ctx, i18nui.KeyEntityDelete),
+			Label:  i18nui.EntityDelete.Text(ctx),
 			Danger: true,
 			Do:     &del,
 		})
 	}
 	return render.Join(urlSpan, ui.Menu(ui.MenuConfig{
-		Label:    i18nui.TVars(ctx, i18nui.KeyEntityRowActions, map[string]string{"title": title}),
+		Label:    i18nui.EntityRowActions.Text(ctx, map[string]any{"title": title}),
 		IconOnly: true,
 		Items:    items,
 		Position: ui.MenuBottomEnd,
@@ -507,11 +507,11 @@ func listIDSafe(key, entity string) string {
 // empty.
 func (b *ListBuilder) emptyState(ctx context.Context, s *listState) ui.EmptyStateConfig {
 	var title, desc string
-	noun := map[string]string{"entity": s.m.noun(ctx, true)}
+	noun := map[string]any{"entity": s.m.noun(ctx, true)}
 	if b.embedded {
 		// The section's header already offers Add.
 		return ui.EmptyStateConfig{
-			Title:        i18nui.TVars(ctx, i18nui.KeyEntityEmpty, noun),
+			Title:        i18nui.EntityEmpty.Text(ctx, noun),
 			HeadingLevel: b.headingLevel() + 1,
 			Compact:      true,
 		}
@@ -519,17 +519,17 @@ func (b *ListBuilder) emptyState(ctx context.Context, s *listState) ui.EmptyStat
 	if s.deletedView {
 		// The trash view's own empty state: nothing is deleted, and
 		// there is no New to offer from inside it.
-		title = i18nui.TVars(ctx, i18nui.KeyEntityDeletedEmpty, noun)
-		desc = i18nui.T(ctx, i18nui.KeyEntityDeletedEmptyBody)
+		title = i18nui.EntityDeletedEmpty.Text(ctx, noun)
+		desc = i18nui.EntityDeletedEmptyBody.Text(ctx)
 		return ui.EmptyStateConfig{Title: title, Description: desc, HeadingLevel: b.headingLevel() + 1}
 	}
 	if s.searchedOrFiltered() {
 		return ui.EmptyStateConfig{
-			Title:        i18nui.TVars(ctx, i18nui.KeyEntityNoMatch, noun),
-			Description:  i18nui.T(ctx, i18nui.KeyEntityNoMatchBody),
+			Title:        i18nui.EntityNoMatch.Text(ctx, noun),
+			Description:  i18nui.EntityNoMatchBody.Text(ctx),
 			HeadingLevel: b.headingLevel() + 1,
 			Action: ui.LinkButton(ui.LinkButtonConfig{
-				Label:   i18nui.T(ctx, i18nui.KeyEntityClearSearch),
+				Label:   i18nui.EntityClearSearch.Text(ctx),
 				Href:    s.clearSearchHref(),
 				Variant: ui.ButtonSecondary,
 			}),
@@ -537,23 +537,23 @@ func (b *ListBuilder) emptyState(ctx context.Context, s *listState) ui.EmptyStat
 	}
 	if s.viewPred != nil {
 		return ui.EmptyStateConfig{
-			Title:        i18nui.TVars(ctx, i18nui.KeyEntityViewEmpty, noun),
-			Description:  i18nui.T(ctx, i18nui.KeyEntityViewEmptyBody),
+			Title:        i18nui.EntityViewEmpty.Text(ctx, noun),
+			Description:  i18nui.EntityViewEmptyBody.Text(ctx),
 			HeadingLevel: b.headingLevel() + 1,
 		}
 	}
 	desc = b.empty
 	if desc == "" {
-		desc = i18nui.T(ctx, i18nui.KeyEntityEmptyBody)
+		desc = i18nui.EntityEmptyBody.Text(ctx)
 	}
 	cfg := ui.EmptyStateConfig{
-		Title:        i18nui.TVars(ctx, i18nui.KeyEntityEmpty, noun),
+		Title:        i18nui.EntityEmpty.Text(ctx, noun),
 		Description:  desc,
 		HeadingLevel: b.headingLevel() + 1,
 	}
 	if b.mayCreate() && s.createPath != "" && canCreate(ctx, s.m) {
 		cfg.Action = ui.LinkButton(ui.LinkButtonConfig{
-			Label: i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": s.m.singular(ctx)}),
+			Label: i18nui.EntityNew.Text(ctx, map[string]any{"entity": s.m.singular(ctx)}),
 			Href:  s.createHref(),
 		})
 	}

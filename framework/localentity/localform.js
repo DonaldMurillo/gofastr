@@ -33,11 +33,35 @@
     if (!specs.has(wrap)) {
       let spec = null;
       try { spec = JSON.parse(wrap.getAttribute(P + 'schema') || ''); } catch (_) { spec = null; }
-      specs.set(wrap, spec && Array.isArray(spec.fields) && spec.msgs ? spec : null);
+      specs.set(wrap, spec && Array.isArray(spec.fields) ? spec : null);
     }
     return specs.get(wrap);
   };
-  const say = (msg, n) => String(msg || '').split('{n}').join(n === undefined ? '' : String(n));
+  // The default messages, in the reader's language (the localentity.*
+  // phrases registered in localentity.go); spec.msgs holds the app's
+  // own words for any it replaced.
+  const say = NS.say || ((k, en) => en);
+  const DEFAULTS = {
+    required: () => say('localentity.required', 'This field is required.'),
+    number: () => say('localentity.number', 'Enter a number.'),
+    integer: () => say('localentity.integer', 'Enter a whole number.'),
+    min: () => say('localentity.min', 'Must be at least {{n}}.'),
+    max: () => say('localentity.max', 'Must be at most {{n}}.'),
+    minlen: () => say('localentity.minlen', 'Must be at least {{n}} characters.'),
+    maxlen: () => say('localentity.maxlen', 'Must be at most {{n}} characters.'),
+    pattern: () => say('localentity.pattern', 'Use the requested format.'),
+    choice: () => say('localentity.choice', 'Choose one of the listed options.'),
+    date: () => say('localentity.date', 'Enter a valid date.'),
+    full: () => say('localentity.full', 'This list is full ({{n}} at most).'),
+    failed: () => say('localentity.failed', 'Could not save on this device.'),
+  };
+  // msg is one message with {{n}} filled: the app's override when the
+  // spec carries a string for k, else the default.
+  const msg = (msgs, k, n) => {
+    const own = msgs && Object.prototype.hasOwnProperty.call(msgs, k) && typeof msgs[k] === 'string' && msgs[k];
+    const s = own || DEFAULTS[k]();
+    return s.split('{{n}}').join(n === undefined ? '' : String(n));
+  };
   const text = (v) => (v === null || v === undefined || typeof v === 'object' ? '' : String(v));
   const pad = (n) => String(n).padStart(2, '0');
 
@@ -78,33 +102,33 @@
       return { value: data.getAll(f.name).some((x) => x !== 'false' && x !== '') };
     }
     const raw = data.get(f.name);
-    if (raw === null || raw === '') return f.req ? { error: msgs.required } : { empty: true };
-    if (typeof raw !== 'string') return { error: msgs.required };
+    if (raw === null || raw === '') return f.req ? { error: msg(msgs, 'required') } : { empty: true };
+    if (typeof raw !== 'string') return { error: msg(msgs, 'required') };
     if (f.t === 'int' || f.t === 'float') {
       const v = raw.trim() === '' ? NaN : Number(raw.trim());
-      if (!Number.isFinite(v)) return { error: msgs.number };
-      if (f.t === 'int' && !Number.isSafeInteger(v)) return { error: msgs.integer };
-      if (f.min !== undefined && v < f.min) return { error: say(msgs.min, f.min) };
-      if (f.max !== undefined && v > f.max) return { error: say(msgs.max, f.max) };
+      if (!Number.isFinite(v)) return { error: msg(msgs, 'number') };
+      if (f.t === 'int' && !Number.isSafeInteger(v)) return { error: msg(msgs, 'integer') };
+      if (f.min !== undefined && v < f.min) return { error: msg(msgs, 'min', f.min) };
+      if (f.max !== undefined && v > f.max) return { error: msg(msgs, 'max', f.max) };
       return { value: v };
     }
-    if (f.t === 'enum' && !(f.values || []).includes(raw)) return { error: msgs.choice };
+    if (f.t === 'enum' && !(f.values || []).includes(raw)) return { error: msg(msgs, 'choice') };
     if (f.t === 'date' || f.t === 'timestamp') {
       const v = f.t === 'date' ? day(raw) : stamp(raw);
-      return v === null ? { error: msgs.date } : { value: v };
+      return v === null ? { error: msg(msgs, 'date') } : { value: v };
     }
     // Lengths count code points, as core/schema counts runes: an emoji
     // is one character on both sides.
     const len = [...raw].length;
-    if (f.min !== undefined && len < f.min) return { error: say(msgs.minlen, f.min) };
-    if (f.max !== undefined && len > f.max) return { error: say(msgs.maxlen, f.max) };
+    if (f.min !== undefined && len < f.min) return { error: msg(msgs, 'minlen', f.min) };
+    if (f.max !== undefined && len > f.max) return { error: msg(msgs, 'maxlen', f.max) };
     if (f.pattern) {
       // Fails closed: a pattern this browser cannot compile refuses the
       // value rather than letting anything through. Define refuses the
       // RE2-only syntax it can see, so this is the last line.
       let ok = false;
       try { ok = new RegExp(f.pattern, 'u').test(raw); } catch (_) { ok = false; }
-      if (!ok) return { error: msgs.pattern };
+      if (!ok) return { error: msg(msgs, 'pattern') };
     }
     return { value: raw };
   }
@@ -169,18 +193,18 @@
           return;
         }
         if (missing.length) {
-          refusal = msgs.required + ' (' + missing.join(', ') + ')';
+          refusal = msg(msgs, 'required') + ' (' + missing.join(', ') + ')';
           throw new Error('missing');
         }
         if (spec.max && (await tx.count(store)) >= spec.max) {
-          refusal = say(msgs.full, spec.max);
+          refusal = msg(msgs, 'full', spec.max);
           throw new Error('full');
         }
         await tx.put(store, Object.assign(Object.fromEntries(defaults), values, { created_at: now, updated_at: now }));
       });
     } catch (_) {
       if (typeof NS._toastOrFallback === 'function') {
-        NS._toastOrFallback({ variant: 'error', title: refusal || msgs.failed, ttl: 6000 });
+        NS._toastOrFallback({ variant: 'error', title: refusal || msg(msgs, 'failed'), ttl: 6000 });
       }
       return;
     }

@@ -66,7 +66,7 @@ func Selection(p SelectionProps, s Classes) render.HTML {
 	}
 	root = Mark(root, "data-hui-selection")
 	w := p.Strings.Resolve()
-	before, after, _ := strings.Cut(w.SelectionCount, "{n}")
+	before, after, _ := strings.Cut(w.SelectionCount, "{{n}}")
 	bar := []render.HTML{
 		b.El("span", PartStatus, Internal(nil),
 			render.Text(before),

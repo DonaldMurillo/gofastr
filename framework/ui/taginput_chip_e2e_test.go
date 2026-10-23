@@ -3,10 +3,11 @@ package ui_test
 import (
 	"testing"
 
+	"github.com/chromedp/chromedp"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
-	"github.com/chromedp/chromedp"
 )
 
 // A chip the headless-collections module adds at runtime wears the

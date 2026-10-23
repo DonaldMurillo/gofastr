@@ -25,7 +25,7 @@
     if (!/^\d{0,9}$/.test(text)) return;
     const n = +text;
     const fmt = bell.getAttribute('data-hui-notification-count-fmt') || '';
-    if (fmt) bell.setAttribute('aria-label', fmt.split('%d').join(n));
+    if (fmt) bell.setAttribute('aria-label', fmt.split('{{n}}').join(n));
     // The badge's count attribute follows too, so the next reader of
     // it (a stylesheet's 99+ shaping, a test) sees the same number the
     // anchor says. An attribute write, so the observer does not hear it.

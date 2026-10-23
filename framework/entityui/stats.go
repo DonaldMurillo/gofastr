@@ -35,7 +35,7 @@ const statGroupCap = 100
 // computed by the database over every match. where is filter text in the
 // query DSL (`status = "active"`), checked against the entity's fields;
 // format "money" prints a sum as $1,234.00 (the currency symbol is the
-// i18nui.KeyEntityCurrency entry), anything else as a number. A
+// i18nui.EntityCurrency entry), anything else as a number. A
 // refused read, a bad filter, an unknown agg or a failed query prints
 // "—": a stat sits beside content the caller can see, and must not
 // announce what it cannot.
@@ -63,9 +63,9 @@ func (u *UI) StatValue(ctx context.Context, entityName, agg, field, where, forma
 		s := groupDigits(total.FloatString(places))
 		if format == "money" {
 			if rest, ok := strings.CutPrefix(s, "-"); ok {
-				return "-" + i18nui.T(ctx, i18nui.KeyEntityCurrency) + rest
+				return "-" + i18nui.EntityCurrency.Text(ctx) + rest
 			}
-			return i18nui.T(ctx, i18nui.KeyEntityCurrency) + s
+			return i18nui.EntityCurrency.Text(ctx) + s
 		}
 		return s
 	default:

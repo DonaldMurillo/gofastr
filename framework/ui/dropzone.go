@@ -105,9 +105,9 @@ func FileDropzone(cfg FileDropzoneConfig) render.HTML {
 	prompt := cfg.Prompt
 	if prompt == "" {
 		if cfg.Multiple {
-			prompt = i18nui.T(ctx, i18nui.KeyDropzoneDropFiles)
+			prompt = i18nui.DropzoneDropFiles.Text(ctx)
 		} else {
-			prompt = i18nui.T(ctx, i18nui.KeyDropzoneDropFile)
+			prompt = i18nui.DropzoneDropFile.Text(ctx)
 		}
 	}
 	words := StringsFor(ctx)
@@ -253,9 +253,9 @@ func dropzoneHelp(cfg FileDropzoneConfig, ctx context.Context) string {
 	}
 	n := strconv.Itoa(cfg.MaxSizeMB)
 	if cfg.Help == "" {
-		return i18nui.TVars(ctx, i18nui.KeyDropzoneMaxSize, map[string]string{"n": n})
+		return i18nui.DropzoneMaxSize.Text(ctx, map[string]any{"n": n})
 	}
-	return cfg.Help + i18nui.TVars(ctx, i18nui.KeyDropzoneMaxSizeSuffix, map[string]string{"n": n})
+	return cfg.Help + i18nui.DropzoneMaxSizeSuffix.Text(ctx, map[string]any{"n": n})
 }
 
 func dropzoneIcon() string {

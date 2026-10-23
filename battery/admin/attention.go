@@ -88,23 +88,23 @@ func (b *Battery) attentionCard(ctx context.Context) render.HTML {
 			rows = watchRows
 		}
 		href := b.entityBase(e) + "?view=" + url.QueryEscape(w.View)
-		heading := i18nui.TVars(ctx, i18nui.KeyAdminAttentionList, map[string]string{
+		heading := i18nui.AdminAttentionList.Text(ctx, map[string]any{
 			"entity": b.plural(ctx, e),
 			"view":   i18nui.ViewLabel(ctx, nil, w.Entity, v.Key, v.Label),
 		})
 		lists = append(lists, b.ui.List(w.Entity).Base(b.entityBase(e)).Key("attn"+strconv.Itoa(i)).
 			View(w.View).Columns(w.Columns...).Top(rows).Embedded().Flush().NoCreate().Heading(heading, 3).
-			Actions(headerLink(i18nui.T(ctx, i18nui.KeyAdminViewAll), href)).RenderCtx(ctx))
+			Actions(headerLink(i18nui.AdminViewAll.Text(ctx), href)).RenderCtx(ctx))
 	}
 	if b.cfg.Queue != nil {
 		if jobs := b.failedJobs(ctx); jobs != "" {
 			lists = append(lists, jobs)
 		}
 	}
-	title := i18nui.T(ctx, i18nui.KeyAdminAttention)
+	title := i18nui.AdminAttention.Text(ctx)
 	if len(lists) == 0 {
 		return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2},
-			ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyAdminAttentionClear), HeadingLevel: 3}))
+			ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.AdminAttentionClear.Text(ctx), HeadingLevel: 3}))
 	}
 	return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2}, ui.Stack(ui.StackConfig{Gap: ui.GapLG}, lists...))
 }

@@ -2,7 +2,6 @@ package headless
 
 import (
 	"strconv"
-	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -197,7 +196,7 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 		for i, sl := range p.Slides {
 			own := html.Attrs{
 				"href":                   "#" + sl.ID,
-				"aria-label":             numReplace(w.CarouselGoTo, "{n}", i+1),
+				"aria-label":             fill(w.CarouselGoTo, "n", strconv.Itoa(i+1)),
 				"data-hui-carousel-goto": strconv.Itoa(i),
 			}
 			if i == 0 {
@@ -225,10 +224,5 @@ func carouselSlidesHaveContent(slides []CarouselSlide) bool {
 
 // carouselSlideName formats the slide sentence.
 func carouselSlideName(format string, n, total int) string {
-	return numReplace(numReplace(format, "{n}", n), "{total}", total)
-}
-
-// numReplace substitutes a {token} with a number.
-func numReplace(s, token string, n int) string {
-	return strings.ReplaceAll(s, token, strconv.Itoa(n))
+	return fill(format, "n", strconv.Itoa(n), "total", strconv.Itoa(total))
 }

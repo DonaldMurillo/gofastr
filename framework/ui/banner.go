@@ -129,7 +129,7 @@ func Banner(cfg BannerConfig) render.HTML {
 		// SystemBanner's own roles already carry the severity: the
 		// offline/urgent banner alerts, the rest are polite status.
 		Dismiss:      &dismiss,
-		DismissLabel: i18nui.T(ctx, i18nui.KeyBannerDismiss),
+		DismissLabel: i18nui.BannerDismiss.Text(ctx),
 		Shown:        true,
 		ExtraAttrs:   headless.Safe(cfg.ExtraAttrs, "role", "aria-live"),
 		Parts:        parts,

@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/chromedp/chromedp"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -13,7 +15,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
-	"github.com/chromedp/chromedp"
 )
 
 func TestCompactLayoutGeometry(t *testing.T) {

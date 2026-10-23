@@ -109,10 +109,10 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 		island = headless.Island{Endpoint: cfg.RPCPath, Signal: id + "-items"}
 	}
 	if cfg.AddLabel == "" {
-		cfg.AddLabel = i18nui.T(ctx, i18nui.KeyRepeaterAdd)
+		cfg.AddLabel = i18nui.RepeaterAdd.Text(ctx)
 	}
 	if cfg.RemoveLabel == "" {
-		cfg.RemoveLabel = i18nui.T(ctx, i18nui.KeyRepeaterRemove)
+		cfg.RemoveLabel = i18nui.RepeaterRemove.Text(ctx)
 	}
 
 	parts := headless.Parts{}

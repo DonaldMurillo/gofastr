@@ -36,15 +36,15 @@ func (b *RecordBuilder) pageTools(ctx context.Context, base string) []render.HTM
 	if span, items := b.copyLink(ctx); len(items) > 0 {
 		out = append(out, span, ui.CopyButton(ui.CopyButtonConfig{
 			Target:      items[0].Copy.Target,
-			Label:       i18nui.T(ctx, i18nui.KeyCopyLink),
+			Label:       i18nui.CopyLink.Text(ctx),
 			Icon:        "link",
 			ToastOnCopy: true,
-			ToastTitle:  i18nui.T(ctx, i18nui.KeyCopyCopied),
+			ToastTitle:  i18nui.CopyCopied.Text(ctx),
 			Ctx:         ctx,
 		}))
 	}
 	return append(out, ui.LinkButton(ui.LinkButtonConfig{
-		Label:      i18nui.T(ctx, i18nui.KeyDrawerOpenPanel),
+		Label:      i18nui.DrawerOpenPanel.Text(ctx),
 		Href:       base,
 		Icon:       "minimize",
 		Variant:    ui.ButtonSecondary,

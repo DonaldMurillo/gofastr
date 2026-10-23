@@ -57,7 +57,7 @@
       // tell the visitor why nothing opened. _fallbackToast is synchronous
       // and already on NS, so no module fetch / async wait.
       if (document.documentElement.hasAttribute('data-cui-static') && NS._fallbackToast) {
-        NS._fallbackToast({ title: 'Needs the Go server.' });
+        NS._fallbackToast({ title: NS.say('runtime.needs_server', 'Needs the Go server.') });
       }
       return;
     }
@@ -141,7 +141,7 @@
           // the toast would deny an open panel.
           console.error('[gofastr] widget chrome fetch failed', err);
           if (cache === NS._chromeCache) {
-            NS._toastOrFallback?.({ variant: 'error', title: 'Could not open that panel.', ttl: 6000 });
+            NS._toastOrFallback?.({ variant: 'error', title: NS.say('runtime.panel_failed', 'Could not open that panel.'), ttl: 6000 });
           }
           throw err;
         }

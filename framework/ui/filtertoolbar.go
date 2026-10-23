@@ -235,7 +235,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 
 	label := cfg.Label
 	if label == "" {
-		label = i18nui.T(ctx, i18nui.KeyFilterToolbarLabel)
+		label = i18nui.FilterToolbarLabel.Text(ctx)
 	}
 
 	controls := make([]render.HTML, 0, len(cfg.Facets)+len(cfg.Extra)+3)
@@ -284,7 +284,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	// Apply (submit) + Reset (link to the bare action → clears params).
 	applyLabel := cfg.ApplyLabel
 	if applyLabel == "" {
-		applyLabel = i18nui.T(ctx, i18nui.KeyFilterApply)
+		applyLabel = i18nui.FilterApply.Text(ctx)
 	}
 	actionsKids := []render.HTML{
 		Button(ButtonConfig{
@@ -297,7 +297,7 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if !cfg.HideReset {
 		resetLabel := cfg.ResetLabel
 		if resetLabel == "" {
-			resetLabel = i18nui.T(ctx, i18nui.KeyFilterReset)
+			resetLabel = i18nui.FilterReset.Text(ctx)
 		}
 		actionsKids = append(actionsKids, LinkButton(LinkButtonConfig{
 			Label:   resetLabel,
@@ -391,7 +391,7 @@ func renderSelectFacet(ctx context.Context, f Facet) render.HTML {
 	if !hasEmptyValue(f.Options) {
 		allLabel := f.AllLabel
 		if allLabel == "" {
-			allLabel = i18nui.TVars(ctx, i18nui.KeyFilterAll, map[string]string{"label": f.Label})
+			allLabel = i18nui.FilterAll.Text(ctx, map[string]any{"label": f.Label})
 		}
 		opts = append(opts, SelectOption{Value: "", Text: allLabel, Selected: f.Value == ""})
 	}
@@ -410,7 +410,7 @@ func renderSortFacet(ctx context.Context, cfg FilterToolbarConfig) render.HTML {
 	}
 	sortLabel := cfg.SortLabel
 	if sortLabel == "" {
-		sortLabel = i18nui.T(ctx, i18nui.KeyFilterSortBy)
+		sortLabel = i18nui.FilterSortBy.Text(ctx)
 	}
 	opts := make([]SelectOption, 0, len(cfg.Sort))
 	for _, o := range cfg.Sort {
@@ -428,7 +428,7 @@ func renderSortFacet(ctx context.Context, cfg FilterToolbarConfig) render.HTML {
 func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 	placeholder := s.Placeholder
 	if placeholder == "" {
-		placeholder = i18nui.T(ctx, i18nui.KeySearchPlaceholder)
+		placeholder = i18nui.SearchPlaceholder.Text(ctx)
 	}
 	extra := html.Attrs{}
 	if s.Value != "" {
@@ -448,7 +448,7 @@ func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 	if s.Shortcut != "" {
 		wrap["data-hui-shortcut-focus"] = s.Shortcut
 		wrap["data-hui-shortcut-target"] = "#" + id
-		kids = append(kids, ShortcutHint(ShortcutHintConfig{Chord: s.Shortcut, Class: "fui-filter-toolbar__search-key"}))
+		kids = append(kids, ShortcutHint(ShortcutHintConfig{Chord: s.Shortcut, Class: "fui-filter-toolbar__search-key", Ctx: ctx}))
 	}
 	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet fui-filter-toolbar__search",
 		ExtraAttrs: wrap}, kids...)
@@ -476,7 +476,7 @@ func renderPillFacet(ctx context.Context, f Facet) render.HTML {
 	if !hasEmptyValue(f.Options) {
 		allLabel := f.AllLabel
 		if allLabel == "" {
-			allLabel = i18nui.T(ctx, i18nui.KeyFilterAllPlain)
+			allLabel = i18nui.FilterAllPlain.Text(ctx)
 		}
 		all := FacetOption{Label: allLabel, Value: ""}
 		pills = append(pills, pill(f.Name, all, f.Value == "", pillID(all)))

@@ -94,7 +94,7 @@ func TestApp_I18nBridgeWiresTranslatorIntoCtx(t *testing.T) {
 
 	a := NewApp(WithI18n(tr))
 	a.Router().Get("/lbl", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(i18nui.T(r.Context(), i18nui.KeyPaginationNext)))
+		_, _ = w.Write([]byte(i18nui.PaginationNext.Text(r.Context())))
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/lbl", nil)

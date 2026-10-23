@@ -150,7 +150,7 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 		}
 		general := cfg.Summary
 		if general == "" {
-			general = i18nui.T(ctx, i18nui.KeyFormErrorsSummary)
+			general = i18nui.FormErrorsSummary.Text(ctx)
 		}
 		errors = ValidationSummary(ValidationSummaryConfig{
 			ID:          cfg.ID + "-errors",
@@ -159,7 +159,7 @@ func StepWizard(cfg StepWizardConfig) render.HTML {
 			FieldLabels: cfg.FieldLabels,
 			FieldIDs:    cfg.FieldIDs,
 			FieldOrder:  cfg.FieldOrder,
-			Title:       i18nui.T(ctx, i18nui.KeyFormHasErrors),
+			Title:       i18nui.FormHasErrors.Text(ctx),
 			Ctx:         ctx,
 		})
 		// headless.StepWizard takes Errors as slot content; this

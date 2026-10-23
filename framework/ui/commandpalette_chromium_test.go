@@ -14,13 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/emulation"
+	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
-	"github.com/chromedp/cdproto/emulation"
-	"github.com/chromedp/chromedp"
-	"github.com/chromedp/chromedp/kb"
 )
 
 // Hard rule 9: dialog bounding is layout — a DOM dump cannot see that a

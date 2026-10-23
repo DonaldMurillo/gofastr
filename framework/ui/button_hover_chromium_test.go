@@ -12,10 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DonaldMurillo/gofastr/core/render"
-	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 )
 
 // Hard rule 9: primary and danger hover mixed the treatment's own

@@ -3,6 +3,7 @@ package entityui
 import (
 	"context"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -41,18 +42,18 @@ func canDelete(ctx context.Context, m *meta, id string) bool {
 
 // AccessDeniedTitle is the heading drawn in place of rows the caller may
 // not read. Exported so a test in another package detects the notice by
-// symbol, not by copying prose.
-const AccessDeniedTitle = "Not available"
+// symbol (AccessDeniedTitle.English()), not by copying prose.
+var AccessDeniedTitle = i18n.Define("entityui.access_denied_title", "Not available")
 
 // accessDenied names no data: only that this entity is not available.
 func accessDenied(ctx context.Context, plural string) render.HTML {
-	return ui.Callout(ui.CalloutConfig{Title: AccessDeniedTitle, Variant: ui.StatusWarning},
-		render.Text(i18nui.TVars(ctx, i18nui.KeyEntityAccessDenied, map[string]string{"entity": plural})))
+	return ui.Callout(ui.CalloutConfig{Title: AccessDeniedTitle.Text(ctx), Variant: ui.StatusWarning},
+		render.Text(i18nui.EntityAccessDenied.Text(ctx, map[string]any{"entity": plural})))
 }
 
 // slotFailed is a failed slot's generic message; the log line carries the
 // detail.
 func slotFailed(ctx context.Context) render.HTML {
-	return ui.Callout(ui.CalloutConfig{Title: i18nui.T(ctx, i18nui.KeyEntitySlotFailed), Variant: ui.StatusDanger},
-		render.Text(i18nui.T(ctx, i18nui.KeyEntitySlotFailedBody)))
+	return ui.Callout(ui.CalloutConfig{Title: i18nui.EntitySlotFailed.Text(ctx), Variant: ui.StatusDanger},
+		render.Text(i18nui.EntitySlotFailedBody.Text(ctx)))
 }

@@ -38,7 +38,7 @@ func (b *Battery) handlePalette(w http.ResponseWriter, r *http.Request) {
 	cmds := b.paletteCommands(ctx, r.PostFormValue("q"))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(ui.PaletteResults(ctx, paletteName, cmds, i18nui.T(ctx, i18nui.KeyAdminPaletteEmpty))))
+	_, _ = w.Write([]byte(ui.PaletteResults(ctx, paletteName, cmds, i18nui.AdminPaletteEmpty.Text(ctx))))
 }
 
 // renderSearch is the search page: the palette's results for ?q= as
@@ -48,9 +48,9 @@ func (b *Battery) renderSearch(ctx context.Context, _ map[string]string) render.
 	if r := appui.RequestFromContext(ctx); r != nil {
 		q = r.URL.Query().Get("q")
 	}
-	label := i18nui.T(ctx, i18nui.KeyAdminSearch)
+	label := i18nui.AdminSearch.Text(ctx)
 	parts := []render.HTML{
-		ui.PageHeader(ui.PageHeaderConfig{Title: i18nui.T(ctx, i18nui.KeyAdminSearch)}),
+		ui.PageHeader(ui.PageHeaderConfig{Title: i18nui.AdminSearch.Text(ctx)}),
 		ui.FilterToolbar(ui.FilterToolbarConfig{
 			Action:    b.cfg.PathPrefix + "/search",
 			Search:    &ui.FilterSearch{Name: "q", Value: q, Placeholder: label, Label: label},
@@ -60,7 +60,7 @@ func (b *Battery) renderSearch(ctx context.Context, _ map[string]string) render.
 	}
 	cmds := b.paletteCommands(ctx, q)
 	if len(cmds) == 0 {
-		parts = append(parts, ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyAdminPaletteEmpty), HeadingLevel: 2}))
+		parts = append(parts, ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.AdminPaletteEmpty.Text(ctx), HeadingLevel: 2}))
 		return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, parts...)
 	}
 	rows := make([]render.HTML, len(cmds))
@@ -88,8 +88,8 @@ func (b *Battery) paletteCommands(ctx context.Context, q string) []ui.PaletteCom
 			out = append(out, c)
 		}
 	}
-	page := i18nui.T(ctx, i18nui.KeyAdminPalettePage)
-	add(ui.PaletteCommand{Label: i18nui.T(ctx, i18nui.KeyAdminDashboard), Href: b.cfg.PathPrefix, Meta: page})
+	page := i18nui.AdminPalettePage.Text(ctx)
+	add(ui.PaletteCommand{Label: i18nui.AdminDashboard.Text(ctx), Href: b.cfg.PathPrefix, Meta: page})
 	for _, it := range b.opsItems(ctx) {
 		add(ui.PaletteCommand{Label: it.Label, Href: it.Href, Meta: page})
 	}
@@ -100,9 +100,9 @@ func (b *Battery) paletteCommands(ctx context.Context, q string) []ui.PaletteCom
 	}
 	for _, e := range b.ents {
 		plural := b.plural(ctx, e)
-		add(ui.PaletteCommand{Label: plural, Href: b.entityBase(e), Meta: i18nui.T(ctx, i18nui.KeyAdminEntities)})
+		add(ui.PaletteCommand{Label: plural, Href: b.entityBase(e), Meta: i18nui.AdminEntities.Text(ctx)})
 		add(ui.PaletteCommand{
-			Label: i18nui.TVars(ctx, i18nui.KeyAdminPaletteNew, map[string]string{"entity": b.singular(ctx, e)}),
+			Label: i18nui.AdminPaletteNew.Text(ctx, map[string]any{"entity": b.singular(ctx, e)}),
 			Href:  b.entityBase(e) + "/create",
 			Meta:  plural,
 		})

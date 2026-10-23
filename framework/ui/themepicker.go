@@ -72,7 +72,7 @@ func ThemePicker(cfg ThemePickerConfig) render.HTML {
 	}
 	defaultLabel := cfg.DefaultLabel
 	if defaultLabel == "" {
-		defaultLabel = i18nui.T(ctx, i18nui.KeyThemeDefault)
+		defaultLabel = i18nui.ThemeDefault.Text(ctx)
 	}
 
 	rootAttrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label")
@@ -87,7 +87,7 @@ func ThemePicker(cfg ThemePickerConfig) render.HTML {
 	rootAttrs["class"] = strings.TrimSpace("fui-theme-toggle fui-theme-toggle--pill " + modifierClass("fui-theme-toggle--fill", cfg.Fill) + " " + cfg.Class)
 	rootAttrs["data-hui-theme-picker"] = ""
 	rootAttrs["role"] = "radiogroup"
-	rootAttrs["aria-label"] = i18nui.T(ctx, i18nui.KeyThemePicker)
+	rootAttrs["aria-label"] = i18nui.ThemePicker.Text(ctx)
 	if cfg.ID != "" {
 		rootAttrs["id"] = cfg.ID
 	}

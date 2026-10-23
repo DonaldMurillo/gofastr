@@ -65,7 +65,7 @@ func Render(cfg Config) render.HTML {
 	if len(cfg.Links) > 0 {
 		primary = html.Nav(html.NavConfig{
 			Class: Style.Links(),
-			Label: i18nui.T(context.Background(), i18nui.KeyNavPrimary),
+			Label: i18nui.NavPrimary.Text(context.Background()),
 		}, links...)
 	}
 	return Style.Scope(html.Header(html.HeaderConfig{Banner: true},

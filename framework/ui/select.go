@@ -1,12 +1,13 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
-	"strings"
 )
 
 // ─── Select ─────────────────────────────────────────────────────────

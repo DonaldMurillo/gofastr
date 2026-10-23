@@ -106,7 +106,7 @@ func ProgressSteps(cfg ProgressStepsConfig) render.HTML {
 	}
 	label := cfg.Label
 	if label == "" {
-		label = i18nui.T(ctx, i18nui.KeyProgressLabel)
+		label = i18nui.ProgressLabel.Text(ctx)
 	}
 	navClass := cfg.Class
 	if cfg.Orientation == ProgressStepsVertical {

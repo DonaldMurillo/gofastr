@@ -407,9 +407,9 @@ func DataTable(cfg DataTableConfig) render.HTML {
 	if len(cfg.Rows) == 0 {
 		e := cfg.Empty
 		if e.Title == "" {
-			e.Title = i18nui.T(ctx, i18nui.KeyTableNoResults)
+			e.Title = i18nui.TableNoResults.Text(ctx)
 			if e.Description == "" {
-				e.Description = i18nui.T(ctx, i18nui.KeyTableEmptyDesc)
+				e.Description = i18nui.TableEmptyDesc.Text(ctx)
 			}
 		}
 		empty = EmptyState(e)

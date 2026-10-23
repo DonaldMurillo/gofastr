@@ -1,9 +1,10 @@
 package ui
 
 import (
-	"github.com/DonaldMurillo/gofastr/core/render"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
 func TestTextFieldWiresLabelHelpAndTypedAttributes(t *testing.T) {

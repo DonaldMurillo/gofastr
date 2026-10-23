@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── PricingCard ─────────────────────────────────────────────────────
@@ -22,7 +25,7 @@ type PricingCardConfig struct {
 	Period      string   // optional period suffix, e.g. "/mo"
 	Description string   // optional one-line pitch under the name
 	Features    []string // checked feature list
-	CTALabel    string   // CTA button label (defaults to "Choose " + Name)
+	CTALabel    string   // CTA button label (defaults to "Choose <Name>" in the reader's language)
 	CTAHref     string   // CTA target
 	Featured    bool     // highlight as the recommended plan
 	ID          string
@@ -36,6 +39,9 @@ type PricingCardConfig struct {
 	// Keys the component owns are dropped: class and id (use Class /
 	// ID) and data-cui-*.
 	ExtraAttrs html.Attrs
+	// Ctx carries the per-request context the badge and the default
+	// CTA label are said in. When nil, English applies.
+	Ctx context.Context
 }
 
 // PricingCard renders a single plan card. Placed directly in a ui.Grid
@@ -44,6 +50,10 @@ type PricingCardConfig struct {
 // buttons start level across the row. Anywhere else the card lays out
 // on its own.
 func PricingCard(cfg PricingCardConfig) render.HTML {
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	cls := "fui-pricing-card"
 	if cfg.Featured {
 		cls += " fui-pricing-card--featured"
@@ -60,7 +70,7 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 		html.Heading(html.HeadingConfig{Level: level, Class: "fui-pricing-card__name"}, render.Text(cfg.Name)),
 	}
 	if cfg.Featured {
-		head = append([]render.HTML{html.Span(html.TextConfig{Class: "fui-pricing-card__badge"}, render.Text("Recommended"))}, head...)
+		head = append([]render.HTML{html.Span(html.TextConfig{Class: "fui-pricing-card__badge"}, render.Text(i18nui.PricingRecommended.Text(ctx)))}, head...)
 	}
 	if cfg.Description != "" {
 		head = append(head, html.Paragraph(html.TextConfig{Class: "fui-pricing-card__desc"}, render.Text(cfg.Description)))
@@ -89,7 +99,7 @@ func PricingCard(cfg PricingCardConfig) render.HTML {
 	if cfg.CTALabel != "" || cfg.CTAHref != "" {
 		label := cfg.CTALabel
 		if label == "" {
-			label = "Choose " + cfg.Name
+			label = i18nui.PricingChoose.Text(ctx, map[string]any{"plan": cfg.Name})
 		}
 		variant := ButtonSecondary
 		if cfg.Featured {

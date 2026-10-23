@@ -19,3 +19,9 @@ var (
 	reasonPrefsInvalid    = i18n.Define("desktop.prefs_invalid", "invalid preferences: {{fields}}")
 	reasonPrefsSaveFailed = i18n.Define("desktop.prefs_save_failed", "saving preferences failed")
 )
+
+// The preferences screen's heading and its save button.
+var (
+	pageSettingsTitle = i18n.Define("desktop.settings_title", "Settings")
+	pageSettingsSave  = i18n.Define("desktop.settings_save", "Save")
+)

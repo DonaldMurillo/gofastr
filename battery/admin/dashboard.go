@@ -39,7 +39,7 @@ func (b *Battery) dashboardNew(ctx context.Context) render.HTML {
 		return ""
 	}
 	return ui.LinkButton(ui.LinkButtonConfig{
-		Label:   i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": b.singular(ctx, e)}),
+		Label:   i18nui.EntityNew.Text(ctx, map[string]any{"entity": b.singular(ctx, e)}),
 		Href:    b.entityBase(e) + "/create",
 		Variant: ui.ButtonPrimary,
 		Icon:    "plus",
@@ -50,8 +50,8 @@ func (b *Battery) dashboardNew(ctx context.Context) render.HTML {
 func (b *Battery) renderDashboard(ctx context.Context, _ map[string]string) render.HTML {
 	parts := []render.HTML{
 		ui.PageHeader(ui.PageHeaderConfig{
-			Title:    i18nui.T(ctx, i18nui.KeyAdminDashboard),
-			Subtitle: i18nui.T(ctx, i18nui.KeyAdminDashboardSub),
+			Title:    i18nui.AdminDashboard.Text(ctx),
+			Subtitle: i18nui.AdminDashboardSub.Text(ctx),
 			Actions:  b.dashboardNew(ctx),
 		}),
 		resultNotice(ctx),
@@ -97,7 +97,7 @@ func (b *Battery) entityCards(ctx context.Context) []render.HTML {
 	}
 	out := make([]render.HTML, 0, len(order))
 	for _, g := range order {
-		label := i18nui.T(ctx, i18nui.KeyAdminEntities)
+		label := i18nui.AdminEntities.Text(ctx)
 		if g != "" {
 			label = i18nui.NavGroupLabel(ctx, nil, g, "")
 		}
@@ -145,7 +145,7 @@ func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML 
 	}
 	updated := ""
 	if t, ok := b.ui.LastUpdated(cctx, e.GetName()); ok {
-		updated = i18nui.TVars(ctx, i18nui.KeyAdminUpdatedAgo, map[string]string{"ago": ui.Ago(ctx, time.Now(), t)})
+		updated = i18nui.AdminUpdatedAgo.Text(ctx, map[string]any{"ago": ui.Ago(ctx, time.Now(), t)})
 	}
 	icon := ""
 	if n := navOf(e); n != nil {
@@ -159,7 +159,7 @@ func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML 
 		Icon:  icon,
 		Tile:  true,
 		Action: ui.LinkButton(ui.LinkButtonConfig{
-			Label:   i18nui.T(ctx, i18nui.KeyAdminCardNew),
+			Label:   i18nui.AdminCardNew.Text(ctx),
 			Href:    b.entityBase(e) + "/create",
 			Variant: ui.ButtonSecondary,
 			Size:    ui.ButtonSizeSmall,
@@ -175,7 +175,7 @@ func (b *Battery) failedJobs(ctx context.Context) render.HTML {
 	jobs, err := b.cfg.Queue.ListJobs(ctx, "failed", dashboardRows, 0)
 	if err != nil {
 		b.logger().Error("admin: list failed jobs", "error", err)
-		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminQueueLoadFailed)))
+		return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminQueueLoadFailed.Text(ctx)))
 	}
 	if len(jobs) == 0 {
 		return ""
@@ -187,9 +187,9 @@ func (b *Battery) failedJobs(ctx context.Context) render.HTML {
 	_, replay := b.replayable()
 	return render.Join(
 		ui.PageHeader(ui.PageHeaderConfig{
-			Title:        i18nui.T(ctx, i18nui.KeyAdminFailedJobs),
+			Title:        i18nui.AdminFailedJobs.Text(ctx),
 			Badge:        count,
-			Actions:      headerLink(i18nui.T(ctx, i18nui.KeyAdminViewAll), b.cfg.PathPrefix+"/queue?status=failed"),
+			Actions:      headerLink(i18nui.AdminViewAll.Text(ctx), b.cfg.PathPrefix+"/queue?status=failed"),
 			HeadingLevel: 3,
 			Compact:      true,
 		}),
@@ -199,17 +199,17 @@ func (b *Battery) failedJobs(ctx context.Context) render.HTML {
 
 // recentCard is the newest audit rows, scoped as the Audit log page is.
 func (b *Battery) recentCard(ctx context.Context) render.HTML {
-	title := i18nui.T(ctx, i18nui.KeyAdminRecent)
-	all := headerLink(i18nui.T(ctx, i18nui.KeyAdminAudit), b.cfg.PathPrefix+"/audit")
+	title := i18nui.AdminRecent.Text(ctx)
+	all := headerLink(i18nui.AdminAudit.Text(ctx), b.cfg.PathPrefix+"/audit")
 	rows, err := b.queryAudit(ctx, dashboardRows)
 	if err != nil {
 		b.logger().Error("admin: load audit rows", "table", b.cfg.AuditTable, "error", err)
 		return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2},
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminAuditLoadFailed))))
+			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminAuditLoadFailed.Text(ctx))))
 	}
 	if len(rows) == 0 {
 		return ui.Card(ui.CardConfig{Heading: title, HeadingLevel: 2},
-			ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.T(ctx, i18nui.KeyAdminNoActivity), HeadingLevel: 3}))
+			ui.EmptyState(ui.EmptyStateConfig{Title: i18nui.AdminNoActivity.Text(ctx), HeadingLevel: 3}))
 	}
 	names := b.actorNames(ctx, rows)
 	now := time.Now()

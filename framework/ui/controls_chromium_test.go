@@ -8,10 +8,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/chromedp/chromedp"
+
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
-	"github.com/chromedp/chromedp"
 )
 
 // Hard rule 9: the neutral palette made the dark-mode primary near

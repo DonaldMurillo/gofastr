@@ -1,9 +1,10 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
-	"strings"
 )
 
 // ─── Tooltip ────────────────────────────────────────────────────────

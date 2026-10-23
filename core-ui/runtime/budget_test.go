@@ -573,6 +573,13 @@ const (
 	//        marker the module left behind froze the page in a
 	//        microtask loop; TestStalledBundleModuleIsBounded).
 	//        Measured 13647 → 13655. (l1: 23)
+	//   +97 runtime strings (2026-10-21): the kernel's say(), which
+	//        reads the host's #gofastr-strings block once and fills
+	//        {{name}} placeholders, and the core fragments' toasts and
+	//        notices calling it (TestRuntimeSayCallsMatchPhrases,
+	//        TestStringsJSONCarriesOnlyTranslations). Measured
+	//        14176 → 14303 (+127); 30 of those bytes were slack under
+	//        the old line. (l1: 189)
 	//
 	// HALT NOTE: the bundle measures 13391 at level 6 — 291 over the
 	// 13100 target (the Back/Forward leave capture every page runs is
@@ -585,7 +592,7 @@ const (
 	// spelling) plus the fixes and boot rows named with their tests.
 	// The line is the measurement plus clearance (moved DOWN from
 	// 13527, never up).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 8
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -952,7 +959,13 @@ const (
 	// into widgetlinks, keeping envelope/widgets under their existing caps.
 	// 16426 is the smallest level-1 line accepting the real bundle. The padded
 	// level-6 fixture must still cross it, checked by the cliff guard below.
-	coreCongestionWindowGZ = 16426
+	// 2026-10-21: the runtime's own words speak the reader's language
+	// (say() and the #gofastr-strings block) and raise core to 14303/16615.
+	// The calls that cost the most are the failed-navigation and
+	// needs-the-server toasts, which fire when the network is the thing
+	// that failed, so a demand module could not load to say them; say()
+	// itself reuses _readInlineJSON. 16615, the smallest step that fits.
+	coreCongestionWindowGZ = 16615
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1001,6 +1014,7 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"in-flight dedup joins only the live navigation (epoch-owned)":             3,   // (l1: -20)
 		"stale cleanup keeps the live dedup + one-shot bounded module wait":        8,   // (l1: 23)
 		"page head/language carriers, safe metadata application and cache replay":  519, // (l1: 649)
+		"runtime strings: kernel say() and the core fragments' calls":              97,  // (l1: 189)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1162,13 +1176,17 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// loading hold and sweep (TestLoadingMinSpansSheetWait's cached
 		// and prefetched arms) and a stale navigation's cleanup stopped
 		// dropping the live one's dedup entry (TestStaleNavKeepsDedup).
-		"envelope": 7843,
+		// 7849 measured (7847 + 2) after the failed-navigation toast
+		// speaks through say() (2026-10-21, runtime strings).
+		"envelope": 7849,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
 		// the document; the 5 bytes over the generic goal are that
 		// hand-off. Pinned at the measured size plus 2 clearance.
-		"widgets": 3079,
+		// 3099 measured (3097 + 2) after its two toasts speak through
+		// say() (2026-10-21, runtime strings).
+		"widgets": 3099,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1198,7 +1216,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// fallback would navigate over the newer page
 		// (TestPlainNavOutlivesMissedPane). Pinned at the measured size
 		// plus 2 clearance.
-		"intercept": 3417,
+		// 3445 measured (3443 + 2) after the panel-limit toast speaks
+		// through say() with its {{n}} (2026-10-21, runtime strings).
+		"intercept": 3445,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
@@ -1259,7 +1279,10 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// broadcast, the deferred error report and widget open, the
 		// network-error catch, and the node-keyed busy-state cleanup),
 		// each pinned by a case in TestDispatchRPC_StaleFormResponseDropped.
-		"rpc": 3303,
+		// 3328 measured (3326 + 2) after its failure toasts and the
+		// network-error signal speak through say() (2026-10-21, runtime
+		// strings).
+		"rpc": 3328,
 	}
 	const coreOverride = 0
 

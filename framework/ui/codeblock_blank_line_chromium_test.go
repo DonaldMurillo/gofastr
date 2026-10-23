@@ -10,10 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/chromedp"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
-	"github.com/chromedp/chromedp"
 )
 
 // A blank source line renders as an empty line span. With no text it

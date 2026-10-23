@@ -161,7 +161,7 @@ func TestMaskedTextSurvivesUnrelatedSave(t *testing.T) {
 	if got := storedToken(t, x); got != "tok-secret" {
 		t.Fatalf("SECURITY: an unrelated save rewrote the masked field to %q", got)
 	}
-	if !strings.Contains(body, i18nui.Defaults[i18nui.KeyEntitySet]) {
+	if !strings.Contains(body, i18nui.EntitySet.English()) {
 		t.Fatalf("a set masked field says so:\n%s", body)
 	}
 }

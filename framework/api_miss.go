@@ -14,6 +14,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // apiNamespacePrefix is the path prefix the JSON miss guard protects: the
@@ -47,6 +49,13 @@ func (a *App) installAPIMissProblem404() {
 	})
 }
 
+// The problem document an unmatched API path answers with; the reason
+// member carries the detail's stable code.
+var (
+	problemNotFound = i18n.Define("framework.api_not_found", "Not Found")
+	problemNoRoute  = i18n.Define("framework.api_no_route", "no route matched {{path}}")
+)
+
 // writeProblemNotFound answers an unmatched API path with an RFC 9457
 // problem document. The request path appears only inside the JSON-encoded
 // detail member; json.Encoder's HTML escaping is the sanitizer, so a
@@ -54,10 +63,12 @@ func (a *App) installAPIMissProblem404() {
 func writeProblemNotFound(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(http.StatusNotFound)
+	ctx := r.Context()
 	json.NewEncoder(w).Encode(map[string]any{
 		"type":   "about:blank",
-		"title":  "Not Found",
+		"title":  problemNotFound.Text(ctx),
 		"status": http.StatusNotFound,
-		"detail": "no route matched " + r.URL.Path,
+		"detail": problemNoRoute.Text(ctx, map[string]any{"path": r.URL.Path}),
+		"reason": problemNoRoute.Code(),
 	})
 }

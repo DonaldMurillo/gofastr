@@ -47,18 +47,18 @@ func (b *ListBuilder) deletedActions(ctx context.Context, s *listState, row map[
 	if canUpdate(ctx, m, id) {
 		forms = append(forms, deletedWriteForm(ctx,
 			m.api+"/"+url.PathEscape(id)+"/_restore",
-			i18nui.T(ctx, i18nui.KeyEntityRestore), ui.ButtonSecondary, interactive.Confirm{},
+			i18nui.EntityRestore.Text(ctx), ui.ButtonSecondary, interactive.Confirm{},
 			back,
 		))
 	}
 	if canDelete(ctx, m, id) {
 		forms = append(forms, deletedWriteForm(ctx,
 			m.api+"/"+url.PathEscape(id)+"/_purge",
-			i18nui.T(ctx, i18nui.KeyEntityPurge), ui.ButtonDanger,
+			i18nui.EntityPurge.Text(ctx), ui.ButtonDanger,
 			interactive.Confirm{
-				Title:   i18nui.TVars(ctx, i18nui.KeyEntityPurgeTitle, map[string]string{"entity": m.noun(ctx, false)}),
-				Message: i18nui.T(ctx, i18nui.KeyEntityPurgeConfirm),
-				Accept:  i18nui.T(ctx, i18nui.KeyEntityPurge),
+				Title:   i18nui.EntityPurgeTitle.Text(ctx, map[string]any{"entity": m.noun(ctx, false)}),
+				Message: i18nui.EntityPurgeConfirm.Text(ctx),
+				Accept:  i18nui.EntityPurge.Text(ctx),
 				Danger:  true,
 			},
 			back,
@@ -217,9 +217,9 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 // trashToast is the answer's toast title.
 func trashToast(ctx context.Context, m *meta, op string) string {
 	if op == "restore" {
-		return i18nui.TVars(ctx, i18nui.KeyEntityRestored, map[string]string{"entity": m.singular(ctx)})
+		return i18nui.EntityRestored.Text(ctx, map[string]any{"entity": m.singular(ctx)})
 	}
-	return i18nui.TVars(ctx, i18nui.KeyEntityPurged, map[string]string{"entity": m.singular(ctx)})
+	return i18nui.EntityPurged.Text(ctx, map[string]any{"entity": m.singular(ctx)})
 }
 
 // scrubBackPath validates a form-carried return path: it must name a

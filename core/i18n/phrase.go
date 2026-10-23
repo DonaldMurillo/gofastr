@@ -85,7 +85,7 @@ func (p Phrase) Code() string { return p.key[strings.LastIndexByte(p.key, '.')+1
 // Format is p's English text with params interpolated: the locale-free
 // rendering an error's Error() method and a log line use.
 func (p Phrase) Format(params ...map[string]any) string {
-	return interpolate(p.english, mergeParams(params))
+	return Fill(p.english, mergeParams(params))
 }
 
 // IsZero reports whether p was never defined.
@@ -111,7 +111,7 @@ func (p Phrase) Text(ctx context.Context, params ...map[string]any) string {
 			return s
 		}
 	}
-	return interpolate(p.english, merged)
+	return Fill(p.english, merged)
 }
 
 // innermostCode walks the [Phrased] errors under outer and returns the

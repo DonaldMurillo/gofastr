@@ -13,6 +13,7 @@ import (
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -25,13 +26,13 @@ import (
 // text never reaches ListJobs.
 var queueStatuses = []struct {
 	value   string
-	label   i18nui.Key
+	label   i18n.Phrase
 	variant ui.StatusVariant
 }{
-	{"pending", i18nui.KeyAdminQueuePending, ui.StatusNeutral},
-	{"claimed", i18nui.KeyAdminQueueClaimed, ui.StatusInfo},
-	{"failed", i18nui.KeyAdminQueueFailed, ui.StatusDanger},
-	{"done", i18nui.KeyAdminQueueDone, ui.StatusSuccess},
+	{"pending", i18nui.AdminQueuePending, ui.StatusNeutral},
+	{"claimed", i18nui.AdminQueueClaimed, ui.StatusInfo},
+	{"failed", i18nui.AdminQueueFailed, ui.StatusDanger},
+	{"done", i18nui.AdminQueueDone, ui.StatusSuccess},
 }
 
 // queueStatus reads ?status= as one of queueStatuses, or "".
@@ -84,8 +85,8 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 		}
 	}
 	header := ui.PageHeader(ui.PageHeaderConfig{
-		Title:    i18nui.T(ctx, i18nui.KeyAdminQueue),
-		Subtitle: i18nui.T(ctx, i18nui.KeyAdminQueueSub),
+		Title:    i18nui.AdminQueue.Text(ctx),
+		Subtitle: i18nui.AdminQueueSub.Text(ctx),
 	})
 	stats, err := b.cfg.Queue.Stats(ctx)
 	if err != nil {
@@ -118,18 +119,18 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 		// Driver text can carry DSNs and hosts: it goes to the log only.
 		b.logger().Error("admin: list jobs", "error", err)
 		return ui.Stack(ui.StackConfig{Gap: ui.GapLG}, header,
-			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.T(ctx, i18nui.KeyAdminQueueLoadFailed))))
+			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminQueueLoadFailed.Text(ctx))))
 	}
 	_, canReplay := b.replayable()
 	if failed := stats["failed"]; canReplay && failed > 0 {
 		header = ui.PageHeader(ui.PageHeaderConfig{
-			Title:    i18nui.T(ctx, i18nui.KeyAdminQueue),
-			Subtitle: i18nui.T(ctx, i18nui.KeyAdminQueueSub),
+			Title:    i18nui.AdminQueue.Text(ctx),
+			Subtitle: i18nui.AdminQueueSub.Text(ctx),
 			Actions: b.opForm(ctx, opSpec{
 				path: b.cfg.PathPrefix + "/queue/_replay_all", page: page,
-				label:   i18nui.TVars(ctx, i18nui.KeyAdminReplayAll, map[string]string{"n": strconv.Itoa(failed)}),
+				label:   i18nui.AdminReplayAll.Text(ctx, map[string]any{"n": strconv.Itoa(failed)}),
 				variant: ui.ButtonSecondary,
-				confirm: i18nui.T(ctx, i18nui.KeyAdminReplayAllConfirm),
+				confirm: i18nui.AdminReplayAllConfirm.Text(ctx),
 			}),
 		})
 	}
@@ -190,11 +191,11 @@ func (b *Battery) queueFilter(ctx context.Context, current string, stats queue.J
 		}
 		return strconv.Itoa(n)
 	}
-	items := []ui.SegmentLink{{Text: i18nui.T(ctx, i18nui.KeyAdminQueueAll), Count: count(queueTotal(stats, "")), Href: href(""), Current: current == ""}}
+	items := []ui.SegmentLink{{Text: i18nui.AdminQueueAll.Text(ctx), Count: count(queueTotal(stats, "")), Href: href(""), Current: current == ""}}
 	for _, st := range queueStatuses {
-		items = append(items, ui.SegmentLink{Text: i18nui.T(ctx, st.label), Count: count(stats[st.value]), Href: href(st.value), Current: current == st.value})
+		items = append(items, ui.SegmentLink{Text: st.label.Text(ctx), Count: count(stats[st.value]), Href: href(st.value), Current: current == st.value})
 	}
-	return ui.SegmentedLinks(ui.SegmentedLinksConfig{Label: i18nui.T(ctx, i18nui.KeyAdminQueueStatus), Items: items, Ctx: ctx})
+	return ui.SegmentedLinks(ui.SegmentedLinksConfig{Label: i18nui.AdminQueueStatus.Text(ctx), Items: items, Ctx: ctx})
 }
 
 // jobStatusBadge names a job's state; a status the page does not know
@@ -202,7 +203,7 @@ func (b *Battery) queueFilter(ctx context.Context, current string, stats queue.J
 func jobStatusBadge(ctx context.Context, status string) render.HTML {
 	for _, st := range queueStatuses {
 		if st.value == status {
-			return ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.T(ctx, st.label), Variant: st.variant})
+			return ui.StatusBadge(ui.StatusBadgeConfig{Label: st.label.Text(ctx), Variant: st.variant})
 		}
 	}
 	if status == "" {
@@ -218,15 +219,15 @@ func jobStatusBadge(ctx context.Context, status string) render.HTML {
 // job and the answer returns to page.
 func (b *Battery) jobsTable(ctx context.Context, jobs []queue.Job, listed, page string, replay bool, emptyLevel int, pager *ui.PaginationConfig, flush bool) render.HTML {
 	cols := []ui.Column{
-		{Key: "id", Header: i18nui.T(ctx, i18nui.KeyAdminColJob), Phone: ui.PhoneSubtitle},
-		{Key: "type", Header: i18nui.T(ctx, i18nui.KeyAdminColType), Phone: ui.PhoneTitle},
-		{Key: "status", Header: i18nui.T(ctx, i18nui.KeyAdminQueueStatus), Phone: ui.PhoneMeta},
-		{Key: "attempts", Header: i18nui.T(ctx, i18nui.KeyAdminColAttempts), Align: "end"},
-		{Key: "updated", Header: i18nui.T(ctx, i18nui.KeyAdminColUpdated), Phone: ui.PhoneDetail},
-		{Key: "error", Header: i18nui.T(ctx, i18nui.KeyAdminColLastError), Truncate: true},
+		{Key: "id", Header: i18nui.AdminColJob.Text(ctx), Phone: ui.PhoneSubtitle},
+		{Key: "type", Header: i18nui.AdminColType.Text(ctx), Phone: ui.PhoneTitle},
+		{Key: "status", Header: i18nui.AdminQueueStatus.Text(ctx), Phone: ui.PhoneMeta},
+		{Key: "attempts", Header: i18nui.AdminColAttempts.Text(ctx), Align: "end"},
+		{Key: "updated", Header: i18nui.AdminColUpdated.Text(ctx), Phone: ui.PhoneDetail},
+		{Key: "error", Header: i18nui.AdminColLastError.Text(ctx), Truncate: true},
 	}
 	if replay {
-		cols = append(cols, ui.Column{Key: "actions", Header: i18nui.T(ctx, i18nui.KeyAdminColActions), Align: "end", Fit: true, Phone: ui.PhoneEnd})
+		cols = append(cols, ui.Column{Key: "actions", Header: i18nui.AdminColActions.Text(ctx), Align: "end", Fit: true, Phone: ui.PhoneEnd})
 	}
 	rows := make([]ui.Row, len(jobs))
 	for i, j := range jobs {
@@ -253,7 +254,7 @@ func (b *Battery) jobsTable(ctx context.Context, jobs []queue.Job, listed, page 
 		if replay && status == "failed" {
 			cells["actions"] = b.opForm(ctx, opSpec{
 				path: b.cfg.PathPrefix + "/queue/_replay/" + url.PathEscape(j.ID), page: page,
-				label: i18nui.T(ctx, i18nui.KeyAdminReplay), variant: ui.ButtonSecondary, small: true,
+				label: i18nui.AdminReplay.Text(ctx), variant: ui.ButtonSecondary, small: true,
 			})
 		}
 		rows[i] = ui.Row{ID: j.ID, Cells: cells}
@@ -261,15 +262,15 @@ func (b *Battery) jobsTable(ctx context.Context, jobs []queue.Job, listed, page 
 	return ui.DataTable(ui.DataTableConfig{
 		Columns:       cols,
 		Rows:          rows,
-		Caption:       i18nui.T(ctx, i18nui.KeyAdminQueue),
+		Caption:       i18nui.AdminQueue.Text(ctx),
 		CaptionHidden: true,
 		Responsive:    ui.ResponsiveRows,
 		Flush:         flush,
 		Pagination:    pager,
 		Ctx:           ctx,
 		Empty: ui.EmptyStateConfig{
-			Title:        i18nui.T(ctx, i18nui.KeyAdminQueueEmpty),
-			Description:  i18nui.T(ctx, i18nui.KeyAdminQueueEmptyDesc),
+			Title:        i18nui.AdminQueueEmpty.Text(ctx),
+			Description:  i18nui.AdminQueueEmptyDesc.Text(ctx),
 			HeadingLevel: emptyLevel,
 		},
 	})

@@ -12,6 +12,9 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/headless"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
 var reasonGone = i18n.Define("rt.gone", "gone")
@@ -97,4 +100,52 @@ func envelope(w http.ResponseWriter, err error) {
 	// Other keys are not the message: quiet.
 	_ = json.NewEncoder(w).Encode(map[string]any{"status": "all good here"})
 	_ = errors.New("x")
+}
+
+// envelope arm, struct bodies: a status-bearing body is an HTTP error
+// document; a struct with no status is a protocol message: quiet.
+func problemDoc(w http.ResponseWriter) {
+	_ = json.NewEncoder(w).Encode(struct {
+		Title  string `json:"title"`
+		Status int    `json:"status"`
+		Detail string `json:"detail"`
+	}{
+		Title:  "Not Found", // want `a body's title is English prose`
+		Status: http.StatusNotFound,
+		Detail: "no_route",
+	})
+	// The positional spelling writes the same body.
+	_ = json.NewEncoder(w).Encode(struct {
+		Title  string `json:"title"`
+		Status int    `json:"status"`
+	}{"Not Found", http.StatusNotFound}) // want `a body's title is English prose`
+	_ = json.NewEncoder(w).Encode(struct {
+		Message string `json:"message"`
+	}{Message: "method not found"})
+}
+
+// uitext arm.
+type localConfig struct{ Label string }
+
+func page(ctx context.Context, method string) {
+	_ = render.Text("Page not found")                       // want `render.Text\("Page not found"\) writes English`
+	_ = render.Text("Method " + method + " is not allowed") // want `render.Text\("Method"\) writes English`
+	_ = render.Text("Saved")                                // want `render.Text\("Saved"\) writes English`
+	_ = map[string]string{"aria-label": "Close dialog"}     // want `aria-label "Close dialog" is English written`
+	_ = ui.ButtonConfig{Label: "Save changes"}              // want `Label: "Save changes" is English written`
+	_ = ui.ButtonConfig{SubmitLabel: "Continue"}            // want `SubmitLabel: "Continue" is English written`
+	_ = ui.ButtonConfig{"Save changes", "", "fui-btn"}      // want `Label: "Save changes" is English written`
+	// Tokens, classes, keys and symbols are not words: quiet.
+	_ = render.Text("GET, POST")
+	_ = render.Text("fui-card")
+	_ = render.Text("⌘")
+	_ = map[string]string{"class": "Close dialog"}
+	_ = ui.ButtonConfig{Class: "Primary button"}
+	// The fixed spelling: quiet.
+	_ = render.Text(reasonGone.Text(ctx))
+	_ = ui.ButtonConfig{Label: reasonGone.Text(ctx)}
+	// Not a UI package's type, the defaults table, and demo content: quiet.
+	_ = localConfig{Label: "Save changes"}
+	_ = headless.Strings{Close: "Close"}
+	_ = headless.Spec{Example: ui.ButtonConfig{Label: "Save changes"}}
 }

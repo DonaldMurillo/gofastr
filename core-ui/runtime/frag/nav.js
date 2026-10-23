@@ -725,8 +725,8 @@
       // pushState'd by the click handler so revert it.
       console.warn('[gofastr] Nav failed:', err);
       _showNavToast(err && /^HTTP \d+$/.test(err.message)
-        ? 'Could not load ' + path + ' (' + err.message + ')'
-        : 'Could not load ' + path + ' — check your connection');
+        ? say('runtime.load_failed_status', 'Could not load {{path}} ({{status}})', { path, status: err.message })
+        : say('runtime.load_failed', 'Could not load {{path}}: check your connection', { path }));
       _pushPub(prevPath || location.pathname, { replace: true });
       currentPath = prevPath;
     } finally {

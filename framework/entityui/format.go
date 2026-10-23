@@ -155,7 +155,7 @@ func muted() render.HTML { return ui.EmptyValue() }
 // grouped places: $1,234.00, and -$5.00 for a negative one. Text that
 // is not a number prints as stored.
 func money(ctx context.Context, val string) string {
-	sym := i18nui.T(ctx, i18nui.KeyEntityCurrency)
+	sym := i18nui.EntityCurrency.Text(ctx)
 	if _, err := strconv.ParseFloat(val, 64); err != nil {
 		return val
 	}

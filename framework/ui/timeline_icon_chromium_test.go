@@ -5,10 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chromedp/chromedp"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
-	"github.com/chromedp/chromedp"
 )
 
 // An event with an Icon draws a bordered circle around the icon, the

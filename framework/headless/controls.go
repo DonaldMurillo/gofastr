@@ -1,7 +1,6 @@
 package headless
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -137,10 +136,10 @@ func NumberInput(p NumberInputProps, s Classes) render.HTML {
 		// content, so the mark sits on the row and not its children.
 		b.El("div", PartFieldRow, Internal(nil),
 			stepper(PartNumberDecrement, "data-hui-number-input-decrement",
-				fmt.Sprintf(w.NumberDecrement, p.Label), "−"),
+				fill(w.NumberDecrement, "label", p.Label), "−"),
 			b.El("input", PartControl, input),
 			stepper(PartNumberIncrement, "data-hui-number-input-increment",
-				fmt.Sprintf(w.NumberIncrement, p.Label), "+"),
+				fill(w.NumberIncrement, "label", p.Label), "+"),
 		),
 	}
 	if p.Error != "" {
@@ -419,7 +418,7 @@ func RangeSlider(p RangeSliderProps, s Classes) render.HTML {
 		output = b.El("output", PartRangeOutput, Internal(html.Attrs{
 			"for":                          id + "-min " + id + "-max",
 			"data-hui-range-slider-output": w.RangeValue,
-		}), render.Text(fmt.Sprintf(w.RangeValue, strconv.Itoa(lo), strconv.Itoa(hi))))
+		}), render.Text(fill(w.RangeValue, "low", strconv.Itoa(lo), "high", strconv.Itoa(hi))))
 	}
 
 	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label", "type", "name",
@@ -439,9 +438,9 @@ func RangeSlider(p RangeSliderProps, s Classes) render.HTML {
 		// track and not the two inputs inside it.
 		b.El("div", PartRangeTrack, Internal(nil),
 			thumb(PartRangeLow, "min", "data-hui-range-slider-low",
-				fmt.Sprintf(w.RangeLow, p.Label), lo),
+				fill(w.RangeLow, "label", p.Label), lo),
 			thumb(PartRangeHigh, "max", "data-hui-range-slider-high",
-				fmt.Sprintf(w.RangeHigh, p.Label), hi),
+				fill(w.RangeHigh, "label", p.Label), hi),
 		),
 	)
 }
@@ -538,7 +537,7 @@ func Rating(p RatingProps, s Classes) render.HTML {
 			"name":       p.Name,
 			"id":         idV,
 			"value":      strconv.Itoa(i),
-			"aria-label": fmt.Sprintf(w.RatingChoice, i, max),
+			"aria-label": fill(w.RatingChoice, "n", strconv.Itoa(i), "max", strconv.Itoa(max)),
 		}
 		if value == i {
 			Mark(radio, "checked")

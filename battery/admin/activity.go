@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -54,7 +55,7 @@ func (b *Battery) actorName(ctx context.Context, id string) string {
 // account matches, and "System" for a row with no actor.
 func actorLabel(ctx context.Context, names map[string]string, r auditRow) string {
 	if !r.ActorID.Valid || r.ActorID.String == "" {
-		return i18nui.T(ctx, i18nui.KeyAdminAuditSystem)
+		return i18nui.AdminAuditSystem.Text(ctx)
 	}
 	if n, ok := names[r.ActorID.String]; ok {
 		return n
@@ -80,7 +81,7 @@ func (b *Battery) activityLead(ctx context.Context, names map[string]string, r a
 	if kind != "" {
 		record = render.Join(ui.Muted(render.Text(kind)), render.Text(" "), record)
 	}
-	return i18nui.TVarsHTML(ctx, i18nui.KeyAdminActivityLine, map[string]render.HTML{
+	return i18nui.HTML(ctx, i18nui.AdminActivityLine, map[string]render.HTML{
 		"actor":  activityActor(ctx, names, r),
 		"verb":   render.Text(activityVerb(ctx, r.Op)),
 		"record": record,
@@ -136,20 +137,20 @@ func (b *Battery) bulkLead(ctx context.Context, names map[string]string, r audit
 	if json.Unmarshal([]byte(r.Diff.String), &d) != nil || d.Done <= 0 {
 		return ""
 	}
-	var verb i18nui.Key
+	var verb i18n.Phrase
 	switch {
 	case d.Action == "delete":
-		verb = i18nui.KeyAdminVerbDelete
+		verb = i18nui.AdminVerbDelete
 	case d.Action == "restore":
-		verb = i18nui.KeyAdminVerbRestore
+		verb = i18nui.AdminVerbRestore
 	case strings.HasPrefix(d.Action, "set:"), strings.HasPrefix(d.Action, "move:"):
-		verb = i18nui.KeyAdminVerbUpdate
+		verb = i18nui.AdminVerbUpdate
 	default:
 		return ""
 	}
-	return i18nui.TVarsHTML(ctx, i18nui.KeyAdminActivityBulkLine, map[string]render.HTML{
+	return i18nui.HTML(ctx, i18nui.AdminActivityBulkLine, map[string]render.HTML{
 		"actor":  activityActor(ctx, names, r),
-		"verb":   render.Text(i18nui.T(ctx, verb)),
+		"verb":   render.Text(verb.Text(ctx)),
 		"count":  render.Text(strconv.Itoa(d.Done)),
 		"entity": render.Text(entityNoun(ctx, e, d.Done)),
 	})
@@ -180,24 +181,24 @@ func (b *Battery) activityChanges(ctx context.Context, r auditRow, before, after
 }
 
 // activityVerbs are the audit operations the admin has words for.
-var activityVerbs = map[string]i18nui.Key{
-	"create":         i18nui.KeyAdminVerbCreate,
-	"update":         i18nui.KeyAdminVerbUpdate,
-	"delete":         i18nui.KeyAdminVerbDelete,
-	"restore":        i18nui.KeyAdminVerbRestore,
-	"purge":          i18nui.KeyAdminVerbPurge,
-	"bulk":           i18nui.KeyAdminVerbBulk,
-	"state_override": i18nui.KeyAdminVerbStateOverride,
+var activityVerbs = map[string]i18n.Phrase{
+	"create":         i18nui.AdminVerbCreate,
+	"update":         i18nui.AdminVerbUpdate,
+	"delete":         i18nui.AdminVerbDelete,
+	"restore":        i18nui.AdminVerbRestore,
+	"purge":          i18nui.AdminVerbPurge,
+	"bulk":           i18nui.AdminVerbBulk,
+	"state_override": i18nui.AdminVerbStateOverride,
 }
 
 // activityVerb is an audit operation in words; an operation the admin
 // has no words for reads as written.
 func activityVerb(ctx context.Context, op string) string {
 	if strings.HasPrefix(op, "transition:") {
-		return i18nui.T(ctx, i18nui.KeyAdminVerbTransition)
+		return i18nui.AdminVerbTransition.Text(ctx)
 	}
 	if key, ok := activityVerbs[op]; ok {
-		return i18nui.T(ctx, key)
+		return key.Text(ctx)
 	}
 	return op
 }

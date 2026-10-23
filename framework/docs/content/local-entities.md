@@ -191,16 +191,18 @@ IndexedDB from devtools, and any script on your origin can write it.
 
 ## Messages
 
-The words shown for a refused value or a full list come from Go, so
-they can be translated:
+The words shown for a refused value or a full list are phrases
+(`localentity.required`, `localentity.full`, ...), sent to the browser
+in the runtime strings block, so a catalog translates them for every
+app. `WithMessages` replaces one for this app, in every language:
 
 ```go
 localentity.WithMessages(localentity.Messages{
-	Full: "Your team is full: release a Pokémon first ({n} at most).",
+	Full: "Your team is full: release a Pokémon first ({{n}} at most).",
 })
 ```
 
-`{n}` is replaced by the bound. Unset fields keep `DefaultMessages`.
+`{{n}}` is replaced by the bound. An unset field keeps its phrase.
 
 ## Limits
 

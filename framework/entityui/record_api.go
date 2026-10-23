@@ -33,10 +33,10 @@ func (b *RecordBuilder) apiTabBody(ctx context.Context, m *meta, row map[string]
 		return slotFailed(ctx)
 	}
 	return ui.Stack(ui.StackConfig{},
-		ui.Section(ui.SectionConfig{Heading: i18nui.T(ctx, i18nui.KeyEntityApiRestTitle)},
+		ui.Section(ui.SectionConfig{Heading: i18nui.EntityApiRestTitle.Text(ctx)},
 			b.restSection(ctx, m)...),
 		b.mcpSection(ctx, m),
-		ui.Section(ui.SectionConfig{Heading: i18nui.T(ctx, i18nui.KeyEntityApiJsonTitle)},
+		ui.Section(ui.SectionConfig{Heading: i18nui.EntityApiJsonTitle.Text(ctx)},
 			ui.CodeBlock(ui.CodeBlockConfig{
 				Language: "json",
 				Code:     string(pretty),
@@ -53,22 +53,22 @@ func (b *RecordBuilder) restSection(ctx context.Context, m *meta) []render.HTML 
 	base, ok := b.ui.restBase(m.e)
 	if !ok {
 		return []render.HTML{ui.Callout(ui.CalloutConfig{
-			Title:   i18nui.T(ctx, i18nui.KeyEntityApiRestTitle),
+			Title:   i18nui.EntityApiRestTitle.Text(ctx),
 			Variant: ui.StatusInfo,
-		}, render.Text(i18nui.T(ctx, i18nui.KeyEntityApiRestOff)))}
+		}, render.Text(i18nui.EntityApiRestOff.Text(ctx)))}
 	}
 	items := []ui.DetailItem{{
-		Label: i18nui.T(ctx, i18nui.KeyEntityApiResource),
+		Label: i18nui.EntityApiResource.Text(ctx),
 		Value: render.Text(restResourceMethods + " " + base),
 	}}
 	items = append(items, ui.DetailItem{
-		Label: i18nui.T(ctx, i18nui.KeyEntityApiRecord),
+		Label: i18nui.EntityApiRecord.Text(ctx),
 		Value: render.Text(restRecordMethods + " " + base + "/{id}"),
 	})
 	return []render.HTML{
 		ui.DetailList(ui.DetailListConfig{Items: items}),
 		ui.LinkButton(ui.LinkButtonConfig{
-			Label:   i18nui.T(ctx, i18nui.KeyEntityApiIndex),
+			Label:   i18nui.EntityApiIndex.Text(ctx),
 			Href:    "/api/llm.md",
 			Variant: ui.ButtonSecondary,
 		}),
@@ -79,17 +79,17 @@ func (b *RecordBuilder) restSection(ctx context.Context, m *meta) []render.HTML 
 // entity, or the notice that MCP does not expose it.
 func (b *RecordBuilder) mcpSection(ctx context.Context, m *meta) render.HTML {
 	if m.e.Config.Exposure == nil || !m.e.Config.Exposure.MCP {
-		return ui.Section(ui.SectionConfig{Heading: i18nui.T(ctx, i18nui.KeyEntityApiMcpTitle)},
+		return ui.Section(ui.SectionConfig{Heading: i18nui.EntityApiMcpTitle.Text(ctx)},
 			ui.Callout(ui.CalloutConfig{
-				Title:   i18nui.T(ctx, i18nui.KeyEntityApiMcpTitle),
+				Title:   i18nui.EntityApiMcpTitle.Text(ctx),
 				Variant: ui.StatusInfo,
-			}, render.Text(i18nui.T(ctx, i18nui.KeyEntityApiMcpOff))))
+			}, render.Text(i18nui.EntityApiMcpOff.Text(ctx))))
 	}
 	names := crud.MCPToolNames(m.ch)
 	if len(names) == 0 {
 		return ""
 	}
-	return ui.Section(ui.SectionConfig{Heading: i18nui.T(ctx, i18nui.KeyEntityApiMcpTitle)},
+	return ui.Section(ui.SectionConfig{Heading: i18nui.EntityApiMcpTitle.Text(ctx)},
 		ui.CodeBlock(ui.CodeBlockConfig{Code: strings.Join(names, "\n"), Language: "text", Scroll: true}))
 }
 

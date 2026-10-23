@@ -145,7 +145,7 @@ func jsonSentence(on bool, ctx context.Context) string {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return i18nui.T(ctx, i18nui.KeyTextAreaInvalidJSON)
+	return i18nui.TextAreaInvalidJSON.Text(ctx)
 }
 
 var textAreaStyle = registry.RegisterStyle("ui-textarea", textAreaCSS)

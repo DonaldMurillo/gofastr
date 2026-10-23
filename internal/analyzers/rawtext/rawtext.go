@@ -26,17 +26,42 @@
 //     errorMessage. A response helper takes a Phrase (plus params) so
 //     every caller is handed the catalog by the type checker.
 //   - envelope: a map literal whose "error" or "message" entry is prose
-//     (a constant string holding a space) or an error's .Error() text.
+//     (a constant string holding a space) or an error's .Error() text,
+//     or an HTTP error body struct (one with a json "status" field, the
+//     RFC 9457 problem document shape) whose field tagged json "error",
+//     "message", "title" or "detail" is prose. Protocol structs with no
+//     status (JSON-RPC errors, the service control socket, the contracts
+//     rule catalog) speak to agents and tools, and stay English.
 //     A constant without a space is a code ("E_DENIED") and stays quiet.
 //   - rawbody: a constant JSON body written straight to an
 //     http.ResponseWriter (fmt.Fprint/Fprintf/Fprintln, io.WriteString,
 //     w.Write([]byte(...))) whose "error", "message", "title" or
 //     "detail" value is prose. It is the envelope arm for a body built
 //     as text rather than a map.
+//   - uitext: English written straight into markup a reader sees: a
+//     constant passed to render.Text, a label attribute (aria-label,
+//     aria-description, title, placeholder, alt) in a string-keyed map
+//     literal such as html.Attrs, or a reader-facing string field
+//     (Label, Title, Placeholder, AriaLabel, Alt, Heading, Description,
+//     Text, Hint, Caption, Subtitle, Empty, or any name ending in Label,
+//     Title, Text or Placeholder) of a component type from a UI package
+//     (framework/ui, framework/headless, framework/entityui, core-ui).
+//     Prose is a constant, or a concatenation with a constant operand,
+//     holding two words or one capitalised word; a class, key, path,
+//     symbol or all-capitals token ("GET, POST") stays quiet. Define the words as a Phrase and render phrase.Text(ctx),
+//     or take them from the component's Strings (ui.StringsFor). The
+//     runtime's JS twin is core-ui/check LintRuntimeProse.
 //
 // Silent postures, deliberately:
 //   - _test.go files, and every package outside the four roots
 //     (examples, cmd, kiln, internal): app code may write what it likes;
+//   - uitext only: pages for developers rather than an app's readers:
+//     the component gallery (framework/gallery) and a headless.Spec
+//     literal's examples, which are sample data a developer browses, and
+//     the SDK reference site (framework/sdkdocs), which documents the
+//     API in English as the OpenAPI document does; and a
+//     headless.Strings literal, the English defaults table that
+//     ui.StringsFor's bridge test pins to i18nui's phrases;
 //   - a site that is the shape on purpose carries
 //     //gofastr:allow(rawtext) <why>: i18n.HTTPError's own http.Error,
 //     an agent-facing control API whose msg is a documented English
@@ -46,7 +71,10 @@ package rawtext
 import (
 	"go/ast"
 	"go/constant"
+	"go/token"
 	"go/types"
+	"iter"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -55,7 +83,7 @@ import (
 
 var Analyzer = &analysis.Analyzer{
 	Name: "rawtext",
-	Doc:  "forbids framework responses written outside the i18n catalog: http.Error, i18n.Define off package level or with non-constant text, handler.Errorf/Message, response helpers taking a msg string, and prose or err.Error() in error envelopes and raw JSON bodies",
+	Doc:  "forbids framework responses written outside the i18n catalog: http.Error, i18n.Define off package level or with non-constant text, handler.Errorf/Message, response helpers taking a msg string, prose or err.Error() in error envelopes and raw JSON bodies, and English written into markup (render.Text, label attributes, reader-facing component fields)",
 	Run:  run,
 }
 
@@ -88,12 +116,13 @@ func run(pass *analysis.Pass) (any, error) {
 			continue
 		}
 		bodies := funcBodies(f)
+		ui := uiReporter{pass: pass, specs: specLiterals(pass, f)}
 		ast.Inspect(f, func(n ast.Node) bool {
 			switch n := n.(type) {
 			case *ast.CallExpr:
-				checkCall(pass, n, bodies)
+				checkCall(pass, n, bodies, ui)
 			case *ast.CompositeLit:
-				checkLiteral(pass, n)
+				checkLiteral(pass, n, ui)
 			case *ast.FuncDecl:
 				checkParams(pass, n.Type, n.Name.Name)
 			case *ast.FuncLit:
@@ -153,7 +182,7 @@ func callee(pass *analysis.Pass, call *ast.CallExpr) (pkg, name string) {
 	return fn.Pkg().Path(), fn.Name()
 }
 
-func checkCall(pass *analysis.Pass, call *ast.CallExpr, bodies []*ast.BlockStmt) {
+func checkCall(pass *analysis.Pass, call *ast.CallExpr, bodies []*ast.BlockStmt, ui uiReporter) {
 	pkg, name := callee(pass, call)
 	switch {
 	case pkg == "net/http" && name == "Error":
@@ -177,7 +206,133 @@ func checkCall(pass *analysis.Pass, call *ast.CallExpr, bodies []*ast.BlockStmt)
 		}
 	case pkg == "" && isWriterWrite(pass, call):
 		checkBody(pass, call.Args)
+	case pkg == module+"core/render" && name == "Text" && len(call.Args) == 1:
+		if s, ok := uiProse(pass, call.Args[0]); ok {
+			ui.reportf(call.Args[0], "render.Text(%q) writes English into the page: define it as an i18n.Phrase at package level and render phrase.Text(ctx), or take it from the component's Strings", s)
+		}
 	}
+}
+
+// uiPackage reports whether path declares components: types whose
+// string fields are rendered into markup.
+func uiPackage(path string) bool {
+	rest, ok := strings.CutPrefix(path, module)
+	if !ok {
+		return false
+	}
+	return rest == "framework/ui" || strings.HasPrefix(rest, "framework/ui/") ||
+		rest == "framework/headless" || rest == "framework/entityui" ||
+		strings.HasPrefix(rest, "core-ui/")
+}
+
+// docPackages draw pages for developers, not for an app's readers: the
+// component gallery's demo content, and the SDK reference site, which
+// documents the API in English the way the OpenAPI document does.
+var docPackages = map[string]bool{
+	"framework/gallery": true,
+	"framework/sdkdocs": true,
+}
+
+// uiReporter reports uitext findings outside demo content: sample data
+// a developer browses (the component gallery's package, a headless.Spec
+// literal), not the framework's words.
+type uiReporter struct {
+	pass  *analysis.Pass
+	specs []*ast.CompositeLit
+}
+
+func (u uiReporter) reportf(n ast.Node, format string, args ...any) {
+	if docPackages[strings.TrimPrefix(u.pass.Pkg.Path(), module)] {
+		return
+	}
+	for _, s := range u.specs {
+		if s.Pos() <= n.Pos() && n.End() <= s.End() {
+			return
+		}
+	}
+	u.pass.Reportf(n.Pos(), format, args...)
+}
+
+// specLiterals collects f's headless.Spec and headless.Strings composite
+// literals: demo content and the English defaults table.
+func specLiterals(pass *analysis.Pass, f *ast.File) []*ast.CompositeLit {
+	var out []*ast.CompositeLit
+	ast.Inspect(f, func(n ast.Node) bool {
+		lit, ok := n.(*ast.CompositeLit)
+		if !ok {
+			return true
+		}
+		if named, ok := types.Unalias(pass.TypesInfo.TypeOf(lit)).(*types.Named); ok {
+			obj := named.Obj()
+			if obj.Pkg() != nil && obj.Pkg().Path() == module+"framework/headless" && (obj.Name() == "Spec" || obj.Name() == "Strings") {
+				out = append(out, lit)
+				return false
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// labelAttrs are the attributes whose value a reader hears or sees.
+var labelAttrs = map[string]bool{
+	"aria-label": true, "aria-description": true, "aria-roledescription": true,
+	"title": true, "placeholder": true, "alt": true,
+}
+
+// uiFields are the reader-facing string fields of a framework type.
+var uiFields = map[string]bool{
+	"Label": true, "Title": true, "Placeholder": true, "AriaLabel": true, "Alt": true,
+	"Heading": true, "Description": true, "Text": true, "Hint": true, "Caption": true,
+	"Subtitle": true, "Empty": true, "EmptyText": true, "EmptyTitle": true,
+}
+
+// uiField reports whether a UI config field named name holds words a
+// reader sees: one of uiFields, or any field ending in Label, Title,
+// Text or Placeholder (SubmitLabel, TriggerLabel, EmptyTitle, AltText).
+func uiField(name string) bool {
+	if uiFields[name] {
+		return true
+	}
+	for _, suffix := range []string{"Label", "Title", "Text", "Placeholder"} {
+		if strings.HasSuffix(name, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// reWords is two words; reCapWord one capitalised word.
+var (
+	reWords   = regexp.MustCompile(`\pL{2,}[,.:;!?)]*\s+\S*\pL{2,}`)
+	reCapWord = regexp.MustCompile(`^\p{Lu}\p{Ll}{2,}[.!?…]?$`)
+)
+
+// uiProse reports e's constant text when it reads as words for a person.
+// A concatenation is prose when one of its constant operands is: "Method
+// " + m + " is not allowed" spells English around a value.
+func uiProse(pass *analysis.Pass, e ast.Expr) (string, bool) {
+	tv, ok := pass.TypesInfo.Types[e]
+	if !ok {
+		return "", false
+	}
+	if bin, isBin := ast.Unparen(e).(*ast.BinaryExpr); isBin && tv.Value == nil && bin.Op == token.ADD {
+		if s, ok := uiProse(pass, bin.X); ok {
+			return s, true
+		}
+		return uiProse(pass, bin.Y)
+	}
+	if tv.Value == nil || tv.Value.Kind() != constant.String {
+		return "", false
+	}
+	s := strings.TrimSpace(constant.StringVal(tv.Value))
+	if strings.ContainsAny(s, "<>{}=") {
+		return "", false // markup, a template or CSS, not a label
+	}
+	if strings.ToUpper(s) == s {
+		return "", false // "GET, POST": tokens, not words
+	}
+	return s, reWords.MatchString(s) || reCapWord.MatchString(s)
 }
 
 // proseField matches a JSON "error", "message", "title" or "detail" key
@@ -212,13 +367,16 @@ func isWriterWrite(pass *analysis.Pass, call *ast.CallExpr) bool {
 	return isResponseWriter(pass.TypesInfo.TypeOf(sel.X))
 }
 
-func checkLiteral(pass *analysis.Pass, lit *ast.CompositeLit) {
+func checkLiteral(pass *analysis.Pass, lit *ast.CompositeLit, ui uiReporter) {
 	t := pass.TypesInfo.TypeOf(lit)
 	if t == nil {
 		return
 	}
 	if named, ok := types.Unalias(t).(*types.Named); ok {
 		obj := named.Obj()
+		if st, ok := named.Underlying().(*types.Struct); ok && obj.Pkg() != nil && uiPackage(obj.Pkg().Path()) {
+			checkUIFields(pass, lit, st, ui)
+		}
 		if obj.Pkg() != nil && obj.Pkg().Path() == module+"core/handler" && obj.Name() == "Error" {
 			for _, e := range lit.Elts {
 				if kv, ok := e.(*ast.KeyValueExpr); ok {
@@ -228,6 +386,9 @@ func checkLiteral(pass *analysis.Pass, lit *ast.CompositeLit) {
 				}
 			}
 		}
+	}
+	if st, ok := t.Underlying().(*types.Struct); ok {
+		checkEnvelopeFields(pass, lit, st)
 	}
 	m, ok := t.Underlying().(*types.Map)
 	if !ok {
@@ -245,7 +406,14 @@ func checkLiteral(pass *analysis.Pass, lit *ast.CompositeLit) {
 		if key.Value == nil || key.Value.Kind() != constant.String {
 			continue
 		}
-		if k := constant.StringVal(key.Value); k != "error" && k != "message" {
+		k := constant.StringVal(key.Value)
+		if labelAttrs[k] {
+			if s, ok := uiProse(pass, kv.Value); ok {
+				ui.reportf(kv.Value, "%s %q is English written into the page: define it as an i18n.Phrase at package level and set phrase.Text(ctx), or take it from the component's Strings", k, s)
+			}
+			continue
+		}
+		if k != "error" && k != "message" {
 			continue
 		}
 		if v := pass.TypesInfo.Types[kv.Value]; v.Value != nil && v.Value.Kind() == constant.String {
@@ -256,6 +424,81 @@ func checkLiteral(pass *analysis.Pass, lit *ast.CompositeLit) {
 		}
 		if isErrorText(pass, kv.Value) {
 			pass.Reportf(kv.Value.Pos(), "an envelope's %s is an error's raw text: answer with the error's Phrase (i18n.ErrorText), never err.Error()", constant.StringVal(key.Value))
+		}
+	}
+}
+
+// checkEnvelopeFields reports a field tagged json "error", "message",
+// "title" or "detail" set to constant prose, on a struct that carries an
+// HTTP status beside it.
+func checkEnvelopeFields(pass *analysis.Pass, lit *ast.CompositeLit, st *types.Struct) {
+	if !hasJSONField(st, "status") {
+		return
+	}
+	for i, val := range litFields(lit, st) {
+		name, _, _ := strings.Cut(reflect.StructTag(st.Tag(i)).Get("json"), ",")
+		if name != "error" && name != "message" && name != "title" && name != "detail" {
+			continue
+		}
+		if v := pass.TypesInfo.Types[val]; v.Value != nil && v.Value.Kind() == constant.String &&
+			strings.Contains(constant.StringVal(v.Value), " ") {
+			pass.Reportf(val.Pos(), "a body's %s is English prose with no code: write it from a Phrase (reason.Text(ctx) beside reason.Code())", name)
+		}
+	}
+}
+
+// litFields yields each element of a struct literal with the index of
+// the field it sets, keyed (Title: "x") or positional ({"x", 404}): the
+// positional form writes the same bytes and must not slip past.
+func litFields(lit *ast.CompositeLit, st *types.Struct) iter.Seq2[int, ast.Expr] {
+	return func(yield func(int, ast.Expr) bool) {
+		for pos, e := range lit.Elts {
+			kv, ok := e.(*ast.KeyValueExpr)
+			if !ok {
+				if pos < st.NumFields() && !yield(pos, e) {
+					return
+				}
+				continue
+			}
+			id, ok := kv.Key.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			for i := range st.NumFields() {
+				if st.Field(i).Name() == id.Name {
+					if !yield(i, kv.Value) {
+						return
+					}
+					break
+				}
+			}
+		}
+	}
+}
+
+// hasJSONField reports whether st has a field whose json name is name.
+func hasJSONField(st *types.Struct, name string) bool {
+	for i := range st.NumFields() {
+		if n, _, _ := strings.Cut(reflect.StructTag(st.Tag(i)).Get("json"), ","); n == name {
+			return true
+		}
+	}
+	return false
+}
+
+// checkUIFields reports a reader-facing string field of a framework
+// type set to English.
+func checkUIFields(pass *analysis.Pass, lit *ast.CompositeLit, st *types.Struct, ui uiReporter) {
+	for i, val := range litFields(lit, st) {
+		f := st.Field(i)
+		if !uiField(f.Name()) {
+			continue
+		}
+		if b, ok := f.Type().Underlying().(*types.Basic); !ok || b.Kind() != types.String {
+			continue
+		}
+		if s, ok := uiProse(pass, val); ok {
+			ui.reportf(val, "%s: %q is English written into the page: define it as an i18n.Phrase at package level and set phrase.Text(ctx), or take it from the component's Strings", f.Name(), s)
 		}
 	}
 }

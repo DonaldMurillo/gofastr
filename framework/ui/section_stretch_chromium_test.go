@@ -12,10 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/chromedp"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
-	"github.com/chromedp/chromedp"
 )
 
 // Hard rule 9: a Section is a two-row grid (head, body). Two Sections side

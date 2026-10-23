@@ -378,12 +378,14 @@ func (ds *UIHost) PWAOfflineHTML() string {
 		body, err = component.SafeRenderCtx(context.Background(), cfg.OfflineScreen)
 		if err != nil {
 			slog.Warn("uihost: PWA offline screen render panicked; serving default offline page", "err", err)
-			body = defaultPWAOfflineBody()
+			body = defaultPWAOfflineBody(context.Background())
 		}
 	} else {
-		body = defaultPWAOfflineBody()
+		body = defaultPWAOfflineBody(context.Background())
 	}
-	shell := ds.documentShell("", "Offline — "+cfg.Name, `<main role="main">`+string(body)+`</main>`)
+	// Precached once, so it speaks the catalog's English: there is no
+	// reader to ask for a language at install time.
+	shell := ds.documentShell("", pageOfflineDocTitle.Text(context.Background(), map[string]any{"app": cfg.Name}), `<main role="main">`+string(body)+`</main>`)
 	// bundle=false (same as RenderStaticPage): component CSS must be
 	// direct per-component links. The bundle URL depends on the page's
 	// component set: precaching it would answer every OTHER page's
@@ -397,9 +399,9 @@ func (ds *UIHost) PWAOfflineHTML() string {
 // app.css, no component CSS. (uihost deliberately does not import
 // framework/ui; linking it would force its LoadAlways styles into every
 // host's CSS bundle. Apps that want a richer screen pass OfflineScreen.)
-func defaultPWAOfflineBody() render.HTML {
-	return html.Heading(html.HeadingConfig{Level: 1}, render.Text("You're offline")) +
-		html.Paragraph(html.TextConfig{}, render.Text("This page isn't available without a connection. Reconnect and try again."))
+func defaultPWAOfflineBody(ctx context.Context) render.HTML {
+	return html.Heading(html.HeadingConfig{Level: 1}, render.Text(pageOfflineTitle.Text(ctx))) +
+		html.Paragraph(html.TextConfig{}, render.Text(pageOfflineBody.Text(ctx)))
 }
 
 // pwaVersion fingerprints the deployment: the manifest, the precache

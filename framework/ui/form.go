@@ -167,7 +167,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 	if !cfg.HideSubmit {
 		submitLabel := cfg.SubmitLabel
 		if submitLabel == "" {
-			submitLabel = i18nui.T(ctx, i18nui.KeyFormSave)
+			submitLabel = i18nui.FormSave.Text(ctx)
 		}
 		actions = headless.Own(Button(ButtonConfig{Label: submitLabel, Type: "submit"}))
 	}
@@ -185,7 +185,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 		}
 		general := cfg.Summary
 		if general == "" {
-			general = i18nui.T(ctx, i18nui.KeyFormErrorsSummary)
+			general = i18nui.FormErrorsSummary.Text(ctx)
 		}
 		errorsHTML = ValidationSummary(ValidationSummaryConfig{
 			ID:          cfg.ID + "-errors",
@@ -194,7 +194,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 			FieldLabels: cfg.FieldLabels,
 			FieldIDs:    cfg.FieldIDs,
 			FieldOrder:  cfg.FieldOrder,
-			Title:       i18nui.T(ctx, i18nui.KeyFormHasErrors),
+			Title:       i18nui.FormHasErrors.Text(ctx),
 			Ctx:         ctx,
 		})
 		// headless.Form takes Errors as slot content; this summary is
@@ -396,7 +396,7 @@ func ValidationSummary(cfg ValidationSummaryConfig) render.HTML {
 
 	titleText := cfg.Title
 	if titleText == "" {
-		titleText = i18nui.T(ctx, i18nui.KeyValidationSummaryTitle)
+		titleText = i18nui.ValidationSummaryTitle.Text(ctx)
 	}
 	return validationSummaryStyle.WrapHTML(headless.ValidationSummary(headless.ValidationSummaryProps{
 		Title:  titleText,

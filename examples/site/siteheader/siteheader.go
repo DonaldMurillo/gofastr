@@ -195,7 +195,7 @@ func Render(cfg Config) render.HTML {
 
 	var primary render.HTML
 	if len(links) > 0 {
-		primary = html.Nav(html.NavConfig{Class: Style.Links(), Label: i18nui.T(ctx, i18nui.KeyNavPrimary)}, links...)
+		primary = html.Nav(html.NavConfig{Class: Style.Links(), Label: i18nui.NavPrimary.Text(ctx)}, links...)
 	}
 
 	var menu render.HTML
@@ -211,7 +211,7 @@ func Render(cfg Config) render.HTML {
 			// menu holds links only.
 			Content: render.Join(
 				panelSearch(),
-				html.Nav(html.NavConfig{Class: Style.PanelLinks(), Label: i18nui.T(ctx, i18nui.KeyNavMobilePrimary)}, menuLinks...),
+				html.Nav(html.NavConfig{Class: Style.PanelLinks(), Label: i18nui.NavMobilePrimary.Text(ctx)}, menuLinks...),
 				html.Div(html.DivConfig{Class: Style.PanelActions()},
 					ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon}),
 					githubLink(),
@@ -220,7 +220,7 @@ func Render(cfg Config) render.HTML {
 			Trap:    true,
 			Dismiss: true,
 			Parts: headless.Parts{Attrs: headless.PartAttrs{
-				headless.PartSummary: {"aria-label": i18nui.T(ctx, i18nui.KeyNavToggle)},
+				headless.PartSummary: {"aria-label": i18nui.NavToggle.Text(ctx)},
 			}},
 		}, headless.Classes{
 			headless.PartRoot:    Style.Menu(),

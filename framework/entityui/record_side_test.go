@@ -34,7 +34,7 @@ func TestRecordSidePanelDraws(t *testing.T) {
 		t.Fatalf("the panel saw %+v", seen)
 	}
 	// It sits in the frame's side column, after the record's details.
-	side := body[strings.Index(body, i18nui.Defaults[i18nui.KeyEntityDetails]):]
+	side := body[strings.Index(body, i18nui.EntityDetails.English()):]
 	if !strings.Contains(side, "panel for inv-1") {
 		t.Fatalf("the panel is not after the details:\n%s", body)
 	}
@@ -69,7 +69,7 @@ func TestRecordPanickingSidePanelFailsPanelOnly(t *testing.T) {
 	}}, withAPI(map[string]string{"invoices": "/api/invoices"}))
 	body := string(x.ui.Record("invoices", "inv-1").Base("/rec/invoices").
 		RenderCtx(x.userCtx("/rec/invoices/inv-1", "", "u1")))
-	want := strings.ReplaceAll(i18nui.Defaults[i18nui.KeyEntitySlotFailed], "'", "&#39;")
+	want := strings.ReplaceAll(i18nui.EntitySlotFailed.English(), "'", "&#39;")
 	if !strings.Contains(body, want) {
 		t.Fatalf("the panel shows the slot message:\n%s", body)
 	}

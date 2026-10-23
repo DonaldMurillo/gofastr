@@ -69,7 +69,7 @@ func (fb *formBuilder) relationPicker(ctx context.Context, f schema.Field, label
 		Required:    f.Required && !fb.masked[f.Name],
 		Value:       cur,
 		ValueLabel:  valueLabel,
-		Placeholder: i18nui.TVars(ctx, i18nui.KeyEntityPickerSearch, map[string]string{"entities": plural}),
+		Placeholder: i18nui.EntityPickerSearch.Text(ctx, map[string]any{"entities": plural}),
 		Options:     opts,
 		More:        more,
 		Endpoint:    fb.m.api + "/_pick?field=" + url.QueryEscape(f.Name),
@@ -99,7 +99,7 @@ func (fb *formBuilder) relationNew(ctx context.Context, f schema.Field) render.H
 		return ""
 	}
 	return ui.LinkButton(ui.LinkButtonConfig{
-		Label:    i18nui.TVars(ctx, i18nui.KeyEntityNew, map[string]string{"entity": om.singular(ctx)}),
+		Label:    i18nui.EntityNew.Text(ctx, map[string]any{"entity": om.singular(ctx)}),
 		Href:     createPath,
 		Variant:  ui.ButtonSecondary,
 		Icon:     "plus",
@@ -162,7 +162,7 @@ func (u *UI) pickerOptions(ctx context.Context, f schema.Field, q string) (opts 
 			continue
 		}
 		if len(opts) == pickerRows {
-			more = i18nui.TVars(ctx, i18nui.KeyEntityPickerMore, map[string]string{"n": strconv.Itoa(pickerRows)})
+			more = i18nui.EntityPickerMore.Text(ctx, map[string]any{"n": strconv.Itoa(pickerRows)})
 			break
 		}
 		opts = append(opts, ui.PickerOption{Value: oid, Label: label})

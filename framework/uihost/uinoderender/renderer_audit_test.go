@@ -1,6 +1,7 @@
 package uinoderender
 
 import (
+	"context"
 	"regexp"
 	"strings"
 	"testing"
@@ -123,7 +124,7 @@ func TestLayoutChainEmitsNoStyleAttribute(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	out, err := New(staticResolver("/m/r")).Render(tt)
+	out, err := New(context.Background(), staticResolver("/m/r")).Render(tt)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -177,7 +178,7 @@ func TestHandBuiltTreeWithoutPropsPanics(t *testing.T) {
 						"replace this test with an assertion that Render returns an error", tc.name)
 				}
 			}()
-			r := New(nil)
+			r := New(context.Background(), nil)
 			_, _ = r.Render(&uinodev1.Tree{Root: tc.root})
 		})
 	}

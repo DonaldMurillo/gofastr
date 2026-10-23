@@ -677,35 +677,35 @@ func (b *Battery) readOps(w http.ResponseWriter, r *http.Request, page string) (
 // succeeded. The names are the only values a page reads from ?result=,
 // so a page never prints request text.
 type result struct {
-	key i18nui.Key
+	key i18n.Phrase
 	ok  bool
 }
 
 var results = map[string]result{
-	"done":               {i18nui.KeyAdminDone, true},
-	"replayed":           {i18nui.KeyAdminReplayed, true},
-	"replayed-all":       {i18nui.KeyAdminReplayedAll, true},
-	"replayed-some":      {i18nui.KeyAdminReplayedSome, true},
-	"granted":            {i18nui.KeyAdminGranted, true},
-	"permissions-saved":  {i18nui.KeyAdminPermissionsSaved, true},
-	"roles-saved":        {i18nui.KeyAdminRolesSaved, true},
-	"name-saved":         {i18nui.KeyAdminNameSaved, true},
-	"module-enabled":     {i18nui.KeyAdminModuleEnabled, true},
-	"module-disabled":    {i18nui.KeyAdminModuleDisabled, true},
-	"module-bumped":      {i18nui.KeyAdminModuleBumped, true},
-	"module-revoked":     {i18nui.KeyAdminModuleRevoked, true},
-	"refused":            {i18nui.KeyAdminRefused, false},
-	"failed":             {i18nui.KeyAdminFailed, false},
-	"bad-input":          {i18nui.KeyAdminBadInput, false},
-	"grant-refused":      {i18nui.KeyAdminGrantRefused, false},
-	"assign-refused":     {i18nui.KeyAdminAssignRefused, false},
-	"name-refused":       {i18nui.KeyAdminNameRefused, false},
-	"unknown-capability": {i18nui.KeyAdminUnknownCapability, false},
-	"module-failed":      {i18nui.KeyAdminModuleFailed, false},
-	"module-refused":     {i18nui.KeyAdminModuleRefused, false},
-	"queue-load-failed":  {i18nui.KeyAdminQueueLoadFailed, false},
-	"replay-unsupported": {i18nui.KeyAdminFailed, false},
-	"replay-duplicate":   {i18nui.KeyAdminReplayDuplicate, false},
+	"done":               {i18nui.AdminDone, true},
+	"replayed":           {i18nui.AdminReplayed, true},
+	"replayed-all":       {i18nui.AdminReplayedAll, true},
+	"replayed-some":      {i18nui.AdminReplayedSome, true},
+	"granted":            {i18nui.AdminGranted, true},
+	"permissions-saved":  {i18nui.AdminPermissionsSaved, true},
+	"roles-saved":        {i18nui.AdminRolesSaved, true},
+	"name-saved":         {i18nui.AdminNameSaved, true},
+	"module-enabled":     {i18nui.AdminModuleEnabled, true},
+	"module-disabled":    {i18nui.AdminModuleDisabled, true},
+	"module-bumped":      {i18nui.AdminModuleBumped, true},
+	"module-revoked":     {i18nui.AdminModuleRevoked, true},
+	"refused":            {i18nui.AdminRefused, false},
+	"failed":             {i18nui.AdminFailed, false},
+	"bad-input":          {i18nui.AdminBadInput, false},
+	"grant-refused":      {i18nui.AdminGrantRefused, false},
+	"assign-refused":     {i18nui.AdminAssignRefused, false},
+	"name-refused":       {i18nui.AdminNameRefused, false},
+	"unknown-capability": {i18nui.AdminUnknownCapability, false},
+	"module-failed":      {i18nui.AdminModuleFailed, false},
+	"module-refused":     {i18nui.AdminModuleRefused, false},
+	"queue-load-failed":  {i18nui.AdminQueueLoadFailed, false},
+	"replay-unsupported": {i18nui.AdminFailed, false},
+	"replay-duplicate":   {i18nui.AdminReplayDuplicate, false},
 }
 
 // done answers a successful ops post. A form RPC gets 204 and a toast;
@@ -714,7 +714,7 @@ var results = map[string]result{
 func (b *Battery) done(w http.ResponseWriter, r *http.Request, page, name string) {
 	res := results[name]
 	if isRPC(r) {
-		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, Title: i18nui.T(r.Context(), res.key), TTL: 4000})
+		ui.AddToast(w, ui.ToastTrigger{Variant: ui.StatusSuccess, Title: res.key.Text(r.Context()), TTL: 4000})
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -730,7 +730,7 @@ func (b *Battery) refuse(w http.ResponseWriter, r *http.Request, page string, st
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": i18nui.T(r.Context(), res.key)})
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": res.key.Text(r.Context())})
 		return
 	}
 	http.Redirect(w, r, withResult(page, name), http.StatusSeeOther)
@@ -763,5 +763,5 @@ func resultNotice(ctx context.Context) render.HTML {
 	if !res.ok {
 		variant = ui.StatusDanger
 	}
-	return ui.Callout(ui.CalloutConfig{Variant: variant}, render.Text(i18nui.T(ctx, res.key)))
+	return ui.Callout(ui.CalloutConfig{Variant: variant}, render.Text(res.key.Text(ctx)))
 }

@@ -1,6 +1,7 @@
 package uinoderender
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -135,7 +136,7 @@ func renderJSON(t *testing.T, jsonTree string) string {
 	if err != nil {
 		t.Fatalf("Validate (payload tree must be schema-valid, the attack is in field CONTENT): %v", err)
 	}
-	h, err := New(staticResolver("/m/mod/rpc")).Render(tt)
+	h, err := New(context.Background(), staticResolver("/m/mod/rpc")).Render(tt)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
