@@ -112,7 +112,7 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 		// nav.js never reads a bare screen body as a full document.
 		if staleMarkupClient(r) {
 			w.Header().Del("Cache-Control")
-			writeStaleMarkupReload(w, r, r.URL.Path, "")
+			writeStaleMarkupReload(w, r, routePath(r), "")
 			return
 		}
 		w.Header().Set("X-Gofastr-Partial", "true")

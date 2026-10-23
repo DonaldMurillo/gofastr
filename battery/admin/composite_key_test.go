@@ -11,9 +11,8 @@ import (
 )
 
 // An entity keyed on two columns: its record screen, crumbs and write
-// routes take one path segment per key column. The write routes take a
-// value holding "/" escaped in its segment; the screen router matches
-// the decoded path, where that value adds a segment and names no record.
+// routes take one path segment per key column, and a value holding "/"
+// is escaped in its segment.
 
 func enrollmentsEnv(t *testing.T) *env {
 	t.Helper()
@@ -48,34 +47,26 @@ func TestCompositeRecordScreen(t *testing.T) {
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Alpha") {
 		t.Errorf("GET s1/c1 = %d, want the record holding Alpha", rr.Code)
 	}
-	// One segment short, or a value the decoded path splits, names no
-	// record.
-	for _, path := range []string{"/admin/entities/enrollments/s1", "/admin/entities/enrollments/a%2Fb/c1"} {
+	// A value holding "/" reaches its record escaped; unescaped, or one
+	// segment short, the path names no record.
+	rr = get(x.as(theAdmin), "/admin/entities/enrollments/a%2Fb/c1")
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Gamma") {
+		t.Errorf("GET a%%2Fb/c1 = %d, want the record holding Gamma", rr.Code)
+	}
+	for _, path := range []string{"/admin/entities/enrollments/s1", "/admin/entities/enrollments/a/b/c1"} {
 		if rr := get(x.as(theAdmin), path); rr.Code != http.StatusNotFound {
 			t.Errorf("GET %s = %d, want 404", path, rr.Code)
 		}
 	}
 }
 
-// entityPath reads the decoded page path, so each segment is a raw key
-// value and the id escapes it.
-func TestCompositeEntityPath(t *testing.T) {
+// The record crumb takes the id from the route match: a key value
+// holding "/" names its record there, where the decoded path splits it.
+func TestCompositeCrumbNamesSlashKey(t *testing.T) {
 	x := enrollmentsEnv(t)
-	for rest, want := range map[string]string{
-		"/entities/enrollments":          "",
-		"/entities/enrollments/create":   "create",
-		"/entities/enrollments/s1/c1":    "s1/c1",
-		"/entities/enrollments/a b/c%d1": "a%20b/c%25d1",
-	} {
-		_, id, ok := x.b.entityPath(rest)
-		if !ok || id != want {
-			t.Errorf("entityPath(%q) = %q, %v; want %q", rest, id, ok, want)
-		}
-	}
-	for _, rest := range []string{"/entities/enrollments/s1", "/entities/enrollments/s1/c1/x", "/entities/enrollments/s1/"} {
-		if _, _, ok := x.b.entityPath(rest); ok {
-			t.Errorf("entityPath(%q) accepted a tail that is not the key", rest)
-		}
+	body := get(x.as(theAdmin), "/admin/entities/enrollments/a%2Fb/c1").Body.String()
+	if !strings.Contains(body, `aria-current="page" class="fui-breadcrumbs__link">a/b</span>`) {
+		t.Errorf("the record crumb is not the a/b record's title:\n%s", body)
 	}
 }
 

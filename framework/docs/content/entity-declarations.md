@@ -1537,9 +1537,9 @@ back off a request, for a handler mounted beside the CRUD routes.
 entityui and the admin draw a composite record at `<base>/<v1>/<v2>`.
 The create form sets every key column; the edit form shows them
 read-only, since a record keeps its key, and a duplicate leaves them
-blank, as it does a unique index's fields. Screen routes match the
-decoded path, so a record whose key value holds `/` is reachable over
-REST and MCP but its screen answers 404.
+blank, as it does a unique index's fields. A key value holding `/` is
+escaped in its segment (`/enrollments/a%2Fb/c1`), and its screen
+answers there as REST and MCP do.
 
 The `framework` package re-exports `JoinKey` and `RowKey` for app code
 that builds ids without importing `framework/entity`. The generators
