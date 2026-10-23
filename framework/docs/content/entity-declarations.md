@@ -1453,9 +1453,27 @@ translation keys Display's names produce (`entity.<entity>.*`,
 
 `EntityConfig.PrimaryKey` names the primary-key columns in order. Left
 nil, the key is the one column `id`, which `Define` injects as a generated
-UUID unless `Fields` declares it. Name more than one column for a
-composite key, the usual shape for a join table keyed on the rows it
-links:
+UUID unless `Fields` declares it.
+
+A plain join table keeps that `id` and holds its pair unique with an
+index. Every surface then names a row by one value, and another entity
+can belong to it:
+
+```go
+app.Entity("enrollments", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "student_id", Type: schema.String, Required: true},
+        {Name: "course_id", Type: schema.String, Required: true},
+        {Name: "grade", Type: schema.String},
+    },
+    Indices: []entity.Index{{Columns: []string{"student_id", "course_id"}, Unique: true}},
+})
+```
+
+Name more than one column for a composite key when the columns are the
+record's identity: a table an existing schema already keys that way, or
+records the API should address by the pair. The links and the limits
+below follow from it:
 
 ```go
 app.Entity("enrollments", framework.EntityConfig{
