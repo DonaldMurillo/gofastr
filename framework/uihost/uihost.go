@@ -1634,6 +1634,18 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 // ScreenStatusCode, else what the render set through app.SetStatus
 // (a record view that drew its not-found state), else 0, the implicit
 // 200.
+// llmMDStatus is pageStatus for a per-URL llm.md render. A doc built
+// without a loaded instance (DI refuses a value screen, or Load failed)
+// has no Component, so the screen's registered component answers for
+// a declared ScreenStatusCode.
+func llmMDStatus(scr *app.Screen, res app.ScreenLLMMDResult, recorded int) int {
+	c := res.Component
+	if c == nil {
+		c = scr.Component
+	}
+	return pageStatus(app.RenderResult{Component: c}, recorded)
+}
+
 func pageStatus(res app.RenderResult, recorded int) int {
 	if res.NotFoundOutlet {
 		return http.StatusNotFound
@@ -4308,7 +4320,7 @@ func (ds *UIHost) dynamicPageLLMMD(r *http.Request, path string) (string, bool) 
 	// A page that answers another status (app.SetStatus for a missing
 	// record, a ScreenStatusCode) has no doc to serve: answer 404 the
 	// way a Load's ErrNotFound does, never a 200 doc of its not-found body.
-	if status := pageStatus(app.RenderResult{Component: res.Component}, recorded()); status != 0 && status != http.StatusOK {
+	if status := llmMDStatus(scr, res, recorded()); status != 0 && status != http.StatusOK {
 		return "", false
 	}
 	md := res.MD

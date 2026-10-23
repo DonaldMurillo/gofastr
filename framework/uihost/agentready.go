@@ -885,7 +885,7 @@ func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) b
 	// The markdown is this URL's other representation, so it carries the
 	// status the HTML would (app.SetStatus, ScreenStatusCode): a missing
 	// record answers 404 in either.
-	status := pageStatus(app.RenderResult{Component: res.Component}, recorded())
+	status := llmMDStatus(screen, res, recorded())
 	md := res.MD
 	if res.Allowed {
 		title := res.Title
