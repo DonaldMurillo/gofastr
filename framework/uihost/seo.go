@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // ─── Sitemap ───────────────────────────────────────────────────────
@@ -83,9 +84,9 @@ func WithRobots(cfg RobotsConfig) Option {
 
 // ─── Internals ─────────────────────────────────────────────────────
 
-func (ds *UIHost) handleSitemap(w http.ResponseWriter, _ *http.Request) {
+func (ds *UIHost) handleSitemap(w http.ResponseWriter, r *http.Request) {
 	doc, ok := ds.SitemapXML("")
-	serveSeoDoc(w, "application/xml; charset=utf-8", "sitemap not configured", doc, ok)
+	serveSeoDoc(w, r, "application/xml; charset=utf-8", reasonSitemapNotConfigured, doc, ok)
 }
 
 // serveSeoDoc is the shared handler body behind handleSitemap and
@@ -93,9 +94,9 @@ func (ds *UIHost) handleSitemap(w http.ResponseWriter, _ *http.Request) {
 // in content type, not-configured message, and the document builder they
 // call: 404 with that message when the doc is unconfigured, otherwise the
 // doc bytes under contentType.
-func serveSeoDoc(w http.ResponseWriter, contentType, notConfigured, doc string, ok bool) {
+func serveSeoDoc(w http.ResponseWriter, r *http.Request, contentType string, notConfigured i18n.Phrase, doc string, ok bool) {
 	if !ok {
-		http.Error(w, notConfigured, http.StatusNotFound)
+		i18n.HTTPError(w, r, http.StatusNotFound, notConfigured)
 		return
 	}
 	w.Header().Set("Content-Type", contentType)
@@ -184,9 +185,9 @@ func (ds *UIHost) sitemapPublic(p string) bool {
 	return true
 }
 
-func (ds *UIHost) handleRobots(w http.ResponseWriter, _ *http.Request) {
+func (ds *UIHost) handleRobots(w http.ResponseWriter, r *http.Request) {
 	doc, ok := ds.RobotsTXT("")
-	serveSeoDoc(w, "text/plain; charset=utf-8", "robots not configured", doc, ok)
+	serveSeoDoc(w, r, "text/plain; charset=utf-8", reasonRobotsNotConfigured, doc, ok)
 }
 
 // RobotsTXT builds the robots.txt document WithRobots configured. Like

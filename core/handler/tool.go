@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"strconv"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -35,7 +36,7 @@ func ToolAdapter[I, O any](h Handler[I, O]) func(ctx context.Context, params map
 					"error", textsafe.Recovered(rec),
 					"stack", textsafe.Truncate(string(debug.Stack()), maxStackLogLen),
 				)
-				result, err = nil, &Error{Code: 500, Message: "internal server error"}
+				result, err = nil, Fail(500, i18n.StatusPhrase(500))
 			}
 		}()
 		var in I
@@ -66,21 +67,21 @@ func bindToolParams(params map[string]any, dst any) error {
 				delete(rest, tag)
 				s, err := toolParamString(raw)
 				if err != nil {
-					return Errorf(400, "invalid %s parameter %q: %s", source, tag, err.Error())
+					return Fail(400, ReasonInvalidParameter, map[string]any{"source": source, "name": strconv.Quote(tag), "detail": err.Error()})
 				}
 				clean := sanitizeQueryParam(s)
 				if source == "path" {
 					clean = router.SanitizePathParam(s, false)
 				}
 				if clean != s {
-					return Errorf(400, "invalid %s parameter %q: it carries a byte a %s value never may", source, tag, source)
+					return Fail(400, ReasonParameterControlByte, map[string]any{"source": source, "name": strconv.Quote(tag)})
 				}
 				fv := rv.Field(i)
 				if !fv.CanSet() {
 					continue
 				}
 				if err := setField(fv, s); err != nil {
-					return Errorf(400, "invalid %s parameter %q: %s", source, tag, err.Error())
+					return Fail(400, ReasonInvalidParameter, map[string]any{"source": source, "name": strconv.Quote(tag), "detail": err.Error()})
 				}
 			}
 		}
@@ -90,7 +91,7 @@ func bindToolParams(params map[string]any, dst any) error {
 	}
 	body, err := json.Marshal(rest)
 	if err != nil {
-		return Errorf(400, "invalid params: %s", err.Error())
+		return Fail(400, ReasonInvalidParams, map[string]any{"detail": err.Error()})
 	}
 	return UnmarshalStrict(body, dst)
 }

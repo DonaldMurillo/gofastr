@@ -32,6 +32,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/internal/rootfs"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -1607,11 +1608,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, scrubCtl(res.URL), http.StatusSeeOther)
 		return
 	case app.DecisionBlock:
-		msg := res.Message
-		if msg == "" {
-			msg = http.StatusText(res.Status)
-		}
-		http.Error(w, msg, res.Status)
+		writeBlock(w, r, res)
 		return
 	}
 	// The status, decided once: a 404-outlet outcome outranks the
@@ -3034,11 +3031,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		http.Redirect(w, r, scrubCtl(res.URL), http.StatusSeeOther)
 		return
 	case app.DecisionBlock:
-		msg := res.Message
-		if msg == "" {
-			msg = http.StatusText(res.Status)
-		}
-		http.Error(w, msg, res.Status)
+		writeBlock(w, r, res)
 		return
 	}
 
@@ -3202,15 +3195,12 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// an ordinary fetch, which the frame's fetch wrapper does put the grant on.
 	// See framework/docs/content/embed.md.
 	if r.Header.Get(embedGrantHeader) != "" {
-		http.Error(w, "embed: SSE cannot be authenticated by a grant: EventSource "+
-			"sends no request headers, so the frame's grant never reaches this "+
-			"endpoint. Use data-cui-poll (or widget Builder.Poll) for live updates "+
-			"inside a frame.", http.StatusUnauthorized)
+		i18n.HTTPError(w, r, http.StatusUnauthorized, reasonEmbedSSE)
 		return
 	}
 	sessionID := r.URL.Query().Get("session")
 	if sessionID == "" {
-		http.Error(w, "missing session parameter", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, reasonSessionMissing)
 		return
 	}
 	// The stream id in the URL is public (it's embedded in page chrome),
@@ -3222,7 +3212,7 @@ func (ds *UIHost) handleSSE(w http.ResponseWriter, r *http.Request) {
 	// leaked-but-real id and no matching cookie.
 	cookieID, ok := ds.verifySessionToken(readSessionCookie(r))
 	if !ok || cookieID != sessionID {
-		http.Error(w, "unknown session", http.StatusUnauthorized)
+		i18n.HTTPError(w, r, http.StatusUnauthorized, reasonUnknownSession)
 		return
 	}
 
@@ -3276,7 +3266,7 @@ func (ds *UIHost) handleRuntimeJS(w http.ResponseWriter, r *http.Request) {
 func (ds *UIHost) handleColorSchemeJS(w http.ResponseWriter, r *http.Request) {
 	js, err := runtime.ColorSchemeJS()
 	if err != nil {
-		http.Error(w, "color-scheme bootstrap unavailable", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 	serveVersionedText(w, r, "application/javascript; charset=utf-8", js, colorSchemeHash(), false)
@@ -3313,7 +3303,7 @@ const maxMutatingBodyBytes = 64 * 1024
 func (ds *UIHost) requireValidSession(w http.ResponseWriter, r *http.Request) (string, bool) {
 	id, ok := ds.verifySessionToken(readSessionCookie(r))
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 		return "", false
 	}
 	return id, true
@@ -3362,7 +3352,7 @@ func (ds *UIHost) requireSessionOrEmbedGrant(w http.ResponseWriter, r *http.Requ
 		// identity confusion the whole feature strips cookies to prevent, and
 		// the opposite of the rule Host.Middleware states for the same case.
 		if !ds.embedGrantOK(r) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			i18n.HTTPError(w, r, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 			return false
 		}
 		stripAmbientCredentials(r)
@@ -3385,11 +3375,11 @@ func rejectCrossOrigin(w http.ResponseWriter, r *http.Request) bool {
 	}
 	u, err := url.Parse(origin)
 	if err != nil || u.Host == "" {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 		return true
 	}
 	if !strings.EqualFold(u.Host, r.Host) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 		return true
 	}
 	return false
@@ -3406,10 +3396,10 @@ func decodeBounded(w http.ResponseWriter, r *http.Request, dst any) bool {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 			return false
 		}
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 		return false
 	}
 	// handler.UnmarshalStrict: duplicate and case-folded top-level keys
@@ -3417,7 +3407,7 @@ func decodeBounded(w http.ResponseWriter, r *http.Request, dst any) bool {
 	// "Action":"danger"} would execute the second action while any
 	// first-read intermediary saw the first. Refuse the ambiguity.
 	if err := handler.UnmarshalStrict(body, dst); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 		return false
 	}
 	return true
@@ -3468,7 +3458,7 @@ func (ds *UIHost) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	// caller can still do both requests. It makes the grant confer nothing
 	// extra, which is the actual claim.
 	if r.Header.Get(fembed.GrantHeader) != "" {
-		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 		return
 	}
 	sess := ds.CreateSession()
@@ -3483,14 +3473,14 @@ func (ds *UIHost) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 // responds with a JSON result.
 func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 		return
 	}
 	if rejectCrossOrigin(w, r) {
 		return
 	}
 	if r.ContentLength > maxMutatingBodyBytes {
-		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 		return
 	}
 
@@ -3583,7 +3573,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 			if d.Kind == app.DecisionBlock && d.Status >= 400 && d.Status < 600 {
 				status = d.Status
 			}
-			http.Error(w, http.StatusText(status), status)
+			i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
 			return
 		}
 	}
@@ -3594,20 +3584,23 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 		actionDef.Handler(ctx)
 
 		w.Header().Set("Content-Type", "application/json")
+		// The message is in the caller's locale.
+		w.Header().Set("Cache-Control", "no-store")
 		json.NewEncoder(w).Encode(map[string]any{
 			"status":  "ok",
 			"action":  actionName,
-			"message": "Server action processed",
+			"message": reasonActionProcessed.Text(r.Context()),
 		})
 		return
 	}
 
 	// No Go handler; just acknowledge
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(map[string]any{
 		"status":  "ok",
 		"action":  actionName,
-		"message": "Server action acknowledged (no handler)",
+		"message": reasonActionAcknowledged.Text(r.Context()),
 	})
 }
 
@@ -3630,7 +3623,7 @@ func (ds *UIHost) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
 	ds.mu.RUnlock()
 
 	if !ok {
-		http.Error(w, "widget not found: "+widgetID, http.StatusNotFound)
+		i18n.HTTPError(w, r, http.StatusNotFound, reasonWidgetNotFound, map[string]any{"id": widgetID})
 		return
 	}
 	serveVersionedText(w, r, "application/javascript; charset=utf-8", js, hash, true)
@@ -3737,7 +3730,7 @@ func (ds *UIHost) Mount(r *router.Router) {
 			// skipping the per-surface scoping entirely.
 			g, ok := ds.embedGrant(req)
 			if !ok {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				i18n.HTTPError(w, req, http.StatusUnauthorized, i18n.StatusPhrase(http.StatusUnauthorized))
 				return
 			}
 			stripAmbientCredentials(req)
@@ -3902,12 +3895,22 @@ func (ds *UIHost) RoutePatterns() []string {
 	return patterns
 }
 
+// writeBlock answers a DecisionBlock: its reason, or the status's
+// generic phrase, in the request's locale.
+func writeBlock(w http.ResponseWriter, r *http.Request, res app.RenderResult) {
+	reason := res.Reason
+	if reason.IsZero() {
+		reason = i18n.StatusPhrase(res.Status)
+	}
+	i18n.HTTPError(w, r, res.Status, reason, res.Params)
+}
+
 // methodNotAllowed is registered alongside POST-only endpoints so a wrong-
 // method request gets a clear 405 instead of falling through to the UI
 // page handler and getting a misleading 404.
-func methodNotAllowed(w http.ResponseWriter, _ *http.Request) {
+func methodNotAllowed(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Allow", "POST")
-	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 }
 
 // mountPageLLMMD registers LLM-friendly documentation routes for every

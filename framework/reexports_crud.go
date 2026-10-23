@@ -2,12 +2,14 @@ package framework
 
 import (
 	"context"
+	"net/http"
+
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/db"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
-	"net/http"
 )
 
 // Re-exports of framework/crud + framework/db so existing callers, generated
@@ -87,7 +89,7 @@ func WithUploadedKeys(ctx context.Context, keys ...string) context.Context {
 func WithReadHooks(ctx context.Context) context.Context { return crud.WithReadHooks(ctx) }
 
 // NewValidationError wraps crud.NewValidationError.
-func NewValidationError(fields map[string][]string) *crud.ValidationError {
+func NewValidationError(fields map[string][]schema.Violation) *crud.ValidationError {
 	return crud.NewValidationError(fields)
 }
 

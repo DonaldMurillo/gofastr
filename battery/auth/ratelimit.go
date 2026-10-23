@@ -65,7 +65,7 @@ func (rl *RateLimiter) guard(w http.ResponseWriter, r *http.Request) bool {
 	allowed, retry := rl.AllowContext(r.Context(), rl.clientIP(r))
 	if !allowed {
 		w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
-		writeAuthError(w, http.StatusTooManyRequests, "rate limit exceeded")
+		writeAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 		return false
 	}
 	return true

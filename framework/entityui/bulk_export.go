@@ -6,15 +6,14 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
-	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // exportKeyParam names the list key on an export link: the list query's
@@ -41,14 +40,14 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		ctx := r.Context()
 		m, err := u.meta(entityName)
 		if err != nil || !bulkOn(m) {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		if m.tr != nil {
-			ctx = i18nui.WithTranslator(ctx, m.tr)
+			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
 		if !canRead(ctx, m.ch) {
-			writeBulkError(w, http.StatusForbidden, "access denied")
+			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
 		q := r.URL.Query()
@@ -64,11 +63,11 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		}
 		if err != nil {
 			if ref, ok := errors.AsType[*bulkRefusal](err); ok {
-				writeBulkError(w, ref.status, ref.msg)
+				writeBulkError(w, r, ref.status, ref.reason, ref.params)
 				return
 			}
 			slog.ErrorContext(ctx, "entityui: export read", "entity", m.name, "error", err)
-			writeBulkError(w, http.StatusInternalServerError, i18nui.T(ctx, i18nui.KeyEntityBulkFailed))
+			writeBulkError(w, r, http.StatusInternalServerError, reasonBulkFailed)
 			return
 		}
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
@@ -143,7 +142,7 @@ func exportFilename(table string) string {
 // drops out. More than InRequestCap names, repeats counted, is refused.
 func (u *UI) namedRows(ctx context.Context, m *meta, named, fields []string) ([]map[string]any, error) {
 	if len(named) > InRequestCap {
-		return nil, refuse(http.StatusUnprocessableEntity, i18nui.TVars(ctx, i18nui.KeyEntityBulkOverCap, map[string]string{"cap": strconv.Itoa(InRequestCap)}))
+		return nil, refuse(http.StatusUnprocessableEntity, reasonBulkOverCap, map[string]any{"cap": InRequestCap})
 	}
 	ids := dedupeIDs(named)
 	return m.ch.ListAll(crud.WithReadHooks(ctx), crud.ListOptions{

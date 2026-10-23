@@ -63,25 +63,17 @@ func coerceLinkPK(target *entity.Entity, targetPK string, fieldPrefix string, va
 			return i, nil
 		}
 		if x == math.Trunc(x) && !math.IsNaN(x) && !math.IsInf(x, 0) {
-			return nil, &ValidationError{fields: map[string][]string{fieldPrefix: {
-				"number is beyond exact float64 precision; send the integer as a JSON integer literal or a string",
-			}}}
+			return nil, &ValidationError{fields: map[string][]schema.Violation{fieldPrefix: {{Reason: reasonBeyondPrecision}}}}
 		}
-		return nil, &ValidationError{fields: map[string][]string{fieldPrefix: {
-			"must be an integer",
-		}}}
+		return nil, &ValidationError{fields: map[string][]schema.Violation{fieldPrefix: {{Reason: schema.ReasonNotInteger}}}}
 	case float32:
 		if i, ok := exactFloatInt64(float64(x)); ok {
 			return i, nil
 		}
 		if float64(x) == math.Trunc(float64(x)) {
-			return nil, &ValidationError{fields: map[string][]string{fieldPrefix: {
-				"number is beyond exact float64 precision; send the integer as a JSON integer literal or a string",
-			}}}
+			return nil, &ValidationError{fields: map[string][]schema.Violation{fieldPrefix: {{Reason: reasonBeyondPrecision}}}}
 		}
-		return nil, &ValidationError{fields: map[string][]string{fieldPrefix: {
-			"must be an integer",
-		}}}
+		return nil, &ValidationError{fields: map[string][]schema.Violation{fieldPrefix: {{Reason: schema.ReasonNotInteger}}}}
 	case json.Number:
 		if i, err := x.Int64(); err == nil {
 			return i, nil
@@ -92,14 +84,10 @@ func coerceLinkPK(target *entity.Entity, targetPK string, fieldPrefix string, va
 				return i, nil
 			}
 			if fl == math.Trunc(fl) {
-				return nil, &ValidationError{fields: map[string][]string{fieldPrefix: {
-					"number is beyond exact float64 precision; send the integer as a JSON integer literal or a string",
-				}}}
+				return nil, &ValidationError{fields: map[string][]schema.Violation{fieldPrefix: {{Reason: reasonBeyondPrecision}}}}
 			}
 		}
-		return nil, &ValidationError{fields: map[string][]string{fieldPrefix: {
-			"must be an integer",
-		}}}
+		return nil, &ValidationError{fields: map[string][]schema.Violation{fieldPrefix: {{Reason: schema.ReasonNotInteger}}}}
 	}
 	return val, nil
 }
@@ -301,8 +289,8 @@ func (ch *CrudHandler) checkTargetRowScope(ctx context.Context, r *http.Request,
 	return nil
 }
 
-func prefixValidationErrors(prefix string, fields map[string][]string) map[string][]string {
-	out := make(map[string][]string, len(fields))
+func prefixValidationErrors(prefix string, fields map[string][]schema.Violation) map[string][]schema.Violation {
+	out := make(map[string][]schema.Violation, len(fields))
 	for k, msgs := range fields {
 		out[prefix+"."+k] = msgs
 	}
@@ -358,7 +346,7 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 		}
 		childMap, ok := rawVal.(map[string]any)
 		if !ok {
-			return nil, &ValidationError{fields: map[string][]string{rel.Name: {"must be an object"}}}
+			return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{Reason: reasonNotObject}}}}
 		}
 
 		target, err := entity.ResolveTarget(ch.Registry, ch.Entity, rel.Entity)
@@ -449,7 +437,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 		case entity.RelHasOne:
 			childMap, ok := rawVal.(map[string]any)
 			if !ok {
-				return nil, &ValidationError{fields: map[string][]string{rel.Name: {"must be an object"}}}
+				return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{Reason: reasonNotObject}}}}
 			}
 			childMap = childHandler.unconvertMapKeys(childMap)
 			childMap[rel.ForeignKey] = parentID
@@ -515,13 +503,13 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 		case entity.RelHasMany:
 			slice, ok := rawVal.([]any)
 			if !ok {
-				return nil, &ValidationError{fields: map[string][]string{rel.Name: {"must be an array"}}}
+				return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{Reason: reasonNotArray}}}}
 			}
 			childResults := make([]map[string]any, 0, len(slice))
 			for idx, item := range slice {
 				childMap, ok := item.(map[string]any)
 				if !ok {
-					return nil, &ValidationError{fields: map[string][]string{fmt.Sprintf("%s.%d", rel.Name, idx): {"must be an object"}}}
+					return nil, &ValidationError{fields: map[string][]schema.Violation{fmt.Sprintf("%s.%d", rel.Name, idx): {{Reason: reasonNotObject}}}}
 				}
 				childMap = childHandler.unconvertMapKeys(childMap)
 				childMap[rel.ForeignKey] = parentID
@@ -565,7 +553,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 		case entity.RelManyToMany:
 			slice, ok := rawVal.([]any)
 			if !ok {
-				return nil, &ValidationError{fields: map[string][]string{rel.Name: {"must be an array"}}}
+				return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{Reason: reasonNotArray}}}}
 			}
 			childResults := make([]map[string]any, 0, len(slice))
 			through, err := query.SafeIdent(rel.Through)
@@ -658,7 +646,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 					}
 				default:
-					return nil, &ValidationError{fields: map[string][]string{fmt.Sprintf("%s.%d", rel.Name, idx): {"must be an object or ID"}}}
+					return nil, &ValidationError{fields: map[string][]schema.Violation{fmt.Sprintf("%s.%d", rel.Name, idx): {{Reason: reasonNotObjectOrID}}}}
 				}
 
 				coercedParentID := coercePKValue(ch.Entity, ch.PrimaryKey, parentID)

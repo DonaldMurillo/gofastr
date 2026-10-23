@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
@@ -79,11 +81,11 @@ func (p *TokensPlugin) RegisterRoutes(r *router.Router, basePath string) {
 func (p *TokensPlugin) requireSessionUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
 	u := GetCurrentUser(r.Context())
 	if u == nil {
-		writeAuthError(w, http.StatusUnauthorized, "authentication required")
+		writeAuthError(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)
 		return "", false
 	}
 	if _, tokenAuth := TokenScopes(r.Context()); tokenAuth {
-		writeAuthError(w, http.StatusUnauthorized, "token management requires an interactive session, not an API token")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonTokensNeedSession)
 		return "", false
 	}
 	// An embed grant is the third credential with that property, and the worst
@@ -94,7 +96,7 @@ func (p *TokensPlugin) requireSessionUserID(w http.ResponseWriter, r *http.Reque
 	// one-origin credential into a permanent `*:*` API token that outlives the
 	// grant's deadline, ignores its scopes and is invisible to the embed system.
 	if _, embedded := embed.GrantFromContext(r.Context()); embedded {
-		writeAuthError(w, http.StatusUnauthorized, "token management requires an interactive session, not an embedded surface")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonTokensNeedSessionEmbed)
 		return "", false
 	}
 	return u.GetID(), true
@@ -138,11 +140,11 @@ func (p *TokensPlugin) createTokenHandler() http.HandlerFunc {
 			// a persistence fault with 400 tells the caller to fix a body
 			// that was fine.
 			if errors.Is(err, ErrInvalidTokenSpec) {
-				writeAuthError(w, http.StatusBadRequest, err.Error())
+				writeAuthErrorFor(w, r, http.StatusBadRequest, err, i18n.StatusPhrase(http.StatusBadRequest))
 				return
 			}
 			log.Printf("auth: issue token: %v", err)
-			writeAuthError(w, http.StatusInternalServerError, "could not create token")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonCouldNotCreateToken)
 			return
 		}
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -176,7 +178,7 @@ func (p *TokensPlugin) listTokensHandler() http.HandlerFunc {
 		}
 		toks, err := p.tokens.List(r.Context(), OwnerKindUser, userID)
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "list tokens failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonListTokensFailed)
 			return
 		}
 		out := make([]map[string]any, 0, len(toks))
@@ -209,17 +211,17 @@ func (p *TokensPlugin) revokeTokenHandler() http.HandlerFunc {
 		}
 		id := router.Param(r, "id")
 		if id == "" {
-			writeAuthError(w, http.StatusBadRequest, "token id required")
+			writeAuthError(w, r, http.StatusBadRequest, reasonTokenIdRequired)
 			return
 		}
 		// Revoke is owner-scoped: a foreign id returns ErrTokenNotFound → 404.
 		// The same id revoking twice is a no-op success (idempotent).
 		if err := p.tokens.Revoke(r.Context(), id, OwnerKindUser, userID); err != nil {
 			if errors.Is(err, ErrTokenNotFound) {
-				writeAuthError(w, http.StatusNotFound, "token not found")
+				writeAuthError(w, r, http.StatusNotFound, reasonTokenNotFound)
 				return
 			}
-			writeAuthError(w, http.StatusInternalServerError, "revoke failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonRevokeFailed)
 			return
 		}
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{

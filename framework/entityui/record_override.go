@@ -13,6 +13,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -174,52 +175,52 @@ func (u *UI) OverrideHandler(entityName string) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
-			writeBulkError(w, http.StatusMethodNotAllowed, "method not allowed")
+			writeBulkError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
 		if handler.IsCrossSiteRequest(r) {
-			writeBulkError(w, http.StatusForbidden, "access denied")
+			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
 		m, err := u.meta(entityName)
 		if err != nil || !m.hasAPI || !hasEnforcedStates(m) {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		id := overrideID(r)
 		if id == "" {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		ctx := r.Context()
 		if m.tr != nil {
-			ctx = i18nui.WithTranslator(ctx, m.tr)
+			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
 		// The capability gate runs before any read: a caller without it
 		// learns nothing, not even that the record exists.
 		if !access.CanResourceExact(ctx, overrideCapability(m), access.Ref{Type: m.name, ID: id}) {
-			writeOverrideError(w, r, ctx, http.StatusForbidden, i18nui.TVars(ctx, i18nui.KeyEntityOverrideDenied, map[string]string{"entity": m.singular(ctx)}))
+			writeOverrideError(w, r, ctx, http.StatusForbidden, reasonOverrideDenied, map[string]any{"entity": m.singular(ctx)})
 			return
 		}
 		plain := !handler.IsJSONContentType(r.Header.Get("Content-Type"))
 		if plain && !isFormContentType(r.Header.Get("Content-Type")) {
-			writeBulkError(w, http.StatusUnsupportedMediaType, "unsupported media type")
+			writeBulkError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, overrideBodyLimit)
 		state, reason, back, err := readOverrideBody(r, plain)
 		if err != nil {
 			if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-				writeBulkError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return
 			}
-			writeBulkError(w, http.StatusBadRequest, "invalid request body")
+			writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 			return
 		}
 		if plain {
 			var ok bool
 			if back, ok = scrubBackPath(back); !ok {
-				writeBulkError(w, http.StatusBadRequest, "invalid return path")
+				writeBulkError(w, r, http.StatusBadRequest, reasonInvalidReturnPath)
 				return
 			}
 		}
@@ -230,28 +231,28 @@ func (u *UI) OverrideHandler(entityName string) http.Handler {
 		// asked here: the capability adds to update, it does not replace
 		// it.
 		if !m.ch.CanReadRecordScoped(ctx, id) {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		if _, err := m.ch.GetOne(crud.WithReadHooks(ctx), id, nil); err != nil {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		if !m.ch.CanUpdateRecordScoped(ctx, id) {
-			writeOverrideError(w, r, ctx, http.StatusForbidden, i18nui.TVars(ctx, i18nui.KeyEntityOverrideDenied, map[string]string{"entity": m.singular(ctx)}))
+			writeOverrideError(w, r, ctx, http.StatusForbidden, reasonOverrideDenied, map[string]any{"entity": m.singular(ctx)})
 			return
 		}
 		if !slices.Contains(stateValues(m), state) {
-			writeOverrideError(w, r, ctx, http.StatusBadRequest, i18nui.T(ctx, i18nui.KeyEntityOverrideStateBad))
+			writeOverrideError(w, r, ctx, http.StatusBadRequest, reasonOverrideStateBad)
 			return
 		}
 		reason = strings.TrimSpace(reason)
 		if reason == "" {
-			writeOverrideError(w, r, ctx, http.StatusBadRequest, i18nui.T(ctx, i18nui.KeyEntityOverrideBlank))
+			writeOverrideError(w, r, ctx, http.StatusBadRequest, reasonOverrideBlank)
 			return
 		}
 		if utf8.RuneCountInString(reason) > overrideReasonMax {
-			writeOverrideError(w, r, ctx, http.StatusBadRequest, i18nui.T(ctx, i18nui.KeyEntityOverrideLong))
+			writeOverrideError(w, r, ctx, http.StatusBadRequest, reasonOverrideLong)
 			return
 		}
 		if _, err := m.ch.UpdateOne(crud.WithStateOverride(ctx, reason), id, map[string]any{m.states.Field: state}); err != nil {
@@ -311,11 +312,12 @@ func isFormContentType(ct string) bool {
 
 // writeOverrideError answers both arms: the RPC caller a JSON error, a
 // plain post the same status as a page that says what to fix.
-func writeOverrideError(w http.ResponseWriter, r *http.Request, ctx context.Context, status int, msg string) {
+func writeOverrideError(w http.ResponseWriter, r *http.Request, ctx context.Context, status int, reason i18n.Phrase, params ...map[string]any) {
 	if handler.IsJSONContentType(r.Header.Get("Content-Type")) {
-		writeBulkError(w, status, msg)
+		writeBulkError(w, r, status, reason, params...)
 		return
 	}
+	msg := reason.Text(ctx, params...)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	body := ui.Callout(ui.CalloutConfig{Title: i18nui.T(ctx, i18nui.KeyEntityOverride), Variant: ui.StatusDanger}, render.Text(msg))
@@ -330,20 +332,20 @@ func writeOverrideError(w http.ResponseWriter, r *http.Request, ctx context.Cont
 func writeOverrideRefusal(w http.ResponseWriter, r *http.Request, ctx context.Context, m *meta, err error) {
 	switch {
 	case errors.Is(err, crud.ErrStateOverrideUnaudited):
-		writeOverrideError(w, r, ctx, http.StatusConflict, i18nui.T(ctx, i18nui.KeyEntityOverrideNoAudit))
+		writeOverrideError(w, r, ctx, http.StatusConflict, reasonOverrideNoAudit)
 	case errors.Is(err, crud.ErrStateOverrideNoReason):
-		writeOverrideError(w, r, ctx, http.StatusBadRequest, i18nui.T(ctx, i18nui.KeyEntityOverrideBlank))
+		writeOverrideError(w, r, ctx, http.StatusBadRequest, reasonOverrideBlank)
 	case errors.Is(err, crud.ErrForbidden):
-		writeOverrideError(w, r, ctx, http.StatusForbidden, i18nui.TVars(ctx, i18nui.KeyEntityOverrideDenied, map[string]string{"entity": m.singular(ctx)}))
+		writeOverrideError(w, r, ctx, http.StatusForbidden, reasonOverrideDenied, map[string]any{"entity": m.singular(ctx)})
 	case crud.IsNotFound(err):
-		writeBulkError(w, http.StatusNotFound, "not found")
+		writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 	case isWriteInvalid(err):
-		writeOverrideError(w, r, ctx, http.StatusUnprocessableEntity, i18nui.T(ctx, i18nui.KeyEntityOverrideFailed))
+		writeOverrideError(w, r, ctx, http.StatusUnprocessableEntity, reasonOverrideFailed)
 	case crud.IsHookRefusal(err):
-		writeOverrideError(w, r, ctx, http.StatusBadRequest, i18nui.T(ctx, i18nui.KeyEntityOverrideFailed))
+		writeOverrideError(w, r, ctx, http.StatusBadRequest, reasonOverrideFailed)
 	default:
 		slog.ErrorContext(ctx, "entityui: state override", "entity", m.name, "error", err)
-		writeOverrideError(w, r, ctx, http.StatusInternalServerError, i18nui.T(ctx, i18nui.KeyEntityOverrideFailed))
+		writeOverrideError(w, r, ctx, http.StatusInternalServerError, reasonOverrideFailed)
 	}
 }
 

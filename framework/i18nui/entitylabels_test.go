@@ -205,7 +205,7 @@ func TestEntityLabelsWithCtxTranslator(t *testing.T) {
 	cat := i18n.NewMapCatalog()
 	cat.Set("fr", "nav.groups.billing", i18n.Message{Text: "Facturation"})
 	tr := i18n.NewTranslator(cat, "en")
-	ctx := WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"}), tr)
+	ctx := i18n.WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"}), tr)
 	if got := NavGroupLabel(ctx, nil, "billing", ""); got != "Facturation" {
 		t.Fatalf("ctx translator not consulted: %q", got)
 	}

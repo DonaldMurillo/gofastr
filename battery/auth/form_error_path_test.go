@@ -19,7 +19,7 @@ func TestFormAuthError_FallsBackToConfiguredPath(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
 	// no Referer header
 	rec := httptest.NewRecorder()
-	writeFormAuthError(rec, req, http.StatusUnauthorized, "invalid_credentials")
+	writeFormAuthError(rec, req, http.StatusUnauthorized, reasonInvalidCredentials)
 
 	if rec.Code != http.StatusSeeOther {
 		t.Errorf("status = %d, want 303 (redirect to login-error path)", rec.Code)
@@ -67,7 +67,7 @@ func TestFormAuthError_NoConfigStillFallsToJSON(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
 	rec := httptest.NewRecorder()
-	writeFormAuthError(rec, req, http.StatusUnauthorized, "invalid_credentials")
+	writeFormAuthError(rec, req, http.StatusUnauthorized, reasonInvalidCredentials)
 
 	if rec.Code == http.StatusSeeOther {
 		t.Errorf("status = 303 when no fallback configured; want JSON 401")

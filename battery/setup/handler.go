@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // maxSetupBodyBytes caps the wizard's urlencoded form bodies. Matches the
@@ -102,12 +104,12 @@ func (r *Runner) handleTokenExchange(w http.ResponseWriter, req *http.Request, t
 	r.mu.Lock()
 	if !r.tokenEnabled || r.token == "" {
 		r.mu.Unlock()
-		http.Error(w, "forbidden: setup token already used or expired. Continue in your original browser session, or restart the app to mint a fresh token.", http.StatusForbidden)
+		i18n.HTTPError(w, req, http.StatusForbidden, reasonSetupTokenUsed)
 		return
 	}
 	if !tokenEqual(tok, r.token) {
 		r.mu.Unlock()
-		http.Error(w, "forbidden: invalid or expired setup token. Check the server startup log for the setup URL.", http.StatusForbidden)
+		i18n.HTTPError(w, req, http.StatusForbidden, reasonSetupTokenInvalid)
 		return
 	}
 	// First successful exchange: invalidate the token (single-use) and
@@ -117,7 +119,7 @@ func (r *Runner) handleTokenExchange(w http.ResponseWriter, req *http.Request, t
 	cookieVal, gerr := generateToken()
 	if gerr != nil {
 		r.mu.Unlock()
-		http.Error(w, "setup: could not mint a session token", http.StatusInternalServerError)
+		i18n.HTTPError(w, req, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 	r.token = ""
@@ -133,7 +135,7 @@ func (r *Runner) handleSetup(w http.ResponseWriter, req *http.Request) {
 	// Auth gate: if token is enabled, require the cookie.
 	if r.tokenEnabled {
 		if !hasSetupCookie(req, r.cookieSecret) {
-			http.Error(w, "forbidden: setup token required. Check the server startup log for the setup URL.", http.StatusForbidden)
+			i18n.HTTPError(w, req, http.StatusForbidden, reasonSetupTokenRequired)
 			return
 		}
 	}
@@ -162,7 +164,7 @@ func (r *Runner) handleSetup(w http.ResponseWriter, req *http.Request) {
 		r.handleSubmit(w, req)
 	default:
 		w.Header().Set("Allow", "GET, POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		i18n.HTTPError(w, req, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 	}
 }
 
@@ -175,10 +177,10 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 	req.Body = http.MaxBytesReader(w, req.Body, maxSetupBodyBytes)
 	if err := req.ParseForm(); err != nil {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			i18n.HTTPError(w, req, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 			return
 		}
-		http.Error(w, "bad form data", http.StatusBadRequest)
+		i18n.HTTPError(w, req, http.StatusBadRequest, i18n.ReasonInvalidForm)
 		return
 	}
 

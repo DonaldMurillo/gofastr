@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/stream"
 	"github.com/DonaldMurillo/gofastr/framework/db"
@@ -214,7 +215,7 @@ func (ch *CrudHandler) eventStreamReauthInterval() time.Duration {
 func (ch *CrudHandler) EventStream() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if ch.Events == nil {
-			writeJSONError(w, http.StatusServiceUnavailable, "event bus not configured")
+			writeJSONError(w, r, http.StatusServiceUnavailable, reasonEventBusMissing)
 			return
 		}
 		// Real-time event streams are authenticated regardless of
@@ -237,7 +238,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 		// RequireOwner.
 		if ch.Entity.Config.Scope.OwnerField == "" && !ch.Entity.Config.Exposure.Public {
 			if _, ok := handler.GetUser(r.Context()); !ok {
-				writeJSONError(w, http.StatusUnauthorized, "authentication required")
+				writeJSONError(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)
 				return
 			}
 		}
@@ -270,7 +271,7 @@ func (ch *CrudHandler) EventStream() http.HandlerFunc {
 			ch.EventStreamSeats, ch.EventStreamSeatOverflow)
 		if !admitted {
 			w.Header().Set("Retry-After", "1")
-			writeJSONError(w, http.StatusTooManyRequests, "too many concurrent event streams for this caller")
+			writeJSONError(w, r, http.StatusTooManyRequests, i18n.ReasonTooManyStreams)
 			return
 		}
 		defer ch.seatRegistry().release(seat)

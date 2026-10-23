@@ -81,11 +81,13 @@ type BatchResponse struct {
 
 // BatchResult is one entry in a batch response, in input order.
 type BatchResult struct {
-	Index   int                 ` + "`json:\"index\"`" + `
-	Data    map[string]any      ` + "`json:\"data,omitempty\"`" + `
-	Error   string              ` + "`json:\"error,omitempty\"`" + `
-	Fields  map[string][]string ` + "`json:\"fields,omitempty\"`" + `
-	Skipped bool                ` + "`json:\"skipped,omitempty\"`" + `
+	Index        int                 ` + "`json:\"index\"`" + `
+	Data         map[string]any      ` + "`json:\"data,omitempty\"`" + `
+	Error        string              ` + "`json:\"error,omitempty\"`" + `
+	Reason       string              ` + "`json:\"reason,omitempty\"`" + `
+	Fields       map[string][]string ` + "`json:\"fields,omitempty\"`" + `
+	FieldReasons map[string][]string ` + "`json:\"field_reasons,omitempty\"`" + `
+	Skipped      bool                ` + "`json:\"skipped,omitempty\"`" + `
 }
 
 // Do sends method+path with an optional JSON body and decodes the 2xx

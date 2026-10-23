@@ -322,7 +322,7 @@ app.Router().Delete("/posts/{id}",
 
 `RequirePermission` returns `403 access denied: missing permission X`
 when the user does not hold the named permission. The error format
-is JSON via `core/handler.WriteError`.
+is JSON via `core/handler.WriteError`, with `"reason":"missing_permission"`.
 
 ## The `Policy` interface
 

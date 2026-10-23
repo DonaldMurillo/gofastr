@@ -22,6 +22,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -237,26 +238,22 @@ func (b *Battery) handlePreferencesForm() http.HandlerFunc {
 			// The --serve shape: the battery never Runs, so no store
 			// opens. Say so plainly; the screen still rendered the
 			// declared defaults.
-			writePreferencesEnvelope(w, http.StatusServiceUnavailable,
-				"preferences need the desktop host: the app state store is not open", nil)
+			writePreferencesEnvelope(w, r, http.StatusServiceUnavailable, reasonPrefsNeedHost, nil)
 			return
 		}
 		if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
-			writePreferencesEnvelope(w, http.StatusUnsupportedMediaType,
-				"content-type must be application/json", nil)
+			writePreferencesEnvelope(w, r, http.StatusUnsupportedMediaType, i18n.ReasonJSONMediaType, nil)
 			return
 		}
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxCallBody))
 		if err != nil {
-			writePreferencesEnvelope(w, http.StatusBadRequest,
-				"request body too large or unreadable", nil)
+			writePreferencesEnvelope(w, r, http.StatusBadRequest, i18n.ReasonBodyUnreadable, nil)
 			return
 		}
 		var form map[string]json.RawMessage
 		if len(body) > 0 {
 			if err := handler.UnmarshalStrict(body, &form); err != nil || form == nil {
-				writePreferencesEnvelope(w, http.StatusBadRequest,
-					"request body must be a JSON object", nil)
+				writePreferencesEnvelope(w, r, http.StatusBadRequest, reasonPrefsNotObject, nil)
 				return
 			}
 		}
@@ -266,14 +263,14 @@ func (b *Battery) handlePreferencesForm() http.HandlerFunc {
 		// could not have rendered.
 		p := b.prefs
 		values := make(map[string]json.RawMessage, len(form))
-		fieldErrs := make(map[string][]string)
+		fieldErrs := make(map[string]*preferenceError)
 		for _, name := range slices.Sorted(maps.Keys(form)) {
 			if name == csrfFormSkip {
 				continue
 			}
 			d, ok := p.index[name]
 			if !ok {
-				fieldErrs[name] = []string{"not a declared preference"}
+				fieldErrs[name] = &preferenceError{key: name, reason: reasonPrefUndeclared}
 				continue
 			}
 			if p.decls[d].Kind == PreferenceInt && string(form[name]) == `""` {
@@ -282,26 +279,26 @@ func (b *Battery) handlePreferencesForm() http.HandlerFunc {
 			values[name] = form[name]
 		}
 		if len(fieldErrs) > 0 {
-			writePreferencesEnvelope(w, http.StatusBadRequest, "some fields are invalid", fieldErrs)
+			writePreferencesEnvelope(w, r, http.StatusBadRequest, reasonPrefsInvalid, fieldErrs)
 			return
 		}
 		if _, err := p.setRaw(values); err != nil {
 			var pe *preferenceError
 			if errors.As(err, &pe) {
-				writePreferencesEnvelope(w, http.StatusBadRequest, pe.Error(),
-					map[string][]string{pe.key: {pe.msg}})
+				writePreferencesEnvelope(w, r, http.StatusBadRequest, reasonPrefsInvalid,
+					map[string]*preferenceError{pe.key: pe})
 				return
 			}
 			var de *Error
 			if errors.As(err, &de) && de.Code == CodeUnsupported {
-				writePreferencesEnvelope(w, http.StatusServiceUnavailable, de.Message, nil)
+				writePreferencesEnvelope(w, r, http.StatusServiceUnavailable, reasonPrefsNeedHost, nil)
 				return
 			}
 			// Internal failures carry no detail to the page.
-			writePreferencesEnvelope(w, http.StatusInternalServerError, "saving preferences failed", nil)
+			writePreferencesEnvelope(w, r, http.StatusInternalServerError, reasonPrefsSaveFailed, nil)
 			return
 		}
-		writePreferencesEnvelope(w, http.StatusOK, "", nil)
+		writePreferencesEnvelope(w, r, http.StatusOK, i18n.Phrase{}, nil)
 	}
 }
 
@@ -313,17 +310,35 @@ const csrfFormSkip = "_csrf"
 // formerrors module renders: error is the fallback toast text, fields
 // maps a form field name to its messages.
 type preferencesEnvelope struct {
-	Error  string              `json:"error,omitempty"`
-	Fields map[string][]string `json:"fields,omitempty"`
-	OK     bool                `json:"ok"`
+	Error        string              `json:"error,omitempty"`
+	Reason       string              `json:"reason,omitempty"`
+	Fields       map[string][]string `json:"fields,omitempty"`
+	FieldReasons map[string][]string `json:"field_reasons,omitempty"`
+	OK           bool                `json:"ok"`
 }
 
-// writePreferencesEnvelope serves one answer. A 200 carries {"ok":true}
-// only; the form's navigate effect re-renders the page.
-func writePreferencesEnvelope(w http.ResponseWriter, status int, errMsg string, fields map[string][]string) {
+// writePreferencesEnvelope serves one answer: reason (given the refused
+// field names as {{fields}}) and each field's refusal in the request's
+// locale beside their codes. A 200 (zero
+// reason) carries {"ok":true} only; the form's navigate effect
+// re-renders the page.
+func writePreferencesEnvelope(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, fields map[string]*preferenceError) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
-	enc := json.NewEncoder(w)
-	_ = enc.Encode(preferencesEnvelope{Error: errMsg, Fields: fields, OK: status == http.StatusOK})
+	env := preferencesEnvelope{OK: status == http.StatusOK}
+	keys := slices.Sorted(maps.Keys(fields))
+	if !reason.IsZero() {
+		env.Error = reason.Text(r.Context(), map[string]any{"fields": strings.Join(keys, ", ")})
+		env.Reason = reason.Code()
+	}
+	for _, key := range keys {
+		if env.Fields == nil {
+			env.Fields, env.FieldReasons = map[string][]string{}, map[string][]string{}
+		}
+		pe := fields[key]
+		env.Fields[key] = []string{pe.reason.Text(r.Context(), pe.params)}
+		env.FieldReasons[key] = []string{pe.reason.Code()}
+	}
+	_ = json.NewEncoder(w).Encode(env)
 }

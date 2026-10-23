@@ -136,11 +136,11 @@ func (p *AccountsPlugin) requireUserID(w http.ResponseWriter, r *http.Request) (
 	// would act on a user the request is not running as.
 	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "no session")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonNoSession)
 		return "", false
 	}
 	if sess.PendingTwoFactor {
-		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+		writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 		return "", false
 	}
 	return sess.UserID, true
@@ -153,13 +153,12 @@ func (p *AccountsPlugin) listHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	lister, ok := p.mgr.UserStore().(AccountLister)
 	if !ok {
-		writeAuthError(w, http.StatusInternalServerError,
-			"user store does not implement AccountLister")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonStoreNoAccountLister)
 		return
 	}
 	accts, err := lister.ListAccounts(r.Context(), userID)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "list accounts failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonListAccountsFailed)
 		return
 	}
 	// Per-caller linked-provider inventory: the same session-scoped,
@@ -176,15 +175,14 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	provider := router.Param(r, "provider")
 	if provider == "" {
-		writeAuthError(w, http.StatusBadRequest, "provider required")
+		writeAuthError(w, r, http.StatusBadRequest, reasonProviderRequired)
 		return
 	}
 
 	lister, listerOK := p.mgr.UserStore().(AccountLister)
 	unlinker, unlinkerOK := p.mgr.UserStore().(AccountUnlinker)
 	if !listerOK || !unlinkerOK {
-		writeAuthError(w, http.StatusInternalServerError,
-			"user store must implement AccountLister and AccountUnlinker")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonStoreNoUnlinker)
 		return
 	}
 
@@ -197,21 +195,19 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 	if atomicUnlinker, ok := p.mgr.UserStore().(AtomicUnlinker); ok {
 		outcome, err := atomicUnlinker.UnlinkOAuthGuarded(r.Context(), userID, provider)
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "unlink failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonUnlinkFailed)
 			return
 		}
 		switch outcome {
 		case UnlinkNotLinked:
-			writeAuthError(w, http.StatusNotFound, "account not linked")
+			writeAuthError(w, r, http.StatusNotFound, reasonAccountNotLinked)
 			return
 		case UnlinkRefusedLast:
-			writeAuthError(w, http.StatusConflict,
-				"cannot unlink the last login method: set a password first or link another provider")
+			writeAuthError(w, r, http.StatusConflict, reasonLastLoginMethod)
 			return
 		}
 		if err := p.revokeProviderTokens(r.Context(), userID, provider); err != nil {
-			writeAuthError(w, http.StatusInternalServerError,
-				"unlink succeeded but the stored provider token could not be revoked")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonUnlinkRevokeFailed)
 			return
 		}
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -230,7 +226,7 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 	// the invariant holds per request, not across concurrent ones.
 	accts, err := lister.ListAccounts(r.Context(), userID)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "list accounts failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonListAccountsFailed)
 		return
 	}
 	count := 0
@@ -240,7 +236,7 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if count == 0 {
-		writeAuthError(w, http.StatusNotFound, "account not linked")
+		writeAuthError(w, r, http.StatusNotFound, reasonAccountNotLinked)
 		return
 	}
 	remainingLinks := len(accts) - count
@@ -249,25 +245,23 @@ func (p *AccountsPlugin) unlinkHandler(w http.ResponseWriter, r *http.Request) {
 	if checker, ok := p.mgr.UserStore().(PasswordChecker); ok {
 		hp, herr := checker.HasPassword(r.Context(), userID)
 		if herr != nil {
-			writeAuthError(w, http.StatusInternalServerError, "password check failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonPasswordCheckFailed)
 			return
 		}
 		hasPassword = hp
 	}
 
 	if remainingLinks <= 0 && !hasPassword {
-		writeAuthError(w, http.StatusConflict,
-			"cannot unlink the last login method: set a password first or link another provider")
+		writeAuthError(w, r, http.StatusConflict, reasonLastLoginMethod)
 		return
 	}
 
 	if err := unlinker.UnlinkOAuth(r.Context(), userID, provider); err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "unlink failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUnlinkFailed)
 		return
 	}
 	if err := p.revokeProviderTokens(r.Context(), userID, provider); err != nil {
-		writeAuthError(w, http.StatusInternalServerError,
-			"unlink succeeded but the stored provider token could not be revoked")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonUnlinkRevokeFailed)
 		return
 	}
 	p.mgr.emitSecurity(r.Context(), SecurityEvent{

@@ -24,7 +24,7 @@ var decimalRe = regexp.MustCompile(`^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$`)
 func validateField(f Field, value any) error {
 	if value == nil {
 		if f.Required {
-			return fmt.Errorf("is required")
+			return violate(ReasonRequired, nil)
 		}
 		return nil
 	}
@@ -55,7 +55,7 @@ func validateField(f Field, value any) error {
 	case Image, File:
 		return validateImageOrFile(value)
 	default:
-		return fmt.Errorf("unsupported field type %d", f.Type)
+		return violate(ReasonUnsupportedType, map[string]any{"type": int(f.Type)})
 	}
 }
 
@@ -64,25 +64,25 @@ func validateField(f Field, value any) error {
 func validateString(f Field, value any) error {
 	s, ok := toString(value)
 	if !ok {
-		return fmt.Errorf("must be a string")
+		return violate(ReasonNotString, nil)
 	}
 	if f.Required && s == "" {
-		return fmt.Errorf("is required")
+		return violate(ReasonRequired, nil)
 	}
 	n := utf8.RuneCountInString(s)
 	if f.Min != nil && float64(n) < *f.Min {
-		return fmt.Errorf("must be at least %v characters", *f.Min)
+		return violate(ReasonMinLength, map[string]any{"min": *f.Min})
 	}
 	if f.Max != nil && float64(n) > *f.Max {
-		return fmt.Errorf("must be at most %v characters", *f.Max)
+		return violate(ReasonMaxLength, map[string]any{"max": *f.Max})
 	}
 	if f.Pattern != "" {
 		re, err := regexp.Compile(f.Pattern)
 		if err != nil {
-			return fmt.Errorf("invalid pattern: %v", err)
+			return violate(ReasonPatternInvalid, map[string]any{"detail": err.Error()})
 		}
 		if !re.MatchString(s) {
-			return fmt.Errorf("must match pattern %q", f.Pattern)
+			return violate(ReasonPattern, map[string]any{"pattern": strconv.Quote(f.Pattern)})
 		}
 	}
 	return nil
@@ -93,16 +93,16 @@ func validateString(f Field, value any) error {
 func validateInt(f Field, value any) error {
 	n, ok := toInt64(value)
 	if !ok {
-		return fmt.Errorf("must be an integer")
+		return violate(ReasonNotInteger, nil)
 	}
 	// Compare bounds in integer space. The bounds are stored as *float64,
 	// so first clamp them to the int64 range; widening n to float64 instead
 	// would lose precision above 2^53 and admit values strictly over Max.
 	if f.Min != nil && (math.IsNaN(*f.Min) || *f.Min >= math.Exp2(63) || n < floatBoundToInt64(*f.Min, true)) {
-		return fmt.Errorf("must be at least %v", *f.Min)
+		return violate(ReasonMin, map[string]any{"min": *f.Min})
 	}
 	if f.Max != nil && (math.IsNaN(*f.Max) || *f.Max < math.MinInt64 || n > floatBoundToInt64(*f.Max, false)) {
-		return fmt.Errorf("must be at most %v", *f.Max)
+		return violate(ReasonMax, map[string]any{"max": *f.Max})
 	}
 	return nil
 }
@@ -138,18 +138,18 @@ func floatBoundToInt64(b float64, isMin bool) int64 {
 func validateFloat(f Field, value any) error {
 	n, ok := toFloat64(value)
 	if !ok {
-		return fmt.Errorf("must be a number")
+		return violate(ReasonNotNumber, nil)
 	}
 	if math.IsNaN(n) || math.IsInf(n, 0) {
 		// NaN/Inf defeat every Min/Max comparison (IEEE-754); reject them
 		// so the bound can't be bypassed.
-		return fmt.Errorf("must be a finite number")
+		return violate(ReasonNotFinite, nil)
 	}
 	if f.Min != nil && n < *f.Min {
-		return fmt.Errorf("must be at least %v", *f.Min)
+		return violate(ReasonMin, map[string]any{"min": *f.Min})
 	}
 	if f.Max != nil && n > *f.Max {
-		return fmt.Errorf("must be at most %v", *f.Max)
+		return violate(ReasonMax, map[string]any{"max": *f.Max})
 	}
 	return nil
 }
@@ -159,10 +159,10 @@ func validateFloat(f Field, value any) error {
 func validateDecimal(f Field, value any) error {
 	s, ok := toString(value)
 	if !ok {
-		return fmt.Errorf("must be a decimal string")
+		return violate(ReasonNotDecimalString, nil)
 	}
 	if f.Required && s == "" {
-		return fmt.Errorf("is required")
+		return violate(ReasonRequired, nil)
 	}
 	if s == "" {
 		return nil
@@ -175,14 +175,14 @@ func validateDecimal(f Field, value any) error {
 	// (kept by policy), but they keep the validator fail-closed if the
 	// regex is ever loosened or a typed caller bypasses it.
 	if !decimalRe.MatchString(s) {
-		return fmt.Errorf("must be a valid decimal number")
+		return violate(ReasonNotDecimal, nil)
 	}
 	n, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		return fmt.Errorf("must be a valid decimal number")
+		return violate(ReasonNotDecimal, nil)
 	}
 	if math.IsNaN(n) || math.IsInf(n, 0) {
-		return fmt.Errorf("must be a finite decimal number")
+		return violate(ReasonNotFiniteDecimal, nil)
 	}
 	// Compare bounds in exact decimal space. Decimal is a fixed-precision type
 	// stored as a string precisely to avoid float rounding, so the bound check
@@ -193,20 +193,20 @@ func validateDecimal(f Field, value any) error {
 	dv, ok := new(big.Rat).SetString(s)
 	if !ok {
 		// decimalRe already vetted the form; defensive fail-closed.
-		return fmt.Errorf("must be a valid decimal number")
+		return violate(ReasonNotDecimal, nil)
 	}
 	if f.Min != nil {
 		// decimalBound returns nil for a NaN/Inf bound; such a bound can never be
 		// satisfied, so reject (fail closed) rather than panic in Cmp.
 		min := decimalBound(*f.Min)
 		if min == nil || dv.Cmp(min) < 0 {
-			return fmt.Errorf("must be at least %v", *f.Min)
+			return violate(ReasonMin, map[string]any{"min": *f.Min})
 		}
 	}
 	if f.Max != nil {
 		max := decimalBound(*f.Max)
 		if max == nil || dv.Cmp(max) > 0 {
-			return fmt.Errorf("must be at most %v", *f.Max)
+			return violate(ReasonMax, map[string]any{"max": *f.Max})
 		}
 	}
 	return nil
@@ -222,20 +222,20 @@ func validateBool(value any) error {
 		if v == 0 || v == 1 {
 			return nil
 		}
-		return fmt.Errorf("must be true or false")
+		return violate(ReasonNotTrueFalse, nil)
 	case string:
 		switch strings.ToLower(v) {
 		case "true", "false", "1", "0":
 			return nil
 		}
-		return fmt.Errorf("must be true or false")
+		return violate(ReasonNotTrueFalse, nil)
 	case float64:
 		if v == 0 || v == 1 {
 			return nil
 		}
-		return fmt.Errorf("must be true or false")
+		return violate(ReasonNotTrueFalse, nil)
 	default:
-		return fmt.Errorf("must be a boolean")
+		return violate(ReasonNotBoolean, nil)
 	}
 }
 
@@ -244,12 +244,12 @@ func validateBool(value any) error {
 func validateEnum(f Field, value any) error {
 	s, ok := toString(value)
 	if !ok {
-		return fmt.Errorf("must be a string")
+		return violate(ReasonNotString, nil)
 	}
 	if slices.Contains(f.Values, s) {
 		return nil
 	}
-	return fmt.Errorf("must be one of %v", f.Values)
+	return violate(ReasonNotOneOf, map[string]any{"values": fmt.Sprint(f.Values)})
 }
 
 // --- UUID ---
@@ -259,10 +259,10 @@ var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 func validateUUID(value any) error {
 	s, ok := toString(value)
 	if !ok {
-		return fmt.Errorf("must be a string")
+		return violate(ReasonNotString, nil)
 	}
 	if !uuidRe.MatchString(s) {
-		return fmt.Errorf("must be a valid UUID")
+		return violate(ReasonNotUUID, nil)
 	}
 	return nil
 }
@@ -272,11 +272,11 @@ func validateUUID(value any) error {
 func validateTimestamp(value any) error {
 	s, ok := toString(value)
 	if !ok {
-		return fmt.Errorf("must be a string")
+		return violate(ReasonNotString, nil)
 	}
 	_, err := time.Parse(time.RFC3339, s)
 	if err != nil {
-		return fmt.Errorf("must be a valid RFC 3339 timestamp")
+		return violate(ReasonNotTimestamp, nil)
 	}
 	return nil
 }
@@ -286,11 +286,11 @@ func validateTimestamp(value any) error {
 func validateDate(value any) error {
 	s, ok := toString(value)
 	if !ok {
-		return fmt.Errorf("must be a string")
+		return violate(ReasonNotString, nil)
 	}
 	_, err := time.Parse("2006-01-02", s)
 	if err != nil {
-		return fmt.Errorf("must be a valid date (YYYY-MM-DD)")
+		return violate(ReasonNotDate, nil)
 	}
 	return nil
 }
@@ -301,17 +301,17 @@ func validateJSON(value any) error {
 	switch v := value.(type) {
 	case string:
 		if !json.Valid([]byte(v)) {
-			return fmt.Errorf("must be valid JSON")
+			return violate(ReasonNotJSON, nil)
 		}
 		return nil
 	default:
 		// try marshaling and re-checking
 		b, err := json.Marshal(v)
 		if err != nil {
-			return fmt.Errorf("must be valid JSON")
+			return violate(ReasonNotJSON, nil)
 		}
 		if !json.Valid(b) {
-			return fmt.Errorf("must be valid JSON")
+			return violate(ReasonNotJSON, nil)
 		}
 		return nil
 	}
@@ -322,10 +322,10 @@ func validateJSON(value any) error {
 func validateRelation(value any) error {
 	s, ok := toString(value)
 	if !ok {
-		return fmt.Errorf("must be a string reference")
+		return violate(ReasonNotReference, nil)
 	}
 	if s == "" {
-		return fmt.Errorf("must be a non-empty reference")
+		return violate(ReasonEmptyReference, nil)
 	}
 	return nil
 }
@@ -335,10 +335,10 @@ func validateRelation(value any) error {
 func validateImageOrFile(value any) error {
 	s, ok := toString(value)
 	if !ok {
-		return fmt.Errorf("must be a string path or URL")
+		return violate(ReasonNotPath, nil)
 	}
 	if s == "" {
-		return fmt.Errorf("must be a non-empty path or URL")
+		return violate(ReasonEmptyPath, nil)
 	}
 	return nil
 }

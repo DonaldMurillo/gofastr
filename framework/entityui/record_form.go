@@ -13,6 +13,7 @@ import (
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -832,7 +833,7 @@ func (fb *formBuilder) kindInput(ctx context.Context, f schema.Field, label, hel
 	// The kind's ctx carries the app's translator so its labels
 	// resolve through the same catalog the form's own fields read, and
 	// Control carries the wiring a FormField would have handed down.
-	kctx := i18nui.WithTranslator(asCaller(ctx), fb.m.tr)
+	kctx := i18n.WithTranslator(asCaller(ctx), fb.m.tr)
 	return contain(kctx, fb.m.name, "input "+f.Name, func() (render.HTML, error) {
 		return kind.Input(InputContext{
 			Ctx: kctx, Entity: fb.m.name, Field: f, Name: f.Name, Value: val, Placeholder: ph,

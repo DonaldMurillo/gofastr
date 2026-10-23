@@ -165,7 +165,7 @@ func TestIncludeBudgetAccounting(t *testing.T) {
 // error" for a request they can fix.
 func TestIncludeErrorStatusSplit(t *testing.T) {
 	rr := httptest.NewRecorder()
-	writeIncludeError(rr, "list", errIncludeBudget)
+	writeIncludeError(rr, httptest.NewRequest(http.MethodGet, "/", nil), "list", errIncludeBudget)
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("budget error = %d, want 400", rr.Code)
 	}
@@ -174,7 +174,7 @@ func TestIncludeErrorStatusSplit(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
-	writeIncludeError(rr, "list", errors.New("some sql driver failure"))
+	writeIncludeError(rr, httptest.NewRequest(http.MethodGet, "/", nil), "list", errors.New("some sql driver failure"))
 	if rr.Code != http.StatusInternalServerError {
 		t.Errorf("server fault = %d, want 500", rr.Code)
 	}

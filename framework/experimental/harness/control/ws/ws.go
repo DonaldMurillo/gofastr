@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/stream"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
@@ -80,11 +81,11 @@ func (h *Handler) seatTable() *control.SeatTable {
 // ServeHTTP implements http.Handler. Path is /v1/ws?session=<id>[&lastEventId=N].
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !h.hostOK(r) {
-		http.Error(w, "invalid host", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.ReasonCrossOriginHost)
 		return
 	}
 	if !h.originOK(r) {
-		http.Error(w, "invalid origin", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.ReasonOriginRefused)
 		return
 	}
 
@@ -97,33 +98,33 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		tok = r.Header.Get("X-Harness-Token")
 	}
 	if tok == "" {
-		http.Error(w, "missing token", http.StatusUnauthorized)
+		i18n.HTTPError(w, r, http.StatusUnauthorized, reasonTokenMissing)
 		return
 	}
 	if h.Encoder == nil {
-		http.Error(w, "server misconfigured", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 	claims, err := auth.Verify(h.Encoder, h.Revocations, tok, time.Now())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+		i18n.HTTPErrorFor(w, r, http.StatusUnauthorized, err)
 		return
 	}
 
 	sessParam := r.URL.Query().Get("session")
 	sess, err := ids.ParseSession(sessParam)
 	if err != nil {
-		http.Error(w, "invalid session id", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, reasonInvalidSessionID)
 		return
 	}
 	if !claims.AllowsSession(sess) {
-		http.Error(w, "token not bound to session", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, reasonTokenUnbound)
 		return
 	}
 
 	// Standard WebSocket upgrade.
 	if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
-		http.Error(w, "expected websocket upgrade", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonWebSocketRequired)
 		return
 	}
 	// Seat the upgrade per token principal BEFORE the Hijack, so a
@@ -136,20 +137,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	seat, seated := h.seatTable().AcquireSeat(string(claims.JTI), 0, stream.SeatOverflowRefuse)
 	if !seated {
 		w.Header().Set("Retry-After", "1")
-		http.Error(w, "too many concurrent control sockets for this token", http.StatusTooManyRequests)
+		i18n.HTTPError(w, r, http.StatusTooManyRequests, i18n.ReasonTooManyStreams)
 		return
 	}
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		h.seatTable().ReleaseSeat(seat)
-		http.Error(w, "no hijacker", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 	conn, rw, err := hj.Hijack()
 	if err != nil {
 		h.seatTable().ReleaseSeat(seat)
 		log.Printf("ws: hijack failed: %v", err)
-		http.Error(w, "hijack failed", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 	if err := completeHandshake(rw, r); err != nil {

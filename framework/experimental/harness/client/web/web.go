@@ -27,6 +27,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/stream"
 
 	"github.com/DonaldMurillo/gofastr/framework/experimental/harness/control"
@@ -125,7 +126,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "no flusher", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
 	// Seat the stream BEFORE any bytes go out, so a refusal can still
@@ -135,7 +136,7 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	seat, seated := s.seatTable().AcquireSeat("", 0, stream.SeatOverflowRefuse)
 	if !seated {
 		w.Header().Set("Retry-After", "1")
-		http.Error(w, "too many concurrent event streams", http.StatusTooManyRequests)
+		i18n.HTTPError(w, r, http.StatusTooManyRequests, i18n.ReasonTooManyStreams)
 		return
 	}
 	defer s.seatTable().ReleaseSeat(seat)
@@ -177,7 +178,7 @@ func (s *Server) handleInput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 		return
 	}
 	defer r.Body.Close()
@@ -190,27 +191,29 @@ func (s *Server) handleInput(w http.ResponseWriter, r *http.Request) {
 	// body shape would POST a prompt at model authority while a
 	// first-read intermediary parsed a different request.
 	if err := handler.DecodeStrict(r.Body, &body); err != nil {
-		http.Error(w, "bad JSON", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 		return
 	}
 	if body.Text == "" {
-		http.Error(w, "empty text", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, reasonEmptyText)
 		return
 	}
 	if err := s.Client.Send(r.Context(), control.SendInput{
 		SessionID: s.Session,
 		Content:   engine.SimpleInput(body.Text),
 	}); err != nil {
-		writeJSONError(w, http.StatusConflict, err.Error())
+		// The loopback-only client relays the engine's own refusal (a
+		// turn in progress, a closed session) so its one user can act.
+		writeJSONError(w, r, http.StatusConflict, reasonSendFailed, map[string]any{"detail": err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)
 }
 
-func writeJSONError(w http.ResponseWriter, code int, msg string) {
+func writeJSONError(w http.ResponseWriter, r *http.Request, code int, reason i18n.Phrase, params ...map[string]any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	_, _ = w.Write([]byte(`{"error":` + jsonString(msg) + `}`))
+	_, _ = w.Write([]byte(`{"error":` + jsonString(reason.Text(r.Context(), params...)) + `,"reason":` + jsonString(reason.Code()) + `}`))
 }
 
 func jsonString(s string) string {

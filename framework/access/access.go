@@ -491,8 +491,7 @@ func RequirePermission(permission Permission) func(http.Handler) http.Handler {
 			ctx := r.Context()
 			granted := requireResource(ctx, permission, Ref{})
 			if !observe(ctx, permission, granted, "require-permission") {
-				herr := handler.Errorf(http.StatusForbidden, "access denied: missing permission %s", permission)
-				handler.WriteError(w, herr)
+				handler.WriteError(w, r, handler.Fail(http.StatusForbidden, handler.ReasonMissingPermission, map[string]any{"permission": string(permission)}))
 				return
 			}
 			next.ServeHTTP(w, r)

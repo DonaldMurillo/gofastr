@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -466,7 +467,7 @@ func Timeout(d time.Duration) Middleware {
 					return false
 				}
 				ctx.cancel(cause)
-				http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
+				i18n.HTTPError(w, r, http.StatusGatewayTimeout, i18n.StatusPhrase(http.StatusGatewayTimeout))
 				// Parent abandoned the handler; the handler goroutine
 				// is still running and may yet panic. Watch for that
 				// late panic and surface it through slog.Default so it

@@ -34,6 +34,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/app/decide"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -254,7 +255,7 @@ func (s *site) entityVisibilityPolicy() app.Policy {
 		}
 		segment := strings.Trim(strings.TrimPrefix(r.URL.Path, prefix), "/")
 		if _, ok := s.lookup(segment); !ok {
-			return decide.Block(http.StatusNotFound, "not found")
+			return decide.Block(http.StatusNotFound)
 		}
 		return decide.Allow()
 	})
@@ -336,17 +337,17 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 				if status == 0 {
 					status = http.StatusForbidden
 				}
-				http.Error(w, "forbidden", status)
+				i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
 				return
 			}
 		}
 		if s.cfg.Artifacts == nil {
-			http.Error(w, "SDK artifacts are not generated yet: run `gofastr generate sdk` and point sdkdocs.Config.Artifacts at gen/sdk/dist", http.StatusNotFound)
+			i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKNotGenerated)
 			return
 		}
 		data, err := fs.ReadFile(s.cfg.Artifacts, file)
 		if err != nil {
-			http.Error(w, "SDK artifact missing: re-run `gofastr generate sdk`", http.StatusNotFound)
+			i18n.HTTPError(w, r, http.StatusNotFound, reasonSDKArtifactMissing)
 			return
 		}
 

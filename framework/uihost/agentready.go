@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -580,7 +581,7 @@ func (ds *UIHost) handleAgentCard(w http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			// Signing errors name key material and paths. Never the client's.
 			log.Printf("uihost: agent card signing failed: %v", err)
-			http.Error(w, "agent card signing failed", http.StatusInternalServerError)
+			i18n.HTTPError(w, req, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 		doc["signatures"] = sigs

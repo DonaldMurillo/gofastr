@@ -284,13 +284,13 @@ func (p *OAuth2Plugin) redirectHandler() http.HandlerFunc {
 		providerName := router.Param(r, "provider")
 		provider, ok := p.providers[providerName]
 		if !ok {
-			writeAuthError(w, http.StatusBadRequest, "unknown oauth provider")
+			writeAuthError(w, r, http.StatusBadRequest, reasonUnknownOauthProvider)
 			return
 		}
 
 		state, err := p.generateState(providerName, "")
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "state generation failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonStateGenerationFailed)
 			return
 		}
 		p.bindStateToBrowser(w, state)
@@ -311,7 +311,7 @@ func (p *OAuth2Plugin) linkHandler() http.HandlerFunc {
 		providerName := router.Param(r, "provider")
 		provider, ok := p.providers[providerName]
 		if !ok {
-			writeAuthError(w, http.StatusBadRequest, "unknown oauth provider")
+			writeAuthError(w, r, http.StatusBadRequest, reasonUnknownOauthProvider)
 			return
 		}
 		userID, ok := p.requireSessionUserID(w, r)
@@ -320,7 +320,7 @@ func (p *OAuth2Plugin) linkHandler() http.HandlerFunc {
 		}
 		state, err := p.generateState(providerName, userID)
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "state generation failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonStateGenerationFailed)
 			return
 		}
 		p.bindStateToBrowser(w, state)
@@ -338,15 +338,15 @@ func (p *OAuth2Plugin) requireSessionUserID(w http.ResponseWriter, r *http.Reque
 	// land on the account behind another cookie.
 	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "no session")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonNoSession)
 		return "", false
 	}
 	if sess.PendingTwoFactor {
-		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+		writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 		return "", false
 	}
 	if sess.UserID == "" {
-		writeAuthError(w, http.StatusUnauthorized, "no session")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonNoSession)
 		return "", false
 	}
 	return sess.UserID, true
@@ -359,7 +359,7 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		providerName := router.Param(r, "provider")
 		provider, ok := p.providers[providerName]
 		if !ok {
-			writeAuthError(w, http.StatusBadRequest, "unknown oauth provider")
+			writeAuthError(w, r, http.StatusBadRequest, reasonUnknownOauthProvider)
 			return
 		}
 
@@ -371,18 +371,18 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		// validateAndConsumeState means the replay cannot burn the
 		// legitimate flow's single-use nonce either.
 		if !p.requireBoundBrowser(w, r, stateParam) {
-			writeAuthError(w, http.StatusBadRequest, "oauth flow was not started in this browser")
+			writeAuthError(w, r, http.StatusBadRequest, reasonOauthWrongBrowser)
 			return
 		}
 		linkUserID, ok := p.validateAndConsumeState(stateParam, providerName)
 		if !ok {
-			writeAuthError(w, http.StatusBadRequest, "invalid or expired state")
+			writeAuthError(w, r, http.StatusBadRequest, reasonInvalidOrExpiredState)
 			return
 		}
 
 		code := r.URL.Query().Get("code")
 		if code == "" {
-			writeAuthError(w, http.StatusBadRequest, "missing authorisation code")
+			writeAuthError(w, r, http.StatusBadRequest, reasonMissingAuthorisationCode)
 			return
 		}
 
@@ -391,14 +391,14 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		// request; the confidential client's secret protects the exchange.
 		tok, err := provider.ExchangeCode(r.Context(), code)
 		if err != nil {
-			writeAuthError(w, http.StatusUnauthorized, "code exchange failed")
+			writeAuthError(w, r, http.StatusUnauthorized, reasonCodeExchangeFailed)
 			return
 		}
 
 		// Fetch user info
 		info, err := provider.FetchUserInfo(r.Context(), tok.AccessToken)
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "failed to fetch user info")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToFetchUserInfo)
 			return
 		}
 		// Canonicalize at the single consumer of every provider (#270):
@@ -410,7 +410,7 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		if info.Email, err = p.mgr.canonicalizeEmail(info.Email); err != nil {
 			slog.Warn("oauth email refused: not in composed Unicode form",
 				"plugin", "oauth2", "email_hash", hashedIdentifier(info.Email), "err", err)
-			writeAuthError(w, http.StatusBadRequest, errComposedEmailMessage)
+			writeAuthError(w, r, http.StatusBadRequest, reasonComposedEmail)
 			return
 		}
 
@@ -426,7 +426,7 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		// Find or create user
 		userStore := p.mgr.UserStore()
 		if userStore == nil {
-			writeAuthError(w, http.StatusInternalServerError, "user store not configured")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonUserStoreNotConfigured)
 			return
 		}
 
@@ -445,19 +445,19 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 				return // 401/403 already written
 			}
 			if currentID != linkUserID {
-				writeAuthError(w, http.StatusForbidden, "session does not match the link request")
+				writeAuthError(w, r, http.StatusForbidden, reasonLinkSessionMismatch)
 				return
 			}
 			linker, ok := userStore.(OAuthLinker)
 			if !ok {
-				writeAuthError(w, http.StatusInternalServerError, "user store does not support linking")
+				writeAuthError(w, r, http.StatusInternalServerError, reasonStoreNoLinking)
 				return
 			}
 			// Never steal a provider identity already bound to a DIFFERENT user.
 			owner, ferr := linker.FindByOAuth(r.Context(), info.Provider, info.ID)
 			switch {
 			case ferr != nil && !errors.Is(ferr, ErrUserNotFound):
-				writeAuthError(w, http.StatusInternalServerError, "link lookup failed")
+				writeAuthError(w, r, http.StatusInternalServerError, reasonLinkLookupFailed)
 				return
 			case ferr == nil && owner != nil && owner.GetID() != linkUserID:
 				p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -467,11 +467,11 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 					Remote: remoteHost(r),
 					Meta:   map[string]string{"provider": providerName, "reason": "provider_already_linked"},
 				})
-				writeAuthError(w, http.StatusConflict, "this provider account is already linked to a different user")
+				writeAuthError(w, r, http.StatusConflict, reasonProviderLinkedElsewhere)
 				return
 			}
 			if err := linkOAuthPreferEnriched(r.Context(), userStore, linker, linkUserID, info); err != nil {
-				writeAuthError(w, http.StatusInternalServerError, "link failed")
+				writeAuthError(w, r, http.StatusInternalServerError, reasonLinkFailed)
 				return
 			}
 			p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -495,17 +495,15 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 					Email: info.Email,
 					Meta:  map[string]string{"provider": providerName, "reason": "link_conflict"},
 				})
-				writeAuthError(w, http.StatusConflict,
-					"an account with this email already exists: log in with your existing credentials and link from account settings")
+				writeAuthError(w, r, http.StatusConflict, reasonEmailTaken)
 			case errors.Is(err, errOAuthLookupFailed):
-				writeAuthError(w, http.StatusInternalServerError, "user lookup failed")
+				writeAuthError(w, r, http.StatusInternalServerError, reasonUserLookupFailed)
 			case errors.Is(err, errOAuthNoLinker):
 				// Unreachable in production (Init fails closed). Surfaces in
 				// DevMode only; treat as a server misconfiguration.
-				writeAuthError(w, http.StatusInternalServerError,
-					"OAuth login is not configured on this server")
+				writeAuthError(w, r, http.StatusInternalServerError, reasonOauthNotConfigured)
 			default:
-				writeAuthError(w, http.StatusConflict, "could not create user")
+				writeAuthError(w, r, http.StatusConflict, reasonCouldNotCreateUser)
 			}
 			return
 		}
@@ -550,7 +548,7 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		cfg := p.mgr.Config()
 		sess, _, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "session create failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
 			return
 		}
 		// Set the session cookie through the one mint helper:

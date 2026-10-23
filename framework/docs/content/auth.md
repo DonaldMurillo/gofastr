@@ -630,7 +630,7 @@ The dispatcher resolves each request as one of four outcomes:
 | Allow        | Normal Load + Render.                                           |
 | Redirect     | 303 to `WithRedirect(url)`, default `/login?next=<path>`.        |
 | RenderAlt    | The alt component takes the screen's place; its Load runs.      |
-| Block        | HTTP status from `WithBlock(status, msg)`, default 401/403.     |
+| Block        | HTTP status from `WithBlock(status)`, default 401/403. The body is the status's phrase, or `WithBlockReason(status, phrase)`'s, in the request's locale. |
 
 ### Option precedence: last-write-wins per call, alt > redirect > block on fail
 

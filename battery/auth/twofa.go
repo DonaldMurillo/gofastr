@@ -420,18 +420,18 @@ func (p *TwoFAPlugin) swapTwoFAState(w http.ResponseWriter, r *http.Request, use
 	swapper, ok := p.store.(TwoFAStateSwapper)
 	if !ok {
 		if err := p.store.SetTwoFA(r.Context(), userID, next); err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "failed to save 2FA state")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToSave2faState)
 			return false
 		}
 		return true
 	}
 	wrote, err := swapper.CompareAndSwapTwoFA(r.Context(), userID, expect, next)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to save 2FA state")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToSave2faState)
 		return false
 	}
 	if !wrote {
-		writeAuthError(w, http.StatusConflict, "2FA state changed concurrently; retry")
+		writeAuthError(w, r, http.StatusConflict, reason2faConflict)
 		return false
 	}
 	return true
@@ -446,11 +446,11 @@ func (p *TwoFAPlugin) swapTwoFAState(w http.ResponseWriter, r *http.Request, use
 func (p *TwoFAPlugin) requireStepUpSession(w http.ResponseWriter, r *http.Request) (*Session, bool) {
 	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "not authenticated")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonNotAuthenticated)
 		return nil, false
 	}
 	if sess.PendingTwoFactor {
-		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+		writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 		return nil, false
 	}
 	// Positive check, not only the absence of the pending flag. A session
@@ -463,11 +463,11 @@ func (p *TwoFAPlugin) requireStepUpSession(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		// Unreadable 2FA state is refused, never assumed absent,
 		// assuming it would hand exactly the bypass back.
-		writeAuthError(w, http.StatusInternalServerError, "2FA state lookup failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reason2faLookupFailed)
 		return nil, false
 	}
 	if state != nil && state.Enabled && !sess.TwoFactorVerified {
-		writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+		writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 		return nil, false
 	}
 	return sess, true
@@ -505,11 +505,11 @@ func (p *TwoFAPlugin) enrollHandler(w http.ResponseWriter, r *http.Request) {
 	// "not enabled" would skip this guard and overwrite a live factor.
 	existing, err := p.store.GetTwoFA(r.Context(), userID)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "could not read 2FA state")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonCouldNotRead2faState)
 		return
 	}
 	if existing != nil && existing.Enabled {
-		writeAuthError(w, http.StatusConflict, "2FA already enabled; disable it before re-enrolling")
+		writeAuthError(w, r, http.StatusConflict, reason2faReenroll)
 		return
 	}
 
@@ -566,17 +566,17 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Code == "" {
-		writeAuthError(w, http.StatusBadRequest, "code required")
+		writeAuthError(w, r, http.StatusBadRequest, reasonCodeRequired)
 		return
 	}
 
 	state, err := p.store.GetTwoFA(r.Context(), userID)
 	if err != nil || state == nil {
-		writeAuthError(w, http.StatusBadRequest, "2FA not enrolled")
+		writeAuthError(w, r, http.StatusBadRequest, reason2faNotEnrolled)
 		return
 	}
 	if state.Enabled {
-		writeAuthError(w, http.StatusBadRequest, "2FA already enabled")
+		writeAuthError(w, r, http.StatusBadRequest, reason2faEnabled)
 		return
 	}
 
@@ -587,14 +587,14 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 	// exclusive within one window. The replay that matters is a second
 	// SESSION on one code, and that is the challenge path's to refuse.
 	if !ValidateTOTP(state.Secret, body.Code, p.config.Period, p.config.Skew) {
-		writeAuthError(w, http.StatusUnauthorized, "invalid code")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidCode)
 		return
 	}
 
 	// Generate backup codes (plaintext to return, hashed to store).
 	plainCodes, hashedCodes, err := generateBackupCodes(p.config.BackupCodeCount)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to generate backup codes")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToGenerateBackupCodes)
 		return
 	}
 
@@ -619,7 +619,7 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 	// The mark lands on the session requireStepUpSession judged, never on
 	// another cookie the request happens to carry.
 	if err := p.markSessionTwoFA(r.Context(), sess.Token); err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to record verification")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToRecordVerification)
 		return
 	}
 
@@ -650,7 +650,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	// requireStepUpSession.
 	sess, err := p.mgr.requestSession(r, true)
 	if err != nil {
-		writeAuthError(w, http.StatusUnauthorized, "not authenticated")
+		writeAuthError(w, r, http.StatusUnauthorized, reasonNotAuthenticated)
 		return
 	}
 	userID := sess.UserID
@@ -662,13 +662,13 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Code == "" {
-		writeAuthError(w, http.StatusBadRequest, "code required")
+		writeAuthError(w, r, http.StatusBadRequest, reasonCodeRequired)
 		return
 	}
 
 	state, err := p.store.GetTwoFA(r.Context(), userID)
 	if err != nil || state == nil || !state.Enabled {
-		writeAuthError(w, http.StatusBadRequest, "2FA not enabled")
+		writeAuthError(w, r, http.StatusBadRequest, reason2faNotEnabled)
 		return
 	}
 
@@ -683,12 +683,12 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Default().Warn("auth: 2fa session budget store error: failing closed", "err", err)
 			w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
-			writeAuthError(w, http.StatusServiceUnavailable, "try again shortly")
+			writeAuthError(w, r, http.StatusServiceUnavailable, reasonTryAgainShortly)
 			return
 		}
 		if !allowed {
 			if err := p.mgr.SessionStore().Delete(r.Context(), sess.Token); err != nil {
-				writeAuthError(w, http.StatusInternalServerError, "could not end the sign-in")
+				writeAuthError(w, r, http.StatusInternalServerError, reasonCouldNotEndTheSignIn)
 				return
 			}
 			p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -696,7 +696,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 				UserID: userID,
 				Remote: remoteHost(r),
 			})
-			writeAuthError(w, http.StatusUnauthorized, "too many attempts: sign in again")
+			writeAuthError(w, r, http.StatusUnauthorized, reasonTooManyAttempts)
 			return
 		}
 	}
@@ -719,7 +719,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		if err := p.markSessionTwoFA(r.Context(), sess.Token); err != nil {
 			// The session is still pending: answering 200 here
 			// would report a step-up that did not happen.
-			writeAuthError(w, http.StatusInternalServerError, "could not complete the step-up")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonCouldNotCompleteTheStepUp)
 			return
 		}
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -736,14 +736,14 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	// Fallback to backup code.
 	consumed, err := p.store.ConsumeBackupCode(r.Context(), userID, body.Code)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "backup code check failed")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonBackupCodeCheckFailed)
 		return
 	}
 	if consumed {
 		if err := p.markSessionTwoFA(r.Context(), sess.Token); err != nil {
 			// The session is still pending: answering 200 here
 			// would report a step-up that did not happen.
-			writeAuthError(w, http.StatusInternalServerError, "could not complete the step-up")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonCouldNotCompleteTheStepUp)
 			return
 		}
 		p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -762,7 +762,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		UserID: userID,
 		Remote: remoteHost(r),
 	})
-	writeAuthError(w, http.StatusUnauthorized, "invalid code")
+	writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidCode)
 }
 
 // HasTwoFactorEnabled implements TwoFactorChecker. Returns true when the
@@ -822,7 +822,7 @@ func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			u := GetCurrentUser(r.Context())
 			if u == nil {
-				writeAuthError(w, http.StatusUnauthorized, "not authenticated")
+				writeAuthError(w, r, http.StatusUnauthorized, reasonNotAuthenticated)
 				return
 			}
 			userID := u.GetID()
@@ -833,12 +833,12 @@ func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 				}
 			}
 			if len(mine) == 0 {
-				writeAuthError(w, http.StatusUnauthorized, "no session")
+				writeAuthError(w, r, http.StatusUnauthorized, reasonNoSession)
 				return
 			}
 			state, err := p.store.GetTwoFA(r.Context(), userID)
 			if err != nil {
-				writeAuthError(w, http.StatusInternalServerError, "2FA state lookup failed")
+				writeAuthError(w, r, http.StatusInternalServerError, reason2faLookupFailed)
 				return
 			}
 			// Not enrolled, bypass.
@@ -854,7 +854,7 @@ func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 					return
 				}
 			}
-			writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+			writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 		})
 	}
 }
@@ -868,7 +868,7 @@ func (p *TwoFAPlugin) disableHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := p.store.DeleteTwoFA(r.Context(), userID); err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to disable 2FA")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToDisable2fa)
 		return
 	}
 	// A pending session (password proven, challenge not yet passed) is
@@ -877,7 +877,7 @@ func (p *TwoFAPlugin) disableHandler(w http.ResponseWriter, r *http.Request) {
 	// saw. Drop them with the factor.
 	if purger, ok := p.mgr.SessionStore().(SessionPendingPurger); ok {
 		if _, err := purger.DeletePendingByUser(r.Context(), userID); err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "2FA disabled, but pending sign-ins could not be revoked")
+			writeAuthError(w, r, http.StatusInternalServerError, reason2faRevokeFailed)
 			return
 		}
 	}
@@ -902,13 +902,13 @@ func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request)
 
 	state, err := p.store.GetTwoFA(r.Context(), userID)
 	if err != nil || state == nil || !state.Enabled {
-		writeAuthError(w, http.StatusBadRequest, "2FA not enabled")
+		writeAuthError(w, r, http.StatusBadRequest, reason2faNotEnabled)
 		return
 	}
 
 	plainCodes, hashedCodes, err := generateBackupCodes(p.config.BackupCodeCount)
 	if err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to generate backup codes")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToGenerateBackupCodes)
 		return
 	}
 
@@ -925,15 +925,15 @@ func (p *TwoFAPlugin) backupCodesHandler(w http.ResponseWriter, r *http.Request)
 	if cas, ok := p.store.(TwoFACompareAndSetter); ok {
 		wrote, err := cas.CompareAndSetTwoFA(r.Context(), userID, state)
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "failed to save backup codes")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToSaveBackupCodes)
 			return
 		}
 		if !wrote {
-			writeAuthError(w, http.StatusConflict, "2FA is no longer enabled")
+			writeAuthError(w, r, http.StatusConflict, reason2faGone)
 			return
 		}
 	} else if err := p.store.SetTwoFA(r.Context(), userID, state); err != nil {
-		writeAuthError(w, http.StatusInternalServerError, "failed to save backup codes")
+		writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToSaveBackupCodes)
 		return
 	}
 

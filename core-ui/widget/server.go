@@ -20,6 +20,7 @@ import (
 	uiregistry "github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -233,7 +234,7 @@ type server struct {
 //
 // Belt-and-suspenders cache headers: no-store + no-cache + must-revalidate
 // + Pragma:no-cache + Expires:0 covers every browser quirk.
-func serveRuntime(w http.ResponseWriter, _ *http.Request) {
+func serveRuntime(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 	w.Header().Set("Pragma", "no-cache")
@@ -243,7 +244,7 @@ func serveRuntime(w http.ResponseWriter, _ *http.Request) {
 		// The error names embed paths; the client gets the fact, the
 		// operator gets the cause.
 		log.Printf("widget: runtime unavailable: %v", err)
-		http.Error(w, "runtime unavailable", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, reasonRuntimeUnavailable)
 		return
 	}
 	fmt.Fprint(w, rt)
@@ -396,7 +397,7 @@ func (s *server) serveChrome(w http.ResponseWriter, r *http.Request) {
 	// context would silently render chrome for the wrong entity.
 	triggerCtx := r.URL.Query().Get("ctx")
 	if !validChromeContext(triggerCtx) {
-		http.Error(w, "invalid chrome context", http.StatusBadRequest)
+		i18n.HTTPError(w, r, http.StatusBadRequest, reasonInvalidChrome)
 		return
 	}
 	// Render with the request context so context-aware slots (e.g. a

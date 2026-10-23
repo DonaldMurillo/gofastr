@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -186,48 +187,48 @@ func (u *UI) PickerHandler(entityName string) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", http.MethodPost)
-			writeBulkError(w, http.StatusMethodNotAllowed, "method not allowed")
+			writeBulkError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
 		if handler.IsCrossSiteRequest(r) {
-			writeBulkError(w, http.StatusForbidden, "access denied")
+			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
 		m, err := u.meta(entityName)
 		if err != nil || !m.hasAPI {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		f, ok := m.field(r.URL.Query().Get("field"))
 		if !ok || f.Type != schema.Relation || m.system(f) || m.locked(f) {
-			writeBulkError(w, http.StatusNotFound, "not found")
+			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
 		ctx := r.Context()
 		if m.tr != nil {
-			ctx = i18nui.WithTranslator(ctx, m.tr)
+			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
 		if !canRead(ctx, m.ch) {
-			writeBulkError(w, http.StatusForbidden, "access denied")
+			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
 		if !handler.IsJSONContentType(r.Header.Get("Content-Type")) {
-			writeBulkError(w, http.StatusUnsupportedMediaType, "unsupported media type")
+			writeBulkError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, pickerBodyLimit)
 		var body pickerBody
 		if err := handler.DecodeStrict(r.Body, &body); err != nil {
 			if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
-				writeBulkError(w, http.StatusRequestEntityTooLarge, "request body too large")
+				writeBulkError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 				return
 			}
-			writeBulkError(w, http.StatusBadRequest, "invalid request body")
+			writeBulkError(w, r, http.StatusBadRequest, i18n.ReasonInvalidJSONBody)
 			return
 		}
 		opts, more, refused := u.pickerOptions(ctx, f, body.Q)
 		if refused {
-			writeBulkError(w, http.StatusForbidden, "access denied")
+			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

@@ -38,7 +38,7 @@ func stringsCtx(entries map[i18nui.Key]string) context.Context {
 	}
 	tr := i18n.NewTranslator(cat, "en")
 	ctx := i18n.WithContext(context.Background(), i18n.Locale{Tag: "fr"})
-	return i18nui.WithTranslator(ctx, tr)
+	return i18n.WithTranslator(ctx, tr)
 }
 
 // everyHeadlessStringField walks headless.Strings and calls fn for

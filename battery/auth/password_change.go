@@ -9,6 +9,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
@@ -46,29 +49,29 @@ func (c *CorePlugin) changePasswordHandler() http.HandlerFunc {
 		}
 		ctx := r.Context()
 		if _, tokenAuth := TokenScopes(ctx); tokenAuth {
-			writeAuthError(w, http.StatusUnauthorized, "changing the password requires an interactive session, not an API token")
+			writeAuthError(w, r, http.StatusUnauthorized, reasonPasswordChangeToken)
 			return
 		}
 		if _, embedded := embed.GrantFromContext(ctx); embedded {
-			writeAuthError(w, http.StatusUnauthorized, "changing the password requires an interactive session, not an embedded surface")
+			writeAuthError(w, r, http.StatusUnauthorized, reasonPasswordChangeEmbed)
 			return
 		}
 		sess, err := c.mgr.requestSession(r, false)
 		if err != nil {
-			writeAuthError(w, http.StatusUnauthorized, "authentication required")
+			writeAuthError(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)
 			return
 		}
 		if sess.PendingTwoFactor {
-			writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+			writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 			return
 		}
 		twoFA, err := c.mgr.twoFactorEnabled(ctx, sess.UserID)
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "two-factor state lookup failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonTwoFactorStateLookupFailed)
 			return
 		}
 		if twoFA && !sess.TwoFactorVerified {
-			writeAuthError(w, http.StatusForbidden, "two-factor verification required")
+			writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 			return
 		}
 
@@ -82,32 +85,31 @@ func (c *CorePlugin) changePasswordHandler() http.HandlerFunc {
 		}
 		switch {
 		case body.Current == "":
-			writeAuthFieldError(w, "current password required", "current_password", "is required")
+			writeAuthFieldError(w, r, reasonCurrentPasswordRequired, "current_password", schema.Violation{Reason: schema.ReasonRequired})
 			return
 		case body.Password == "":
-			writeAuthFieldError(w, "new password required", "password", "is required")
+			writeAuthFieldError(w, r, reasonNewPasswordRequired, "password", schema.Violation{Reason: schema.ReasonRequired})
 			return
 		case len(body.Password) > 128:
-			writeAuthFieldError(w, "password too long", "password", "must be at most 128 characters")
+			writeAuthFieldError(w, r, reasonPasswordTooLong, "password", schema.Violation{Reason: schema.ReasonMaxLength, Params: map[string]any{"max": 128}})
 			return
 		case ValidatePasswordStrength(body.Password) != nil:
-			writeAuthFieldError(w, "password too short", "password",
-				fmt.Sprintf("must be at least %d characters", RecommendedMinPasswordBytes))
+			writeAuthFieldError(w, r, reasonPasswordTooShortField, "password", schema.Violation{Reason: schema.ReasonMinLength, Params: map[string]any{"min": RecommendedMinPasswordBytes}})
 			return
 		case body.Confirm != nil && *body.Confirm != body.Password:
-			writeAuthFieldError(w, "passwords do not match", "confirm_password", "does not match the new password")
+			writeAuthFieldError(w, r, reasonPasswordsMismatch, "confirm_password", schema.Violation{Reason: reasonConfirmMismatch})
 			return
 		}
 
 		store := c.mgr.UserStore()
 		setter, ok := store.(PasswordSetter)
 		if !ok {
-			writeAuthError(w, http.StatusInternalServerError, "user store does not implement PasswordSetter")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonStoreNoPasswordSetter)
 			return
 		}
 		user, err := store.FindByID(ctx, sess.UserID)
 		if err != nil {
-			writeAuthError(w, http.StatusUnauthorized, "authentication required")
+			writeAuthError(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)
 			return
 		}
 		email, err := c.mgr.canonicalizeEmail(user.GetEmail())
@@ -117,7 +119,7 @@ func (c *CorePlugin) changePasswordHandler() http.HandlerFunc {
 		if c.loginLimitAccount != nil {
 			if allowed, retry := c.loginLimitAccount.AllowContext(ctx, "account:"+email); !allowed {
 				w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
-				writeAuthError(w, http.StatusTooManyRequests, "rate limit exceeded")
+				writeAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 				return
 			}
 		}
@@ -127,21 +129,21 @@ func (c *CorePlugin) changePasswordHandler() http.HandlerFunc {
 				Kind: "password.change_failed", UserID: sess.UserID, Remote: remoteHost(r),
 				Meta: map[string]string{"reason": "bad_credentials"},
 			})
-			writeAuthFieldError(w, "current password is incorrect", "current_password", "does not match your current password")
+			writeAuthFieldError(w, r, reasonCurrentPasswordIncorrect, "current_password", schema.Violation{Reason: reasonCurrentMismatch})
 			return
 		}
 		if body.Password == body.Current {
-			writeAuthFieldError(w, "new password matches the current one", "password", "must differ from the current password")
+			writeAuthFieldError(w, r, reasonPasswordUnchanged, "password", schema.Violation{Reason: reasonMustDiffer})
 			return
 		}
 
 		newHash, err := HashPassword(body.Password)
 		if err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "hash failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonHashFailed)
 			return
 		}
 		if err := setter.SetPassword(ctx, sess.UserID, newHash); err != nil {
-			writeAuthError(w, http.StatusInternalServerError, "set password failed")
+			writeAuthError(w, r, http.StatusInternalServerError, reasonSetPasswordFailed)
 			return
 		}
 		c.mgr.emitSecurity(ctx, SecurityEvent{Kind: "password.changed", UserID: sess.UserID, Remote: remoteHost(r)})
@@ -229,15 +231,19 @@ func (m *AuthManager) revokeUserSessions(ctx context.Context, userID, reason, re
 }
 
 // writeAuthFieldError answers 422 with the form-errors envelope: the
-// flat error fields writeAuthError writes, plus the one field's message.
-func writeAuthFieldError(w http.ResponseWriter, msg, field, fieldMsg string) {
+// flat error fields writeAuthError writes, plus the one field's
+// violation as fields (text) and field_reasons (code).
+func writeAuthFieldError(w http.ResponseWriter, r *http.Request, reason i18n.Phrase, field string, why schema.Violation) {
 	writeCredentialHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnprocessableEntity)
+	ctx := requestContext(r)
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"error":   msg,
-		"success": false,
-		"code":    http.StatusUnprocessableEntity,
-		"fields":  map[string][]string{field: {fieldMsg}},
+		"error":         reason.Text(ctx),
+		"success":       false,
+		"code":          http.StatusUnprocessableEntity,
+		"reason":        reason.Code(),
+		"fields":        map[string][]string{field: {why.Text(ctx)}},
+		"field_reasons": map[string][]string{field: {why.Reason.Code()}},
 	})
 }

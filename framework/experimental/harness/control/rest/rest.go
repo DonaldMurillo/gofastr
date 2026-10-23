@@ -467,6 +467,7 @@ func writeJSON(w http.ResponseWriter, code int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
+//gofastr:allow(rawtext) the control API is an agent contract: reason is its stable code and msg the English detail an agent reads, never a page
 func writeError(w http.ResponseWriter, code int, reason, msg string) {
 	writeJSON(w, code, control.Error{Reason: reason, Message: msg})
 }

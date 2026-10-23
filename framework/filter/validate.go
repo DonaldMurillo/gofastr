@@ -1,8 +1,9 @@
 package filter
 
 import (
-	"fmt"
+	"strconv"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
@@ -112,7 +113,11 @@ func CheckOpType(field string, op FilterOp, t schema.FieldType) error {
 	if OpSuitsType(op, t) {
 		return nil
 	}
-	return fmt.Errorf("operator %q cannot filter %q (type %s)", op, field, fieldTypeName(t))
+	return i18n.NewError(reasonOpTypeMismatch, opTypeParams(field, op, t))
+}
+
+func opTypeParams(field string, op FilterOp, t schema.FieldType) map[string]any {
+	return map[string]any{"op": strconv.Quote(string(op)), "field": strconv.Quote(field), "type": fieldTypeName(t)}
 }
 
 // fieldTypeName renders t for an error message. schema.FieldType has no
@@ -162,36 +167,36 @@ func fieldTypeName(t schema.FieldType) string {
 // here, the schema is the authority.
 func validateLeaf(p *Predicate, idx *predFieldIndex) error {
 	if p.Field == "" {
-		return fmt.Errorf("where: predicate leaf has no field")
+		return i18n.NewError(reasonWhereNoField)
 	}
 	if idx.noQuery[p.Field] {
 		// Visible in responses but barred from the query surface, so the
 		// field can be named without disclosing anything new.
-		return fmt.Errorf("where: field %q cannot be filtered", p.Field)
+		return i18n.NewError(reasonWhereNotFilterable, map[string]any{"field": strconv.Quote(p.Field)})
 	}
 	if !idx.allow[p.Field] {
 		// Unknown or Hidden field, never build a predicate on it. Folding
 		// Hidden into unknown keeps a hidden column indistinguishable from
 		// an absent one.
-		return fmt.Errorf("where: unknown filter field %q", p.Field)
+		return i18n.NewError(reasonWhereUnknownField, map[string]any{"field": strconv.Quote(p.Field)})
 	}
 	if col, ok := idx.alias[p.Field]; ok {
 		p.Field = col
 	}
 	if !knownPredicateOps[p.Op] {
-		return fmt.Errorf("where: unknown operator %q", p.Op)
+		return i18n.NewError(reasonWhereUnknownOp, map[string]any{"op": strconv.Quote(string(p.Op))})
 	}
 	if t, ok := idx.colType[p.Field]; ok {
-		if err := CheckOpType(p.Field, p.Op, t); err != nil {
-			return fmt.Errorf("where: %w", err)
+		if !OpSuitsType(p.Op, t) {
+			return i18n.NewError(reasonWhereOpTypeMismatch, opTypeParams(p.Field, p.Op, t))
 		}
 	}
 	if p.Op == OpIn {
 		if len(p.Values) == 0 {
-			return fmt.Errorf("where: %q with op in requires values", p.Field)
+			return i18n.NewError(reasonWhereInNeedsValues, map[string]any{"field": strconv.Quote(p.Field)})
 		}
 		if len(p.Values) > MaxINListEntries {
-			return fmt.Errorf("where: in-list exceeds %d entries", MaxINListEntries)
+			return i18n.NewError(reasonWhereInOverCap, map[string]any{"max": MaxINListEntries})
 		}
 	}
 	p.isBool = idx.boolCol[p.Field]
@@ -255,15 +260,15 @@ func copyPredicateTree(p *Predicate) *Predicate {
 
 func validatePredicateNode(p *Predicate, idx *predFieldIndex, depth int, count *int) error {
 	if depth > maxPredicateDepth {
-		return fmt.Errorf("where: nesting exceeds max depth %d", maxPredicateDepth)
+		return i18n.NewError(reasonWhereTooDeep, map[string]any{"max": maxPredicateDepth})
 	}
 	*count++
 	if *count > maxPredicateNodes {
-		return fmt.Errorf("where: exceeds max node count %d", maxPredicateNodes)
+		return i18n.NewError(reasonWhereTooManyNodes, map[string]any{"max": maxPredicateNodes})
 	}
 	if len(p.Children) > 0 {
 		if p.Field != "" {
-			return fmt.Errorf("where: each node must be exactly one of and/or/field")
+			return i18n.NewError(reasonWhereNodeShape)
 		}
 		for i := range p.Children {
 			if err := validatePredicateNode(&p.Children[i], idx, depth+1, count); err != nil {

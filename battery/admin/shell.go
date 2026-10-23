@@ -113,7 +113,7 @@ func (b *Battery) gatePolicy() appui.Policy {
 			}
 			return decide.Redirect(b.cfg.LoginPath + "?next=" + urlQueryEscape(next))
 		}
-		return decide.Block(status, http.StatusText(status))
+		return decide.Block(status)
 	})
 }
 

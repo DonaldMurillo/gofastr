@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
@@ -37,7 +38,7 @@ import (
 func DecodeStrict(r io.Reader, dst any) error {
 	body, err := io.ReadAll(r)
 	if err != nil {
-		e := Errorf(400, "invalid JSON: %s", err.Error())
+		e := Fail(400, ReasonInvalidJSON, map[string]any{"detail": err.Error()})
 		e.Err = err
 		return e
 	}
@@ -61,14 +62,14 @@ func UnmarshalStrict(data []byte, dst any) error {
 		dec.DisallowUnknownFields()
 	}
 	if err := dec.Decode(dst); err != nil {
-		return Errorf(400, "invalid JSON: %s", err.Error())
+		return Fail(400, ReasonInvalidJSON, map[string]any{"detail": err.Error()})
 	}
 	// Exactly one value: a second Decode must find nothing. A swallowed
 	// second value is the same two-ways-to-read ambiguity the duplicate
 	// key rules exist to kill (the bind-trailing pin).
 	var trailing json.RawMessage
 	if err := dec.Decode(&trailing); err != io.EOF {
-		return Errorf(400, "invalid JSON: body must contain exactly one JSON value")
+		return Fail(400, ReasonJSONMultipleValues)
 	}
 	return nil
 }
@@ -105,9 +106,9 @@ func CheckTopLevelKeys(data []byte, fold func(string) string) error {
 		}
 		if prev, dup := seen[norm]; dup {
 			if prev == key {
-				return Errorf(400, "invalid JSON: duplicate key %q", key)
+				return Fail(400, ReasonJSONDuplicateKey, map[string]any{"key": strconv.Quote(key)})
 			}
-			return Errorf(400, "invalid JSON: keys %q and %q name the same field", prev, key)
+			return Fail(400, ReasonJSONFoldedKeys, map[string]any{"first": strconv.Quote(prev), "second": strconv.Quote(key)})
 		}
 		seen[norm] = key
 		var skip json.RawMessage
@@ -160,9 +161,9 @@ func walkObjectKeys(dec *json.Decoder, fold func(string) string) error {
 				}
 				if prev, dup := seen[norm]; dup {
 					if prev == key {
-						return Errorf(400, "invalid JSON: duplicate key %q", key)
+						return Fail(400, ReasonJSONDuplicateKey, map[string]any{"key": strconv.Quote(key)})
 					}
-					return Errorf(400, "invalid JSON: keys %q and %q name the same field", prev, key)
+					return Fail(400, ReasonJSONFoldedKeys, map[string]any{"first": strconv.Quote(prev), "second": strconv.Quote(key)})
 				}
 				seen[norm] = key
 				if err := walkObjectKeys(dec, fold); err != nil {

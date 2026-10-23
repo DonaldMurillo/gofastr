@@ -263,7 +263,7 @@ func TestBind_DeeplyNestedJSONRejected(t *testing.T) {
 func TestRespond_ErrorNoStackLeak(t *testing.T) {
 	w := httptest.NewRecorder()
 	rawDBErr := errors.New(`pq: password authentication failed for user "admin"`)
-	WriteError(w, rawDBErr)
+	WriteError(w, nil, rawDBErr)
 
 	body := w.Body.String()
 	if strings.Contains(body, "pq:") {

@@ -1382,7 +1382,7 @@ func TestOps_WriteCRUDErrorDoesntLeakInternal(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			rr := httptest.NewRecorder()
-			writeCRUDError(rr, tc.err)
+			writeCRUDError(rr, httptest.NewRequest(http.MethodGet, "/", nil), tc.err)
 			if rr.Code != http.StatusInternalServerError {
 				t.Errorf("SECURITY: [ops] writeCRUDError returned status %d, want 500 for internal error. Attack: error classification bypass.", rr.Code)
 			}

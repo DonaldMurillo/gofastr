@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
@@ -53,7 +55,7 @@ const (
 // errIncludeBudget marks an include that exceeded maxIncludeRows. It is a
 // client-caused bound, so the HTTP surfaces render it as 400 (narrow the
 // include or paginate) rather than as a 500.
-var errIncludeBudget = errors.New("include exceeds the maximum number of related rows; narrow the include or reduce the page size")
+var errIncludeBudget = i18n.NewError(reasonIncludeBudget)
 
 // includeBudget is the per-request row allowance, spent by every eager-load
 // as it scans. Threaded rather than stored on CrudHandler because a handler
@@ -170,7 +172,7 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 		// scoped-filter field allow-list. Serving the include anyway is a
 		// `SELECT *` of a table nobody vouched for, that is how a related
 		// auth table's password_hash reaches a caller. Refuse instead.
-		return nil, fmt.Errorf("include %q requires an entity registry: set CrudHandler.Registry (framework apps do this automatically)", raw)
+		return nil, i18n.NewError(reasonIncludeNoRegistry, map[string]any{"include": strconv.Quote(raw)})
 	}
 
 	var roots []*IncludeNode
@@ -178,7 +180,7 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 
 	paths := splitIncludeDelim(raw, ',')
 	if len(paths) > maxIncludePaths {
-		return nil, fmt.Errorf("too many include paths: %d (max %d)", len(paths), maxIncludePaths)
+		return nil, i18n.NewError(reasonIncludeTooManyPaths, map[string]any{"count": len(paths), "max": maxIncludePaths})
 	}
 
 	for _, path := range paths {
@@ -187,7 +189,7 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 			continue
 		}
 		if len(segments) > maxIncludeDepth {
-			return nil, fmt.Errorf("include %q is %d relations deep; the maximum is %d", path, len(segments), maxIncludeDepth)
+			return nil, i18n.NewError(reasonIncludeTooDeep, map[string]any{"include": strconv.Quote(path), "depth": len(segments), "max": maxIncludeDepth})
 		}
 
 		siblings := &roots
@@ -199,9 +201,9 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 			rel, ok := relationByName(currentEntity, seg)
 			if !ok {
 				if near := includeNearMiss(currentEntity, seg); near != "" {
-					return nil, fmt.Errorf("unknown include %q (segment %q has no relation on entity %q; did you mean %q?)", path, seg, currentEntity.GetName(), near)
+					return nil, i18n.NewError(reasonUnknownIncludeHint, map[string]any{"include": strconv.Quote(path), "segment": strconv.Quote(seg), "entity": strconv.Quote(currentEntity.GetName()), "suggestion": strconv.Quote(near)})
 				}
-				return nil, fmt.Errorf("unknown include %q (segment %q has no relation on entity %q)", path, seg, currentEntity.GetName())
+				return nil, i18n.NewError(reasonUnknownInclude, map[string]any{"include": strconv.Quote(path), "segment": strconv.Quote(seg), "entity": strconv.Quote(currentEntity.GetName())})
 			}
 			// Resolve the target entity. Registration is required for EVERY
 			// segment, leaf included. The leaf used to be exempt, "EagerLoad
@@ -220,7 +222,7 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 			// scopes exclude. Ambiguity is an error, never a silent pick.
 			target, err := entity.ResolveTarget(registry, ent, rel.Entity)
 			if err != nil {
-				return nil, fmt.Errorf("include %q: relation %q targets entity %q, which is not registered: %w", path, seg, rel.Entity, err)
+				return nil, i18n.Wrap(reasonIncludeUnregistered, err, map[string]any{"include": strconv.Quote(path), "relation": strconv.Quote(seg), "entity": strconv.Quote(rel.Entity)})
 			}
 			node, exists := siblingMap[seg]
 			if !exists {
@@ -387,7 +389,7 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		}
 		eq := strings.IndexByte(kv, '=')
 		if eq < 0 {
-			return nil, fmt.Errorf("include %q: scoped filter %q missing =", pathForErrors, kv)
+			return nil, i18n.NewError(reasonScopedMissingEq, map[string]any{"include": strconv.Quote(pathForErrors), "filter": strconv.Quote(kv)})
 		}
 		key, value := kv[:eq], kv[eq+1:]
 		field := key
@@ -400,10 +402,10 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			}
 		}
 		if noQueryField[field] {
-			return nil, fmt.Errorf("include %q: scoped field %q cannot be filtered", pathForErrors, field)
+			return nil, i18n.NewError(reasonScopedNotFilterable, map[string]any{"include": strconv.Quote(pathForErrors), "field": strconv.Quote(field)})
 		}
 		if fields != nil && !knownField[field] {
-			return nil, fmt.Errorf("include %q: scoped field %q not on target entity", pathForErrors, field)
+			return nil, i18n.NewError(reasonScopedUnknownField, map[string]any{"include": strconv.Quote(pathForErrors), "field": strconv.Quote(field)})
 		}
 		sent := field
 		// Resolve the wire key to its column AFTER the allow-list check:
@@ -414,7 +416,7 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 		}
 		if fields != nil {
 			if err := filter.CheckOpType(sent, op, colType[field]); err != nil {
-				return nil, fmt.Errorf("include %q: scoped %w", pathForErrors, err)
+				return nil, i18n.Wrap(reasonScopedFilter, err, map[string]any{"include": strconv.Quote(pathForErrors)})
 			}
 		}
 		if op == filter.OpIn {
@@ -422,7 +424,7 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			// rejected without materializing it. Same shape as the top-level
 			// ?field_in= path (filter.SplitINValuesBounded).
 			if n := strings.Count(value, "|") + 1; n > maxScopedINEntries {
-				return nil, fmt.Errorf("include %q: scoped IN list on %q has %d entries (max %d)", pathForErrors, field, n, maxScopedINEntries)
+				return nil, i18n.NewError(reasonScopedInListOverCap, map[string]any{"include": strconv.Quote(pathForErrors), "field": strconv.Quote(field), "count": n, "max": maxScopedINEntries})
 			}
 			vals := strings.SplitSeq(value, "|")
 			for v := range vals {
@@ -472,9 +474,9 @@ func includeNearMiss(ent *entity.Entity, seg string) string {
 // the client's doing, it asked for more related rows than one response may
 // carry, so it renders as 400 with an actionable message. Everything else
 // is a server fault and stays an opaque 500 with the detail in the log.
-func writeIncludeError(w http.ResponseWriter, surface string, err error) {
+func writeIncludeError(w http.ResponseWriter, r *http.Request, surface string, err error) {
 	if errors.Is(err, errIncludeBudget) {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
+		writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 		return
 	}
 	if forbidden, ok := errors.AsType[*includeForbiddenError](err); ok {
@@ -485,11 +487,11 @@ func writeIncludeError(w http.ResponseWriter, surface string, err error) {
 		// empty relation where the target's own route answers 401. Nothing
 		// leaks either way, the owner scope matches no row, but the two
 		// status codes differ.
-		writeJSONError(w, http.StatusForbidden, forbidden.Error())
+		writeErrJSON(w, r, http.StatusForbidden, forbidden, i18n.Phrase{})
 		return
 	}
 	log.Printf("crud: %s include failed: %v", surface, err)
-	writeJSONError(w, http.StatusInternalServerError, "internal server error")
+	writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 }
 
 // applyIncludeTree eager-loads the include forest onto the parent rows. Top-
@@ -1012,7 +1014,11 @@ func (ch *CrudHandler) wireConverterFor(targetName string) func(string) string {
 type includeForbiddenError struct{ Entity string }
 
 func (e *includeForbiddenError) Error() string {
-	return "access denied: include targets entity " + e.Entity + ", which you may not read"
+	return reasonIncludeForbidden.Format(map[string]any{"entity": e.Entity})
+}
+
+func (e *includeForbiddenError) Phrased() (i18n.Phrase, map[string]any) {
+	return reasonIncludeForbidden, map[string]any{"entity": e.Entity}
 }
 
 // checkIncludeReadable walks the include forest and refuses any node whose

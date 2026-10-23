@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/static"
 )
@@ -377,7 +378,7 @@ func writeAsset(w http.ResponseWriter, r *http.Request, b []byte, contentType st
 		var ok bool
 		origin, ok = requestOrigin(r)
 		if !ok {
-			http.Error(w, "bad request origin", http.StatusBadRequest)
+			i18n.HTTPError(w, r, http.StatusBadRequest, i18n.ReasonOriginRefused)
 			return
 		}
 	}

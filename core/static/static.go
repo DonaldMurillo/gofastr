@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
@@ -113,7 +114,7 @@ func Handler(config Config) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only serve GET and HEAD.
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			return
 		}
 
@@ -162,14 +163,14 @@ func Handler(config Config) http.Handler {
 				if errors.Is(err, fs.ErrNotExist) {
 					http.NotFound(w, r)
 				} else {
-					http.Error(w, "internal server error", http.StatusInternalServerError)
+					i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 				}
 				return
 			}
 			defer root.Close()
 			info, err := openedRootInfo(root)
 			if err != nil {
-				http.Error(w, "internal server error", http.StatusInternalServerError)
+				i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 				return
 			}
 			if !os.SameFile(config.rootIdentity, info) {
@@ -283,7 +284,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
 			return false
 		}
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return true
 	}
 	defer f.Close()
@@ -303,7 +304,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 
 	stat, err := f.Stat()
 	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return true
 	}
 
@@ -325,7 +326,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 	})
 	if err != nil {
 		// A read fault that is not "not found" is a 500, not a 404.
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return true
 	}
 
@@ -401,7 +402,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, config Config, name strin
 			return true
 		}
 		if err != nil {
-			http.Error(w, "internal server error", http.StatusInternalServerError)
+			i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return true
 		}
 		defer reopened.Close()

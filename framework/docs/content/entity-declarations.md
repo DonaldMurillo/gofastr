@@ -1666,7 +1666,10 @@ Lists keep `{"data":[...]}` plus pagination metadata.
 
 Errors are JSON everywhere in the API namespace, whatever missed. A handled
 record miss (e.g. `GET /api/posts/404-nope`) answers
-`application/json` with `{"error":"not found","success":false,"code":404}`.
+`application/json` with
+`{"error":"not found","reason":"not_found","success":false,"code":404}`.
+`reason` is the stable code a client branches on; `error` is the text in
+the request's locale (see [i18n](i18n.md) → "The error contract").
 A write the database refuses on a constraint answers `409 Conflict`, not
 `500`: a UNIQUE violation (a duplicate key) and a FOREIGN KEY violation
 (a create or update that points at a missing row, or a delete of a row that
@@ -1676,7 +1679,7 @@ server log only. When the refused constraint is one the entity declares
 (a `unique` field, a unique column index, a relation's foreign key) the
 body carries the fields the caller sent in the validation shape, so a
 form shows the refusal on the control:
-`{"error":"conflict","success":false,"code":409,"fields":{"number":["is already in use"]}}`.
+`{"error":"conflict","reason":"conflict","success":false,"code":409,"fields":{"number":["is already in use"]},"field_reasons":{"number":["unique_taken"]}}`.
 A relation's message is "refers to a record that does not exist". A
 column the caller did not send (the owner column of a per-account
 index) is not named, and a conflict on a `hidden` or `no_query` field

@@ -166,7 +166,7 @@ func TestRosterBeatCannotRestateLocalIdentity(t *testing.T) {
 // plain request, not a WriteHeader panic that kills the response.
 func TestPlainRefusalStatusClamped(t *testing.T) {
 	s := New(Config{Authorize: func(r *http.Request) (Join, error) {
-		return Join{}, &HTTPError{Status: 42, Message: "nope"}
+		return Join{}, &HTTPError{Status: 42, Reason: testReasonNo}
 	}})
 	srv := httptest.NewServer(s)
 	t.Cleanup(srv.Close)

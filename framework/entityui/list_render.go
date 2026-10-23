@@ -11,6 +11,7 @@ import (
 
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
@@ -31,7 +32,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	// middleware already stashes it on the request ctx, and this bridge
 	// keeps a render outside the middleware (a test, a build) translated.
 	if m.tr != nil {
-		ctx = i18nui.WithTranslator(ctx, m.tr)
+		ctx = i18n.WithTranslator(ctx, m.tr)
 	}
 	// The read gate: the same posture the JSON list route enforces. A
 	// screen for an entity whose GET /api/<entity> answers 401 or 403

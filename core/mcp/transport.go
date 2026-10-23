@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/netguard"
 )
 
@@ -50,7 +51,7 @@ func isMCPJSONContentType(ct string) bool {
 // failure and reports whether the caller should continue.
 func decodeMCPRequest(w http.ResponseWriter, r *http.Request, req *Request) bool {
 	if !isMCPJSONContentType(r.Header.Get("Content-Type")) {
-		http.Error(w, "unsupported media type", http.StatusUnsupportedMediaType)
+		i18n.HTTPError(w, r, http.StatusUnsupportedMediaType, i18n.StatusPhrase(http.StatusUnsupportedMediaType))
 		return false
 	}
 	body := http.MaxBytesReader(w, r.Body, maxMCPBodyBytes)
@@ -59,7 +60,7 @@ func decodeMCPRequest(w http.ResponseWriter, r *http.Request, req *Request) bool
 	if err != nil {
 		var maxErr *http.MaxBytesError
 		if errorAsMaxBytes(err, &maxErr) {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			i18n.HTTPError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
 			return false
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -215,11 +216,11 @@ func (s *Server) SetAllowedOrigins(origins []string) {
 // It reads a JSON-RPC request from the body and writes the response.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 		return
 	}
 	if !s.originOK(r) {
-		http.Error(w, "forbidden: cross-origin or unexpected Host", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.ReasonCrossOriginHost)
 		return
 	}
 
@@ -343,7 +344,7 @@ func (s *Server) ServeSSE(path string) http.Handler {
 			return
 		}
 
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		i18n.HTTPError(w, r, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 	})
 
 	return mux
@@ -352,7 +353,7 @@ func (s *Server) ServeSSE(path string) http.Handler {
 // ssePostHandler handles POST requests with optional SSE streaming.
 func (s *Server) ssePostHandler(w http.ResponseWriter, r *http.Request) {
 	if !s.originOK(r) {
-		http.Error(w, "forbidden: cross-origin or unexpected Host", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.ReasonCrossOriginHost)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -398,7 +399,7 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 	// today (the event below is static), but the next thing streamed
 	// from here would be a cross-origin read.
 	if !s.originOK(r) {
-		http.Error(w, "forbidden: cross-origin or unexpected Host", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.ReasonCrossOriginHost)
 		return
 	}
 
@@ -417,7 +418,7 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 	// holding one goroutine and one buffered channel per connection for
 	// the stream's whole life — the DoS shape the seat cap exists for.
 	if err := s.checkServerGate(ctx); err != nil {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
 		return
 	}
 
@@ -428,7 +429,7 @@ func (s *Server) sseGetHandler(w http.ResponseWriter, r *http.Request) {
 	key := sseSeatKey(ctx, r)
 	sub, ok := s.addSSESubscriber(ctx, key)
 	if !ok {
-		http.Error(w, "too many streams for this caller", http.StatusTooManyRequests)
+		i18n.HTTPError(w, r, http.StatusTooManyRequests, i18n.ReasonTooManyStreams)
 		return
 	}
 	defer s.removeSSESubscriber(sub)

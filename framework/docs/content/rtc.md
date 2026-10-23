@@ -125,7 +125,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/battery/rtc"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
+
+var signInFirst = i18n.Define("call.sign_in_first", "sign in first")
 
 sig := rtc.New(rtc.Config{
 	ICEServers: []rtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
@@ -133,7 +136,7 @@ sig := rtc.New(rtc.Config{
 	Authorize: func(r *http.Request) (rtc.Join, error) {
 		u, ok := handler.GetUser(r.Context())
 		if !ok {
-			return rtc.Join{}, &rtc.HTTPError{Status: http.StatusUnauthorized, Message: "sign in first"}
+			return rtc.Join{}, &rtc.HTTPError{Status: http.StatusUnauthorized, Reason: signInFirst}
 		}
 		user := u.(auth.User)
 		return rtc.Join{Room: r.URL.Query().Get("room"), User: user.GetID(), DisplayName: user.GetEmail()}, nil

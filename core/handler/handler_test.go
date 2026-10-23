@@ -10,6 +10,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
 // --- Test types ---
@@ -306,16 +309,16 @@ func TestErrorResponseCorrectStatus(t *testing.T) {
 		},
 		{
 			name:       "wrapped error",
-			err:        WrapError(422, "unprocessable", errors.New("db error")),
+			err:        WrapError(422, i18n.StatusPhrase(422), errors.New("db error")),
 			wantStatus: 422,
-			wantMsg:    "unprocessable",
+			wantMsg:    "unprocessable request",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			WriteError(w, tt.err)
+			WriteError(w, nil, tt.err)
 
 			resp := w.Result()
 			if resp.StatusCode != tt.wantStatus {
@@ -340,14 +343,14 @@ func TestErrorResponseCorrectStatus(t *testing.T) {
 }
 
 func TestValidationError(t *testing.T) {
-	fields := map[string][]string{
-		"email": {"is required", "must be valid"},
-		"name":  {"is required"},
+	fields := map[string][]schema.Violation{
+		"email": {{Reason: schema.ReasonRequired}, {Reason: schema.ReasonNotString}},
+		"name":  {{Reason: schema.ReasonRequired}},
 	}
 	herr := ValidationError(fields)
 
 	w := httptest.NewRecorder()
-	WriteError(w, herr)
+	WriteError(w, nil, herr)
 
 	resp := w.Result()
 	if resp.StatusCode != http.StatusBadRequest {
@@ -362,6 +365,12 @@ func TestValidationError(t *testing.T) {
 	if body.Error.Fields["name"][0] != "is required" {
 		t.Errorf("expected field error 'is required', got %v", body.Error.Fields)
 	}
+	if got := body.Error.FieldReasons["email"]; len(got) != 2 || got[0] != "required" || got[1] != "not_string" {
+		t.Errorf("field_reasons[email] = %v", got)
+	}
+	if body.Error.Reason != "validation_failed" || body.Error.Message != "validation failed" {
+		t.Errorf("reason %q message %q", body.Error.Reason, body.Error.Message)
+	}
 }
 
 func TestErrorImplementsError(t *testing.T) {
@@ -370,7 +379,7 @@ func TestErrorImplementsError(t *testing.T) {
 		t.Errorf("expected 'bad request', got %s", err.Error())
 	}
 
-	wrapped := WrapError(500, "internal", errors.New("root cause"))
+	wrapped := WrapError(500, i18n.StatusPhrase(500), errors.New("root cause"))
 	if !strings.Contains(wrapped.Error(), "root cause") {
 		t.Errorf("expected wrapped error to contain 'root cause', got %s", wrapped.Error())
 	}
