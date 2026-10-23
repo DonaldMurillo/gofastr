@@ -182,10 +182,6 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   carries `Reason` and `Params` instead of `Message`.
   `middleware.RateLimitConfig.ErrorMessage string` is
   `Message i18n.Phrase`.
-- **BREAKING: plain-text status bodies are lowercase.** A refusal with no
-  message of its own writes its status phrase, "internal server error",
-  "gateway timeout", "not found", where it wrote `http.StatusText`'s
-  "Internal Server Error".
 - **BREAKING: query parsers answer with their own code.** A crud list
   given a bad `?field_<op>=`, `?sort=`, `?where=`, `?filter=`,
   `?include=`, `?fields=` or nested `?rel.field=` answers the parser's
