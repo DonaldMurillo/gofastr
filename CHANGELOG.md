@@ -554,6 +554,15 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   names each field still set to a string.
 
 ### Fixed
+- **A record page for a missing or hidden row answers 404.** entityui's
+  Record (a generated record screen, the admin record page) drew its
+  "Not found" state with a 200, while the JSON API gave the same caller
+  404. The page answers 404 now, on the full page, a client navigation
+  and the embed content route, and so does a Create duplicating such a
+  row. The status comes from the new `app.SetStatus(ctx, code)`, which
+  any component can call while it draws; a screen's `ScreenStatusCode`
+  still outranks it. The embed content route also honours
+  `ScreenStatusCode` now, where it answered 200.
 - **Postgres text-to-integer retypes apply.** A column whose declared
   type moved from text to an integer rendered
   `ALTER COLUMN ... TYPE INTEGER` with no `USING` clause, which Postgres

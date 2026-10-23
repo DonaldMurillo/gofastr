@@ -151,6 +151,33 @@ func (s *ThingScreen) ScreenStatusCode() int {
 The body still renders through the layout, so the user gets the real
 not-found page while crawlers and clients get the real status.
 
+A component that only learns the answer while it draws sets the status
+from its render instead, with `app.SetStatus` (`core-ui/app`):
+
+```go
+func (c *ThingCard) RenderCtx(ctx context.Context) render.HTML {
+    thing, ok := c.lookup(ctx)
+    if !ok {
+        app.SetStatus(ctx, http.StatusNotFound)
+        return notFoundBody(ctx)
+    }
+    return drawThing(ctx, thing)
+}
+```
+
+The entity views do this already: `entityui` Record and a Create
+duplicating a row answer 404 when the row is missing or hidden from the
+caller, so a generated record screen and an admin record page need no
+code for it. The first `SetStatus` in a render wins. A screen's own
+`ScreenStatusCode` outranks it, and a 404-outlet outcome outranks both.
+It applies on the full page, a client navigation, `RenderScreen` and
+the embed content route. Outside a page render (an island RPC, a
+component rendered on its own) the call does nothing.
+
+A drawer opened onto a missing record falls back to an ordinary
+navigation: the runtime mounts an overlay only from a 2xx, so the
+reader lands on the record's own URL and sees its 404 page.
+
 ## Common mistakes
 
 - **Inline `template.Must` strings scattered through Go files.** Embed
