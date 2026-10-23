@@ -1613,6 +1613,11 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	}
 	switch res.Kind {
 	case app.DecisionRedirect:
+		// The runtime's whole-page fetch (a navigation across layout
+		// chains) cannot follow a 303 off the origin.
+		if scriptFetch(r) && writeDocumentRedirect(w, res.URL) {
+			return
+		}
 		http.Redirect(w, r, scrubCtl(res.URL), http.StatusSeeOther)
 		return
 	case app.DecisionBlock:
@@ -3036,13 +3041,18 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		// bearing URL would be fed directly into loadPage(), which
 		// does a fetch with credentials, turning the partial-
 		// redirect signal into a cross-origin XSRF / credential-leak
-		// vector. For unsafe URLs fall back to a hard 303 redirect;
-		// the browser handles those safely (cross-origin redirects
-		// don't propagate cookies, javascript:/data: schemes are
-		// blocked at the navigation layer).
+		// vector. An absolute http(s) URL goes out as
+		// X-Gofastr-Document, which the runtime loads as a page and
+		// never fetches. For other unsafe URLs fall back to a hard 303
+		// redirect; the browser handles those safely (cross-origin
+		// redirects don't propagate cookies, javascript:/data: schemes
+		// are blocked at the navigation layer).
 		if handler.IsSafeRelativePath(res.URL) {
 			w.Header().Set("X-Gofastr-Location", res.URL)
 			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if writeDocumentRedirect(w, res.URL) {
 			return
 		}
 		http.Redirect(w, r, scrubCtl(res.URL), http.StatusSeeOther)

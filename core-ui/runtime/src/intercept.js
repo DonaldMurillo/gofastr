@@ -538,8 +538,14 @@
     panel = null;
     if (!p || location.pathname + location.search !== p.under) return;
     const e = epoch;
+    // A record that will not open over the list (a redirect, a decline)
+    // still opens: as its own page.
     fetchOverlay(p.rec, p.under)
-      .then((res) => { if (e === epoch && res && !layers.length) mountLayer(res, p.rec, '', p.under, null); })
+      .then((res) => {
+        if (e !== epoch || layers.length) return;
+        if (res) mountLayer(res, p.rec, '', p.under, null);
+        else fallbackNav(p.rec, '');
+      })
       .catch(() => {});
   });
 
