@@ -105,18 +105,65 @@ func TestNegotiatedMarkdownSetStatus(t *testing.T) {
 	a.Register("/missing/{id}", &drawsMissingByID{}, nil)
 	a.Register("/gone/{id}", &goneByID{}, nil)
 	a.Register("/things/{id}", &loadedTitleComp{}, nil)
-	// A value screen: DI refuses it, so its markdown is the pattern doc
-	// with no loaded instance, and the declared status still applies.
+	// Value screens skip DI and render per URL like pointer ones: a
+	// declared status and one set while drawing both apply.
 	a.Register("/declared", drawsMissingDeclaresGone{}, nil)
+	a.Register("/drawn", drawsMissing{}, nil)
 	ds := New(a, WithPublicLLMMD(), WithMarkdownNegotiation())
 
-	for path, want := range map[string]int{"/missing/1": http.StatusNotFound, "/gone/1": http.StatusGone, "/things/42": http.StatusOK, "/declared": http.StatusGone} {
+	for path, want := range map[string]int{"/missing/1": http.StatusNotFound, "/gone/1": http.StatusGone, "/things/42": http.StatusOK, "/declared": http.StatusGone, "/drawn": http.StatusNotFound} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.Header.Set("Accept", "text/markdown")
 		rec := httptest.NewRecorder()
 		ds.ServeHTTP(rec, req)
 		if rec.Code != want || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/markdown") {
 			t.Errorf("%s = %d (%s), want %d markdown", path, rec.Code, rec.Header().Get("Content-Type"), want)
+		}
+	}
+}
+
+// loadedStatus reads its status from state only Load sets: called on an
+// unloaded instance it panics.
+type loadedStatus struct{ rec *struct{ gone bool } }
+
+func (s *loadedStatus) SetParams(map[string]string) {}
+func (s *loadedStatus) Load(context.Context) error {
+	s.rec = &struct{ gone bool }{gone: true}
+	return nil
+}
+func (s *loadedStatus) Render() render.HTML { return "<p>secret record</p>" }
+func (s *loadedStatus) ScreenStatusCode() int {
+	if s.rec.gone {
+		return http.StatusGone
+	}
+	return 0
+}
+
+// A policy-refused screen's llm.md is the withheld doc: the status check
+// never reaches the unloaded screen (whose ScreenStatusCode reads Load
+// state) and nothing of its content leaks.
+func TestRefusedLLMMDSkipsStatusCheck(t *testing.T) {
+	a := app.NewApp("status")
+	a.Register("/", &testHomeComp{}, nil)
+	deny := app.PolicyFunc(func(context.Context) app.Decision {
+		return app.Decision{Kind: app.DecisionBlock, Status: http.StatusForbidden}
+	})
+	a.RegisterScreen(app.NewScreen("/things/{id}", &loadedStatus{}).WithPolicy(deny), nil)
+	ds := New(a, WithPublicLLMMD(), WithMarkdownNegotiation())
+
+	for _, accept := range []string{"", "text/markdown"} {
+		path := "/things/1/llm.md"
+		if accept != "" {
+			path = "/things/1"
+		}
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if accept != "" {
+			req.Header.Set("Accept", accept)
+		}
+		rec := httptest.NewRecorder()
+		ds.ServeHTTP(rec, req)
+		if strings.Contains(rec.Body.String(), "secret record") {
+			t.Errorf("%s (Accept %q) leaked the refused screen:\n%s", path, accept, rec.Body.String())
 		}
 	}
 }

@@ -579,9 +579,13 @@ for another user's record now gets 404.
   it. A drawer that gets the 404 drops the record's cached page before
   it falls back to a navigation, so a deleted record never replays from
   the screen cache. The record's `llm.md` and its negotiated markdown
-  (`Accept: text/markdown`) answer 404 too, and a static
-  export skips such a page and its `llm.md` the way it skips a 404 outlet. The embed content route keeps answering 200 with the
-  not-found body, because the embed loader mounts only a 2xx.
+  (`Accept: text/markdown`) answer 404 too, and a static export skips
+  such a page and its `llm.md` the way it skips a 404 outlet. A screen
+  registered as a value, not a pointer, now renders its per-URL doc the
+  way its page does; it fell back to the route's pattern doc, which
+  never ran the render that sets the status. The embed content route
+  keeps answering 200 with the not-found body, because the embed loader
+  mounts only a 2xx.
 - **Postgres text-to-integer retypes apply.** A column whose declared
   type moved from text to an integer rendered
   `ALTER COLUMN ... TYPE INTEGER` with no `USING` clause, which Postgres

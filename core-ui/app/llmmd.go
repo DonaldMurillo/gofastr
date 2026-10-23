@@ -221,7 +221,10 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 		}
 	}
 	loaded := true
-	if err := a.Inject(comp); err != nil {
+	// The page render's DI contract (injectComponent): a value component
+	// is the stateless form and skips DI, so it renders per URL like a
+	// pointer one instead of falling back to the pattern doc.
+	if err := a.injectComponent(comp, path); err != nil {
 		loaded = false
 	}
 	if loaded {

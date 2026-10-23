@@ -91,12 +91,12 @@ func TestStaticBuildSkipsSetStatusPage(t *testing.T) {
 
 	a := coreapp.NewApp("SSGStatus")
 	a.RegisterScreen(coreapp.NewScreen("/present", nfStaticScreen("PRESENT")), nil)
-	// A pointer, as a real record screen is: the per-URL llm.md renders
-	// the instance only for an injectable (pointer) component.
+	// A pointer, as a real record screen is.
 	a.RegisterScreen(coreapp.NewScreen("/gone", &nfSetStatusScreen{}), nil)
-	// A value screen declaring its status: DI refuses it, so its doc is
-	// the pattern doc, and the declaration must still keep it out.
+	// Value screens skip DI and render per URL the same way: one that
+	// declares 410 and one that sets 404 while it draws.
 	a.RegisterScreen(coreapp.NewScreen("/declared", nfDeclaredGone{}), nil)
+	a.RegisterScreen(coreapp.NewScreen("/drawn", nfSetStatusScreen{}), nil)
 
 	out := t.TempDir()
 	res, err := (&Builder{Host: uihost.New(a), OutDir: out}).Build(context.Background())
@@ -118,9 +118,9 @@ func TestStaticBuildSkipsSetStatusPage(t *testing.T) {
 		md, _ := os.ReadFile(filepath.Join(out, "gone", "llm.md"))
 		t.Errorf("no llm.md may be written for a 404 page; wrote:\n%s\nlog:\n%s", md, buf.String())
 	}
-	for _, f := range []string{"declared/index.html", "declared/llm.md"} {
+	for _, f := range []string{"declared/index.html", "declared/llm.md", "drawn/index.html", "drawn/llm.md"} {
 		if _, err := os.Stat(filepath.Join(out, f)); !os.IsNotExist(err) {
-			t.Errorf("%s written for a screen that declares 410", f)
+			t.Errorf("%s written for a screen that answers 404/410", f)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(out, "present", "llm.md")); err != nil {

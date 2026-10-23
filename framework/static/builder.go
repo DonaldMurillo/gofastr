@@ -261,14 +261,7 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 					// A page that answers another status is skipped like
 					// its HTML (uihost.StatusPageError): the static host
 					// would serve its not-found body as a 200 doc.
-					// No loaded instance (a value screen DI refuses, a
-					// failed Load): the registered component answers for
-					// a declared ScreenStatusCode.
-					c := doc.Component
-					if c == nil {
-						c = screen.Component
-					}
-					if st := docStatus(c, recorded()); st != 0 {
+					if st := docStatus(doc.Component, recorded()); st != 0 {
 						slog.Warn("static: skipped llm.md for a page that answers a status other than 200",
 							"path", p, "status", st)
 						continue
