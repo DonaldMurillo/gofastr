@@ -52,6 +52,12 @@ func TestStaleMarkupReloadKeepsPrefix(t *testing.T) {
 	if !strings.Contains(w.Body.String(), `url='/es/a?x=1'`) {
 		t.Errorf("refresh lost the locale prefix:\n%s", w.Body.String())
 	}
+	// A key segment holding "/" reloads as that one segment.
+	w = httptest.NewRecorder()
+	writeStaleMarkupReload(w, r, app.RoutePath("/k/a%2Fb"), "")
+	if !strings.Contains(w.Body.String(), `url='/es/k/a%2Fb?x=1'`) {
+		t.Errorf("refresh split the key:\n%s", w.Body.String())
+	}
 }
 
 // A Disallow names the app's own paths, and every locale serves them

@@ -284,6 +284,23 @@ func TestCacheMiddleware_DoesNotLeakAcrossHosts(t *testing.T) {
 	}
 }
 
+// /a%2Fb is one segment whose key holds "/", a different page from /a/b.
+// Keying on the decoded path served one's cached body for the other.
+func TestCacheKeysEscapedSlashApart(t *testing.T) {
+	store := NewMemoryCache()
+	handler := CacheMiddleware(store, time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("path=" + r.URL.EscapedPath()))
+	}))
+	for _, p := range []string{"/a/b", "/a%2Fb"} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, p, nil))
+		if got := rec.Body.String(); got != "path="+p {
+			t.Fatalf("GET %s served %q (X-Cache=%s)", p, got, rec.Header().Get("X-Cache"))
+		}
+	}
+}
+
 func TestCacheMiddleware_RequestNoStoreBypassesStoredVariant(t *testing.T) {
 	cacheRequestDirectiveTest(t, "request Cache-Control: no-store did not bypass stored variant",
 		"no-store", "nostore-req")

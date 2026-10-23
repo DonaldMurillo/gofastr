@@ -1453,9 +1453,27 @@ translation keys Display's names produce (`entity.<entity>.*`,
 
 `EntityConfig.PrimaryKey` names the primary-key columns in order. Left
 nil, the key is the one column `id`, which `Define` injects as a generated
-UUID unless `Fields` declares it. Name more than one column for a
-composite key, the usual shape for a join table keyed on the rows it
-links:
+UUID unless `Fields` declares it.
+
+A plain join table keeps that `id` and holds its pair unique with an
+index. Every surface then names a row by one value, and another entity
+can belong to it:
+
+```go
+app.Entity("enrollments", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "student_id", Type: schema.String, Required: true},
+        {Name: "course_id", Type: schema.String, Required: true},
+        {Name: "grade", Type: schema.String},
+    },
+    Indices: []entity.Index{{Columns: []string{"student_id", "course_id"}, Unique: true}},
+})
+```
+
+Name more than one column for a composite key when the columns are the
+record's identity: a table an existing schema already keys that way, or
+records the API should address by the pair. The links and the limits
+below follow from it:
 
 ```go
 app.Entity("enrollments", framework.EntityConfig{
@@ -1706,9 +1724,9 @@ back off a request, for a handler mounted beside the CRUD routes.
 entityui and the admin draw a composite record at `<base>/<v1>/<v2>`.
 The create form sets every key column; the edit form shows them
 read-only, since a record keeps its key, and a duplicate leaves them
-blank, as it does a unique index's fields. Screen routes match the
-decoded path, so a record whose key value holds `/` is reachable over
-REST and MCP but its screen answers 404.
+blank, as it does a unique index's fields. A key value holding `/` is
+escaped in its segment (`/enrollments/a%2Fb/c1`), and its screen
+answers there as REST and MCP do.
 
 The `framework` package re-exports `JoinKey` and `RowKey` for app code
 that builds ids without importing `framework/entity`. The generators

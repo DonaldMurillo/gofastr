@@ -17,6 +17,8 @@ type stubComp struct{ tag string }
 
 func (s *stubComp) Render() render.HTML { return render.HTML("<p>" + s.tag + "</p>") }
 
+func (s *stubComp) SetParams(map[string]string) {}
+
 func TestSessionFrom_ReturnsLoadedUser(t *testing.T) {
 	u := &auth.BasicUser{ID: "u1", Email: "a@b", Roles: []string{"user"}}
 	ctx := handler.SetUser(context.Background(), u)
@@ -156,6 +158,7 @@ var _ component.Component = (*stubComp)(nil)
 func TestSessionPolicy_NextPathEdgeCases(t *testing.T) {
 	cases := []struct {
 		name         string
+		pattern      string // screen pattern; empty = requestPath
 		requestPath  string // includes ?query if any
 		withRequest  bool   // whether to attach app.WithRequest
 		policyURL    string // url passed to WithRedirect
@@ -204,22 +207,28 @@ func TestSessionPolicy_NextPathEdgeCases(t *testing.T) {
 			wantContains: "%2Fdash",
 		},
 		{
-			// httptest.NewRequest decodes %2F → /, so the next= value
-			// contains the canonical decoded form re-encoded once.
-			name:         "encoded slash in path normalises through",
+			// "/foo%2Fbar" is one segment whose value holds "/". next=
+			// carries the escaped path, so login returns to that
+			// segment and not to "/foo/bar".
+			name:         "encoded slash in a key survives next",
+			pattern:      "/:key",
 			requestPath:  "/foo%2Fbar",
 			withRequest:  true,
 			policyURL:    "/login",
 			wantPrefix:   "/login?next=",
-			wantContains: "%2Ffoo%2Fbar",
+			wantContains: "next=%2Ffoo%252Fbar",
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			pattern := tc.pattern
+			if pattern == "" {
+				pattern = tc.requestPath
+			}
 			a := app.NewApp("t")
 			a.RegisterScreen(
-				app.NewScreen(tc.requestPath, &stubComp{tag: "x"}).
+				app.NewScreen(pattern, &stubComp{tag: "x"}).
 					WithPolicy(auth.SessionPolicy(auth.WithRedirect(tc.policyURL))),
 				nil,
 			)

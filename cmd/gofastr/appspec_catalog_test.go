@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -79,5 +80,31 @@ func TestGeneratedAppSpeaksItsCatalog(t *testing.T) {
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("generated app did not speak its catalog: %v\n%s", err, out)
+	}
+}
+
+// The generated i18n_test.go passes a catalog of the app's phrases and
+// fails one naming a key nothing defines.
+func TestGeneratedCatalogTestCatchesStrayKey(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds a generated app")
+	}
+	dir, _ := generateBaseProject(t, catalogAppSpec)
+	run := func(es string) (string, error) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "locales", "es.json"), []byte(es), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("go", "test", "-mod=mod", "-count=1", "-run", "TestCatalogsMatchPhrases", ".")
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	if out, err := run(`{"shop":{"screens":{"about":{"welcome_back":"Bienvenido de nuevo"}}},"entity":{"posts":{"name":"Entradas"}}}`); err != nil {
+		t.Fatalf("a catalog of the app's phrases failed the check: %v\n%s", err, out)
+	}
+	out, err := run(`{"shop":{"screens":{"about":{"welcome_bak":"Bienvenido de nuevo"}}}}`)
+	if err == nil || !strings.Contains(out, "shop.screens.about.welcome_bak: unknown key") {
+		t.Fatalf("a stray key passed the check: %v\n%s", err, out)
 	}
 }
