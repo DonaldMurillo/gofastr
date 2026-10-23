@@ -7,6 +7,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.94.0] - 2026-10-23
+
+**BREAKING** for error helpers, translated text and entity keys. Every
+message the framework writes is an `i18n.Phrase` in the request's
+locale, and every JSON error body carries a stable `reason` code. Error
+helpers, refusals, screen titles, battery text callbacks, and desktop,
+setup and admin words take phrases or the request context. Numbers,
+dates and plurals follow CLDR, pages carry `<html lang dir>` from the
+request, and kit CSS sets logical properties. `EntityConfig.PrimaryKey`
+is a `[]string`, so an entity can key on several columns: HTTP, MCP,
+the admin and the generated clients name a record by one path segment
+per key column, and relations, join entities and foreign keys reach
+composite keys. A key column must be a string, integer, enum, UUID or
+relation. v0.94.0 also adds unique jobs, locale URL prefixes, a language
+switcher and primary-key change migrations. `gofastr upgrade` lists each
+change.
+
 ### Added
 - **Unique jobs.** A job with `Job.UniqueKey` set is refused with
   `queue.ErrDuplicateJob` while another job of the same type holds the
