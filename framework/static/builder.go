@@ -256,7 +256,16 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 				// (a placeholder, for ScreenLoader screens). Fall back to
 				// the pattern doc if the concrete path doesn't resolve.
 				var md string
-				if doc, ok := coreapp.ScreenLLMMDForPath(ctx, b.Host.App, p); ok {
+				sctx, recorded := coreapp.TrackStatus(ctx)
+				if doc, ok := coreapp.ScreenLLMMDForPath(sctx, b.Host.App, p); ok {
+					// A page that answers another status is skipped like
+					// its HTML (uihost.StatusPageError): the static host
+					// would serve its not-found body as a 200 doc.
+					if st := docStatus(doc.Component, recorded()); st != 0 {
+						slog.Warn("static: skipped llm.md for a page that answers a status other than 200",
+							"path", p, "status", st)
+						continue
+					}
 					md = doc.MD
 				} else {
 					// The expanded URL doesn't resolve (e.g. a StaticPaths
@@ -1223,6 +1232,22 @@ func pathToFile(p string) string {
 //	"/"              -> "llm.md"
 //	"/about"         -> "about/llm.md"
 //	"/products/abc"  -> "products/abc/llm.md"
+//
+// docStatus is the status a page's render answers when it is not 200:
+// the screen's ScreenStatusCode first, then what the render set through
+// app.SetStatus. Zero means 200.
+func docStatus(c any, recorded int) int {
+	if sc, ok := c.(uihost.ScreenStatusCode); ok {
+		if code := sc.ScreenStatusCode(); code != 0 && code != http.StatusOK {
+			return code
+		}
+	}
+	if recorded == http.StatusOK {
+		return 0
+	}
+	return recorded
+}
+
 func pathToLLMFile(p string) string {
 	clean := strings.Trim(p, "/")
 	if clean == "" {
