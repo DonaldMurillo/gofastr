@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=2882260480216072
+//gofastr:generated generator=app kind=scaffold version=dev sum=9c412ad98dd94327
 
 package entities
 
@@ -325,9 +325,9 @@ func registerProducts(app *framework.App) {
 			{Name: "tags", Type: schema.JSON},
 		},
 		Relations: []framework.Relation{
-			{Type: framework.RelManyToOne, Name: "category", Entity: "categories", ForeignKey: "category_id"},
-			{Type: framework.RelHasMany, Name: "reviews", Entity: "reviews", ForeignKey: "product_id"},
-			{Type: framework.RelHasMany, Name: "order_items", Entity: "order_items", ForeignKey: "product_id"},
+			{Type: framework.RelManyToOne, Name: "category", Entity: "categories", ForeignKey: []string{"category_id"}},
+			{Type: framework.RelHasMany, Name: "reviews", Entity: "reviews", ForeignKey: []string{"product_id"}},
+			{Type: framework.RelHasMany, Name: "order_items", Entity: "order_items", ForeignKey: []string{"product_id"}},
 		},
 		Scope: &framework.ScopeConfig{
 			SoftDelete: true,

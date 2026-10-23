@@ -1751,22 +1751,20 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 		cascadeWrite := boolValue(m["cascade_write"])
 		// foreign_key is one column, or a list of one column per key
 		// column of a composite key it references.
-		foreignKey, foreignKeys := stringValue(m["foreign_key"]), []string(nil)
+		var foreignKey []string
 		if node := m["foreign_key"]; node != nil && node.Kind == coreyaml.List {
-			foreignKeys = stringListValue(node)
-			if len(foreignKeys) == 0 || slices.Contains(foreignKeys, "") {
+			foreignKey = stringListValue(node)
+			if len(foreignKey) == 0 || slices.Contains(foreignKey, "") {
 				return nil, fmt.Errorf("relations[%d].foreign_key: want a column name or a non-empty list of them", i)
 			}
-			if len(foreignKeys) == 1 {
-				foreignKey, foreignKeys = foreignKeys[0], nil
-			}
+		} else if fk := stringValue(m["foreign_key"]); fk != "" {
+			foreignKey = []string{fk}
 		}
 		out = append(out, framework.Relation{
 			Type:             relType,
 			Name:             stringValue(m["name"]),
 			Entity:           stringValue(m["entity"]),
 			ForeignKey:       foreignKey,
-			ForeignKeys:      foreignKeys,
 			Through:          stringValue(m["through"]),
 			LocalKey:         stringValue(m["local_key"]),
 			ForeignKeyTarget: stringValue(m["foreign_key_target"]),
@@ -6248,7 +6246,7 @@ func appSpecRelationKeys(decl framework.EntityDeclaration, rel framework.Relatio
 	case fwentity.RelHasOne, fwentity.RelHasMany:
 		holder, ref = target, decl
 	}
-	fks, key := rel.FKColumns(), keyOf(ref)
+	fks, key := rel.ForeignKey, keyOf(ref)
 	if len(fks) == 0 {
 		return nil
 	}
@@ -6321,7 +6319,7 @@ func appSpecEntityRelations(decl framework.EntityDeclaration) map[string]string 
 	}
 	for _, r := range decl.Relations {
 		if r.Type == fwentity.RelManyToOne && r.Entity != "" {
-			for _, c := range r.FKColumns() {
+			for _, c := range r.ForeignKey {
 				out[c] = r.Entity
 			}
 		}

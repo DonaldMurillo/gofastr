@@ -34,7 +34,7 @@ const orderLinesYAML = `  - name: orders
         foreign_key: [order_store, order_no]
 `
 
-// A foreign_key list reaches Relation.ForeignKeys, the generated
+// A foreign_key list reaches Relation.ForeignKey, the generated
 // registration, pack, and the YAML round trip, in declared order.
 func TestForeignKeyListReachesRegistration(t *testing.T) {
 	bp, err := loadBPWithEntity(t, orderLinesYAML)
@@ -43,14 +43,14 @@ func TestForeignKeyListReachesRegistration(t *testing.T) {
 	}
 	want := []string{"order_store", "order_no"}
 	decl := bp.Entities[1]
-	if rel := decl.Relations[0]; rel.ForeignKey != "" || !slices.Equal(rel.ForeignKeys, want) {
-		t.Fatalf("relation = %q / %v; want ForeignKeys %v", rel.ForeignKey, rel.ForeignKeys, want)
+	if rel := decl.Relations[0]; !slices.Equal(rel.ForeignKey, want) {
+		t.Fatalf("ForeignKey = %v, want %v", rel.ForeignKey, want)
 	}
 	src, err := renderEntityRegistration(decl)
 	if err != nil {
 		t.Fatalf("render: %v", err)
 	}
-	if !strings.Contains(src, `ForeignKeys: []string{"order_store", "order_no"}`) {
+	if !strings.Contains(src, `ForeignKey: []string{"order_store", "order_no"}`) {
 		t.Fatalf("registration lacks the foreign key:\n%s", src)
 	}
 	call, err := parser.ParseExpr(strings.TrimSpace(src[:strings.Index(src, "\n\t_ = ")]))
@@ -58,8 +58,8 @@ func TestForeignKeyListReachesRegistration(t *testing.T) {
 		t.Fatalf("parse registration: %v\n%s", err, src)
 	}
 	packed, err := packEntityDeclFromCall(call.(*ast.CallExpr))
-	if err != nil || len(packed.Relations) != 1 || !slices.Equal(packed.Relations[0].ForeignKeys, want) {
-		t.Fatalf("packed relations = %+v, %v; want ForeignKeys %v", packed.Relations, err, want)
+	if err != nil || len(packed.Relations) != 1 || !slices.Equal(packed.Relations[0].ForeignKey, want) {
+		t.Fatalf("packed relations = %+v, %v; want ForeignKey %v", packed.Relations, err, want)
 	}
 
 	out, err := encodeAppSpecYAML(bp)
@@ -70,8 +70,8 @@ func TestForeignKeyListReachesRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-parse: %v\n%s", err, out)
 	}
-	if got := again.Entities[1].Relations[0].ForeignKeys; !slices.Equal(got, want) {
-		t.Errorf("YAML round trip ForeignKeys = %v; want %v\n%s", got, want, out)
+	if got := again.Entities[1].Relations[0].ForeignKey; !slices.Equal(got, want) {
+		t.Errorf("YAML round trip ForeignKey = %v; want %v\n%s", got, want, out)
 	}
 }
 
@@ -94,8 +94,8 @@ func TestForeignKeyListOfOne(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if rel := bp.Entities[1].Relations[0]; rel.ForeignKey != "author_id" || rel.ForeignKeys != nil {
-		t.Fatalf("relation = %q / %v; want ForeignKey author_id", rel.ForeignKey, rel.ForeignKeys)
+	if rel := bp.Entities[1].Relations[0]; !slices.Equal(rel.ForeignKey, []string{"author_id"}) {
+		t.Fatalf("ForeignKey = %v, want [author_id]", rel.ForeignKey)
 	}
 }
 

@@ -981,7 +981,7 @@ transitions write, and a
 `many_to_many` with a composite end; link the last through a join entity
 that belongs to both sides. A one-element list is the plain
 `foreign_key: order_no` spelling. The rules are those of
-[`ForeignKeys`](entity-declarations.md#relations-and-composite-keys).
+[`Relation.ForeignKey`](entity-declarations.md#relations-and-composite-keys).
 
 #### RBAC for writable APIs
 

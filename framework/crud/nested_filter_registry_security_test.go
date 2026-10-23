@@ -97,7 +97,7 @@ func TestBuildExistsSubquery_UnsafeRelationIdentifiers(t *testing.T) {
 		{
 			name: "unsafe foreign key in BelongsTo",
 			nf: nestedFilter{
-				Relation: entity.Relation{Type: entity.RelManyToOne, Entity: "authors", ForeignKey: "author_id; DROP TABLE users"},
+				Relation: entity.Relation{Type: entity.RelManyToOne, Entity: "authors", ForeignKey: []string{"author_id; DROP TABLE users"}},
 				Field:    "name",
 				Op:       "eq",
 				Value:    "alice",
@@ -106,7 +106,7 @@ func TestBuildExistsSubquery_UnsafeRelationIdentifiers(t *testing.T) {
 		{
 			name: "unsafe foreign key in HasMany",
 			nf: nestedFilter{
-				Relation: entity.Relation{Type: entity.RelHasMany, Entity: "comments", ForeignKey: "post_id; DROP TABLE users"},
+				Relation: entity.Relation{Type: entity.RelHasMany, Entity: "comments", ForeignKey: []string{"post_id; DROP TABLE users"}},
 				Field:    "content",
 				Op:       "eq",
 				Value:    "test",
@@ -161,7 +161,7 @@ func TestBuildExistsSubquery_UnsafeRelationIdentifiers(t *testing.T) {
 			name: "unsafe parent pk",
 			ppk:  "id; SELECT 1",
 			nf: nestedFilter{
-				Relation: entity.Relation{Type: entity.RelHasMany, Entity: "comments", ForeignKey: "post_id"},
+				Relation: entity.Relation{Type: entity.RelHasMany, Entity: "comments", ForeignKey: []string{"post_id"}},
 				Field:    "content",
 				Op:       "eq",
 				Value:    "test",
@@ -192,12 +192,12 @@ func TestBuildExistsSubquery_UnsafeRelationIdentifiers(t *testing.T) {
 // hop's EXISTS, so the outer one carries "AND 1 = 0" and matches nothing.
 func TestBuildExistsSubquery_UnsafeHopChain(t *testing.T) {
 	toAuthor := relationHop{
-		Relation: entity.Relation{Type: entity.RelManyToOne, Entity: "authors", ForeignKey: "author_id"},
+		Relation: entity.Relation{Type: entity.RelManyToOne, Entity: "authors", ForeignKey: []string{"author_id"}},
 		Target:   &entity.Entity{Config: entity.EntityConfig{PrimaryKey: []string{"id"}}},
 		Table:    "authors",
 	}
 	toTeam := relationHop{
-		Relation: entity.Relation{Type: entity.RelManyToOne, Entity: "teams", ForeignKey: "team_id"},
+		Relation: entity.Relation{Type: entity.RelManyToOne, Entity: "teams", ForeignKey: []string{"team_id"}},
 		Target:   &entity.Entity{Config: entity.EntityConfig{PrimaryKey: []string{"id"}}},
 		Table:    "teams",
 	}
@@ -237,7 +237,7 @@ func TestBuildExistsSubquery_UnsafeHopChain(t *testing.T) {
 
 	t.Run("unsafe key on the second hop", func(t *testing.T) {
 		hop := toTeam
-		hop.Relation.ForeignKey = "team_id; DROP TABLE users"
+		hop.Relation.ForeignKey = []string{"team_id; DROP TABLE users"}
 		sql, _ := buildExistsSubquery("posts", []string{"id"}, nf(toAuthor, hop))
 		noInjection(t, sql)
 		if !strings.HasPrefix(sql, "EXISTS (SELECT 1 FROM authors") || !strings.HasSuffix(sql, "AND 1 = 0)") {

@@ -1490,9 +1490,8 @@ constraint. Changing the key of an existing table is a migration; see
 ### Relations and composite keys
 
 A foreign key has one column per column of the key it references, in key
-order. A one-column foreign key is the relation's `ForeignKey`; a longer
-one is `ForeignKeys`, which the constructors fill when they get more than
-one column, and `Relation.FKColumns()` returns the columns either way:
+order, and `Relation.ForeignKey` lists them: `[]string{"author_id"}` for a
+one-column key. The constructors take the columns as arguments:
 
 ```go
 app.Entity("orders", framework.EntityConfig{
@@ -1663,6 +1662,26 @@ refused with 404. Postgres checks the rows a delete reached through
 `RETURNING`; SQLite, which cannot return rows from a virtual table such
 as an FTS5 index, first reads the rows the delete's own `WHERE` (key,
 owner, tenant, live or trashed) reaches, inside the same transaction. Send ids as the API returns them.
+
+### What a composite key cannot do
+
+Boot refuses a declaration that breaks one of the first four rules,
+before any DDL runs:
+
+- A key column is a string, text, integer, enum, UUID or relation field,
+  with no `RawType` but an integer type.
+- A foreign key onto a composite key lists one column per key column;
+  one column is `entity.ErrCompositeKey`.
+- A `many_to_many` links two one-column keys. Link a composite-keyed end
+  through a join entity that belongs to both sides.
+- A `cascade_write` relation has a one-column foreign key, and a
+  `cascade_write` `has_one` or `has_many` needs a child keyed on one
+  column.
+- `Entity.KeyColumn()`, for code that needs one column, returns
+  `entity.ErrCompositeKey`. Read `Entity.KeyColumns()` instead.
+- A record keeps its key: the edit form shows the key columns read-only,
+  and changing the key of a table is a
+  [migration](migrations.md#primary-key-changes).
 
 ### Composite keys over HTTP and MCP
 

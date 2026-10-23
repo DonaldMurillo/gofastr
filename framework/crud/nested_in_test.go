@@ -14,7 +14,7 @@ import (
 // single related row.
 func TestNestedIn_BelongsToCoalescesToIN(t *testing.T) {
 	nf := nestedFilter{
-		Relation: entity.Relation{Type: entity.RelManyToOne, Name: "author", Entity: "users", ForeignKey: "author_id"},
+		Relation: entity.Relation{Type: entity.RelManyToOne, Name: "author", Entity: "users", ForeignKey: []string{"author_id"}},
 		Field:    "name",
 		Op:       filter.OpIn,
 		Values:   []string{"alice", "bob"},

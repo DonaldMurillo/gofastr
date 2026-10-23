@@ -326,9 +326,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   keys".
 - **Foreign keys to composite keys.** A relation names one column per
   key column of the end it references:
-  `entity.BelongsTo("order", "orders", "order_store", "order_no")` fills
-  `Relation.ForeignKeys`, and `Relation.FKColumns()` returns the columns
-  for a one-column key too. The migrator emits one `FOREIGN KEY` over
+  `entity.BelongsTo("order", "orders", "order_store", "order_no")` lists
+  both in `Relation.ForeignKey`. The migrator emits one `FOREIGN KEY` over
   the tuple and an index on it; boot refuses a column count that differs
   from the key's, a repeated or undeclared column, a column typed
   unlike its key column, and a column a transition of any declaration
@@ -373,6 +372,13 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   column is needed. `CrudHandler.PrimaryKey` is `[]string`, and a handler
   that leaves it empty reads its entity's key. A raw `migrate.Table` with
   several `PrimaryKey` columns no longer panics.
+- **BREAKING: `Relation.ForeignKey` is `[]string`.** It lists one column
+  per key column of the end it references, so a one-column relation is
+  `ForeignKey: []string{"author_id"}`; the `BelongsTo`, `HasOne` and
+  `HasMany` constructors are unchanged. `migrate.ForeignKey.Column` is
+  gone: name the local columns in `Columns`, `{Columns:
+  []string{"user_id"}, RefTable: "users"}`. The SDK schema hash of an app
+  with no composite foreign key does not change.
 - **BREAKING: a column name may not be another field's wire key.**
   `Define` panics when one field's `WireName` is another field's column
   name (`body_text` published as `content` beside a `content` column

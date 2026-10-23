@@ -517,7 +517,7 @@ func (w fkWrite) takes(ch *CrudHandler, c string) bool {
 // the write names it at all. A column the write cannot know reads nil;
 // checkForeignKeyTuples refuses such a write before anything reads it.
 func (w fkWrite) tuple(ch *CrudHandler, rel entity.Relation) ([]any, bool) {
-	fks := rel.FKColumns()
+	fks := rel.ForeignKey
 	if !slices.ContainsFunc(fks, func(c string) bool { return w.takes(ch, c) }) {
 		return nil, false
 	}
@@ -610,7 +610,7 @@ func (ch *CrudHandler) updateWrite(ctx context.Context, r *http.Request, id stri
 		if _, named := w.tuple(ch, rel); !named {
 			continue
 		}
-		for _, c := range rel.FKColumns() {
+		for _, c := range rel.ForeignKey {
 			if !w.takes(ch, c) && !slices.Contains(read, c) {
 				read = append(read, c)
 			}
@@ -651,7 +651,7 @@ func (ch *CrudHandler) checkForeignKeyTuples(w fkWrite) error {
 		fields[c] = append(fields[c], v)
 	}
 	for _, rel := range ch.Entity.Config.Relations {
-		fks := rel.FKColumns()
+		fks := rel.ForeignKey
 		if rel.Type != entity.RelManyToOne || len(fks) < 2 {
 			continue
 		}

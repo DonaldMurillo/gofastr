@@ -47,10 +47,8 @@ type Column struct {
 // primary key. RefTable is the registered name of the target (an entity name
 // or another Table's Name); the reference targets that table's primary key.
 type ForeignKey struct {
-	Column string // local column
-	// Columns names the local columns of a foreign key to a table keyed on
-	// several columns, one per key column in key order; Column is empty
-	// then.
+	// Columns names the local columns, one per key column of RefTable in
+	// key order: []string{"user_id"}, or two for a table keyed on two.
 	Columns  []string
 	RefTable string // target table/entity name (references its primary key)
 }
@@ -79,20 +77,11 @@ func (t Table) ToEntity() *entity.Entity {
 	}
 	var relations []entity.Relation
 	for _, fk := range t.ForeignKeys {
-		if len(fk.Columns) > 0 {
-			relations = append(relations, entity.Relation{
-				Type:        entity.RelManyToOne,
-				Name:        strings.Join(fk.Columns, "_"),
-				Entity:      fk.RefTable,
-				ForeignKeys: slices.Clone(fk.Columns),
-			})
-			continue
-		}
 		relations = append(relations, entity.Relation{
 			Type:       entity.RelManyToOne,
-			Name:       fk.Column,
+			Name:       strings.Join(fk.Columns, "_"),
 			Entity:     fk.RefTable,
-			ForeignKey: fk.Column,
+			ForeignKey: slices.Clone(fk.Columns),
 		})
 	}
 	timestamps, crud := false, false

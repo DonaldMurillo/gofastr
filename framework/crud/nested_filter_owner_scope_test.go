@@ -231,7 +231,7 @@ func TestResolveNestedFiltersCarriesNoCallerScope(t *testing.T) {
 	parent := gateEntity(t, "boards", entity.EntityConfig{
 		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 		Relations: []entity.Relation{
-			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: "board_id"},
+			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: []string{"board_id"}},
 		},
 	})
 	got, err := resolveNestedFilters(parent, &reg, []NestedFilter{{Relation: "notes", Field: "body", Value: "x"}})

@@ -18,7 +18,7 @@ func TestForeignKeysMoveSchemaHash(t *testing.T) {
 				{Name: "order_no", Type: schema.Int},
 				{Name: "line_store", Type: schema.String},
 			},
-			Relations: []entity.Relation{{Type: entity.RelManyToOne, Name: "order", Entity: "orders", ForeignKeys: fks}},
+			Relations: []entity.Relation{{Type: entity.RelManyToOne, Name: "order", Entity: "orders", ForeignKey: fks}},
 		}}})
 	}
 	base := hash("order_store", "order_no")

@@ -92,7 +92,7 @@ func TestEagerLoad_LoaderDBErrors(t *testing.T) {
 	}
 	// ManyToMany loader QueryContext error.
 	m2m := entity.ManyToMany("tags", "ghost_tags", "ghost_pivot", "post_id", "tag_id")
-	m2m.ForeignKey = "tag_id"
+	m2m.ForeignKey = []string{"tag_id"}
 	if _, err := EagerLoad(ctx, dbFromCh(ch), ch.Entity, []entity.Relation{m2m}, []string{"p1"}, reg); err == nil {
 		t.Error("EagerLoad M2M against missing tables should error")
 	}
@@ -106,17 +106,17 @@ func TestEagerLoad_ManyToManyInvalidIdentifiers(t *testing.T) {
 	ent := entity.Define("p", entity.EntityConfig{Name: "p", Table: "p"}.WithTimestamps(false))
 	ctx := context.Background()
 	// Invalid through table.
-	r := entity.Relation{Type: entity.RelManyToMany, Name: "t", Entity: "x", ForeignKey: "fk", Through: "bad table!", LocalKey: "lk", ForeignKeyTarget: "fkt"}
+	r := entity.Relation{Type: entity.RelManyToMany, Name: "t", Entity: "x", ForeignKey: []string{"fk"}, Through: "bad table!", LocalKey: "lk", ForeignKeyTarget: "fkt"}
 	if _, err := EagerLoad(ctx, db, ent, []entity.Relation{r}, []string{"1"}); err == nil {
 		t.Error("invalid through table should error")
 	}
 	// Invalid local key.
-	r2 := entity.Relation{Type: entity.RelManyToMany, Name: "t", Entity: "x", ForeignKey: "fk", Through: "pivot", LocalKey: "bad key!", ForeignKeyTarget: "fkt"}
+	r2 := entity.Relation{Type: entity.RelManyToMany, Name: "t", Entity: "x", ForeignKey: []string{"fk"}, Through: "pivot", LocalKey: "bad key!", ForeignKeyTarget: "fkt"}
 	if _, err := EagerLoad(ctx, db, ent, []entity.Relation{r2}, []string{"1"}); err == nil {
 		t.Error("invalid local key should error")
 	}
 	// Invalid FK target.
-	r3 := entity.Relation{Type: entity.RelManyToMany, Name: "t", Entity: "x", ForeignKey: "fk", Through: "pivot", LocalKey: "lk", ForeignKeyTarget: "bad!"}
+	r3 := entity.Relation{Type: entity.RelManyToMany, Name: "t", Entity: "x", ForeignKey: []string{"fk"}, Through: "pivot", LocalKey: "lk", ForeignKeyTarget: "bad!"}
 	if _, err := EagerLoad(ctx, db, ent, []entity.Relation{r3}, []string{"1"}); err == nil {
 		t.Error("invalid FK target should error")
 	}

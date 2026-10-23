@@ -923,6 +923,15 @@ notes:
         - symbol: gofastr/framework/crud.CrudHandler.PrimaryKey
           type: '^string$'
     guidance: "Set PrimaryKey: []string{\"code\"}, or leave it empty and the handler reads its entity's key."
+  - change: "entity.Relation.ForeignKey is []string, and migrate.ForeignKey.Column is removed"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/framework/entity.Relation.ForeignKey
+          type: '^string$'
+      uses: [gofastr/framework/migrate.ForeignKey.Column]
+    guidance: "Write ForeignKey: []string{\"author_id\"} in a Relation literal; entity.BelongsTo, HasOne and HasMany take the columns as before. Read rel.ForeignKey as a list: one column per key column of the end it references. In a raw table, write {Columns: []string{\"user_id\"}, RefTable: \"users\"}. See gofastr docs entity-declarations, Relations and composite keys."
   - change: "the saved-view delete route is POST <write base>/_views/_delete?id=<id> instead of POST <write base>/_views/_delete/{id}"
     breaking: true
     hits: edit

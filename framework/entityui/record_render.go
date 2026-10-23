@@ -114,8 +114,8 @@ func (b *RecordBuilder) checkRelated(m *meta, name string) error {
 // columns has one foreign-key column per key column, in key order.
 func relationTo(other *entity.Entity, target string) (rel entity.Relation, fks []string) {
 	for _, r := range other.Config.Relations {
-		if r.Entity == target && len(r.FKColumns()) > 0 {
-			return r, r.FKColumns()
+		if r.Entity == target && len(r.ForeignKey) > 0 {
+			return r, r.ForeignKey
 		}
 	}
 	return entity.Relation{}, nil

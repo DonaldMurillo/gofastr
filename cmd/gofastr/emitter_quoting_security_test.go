@@ -200,30 +200,30 @@ func irQuotingSites(payload string) []irSite {
 	})
 	add("relation.name", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
-			Type: framework.RelManyToOne, Name: payload, Entity: "tickets", ForeignKey: "parent_id",
+			Type: framework.RelManyToOne, Name: payload, Entity: "tickets", ForeignKey: []string{"parent_id"},
 		}}
 	})
 	add("relation.foreign_key", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
-			Type: framework.RelManyToOne, Name: "parent", Entity: "tickets", ForeignKey: payload,
+			Type: framework.RelManyToOne, Name: "parent", Entity: "tickets", ForeignKey: []string{payload},
 		}}
 	})
 	add("relation.through", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
 			Type: framework.RelManyToMany, Name: "tags", Entity: "tickets",
-			ForeignKey: "tag_id", Through: payload, LocalKey: "ticket_id",
+			ForeignKey: []string{"tag_id"}, Through: payload, LocalKey: "ticket_id",
 		}}
 	})
 	add("relation.local_key", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
 			Type: framework.RelManyToMany, Name: "tags", Entity: "tickets",
-			ForeignKey: "tag_id", Through: "t_pivot", LocalKey: payload,
+			ForeignKey: []string{"tag_id"}, Through: "t_pivot", LocalKey: payload,
 		}}
 	})
 	add("relation.foreign_key_target", func(b *AppSpec) {
 		ent(b).Relations = []framework.Relation{{
 			Type: framework.RelManyToOne, Name: "parent", Entity: "tickets",
-			ForeignKey: "parent_id", ForeignKeyTarget: payload,
+			ForeignKey: []string{"parent_id"}, ForeignKeyTarget: payload,
 		}}
 	})
 
@@ -533,7 +533,7 @@ func TestRelationNameMustBeAnIdentifier(t *testing.T) {
 				Name:   "tickets",
 				Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
 				Relations: []framework.Relation{{
-					Type: framework.RelManyToOne, Name: name, Entity: "tickets", ForeignKey: "parent_id",
+					Type: framework.RelManyToOne, Name: name, Entity: "tickets", ForeignKey: []string{"parent_id"},
 				}},
 			}},
 			Screens: []AppSpecScreen{{Name: "home", Route: "/", Type: "page"}},

@@ -417,7 +417,7 @@ func buildHopSubquery(parentTable string, parentKey []string, hops []relationHop
 	// The hop joins column by column; one whose columns do not line up
 	// with the key they reference matches nothing.
 	targetKey := hop.Target.KeyColumns()
-	fks := rel.FKColumns()
+	fks := rel.ForeignKey
 	var joinable bool
 	switch rel.Type {
 	case entity.RelManyToOne:

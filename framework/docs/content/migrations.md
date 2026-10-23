@@ -367,8 +367,10 @@ compares the declared key with the live one (or the snapshot's
 Either way the change fails, and the table keeps its old key and rows, when
 rows repeat the new key or leave a key column `NULL`. Clean those rows up
 first. A key column renamed through `Renames` keeps its place in the key, so
-a rename alone is no key change. Another entity's `belongs_to` or
-`many_to_many` onto a composite key is refused with
+a rename alone is no key change. A foreign key onto the table names one
+column per key column, so a key that grows from one column to several
+needs every relation onto it to list the new columns first: a one-column
+`belongs_to` or a `many_to_many` onto a composite key is refused with
 `entity.ErrCompositeKey` before anything runs.
 
 Boot applies a key change only to an empty table. A table with rows and a
@@ -522,16 +524,16 @@ app.Table(migrate.Table{
         {Name: "amount",  RawType: "NUMERIC(12,2)"}, // RawType escape hatch
     },
     Indices:     []migrate.Index{{Name: "ux_user_roles", Columns: []string{"user_id", "role"}, Unique: true}},
-    ForeignKeys: []migrate.ForeignKey{{Column: "user_id", RefTable: "users"}},
+    ForeignKeys: []migrate.ForeignKey{{Columns: []string{"user_id"}, RefTable: "users"}},
 })
 ```
 
 Only the columns you declare are emitted. Nothing is injected. A foreign key
 references the target table's primary key (the target may be an entity or
-another raw table): `Column` names the local column for a one-column key,
-and `Columns` names one local column per key column, in key order, for a
-composite one (`{Columns: []string{"order_store", "order_no"}, RefTable:
-"orders"}`). Mark several columns `PrimaryKey: true` for a composite key;
+another raw table): `Columns` names one local column per key column, in
+key order: `{Columns: []string{"user_id"}, RefTable: "users"}`, or
+`{Columns: []string{"order_store", "order_no"}, RefTable: "orders"}` for a
+composite one. Mark several columns `PrimaryKey: true` for a composite key;
 the key takes them in column order.
 A table with no primary key is allowed but cannot be referenced. `RawType` on a column overrides
 the portable type with an exact SQL type (`NUMERIC(10,2)`, `INET`, …) and works

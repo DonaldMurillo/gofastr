@@ -737,7 +737,7 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 	var out []string
 	seen := make(map[string]bool)
 	for _, rel := range ent.Config.Relations {
-		fks := rel.FKColumns()
+		fks := rel.ForeignKey
 		if rel.Type != entity.RelManyToOne || len(fks) == 0 {
 			continue
 		}
@@ -809,7 +809,7 @@ func foreignKeyClauses(ent *entity.Entity, all map[string]*entity.Entity) ([]str
 // compared as Postgres would declare them, on either dialect, so an app
 // that boots on SQLite boots on Postgres.
 func checkForeignKeyTypes(ent *entity.Entity, rel entity.Relation, all map[string]*entity.Entity) error {
-	fks := rel.FKColumns()
+	fks := rel.ForeignKey
 	if len(fks) < 2 {
 		return nil
 	}
@@ -878,11 +878,11 @@ func mutatingFKReferrers(ent *entity.Entity, all map[string]*entity.Entity) []st
 					seen[rel.Through] = true
 				}
 			case entity.RelManyToOne:
-				if all[rel.Entity] != ent || len(rel.FKColumns()) == 0 {
+				if all[rel.Entity] != ent || len(rel.ForeignKey) == 0 {
 					continue
 				}
 				// foreignKeyClauses emits no key on the owner column.
-				if other.Config.Scope.OwnerField != "" && strings.EqualFold(rel.ForeignKey, other.Config.Scope.OwnerField) {
+				if other.Config.Scope.OwnerField != "" && len(rel.ForeignKey) == 1 && strings.EqualFold(rel.ForeignKey[0], other.Config.Scope.OwnerField) {
 					continue
 				}
 				if rel.OnDelete == entity.OnDeleteCascade || rel.OnDelete == entity.OnDeleteSetNull {
@@ -1017,7 +1017,7 @@ func mergeEntityConfig(base entity.EntityConfig, versions []*entity.Entity) enti
 	var rels []entity.Relation
 	for _, v := range versions {
 		for _, rel := range v.Config.Relations {
-			key := strings.Join(rel.FKColumns(), ",")
+			key := strings.Join(rel.ForeignKey, ",")
 			if key == "" {
 				key = rel.Name // a relation with no FK column (many_to_many), dedupe by logical name
 			}
@@ -1331,7 +1331,7 @@ func relationColumnType(ent *entity.Entity, f schema.Field, all map[string]*enti
 	}
 	seen[ref] = true
 	for _, rel := range ent.Config.Relations {
-		if rel.Type != entity.RelManyToOne || !strings.EqualFold(rel.ForeignKey, f.Name) {
+		if rel.Type != entity.RelManyToOne || len(rel.ForeignKey) != 1 || !strings.EqualFold(rel.ForeignKey[0], f.Name) {
 			continue
 		}
 		target, ok := all[rel.Entity]
