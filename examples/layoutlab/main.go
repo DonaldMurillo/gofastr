@@ -973,7 +973,7 @@ func (s *MessageScreen) SetParams(m map[string]string) { s.id = m["id"] }
 // ScreenTitle makes the title dynamic (post-Load): the route.title
 // binding and the snapshot island carry "Message <id>", which is what
 // the e2e asserts updates on navigation.
-func (s *MessageScreen) ScreenTitle() string { return "Message " + s.id }
+func (s *MessageScreen) ScreenTitle(ctx context.Context) string { return "Message " + s.id }
 
 func (s *MessageScreen) Render() render.HTML { return marker("SCREEN-MESSAGE-" + s.id) }
 

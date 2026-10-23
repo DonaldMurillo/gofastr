@@ -234,11 +234,11 @@ type HeadlessDashboardScreen struct {
 	SortDir ui.SortDir
 }
 
-func (s *HeadlessDashboardScreen) ScreenTitle() string {
+func (s *HeadlessDashboardScreen) ScreenTitle(ctx context.Context) string {
 	return "Billing & usage · " + s.Route.Name + " theme"
 }
 
-func (s *HeadlessDashboardScreen) ScreenDescription() string {
+func (s *HeadlessDashboardScreen) ScreenDescription(ctx context.Context) string {
 	return "A basic dashboard on the rebuilt components: a record summary with live signals, a chart with a text alternative, an invoice table that sorts without script, and the settings form unchanged."
 }
 

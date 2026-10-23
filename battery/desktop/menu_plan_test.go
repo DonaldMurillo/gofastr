@@ -37,7 +37,7 @@ func TestKeyEquivalentSplitting(t *testing.T) {
 }
 
 func TestPlanMenuBarSynthesizesAppAndEditMenus(t *testing.T) {
-	plans, actions := PlanMenuBar("Notes", nil, false)
+	plans, actions := PlanMenuBar(context.Background(), "Notes", nil, false)
 	if len(actions) != 0 {
 		t.Fatalf("nil menu must produce no actions, got %v", actions)
 	}
@@ -95,7 +95,7 @@ func TestPlanMenuBarUserMenusAndTags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plans, actions := PlanMenuBar("Notes", validated, false)
+	plans, actions := PlanMenuBar(context.Background(), "Notes", validated, false)
 
 	if len(plans) != 4 {
 		t.Fatalf("plans = %d menus, want 4 (app, File, Go, Edit)", len(plans))
@@ -139,7 +139,7 @@ func TestPlanMenuBarNestedSubmenus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plans, actions := PlanMenuBar("Notes", validated, false)
+	plans, actions := PlanMenuBar(context.Background(), "Notes", validated, false)
 	file := plans[1]
 	if len(file.Items) != 1 || file.Items[0].Title != "Export" || file.Items[0].Action {
 		t.Fatalf("export row = %+v", file.Items)
@@ -161,7 +161,7 @@ func TestPlanMenuBarChildlessTopLevelActionStaysReachable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plans, actions := PlanMenuBar("Notes", validated, false)
+	plans, actions := PlanMenuBar(context.Background(), "Notes", validated, false)
 	solo := plans[1]
 	if solo.Title != "Standalone" || len(solo.Items) != 1 {
 		t.Fatalf("solo menu = %+v", solo)
@@ -179,7 +179,7 @@ func TestPlanMenuBarRoleTitleDefaults(t *testing.T) {
 	menu := &Menu{Items: []MenuItem{
 		{Title: "File", Children: []MenuItem{{Role: RoleQuit}, {Role: RoleAbout}}},
 	}}
-	plans, _ := PlanMenuBar("Notes", menu, false)
+	plans, _ := PlanMenuBar(context.Background(), "Notes", menu, false)
 	rows := plans[1].Items
 	if rows[0].Title != "Quit Notes" || rows[0].Role != RoleQuit {
 		t.Fatalf("quit default title = %+v", rows[0])
@@ -191,7 +191,7 @@ func TestPlanMenuBarRoleTitleDefaults(t *testing.T) {
 
 func TestPlanMenuBarSettingsRowOnlyWhenConfigured(t *testing.T) {
 	// Without Settings: About, separator, Quit.
-	plans, _ := PlanMenuBar("Notes", nil, false)
+	plans, _ := PlanMenuBar(context.Background(), "Notes", nil, false)
 	app := plans[0]
 	for _, r := range app.Items {
 		if r.Role == RoleSettings {
@@ -199,7 +199,7 @@ func TestPlanMenuBarSettingsRowOnlyWhenConfigured(t *testing.T) {
 		}
 	}
 	// With Settings: About, Settings… (cmd+,), separator, Quit.
-	plans, _ = PlanMenuBar("Notes", nil, true)
+	plans, _ = PlanMenuBar(context.Background(), "Notes", nil, true)
 	app = plans[0]
 	want := []MenuItemPlan{
 		{Title: "About Notes", Role: RoleAbout},
@@ -229,8 +229,8 @@ func TestPlanTrayMenuSharesActionIDTable(t *testing.T) {
 	// the menu bar and the tray (the shell dispatches both through one
 	// action-id table).
 	b := New(Config{ID: "tray.example.app", Menu: menu, Tray: &Tray{Menu: tray}})
-	plans, actionIDs := PlanMenuBar("Notes", b.runMenu, true)
-	trayRows := PlanTrayMenu(b.tray, "Notes", &actionIDs)
+	plans, actionIDs := PlanMenuBar(context.Background(), "Notes", b.runMenu, true)
+	trayRows := PlanTrayMenu(context.Background(), b.tray, "Notes", &actionIDs)
 
 	if len(plans[1].Items) != 1 || !plans[1].Items[0].Action || plans[1].Items[0].Tag != 0 {
 		t.Fatalf("File menu row lost its tag: %+v", plans[1].Items)
@@ -275,7 +275,7 @@ func TestPlanRowsRoleDefaultsForSettingsAndShow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows := planRows(validated.Items[0].Children, "Notes", new([]string))
+	rows := planRows(context.Background(), validated.Items[0].Children, "Notes", new([]string))
 	if rows[0].Title != "Show Notes" || rows[0].Role != RoleShow || rows[0].Action {
 		t.Fatalf("show row = %+v", rows[0])
 	}

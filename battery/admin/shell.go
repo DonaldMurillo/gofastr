@@ -155,7 +155,7 @@ func (s *adminScreen) Load(ctx context.Context) error {
 	return nil
 }
 
-func (s *adminScreen) ScreenTitle() string { return s.loaded }
+func (s *adminScreen) ScreenTitle(ctx context.Context) string { return s.loaded }
 
 // ctx is the context the page reads with: elevated for the admin's own
 // pages, and only once the caller passed the gate. The screen policy has

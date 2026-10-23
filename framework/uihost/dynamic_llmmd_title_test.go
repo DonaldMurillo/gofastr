@@ -25,8 +25,8 @@ func (c *loadedTitleComp) Load(ctx context.Context) error {
 	c.title = "Thing " + c.id
 	return nil
 }
-func (c *loadedTitleComp) ScreenTitle() string { return c.title }
-func (c *loadedTitleComp) ScreenDescription() string {
+func (c *loadedTitleComp) ScreenTitle(ctx context.Context) string { return c.title }
+func (c *loadedTitleComp) ScreenDescription(ctx context.Context) string {
 	if c.id == "" {
 		return ""
 	}

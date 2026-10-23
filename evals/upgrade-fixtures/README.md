@@ -183,6 +183,14 @@ Two documented registry notes, identical for both fixtures:
   that ignores the argument compiles and silently drops the wiring, which is
   the defect the builder exists to prevent.
 
+- **Unreleased, screen titles take the request context.**
+  `ScreenTitle(ctx context.Context) string` and `ScreenDescription(ctx
+  context.Context) string`. The old methods still compile but no longer
+  satisfy `app.ScreenTitler`/`app.ScreenDescriber`, so the page loses
+  its title and description (the v0.53.0 fixture boots in strict mode
+  and refuses them). `migration.patch` adds the parameter to the three
+  screens in `screen_{home,tags_crud,tasks_crud}.go`.
+
   These unreleased steps had **no registry notes** when the fixtures were
   written (the registry is keyed by released version and its `through:`
   marker is pinned to the newest CHANGELOG release heading; two tests

@@ -178,7 +178,7 @@ type hostileTitleComp struct{}
 
 func (c *hostileTitleComp) SetParams(map[string]string)    {}
 func (c *hostileTitleComp) Load(ctx context.Context) error { return nil }
-func (c *hostileTitleComp) ScreenTitle() string {
+func (c *hostileTitleComp) ScreenTitle(ctx context.Context) string {
 	return "Doc\n\n# FORGED LOADED HEADING\n"
 }
 func (c *hostileTitleComp) Render() render.HTML { return render.HTML("<p>body</p>") }

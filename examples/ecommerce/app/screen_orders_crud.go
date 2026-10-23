@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=73dfb59868ba5872
+//gofastr:generated generator=app kind=scaffold version=dev sum=32cf43bcaf9cb822
 
 package main
 
@@ -16,9 +16,9 @@ import (
 
 type OrdersScreen struct{ component.ContextOnly }
 
-func (s *OrdersScreen) ScreenTitle() string        { return "Orders" }
-func (s *OrdersScreen) ScreenDescription() string  { return "View and manage orders" }
-func (s *OrdersScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *OrdersScreen) ScreenTitle(ctx context.Context) string       { return "Orders" }
+func (s *OrdersScreen) ScreenDescription(ctx context.Context) string { return "View and manage orders" }
+func (s *OrdersScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 func (s *OrdersScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
@@ -32,10 +32,12 @@ type OrderDetailScreen struct {
 	id string
 }
 
-func (s *OrderDetailScreen) SetParams(p map[string]string) { s.id = p["id"] }
-func (s *OrderDetailScreen) ScreenTitle() string           { return "Order Details" }
-func (s *OrderDetailScreen) ScreenDescription() string     { return "View order details" }
-func (s *OrderDetailScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
+func (s *OrderDetailScreen) SetParams(p map[string]string)          { s.id = p["id"] }
+func (s *OrderDetailScreen) ScreenTitle(ctx context.Context) string { return "Order Details" }
+func (s *OrderDetailScreen) ScreenDescription(ctx context.Context) string {
+	return "View order details"
+}
+func (s *OrderDetailScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *OrderDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},

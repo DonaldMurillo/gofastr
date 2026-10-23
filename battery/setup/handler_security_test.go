@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // Property: the wizard must not execute a step while the completion
@@ -39,7 +41,7 @@ func TestSetupProbeErrorFailsClosed(t *testing.T) {
 			Name: "Create Admin",
 			Fields: []Field{{
 				Name:     "ADMIN_EMAIL",
-				Label:    "Admin email",
+				Label:    i18n.Define("setup_test.admin_email", "Admin email"),
 				EnvVar:   "GOFASTR_ADMIN_EMAIL",
 				Validate: func(string) error { return nil },
 			}},
@@ -138,7 +140,7 @@ func TestRunStepsRefusesWhenComplete(t *testing.T) {
 		Complete: func(context.Context) (bool, error) { return true, nil },
 		Steps: []Step{{
 			Name:   "Create Admin",
-			Fields: []Field{{Name: "ADMIN_EMAIL", Label: "Admin email"}},
+			Fields: []Field{{Name: "ADMIN_EMAIL", Label: i18n.Define("setup_test.admin_email", "Admin email")}},
 			Run: func(context.Context, map[string]string) error {
 				atomic.AddInt32(&runs, 1)
 				return nil

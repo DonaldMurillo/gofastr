@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=346d34c18b4a0ab0
+//gofastr:generated generator=app kind=scaffold version=dev sum=74ca78df71c07082
 
 package main
 
@@ -16,8 +16,10 @@ import (
 
 type CategoriesScreen struct{ component.ContextOnly }
 
-func (s *CategoriesScreen) ScreenTitle() string        { return "Categories" }
-func (s *CategoriesScreen) ScreenDescription() string  { return "Browse product categories" }
+func (s *CategoriesScreen) ScreenTitle(ctx context.Context) string { return "Categories" }
+func (s *CategoriesScreen) ScreenDescription(ctx context.Context) string {
+	return "Browse product categories"
+}
 func (s *CategoriesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *CategoriesScreen) RenderCtx(ctx context.Context) render.HTML {

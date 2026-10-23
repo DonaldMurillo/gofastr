@@ -84,7 +84,7 @@ func tilePillPair(key string, off, on string, state bool) render.HTML {
 // LobbyScreen is the public page: a name, a room, one form.
 type LobbyScreen struct{ component.ContextOnly }
 
-func (s *LobbyScreen) ScreenTitle() string { return "Join a call" }
+func (s *LobbyScreen) ScreenTitle(ctx context.Context) string { return "Join a call" }
 
 func (s *LobbyScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
@@ -122,7 +122,7 @@ type RoomScreen struct {
 	room string
 }
 
-func (s *RoomScreen) ScreenTitle() string { return "Call room" }
+func (s *RoomScreen) ScreenTitle(ctx context.Context) string { return "Call room" }
 
 func (s *RoomScreen) SetParams(m map[string]string) { s.room = m["room"] }
 

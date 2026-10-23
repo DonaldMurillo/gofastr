@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -235,5 +236,5 @@ func TestRenderScreenTitleFromTitler(t *testing.T) {
 
 type titleOnlyComp struct{}
 
-func (titleOnlyComp) Render() render.HTML { return render.HTML("<p>gone</p>") }
-func (titleOnlyComp) ScreenTitle() string { return "Session expired" }
+func (titleOnlyComp) Render() render.HTML                    { return render.HTML("<p>gone</p>") }
+func (titleOnlyComp) ScreenTitle(ctx context.Context) string { return "Session expired" }

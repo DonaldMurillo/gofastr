@@ -138,10 +138,16 @@ func TestShellLangIsAttributeEscaped(t *testing.T) {
 	}
 }
 
-func TestPWAOfflineHTMLUsesConfiguredLang(t *testing.T) {
+// The built-in offline body speaks the phrases, so <html lang> names the
+// language they render in, not a site language the text is not in. An
+// app's own offline screen keeps the configured language.
+func TestPWAOfflineLangMatchesBody(t *testing.T) {
 	ds := New(app.NewApp("x"), WithLang("pt"), WithPWA(PWAConfig{Name: "PWA"}))
-	html := ds.PWAOfflineHTML()
-	if !strings.Contains(html, `<html dir="ltr" lang="pt">`) {
-		t.Errorf("PWA offline shell must use the configured lang; got:\n%s", html)
+	if html := ds.PWAOfflineHTML(); !strings.Contains(html, `<html dir="ltr" lang="en">`) {
+		t.Errorf("built-in English offline body must claim lang=en; got:\n%s", html)
+	}
+	ds = New(app.NewApp("x"), WithLang("pt"), WithPWA(PWAConfig{Name: "PWA", OfflineScreen: offlineMarkerComp{}}))
+	if html := ds.PWAOfflineHTML(); !strings.Contains(html, `<html dir="ltr" lang="pt">`) {
+		t.Errorf("an app offline screen keeps the configured lang; got:\n%s", html)
 	}
 }

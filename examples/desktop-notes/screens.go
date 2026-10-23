@@ -37,8 +37,8 @@ type notesListScreen struct {
 	component.ContextOnly
 }
 
-func (s *notesListScreen) ScreenTitle() string       { return "Notes" }
-func (s *notesListScreen) ScreenDescription() string { return "Local-first notes" }
+func (s *notesListScreen) ScreenTitle(ctx context.Context) string       { return "Notes" }
+func (s *notesListScreen) ScreenDescription(ctx context.Context) string { return "Local-first notes" }
 
 func (s *notesListScreen) RenderCtx(ctx context.Context) render.HTML {
 	// Base keeps record links and the New button on /notes even when
@@ -79,8 +79,8 @@ func (s *noteDetailScreen) Load(ctx context.Context) error {
 	return nil
 }
 
-func (s *noteDetailScreen) ScreenTitle() string       { return s.title }
-func (s *noteDetailScreen) ScreenDescription() string { return "A note" }
+func (s *noteDetailScreen) ScreenTitle(ctx context.Context) string       { return s.title }
+func (s *noteDetailScreen) ScreenDescription(ctx context.Context) string { return "A note" }
 
 func (s *noteDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 	// Delete is the one record action the notes app turns on; the
@@ -94,8 +94,8 @@ type noteCreateScreen struct {
 	component.ContextOnly
 }
 
-func (s *noteCreateScreen) ScreenTitle() string       { return "New note" }
-func (s *noteCreateScreen) ScreenDescription() string { return "Create a note" }
+func (s *noteCreateScreen) ScreenTitle(ctx context.Context) string       { return "New note" }
+func (s *noteCreateScreen) ScreenDescription(ctx context.Context) string { return "Create a note" }
 
 func (s *noteCreateScreen) RenderCtx(ctx context.Context) render.HTML {
 	return notesUI.Create("notes").Base("/notes").RenderCtx(ctx)
@@ -118,8 +118,10 @@ type quickNoteScreen struct {
 	component.ContextOnly
 }
 
-func (s *quickNoteScreen) ScreenTitle() string       { return "Quick note" }
-func (s *quickNoteScreen) ScreenDescription() string { return "The floating quick-note widget" }
+func (s *quickNoteScreen) ScreenTitle(ctx context.Context) string { return "Quick note" }
+func (s *quickNoteScreen) ScreenDescription(ctx context.Context) string {
+	return "The floating quick-note widget"
+}
 
 func (s *quickNoteScreen) RenderCtx(ctx context.Context) render.HTML {
 	header := ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},

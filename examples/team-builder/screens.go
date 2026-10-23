@@ -21,7 +21,7 @@ const formID = "team-form"
 // TeamScreen is the whole app: the add form and the team.
 type TeamScreen struct{ component.ContextOnly }
 
-func (s *TeamScreen) ScreenTitle() string { return "Your team" }
+func (s *TeamScreen) ScreenTitle(ctx context.Context) string { return "Your team" }
 
 func (s *TeamScreen) RenderCtx(ctx context.Context) render.HTML {
 	team := Members.List(localentity.ListConfig{OrderBy: "level", Desc: true})

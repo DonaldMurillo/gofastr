@@ -369,29 +369,36 @@ func (ds *UIHost) PWAOfflineHTML() string {
 		return ""
 	}
 	cfg := ds.resolvedPWA()
+	// Precached once, so it speaks the catalog's fallback language: there
+	// is no reader to ask for a language at install time.
+	ctx := context.Background()
+	// The built-in body speaks the phrases, so <html lang> names the
+	// language they render in; an app's own offline screen keeps the
+	// app's language.
+	lang := i18n.DocLang(ctx)
 	var body render.HTML
 	if cfg.OfflineScreen != nil {
+		lang = ""
 		// Same containment as every other screen: this renders at
 		// service-worker install/precache time, and a panicking offline
 		// screen must not take the harness down with it.
 		var err error
-		body, err = component.SafeRenderCtx(context.Background(), cfg.OfflineScreen)
+		body, err = component.SafeRenderCtx(ctx, cfg.OfflineScreen)
 		if err != nil {
 			slog.Warn("uihost: PWA offline screen render panicked; serving default offline page", "err", err)
-			body = defaultPWAOfflineBody(context.Background())
+			body = defaultPWAOfflineBody(ctx)
+			lang = i18n.DocLang(ctx)
 		}
 	} else {
-		body = defaultPWAOfflineBody(context.Background())
+		body = defaultPWAOfflineBody(ctx)
 	}
-	// Precached once, so it speaks the catalog's English: there is no
-	// reader to ask for a language at install time.
-	shell := ds.documentShell(context.Background(), "", pageOfflineDocTitle.Text(context.Background(), map[string]any{"app": cfg.Name}), `<main role="main">`+string(body)+`</main>`)
+	shell := ds.documentShellLang(ctx, "", lang, pageOfflineDocTitle.Text(ctx, map[string]any{"app": cfg.Name}), `<main role="main">`+string(body)+`</main>`)
 	// bundle=false (same as RenderStaticPage): component CSS must be
 	// direct per-component links. The bundle URL depends on the page's
 	// component set: precaching it would answer every OTHER page's
 	// bundle request with the offline page's set, and static exports
 	// don't emit the bundle endpoint at all.
-	return ds.injectChromeMode(shell, pwaOfflinePath, "", "", false)
+	return ds.injectChromeMode(ctx, shell, pwaOfflinePath, "", "", false)
 }
 
 // defaultPWAOfflineBody is the built-in offline screen. Minimal semantic

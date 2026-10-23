@@ -788,14 +788,15 @@ func (b *Battery) rememberedFrame(id string) *Frame {
 }
 
 // OpenSettings opens (or focuses) the window Config.Settings
-// describes. ErrUnsupported when Config.Settings is nil.
-func (b *Battery) OpenSettings() (Window, error) {
+// describes. ErrUnsupported when Config.Settings is nil. A spec with no
+// Title gets the desktop.settings_title phrase in ctx's locale.
+func (b *Battery) OpenSettings(ctx context.Context) (Window, error) {
 	if b.cfg.Settings == nil {
 		return nil, &Error{Code: CodeUnsupported, Message: "no Settings window is configured (desktop.Config.Settings)"}
 	}
 	spec := *b.cfg.Settings
 	if spec.Title == "" {
-		spec.Title = "Settings"
+		spec.Title = pageSettingsTitle.Text(ctx, nil)
 	}
 	return b.OpenWindow(spec)
 }
@@ -1019,8 +1020,8 @@ func (b *Battery) Run(app *framework.App) error {
 		Tray:     b.tray,
 		Settings: b.cfg.Settings,
 		OnMenu:   b.dispatchMenu,
-		OnSettings: func() {
-			if _, err := b.OpenSettings(); err != nil {
+		OnSettings: func(ctx context.Context) {
+			if _, err := b.OpenSettings(ctx); err != nil {
 				b.logger.Error("desktop: opening the settings window failed", "error", err)
 			}
 		},

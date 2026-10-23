@@ -15,6 +15,7 @@ package main
 // =============================================================================
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -77,8 +78,8 @@ func railColumn(rail render.HTML) render.HTML {
 
 type GetStartedScreen struct{}
 
-func (s *GetStartedScreen) ScreenTitle() string { return "Get started" }
-func (s *GetStartedScreen) ScreenDescription() string {
+func (s *GetStartedScreen) ScreenTitle(ctx context.Context) string { return "Get started" }
+func (s *GetStartedScreen) ScreenDescription(ctx context.Context) string {
 	return "Cold machine to a running GoFastr app in four minutes."
 }
 func (s *GetStartedScreen) ScreenType() app.ScreenType { return app.ScreenPage }
@@ -273,8 +274,8 @@ func gsNext() render.HTML {
 
 type ConceptsIndexScreen struct{}
 
-func (s *ConceptsIndexScreen) ScreenTitle() string { return "Docs" }
-func (s *ConceptsIndexScreen) ScreenDescription() string {
+func (s *ConceptsIndexScreen) ScreenTitle(ctx context.Context) string { return "Docs" }
+func (s *ConceptsIndexScreen) ScreenDescription(ctx context.Context) string {
 	return "Every feature, grouped by what you're trying to do, not alphabetically."
 }
 func (s *ConceptsIndexScreen) ScreenType() app.ScreenType { return app.ScreenPage }
@@ -385,8 +386,8 @@ func intentSection(it docIntent) render.HTML {
 
 type ExamplesScreen struct{}
 
-func (s *ExamplesScreen) ScreenTitle() string { return "Examples" }
-func (s *ExamplesScreen) ScreenDescription() string {
+func (s *ExamplesScreen) ScreenTitle(ctx context.Context) string { return "Examples" }
+func (s *ExamplesScreen) ScreenDescription(ctx context.Context) string {
 	return fmt.Sprintf("%d reference apps. Each runs in one command.", len(exRowItems()))
 }
 func (s *ExamplesScreen) ScreenType() app.ScreenType { return app.ScreenPage }
@@ -688,8 +689,8 @@ func exRow(num, path, title, tag, loc, desc string, points []string, cmd string,
 
 type KilnScreen struct{}
 
-func (s *KilnScreen) ScreenTitle() string { return "Kiln" }
-func (s *KilnScreen) ScreenDescription() string {
+func (s *KilnScreen) ScreenTitle(ctx context.Context) string { return "Kiln" }
+func (s *KilnScreen) ScreenDescription(ctx context.Context) string {
 	return "Build a GoFastr app live by chatting with an agent."
 }
 func (s *KilnScreen) ScreenType() app.ScreenType { return app.ScreenPage }
@@ -891,8 +892,8 @@ func kCli() render.HTML {
 
 type PhilosophyScreen struct{}
 
-func (s *PhilosophyScreen) ScreenTitle() string { return "Philosophy" }
-func (s *PhilosophyScreen) ScreenDescription() string {
+func (s *PhilosophyScreen) ScreenTitle(ctx context.Context) string { return "Philosophy" }
+func (s *PhilosophyScreen) ScreenDescription(ctx context.Context) string {
 	return "The convictions behind GoFastr: what we say no to, and why."
 }
 func (s *PhilosophyScreen) ScreenType() app.ScreenType { return app.ScreenPage }
@@ -983,9 +984,9 @@ func phBody() render.HTML {
 
 type NotFoundScreen struct{}
 
-func (s *NotFoundScreen) ScreenTitle() string        { return "404: Not found" }
-func (s *NotFoundScreen) ScreenDescription() string  { return "" }
-func (s *NotFoundScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *NotFoundScreen) ScreenTitle(ctx context.Context) string       { return "404: Not found" }
+func (s *NotFoundScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *NotFoundScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 // Render is the component.Component fallback (path unknown). The uihost
 // calls RenderNotFound with the real path via the NotFoundRenderer

@@ -128,6 +128,7 @@ place, with no React or Vue on the client:
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
 
@@ -144,7 +145,7 @@ import (
 // A screen is plain Go: Render returns server-rendered HTML.
 type HomeScreen struct{}
 
-func (s *HomeScreen) ScreenTitle() string { return "Notes" }
+func (s *HomeScreen) ScreenTitle(ctx context.Context) string { return "Notes" }
 func (s *HomeScreen) Render() render.HTML {
 	return html.Heading(html.HeadingConfig{Level: 1}, render.Text("My notes"))
 }

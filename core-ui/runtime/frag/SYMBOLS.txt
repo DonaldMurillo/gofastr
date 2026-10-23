@@ -145,6 +145,7 @@ kernel	10	n
 kernel	10	shown
 kernel	2	M
 kernel	2	_dc
+kernel	2	_json
 kernel	2	_locks
 kernel	2	_readInlineJSON
 kernel	2	_says
@@ -161,7 +162,6 @@ kernel	2	routes
 kernel	2	say
 kernel	2	state
 kernel	4	c
-kernel	4	el
 kernel	4	node
 kernel	4	params
 kernel	4	r
@@ -358,7 +358,6 @@ signals	10	sel
 signals	10	target
 signals	10	v
 signals	12	dur
-signals	12	s
 signals	12	t
 signals	2	isReservedSignalKey
 signals	4	G

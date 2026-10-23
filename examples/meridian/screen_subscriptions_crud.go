@@ -14,9 +14,9 @@ import (
 
 type SubscriptionsScreen struct{ component.ContextOnly }
 
-func (s *SubscriptionsScreen) ScreenTitle() string        { return "Subscriptions" }
-func (s *SubscriptionsScreen) ScreenDescription() string  { return "" }
-func (s *SubscriptionsScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *SubscriptionsScreen) ScreenTitle(ctx context.Context) string       { return "Subscriptions" }
+func (s *SubscriptionsScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *SubscriptionsScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 func (s *SubscriptionsScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
@@ -29,10 +29,10 @@ type SubscriptionDetailScreen struct {
 	id string
 }
 
-func (s *SubscriptionDetailScreen) SetParams(p map[string]string) { s.id = p["id"] }
-func (s *SubscriptionDetailScreen) ScreenTitle() string           { return "Subscription" }
-func (s *SubscriptionDetailScreen) ScreenDescription() string     { return "" }
-func (s *SubscriptionDetailScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
+func (s *SubscriptionDetailScreen) SetParams(p map[string]string)                { s.id = p["id"] }
+func (s *SubscriptionDetailScreen) ScreenTitle(ctx context.Context) string       { return "Subscription" }
+func (s *SubscriptionDetailScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *SubscriptionDetailScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 func (s *SubscriptionDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
@@ -45,9 +45,11 @@ func (s *SubscriptionDetailScreen) RenderCtx(ctx context.Context) render.HTML {
 
 type SubscriptionsCreateScreen struct{ component.ContextOnly }
 
-func (s *SubscriptionsCreateScreen) ScreenTitle() string        { return "New Subscription" }
-func (s *SubscriptionsCreateScreen) ScreenDescription() string  { return "" }
-func (s *SubscriptionsCreateScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *SubscriptionsCreateScreen) ScreenTitle(ctx context.Context) string {
+	return "New Subscription"
+}
+func (s *SubscriptionsCreateScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *SubscriptionsCreateScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 
 func (s *SubscriptionsCreateScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},

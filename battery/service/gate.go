@@ -317,13 +317,6 @@ func (g *gate) loginHandler() http.Handler {
 			SameSite: http.SameSiteStrictMode,
 		})
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write([]byte(signedInPage))
+		_, _ = w.Write([]byte(signedInPage(r.Context())))
 	})
 }
-
-// signedInPage is the login success body: a same-origin refresh to the
-// app's root, plus a link for a browser that ignores refresh.
-const signedInPage = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=/"><title>Signed in</title></head>
-<body><p>Signed in. <a href="/">Continue</a></p></body></html>
-`

@@ -39,8 +39,8 @@ type taskCreateScreen struct {
 	component.ContextOnly
 }
 
-func (s *taskCreateScreen) ScreenTitle() string       { return "New task" }
-func (s *taskCreateScreen) ScreenDescription() string { return "Create a task" }
+func (s *taskCreateScreen) ScreenTitle(ctx context.Context) string       { return "New task" }
+func (s *taskCreateScreen) ScreenDescription(ctx context.Context) string { return "Create a task" }
 
 func (s *taskCreateScreen) RenderCtx(ctx context.Context) render.HTML {
 	return focusUI.Create("tasks").Base("/tasks").RenderCtx(ctx)
@@ -76,8 +76,8 @@ func (s *taskRecordScreen) Load(ctx context.Context) error {
 	return nil
 }
 
-func (s *taskRecordScreen) ScreenTitle() string       { return s.title }
-func (s *taskRecordScreen) ScreenDescription() string { return "A task" }
+func (s *taskRecordScreen) ScreenTitle(ctx context.Context) string       { return s.title }
+func (s *taskRecordScreen) ScreenDescription(ctx context.Context) string { return "A task" }
 func (s *taskRecordScreen) RenderCtx(ctx context.Context) render.HTML {
 	return focusUI.Record("tasks", s.id).Base("/tasks").Delete().RenderCtx(ctx)
 }
@@ -149,8 +149,10 @@ type dashboardScreen struct {
 	eng *Engine
 }
 
-func (s *dashboardScreen) ScreenTitle() string       { return "Focus" }
-func (s *dashboardScreen) ScreenDescription() string { return "Pomodoro focus timer" }
+func (s *dashboardScreen) ScreenTitle(ctx context.Context) string { return "Focus" }
+func (s *dashboardScreen) ScreenDescription(ctx context.Context) string {
+	return "Pomodoro focus timer"
+}
 
 func (s *dashboardScreen) RenderCtx(ctx context.Context) render.HTML {
 	stats := s.stats(ctx)
@@ -329,8 +331,8 @@ type historyScreen struct {
 	app *framework.App
 }
 
-func (s *historyScreen) ScreenTitle() string       { return "History" }
-func (s *historyScreen) ScreenDescription() string { return "Every focus session" }
+func (s *historyScreen) ScreenTitle(ctx context.Context) string       { return "History" }
+func (s *historyScreen) ScreenDescription(ctx context.Context) string { return "Every focus session" }
 
 func (s *historyScreen) RenderCtx(ctx context.Context) render.HTML {
 	rows, err := s.app.MustCrudHandler("sessions").ListAll(ctx, crud.ListOptions{
@@ -413,8 +415,10 @@ type widgetScreen struct {
 	eng *Engine
 }
 
-func (s *widgetScreen) ScreenTitle() string       { return "Timer" }
-func (s *widgetScreen) ScreenDescription() string { return "The floating focus timer" }
+func (s *widgetScreen) ScreenTitle(ctx context.Context) string { return "Timer" }
+func (s *widgetScreen) ScreenDescription(ctx context.Context) string {
+	return "The floating focus timer"
+}
 
 func (s *widgetScreen) RenderCtx(ctx context.Context) render.HTML {
 	state := s.eng.State(ctx)

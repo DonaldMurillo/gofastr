@@ -353,8 +353,8 @@ type bundleAndDescriberComp struct{}
 func (bundleAndDescriberComp) Render() render.HTML {
 	return html.Div(html.DivConfig{}, render.Text("hi"))
 }
-func (bundleAndDescriberComp) ScreenDescription() string { return "From describer" }
-func (bundleAndDescriberComp) ScreenSEO() SEO            { return SEO{Description: "From bundle"} }
+func (bundleAndDescriberComp) ScreenDescription(ctx context.Context) string { return "From describer" }
+func (bundleAndDescriberComp) ScreenSEO() SEO                               { return SEO{Description: "From bundle"} }
 
 func TestSEOBundleDescriptionOverrides(t *testing.T) {
 	a := app.NewApp("x")
@@ -414,10 +414,10 @@ func TestPerPageOGBeatsGlobal(t *testing.T) {
 // Empty bundle fields fall through to per-concern interfaces.
 type partialBundleComp struct{}
 
-func (partialBundleComp) Render() render.HTML       { return html.Div(html.DivConfig{}, render.Text("hi")) }
-func (partialBundleComp) ScreenDescription() string { return "fallback desc" }
-func (partialBundleComp) ScreenCanonical() string   { return "https://example.com/c-fallback" }
-func (partialBundleComp) ScreenSEO() SEO            { return SEO{Robots: "noindex"} } // only robots in bundle
+func (partialBundleComp) Render() render.HTML                          { return html.Div(html.DivConfig{}, render.Text("hi")) }
+func (partialBundleComp) ScreenDescription(ctx context.Context) string { return "fallback desc" }
+func (partialBundleComp) ScreenCanonical() string                      { return "https://example.com/c-fallback" }
+func (partialBundleComp) ScreenSEO() SEO                               { return SEO{Robots: "noindex"} } // only robots in bundle
 
 func TestSEOBundleFallsThroughEmptyFields(t *testing.T) {
 	a := app.NewApp("x")

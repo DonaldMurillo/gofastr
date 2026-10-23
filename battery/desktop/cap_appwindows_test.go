@@ -1,6 +1,7 @@
 package desktop
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -114,7 +115,7 @@ func TestOpenWindowDedupesByPathAndFocuses(t *testing.T) {
 
 func TestOpenSettings(t *testing.T) {
 	b, shell := newTestBattery(t) // no Config.Settings
-	if _, err := b.OpenSettings(); err == nil {
+	if _, err := b.OpenSettings(context.Background()); err == nil {
 		t.Fatal("OpenSettings without Config.Settings accepted")
 	} else if de, ok := err.(*Error); !ok || de.Code != CodeUnsupported {
 		t.Fatalf("OpenSettings err = %v, want unsupported", err)
@@ -129,7 +130,7 @@ func TestOpenSettings(t *testing.T) {
 	})
 	b2.grants = newMemGrantStore()
 	markReadyForWindows(b2, &fakeWindow{id: "main"})
-	w, err := b2.OpenSettings()
+	w, err := b2.OpenSettings(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +286,7 @@ func TestRunWiresSettingsAndTray(t *testing.T) {
 
 	// A settings activation (what the native shells fire for the app
 	// menu's Settings… item and RoleSettings rows) opens the window.
-	cfg.OnSettings()
+	cfg.OnSettings(context.Background())
 	waitFor(t, "settings window to open", func() bool {
 		return len(shell.openWindowCallsList()) == 1
 	})

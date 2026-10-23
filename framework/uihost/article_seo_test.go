@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -131,8 +132,10 @@ type asArticlePlainComp struct{}
 func (*asArticlePlainComp) Render() render.HTML {
 	return render.Raw("<h1>My Post</h1><p>The prose.</p>")
 }
-func (*asArticlePlainComp) ScreenTitle() string       { return "My Post" }
-func (*asArticlePlainComp) ScreenDescription() string { return "A normal screen turned article." }
+func (*asArticlePlainComp) ScreenTitle(ctx context.Context) string { return "My Post" }
+func (*asArticlePlainComp) ScreenDescription(ctx context.Context) string {
+	return "A normal screen turned article."
+}
 
 func TestAsArticleDerivesFromScreenTitle(t *testing.T) {
 	a := app.NewApp("plain")

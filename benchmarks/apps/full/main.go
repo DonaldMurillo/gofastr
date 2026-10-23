@@ -188,9 +188,9 @@ func main() {
 // machinery, not to look like anything.
 type HomeScreen struct{}
 
-func (s *HomeScreen) ScreenTitle() string        { return "Home" }
-func (s *HomeScreen) ScreenDescription() string  { return "full bench app" }
-func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *HomeScreen) ScreenTitle(ctx context.Context) string       { return "Home" }
+func (s *HomeScreen) ScreenDescription(ctx context.Context) string { return "full bench app" }
+func (s *HomeScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 func (s *HomeScreen) Render() render.HTML {
 	return render.Tag("main", nil,
 		render.Tag("h1", nil, render.Text("full")),

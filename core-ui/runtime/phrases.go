@@ -3,8 +3,9 @@ package runtime
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
 // The runtime's own words: the fallback notice, failed navigations and
-// requests, the panel stack and the embed frame. frag/*.js and src/*.js
-// say each one through say('runtime.<code>', 'English', params).
+// requests, a server action's default success toast, the panel stack
+// and the embed frame. frag/*.js and src/*.js say each one through
+// say('runtime.<code>', 'English', params).
 var (
 	sayNotifications     = i18n.Define("runtime.notifications", "Notifications")
 	sayDismissNotice     = i18n.Define("runtime.dismiss_notification", "Dismiss notification")
@@ -18,6 +19,7 @@ var (
 	sayRequestFailed     = i18n.Define("runtime.request_failed", "Request failed")
 	sayRequestFailedCode = i18n.Define("runtime.request_failed_status", "Request failed ({{status}})")
 	sayNetworkError      = i18n.Define("runtime.network_error", "Network error: please try again")
+	sayDone              = i18n.Define("runtime.done", "Done")
 	sayEmbedFailed       = i18n.Define("runtime.embed_failed", "This panel could not load. Error: {{code}}.")
 	sayEmbedNoLinks      = i18n.Define("runtime.embed_no_links", "This panel cannot open links.")
 	sayEmbedNoForms      = i18n.Define("runtime.embed_no_forms", "This panel cannot submit this form.")
@@ -26,6 +28,6 @@ var (
 func init() {
 	RegisterStrings(sayNotifications, sayDismissNotice, sayLoadFailedStatus, sayLoadFailed,
 		sayNeedsServer, sayPanelFailed, sayPanelLimit, sayPanelLimitHint, saySubmitFailed,
-		sayRequestFailed, sayRequestFailedCode, sayNetworkError, sayEmbedFailed,
+		sayRequestFailed, sayRequestFailedCode, sayNetworkError, sayDone, sayEmbedFailed,
 		sayEmbedNoLinks, sayEmbedNoForms)
 }

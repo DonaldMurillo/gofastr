@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -98,7 +99,7 @@ type titleComp struct {
 	title string
 }
 
-func (c *titleComp) ScreenTitle() string { return c.title }
+func (c *titleComp) ScreenTitle(ctx context.Context) string { return c.title }
 
 func (c *titleComp) Render() render.HTML {
 	return render.HTML("<main>title surface</main>")

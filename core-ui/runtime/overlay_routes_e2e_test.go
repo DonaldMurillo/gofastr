@@ -44,7 +44,7 @@ func (d *overlayDetailScreen) SetParams(m map[string]string) { d.id = m["id"] }
 func (d *overlayDetailScreen) Render() render.HTML {
 	return render.HTML(`<p id="detail-body">DETAIL-` + render.Text(d.id) + `</p>`)
 }
-func (d *overlayDetailScreen) ScreenTitle() string { return "Product 7" }
+func (d *overlayDetailScreen) ScreenTitle(ctx context.Context) string { return "Product 7" }
 
 // overlayRig is a real uihost app whose shell binds route.title (a
 // kept-layer binding) and whose /products/:id route intercepts from

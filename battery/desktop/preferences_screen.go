@@ -85,11 +85,13 @@ type preferencesScreen struct {
 
 // ScreenTitle names the page. The preferences form is the app's one
 // settings surface, so the title is fixed.
-func (s *preferencesScreen) ScreenTitle() string { return "Settings" }
+func (s *preferencesScreen) ScreenTitle(ctx context.Context) string {
+	return pageSettingsTitle.Text(ctx, nil)
+}
 
 // ScreenDescription is the page's one-line description.
-func (s *preferencesScreen) ScreenDescription() string {
-	return "Preferences for this installation"
+func (s *preferencesScreen) ScreenDescription(ctx context.Context) string {
+	return pageSettingsDescription.Text(ctx, nil)
 }
 
 // RenderCtx paints the form from the declared list and the
@@ -108,7 +110,7 @@ func (s *preferencesScreen) RenderCtx(ctx context.Context) render.HTML {
 		case PreferenceBool:
 			field = boolField(d, p.Bool(d.Key))
 		case PreferenceInt:
-			field = intField(d, p.Int(d.Key))
+			field = intField(ctx, d, p.Int(d.Key))
 		case PreferenceChoice:
 			field = choiceField(d, p.String(d.Key))
 		default: // PreferenceString; the kinds are a closed set validated at New
@@ -148,7 +150,7 @@ func boolField(d Preference, v bool) render.HTML {
 
 // intField builds an int preference's number input from v, the
 // stored-or-default value the typed reader (Preferences.Int) answers.
-func intField(d Preference, v int) render.HTML {
+func intField(ctx context.Context, d Preference, v int) render.HTML {
 	id := "f-" + d.Key
 	var min, max *float64
 	if d.Min != nil {
@@ -162,7 +164,7 @@ func intField(d Preference, v int) render.HTML {
 	return ui.NumberField(ui.NumberFieldConfig{
 		Name: d.Key, Label: d.Label, ID: id,
 		Value: strconv.Itoa(v), Min: min, Max: max,
-		Help: intHelp(d),
+		Help: intHelp(ctx, d),
 	})
 }
 
@@ -191,16 +193,17 @@ func stringField(d Preference, text string) render.HTML {
 }
 
 // intHelp joins the declaration's help with the range hint, so the
-// bounds are visible where they are enforced.
-func intHelp(d Preference) string {
+// bounds are visible where they are enforced. The hint is in ctx's
+// locale, its numbers in the locale's digits.
+func intHelp(ctx context.Context, d Preference) string {
 	hint := ""
 	switch {
 	case d.Min != nil && d.Max != nil:
-		hint = "Between " + strconv.Itoa(*d.Min) + " and " + strconv.Itoa(*d.Max) + "."
+		hint = hintPrefBetween.Text(ctx, map[string]any{"min": *d.Min, "max": *d.Max})
 	case d.Min != nil:
-		hint = "At least " + strconv.Itoa(*d.Min) + "."
+		hint = hintPrefAtLeast.Text(ctx, map[string]any{"min": *d.Min})
 	case d.Max != nil:
-		hint = "At most " + strconv.Itoa(*d.Max) + "."
+		hint = hintPrefAtMost.Text(ctx, map[string]any{"max": *d.Max})
 	}
 	if d.Help == "" {
 		return hint

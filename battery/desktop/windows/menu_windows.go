@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -11,7 +12,7 @@ import (
 )
 
 func (s *winShell) installMenus(hwnd uintptr, title string, menu *desktop.Menu, hasSettings bool) error {
-	plans, ids := desktop.PlanMenuBar(title, menu, hasSettings)
+	plans, ids := desktop.PlanMenuBar(s.text(), title, menu, hasSettings)
 	s.actionIDs = ids
 	root, err := win32.CreateMenu()
 	if err != nil {
@@ -59,7 +60,7 @@ func (s *winShell) appendRows(menu uintptr, rows []desktop.MenuItemPlan, prefix 
 			if err := s.appendRows(sub, row.Submenu, path); err != nil {
 				return err
 			}
-			if err := win32.AppendMenu(menu, win32.MF_POPUP, sub, acceleratorLabel(row)); err != nil {
+			if err := win32.AppendMenu(menu, win32.MF_POPUP, sub, acceleratorLabel(s.text(), row)); err != nil {
 				return err
 			}
 			continue
@@ -70,14 +71,23 @@ func (s *winShell) appendRows(menu uintptr, rows []desktop.MenuItemPlan, prefix 
 			action.id = s.actionIDs[row.Tag]
 		}
 		s.menuActions[id] = action
-		if err := win32.AppendMenu(menu, win32.MF_STRING, uintptr(id), acceleratorLabel(row)); err != nil {
+		if err := win32.AppendMenu(menu, win32.MF_STRING, uintptr(id), acceleratorLabel(s.text(), row)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func acceleratorLabel(row desktop.MenuItemPlan) string {
+// text is the context the shell's own words render under: the one Run
+// resolved, or a bare one before Run (the phrases' English).
+func (s *winShell) text() context.Context {
+	if s.textCtx == nil {
+		return context.Background()
+	}
+	return s.textCtx
+}
+
+func acceleratorLabel(ctx context.Context, row desktop.MenuItemPlan) string {
 	label := row.Title
 	if label == "" {
 		label = row.Role
@@ -85,15 +95,16 @@ func acceleratorLabel(row desktop.MenuItemPlan) string {
 	if row.Key == "" {
 		return label
 	}
+	ctrl, alt, shift := desktop.AcceleratorNames(ctx)
 	mods := make([]string, 0, 3)
 	if row.Mask&(1<<20) != 0 || row.Mask&(1<<18) != 0 {
-		mods = append(mods, "Ctrl")
+		mods = append(mods, ctrl)
 	}
 	if row.Mask&(1<<19) != 0 {
-		mods = append(mods, "Alt")
+		mods = append(mods, alt)
 	}
 	if row.Mask&(1<<17) != 0 {
-		mods = append(mods, "Shift")
+		mods = append(mods, shift)
 	}
 	mods = append(mods, strings.ToUpper(row.Key))
 	return label + "\t" + strings.Join(mods, "+")
@@ -118,7 +129,7 @@ func (s *winShell) invokeMenuAction(a menuAction) {
 		s.Quit()
 	case desktop.RoleSettings:
 		if s.onSettings != nil {
-			go s.onSettings()
+			go s.onSettings(s.text())
 		}
 	case desktop.RoleShow:
 		s.mu.RLock()
@@ -128,7 +139,8 @@ func (s *winShell) invokeMenuAction(a menuAction) {
 			_ = w.Focus()
 		}
 	case desktop.RoleAbout:
-		win32.MessageBox(s.hwnd, "A desktop application built with gofastr.", "About", 0)
+		title, body := desktop.AboutText(s.text())
+		win32.MessageBox(s.hwnd, body, title, 0)
 	default:
 		if a.id != "" && s.onMenu != nil {
 			go s.onMenu(a.id)
@@ -233,18 +245,29 @@ func (s *winShell) ScriptPrompts(ds ...desktop.Decision) {
 	s.promptMu.Unlock()
 }
 
+// ClickPrompt finds the prompt by the words it was shown with, which
+// follow the request's language, not the shell's. A button named in
+// English maps onto the dialog's own label, and onto the message-box
+// fallback's Yes/No/Cancel. The words are read on every attempt: a
+// caller may start waiting before Prompt shows the dialog.
 func (s *winShell) ClickPrompt(button string) error {
-	names := []string{button}
-	switch strings.ToLower(button) {
-	case "allow":
-		names = append(names, "Yes")
-	case "allow once":
-		names = append(names, "No")
-	case "deny":
-		names = append(names, "Cancel")
-	}
 	for i := 0; i < 100; i++ {
-		dlg := win32.FindWindow("#32770", "Permission required")
+		s.promptMu.Lock()
+		words := s.promptWords
+		s.promptMu.Unlock()
+		if words.Title == "" {
+			words = desktop.PromptText(s.text(), desktop.PermissionRequest{})
+		}
+		names := []string{button}
+		switch strings.ToLower(button) {
+		case "allow":
+			names = append(names, words.Allow, "Yes")
+		case "allow once":
+			names = append(names, words.AllowOnce, "No")
+		case "deny":
+			names = append(names, words.Deny, "Cancel")
+		}
+		dlg := win32.FindWindow("#32770", words.Title)
 		if dlg != 0 {
 			for _, name := range names {
 				buttonName, _ := win32.UTF16Ptr(name)

@@ -20,7 +20,7 @@ user", onboarding a fresh deploy, setup token.
 // ("does an admin user exist?"). Use both.
 adminStep, adminDone := setup.AdminStep(authManager, db, "auth_users")
 runner := setup.New(setup.Config{
-    Title: "My App Setup",
+    Title: setupTitle, // an i18n.Phrase; zero is setup.title, "Setup"
     Steps: []setup.Step{
         adminStep,             // initial admin
         setup.HealthStep(app), // readiness checks

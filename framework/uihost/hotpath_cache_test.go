@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -60,7 +61,7 @@ func TestHasActionsShortCircuitsEmptiness(t *testing.T) {
 	if ds.HasActions() {
 		t.Fatal("HasActions should be false when no actions are compiled")
 	}
-	page := ds.injectChrome(`<html><head></head><body>x</body></html>`, "/", "", "")
+	page := ds.injectChrome(context.Background(), `<html><head></head><body>x</body></html>`, "/", "", "")
 	if strings.Contains(page, "/__gofastr/actions.js") {
 		t.Error("actions.js tag emitted despite HasActions()==false — the emptiness check must short-circuit, not build the bundle")
 	}

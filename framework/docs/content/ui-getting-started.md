@@ -132,6 +132,8 @@ A screen is just a Go type implementing `component.Component`. Add `screens/abou
 package screens
 
 import (
+    "context"
+
     "github.com/DonaldMurillo/gofastr/core-ui/app"
     "github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -145,9 +147,9 @@ func (a *AboutScreen) Render() render.HTML {
     )
 }
 
-func (a *AboutScreen) ScreenTitle() string        { return "About" }
-func (a *AboutScreen) ScreenDescription() string  { return "" }
-func (a *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (a *AboutScreen) ScreenTitle(ctx context.Context) string       { return "About" }
+func (a *AboutScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (a *AboutScreen) ScreenType() app.ScreenType                   { return app.ScreenPage }
 ```
 
 > **Prefer the typed `core-ui/html` config structs over raw `render.Tag`.**

@@ -139,12 +139,9 @@
   // executable), so they pass strict CSP. Reading happens before
   // first paint of any non-trivial component because runtime.js is
   // injected at the end of <body>, after the JSON blocks in <head>.
-  const _readInlineJSON = (id) => {
-    const el = document.getElementById(id);
-    if (!el) return null;
-    try { return JSON.parse(el.textContent || 'null'); }
-    catch (_) { return null; }
-  };
+  // _json parses server-written JSON text, null for none or garbage.
+  const _json = (t) => { try { return JSON.parse(t || 'null'); } catch (_) { return null; } };
+  const _readInlineJSON = (id) => _json(document.getElementById(id)?.textContent);
   if (!window.__gofastr_routes) {
     const r = _readInlineJSON('gofastr-routes');
     if (r) window.__gofastr_routes = r;
@@ -179,10 +176,11 @@
   // locale) else the English beside the key, with {{name}} filled from
   // p. A Go test holds each say() call to its registered phrase. No
   // Object.prototype member is a string, so a key like "toString" falls
-  // through to the English.
-  let _says;
+  // through to the English. A soft nav replaces the table
+  // (applyDocShell, frag/nav.js).
+  let _says = _readInlineJSON('gofastr-strings') || {};
   const say = (k, en, p) => {
-    const s = (_says ??= _readInlineJSON('gofastr-strings') || {})[k];
+    const s = _says[k];
     return (typeof s == 'string' ? s : en).replace(/\{\{(\w+)\}\}/g, (m, n) => (p && own(p, n) ? p[n] : m));
   };
   const closestAttr = (el, attr) => {

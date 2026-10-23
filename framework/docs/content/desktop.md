@@ -228,7 +228,9 @@ A method with a `Permission` ("resource:verb") is gated. The
 `deny` persist across restarts. A miss hops to the UI thread and shows
 the OS alert with Allow, Allow once, and Deny; only the first and the
 last persist (so a page cannot re-prompt in a loop, and deny is
-sticky). With no database on the app, grants fall back to memory with
+sticky). The alert speaks the calling page's language: its words are
+the `desktop.permission_*` phrases, rendered under the bridge
+request's locale. With no database on the app, grants fall back to memory with
 a startup Warn.
 
 A grant is keyed on the **capability and the permission**, not the
@@ -321,7 +323,14 @@ shape.
 
 `Config.Menu` declares the native menu bar in Go. The shell wraps it
 with the standard app menu (About, Quit) and an Edit menu; do not
-declare your own Quit beyond the `Role: "quit"` item. Each item is
+declare your own Quit beyond the `Role: "quit"` item. The shell's own
+words (those two menus, a role item's default title, the Windows
+About box and accelerator names) are `desktop.menu_*`,
+`desktop.about_*` and `desktop.accelerator_*` phrases. They speak the
+first of the OS's preferred languages your catalog has (System
+Settings on macOS, the display languages on Windows), else the one
+`LANG` names. Your own item titles are yours: render them from your
+phrases before you build the `Menu`. Each item is
 exactly one of:
 
 - `Navigate`: a same-origin absolute path, dispatched as

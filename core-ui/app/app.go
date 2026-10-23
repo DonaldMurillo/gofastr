@@ -78,6 +78,7 @@ type App struct {
 // WithNotFoundBody sets the body the 404-outlet outcome renders and
 // returns the app for chaining (see App.NotFound).
 func (a *App) WithNotFoundBody(c component.Component) *App {
+	RefuseRetiredTitle("not-found body", c)
 	a.NotFound = c
 	return a
 }
@@ -275,10 +276,10 @@ func (a *App) Register(path string, comp component.Component, layout *Layout, op
 	// Each is detected independently, a component can implement
 	// ScreenTitler alone, or ScreenTitler + ScreenDescriber, etc.
 	if titler, ok := comp.(ScreenTitler); ok {
-		screen.Title = titler.ScreenTitle()
+		screen.Title = titler.ScreenTitle(context.Background())
 	}
 	if describer, ok := comp.(ScreenDescriber); ok {
-		screen.Description = describer.ScreenDescription()
+		screen.Description = describer.ScreenDescription(context.Background())
 	}
 	if typer, ok := comp.(ScreenTyper); ok {
 		screen.Type = typer.ScreenType()
@@ -565,6 +566,7 @@ func (a *App) RenderPageResult(ctx context.Context, path string) (RenderResult, 
 // exactly like a registered screen (per-request instance, DI, Load,
 // article wrap, the default layout chain).
 func notFoundScreenFor(ctx context.Context, comp component.Component) *Screen {
+	RefuseRetiredTitle("not-found body", comp)
 	return NewScreen("/__gofastr_not_found__", comp).WithTitle(pageNotFoundDocTitle.Text(ctx))
 }
 
@@ -603,6 +605,7 @@ func (a *App) RenderNotFoundFromResult(ctx context.Context, path, fromPath strin
 // the default layout chain) so the error body renders inside the root
 // layout like every page..
 func errorScreenFor(ctx context.Context, comp component.Component) *Screen {
+	RefuseRetiredTitle("error body", comp)
 	return NewScreen("/__gofastr_error__", comp).WithTitle(pageErrorDocTitle.Text(ctx))
 }
 
@@ -709,10 +712,12 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 
 	// Per-request component instance: shallow-copy from the registered
 	// template so SetParams / Inject / Load mutations land on storage
-	// only this request can see. RenderAlt overrides with its factory.
+	// only this request can see. RenderAlt overrides with its factory,
+	// whose component no registration ever saw.
 	comp := screen.newInstance()
 	if decision.Kind == DecisionRenderAlt && decision.AltFactory != nil {
 		comp = decision.AltFactory()
+		RefuseRetiredTitle("screen "+screen.Path+" RenderAlt", comp)
 	}
 
 	// Inject route params into ParamSetter components
@@ -782,7 +787,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 	titleText := a.Name
 	effectiveTitle := screen.Title
 	if titler, ok := comp.(ScreenTitler); ok {
-		if t := safeScreenTitle(titler); t != "" {
+		if t := safeScreenTitle(ctx, titler); t != "" {
 			effectiveTitle = t
 		}
 	}
@@ -844,7 +849,7 @@ func (a *App) renderScreenPage(ctx context.Context, path string, screen *Screen,
 				comp = nfComp
 				effectiveTitle = nfScreen.Title
 				if titler, ok := nfComp.(ScreenTitler); ok {
-					if t := safeScreenTitle(titler); t != "" {
+					if t := safeScreenTitle(ctx, titler); t != "" {
 						effectiveTitle = t
 					}
 				}
@@ -1155,7 +1160,7 @@ func (a *App) partialFromShared(ctx context.Context, path, fromPath string, res 
 		res.Component = nfComp
 		res.Title = nfScreen.Title
 		if titler, ok := nfComp.(ScreenTitler); ok {
-			if t := safeScreenTitle(titler); t != "" {
+			if t := safeScreenTitle(ctx, titler); t != "" {
 				res.Title = t
 			}
 		}
@@ -1387,6 +1392,7 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 	comp := screen.newInstance()
 	if decision.Kind == DecisionRenderAlt && decision.AltFactory != nil {
 		comp = decision.AltFactory()
+		RefuseRetiredTitle("screen "+screen.Path+" RenderAlt", comp)
 	}
 
 	if len(params) > 0 {
@@ -1451,7 +1457,7 @@ func (a *App) renderScreenPartial(ctx context.Context, path string, screen *Scre
 	// (or generic) title, so the partial path must re-read it from the
 	// loaded instance, same as the full-page path's <title> build.
 	if t, ok := comp.(ScreenTitler); ok {
-		out.Title = safeScreenTitle(t)
+		out.Title = safeScreenTitle(ctx, t)
 	}
 	if decision.Kind == DecisionRenderAlt {
 		out.Kind = DecisionRenderAlt
@@ -1519,7 +1525,7 @@ func safeScreenLoad(loader ScreenLoader, ctx context.Context) (err error) {
 // containment: a hook that works at registration (the 1st read) but panics
 // on the per-request copy (the 2nd) degrades to the registered title
 // instead of killing the request.
-func safeScreenTitle(titler ScreenTitler) (title string) {
+func safeScreenTitle(ctx context.Context, titler ScreenTitler) (title string) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Default().Error("app: ScreenTitle re-read panicked; using registered title",
@@ -1527,7 +1533,7 @@ func safeScreenTitle(titler ScreenTitler) (title string) {
 			title = ""
 		}
 	}()
-	return titler.ScreenTitle()
+	return titler.ScreenTitle(ctx)
 }
 
 // safeScreenLang is safeScreenTitle for the ScreenLang re-read: a panicking

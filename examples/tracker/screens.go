@@ -457,7 +457,7 @@ func (s *ProjectIndexScreen) Load(ctx context.Context) error {
 	return nil
 }
 
-func (s *ProjectIndexScreen) ScreenTitle() string {
+func (s *ProjectIndexScreen) ScreenTitle(ctx context.Context) string {
 	if p, ok := projectBySlug(s.project); ok {
 		return p.Name
 	}
@@ -583,7 +583,7 @@ func issueResolver(ctx context.Context) (*Issue, error) {
 func (s *IssueScreen) SetParams(m map[string]string) { s.n = m["n"] }
 
 // ScreenTitle makes the route's title dynamic once the issue is known.
-func (s *IssueScreen) ScreenTitle() string {
+func (s *IssueScreen) ScreenTitle(ctx context.Context) string {
 	if s.found {
 		return s.iss.Key() + " · " + s.iss.Title
 	}
