@@ -384,6 +384,61 @@ func TestCompositeForeignKeyTenantColumn(t *testing.T) {
 	})
 }
 
+// A reference through the owner column holds the caller's owner on the
+// upsert's conflict update and the bulk update, which keep it; a
+// cross-owner bulk update reaches other owners' rows, so it does not.
+func TestCompositeForeignKeyOwnerColumn(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		useRelOwner(t)
+		app := relApp(t, db,
+			entity.Define("oorder", entity.EntityConfig{
+				Table:      "oorders",
+				PrimaryKey: []string{"owner_id", "no"},
+				Fields: []schema.Field{
+					{Name: "owner_id", Type: schema.String, Required: true},
+					{Name: "no", Type: schema.String, Required: true},
+				},
+			}.WithTimestamps(false)),
+			entity.Define("obin", entity.EntityConfig{
+				Table: "obins",
+				Fields: []schema.Field{
+					{Name: "owner_id", Type: schema.String},
+					{Name: "order_no", Type: schema.String},
+				},
+				Relations: []entity.Relation{entity.BelongsTo("order", "oorder", "owner_id", "order_no")},
+				Scope:     &entity.ScopeConfig{OwnerField: "owner_id"},
+			}.WithTimestamps(false)),
+		)
+		if _, err := db.Exec(`INSERT INTO oorders (owner_id, no) VALUES ('alice', '1'), ('bob', '2')`); err != nil {
+			t.Fatal(err)
+		}
+		bins, err := app.Registry.Get("obin")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ch, err := app.CrudHandlerForEntity(bins)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bob := handler.SetUser(context.Background(), relUser("bob"))
+		if _, err := ch.UpsertOne(bob, map[string]any{"id": "b1", "order_no": "2"}); err != nil {
+			t.Errorf("bob upserting a bin on his order (bob, 2): %v", err)
+		}
+		if _, err := ch.UpsertOne(bob, map[string]any{"id": "b1", "order_no": "1"}); err == nil {
+			t.Error("bob upserting a bin on (bob, 1), which does not exist, succeeded; want it refused")
+		}
+		if _, err := NewTypedQuery[struct{}](ch).UpdateAll(bob, map[string]any{"order_no": "2"}); err != nil {
+			t.Errorf("bob moving his bins to his order (bob, 2): %v", err)
+		}
+		if _, err := NewTypedQuery[struct{}](ch).UpdateAll(bob, map[string]any{"order_no": "1"}); err == nil {
+			t.Error("bob moving his bins to (bob, 1), which does not exist, succeeded; want it refused")
+		}
+		if _, err := NewTypedQuery[struct{}](ch).UpdateAll(owner.AllowCrossOwner(bob), map[string]any{"order_no": "2"}); err == nil {
+			t.Error("a cross-owner bulk update moving part of the reference succeeded; want it refused")
+		}
+	})
+}
+
 // A write checks the reference the row will hold. A PATCH that moves the
 // store of a line keyed on it keeps the stored store, so the check reads
 // that; the upsert and bulk update, which cannot read one stored tuple,

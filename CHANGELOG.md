@@ -343,8 +343,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   and a write that cannot know such a column (the upsert's conflict
   update, the bulk `UpdateAll`, a create through an `AutoIncrement`
   column) refuses moving part of the reference with a 400
-  `validation.kept_foreign_key`; the upsert and a tenant-scoped
-  `UpdateAll` read the tenant column as the caller's tenant. A tuple with a null column names no
+  `validation.kept_foreign_key`; the upsert and a scoped `UpdateAll`
+  read the tenant and owner columns as the caller's. A tuple with a null column names no
   row. The columns are spelled as their
   fields are declared. An app spec
   names the columns as a list, `foreign_key: [order_store, order_no]`.

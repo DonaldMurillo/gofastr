@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
+	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
@@ -537,13 +538,20 @@ func unknownHeld(string) (any, bool) { return nil, false }
 
 // scopedHeld is fkWrite.holds for the writes that cannot read one stored
 // row: the upsert's conflict update and the bulk update. Each row they
-// touch is scoped to the caller's tenant and keeps it, so the tenant
-// column holds that tenant; every other column they keep is unknown. A
-// context with no tenant (a cross-tenant bulk update) leaves it unknown.
+// touch is scoped to the caller's tenant and owner and keeps both, so
+// those columns hold the caller's; every other column they keep is
+// unknown. A context with no tenant (a cross-tenant bulk update), or no
+// owner or a cross-owner grant (which lifts the bulk update's owner
+// filter), leaves that column unknown.
 func (ch *CrudHandler) scopedHeld(ctx context.Context) func(string) (any, bool) {
 	return func(c string) (any, bool) {
 		if ch.Entity.Config.Scope.MultiTenant && c == ch.Entity.Config.TenantColumn() {
 			if id := tenant.GetTenantID(ctx); id != "" {
+				return id, true
+			}
+		}
+		if of := ch.Entity.Config.Scope.OwnerField; of != "" && c == of && !owner.IsCrossOwner(ctx) {
+			if id, ok := owner.Get(ctx); ok {
 				return id, true
 			}
 		}
