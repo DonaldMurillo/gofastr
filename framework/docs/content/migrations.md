@@ -371,8 +371,9 @@ a rename alone is no key change. Another entity's `belongs_to` or
 Boot applies a key change only to an empty table. A table with rows and a
 different key fails the boot with an error naming `gofastr migrate
 generate`: rows keyed one way do not satisfy another, and a write on the
-wrong key could touch several rows. A table with rows and no key at all is
-left as it is with a warning. Boot never drops the old key column; a
+wrong key could touch several rows. A table with rows and no key at all
+fails the same way, since nothing holds the declared key unique. Boot
+never drops the old key column; a
 generated migration does, when the entity no longer declares it.
 
 A snapshot written before `primary_keys` was recorded generates no key

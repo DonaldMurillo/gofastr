@@ -35,7 +35,7 @@ func TestV094PlaceholderSpellingNote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("upgrade.Load: %v", err)
 	}
-	n := scantest.Note(t, reg, "v0.94.0", 14)
+	n := scantest.Note(t, reg, "v0.94.0", 13)
 	const mainGo = "package main\n\nfunc main() {}\n"
 	for _, body := range []string{
 		`{"ui": {"selection": {"count": "{n} seleccionados"}}}`,
