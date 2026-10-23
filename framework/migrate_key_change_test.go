@@ -194,6 +194,23 @@ func TestBootRefusesPopulatedKeyChange(t *testing.T) {
 	})
 }
 
+// A table with rows and no primary key boots with its rows: nothing in it
+// contradicts the declared key, so boot warns and leaves it.
+func TestBootKeepsKeylessPopulatedTable(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		execAll(t, db,
+			"CREATE TABLE enrollments (student_id TEXT NOT NULL, course_id TEXT NOT NULL, grade TEXT)",
+			"INSERT INTO enrollments (student_id, course_id) VALUES ('s1', 'c1')",
+		)
+		if err := AutoMigrate(db, enrollmentRegistry(t, true)); err != nil {
+			t.Fatalf("AutoMigrate over a keyless table with rows: %v", err)
+		}
+		if n := enrollmentRows(t, db, "enrollments"); n != 1 {
+			t.Fatalf("rows after boot = %d, want 1", n)
+		}
+	})
+}
+
 // A generated migration carries the key change, from a snapshot that
 // records keys. A snapshot written before keys were recorded generates no
 // key change; boot is the check for those.
