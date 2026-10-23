@@ -6268,7 +6268,33 @@ func appSpecRelationKeys(decl framework.EntityDeclaration, rel framework.Relatio
 			return fmt.Errorf("app spec: entity %q relation %q names foreign-key column %q, which %q's transitions write: a move would change the reference with no check, so keep state fields out of multi-column foreign keys", decl.Name, rel.Name, c, holder.Name)
 		}
 	}
+	// The migrator refuses an integer column against a text key column
+	// and the reverse; refuse it here, before the app is generated.
+	for i, c := range fks {
+		f, _ := appSpecColumn(holder, c)
+		k, _ := appSpecColumn(ref, key[i])
+		if f == nil || k == nil {
+			continue
+		}
+		if ft, kt := appSpecTypeFamily(f.Type), appSpecTypeFamily(k.Type); ft != "" && kt != "" && ft != kt {
+			return fmt.Errorf("app spec: entity %q relation %q names foreign-key column %q, typed %s, for key column %q of %q, typed %s: type each column like the key column it references", decl.Name, rel.Name, c, f.Type, key[i], ref.Name, k.Type)
+		}
+	}
 	return nil
+}
+
+// appSpecTypeFamily groups a declared field type by the column the
+// migrator gives it, as its foreign-key type check does: integer or
+// text. Any other type, a relation (which holds its target's key) among
+// them, is "", and the check skips it.
+func appSpecTypeFamily(t string) string {
+	switch {
+	case appSpecIntType(t):
+		return "integer"
+	case strings.EqualFold(strings.TrimSpace(t), "string"), strings.EqualFold(strings.TrimSpace(t), "text"):
+		return "text"
+	}
+	return ""
 }
 
 // appSpecEntityRelations maps each belongs_to FK column → target entity.

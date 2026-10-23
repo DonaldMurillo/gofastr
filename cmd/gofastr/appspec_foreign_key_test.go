@@ -109,6 +109,7 @@ func TestForeignKeyRefusedAtLoad(t *testing.T) {
 		"three":      {"foreign_key: [order_store, order_no]", "foreign_key: [order_store, order_no, sku]", "one foreign-key column per key column"},
 		"repeated":   {"foreign_key: [order_store, order_no]", "foreign_key: [order_no, ORDER_NO]", "twice"},
 		"undeclared": {"foreign_key: [order_store, order_no]", "foreign_key: [order_store, order_ref]", `"order_ref", which is not a declared field`},
+		"mistyped":   {"name: order_no\n        type: int", "name: order_no\n        type: string", "type each column like the key column"},
 		"many to many": {"type: belongs_to\n        name: order\n        entity: orders\n        foreign_key: [order_store, order_no]",
 			"type: many_to_many\n        name: order\n        entity: orders\n        through: line_orders\n        local_key: line_id\n        foreign_key_target: order_id", "join entity"},
 	} {
