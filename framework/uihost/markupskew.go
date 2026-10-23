@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"html"
 	"net/http"
-	"net/url"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -50,7 +50,12 @@ func writeStaleMarkupReload(w http.ResponseWriter, r *http.Request, path, swapLa
 	w.WriteHeader(http.StatusConflict)
 	// The refresh is no link the page rewriter reads, so the locale
 	// prefix the router stripped goes back on here.
-	target := i18n.PathPrefix(r.Context()) + (&url.URL{Path: path, RawQuery: r.URL.RawQuery}).RequestURI()
+	// path is in routing form, so a key segment holding "/" goes back
+	// out as %2F.
+	target := i18n.PathPrefix(r.Context()) + app.EscapeRoutePath(path)
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
 	updated := html.EscapeString(pageAppUpdated.Text(r.Context(), nil))
 	reload := html.EscapeString(pageReloadPage.Text(r.Context(), nil))
 	if !handler.IsSafeRelativePath(target) {
