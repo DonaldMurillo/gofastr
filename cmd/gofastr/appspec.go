@@ -3639,6 +3639,7 @@ func renderAppSpec(bp AppSpec, entityOrderOffset, screenOrderOffset int, fonts b
 		// catalog embeds. The generator never writes a <tag>.json, so
 		// a regenerate keeps every translation.
 		files = append(files, generatedFile{name: "i18n.go", content: appSpecI18nGo})
+		files = append(files, generatedFile{name: "i18n_test.go", content: appSpecI18nTestGo})
 		files = append(files, generatedFile{name: "locales/README.md", content: strings.Replace(appSpecLocalesReadme, "{{pick}}", appSpecLocalesPick(bp), 1)})
 	}
 	if len(bp.Entities) > 0 {
@@ -4694,6 +4695,43 @@ func translatorOption() framework.AppOption {
 		i18nui.AddPseudo(c, pseudoLocale)
 	}
 	return framework.WithI18n(i18n.NewTranslator(c, "en"))
+}
+`
+
+// appSpecI18nTestGo checks each locale file against the phrases the
+// app links in. It lives in package main, which wires the whole app, so
+// i18n.Phrases() knows every screen's words and the framework's.
+const appSpecI18nTestGo = `package main
+
+import (
+	"io/fs"
+	"path"
+	"strings"
+	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
+)
+
+// Each locales/<tag>.json names only phrases the app and the framework
+// define, and keeps every {{placeholder}} of a phrase's English. Entity
+// keys name the app's data rather than a defined phrase, so the check
+// leaves them alone. Pass i18n.Require("<app>.") to also fail on a
+// phrase a locale does not translate yet.
+func TestCatalogsMatchPhrases(t *testing.T) {
+	c, err := i18n.LoadJSONCatalog(localeFS, "locales")
+	if err != nil {
+		t.Fatal(err)
+	}
+	names, err := fs.Glob(localeFS, "locales/*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range names {
+		tag := strings.TrimSuffix(path.Base(name), ".json")
+		for _, is := range i18n.CheckCatalog(c, tag, i18n.Skip("entity.")) {
+			t.Errorf("%s: %s: %s (English %q, translation %q)", tag, is.Key, is.Problem, is.English, is.Text)
+		}
+	}
 }
 `
 

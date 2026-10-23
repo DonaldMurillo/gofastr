@@ -208,6 +208,8 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   header, footer and sidebar take the request context. The generator
   writes `i18n.go`, whose `translatorOption()` loads `locales/<tag>.json`
   and adds the `en-XA` pseudo-locale under `GOFASTR_PSEUDO_LOCALE=1`,
+  `i18n_test.go`, which runs `i18n.CheckCatalog` over every locale file
+  so `go test` fails on a stray key or a dropped `{{placeholder}}`,
   and `locales/README.md`. It never writes a `<tag>.json`, so
   `generate --force` keeps translations. `gofastr pack` reads each
   phrase back as its English. Meridian's pseudo-locale switch is
