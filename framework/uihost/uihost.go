@@ -1535,7 +1535,7 @@ func (ds *UIHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // handlePage renders a full page with runtime.js, SSE meta tag, and compiled actions.
 func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	w, r = renderdiag.TestResponse(w, r)
-	path := r.URL.Path
+	path := routePath(r)
 	// A part request (X-Gofastr-Part, is answered
 	// before anything else: it never renders a document, never mints a
 	// session, and every whole-page outcome is its 409 reset — so it
@@ -3599,7 +3599,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 	if screen != nil {
 		ctx := app.WithRequest(r.Context(), r)
 		if body.Page != "" {
-			if m, ok := ds.App.Router.MatchFor(body.Page); ok && m.ScreenID() == screen.Path {
+			if m, ok := ds.App.Router.MatchFor(app.RoutePath(body.Page)); ok && m.ScreenID() == screen.Path {
 				ctx = app.WithMatch(ctx, m)
 			}
 		}
@@ -4091,6 +4091,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 		return true
 	}
 	if ds.App != nil {
+		path := routePath(r)
 		if _, _, ok := ds.App.Router.Resolve(path); ok {
 			return true
 		}
@@ -4199,10 +4200,10 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	// registered and "/foo" arrives, 301 to the slash form. ServeMux
 	// gives this for free for subtree patterns, but UIHost dispatches
 	// inside handlePage via App.Router.Resolve, so we do it here.
-	if path != "/" && !strings.HasSuffix(path, "/") {
-		if _, _, ok := ds.App.Router.Resolve(path); !ok {
-			if _, _, ok := ds.App.Router.Resolve(path + "/"); ok {
-				target := path + "/"
+	if rp := routePath(r); rp != "/" && !strings.HasSuffix(rp, "/") {
+		if _, _, ok := ds.App.Router.Resolve(rp); !ok {
+			if _, _, ok := ds.App.Router.Resolve(rp + "/"); ok {
+				target := app.EscapeRoutePath(rp) + "/"
 				if r.URL.RawQuery != "" {
 					target += "?" + r.URL.RawQuery
 				}
@@ -4264,7 +4265,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	// /products/42/llm.md) can't be pre-registered, so they land here.
 	// Serve the per-instance doc when the base path resolves to a screen.
 	// Mirrored in resolvesStaticOrScreen. Keep the two in sync.
-	if md, ok := ds.dynamicPageLLMMD(r, path); ok {
+	if md, ok := ds.dynamicPageLLMMD(r, routePath(r)); ok {
 		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Write([]byte(md))

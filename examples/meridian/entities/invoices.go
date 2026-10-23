@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=351575c607e2afec
+//gofastr:generated generator=app kind=scaffold version=dev sum=95f14324c949a4b4
 
 package entities
 
@@ -312,7 +312,7 @@ func registerInvoices(app *framework.App) {
 			{Name: "user_id", Type: schema.String, Hidden: true},
 		},
 		Relations: []framework.Relation{
-			{Type: framework.RelManyToOne, Name: "customer", Entity: "customers", ForeignKey: "customer_id"},
+			{Type: framework.RelManyToOne, Name: "customer", Entity: "customers", ForeignKey: []string{"customer_id"}},
 		},
 		Scope: &framework.ScopeConfig{
 			OwnerField: "user_id",

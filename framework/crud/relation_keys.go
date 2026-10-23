@@ -69,10 +69,20 @@ func safeColumns(cols []string) ([]string, error) {
 	return out, nil
 }
 
+// oneFK returns rel's foreign-key column when it has exactly one, as a
+// cascade write needs (entity.CheckRelationKeys refuses it several), or
+// "" when it has none or several.
+func oneFK(rel entity.Relation) string {
+	if len(rel.ForeignKey) != 1 {
+		return ""
+	}
+	return rel.ForeignKey[0]
+}
+
 // relationFKs returns rel's foreign-key columns validated for SQL: one,
 // or one per key column of a composite key it references.
 func relationFKs(rel entity.Relation) ([]string, error) {
-	fks := rel.FKColumns()
+	fks := rel.ForeignKey
 	if len(fks) == 0 {
 		return nil, fmt.Errorf("relation %q names no foreign key", rel.Name)
 	}

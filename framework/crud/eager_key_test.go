@@ -32,7 +32,7 @@ func TestEagerLoadJoinsOnDeclaredKeys(t *testing.T) {
 		PrimaryKey: []string{"slug"},
 	}.WithTimestamps(false))
 	tagged := entity.ManyToMany("tags", "tags", "line_tags", "line_code", "tag_slug")
-	tagged.ForeignKey = "tag_slug" // EagerLoad validates ForeignKey for every shape
+	tagged.ForeignKey = []string{"tag_slug"} // EagerLoad validates ForeignKey for every shape
 	lines := entity.Define("lines", entity.EntityConfig{
 		Fields:     []schema.Field{{Name: "code", Type: schema.String}, {Name: "sku_id", Type: schema.String}},
 		PrimaryKey: []string{"code"},

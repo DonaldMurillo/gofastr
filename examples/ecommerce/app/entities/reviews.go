@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=142a440e8698d605
+//gofastr:generated generator=app kind=scaffold version=dev sum=dd301faf1882b65b
 
 package entities
 
@@ -272,7 +272,7 @@ func registerReviews(app *framework.App) {
 			{Name: "verified", Type: schema.Bool, Default: false},
 		},
 		Relations: []framework.Relation{
-			{Type: framework.RelManyToOne, Name: "product", Entity: "products", ForeignKey: "product_id"},
+			{Type: framework.RelManyToOne, Name: "product", Entity: "products", ForeignKey: []string{"product_id"}},
 		},
 		Exposure: &framework.ExposureConfig{
 			CRUD:   boolPtr(true),

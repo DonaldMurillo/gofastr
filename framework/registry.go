@@ -545,7 +545,7 @@ func checkTransitionForeignKeys(rels, moves *entity.Entity) error {
 		return nil
 	}
 	for _, rel := range rels.Config.Relations {
-		fks := rel.FKColumns()
+		fks := rel.ForeignKey
 		if rel.Type != entity.RelManyToOne || len(fks) < 2 {
 			continue
 		}
@@ -873,7 +873,7 @@ func conflictingRelations(a, b *entity.Entity) error {
 // the foreign-key columns (the physical columns), or the logical Name for
 // HasMany/HasOne relations that carry no FK column on this side.
 func relationDedupKey(rel entity.Relation) string {
-	if fks := rel.FKColumns(); len(fks) > 0 {
+	if fks := rel.ForeignKey; len(fks) > 0 {
 		return strings.Join(fks, ",")
 	}
 	return rel.Name
@@ -881,7 +881,7 @@ func relationDedupKey(rel entity.Relation) string {
 
 // relationDisplayColumn returns the column to name in the error message.
 func relationDisplayColumn(rel entity.Relation) string {
-	if fks := rel.FKColumns(); len(fks) > 0 {
+	if fks := rel.ForeignKey; len(fks) > 0 {
 		return strings.Join(fks, ", ")
 	}
 	return rel.Name

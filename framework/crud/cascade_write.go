@@ -429,7 +429,7 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 		if childPKVal == nil {
 			childPKVal = childResult[ch.convertKey(targetPK)]
 		}
-		body[rel.ForeignKey] = childPKVal
+		body[oneFK(rel)] = childPKVal
 		attached[ch.convertKey(rel.Name)] = childResult
 	}
 	return attached, nil
@@ -475,7 +475,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 				return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{Reason: reasonNotObject}}}}
 			}
 			childMap = childHandler.unconvertMapKeys(childMap)
-			childMap[rel.ForeignKey] = parentID
+			childMap[oneFK(rel)] = parentID
 
 			var childResult map[string]any
 			childIDVal, hasChildID := childMap[targetPK]
@@ -484,7 +484,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 			}
 			if isUpdate {
 				if hasChildID && childIDVal != nil && fmt.Sprint(childIDVal) != "" {
-					if err := ch.checkChildOwnership(ctx, target, targetPK, rel.ForeignKey, childIDVal, parentID); err != nil {
+					if err := ch.checkChildOwnership(ctx, target, targetPK, oneFK(rel), childIDVal, parentID); err != nil {
 						return nil, err
 					}
 					if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childIDVal)) {
@@ -495,7 +495,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						childHandler.EmitEvent(ctx, event.EntityUpdated, childResult)
 					}
 				} else {
-					existingID, scanErr := ch.findExistingHasOneChild(ctx, target, targetPK, rel.ForeignKey, parentID)
+					existingID, scanErr := ch.findExistingHasOneChild(ctx, target, targetPK, oneFK(rel), parentID)
 					if scanErr != nil {
 						return nil, scanErr
 					}
@@ -547,7 +547,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					return nil, &ValidationError{fields: map[string][]schema.Violation{fmt.Sprintf("%s.%d", rel.Name, idx): {{Reason: reasonNotObject}}}}
 				}
 				childMap = childHandler.unconvertMapKeys(childMap)
-				childMap[rel.ForeignKey] = parentID
+				childMap[oneFK(rel)] = parentID
 
 				var childResult map[string]any
 				childIDVal, hasChildID := childMap[targetPK]
@@ -555,7 +555,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					childIDVal, hasChildID = childMap[ch.convertKey(targetPK)]
 				}
 				if isUpdate && hasChildID && childIDVal != nil && fmt.Sprint(childIDVal) != "" {
-					if err := ch.checkChildOwnership(ctx, target, targetPK, rel.ForeignKey, childIDVal, parentID); err != nil {
+					if err := ch.checkChildOwnership(ctx, target, targetPK, oneFK(rel), childIDVal, parentID); err != nil {
 						return nil, err
 					}
 					if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childIDVal)) {

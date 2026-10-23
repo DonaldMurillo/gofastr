@@ -452,6 +452,11 @@ With `app.module` set the generator also writes:
 - `i18n.go`: `translatorOption()`, which `main.go` installs. It embeds
   `locales/`, loads every `<tag>.json` there with `i18n.LoadJSONCatalog`,
   and adds the `en-XA` pseudo-locale when `GOFASTR_PSEUDO_LOCALE=1`.
+- `i18n_test.go`: `TestCatalogsMatchPhrases` runs `i18n.CheckCatalog`
+  over every `locales/<tag>.json`, so `go test` fails on a key no phrase
+  defines or a translation that drops a `{{placeholder}}`. `entity.*`
+  keys name the app's data and are skipped. Add `i18n.Require("<app>.")`
+  to fail on a phrase a locale has not translated yet.
 - `locales/README.md`: what goes in the directory. It also keeps the
   directory non-empty, which `go:embed` requires.
 
@@ -981,7 +986,7 @@ transitions write, and a
 `many_to_many` with a composite end; link the last through a join entity
 that belongs to both sides. A one-element list is the plain
 `foreign_key: order_no` spelling. The rules are those of
-[`ForeignKeys`](entity-declarations.md#relations-and-composite-keys).
+[`Relation.ForeignKey`](entity-declarations.md#relations-and-composite-keys).
 
 #### RBAC for writable APIs
 

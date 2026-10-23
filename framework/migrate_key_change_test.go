@@ -194,19 +194,36 @@ func TestBootRefusesPopulatedKeyChange(t *testing.T) {
 	})
 }
 
-// A table with rows and no primary key boots with its rows: nothing in it
-// contradicts the declared key, so boot warns and leaves it.
-func TestBootKeepsKeylessPopulatedTable(t *testing.T) {
+// A table with rows and no primary key fails the boot and keeps its rows:
+// nothing holds the declared key unique. The fix the error names, the
+// schema diff applied with AllowDestructive, adds the key.
+func TestBootRefusesKeylessPopulatedTable(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
+		ctx := context.Background()
 		execAll(t, db,
 			"CREATE TABLE enrollments (student_id TEXT NOT NULL, course_id TEXT NOT NULL, grade TEXT)",
 			"INSERT INTO enrollments (student_id, course_id) VALUES ('s1', 'c1')",
 		)
-		if err := AutoMigrate(db, enrollmentRegistry(t, true)); err != nil {
-			t.Fatalf("AutoMigrate over a keyless table with rows: %v", err)
+		reg := enrollmentRegistry(t, true)
+		err := AutoMigrate(db, reg)
+		if err == nil || !strings.Contains(err.Error(), "has rows and no primary key") || !strings.Contains(err.Error(), "gofastr migrate generate") {
+			t.Fatalf("AutoMigrate over a keyless table with rows = %v, want the refusal", err)
 		}
 		if n := enrollmentRows(t, db, "enrollments"); n != 1 {
 			t.Fatalf("rows after boot = %d, want 1", n)
+		}
+		changes, err := DiffSchema(ctx, db, reg)
+		if err != nil {
+			t.Fatalf("DiffSchema: %v", err)
+		}
+		if _, err := migrate.ApplySchemaDiffWithOptions(ctx, db, changes, migrate.ApplyOptions{AllowDestructive: true}); err != nil {
+			t.Fatalf("apply with AllowDestructive: %v", err)
+		}
+		if _, err := db.ExecContext(ctx, "INSERT INTO enrollments (student_id, course_id) VALUES ('s1', 'c1')"); err == nil {
+			t.Fatal("a repeated (student_id, course_id) pair was accepted after the diff")
+		}
+		if err := AutoMigrate(db, reg); err != nil {
+			t.Fatalf("AutoMigrate after the diff: %v", err)
 		}
 	})
 }

@@ -59,7 +59,7 @@ func TestScopeNestedFiltersForCaller_ScopedTargets(t *testing.T) {
 
 	filterOn := func(target string) []nestedFilter {
 		return []nestedFilter{{
-			Relation: entity.Relation{Type: entity.RelHasMany, Name: target, Entity: target, ForeignKey: "board_id"},
+			Relation: entity.Relation{Type: entity.RelHasMany, Name: target, Entity: target, ForeignKey: []string{"board_id"}},
 			Field:    "body",
 		}}
 	}
@@ -164,7 +164,7 @@ func TestScopeNestedFiltersForCallerStillRefusesUnreadableTargets(t *testing.T) 
 	})
 	ch := &CrudHandler{Entity: parent, Registry: &reg}
 	nf := []nestedFilter{{
-		Relation: entity.Relation{Type: entity.RelHasMany, Name: "secrets", Entity: "secrets", ForeignKey: "board_id"},
+		Relation: entity.Relation{Type: entity.RelHasMany, Name: "secrets", Entity: "secrets", ForeignKey: []string{"board_id"}},
 		Field:    "body",
 	}}
 	err := ch.scopeNestedFiltersForCaller(context.Background(), nf)
@@ -185,9 +185,9 @@ func TestBuildExistsSubqueryEmitsScopePredicates(t *testing.T) {
 		name string
 		rel  entity.Relation
 	}{
-		{"many-to-one", entity.Relation{Type: entity.RelManyToOne, Entity: "notes", ForeignKey: "note_id"}},
-		{"has-many", entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: "board_id"}},
-		{"has-one", entity.Relation{Type: entity.RelHasOne, Entity: "notes", ForeignKey: "board_id"}},
+		{"many-to-one", entity.Relation{Type: entity.RelManyToOne, Entity: "notes", ForeignKey: []string{"note_id"}}},
+		{"has-many", entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: []string{"board_id"}}},
+		{"has-one", entity.Relation{Type: entity.RelHasOne, Entity: "notes", ForeignKey: []string{"board_id"}}},
 		{"many-to-many", entity.Relation{Type: entity.RelManyToMany, Entity: "notes", Through: "board_notes", LocalKey: "board_id", ForeignKeyTarget: "note_id"}},
 	}
 	for _, sh := range shapes {
@@ -228,7 +228,7 @@ func TestBuildExistsSubqueryEmitsScopePredicates(t *testing.T) {
 	// A scope column that is not a plain identifier must match nothing rather
 	// than be dropped: dropping it widens the subquery back to every row.
 	nf := nestedFilter{
-		Relation: entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: "board_id"},
+		Relation: entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: []string{"board_id"}},
 		Field:    "body", Op: filter.OpEq, Value: "x", table: "notes",
 		scopes: []filter.ParsedFilter{{Field: "owner_id; DROP TABLE notes --", Op: filter.OpEq, Value: "u1"}},
 	}
@@ -265,9 +265,9 @@ func TestBuildExistsSubqueryHidesSoftDeletedInEveryShape(t *testing.T) {
 		name string
 		rel  entity.Relation
 	}{
-		{"many-to-one", entity.Relation{Type: entity.RelManyToOne, Entity: "notes", ForeignKey: "note_id"}},
-		{"has-many", entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: "board_id"}},
-		{"has-one", entity.Relation{Type: entity.RelHasOne, Entity: "notes", ForeignKey: "board_id"}},
+		{"many-to-one", entity.Relation{Type: entity.RelManyToOne, Entity: "notes", ForeignKey: []string{"note_id"}}},
+		{"has-many", entity.Relation{Type: entity.RelHasMany, Entity: "notes", ForeignKey: []string{"board_id"}}},
+		{"has-one", entity.Relation{Type: entity.RelHasOne, Entity: "notes", ForeignKey: []string{"board_id"}}},
 		{"many-to-many", entity.Relation{Type: entity.RelManyToMany, Entity: "notes", Through: "board_notes", LocalKey: "board_id", ForeignKeyTarget: "note_id"}},
 	}
 	for _, sh := range shapes {
@@ -440,7 +440,7 @@ func TestResolveNestedFiltersCarriesSoftDeleteAndResolvedTable(t *testing.T) {
 	parent := gateEntity(t, "boards", entity.EntityConfig{
 		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 		Relations: []entity.Relation{
-			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: "board_id"},
+			{Type: entity.RelHasMany, Name: "notes", Entity: "notes", ForeignKey: []string{"board_id"}},
 		},
 	})
 

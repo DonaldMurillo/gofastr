@@ -2254,15 +2254,12 @@ func renderRelationLiteral(rel framework.Relation) string {
 	parts = append(parts, fmt.Sprintf("Type: framework.%s", relationTypeConst(rel.Type)))
 	parts = append(parts, fmt.Sprintf("Name: %q", rel.Name))
 	parts = append(parts, fmt.Sprintf("Entity: %q", rel.Entity))
-	if rel.ForeignKey != "" {
-		parts = append(parts, fmt.Sprintf("ForeignKey: %q", rel.ForeignKey))
-	}
-	if len(rel.ForeignKeys) > 0 {
-		quoted := make([]string, len(rel.ForeignKeys))
-		for i, c := range rel.ForeignKeys {
+	if len(rel.ForeignKey) > 0 {
+		quoted := make([]string, len(rel.ForeignKey))
+		for i, c := range rel.ForeignKey {
 			quoted[i] = fmt.Sprintf("%q", c)
 		}
-		parts = append(parts, "ForeignKeys: []string{"+strings.Join(quoted, ", ")+"}")
+		parts = append(parts, "ForeignKey: []string{"+strings.Join(quoted, ", ")+"}")
 	}
 	if rel.Through != "" {
 		parts = append(parts, fmt.Sprintf("Through: %q", rel.Through))

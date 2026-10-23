@@ -241,12 +241,12 @@ func TestEagerLoad_InvalidIdentifiers(t *testing.T) {
 	ent := entity.Define("p", entity.EntityConfig{Name: "p", Table: "p"}.WithTimestamps(false))
 	ctx := context.Background()
 	// Invalid relation entity name.
-	badRel := entity.Relation{Type: entity.RelHasMany, Name: "r", Entity: "bad name!", ForeignKey: "x"}
+	badRel := entity.Relation{Type: entity.RelHasMany, Name: "r", Entity: "bad name!", ForeignKey: []string{"x"}}
 	if _, err := EagerLoad(ctx, db, ent, []entity.Relation{badRel}, []string{"1"}); err == nil {
 		t.Error("invalid relation entity should error")
 	}
 	// Invalid FK.
-	badFK := entity.Relation{Type: entity.RelHasMany, Name: "r", Entity: "users", ForeignKey: "bad fk!"}
+	badFK := entity.Relation{Type: entity.RelHasMany, Name: "r", Entity: "users", ForeignKey: []string{"bad fk!"}}
 	if _, err := EagerLoad(ctx, db, ent, []entity.Relation{badFK}, []string{"1"}); err == nil {
 		t.Error("invalid FK should error")
 	}

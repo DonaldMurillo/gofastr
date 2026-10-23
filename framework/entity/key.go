@@ -49,7 +49,7 @@ var ErrForeignKeyShape = errors.New("entity: foreign key does not match the key 
 // is not checked, except that a foreign key of several columns needs
 // the key it references.
 func CheckRelationKeys(source *Entity, rel Relation, target *Entity) error {
-	if fks := rel.FKColumns(); rel.CascadeWrite && len(fks) > 1 {
+	if fks := rel.ForeignKey; rel.CascadeWrite && len(fks) > 1 {
 		return fmt.Errorf("%w: relation %q: a cascade write stamps one foreign-key column, and (%s) are several",
 			ErrCompositeKey, rel.Name, strings.Join(fks, ", "))
 	}
@@ -66,8 +66,8 @@ func CheckRelationKeys(source *Entity, rel Relation, target *Entity) error {
 			}
 		}
 	case RelManyToMany:
-		if len(rel.ForeignKeys) > 0 {
-			return fmt.Errorf("%w: relation %q: a many_to_many links through LocalKey and ForeignKeyTarget, not ForeignKeys",
+		if len(rel.ForeignKey) > 1 {
+			return fmt.Errorf("%w: relation %q: a many_to_many links through LocalKey and ForeignKeyTarget, not ForeignKey",
 				ErrForeignKeyShape, rel.Name)
 		}
 		for _, e := range []*Entity{source, target} {
@@ -85,7 +85,7 @@ func CheckRelationKeys(source *Entity, rel Relation, target *Entity) error {
 // checkForeignKey checks rel's foreign-key columns, held by holder,
 // against the key of ref, the entity they reference.
 func checkForeignKey(rel Relation, holder, ref *Entity) error {
-	fks := rel.FKColumns()
+	fks := rel.ForeignKey
 	if len(fks) > 1 {
 		for i, c := range fks {
 			if slices.IndexFunc(fks[:i], func(p string) bool { return strings.EqualFold(p, c) }) >= 0 {
@@ -229,7 +229,7 @@ func relationHoldsInt(reg Registry, e *Entity, col string, seen map[columnRef]bo
 	}
 	seen[ref] = true
 	for _, rel := range e.Config.Relations {
-		if rel.Type != RelManyToOne || !strings.EqualFold(rel.ForeignKey, col) {
+		if rel.Type != RelManyToOne || len(rel.ForeignKey) != 1 || !strings.EqualFold(rel.ForeignKey[0], col) {
 			continue
 		}
 		target, err := ResolveTarget(reg, e, rel.Entity)

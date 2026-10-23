@@ -1453,9 +1453,27 @@ translation keys Display's names produce (`entity.<entity>.*`,
 
 `EntityConfig.PrimaryKey` names the primary-key columns in order. Left
 nil, the key is the one column `id`, which `Define` injects as a generated
-UUID unless `Fields` declares it. Name more than one column for a
-composite key, the usual shape for a join table keyed on the rows it
-links:
+UUID unless `Fields` declares it.
+
+A plain join table keeps that `id` and holds its pair unique with an
+index. Every surface then names a row by one value, and another entity
+can belong to it:
+
+```go
+app.Entity("enrollments", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "student_id", Type: schema.String, Required: true},
+        {Name: "course_id", Type: schema.String, Required: true},
+        {Name: "grade", Type: schema.String},
+    },
+    Indices: []entity.Index{{Columns: []string{"student_id", "course_id"}, Unique: true}},
+})
+```
+
+Name more than one column for a composite key when the columns are the
+record's identity: a table an existing schema already keys that way, or
+records the API should address by the pair. The links and the limits
+below follow from it:
 
 ```go
 app.Entity("enrollments", framework.EntityConfig{
@@ -1490,9 +1508,8 @@ constraint. Changing the key of an existing table is a migration; see
 ### Relations and composite keys
 
 A foreign key has one column per column of the key it references, in key
-order. A one-column foreign key is the relation's `ForeignKey`; a longer
-one is `ForeignKeys`, which the constructors fill when they get more than
-one column, and `Relation.FKColumns()` returns the columns either way:
+order, and `Relation.ForeignKey` lists them: `[]string{"author_id"}` for a
+one-column key. The constructors take the columns as arguments:
 
 ```go
 app.Entity("orders", framework.EntityConfig{
@@ -1664,6 +1681,26 @@ refused with 404. Postgres checks the rows a delete reached through
 as an FTS5 index, first reads the rows the delete's own `WHERE` (key,
 owner, tenant, live or trashed) reaches, inside the same transaction. Send ids as the API returns them.
 
+### What a composite key cannot do
+
+Boot refuses a declaration that breaks one of the first four rules,
+before any DDL runs:
+
+- A key column is a string, text, integer, enum, UUID or relation field,
+  with no `RawType` but an integer type.
+- A foreign key onto a composite key lists one column per key column;
+  one column is `entity.ErrCompositeKey`.
+- A `many_to_many` links two one-column keys. Link a composite-keyed end
+  through a join entity that belongs to both sides.
+- A `cascade_write` relation has a one-column foreign key, and a
+  `cascade_write` `has_one` or `has_many` needs a child keyed on one
+  column.
+- `Entity.KeyColumn()`, for code that needs one column, returns
+  `entity.ErrCompositeKey`. Read `Entity.KeyColumns()` instead.
+- A record keeps its key: the edit form shows the key columns read-only,
+  and changing the key of a table is a
+  [migration](migrations.md#primary-key-changes).
+
 ### Composite keys over HTTP and MCP
 
 A composite-key entity's record routes take one path segment per key
@@ -1687,9 +1724,9 @@ back off a request, for a handler mounted beside the CRUD routes.
 entityui and the admin draw a composite record at `<base>/<v1>/<v2>`.
 The create form sets every key column; the edit form shows them
 read-only, since a record keeps its key, and a duplicate leaves them
-blank, as it does a unique index's fields. Screen routes match the
-decoded path, so a record whose key value holds `/` is reachable over
-REST and MCP but its screen answers 404.
+blank, as it does a unique index's fields. A key value holding `/` is
+escaped in its segment (`/enrollments/a%2Fb/c1`), and its screen
+answers there as REST and MCP do.
 
 The `framework` package re-exports `JoinKey` and `RowKey` for app code
 that builds ids without importing `framework/entity`. The generators

@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -36,8 +37,8 @@ func TestRelationFieldDerivesBelongsTo(t *testing.T) {
 	}
 	// For BelongsTo, ForeignKey is the column on the local table holding the
 	// FK, that is the relation field's own column.
-	if rel.ForeignKey != "author" {
-		t.Errorf("expected ForeignKey %q (the field's own column), got %q", "author", rel.ForeignKey)
+	if !slices.Equal(rel.ForeignKey, []string{"author"}) {
+		t.Errorf("expected ForeignKey %q (the field's own column), got %v", "author", rel.ForeignKey)
 	}
 }
 

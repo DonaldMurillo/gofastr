@@ -315,7 +315,7 @@ func TestDiffSchema_Errors(t *testing.T) {
 	// topoSort error (BelongsTo unknown).
 	db2, m2 := mock(t)
 	expectSQLiteDialect(m2)
-	bad := rawEnt("p", "p", []schema.Field{{Name: "x", Type: schema.String}}, []entity.Relation{{Type: entity.RelManyToOne, Entity: "ghost", ForeignKey: "g_id"}}, "id")
+	bad := rawEnt("p", "p", []schema.Field{{Name: "x", Type: schema.String}}, []entity.Relation{{Type: entity.RelManyToOne, Entity: "ghost", ForeignKey: []string{"g_id"}}}, "id")
 	if _, err := DiffSchema(ctxB(), db2, testReg{"p": bad}); err == nil {
 		t.Error("expected topo-sort error in DiffSchema")
 	}
@@ -409,7 +409,7 @@ func TestRunSeeds_Branches(t *testing.T) {
 	m3.ExpectExec("CREATE TABLE IF NOT EXISTS").WillReturnResult(sqlmock.NewResult(0, 0))
 	m3.ExpectQuery("SELECT entity_name").WillReturnRows(sqlmock.NewRows([]string{"entity_name"}))
 	badSeed := seededEntity("p", okSeed)
-	badSeed.Config.Relations = []entity.Relation{{Type: entity.RelManyToOne, Entity: "ghost", ForeignKey: "g_id"}}
+	badSeed.Config.Relations = []entity.Relation{{Type: entity.RelManyToOne, Entity: "ghost", ForeignKey: []string{"g_id"}}}
 	if err := RunSeeds(ctxB(), db3, testReg{"p": badSeed}); err == nil {
 		t.Error("expected topo-sort error")
 	}
@@ -451,7 +451,7 @@ func TestAutoMigratePlan_MigrateEntityFKError(t *testing.T) {
 	m.ExpectRollback()
 	users := rawEnt("users", "users", []schema.Field{{Name: "id", Type: schema.String}}, nil, "id")
 	bad := rawEnt("p", "p", []schema.Field{{Name: "id", Type: schema.String}},
-		[]entity.Relation{{Type: entity.RelManyToOne, Entity: "users", ForeignKey: "bad col"}}, "id")
+		[]entity.Relation{{Type: entity.RelManyToOne, Entity: "users", ForeignKey: []string{"bad col"}}}, "id")
 	if err := AutoMigratePlanContext(ctxB(), db, Plan{Registry: testReg{"users": users, "p": bad}}); err == nil {
 		t.Error("expected migrateEntity FK error")
 	}
@@ -478,7 +478,7 @@ func TestEnsureSeedLedger_Postgres(t *testing.T) {
 func TestGeneratePlan_Errors(t *testing.T) {
 	// topoSort error.
 	bad := rawEnt("p", "p", []schema.Field{{Name: "x", Type: schema.String}},
-		[]entity.Relation{{Type: entity.RelManyToOne, Entity: "ghost", ForeignKey: "g_id"}}, "id")
+		[]entity.Relation{{Type: entity.RelManyToOne, Entity: "ghost", ForeignKey: []string{"g_id"}}}, "id")
 	if _, _, _, err := GeneratePlan(Plan{Registry: testReg{"p": bad}}, SchemaSnapshot{Tables: map[string]map[string]string{}}, DialectSQLite); err == nil {
 		t.Error("expected GeneratePlan topo-sort error")
 	}

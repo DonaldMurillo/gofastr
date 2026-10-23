@@ -380,7 +380,7 @@ func TestWarnUnresolvableRelationsIsSelective(t *testing.T) {
 		Table:  "ur_posts",
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 		Relations: []entity.Relation{
-			{Name: "author", Type: entity.RelManyToOne, Entity: "ur_users", ForeignKey: "author_id"},
+			{Name: "author", Type: entity.RelManyToOne, Entity: "ur_users", ForeignKey: []string{"author_id"}},
 		},
 	}.WithTimestamps(false))
 	app.warnUnresolvableRelations()
@@ -398,7 +398,7 @@ func TestWarnUnresolvableRelationsIsSelective(t *testing.T) {
 		Table:  "nt_posts",
 		Fields: []schema.Field{{Name: "title", Type: schema.String}},
 		Relations: []entity.Relation{
-			{Name: "author", Type: entity.RelManyToOne, Entity: "nt_users", ForeignKey: "author_id"},
+			{Name: "author", Type: entity.RelManyToOne, Entity: "nt_users", ForeignKey: []string{"author_id"}},
 		},
 	}.WithTimestamps(false))
 	ok.warnUnresolvableRelations()

@@ -25,10 +25,10 @@ func TestHTTPErrorTranslates(t *testing.T) {
 	}
 }
 
-func TestHTTPErrorEnglishWithoutCatalog(t *testing.T) {
+func TestHTTPErrorUntranslatedIsStatusText(t *testing.T) {
 	w := httptest.NewRecorder()
 	HTTPError(w, httptest.NewRequest("GET", "/", nil), http.StatusMethodNotAllowed, StatusPhrase(http.StatusMethodNotAllowed))
-	if w.Body.String() != "method not allowed\n" {
+	if w.Body.String() != "Method Not Allowed\n" {
 		t.Fatalf("body %q", w.Body.String())
 	}
 }
@@ -56,7 +56,7 @@ func TestHTTPErrorZeroPhraseUsesStatusText(t *testing.T) {
 func TestHTTPErrorNilRequest(t *testing.T) {
 	w := httptest.NewRecorder()
 	HTTPError(w, nil, http.StatusForbidden, StatusPhrase(http.StatusForbidden))
-	if w.Body.String() != "forbidden\n" {
+	if w.Body.String() != "Forbidden\n" {
 		t.Fatalf("body %q", w.Body.String())
 	}
 }

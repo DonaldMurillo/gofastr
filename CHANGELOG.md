@@ -225,6 +225,8 @@ change.
   header, footer and sidebar take the request context. The generator
   writes `i18n.go`, whose `translatorOption()` loads `locales/<tag>.json`
   and adds the `en-XA` pseudo-locale under `GOFASTR_PSEUDO_LOCALE=1`,
+  `i18n_test.go`, which runs `i18n.CheckCatalog` over every locale file
+  so `go test` fails on a stray key or a dropped `{{placeholder}}`,
   and `locales/README.md`. It never writes a `<tag>.json`, so
   `generate --force` keeps translations. `gofastr pack` reads each
   phrase back as its English. Meridian's pseudo-locale switch is
@@ -293,9 +295,14 @@ change.
   `<base>/<v1>/<v2>`; the create form sets the key columns and later
   edits show them read-only. New: `crud.KeyPath`, `crud.TransitionPath`,
   `crud.PathRecordID`, `CrudRouteOptions.Key`. A key value holding `/`
-  works over REST and MCP; its screen answers 404, since screen routes
-  match the decoded path. See `gofastr docs entity-declarations` →
-  "Composite keys over HTTP and MCP".
+  is escaped in its segment and reaches its screen as it reaches REST
+  and MCP: the screen router splits the escaped path and decodes each
+  segment, and a pattern redirect carries such a value as one segment.
+  The login `next=` from `auth.SessionPolicy` and the admin gate, the
+  stale-markup reload, and `cache.CacheMiddleware`'s key all use the
+  escaped path, so `/a%2Fb` and `/a/b` stay two pages.
+  New: `app.RoutePath` and `app.EscapeRoutePath`. See
+  `gofastr docs entity-declarations` → "Composite keys over HTTP and MCP".
 - **Composite keys in the generators.** An app spec entity takes
   `primary_key: [student_id, course_id]`, and `gofastr pack` writes it
   back. A record screen's `{id}` mounts as one segment per key column
@@ -343,9 +350,8 @@ change.
   keys".
 - **Foreign keys to composite keys.** A relation names one column per
   key column of the end it references:
-  `entity.BelongsTo("order", "orders", "order_store", "order_no")` fills
-  `Relation.ForeignKeys`, and `Relation.FKColumns()` returns the columns
-  for a one-column key too. The migrator emits one `FOREIGN KEY` over
+  `entity.BelongsTo("order", "orders", "order_store", "order_no")` lists
+  both in `Relation.ForeignKey`. The migrator emits one `FOREIGN KEY` over
   the tuple and an index on it; boot refuses a column count that differs
   from the key's, a repeated or undeclared column, a column typed
   unlike its key column, and a column a transition of any declaration
@@ -372,7 +378,8 @@ change.
 - **Primary-key change migrations.** The schema diff detects a changed
   key and emits it as destructive: Postgres swaps the key constraint,
   SQLite rebuilds the table. Boot changes the key of an empty table only
-  and refuses a populated one, pointing at `gofastr migrate generate`.
+  and refuses a populated one, pointing at `gofastr migrate generate`; a
+  populated table with no primary key at all is refused the same way.
   The snapshot records `primary_keys`. See `gofastr docs migrations` →
   "Primary-key changes".
 - **`query.DeleteBuilder.Returning`.** A DELETE built with `query.Delete`
@@ -390,6 +397,13 @@ change.
   column is needed. `CrudHandler.PrimaryKey` is `[]string`, and a handler
   that leaves it empty reads its entity's key. A raw `migrate.Table` with
   several `PrimaryKey` columns no longer panics.
+- **BREAKING: `Relation.ForeignKey` is `[]string`.** It lists one column
+  per key column of the end it references, so a one-column relation is
+  `ForeignKey: []string{"author_id"}`; the `BelongsTo`, `HasOne` and
+  `HasMany` constructors are unchanged. `migrate.ForeignKey.Column` is
+  gone: name the local columns in `Columns`, `{Columns:
+  []string{"user_id"}, RefTable: "users"}`. The SDK schema hash of an app
+  with no composite foreign key does not change.
 - **BREAKING: a column name may not be another field's wire key.**
   `Define` panics when one field's `WireName` is another field's column
   name (`body_text` published as `content` beside a `content` column
@@ -432,10 +446,6 @@ change.
   carries `Reason` and `Params` instead of `Message`.
   `middleware.RateLimitConfig.ErrorMessage string` is
   `Message i18n.Phrase`.
-- **BREAKING: plain-text status bodies are lowercase.** A refusal with no
-  message of its own writes its status phrase, "internal server error",
-  "gateway timeout", "not found", where it wrote `http.StatusText`'s
-  "Internal Server Error".
 - **BREAKING: query parsers answer with their own code.** A crud list
   given a bad `?field_<op>=`, `?sort=`, `?where=`, `?filter=`,
   `?include=`, `?fields=` or nested `?rel.field=` answers the parser's

@@ -272,7 +272,7 @@ func TestCompositeForeignKey(t *testing.T) {
 		{"undeclared column", line, two, BelongsTo("e", "enrollment", "s", "x"), ErrForeignKeyShape},
 		{"has_many undeclared on the child", two, line, HasMany("lines", "line", "s", "x"), ErrForeignKeyShape},
 		{"unknown target", line, nil, BelongsTo("e", "enrollment", "s", "c"), ErrForeignKeyShape},
-		{"m2m with ForeignKeys", one, one, Relation{Type: RelManyToMany, Name: "x", ForeignKeys: []string{"a", "b"}}, ErrForeignKeyShape},
+		{"m2m with two columns", one, one, Relation{Type: RelManyToMany, Name: "x", ForeignKey: []string{"a", "b"}}, ErrForeignKeyShape},
 		{"cascade has_many", two, line, HasMany("lines", "line", "s", "c").WithCascadeWrite(true), ErrCompositeKey},
 		{"state field", staged("s", ""), two, BelongsTo("e", "enrollment", "s", "c"), ErrForeignKeyShape},
 		{"transition stamp", staged("note", "c"), two, BelongsTo("e", "enrollment", "s", "c"), ErrForeignKeyShape},
@@ -285,33 +285,15 @@ func TestCompositeForeignKey(t *testing.T) {
 	}
 }
 
-// The constructors put one column in ForeignKey and several in
-// ForeignKeys; FKColumns reads either.
-func TestForeignKeySpellings(t *testing.T) {
-	one := BelongsTo("a", "t", "x")
-	if one.ForeignKey != "x" || one.ForeignKeys != nil || !slices.Equal(one.FKColumns(), []string{"x"}) {
-		t.Errorf("one column = %+v", one)
+// The constructors list the foreign key's columns in ForeignKey.
+func TestForeignKeyConstructors(t *testing.T) {
+	if got := BelongsTo("a", "t", "x").ForeignKey; !slices.Equal(got, []string{"x"}) {
+		t.Errorf("one column = %v", got)
 	}
-	two := HasMany("a", "t", "x", "y")
-	if two.ForeignKey != "" || !slices.Equal(two.FKColumns(), []string{"x", "y"}) {
-		t.Errorf("two columns = %+v", two)
+	if got := HasMany("a", "t", "x", "y").ForeignKey; !slices.Equal(got, []string{"x", "y"}) {
+		t.Errorf("two columns = %v", got)
 	}
-	if got := ManyToMany("a", "t", "p", "l", "f").FKColumns(); got != nil {
-		t.Errorf("many_to_many FKColumns = %v, want none", got)
-	}
-
-	rels := []Relation{{Type: RelManyToOne, Name: "a", Entity: "t", ForeignKeys: []string{"x"}}}
-	e := Define("n", EntityConfig{Fields: []schema.Field{{Name: "x", Type: schema.String}}, Relations: rels})
-	if r := e.Config.Relations[0]; r.ForeignKey != "x" || r.ForeignKeys != nil {
-		t.Errorf("one column in ForeignKeys = %+v, want it in ForeignKey", r)
-	}
-	if rels[0].ForeignKeys == nil {
-		t.Error("Define rewrote the caller's relations")
-	}
-	both := Define("b", EntityConfig{Fields: []schema.Field{{Name: "x", Type: schema.String}}, Relations: []Relation{
-		{Type: RelManyToOne, Name: "a", Entity: "t", ForeignKey: "x", ForeignKeys: []string{"x", "y"}},
-	}})
-	if err := both.Validate(); err == nil || !strings.Contains(err.Error(), "both ForeignKey and ForeignKeys") {
-		t.Errorf("Validate with both spellings = %v", err)
+	if got := ManyToMany("a", "t", "p", "l", "f").ForeignKey; got != nil {
+		t.Errorf("many_to_many ForeignKey = %v, want none", got)
 	}
 }

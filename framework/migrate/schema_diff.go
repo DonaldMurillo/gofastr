@@ -997,7 +997,7 @@ func entityIndices(ent *entity.Entity) []entity.Index {
 		out = append(out, idx)
 	}
 	for _, rel := range ent.Config.Relations {
-		fks := rel.FKColumns()
+		fks := rel.ForeignKey
 		if rel.Type != entity.RelManyToOne || len(fks) == 0 {
 			continue
 		}

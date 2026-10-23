@@ -3,7 +3,6 @@ package migrate
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"sort"
 	"strings"
@@ -276,11 +275,10 @@ func declaredField(ent *entity.Entity, col string) (schema.Field, bool) {
 // read again on the lock-holding connection before anything changes, so a
 // replica that lost the boot race sees its peer's change and does nothing.
 //
-// An empty table gets the new key. A table with rows is refused when it
-// already has a different key: rows keyed one way do not satisfy another,
-// and a create or update on the wrong key could touch several rows. A table
-// with rows and no key at all is left as it is with a warning, because
-// nothing in it contradicts the declared key.
+// An empty table gets the new key. A table with rows is refused: rows
+// keyed one way do not satisfy another, and with no key at all nothing
+// holds the declared one unique, so a create or update by id could touch
+// several rows.
 func convergeKey(ctx context.Context, exec execQueryer, ent *entity.Entity, all map[string]*entity.Entity, dialect Dialect, pre liveKey) error {
 	declared := ent.KeyColumns()
 	if sameKey(pre.cols, declared) {
@@ -311,10 +309,9 @@ func convergeKey(ctx context.Context, exec execQueryer, ent *entity.Entity, all 
 	}
 	if populated {
 		if len(cur.cols) == 0 {
-			slog.Warn("migrate: table has rows and no primary key; the entity's key is not enforced by the database",
-				"table", table, "key", strings.Join(declared, ","),
-				"fix", "generate a migration with `gofastr migrate generate` and review it")
-			return nil
+			return fmt.Errorf("table %s has rows and no primary key, and the entity declares (%s): boot does not add a populated table's primary key; "+
+				"generate a migration with `gofastr migrate generate` and review it, or apply DiffSchema's changes with ApplySchemaDiffWithOptions and AllowDestructive",
+				table, strings.Join(declared, ", "))
 		}
 		return fmt.Errorf("table %s is keyed on (%s) but the entity declares (%s), and the table has rows: boot does not change a populated table's primary key; "+
 			"generate a migration with `gofastr migrate generate` and review it, or apply DiffSchema's changes with ApplySchemaDiffWithOptions and AllowDestructive",

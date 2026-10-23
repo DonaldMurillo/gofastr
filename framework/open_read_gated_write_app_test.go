@@ -46,7 +46,7 @@ func openReadGatedWriteApp(t *testing.T) *App {
 			{Name: "author_id", Type: schema.Relation, To: "users"},
 		},
 		Relations: []entity.Relation{
-			{Type: entity.RelManyToOne, Name: "author", Entity: "users", ForeignKey: "author_id"},
+			{Type: entity.RelManyToOne, Name: "author", Entity: "users", ForeignKey: []string{"author_id"}},
 		},
 		Scope: &entity.ScopeConfig{SoftDelete: true},
 		Exposure: &entity.ExposureConfig{

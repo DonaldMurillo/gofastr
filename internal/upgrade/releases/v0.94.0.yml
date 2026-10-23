@@ -102,10 +102,6 @@ notes:
         - glob: "**/*.json"
           match: '"(bulkNone|bulkUnknown|bulkOverCap|bulkNeedsUser|bulkBadFilter|bulkFailed|bulkBadScope|bulkEveryOverCap|bulkStale|savedBadFilter|savedBadCols|overrideFailed|overrideBlank|overrideLong|overrideStateBad|overrideNoAudit|overrideDenied)"\s*:'
     guidance: "In each locale file, move the string from ui.entity.<camelKey> to a top-level entityui section under the snake_case code (bulkOverCap becomes entityui.bulk_over_cap) and write placeholders as {{cap}} and {{entity}}. See gofastr docs i18n."
-  - change: "a plain-text refusal with no message of its own writes its lowercase status phrase (\"internal server error\") instead of http.StatusText (\"Internal Server Error\")"
-    breaking: true
-    nodetect: "the change is in a response body; code that compares it lives in the app's tests or its consumers"
-    guidance: "Compare the status code rather than the body. A test that matched \"Internal Server Error\" matches \"internal server error\", or the catalog's text for error.internal in the locale it sends."
   - change: "a crud list refuses a bad filter, sort, where, DSL filter, include, projection or nested filter with the parser's own message and code (unknown filter \"x\", unknown_filter) instead of wrapping it in \"invalid filters: ...\" or \"invalid query: ...\"; a bad cursor keeps its text and answers the decoder's code (cursor_format)"
     breaking: true
     nodetect: "the change is in a response body; code that reads it lives in the app's consumers"
@@ -804,7 +800,7 @@ notes:
           type: '^func\(\) string$'
         - symbol: gofastr/core-ui/app.ScreenDescriber.ScreenDescription
           type: '^func\(\) string$'
-    guidance: "Add the parameter: func (s *HelpScreen) ScreenTitle(ctx context.Context) string. A screen with the old signature no longer satisfies the interface, so its page silently loses its title. To translate it, return a phrase: helpTitle.Text(ctx). App.Register reads it once with a bare context, which gives the English, for the route table."
+    guidance: "Add the parameter: func (s *HelpScreen) ScreenTitle(ctx context.Context) string. A screen still declaring ScreenTitle() string or ScreenDescription() string panics when it is registered, naming the type, so the app does not boot until it moves. To translate it, return a phrase: helpTitle.Text(ctx). App.Register reads it once with a bare context, which gives the English, for the route table."
   - change: "uihost.ScreenSEO and uihost.ScreenSchema take the request context: ScreenSEO(ctx context.Context) uihost.SEO and ScreenSchema(ctx context.Context) []seo.Thing"
     breaking: true
     hits: edit
@@ -915,6 +911,10 @@ notes:
     find:
       uses: [gofastr/framework/entity.Entity.PrimaryKey]
     guidance: "Declare a key other than id as EntityConfig.PrimaryKey: []string{\"code\"}, or several columns for a composite key. Read ent.KeyColumns() where you read ent.PrimaryKey, or ent.KeyColumn() where one column is needed (it returns entity.ErrCompositeKey for a composite key). See gofastr docs entity-declarations, Record ids."
+  - change: "boot refuses a table that has rows and no primary key, where it left the table keyless"
+    breaking: true
+    nodetect: "the change is in the database's state, not the app's source"
+    guidance: "A table created outside gofastr with no primary key now fails the boot with an error naming it. Run gofastr migrate generate, review the migration that adds the key (rows that repeat the key, or leave a key column NULL, must be cleaned up first), and apply it. See gofastr docs migrations, Primary-key changes."
   - change: "crud.CrudHandler.PrimaryKey is []string"
     breaking: true
     hits: edit
@@ -923,6 +923,15 @@ notes:
         - symbol: gofastr/framework/crud.CrudHandler.PrimaryKey
           type: '^string$'
     guidance: "Set PrimaryKey: []string{\"code\"}, or leave it empty and the handler reads its entity's key."
+  - change: "entity.Relation.ForeignKey is []string, and migrate.ForeignKey.Column is removed"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/framework/entity.Relation.ForeignKey
+          type: '^string$'
+      uses: [gofastr/framework/migrate.ForeignKey.Column]
+    guidance: "Write ForeignKey: []string{\"author_id\"} in a Relation literal; entity.BelongsTo, HasOne and HasMany take the columns as before. Read rel.ForeignKey as a list: one column per key column of the end it references. In a raw table, write {Columns: []string{\"user_id\"}, RefTable: \"users\"}. See gofastr docs entity-declarations, Relations and composite keys."
   - change: "the saved-view delete route is POST <write base>/_views/_delete?id=<id> instead of POST <write base>/_views/_delete/{id}"
     breaking: true
     hits: edit
