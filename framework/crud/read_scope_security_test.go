@@ -522,10 +522,10 @@ func TestRenderReadScopeOps(t *testing.T) {
 	}
 	sql, args := renderReadScope(preds, "", 1)
 	for _, want := range []string{
-		`"status" = $1`,
-		`"status" <> $2`,
-		`"status" IN ($3, $4)`,
-		`"channel" NOT IN ($5)`,
+		`status = $1`,
+		`status <> $2`,
+		`status IN ($3, $4)`,
+		`channel NOT IN ($5)`,
 	} {
 		if !strings.Contains(sql, want) {
 			t.Errorf("renderReadScope missing %q in %s", want, sql)
@@ -536,7 +536,7 @@ func TestRenderReadScopeOps(t *testing.T) {
 	}
 	// Qualified form for joins.
 	sql, _ = renderReadScope(preds[:1], "posts", 3)
-	if !strings.Contains(sql, `"posts"."status" = $3`) {
+	if !strings.Contains(sql, `posts.status = $3`) {
 		t.Errorf("qualified render = %s, want posts-qualified column starting at $3", sql)
 	}
 	// An op the renderer does not know matches NOTHING, never everything.

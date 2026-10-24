@@ -516,3 +516,21 @@ func TestCompositeBelongsToTargetRefused(t *testing.T) {
 		}
 	})
 }
+
+// A many_to_many through a join entity that lacks one of the two link
+// columns is refused at boot: the migrator creates no pivot for it.
+func TestJoinEntityMissingLinkColumn(t *testing.T) {
+	ents := schoolEntities(nil)
+	ents[0].Config.Relations[1] = entity.ManyToMany("courses", "course", "enrollments", "student_id", "class_id")
+	reg := NewRegistry()
+	for _, e := range ents {
+		if err := reg.Register(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db := openTestDB(t, DialectSQLite)
+	err := AutoMigrate(db, reg)
+	if err == nil || !strings.Contains(err.Error(), `declares no column "class_id"`) {
+		t.Fatalf("AutoMigrate = %v, want the missing link column refused", err)
+	}
+}

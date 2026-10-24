@@ -72,7 +72,7 @@ func TestGet_BadProjection(t *testing.T) {
 // fails → 500, exercising applyIncludeTree error propagation.
 func TestGet_IncludeChildQueryErr(t *testing.T) {
 	ch, _, _ := covFaultRelWorld(t)
-	covFault.set(func(c *covFaults) { c.queryErrOn = `FROM "comments"` }) // only the comments query
+	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM comments " }) // only the comments query
 	req := withTestUser(httptest.NewRequest("GET", "/posts/p1?include=comments", nil), "u1")
 	req.SetPathValue("id", "p1")
 	rec := httptest.NewRecorder()
@@ -89,7 +89,7 @@ func TestGet_IncludeChildQueryErr(t *testing.T) {
 // crud_api.go:145: GetOne include query failure.
 func TestGetOne_IncludeChildErr(t *testing.T) {
 	ch, _, _ := covFaultRelWorld(t)
-	covFault.set(func(c *covFaults) { c.queryErrOn = `FROM "comments"` })
+	covFault.set(func(c *covFaults) { c.queryErrOn = "FROM comments " })
 	if _, err := ch.GetOne(context.Background(), "p1", []string{"comments"}); !errors.Is(err, errCovInjected) {
 		t.Fatalf("GetOne include err = %v, want injected", err)
 	}

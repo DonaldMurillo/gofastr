@@ -1,6 +1,9 @@
 package entity
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Registry is the minimal contract subpackages need from the framework's
 // entity registry: enumerate every registered entity.
@@ -51,6 +54,42 @@ type VersionedRegistry interface {
 	// version (the route-group prefix it was mounted at; "" for the
 	// unversioned App.Entity registration).
 	GetVersioned(name, version string) (*Entity, error)
+}
+
+// PivotEntity returns the registered entity that owns a many_to_many's
+// Through table, or nil when no entity does and the migrator creates the
+// table itself. Tables match ignoring case. Of several entities sharing the
+// table it takes the source's own version, then the unversioned
+// declaration, then the only one. Several other versions are an error, as
+// in ResolveTarget: each can scope its rows differently, so picking one
+// could read links another owner, tenant or soft delete hides.
+func PivotEntity(reg Registry, source *Entity, table string) (*Entity, error) {
+	if reg == nil || table == "" {
+		return nil, nil
+	}
+	var unversioned *Entity
+	var others []*Entity
+	for _, e := range reg.AllSorted() {
+		if !strings.EqualFold(e.GetTable(), table) {
+			continue
+		}
+		if source != nil && source.Version != "" && e.Version == source.Version {
+			return e, nil
+		}
+		if e.Version == "" && unversioned == nil {
+			unversioned = e
+		}
+		others = append(others, e)
+	}
+	switch {
+	case unversioned != nil:
+		return unversioned, nil
+	case len(others) == 1:
+		return others[0], nil
+	case len(others) > 1:
+		return nil, fmt.Errorf("entity: pivot table %q is owned by %d versions and none matches the source's: declare it at the source's version or unversioned", table, len(others))
+	}
+	return nil, nil
 }
 
 // ResolveTarget resolves a relation target for a source entity, preferring the

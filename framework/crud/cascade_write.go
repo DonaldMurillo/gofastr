@@ -37,12 +37,12 @@ func (ch *CrudHandler) childHandlerFor(target *entity.Entity) *CrudHandler {
 // If the target entity's primary key is schema.Int, float64 / float-based json.Number values
 // that are at or beyond ±2^53 (or not exact integers) are rejected with a ValidationError,
 // preventing silent precision loss.
-func coerceLinkPK(target *entity.Entity, targetPK string, fieldPrefix string, val any) (any, error) {
+func coerceLinkPK(reg entity.Registry, target *entity.Entity, targetPK string, fieldPrefix string, val any) (any, error) {
 	if target == nil || val == nil {
 		return val, nil
 	}
 	isPKInt := false
-	for _, f := range target.GetFields() {
+	for _, f := range entity.ValueFields(reg, target) {
 		if f.Name == targetPK && f.Type == schema.Int {
 			isPKInt = true
 			break
@@ -89,11 +89,11 @@ func coerceLinkPK(target *entity.Entity, targetPK string, fieldPrefix string, va
 
 // coercePKValue coerces a value into an integer type if the entity's primary key (or FK) is an integer schema type.
 // This prevents PostgreSQL strict type errors (e.g. integer = double precision or integer = text).
-func coercePKValue(ent *entity.Entity, colName string, val any) any {
+func coercePKValue(reg entity.Registry, ent *entity.Entity, colName string, val any) any {
 	if ent == nil || val == nil {
 		return val
 	}
-	for _, f := range ent.GetFields() {
+	for _, f := range entity.ValueFields(reg, ent) {
 		if f.Name == colName {
 			switch f.Type {
 			case schema.Int:
@@ -177,8 +177,8 @@ func (ch *CrudHandler) checkChildOwnership(ctx context.Context, target *entity.E
 	if err != nil {
 		return err
 	}
-	coercedChildID := coercePKValue(target, targetPK, childIDVal)
-	coercedParentID := coercePKValue(ch.Entity, parentPK, parentID)
+	coercedChildID := coercePKValue(ch.Registry, target, targetPK, childIDVal)
+	coercedParentID := coercePKValue(ch.Registry, ch.Entity, parentPK, parentID)
 	allArgs := append([]any{coercedChildID, coercedParentID}, args...)
 	allArgs = append(allArgs, readArgs...)
 	var belongs int
@@ -229,7 +229,7 @@ func (ch *CrudHandler) findExistingHasOneChild(ctx context.Context, target *enti
 	if err != nil {
 		return nil, err
 	}
-	coercedParentID := coercePKValue(ch.Entity, parentPK, parentID)
+	coercedParentID := coercePKValue(ch.Registry, ch.Entity, parentPK, parentID)
 	allArgs := append([]any{coercedParentID}, args...)
 	allArgs = append(allArgs, readArgs...)
 	var existingID any
@@ -279,7 +279,7 @@ func (ch *CrudHandler) checkTargetRowScope(ctx context.Context, r *http.Request,
 	if target.Config.Scope.SoftDelete {
 		q += " AND deleted_at IS NULL"
 	}
-	coercedID := coercePKValue(target, targetPK, idVal)
+	coercedID := coercePKValue(ch.Registry, target, targetPK, idVal)
 	allArgs := append([]any{coercedID}, args...)
 	allArgs = append(allArgs, readArgs...)
 	var hit any
@@ -588,7 +588,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						idVal, hasID = childMap[ch.convertKey(targetPK)]
 					}
 					if hasID {
-						coerced, err := coerceLinkPK(target, targetPK, fieldPrefix, idVal)
+						coerced, err := coerceLinkPK(ch.Registry, target, targetPK, fieldPrefix, idVal)
 						if err != nil {
 							return nil, err
 						}
@@ -633,7 +633,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						}
 					}
 				case string, int, int64, int32, uint, uint64, float64:
-					coerced, err := coerceLinkPK(target, targetPK, fieldPrefix, it)
+					coerced, err := coerceLinkPK(ch.Registry, target, targetPK, fieldPrefix, it)
 					if err != nil {
 						return nil, err
 					}
@@ -643,7 +643,7 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 					}
 				case json.Number:
-					coerced, err := coerceLinkPK(target, targetPK, fieldPrefix, it)
+					coerced, err := coerceLinkPK(ch.Registry, target, targetPK, fieldPrefix, it)
 					if err != nil {
 						return nil, err
 					}
@@ -656,8 +656,8 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					return nil, &ValidationError{fields: map[string][]schema.Violation{fmt.Sprintf("%s.%d", rel.Name, idx): {{Reason: reasonNotObjectOrID}}}}
 				}
 
-				coercedParentID := coercePKValue(ch.Entity, parentPK, parentID)
-				coercedChildID := coercePKValue(target, targetPK, childID)
+				coercedParentID := coercePKValue(ch.Registry, ch.Entity, parentPK, parentID)
+				coercedChildID := coercePKValue(ch.Registry, target, targetPK, childID)
 
 				var exists int
 				checkQ := fmt.Sprintf("SELECT 1 FROM %s WHERE %s = $1 AND %s = $2",

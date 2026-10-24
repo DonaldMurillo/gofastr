@@ -42,7 +42,7 @@ func TestInclude_UsesTargetEntityWireMapNotParents(t *testing.T) {
 	}
 
 	rows := []map[string]any{{"id": 1, "body_text": "hello"}}
-	got, err := ch.formatRelationValueDeep(rel, rows, true,
+	got, err := ch.formatRelationValueDeep(rel, nil, rows, true,
 		map[uintptr]*convertedSubtree{}, newIncludeBudget())
 	if err != nil {
 		t.Fatalf("convert: %v", err)

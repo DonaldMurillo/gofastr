@@ -69,7 +69,7 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 			}
 			cols := map[string]string{}
 			for _, f := range ent.GetFields() {
-				cols[f.Name] = SQLType(f, dialect)
+				cols[f.Name] = columnSQLType(ent, f, all, dialect)
 			}
 			snap.Tables[ent.GetTable()] = cols
 			if snap.PrimaryKeys == nil {

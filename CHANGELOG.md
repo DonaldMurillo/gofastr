@@ -262,8 +262,7 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   "course_id"}` keys a table on several columns: each gets `NOT NULL` and
   the table a `PRIMARY KEY (student_id, course_id)` constraint, with no
   injected `id`. A raw `migrate.Table` marks several columns `PrimaryKey:
-  true` for the same key. Relations still need a one-column key and
-  return `entity.ErrCompositeKey` for now. Two versions
+  true` for the same key. Two versions
   of one entity must declare the same key, and `Define` panics on a
   composite key column that is `Hidden` or `NoQuery`, since the API could
   not name its records. `ExportData` pages a composite key by row value,
@@ -305,10 +304,33 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   --from-openapi` reads such an app's document: a body property named
   exactly like a path parameter, as the key columns are in the PUT body,
   takes no flag of its own. `seed.count` rows never repeat a key, and
-  the generator refuses a count an enum-only key cannot cover. New:
+  the generator refuses a count an enum-only key cannot cover. A seed
+  reference (`"@currencies.label=Euro"`) resolves to the target's key
+  column rather than `id`. New:
   `framework.JoinKey` and `framework.RowKey`. An entity keyed on `id`
   keeps every generated signature. See `gofastr docs app-spec` →
   "Composite keys (`primary_key`)".
+- **Join entities and three-way associations.** Only the end a foreign
+  key references needs a one-column key now (`entity.CheckRelationKeys`):
+  a `belongs_to` checks its target, a `has_one` or `has_many` its source,
+  a `many_to_many` both. An enrollments entity keyed on
+  `(student_id, course_id)` with a `grade` column belongs to students and
+  courses, each side has many of it, and `students` can declare a
+  `many_to_many` to courses through it; `?include=`, nested filters and
+  `EagerLoad` work across all of them, and a three-column key does the
+  same for a three-way association. When a registered entity owns a
+  `many_to_many`'s pivot table, reads through the pivot apply its soft
+  delete and owner, tenant and read scopes, and boot refuses the
+  relation if that entity lacks either link column. When several
+  versions own the pivot and none is the source's version or
+  unversioned, the read is an error rather than a pick. A `cascade_write`
+  into a composite-keyed child is refused at boot. A key that is a
+  relation to an integer key holds that integer: ids, writes and
+  cascade links take it in canonical decimal on both dialects. New:
+  `entity.CheckRelationKeys`, `entity.PivotEntity`, `entity.ValueFields`,
+  `entity.RelationHoldsInt`, `crud.CrudHandler.WireKey`.
+  See `gofastr docs entity-declarations` → "Relations and composite
+  keys".
 - **Primary-key change migrations.** The schema diff detects a changed
   key and emits it as destructive: Postgres swaps the key constraint,
   SQLite rebuilds the table. Boot changes the key of an empty table only
@@ -498,6 +520,11 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   names each field still set to a string.
 
 ### Fixed
+- **Postgres text-to-integer retypes apply.** A column whose declared
+  type moved from text to an integer rendered
+  `ALTER COLUMN ... TYPE INTEGER` with no `USING` clause, which Postgres
+  refuses. The change casts the column now: numeric text converts, and
+  anything else fails the migration.
 - **App spec edit forms load their record.** An `entity_form` with
   `mode: edit` PUT to a literal `{id}`, drew its fields empty, and could
   not submit while a required field stayed blank. It renders the record
@@ -566,6 +593,30 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   `entity.ErrCompositeKey` for a composite one. Included and eager-loaded
   rows also keep a mixed-case field (`Sku`) on Postgres, which reports
   the folded column name (`sku`) the allow-list used to miss.
+- **A relation field to an integer key failed on Postgres.** Its column
+  was `TEXT`, and Postgres refuses a `TEXT` foreign key to an `INTEGER`
+  key, so the `CREATE TABLE` failed. The column now takes the target
+  key's integer type on Postgres, following a target key that is itself
+  such a relation; SQLite keeps `TEXT`. A write stores the reference in
+  canonical decimal (`"01"` becomes `1`), and a value that names no
+  integer is a 400 `not_integer`.
+- **`?include=` joined on `id`.** A `belongs_to` or `many_to_many`
+  include to a target keyed on another column loaded nothing; it now
+  joins on the target's key. Includes, nested filters and `EagerLoad`
+  also stopped quoting relation columns, so a mixed-case one
+  (`authorId`) matches the column Postgres folded when the unquoted DDL
+  created it.
+- **A nested include used the first hop's wire names at every depth.**
+  `?include=student.enrollments` renamed each enrollment's columns with
+  the student's `WireName`s and casing, not the enrollment's own. Each
+  hop now converts with its own target's.
+- **A child `AfterList` hook that replaced rows failed when the child's
+  key had a `WireName`.** The fold-back looked the key up under the
+  parent's casing of the column, while the included rows carry the
+  child's wire names, so it found no key. It now reads the child's.
+- **`EagerLoad` refused a `many_to_many` built with
+  `entity.ManyToMany`.** It validated `Relation.ForeignKey`, which a
+  many-to-many leaves empty, and failed with `invalid FK ""`.
 - **A generated SQLite rebuild migration had a partial `Down`.** The
   rebuild has no inverse, but the other changes in the same file kept
   theirs, so a rollback "succeeded" into a table matching neither schema.

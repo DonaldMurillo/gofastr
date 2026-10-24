@@ -602,6 +602,15 @@ explicit relation you declare for the same name always wins and is never
 overwritten. Has-many relations (`many: true`) keep their FK on the *other*
 table and must be declared explicitly via `HasMany`/`Relations`.
 
+A relation column is `TEXT`, except on Postgres when the target's key is
+an `int` field: there it is `INTEGER` (`BIGINT` for a `BIGSERIAL` key),
+since Postgres refuses a `TEXT` foreign key to an integer column. A target
+key that is itself a relation column to an `int` key counts the same way,
+however long the chain. SQLite compares the two by affinity, so it keeps
+`TEXT`. Either way a write stores such a reference in canonical decimal:
+`"01"`, `"+1"` and `1.0` are stored as `1`, and a value that names no
+integer (`"owls"`) is a 400 with the reason `not_integer`.
+
 **A BelongsTo FK is a write-side trust boundary too.** A create or
 update whose body sets a BelongsTo FK (an `order_id`, an
 `author_id`) is refused with **404** when the target row exists but
@@ -1093,6 +1102,8 @@ all. Rename one field or set a `WireName`.
 at `Define`. So is a `WireName` that is another field's column name: a
 body names a field by either, and entityui's forms post by column name,
 so `content` would write whichever field publishes as `content`.
+`CrudHandler.WireKey(column)` returns the key a column's value sits under
+in the rows `ListAll` and `GetOne` return.
 
 **Repeating `_in` unions.** `?tag_in=a,b&tag_in=c` matches all three.
 Every occurrence of the key contributes; the 1000-entry cap
@@ -1442,9 +1453,27 @@ translation keys Display's names produce (`entity.<entity>.*`,
 
 `EntityConfig.PrimaryKey` names the primary-key columns in order. Left
 nil, the key is the one column `id`, which `Define` injects as a generated
-UUID unless `Fields` declares it. Name more than one column for a
-composite key, the usual shape for a join table keyed on the rows it
-links:
+UUID unless `Fields` declares it.
+
+A plain join table keeps that `id` and holds its pair unique with an
+index. Every surface then names a row by one value, and another entity
+can belong to it:
+
+```go
+app.Entity("enrollments", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "student_id", Type: schema.String, Required: true},
+        {Name: "course_id", Type: schema.String, Required: true},
+        {Name: "grade", Type: schema.String},
+    },
+    Indices: []entity.Index{{Columns: []string{"student_id", "course_id"}, Unique: true}},
+})
+```
+
+Name more than one column for a composite key when the columns are the
+record's identity: a table an existing schema already keys that way, or
+records the API should address by the pair. The links and the limits
+below follow from it:
 
 ```go
 app.Entity("enrollments", framework.EntityConfig{
@@ -1477,9 +1506,66 @@ each key column `NOT NULL` and a `PRIMARY KEY (student_id, course_id)`
 constraint. Changing the key of an existing table is a migration; see
 [Primary-key changes](migrations.md#primary-key-changes).
 
-A relation needs a one-column key on both ends for now: a `belongs_to`,
-`has_many` or `many_to_many` to or from a composite-key entity returns
-`entity.ErrCompositeKey`.
+### Relations and composite keys
+
+A foreign key here is one column, so the end it references needs a
+one-column key; the end that holds it may have any key.
+`entity.CheckRelationKeys` applies the rule, and boot, `?include=`,
+nested filters and `EagerLoad` refuse a relation that breaks it with
+`entity.ErrCompositeKey`:
+
+- a `belongs_to` references its target;
+- a `has_one` or `has_many` references its source;
+- a `many_to_many` references both ends through its pivot.
+
+So a join table keyed on the pair it links is an entity of its own, with
+a payload: it belongs to each side, each side has many of it, and a
+`many_to_many` can read through it.
+
+```go
+app.Entity("courses", framework.EntityConfig{
+    Fields: []schema.Field{{Name: "title", Type: schema.String}},
+})
+app.Entity("students", framework.EntityConfig{
+    Fields: []schema.Field{{Name: "name", Type: schema.String}},
+    Relations: []entity.Relation{
+        entity.HasMany("enrollments", "enrollments", "student_id"),
+        entity.ManyToMany("courses", "courses", "enrollments", "student_id", "course_id"),
+    },
+})
+app.Entity("enrollments", framework.EntityConfig{
+    Fields: []schema.Field{
+        {Name: "student_id", Type: schema.String, Required: true},
+        {Name: "course_id", Type: schema.String, Required: true},
+        {Name: "grade", Type: schema.String},
+    },
+    PrimaryKey: []string{"student_id", "course_id"},
+    Relations: []entity.Relation{
+        entity.BelongsTo("student", "students", "student_id"),
+        entity.BelongsTo("course", "courses", "course_id"),
+    },
+})
+```
+
+`GET /enrollments/{student}/{course}?include=student,course`,
+`GET /students/{id}?include=enrollments.course`, `?include=courses`,
+`?enrollments.grade=A` and `?courses.title=Art` all work. A three-way
+association is the same shape with three `belongs_to` and a three-column
+key.
+
+When a registered entity owns a `many_to_many`'s `Through` table, every
+read through the pivot applies that entity's soft delete and its owner,
+tenant and read scopes: a soft-deleted enrollment, or another owner's,
+links nothing. Boot refuses the relation when the entity does not
+declare both `LocalKey` and `ForeignKeyTarget`, since the migrator then
+creates no pivot of its own.
+
+An `AfterList` hook on a composite-keyed child that replaces rows in an
+include is matched back to them by the whole key. A `cascade_write`
+`has_one` or `has_many` into a composite-keyed child is refused at boot:
+it tells an existing child from a new one by the child's one key column.
+A foreign key to a composite-keyed target needs one column per key
+column, which a relation cannot declare yet.
 
 The framework names a record by its primary-key columns,
 `Entity.KeyColumns()`, in declared order. Reads, writes, the keyset
@@ -1497,7 +1583,10 @@ one id. A one-column id is the value itself, so every string is its own
 spelling.
 `entity.KeyValues(id, cols, fields)` reads an id into the values a lookup
 binds, an integer key column's only in canonical decimal (`1`, never `01`).
-`entity.RowKey` reads the id out of a row.
+Pass it `entity.ValueFields(reg, e)` rather than `e.GetFields()`: a
+relation column whose target has an `int` key holds an integer, and
+`ValueFields` types it `int` (`entity.RelationHoldsInt` answers it for
+one column). `entity.RowKey` reads the id out of a row.
 
 On an `Unmanaged` entity (a view, or a table created elsewhere) the
 database chose the key column types, and equality may match a second
