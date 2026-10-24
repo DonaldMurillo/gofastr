@@ -75,7 +75,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// or one already on the row it is writing (media_provenance.go).
 		// Checked on the caller's body, before hooks add their own values.
 		if err := ch.checkMediaProvenance(ctx, body,
-			ch.currentMediaKeys(ctx, req, body[ch.PrimaryKey])); err != nil {
+			ch.currentMediaKeys(ctx, req, ch.colKeyVals(body))); err != nil {
 			return err
 		}
 		ch.InjectTenant(body, ctx)
@@ -214,7 +214,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// fields, those represent identity / immutability.
 		setParts := make([]string, 0, len(cols))
 		for _, c := range cols {
-			if c == ch.PrimaryKey {
+			if ch.isKeyCol(c) {
 				continue
 			}
 			if isAutoField(ch.Entity, c) {
@@ -243,7 +243,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		sb.WriteString(") VALUES (")
 		sb.WriteString(strings.Join(placeholders, ", "))
 		sb.WriteString(") ON CONFLICT (")
-		sb.WriteString(ch.PrimaryKey)
+		sb.WriteString(strings.Join(ch.keyCols(), ", "))
 		sb.WriteString(") DO ")
 		if len(setParts) == 0 {
 			// No fields to update, just DO NOTHING; RETURNING still picks
@@ -285,9 +285,10 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			// returned row consistent with what a scoped read would surface
 			// (e.g. never a soft-deleted row) even if the preflight contract
 			// ever changes.
+			kc, ka := ch.keyCond(ch.colKeyVals(body))
 			selQB := query.Select(visFields...).
 				From(ch.Entity.GetTable()).
-				Where(ch.PrimaryKey+" = $1", body[ch.PrimaryKey])
+				Where(kc, ka...)
 			ch.ApplyTenantScope(selQB, req)
 			ch.ApplyOwnerScope(selQB, req)
 			// This fallback is a READ (it hands the row to the caller), so
@@ -306,7 +307,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		result = res
 
 		if ch.Hooks != nil {
-			if err := runHooks(ch.Hooks, ctx, hook.AfterCreate, result); err != nil {
+			if err := ch.afterRow(ctx, hook.AfterCreate, result); err != nil {
 				return fmt.Errorf("after-create hook: %w", err)
 			}
 		}
@@ -339,8 +340,8 @@ func (ch *CrudHandler) upsertPreflight(ctx context.Context, body map[string]any)
 	if ownerField == "" && !checkSoftDelete && !checkTenant {
 		return nil
 	}
-	pk, ok := body[ch.PrimaryKey]
-	if !ok || pk == nil {
+	key := ch.colKeyVals(body)
+	if key == nil {
 		return nil // no PK supplied ⇒ no conflict possible.
 	}
 
@@ -360,9 +361,10 @@ func (ch *CrudHandler) upsertPreflight(ctx context.Context, body map[string]any)
 	for i := range dest {
 		ptrs[i] = &dest[i]
 	}
-	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s = $1",
-		strings.Join(cols, ", "), ch.Entity.GetTable(), ch.PrimaryKey)
-	err := ch.DB.QueryRowContext(ctx, q, pk).Scan(ptrs...)
+	kc, ka := ch.keyCond(key)
+	q := fmt.Sprintf("SELECT %s FROM %s WHERE %s",
+		strings.Join(cols, ", "), ch.Entity.GetTable(), kc)
+	err := ch.DB.QueryRowContext(ctx, q, ka...).Scan(ptrs...)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return nil // no existing row, pure insert path, allow.

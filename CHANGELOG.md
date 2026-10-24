@@ -248,6 +248,14 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   live in a header or footer that stays on screen. Generated apps with
   `app.locale_prefixes` put it in the marketing footer (sitefooter
   gains a `Language` slot), and so does Meridian.
+- **Record ids name every key column.** `Entity.KeyColumns()` lists an
+  entity's primary-key columns, and crud reads, writes, upserts, the
+  keyset cursor's tiebreak, event payloads, audit `record_id`s and hook
+  ids all name a record through them. A string id is `entity.JoinKey` of
+  the key values (`entity.SplitKey` and `entity.RowKey` read it back),
+  which for a one-column key is the value itself, so nothing changes for
+  existing entities. See `gofastr docs entity-declarations` → "Record
+  ids".
 
 ### Changed
 - **BREAKING: error helpers take phrases.** `handler.WrapError(code,
@@ -403,6 +411,12 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the URL in `X-Gofastr-Document` on the partial and the whole-page
   fetch, and the runtime loads it as a page after checking it is
   http(s). A document load still gets the 303.
+- **Audit rows name records whose key column is not `id`.** The audit
+  trail's create and update rows always read an `id` column for
+  `record_id`, so an entity keyed on `user_code` logged its `id` column,
+  or nothing when it had none, while its delete rows and the Activity
+  tab used the `user_code` value. Every row now reads the key column,
+  under its `WireName`, its camelCase form, or its own name.
 - **`DBQueue` index names on long table names.** Postgres cuts
   identifiers at 63 bytes, so with a table name of 62 or 63 bytes the
   dequeue and lane indexes got the same name and the second was never
@@ -439,6 +453,23 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
   the go.mod `gofastr init` writes; the `go 1.27.0` floor is unchanged).
   1.27.3 fixes GO-2026-6809 in crypto/x509, which govulncheck reaches
   through the SMTP sender's TLS handshake. Build apps with 1.27.3.
+- **A sensitive primary key stays out of the audit log's `record_id`.**
+  The default scrub dropped an `api_key` or `token` column from the
+  audit diff, but the same value went into `record_id` unchanged when it
+  was the record's key, on delete always and on create and update for a
+  one-word name. Without a `Redact` callback, a key whose column or wire
+  name the scrub treats as sensitive is now stored as `sha256:<hex>` on
+  every row, and the Activity tab hashes the id the same way to find
+  them. Rows written before the change keep the raw id and no longer
+  show in that tab. Create and update rows now strip control bytes from
+  `record_id` the way delete rows already did. The CRUD handler hands
+  its After hooks the record id it read from its own key columns
+  (`crud.AuditRecordIDFor`), so a key two API versions give different
+  wire names, even each other's, still names the right record, and a
+  key sensitive under any version's wire name is hashed.
+  `framework.AuditDigestID` tells a digest from a record id; the admin
+  audit page uses it so a digest is never looked up, and so never
+  titles or links a record whose own id is that digest string.
 
 ## [0.93.0] - 2026-10-20
 

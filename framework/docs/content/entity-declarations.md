@@ -1432,6 +1432,20 @@ translation keys Display's names produce (`entity.<entity>.*`,
 `nav.groups.<key>`) are listed on the
 [Internationalization](i18n.md) page.
 
+## Record ids
+
+The framework names a record by its primary-key columns,
+`Entity.KeyColumns()`, in declared order. Reads, writes, the keyset
+cursor's tiebreak, `UpsertOne`'s conflict target, event payloads, audit
+`record_id`s and hook ids all go through them.
+
+Where an API takes or returns one record id as a string (`GetOne`,
+`OnBeforeDelete`, `hook.GetPayload.ID`, an audit row), that string is
+`entity.JoinKey` of the key values. For a single-column key, the usual
+case, it is the value itself. `entity.SplitKey(id, n)` reverses it and
+refuses an id with the wrong number of values (`entity.ErrBadKey`).
+`entity.RowKey` reads the id out of a row.
+
 ## States (a state machine)
 
 `EntityConfig.States` names the Enum field holding a record's state and the

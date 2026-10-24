@@ -248,6 +248,9 @@ type App struct {
 	// auditActor is WithAuditLog's actor resolver, for audit rows written
 	// outside the CRUD hooks (entityui's bulk runs).
 	auditActor func(context.Context) string
+	// auditCfg is WithAuditLog's config, for the Activity tab to map a
+	// record id to the record_id the audit rows store (AuditConfig.keyID).
+	auditCfg *AuditConfig
 	// entityUI is the UI EntityUI built; a second call is refused.
 	entityUI *entityui.UI
 	// pendingEndpoints holds EntityEndpoints calls until App.Entity

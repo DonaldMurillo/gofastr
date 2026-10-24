@@ -151,11 +151,14 @@ func (ch *CrudHandler) runAfterGet(ctx context.Context, r *http.Request, id stri
 // vouch for keeps both properties. The id is not a secret: it is the row's own
 // URL, and the caller is about to be redirected to it.
 func (ch *CrudHandler) identityOnly(result map[string]any) map[string]any {
-	key := ch.convertKey(ch.PrimaryKey)
-	if v, ok := result[key]; ok {
-		return map[string]any{key: v}
+	out := map[string]any{}
+	for _, c := range ch.keyCols() {
+		key := ch.convertKey(c)
+		if v, ok := result[key]; ok {
+			out[key] = v
+		}
 	}
-	return map[string]any{}
+	return out
 }
 
 // hookRequest strips the read-hook opt-in from the request a hook receives.
@@ -358,10 +361,7 @@ func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) 
 	if !parentHooks {
 		return row, nil
 	}
-	id := ""
-	if v, ok := row[ch.convertKey(ch.PrimaryKey)]; ok {
-		id = fmt.Sprint(v)
-	}
+	id, _ := ch.rowID(row)
 	payload := &hook.GetPayload{Request: r, ID: id, Result: row}
 	if err := runHooks(ch.Hooks, hookCtx(r.Context()), hook.AfterGet, payload); err != nil {
 		return nil, err

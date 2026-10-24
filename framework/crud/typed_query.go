@@ -222,10 +222,7 @@ func (q *TypedQuery[T]) First(ctx context.Context) (*T, error) {
 		return nil, sql.ErrNoRows
 	}
 	row := raw[0]
-	id := ""
-	if v, ok := row[q.handler.convertKey(q.handler.PrimaryKey)]; ok {
-		id = fmt.Sprint(v)
-	}
+	id, _ := q.handler.rowID(row)
 	row, err = q.handler.runAfterGet(ctx, req, id, row)
 	if err != nil {
 		return nil, err
@@ -397,7 +394,7 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	}
 	anySet := false
 	for _, f := range q.handler.Entity.GetFields() {
-		if f.Name == q.handler.PrimaryKey || f.AutoGenerate != schema.AutoNone {
+		if q.handler.isKeyCol(f.Name) || f.AutoGenerate != schema.AutoNone {
 			continue
 		}
 		if (f.ReadOnly || f.Hidden) && !serverWrites(ctx) {

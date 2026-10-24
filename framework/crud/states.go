@@ -322,8 +322,8 @@ func (ch *CrudHandler) checkStateUpsert(ctx context.Context, r *http.Request, bo
 	if ch.enforcedStates() == nil {
 		return ctx, nil
 	}
-	if id, ok := body[ch.PrimaryKey]; ok && id != nil {
-		next, err := ch.checkStateUpdate(ctx, r, fmt.Sprint(id), body)
+	if id, ok := entity.RowKey(body, ch.keyCols(), nil); ok {
+		next, err := ch.checkStateUpdate(ctx, r, id, body)
 		if !errors.Is(err, errNotFound) {
 			return next, err
 		}
@@ -583,7 +583,8 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 	if col := autoUpdatedAtColumn(ch.Entity); col != "" {
 		ub.Set(col, generateFieldValue(schema.AutoTimestamp))
 	}
-	ub.Where(ch.PrimaryKey+" = $1", id)
+	kc, ka := ch.keyWhere(id)
+	ub.Where(kc, ka...)
 	placeholders := make([]string, len(t.From))
 	from := make([]any, len(t.From))
 	for i, v := range t.From {
@@ -616,7 +617,7 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 		return nil, fmt.Errorf("transition %s: %w", t.Key, err)
 	}
 	if ch.Hooks != nil {
-		if err := runHooks(ch.Hooks, ctx, hook.AfterUpdate, result); err != nil {
+		if err := ch.afterRow(ctx, hook.AfterUpdate, result); err != nil {
 			return nil, fmt.Errorf("after-update hook: %w", err)
 		}
 	}
@@ -629,9 +630,10 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 // selectMoveTarget reads cols of row id under the move's WHERE (tenant,
 // owner-write scope, deleted_at IS NULL); absent answers errNotFound.
 func (ch *CrudHandler) selectMoveTarget(ctx context.Context, r *http.Request, id string, cols []string) (map[string]any, error) {
+	kc, ka := ch.keyWhere(id)
 	qb := query.Select(cols...).
 		From(ch.Entity.GetTable()).
-		Where(ch.PrimaryKey+" = $1", id)
+		Where(kc, ka...)
 	ch.ApplyTenantScope(qb, r)
 	applyOwnerScope(ch, qb, r, false)
 	if ch.Entity.Config.Scope.SoftDelete {
@@ -651,7 +653,7 @@ func (ch *CrudHandler) selectMoveTarget(ctx context.Context, r *http.Request, id
 // may write but not read a record learns nothing of its state from a 409
 // or 422.
 func (ch *CrudHandler) refusalState(ctx context.Context, id string, st *entity.StatesConfig, current string) (string, []string, bool) {
-	if hidden, err := ch.readScopeHidesRow(ctx, map[string]any{ch.PrimaryKey: id}); hidden || err != nil {
+	if hidden, err := ch.readScopeHidesRow(ctx, ch.keyPayload(id)); hidden || err != nil {
 		return "", nil, true
 	}
 	return current, openMoves(st, current), false
