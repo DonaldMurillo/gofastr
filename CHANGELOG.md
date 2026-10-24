@@ -7,6 +7,20 @@ stabilises). Breaking changes are clearly marked with **BREAKING**.
 
 ## [Unreleased]
 
+## [0.94.1] - 2026-10-24
+
+### Security
+- **BREAKING: Go 1.27.3 is the floor.** `go.mod` declares `go 1.27.3`,
+  up from `go 1.27.0`. v0.94.0 built the repo with 1.27.3, but its
+  `toolchain` line binds only GoFastr's own builds, so an app still
+  built on Go 1.27.0 to 1.27.2 and shipped GO-2026-6809 in
+  `crypto/x509`, which the SMTP sender's TLS handshake reaches. Now an
+  app needs 1.27.3: `go get` raises its `go` line, and the default
+  `GOTOOLCHAIN=auto` downloads the toolchain. With `GOTOOLCHAIN=local`,
+  install 1.27.3 first. `gofastr init` writes `go 1.27.3` with no
+  `toolchain` line, and `gofastr init .` raises a module below the
+  floor.
+
 ## [0.94.0] - 2026-10-23
 
 **BREAKING** for error helpers, translated text and entity keys.
