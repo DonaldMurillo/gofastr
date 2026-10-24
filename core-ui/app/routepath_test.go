@@ -66,3 +66,24 @@ func TestRedirectCarriesSlashKey(t *testing.T) {
 		t.Fatalf("redirect = %q (ok=%v), want /orders/a%%2Fb", got, ok)
 	}
 }
+
+// A carried "?" or "#" stays in the path: written raw, the browser would
+// read the rest of the value as a query or a fragment.
+func TestRedirectEscapesQueryChars(t *testing.T) {
+	a := NewApp("redir")
+	a.Register("/orders/:id", &catchScreen{}, nil)
+	a.Register("/files/{rest...}", &catchScreen{}, nil)
+	a.RedirectPattern("/o/:id", "/orders/:id")
+	a.RedirectPattern("/f/{rest...}", "/files/{rest...}")
+	for from, want := range map[string]string{
+		"/o/a%3Fb":     "/orders/a%3Fb",
+		"/o/a%23b":     "/orders/a%23b",
+		"/f/x/a%3Fb":   "/files/x/a%3Fb",
+		"/f/x/a%2523b": "/files/x/a%2523b",
+	} {
+		got, ok := a.ResolveRedirect(RoutePath(from))
+		if !ok || got != want {
+			t.Errorf("redirect %s = %q (ok=%v), want %s", from, got, ok, want)
+		}
+	}
+}
