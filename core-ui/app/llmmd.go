@@ -434,7 +434,7 @@ func AppLLMMDCtx(ctx context.Context, a *App) string {
 			if desc == "" {
 				desc = "—"
 			}
-			fmt.Fprintf(&b, "| [%s](%s) | %s | %s | %s |\n", mdLinkText(r.Path), mdLinkDest(r.Path+"/llm.md"), mdTableCell(r.Title), screen.Type.String(), mdTableCell(desc))
+			fmt.Fprintf(&b, "| [%s](%s) | %s | %s | %s |\n", mdLinkText(r.Path), mdLinkDest(pageLLMMDLink(r.Path)), mdTableCell(r.Title), screen.Type.String(), mdTableCell(desc))
 		}
 		b.WriteString("\n")
 	}

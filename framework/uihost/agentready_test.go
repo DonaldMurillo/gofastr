@@ -482,6 +482,27 @@ func TestMarkdownNegotiation_NoAcceptHeaderIsHTML(t *testing.T) {
 	}
 }
 
+// App.NoLLMMD turns off every page doc, the negotiated one included: the
+// request gets the HTML page.
+func TestNegotiationHonorsAppNoLLMMD(t *testing.T) {
+	a := app.NewApp("md-neg-off")
+	a.NoLLMMD = true
+	a.RegisterScreen(app.NewScreen("/", &mdPageScreen{}).WithTitle("Home"), nil)
+	srv := httptest.NewServer(New(a, WithPublicLLMMD(), WithMarkdownNegotiation()))
+	t.Cleanup(srv.Close)
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/", nil)
+	req.Header.Set("Accept", "text/markdown")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Errorf("NoLLMMD app, Accept: text/markdown → Content-Type %q, want text/html", ct)
+	}
+}
+
 // ── Gap: default llms.txt section links /llm-pages.md when public ──
 
 func TestDefaultLLMsSections_LLMMDPublic(t *testing.T) {

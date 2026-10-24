@@ -864,7 +864,7 @@ func markdownAlternate(path string) string {
 // serveMarkdownForPage renders the markdown for the requested path via
 // the per-screen LLM doc renderer. Returns false if no screen matches.
 func (ds *UIHost) serveMarkdownForPage(w http.ResponseWriter, r *http.Request) bool {
-	if ds.App == nil {
+	if ds.App == nil || ds.App.NoLLMMD {
 		return false
 	}
 	screen, _, ok := ds.App.Router.Resolve(routePath(r))
