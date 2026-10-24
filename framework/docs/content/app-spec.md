@@ -1155,7 +1155,10 @@ would never retry; the app would report ready with bootstrap data missing.
 A relation value written as `"@currencies.label=Euro"` is a reference: the
 seed looks up the first `currencies` row whose `label` is `Euro` and stores
 that row's key, the target's `primary_key` column when it declares one and
-`id` otherwise.
+`id` otherwise. A relation's target has a one-column key, since boot
+refuses a relation to an entity keyed on several columns (see
+[Relations and composite keys](entity-declarations.md#relations-and-composite-keys)),
+so a reference always stores one value.
 
 When any entity declares `owner_field` (per-user scoping) **and** an admin
 account is bootstrapped (`app.admin.seed_email` / `seed_password`), the seed

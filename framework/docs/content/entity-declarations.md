@@ -1523,6 +1523,9 @@ a payload: it belongs to each side, each side has many of it, and a
 `many_to_many` can read through it.
 
 ```go
+app.Entity("courses", framework.EntityConfig{
+    Fields: []schema.Field{{Name: "title", Type: schema.String}},
+})
 app.Entity("students", framework.EntityConfig{
     Fields: []schema.Field{{Name: "name", Type: schema.String}},
     Relations: []entity.Relation{
