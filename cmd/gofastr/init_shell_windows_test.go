@@ -23,9 +23,19 @@ func TestInitWindowsShells(t *testing.T) {
 				if err != nil {
 					t.Skip("Git for Windows is not installed")
 				}
-				bash = filepath.Join(filepath.Dir(git), "..", "bin", "bash.exe")
-				if _, err := os.Stat(bash); err != nil {
-					t.Skipf("Git Bash is not available beside %s: %v", git, err)
+				// Git Bash's PATH can select mingw64/bin/git.exe instead
+				// of cmd/git.exe. Check both installation layouts.
+				for _, candidate := range []string{
+					filepath.Join(filepath.Dir(git), "..", "bin", "bash.exe"),
+					filepath.Join(filepath.Dir(git), "..", "..", "bin", "bash.exe"),
+				} {
+					if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+						bash = candidate
+						break
+					}
+				}
+				if bash == "" {
+					t.Skipf("Git Bash is not available beside %s", git)
 				}
 			}
 			newCommand := func() *exec.Cmd {
