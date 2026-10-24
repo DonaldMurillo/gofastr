@@ -52,7 +52,7 @@ func (b *Battery) openWith(l layout, print bool) error {
 		f.Close()
 		return fmt.Errorf("service: restrict sign-in page: %w", err)
 	}
-	if _, err := f.WriteString(signInPage(loginURL, resp.Token)); err != nil {
+	if _, err := f.WriteString(signInPage(openCtx(), loginURL, resp.Token)); err != nil {
 		f.Close()
 		return fmt.Errorf("service: write sign-in page: %w", err)
 	}

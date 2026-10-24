@@ -3653,6 +3653,7 @@ func (a *App) Start(addr string) error {
 	for i := len(a.serverWrappers) - 1; i >= 0; i-- {
 		serveHandler = a.serverWrappers[i](serveHandler)
 	}
+	serveHandler = a.serveLocale(serveHandler)
 	a.serverWrapped = true
 	srv := &http.Server{
 		Addr:              addr,

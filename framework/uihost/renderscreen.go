@@ -65,6 +65,7 @@ const screenCacheControlDefault = "private, no-store"
 // same tail every page runs (finishPageDocument): verify-or-mint the
 // session, no-store + Vary: Cookie, chrome, seed, widget SSR.
 func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp component.Component, resp ScreenResponse) {
+	app.RefuseRetiredTitle("RenderScreen", comp)
 	status := resp.Status
 	if status == 0 {
 		if sc, ok := comp.(ScreenStatusCode); ok {
@@ -135,7 +136,7 @@ func (ds *UIHost) RenderScreen(w http.ResponseWriter, r *http.Request, comp comp
 	}
 	// Same convention as the page pipeline: "<page> — <app>".
 	if t, ok := comp.(app.ScreenTitler); ok {
-		if name := t.ScreenTitle(); name != "" {
+		if name := t.ScreenTitle(r.Context()); name != "" {
 			title = name
 			if suffix := " — " + appName; !strings.HasSuffix(title, suffix) {
 				title += suffix

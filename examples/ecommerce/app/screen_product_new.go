@@ -1,8 +1,10 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=a573a5979632b6f5
+//gofastr:generated generator=app kind=scaffold version=dev sum=f0c69be50430f49d
 
 package main
 
 import (
+	"context"
+
 	"database/sql"
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -15,8 +17,10 @@ import (
 
 type ProductNewScreen struct{}
 
-func (s *ProductNewScreen) ScreenTitle() string        { return "Add Product" }
-func (s *ProductNewScreen) ScreenDescription() string  { return "Create a new product listing" }
+func (s *ProductNewScreen) ScreenTitle(ctx context.Context) string { return "Add Product" }
+func (s *ProductNewScreen) ScreenDescription(ctx context.Context) string {
+	return "Create a new product listing"
+}
 func (s *ProductNewScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 func (s *ProductNewScreen) Render() render.HTML {

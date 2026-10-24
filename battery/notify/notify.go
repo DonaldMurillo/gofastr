@@ -39,6 +39,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/battery/email"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -64,6 +65,13 @@ type Recipient struct {
 	// channels, kept as a slice rather than a single field because
 	// users frequently have multiple devices.
 	PushTokens []string
+	// Locale is the BCP 47 tag the recipient reads ("fr-CA"), typically
+	// from their profile. When set, the templater and the channel run
+	// under it, so a phrase-based Templater speaks the recipient's
+	// language, not the language of whoever triggered the send. A tag
+	// the catalog lacks falls back to the catalog's fallback; empty
+	// keeps ctx's locale.
+	Locale string
 }
 
 // Rendered is the per-channel materialised message.
@@ -183,6 +191,7 @@ func (n *Notifier) Send(ctx context.Context, msg Notification) error {
 	onError := n.onError
 	n.mu.RUnlock()
 
+	ctx = recipientContext(ctx, msg.To)
 	selected, rerr := routeSafe(router, msg, chanNames)
 	if rerr != nil {
 		return rerr
@@ -265,6 +274,19 @@ func routeSafe(router Router, msg Notification, chanNames []string) (selected []
 		}
 	}()
 	return router(msg.Type, msg.To, chanNames), nil
+}
+
+// recipientContext is ctx speaking to's language when to names one.
+func recipientContext(ctx context.Context, to Recipient) context.Context {
+	if to.Locale == "" {
+		return ctx
+	}
+	tr := i18n.TranslatorFrom(ctx)
+	if tr == nil {
+		tr = i18n.Default()
+	}
+	loc, _ := i18n.Match(tr, to.Locale)
+	return i18n.WithContext(ctx, loc)
 }
 
 // renderFor resolves the rendered payload for one channel. The templater
@@ -372,7 +394,10 @@ func DefaultRouter(_ string, to Recipient, channels []string) []string {
 // ----- bundled MapTemplater ------------------------------------------------
 
 // Template is one per-channel template. The fields are interpolated
-// with the same `{{placeholder}}` form used by the i18n package.
+// with the same `{{placeholder}}` form used by the i18n package, but
+// they are fixed text: for a message in the recipient's language,
+// implement Templater with i18n phrases (ctx carries
+// [Recipient.Locale]).
 type Template struct {
 	Subject  string
 	TextBody string
@@ -382,7 +407,7 @@ type Template struct {
 
 // MapTemplater is the simplest Templater: a (notifType, channel) →
 // Template lookup table. Suitable for apps with a small fixed set of
-// notifications; for catalog-driven i18n use [I18nTemplater].
+// notifications in one language; see [Template] for translated ones.
 type MapTemplater struct {
 	mu        sync.RWMutex
 	templates map[string]map[string]Template // type → channel → template

@@ -206,7 +206,7 @@ func (f *Shell) FireOnSettings() {
 	f.settingsFires++
 	f.mu.Unlock()
 	if onSettings != nil {
-		onSettings()
+		onSettings(context.Background())
 	}
 }
 

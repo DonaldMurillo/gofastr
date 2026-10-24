@@ -206,7 +206,7 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 	for _, f := range step.Fields {
 		if f.Validate != nil {
 			if err := f.Validate(values[f.Name]); err != nil {
-				fieldErrors[f.Name] = err.Error()
+				fieldErrors[f.Name], _ = i18n.ErrorText(req.Context(), err, i18n.Phrase{})
 			}
 		}
 	}
@@ -219,7 +219,8 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 	// critical section so a racing POST on an intermediate step can't
 	// re-run it between the run and the advance.
 	if err := r.runStepSerialized(req.Context(), stepIdx, step, values); err != nil {
-		r.renderStepWithErrors(w, req, stepIdx, map[string]string{"_step": err.Error()})
+		msg, _ := i18n.ErrorText(req.Context(), err, i18n.Phrase{})
+		r.renderStepWithErrors(w, req, stepIdx, map[string]string{"_step": msg})
 		return
 	}
 

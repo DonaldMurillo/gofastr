@@ -242,7 +242,7 @@ func ScreenLLMMDForPath(ctx context.Context, a *App, path string) (ScreenLLMMDRe
 
 	title := screen.Title
 	if t, ok := comp.(ScreenTitler); ok {
-		if tt := safeScreenTitle(t); tt != "" {
+		if tt := safeScreenTitle(ctx, t); tt != "" {
 			title = tt
 		}
 	}

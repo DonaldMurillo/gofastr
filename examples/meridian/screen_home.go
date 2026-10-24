@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/seo"
@@ -12,8 +14,12 @@ import (
 
 type HomeScreen struct{}
 
-func (s *HomeScreen) ScreenTitle() string        { return "Meridian: billing that runs itself" }
-func (s *HomeScreen) ScreenDescription() string  { return "The revenue console for modern SaaS." }
+func (s *HomeScreen) ScreenTitle(ctx context.Context) string {
+	return "Meridian: billing that runs itself"
+}
+func (s *HomeScreen) ScreenDescription(ctx context.Context) string {
+	return "The revenue console for modern SaaS."
+}
 func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 // ScreenSchema emits Organization + WebSite JSON-LD on the homepage,

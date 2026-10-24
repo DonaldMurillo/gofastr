@@ -802,9 +802,8 @@ func (h *HomeScreen) Render() render.HTML {
 // No ScreenTitle here on purpose: the page renderer composes
 // "<title>SCREEN — APP NAME</title>", so a home screen titled after the
 // app itself ships "myapp — myapp". Untitled, the tab reads exactly the
-// app name. Add ScreenTitle() (and ScreenDescription()) on inner pages,
+// app name. Add ScreenTitle (and ScreenDescription) on inner pages,
 // where the screen name differs from the site's.
-func (h *HomeScreen) ScreenDescription() string  { return "" }
 func (h *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 `, name, entityHint, actions)
 	if err := os.WriteFile(filepath.Join(name, "screens.go"), []byte(content), 0o644); err != nil {
@@ -843,9 +842,9 @@ import (
 
 type LoginScreen struct{ component.ContextOnly }
 
-func (s *LoginScreen) ScreenTitle() string        { return "Sign in" }
-func (s *LoginScreen) ScreenDescription() string  { return "" }
-func (s *LoginScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *LoginScreen) ScreenTitle(ctx context.Context) string       { return "Sign in" }
+func (s *LoginScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *LoginScreen) ScreenType() app.ScreenType                  { return app.ScreenPage }
 
 func (s *LoginScreen) RenderCtx(ctx context.Context) render.HTML {
 	q := app.QueryFromContext(ctx)
@@ -878,9 +877,9 @@ func (s *LoginScreen) RenderCtx(ctx context.Context) render.HTML {
 
 type RegisterScreen struct{ component.ContextOnly }
 
-func (s *RegisterScreen) ScreenTitle() string        { return "Create account" }
-func (s *RegisterScreen) ScreenDescription() string  { return "" }
-func (s *RegisterScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+func (s *RegisterScreen) ScreenTitle(ctx context.Context) string       { return "Create account" }
+func (s *RegisterScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *RegisterScreen) ScreenType() app.ScreenType                  { return app.ScreenPage }
 
 // Registering does not sign the user in. battery/auth answers a new
 // address and an already-registered one with the same redirect, so the

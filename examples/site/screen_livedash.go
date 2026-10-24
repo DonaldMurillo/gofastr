@@ -532,8 +532,8 @@ type LiveDashboardScreen struct {
 	component.ContextOnly
 }
 
-func (s *LiveDashboardScreen) ScreenTitle() string { return "Live dashboard" }
-func (s *LiveDashboardScreen) ScreenDescription() string {
+func (s *LiveDashboardScreen) ScreenTitle(ctx context.Context) string { return "Live dashboard" }
+func (s *LiveDashboardScreen) ScreenDescription(ctx context.Context) string {
 	return "Live-data reference: SSE island push, computed signals, bounded feed"
 }
 func (s *LiveDashboardScreen) ScreenType() app.ScreenType { return app.ScreenPage }

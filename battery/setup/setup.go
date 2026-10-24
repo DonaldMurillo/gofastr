@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // Field describes one input the operator provides during setup.
@@ -28,8 +29,9 @@ type Field struct {
 	// (prefixed with GOFASTR_). e.g. "ADMIN_EMAIL" → form name
 	// "ADMIN_EMAIL", env GOFASTR_ADMIN_EMAIL.
 	Name string
-	// Label is the human-readable label shown in the wizard.
-	Label string
+	// Label is the field's label in the wizard, in the reader's
+	// language. The zero Phrase shows Name.
+	Label i18n.Phrase
 	// EnvVar is the full environment variable name (e.g.
 	// "GOFASTR_ADMIN_EMAIL"). Empty means the field cannot be resolved
 	// from env, it can only come through the wizard.
@@ -40,18 +42,39 @@ type Field struct {
 	Secret bool
 	// Validate optionally checks the value before the step's Run fires.
 	// Returning an error aborts the step and re-renders the field with
-	// the message.
+	// the message: an [i18n.NewError] renders in the reader's language,
+	// any other error as its own text.
 	Validate func(value string) error
+}
+
+// label is f's label in ctx's language.
+func (f Field) label(ctx context.Context) string {
+	if f.Label.IsZero() {
+		return f.Name
+	}
+	return f.Label.Text(ctx)
 }
 
 // Step is one unit of the setup flow.
 type Step struct {
-	Name   string
+	// Name identifies the step in logs and headless errors.
+	Name string
+	// Title is the step's heading and progress label in the wizard, in
+	// the reader's language. The zero Phrase shows Name.
+	Title  i18n.Phrase
 	Fields []Field
 	// Run executes the step with the resolved field values. Called once
 	// per step in order. An error aborts the flow (headless) or
 	// re-renders the step (interactive).
 	Run func(ctx context.Context, values map[string]string) error
+}
+
+// title is s's heading in ctx's language.
+func (s Step) title(ctx context.Context) string {
+	if s.Title.IsZero() {
+		return s.Name
+	}
+	return s.Title.Text(ctx)
 }
 
 // Config is the top-level setup configuration.
@@ -68,8 +91,9 @@ type Config struct {
 	// guaranteed to be authorised.
 	DisableToken bool
 
-	// Title overrides the wizard page title. Defaults to "Setup".
-	Title string
+	// Title overrides the wizard page title. The zero Phrase is
+	// setup.title, "Setup".
+	Title i18n.Phrase
 
 	// HostName overrides the host in the setup URL printed at boot.
 	// Defaults to the bound listen address.
@@ -128,8 +152,8 @@ func New(cfg Config) *Runner {
 	if cfg.Complete == nil {
 		panic("setup: Config.Complete is required")
 	}
-	if cfg.Title == "" {
-		cfg.Title = "Setup"
+	if cfg.Title.IsZero() {
+		cfg.Title = pageTitle
 	}
 	return &Runner{cfg: cfg, tokenEnabled: !cfg.DisableToken}
 }

@@ -1,6 +1,7 @@
 package desktopui_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -19,8 +20,10 @@ import (
 // components, their registered styles are served.
 type demoScreen struct{}
 
-func (s *demoScreen) ScreenTitle() string       { return "Desktop UI demo" }
-func (s *demoScreen) ScreenDescription() string { return "Every desktop component on one page" }
+func (s *demoScreen) ScreenTitle(ctx context.Context) string { return "Desktop UI demo" }
+func (s *demoScreen) ScreenDescription(ctx context.Context) string {
+	return "Every desktop component on one page"
+}
 
 func (s *demoScreen) Render() render.HTML {
 	return ui.Stack(ui.StackConfig{}, []render.HTML{

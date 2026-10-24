@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -98,10 +99,10 @@ func (c *explicitIDComp) Render() render.HTML { return render.Raw("<p>explicit</
 func (c *explicitIDComp) Actions() {
 	component.On("save", func(*component.ComponentContext) {})
 }
-func (c *explicitIDComp) ScreenTitle() string        { return "Explicit" }
-func (c *explicitIDComp) ScreenDescription() string  { return "" }
-func (c *explicitIDComp) ScreenType() app.ScreenType { return app.ScreenPage }
-func (c *explicitIDComp) ComponentID() string        { return c.id }
+func (c *explicitIDComp) ScreenTitle(ctx context.Context) string       { return "Explicit" }
+func (c *explicitIDComp) ScreenDescription(ctx context.Context) string { return "" }
+func (c *explicitIDComp) ScreenType() app.ScreenType                   { return app.ScreenPage }
+func (c *explicitIDComp) ComponentID() string                          { return c.id }
 
 // TestExplicitIDCollisionAlsoRefused pins the other edge of the collision
 // guard: the panic must fire when an EXPLICIT ComponentID collides with

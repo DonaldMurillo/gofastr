@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // buildTestRunner creates a Runner with token enabled (default) for
@@ -22,7 +24,7 @@ func buildTestRunner(t *testing.T, disableToken bool, completeVal *bool) *Runner
 		},
 		Steps: []Step{
 			{Name: "test", Fields: []Field{
-				{Name: "FOO", Label: "Foo"},
+				{Name: "FOO", Label: i18n.Define("setup_test.foo", "Foo")},
 			}, Run: func(_ context.Context, _ map[string]string) error { return nil }},
 		},
 	})

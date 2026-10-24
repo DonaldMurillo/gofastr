@@ -189,10 +189,10 @@ func pluginsSectionMenuConfig() interactive.SectionMenuConfig {
 func groupScreen(path string, comp component.Component, opts ...app.ScreenOption) *app.Screen {
 	s := app.NewScreen(path, comp)
 	if t, ok := comp.(app.ScreenTitler); ok {
-		s.Title = t.ScreenTitle()
+		s.Title = t.ScreenTitle(context.Background())
 	}
 	if d, ok := comp.(app.ScreenDescriber); ok {
-		s.Description = d.ScreenDescription()
+		s.Description = d.ScreenDescription(context.Background())
 	}
 	if ty, ok := comp.(app.ScreenTyper); ok {
 		s.Type = ty.ScreenType()

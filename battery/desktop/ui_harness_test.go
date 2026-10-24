@@ -138,7 +138,7 @@ func TestSettingsUnconfiguredIsUnsupported(t *testing.T) {
 	app, d := uiApp(t, desktop.Config{})
 	h := desktoptest.Run(t, app, d)
 	h.Call("windows", "openSettings", nil).AssertCode(t, desktop.CodeUnsupported)
-	if _, err := d.OpenSettings(); err == nil {
+	if _, err := d.OpenSettings(context.Background()); err == nil {
 		t.Fatal("OpenSettings without Config.Settings succeeded")
 	}
 	// A secondary window on any screen still opens through the page.

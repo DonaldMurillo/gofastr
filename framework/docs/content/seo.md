@@ -46,10 +46,10 @@ host := uihost.New(site,
 Implement any of these on a screen component:
 
 ```go
-func (s *PostScreen) ScreenTitle() string       { return s.post.Title }
-func (s *PostScreen) ScreenDescription() string { return s.post.Summary }
-func (s *PostScreen) ScreenCanonical() string   { return "https://blog.example/posts/" + s.post.Slug }
-func (s *PostScreen) ScreenRobots() string      { return "noindex" } // drafts, filtered views
+func (s *PostScreen) ScreenTitle(ctx context.Context) string       { return s.post.Title }
+func (s *PostScreen) ScreenDescription(ctx context.Context) string { return s.post.Summary }
+func (s *PostScreen) ScreenCanonical() string                       { return "https://blog.example/posts/" + s.post.Slug }
+func (s *PostScreen) ScreenRobots() string                          { return "noindex" } // drafts, filtered views
 func (s *PostScreen) ScreenHreflangs() []uihost.HreflangLink {
     return []uihost.HreflangLink{{Lang: "en", URL: "…"}, {Lang: "x-default", URL: "…"}}
 }
@@ -104,7 +104,7 @@ site.Register("/posts/:slug", &PostScreen{}, layout, app.AsArticle())
 
 // PostScreen is an ordinary screen: title + prose, nothing more.
 type PostScreen struct{ post Post }
-func (s *PostScreen) ScreenTitle() string { return s.post.Title }
+func (s *PostScreen) ScreenTitle(ctx context.Context) string { return s.post.Title }
 func (s *PostScreen) Render() render.HTML { /* the post body */ }
 ```
 
@@ -206,7 +206,7 @@ icon-less apps never 404 on every page load.
 ## Titles
 
 `<title>` comes from the screen: the `Title` set at registration
-(`app.NewScreen(...).WithTitle("Pricing")`) or a `ScreenTitle() string`
+(`app.NewScreen(...).WithTitle("Pricing")`) or a `ScreenTitle(ctx context.Context) string`
 method (re-read after `Load`, so dynamic routes can title themselves
 from data). The app name is appended: `Pricing — Freightline`. If the
 title already ends with the exact suffix ` — Freightline`, it is left

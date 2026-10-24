@@ -68,7 +68,7 @@ const (
 // customer's brand override) with no CSS of its own.
 type reportsScreen struct{}
 
-func (s *reportsScreen) ScreenTitle() string { return "Reports" }
+func (s *reportsScreen) ScreenTitle(ctx context.Context) string { return "Reports" }
 
 func (s *reportsScreen) Render() render.HTML { return s.RenderCtx(context.Background()) }
 

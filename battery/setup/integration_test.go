@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
+
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
@@ -99,7 +101,7 @@ func TestSwap_WizardCompletesAndSwaps(t *testing.T) {
 		},
 		Steps: []Step{
 			{Name: "create", Fields: []Field{
-				{Name: "NAME", Label: "Name"},
+				{Name: "NAME", Label: i18n.Define("setup_test.name", "Name")},
 			}, Run: func(_ context.Context, vals map[string]string) error {
 				done = true
 				return nil
@@ -150,8 +152,8 @@ func TestSwap_PRGRedirectBetweenSteps(t *testing.T) {
 			return done, nil
 		},
 		Steps: []Step{
-			{Name: "first", Fields: []Field{{Name: "A", Label: "A"}}, Run: func(_ context.Context, _ map[string]string) error { return nil }},
-			{Name: "second", Fields: []Field{{Name: "B", Label: "B"}}, Run: func(_ context.Context, _ map[string]string) error {
+			{Name: "first", Fields: []Field{{Name: "A", Label: i18n.Define("setup_test.a", "A")}}, Run: func(_ context.Context, _ map[string]string) error { return nil }},
+			{Name: "second", Fields: []Field{{Name: "B", Label: i18n.Define("setup_test.b", "B")}}, Run: func(_ context.Context, _ map[string]string) error {
 				done = true
 				return nil
 			}},
@@ -452,10 +454,10 @@ func TestRender_PageContainsComponents(t *testing.T) {
 	done := false
 	r := New(Config{
 		DisableToken: true,
-		Title:        "Test Setup",
+		Title:        i18n.Define("setup_test.title", "Test Setup"),
 		Complete:     func(_ context.Context) (bool, error) { return done, nil },
 		Steps: []Step{
-			{Name: "step1", Fields: []Field{{Name: "X", Label: "X"}}},
+			{Name: "step1", Fields: []Field{{Name: "X", Label: i18n.Define("setup_test.x", "X")}}},
 		},
 	})
 	h := r.Handler(func() {}, nil, nil)
@@ -561,7 +563,7 @@ func TestSwap_CompleteStuckFalseIsHonest(t *testing.T) {
 		DisableToken: true,
 		Complete:     func(_ context.Context) (bool, error) { return false, nil },
 		Steps: []Step{
-			{Name: "create", Fields: []Field{{Name: "NAME", Label: "Name"}},
+			{Name: "create", Fields: []Field{{Name: "NAME", Label: i18n.Define("setup_test.name", "Name")}},
 				Run: func(_ context.Context, _ map[string]string) error { return nil }},
 		},
 	})
@@ -602,7 +604,7 @@ func TestSwap_CompleteErrorRecovers(t *testing.T) {
 			return ran, nil
 		},
 		Steps: []Step{
-			{Name: "create", Fields: []Field{{Name: "NAME", Label: "Name"}},
+			{Name: "create", Fields: []Field{{Name: "NAME", Label: i18n.Define("setup_test.name", "Name")}},
 				Run: func(_ context.Context, _ map[string]string) error { ran = true; return nil }},
 		},
 	})

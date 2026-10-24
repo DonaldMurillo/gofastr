@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -924,8 +925,10 @@ type describedHomeComp struct{}
 func (d *describedHomeComp) Render() render.HTML {
 	return html.Div(html.DivConfig{}, html.Heading(html.HeadingConfig{Level: 1}, render.Text("Home")))
 }
-func (d *describedHomeComp) ScreenTitle() string       { return "Home" }
-func (d *describedHomeComp) ScreenDescription() string { return "Welcome to the test site" }
+func (d *describedHomeComp) ScreenTitle(ctx context.Context) string { return "Home" }
+func (d *describedHomeComp) ScreenDescription(ctx context.Context) string {
+	return "Welcome to the test site"
+}
 
 // silentHomeComp does NOT implement ScreenDescriber; no auto-meta.
 type silentHomeComp struct{}

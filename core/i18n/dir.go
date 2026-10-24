@@ -1,6 +1,10 @@
 package i18n
 
-import "golang.org/x/text/language"
+import (
+	"context"
+
+	"golang.org/x/text/language"
+)
 
 // rtlScripts are the scripts written right to left that CLDR assigns as
 // some language's likely script.
@@ -23,4 +27,28 @@ func Dir(tag string) string {
 		return "rtl"
 	}
 	return "ltr"
+}
+
+// DocLang is the language a page rendered under ctx is written in, for
+// its <html lang>, paired with [Dir] for the direction. It is the
+// locale on ctx when the translator's catalog has it (a region of a
+// catalog language counts), the translator's fallback when the catalog
+// lacks it, and "en" when no translator runs, since every phrase then
+// renders its English text. A page outside the app shell (a battery's
+// sign-in screen, the setup wizard) declares its language with it.
+func DocLang(ctx context.Context) string {
+	tr := TranslatorFrom(ctx)
+	if tr == nil {
+		tr = Default()
+	}
+	if tr == nil {
+		return "en"
+	}
+	if tag := FromContext(ctx).Tag; tag != "" && matchCatalog(tag, availableLocales(tr)) != "" {
+		return tag
+	}
+	if tr.fallback != "" {
+		return tr.fallback
+	}
+	return "en"
 }

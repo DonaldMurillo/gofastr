@@ -631,7 +631,7 @@ func (f *frameFriendlyWriter) serveHost(host http.Handler, r *http.Request) {
 // primitives.
 type galleryPreviewScreen struct{}
 
-func (g *galleryPreviewScreen) ScreenTitle() string { return "Theme Preview" }
+func (g *galleryPreviewScreen) ScreenTitle(ctx context.Context) string { return "Theme Preview" }
 
 func (g *galleryPreviewScreen) Render() render.HTML {
 	sections := []render.HTML{}

@@ -20,9 +20,9 @@ import (
 // homeScreen renders a fixed HTML body.
 type homeScreen struct{}
 
-func (homeScreen) ScreenTitle() string            { return "Home" }
-func (homeScreen) ScreenDescription() string      { return "" }
-func (homeScreen) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
+func (homeScreen) ScreenTitle(ctx context.Context) string       { return "Home" }
+func (homeScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (homeScreen) ScreenType() coreapp.ScreenType               { return coreapp.ScreenPage }
 func (homeScreen) Render() render.HTML {
 	return html.Heading(html.HeadingConfig{Level: 1}, render.Text("Home"))
 }
@@ -36,10 +36,10 @@ func (l *loadingScreen) Load(ctx context.Context) error {
 	l.Body = "loaded:" + ctx.Value(loadKey{}).(string)
 	return nil
 }
-func (l *loadingScreen) ScreenTitle() string            { return "Loaded" }
-func (l *loadingScreen) ScreenDescription() string      { return "" }
-func (l *loadingScreen) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
-func (l *loadingScreen) Render() render.HTML            { return render.HTML("<p>" + l.Body + "</p>") }
+func (l *loadingScreen) ScreenTitle(ctx context.Context) string       { return "Loaded" }
+func (l *loadingScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (l *loadingScreen) ScreenType() coreapp.ScreenType               { return coreapp.ScreenPage }
+func (l *loadingScreen) Render() render.HTML                          { return render.HTML("<p>" + l.Body + "</p>") }
 
 type loadKey struct{}
 
@@ -48,11 +48,11 @@ type productScreen struct {
 	slug string
 }
 
-func (p *productScreen) SetParams(params map[string]string) { p.slug = params["slug"] }
-func (p *productScreen) ScreenTitle() string                { return "Product " + p.slug }
-func (p *productScreen) ScreenDescription() string          { return "" }
-func (p *productScreen) ScreenType() coreapp.ScreenType     { return coreapp.ScreenPage }
-func (p *productScreen) Render() render.HTML                { return render.HTML("<p>product-" + p.slug + "</p>") }
+func (p *productScreen) SetParams(params map[string]string)           { p.slug = params["slug"] }
+func (p *productScreen) ScreenTitle(ctx context.Context) string       { return "Product " + p.slug }
+func (p *productScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (p *productScreen) ScreenType() coreapp.ScreenType               { return coreapp.ScreenPage }
+func (p *productScreen) Render() render.HTML                          { return render.HTML("<p>product-" + p.slug + "</p>") }
 func (p *productScreen) StaticPaths(ctx context.Context) []map[string]string {
 	return []map[string]string{
 		{"slug": "alpha"},
@@ -230,11 +230,11 @@ func TestBuildSkipsDynamicRoutesWithoutStaticPaths(t *testing.T) {
 
 type productScreenWithoutPaths struct{}
 
-func (productScreenWithoutPaths) Render() render.HTML            { return render.HTML("ignored") }
-func (productScreenWithoutPaths) SetParams(map[string]string)    {}
-func (productScreenWithoutPaths) ScreenTitle() string            { return "" }
-func (productScreenWithoutPaths) ScreenDescription() string      { return "" }
-func (productScreenWithoutPaths) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
+func (productScreenWithoutPaths) Render() render.HTML                          { return render.HTML("ignored") }
+func (productScreenWithoutPaths) SetParams(map[string]string)                  {}
+func (productScreenWithoutPaths) ScreenTitle(ctx context.Context) string       { return "" }
+func (productScreenWithoutPaths) ScreenDescription(ctx context.Context) string { return "" }
+func (productScreenWithoutPaths) ScreenType() coreapp.ScreenType               { return coreapp.ScreenPage }
 
 // ============================================================================
 // SSG respects NoLLMMD opt-out
@@ -242,10 +242,10 @@ func (productScreenWithoutPaths) ScreenType() coreapp.ScreenType { return coreap
 
 type noopScreen struct{}
 
-func (noopScreen) Render() render.HTML            { return render.HTML("<p>noop</p>") }
-func (noopScreen) ScreenTitle() string            { return "Noop" }
-func (noopScreen) ScreenDescription() string      { return "" }
-func (noopScreen) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
+func (noopScreen) Render() render.HTML                          { return render.HTML("<p>noop</p>") }
+func (noopScreen) ScreenTitle(ctx context.Context) string       { return "Noop" }
+func (noopScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (noopScreen) ScreenType() coreapp.ScreenType               { return coreapp.ScreenPage }
 
 func TestBuild_NoLLMMD_PerScreen(t *testing.T) {
 	a := coreapp.NewApp("NoLLMMDTest")
@@ -538,10 +538,10 @@ func TestRewriteBaseURLsPrefixesAction(t *testing.T) {
 // renderScreen wraps a raw HTML body in a minimal Screen for tests.
 type renderScreen struct{ Body string }
 
-func (r *renderScreen) ScreenTitle() string          { return "Links" }
-func (*renderScreen) ScreenDescription() string      { return "" }
-func (*renderScreen) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
-func (r *renderScreen) Render() render.HTML          { return render.HTML(r.Body) }
+func (r *renderScreen) ScreenTitle(ctx context.Context) string     { return "Links" }
+func (*renderScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (*renderScreen) ScreenType() coreapp.ScreenType               { return coreapp.ScreenPage }
+func (r *renderScreen) Render() render.HTML                        { return render.HTML(r.Body) }
 
 // Hidden click-to-open widgets (command palette, section-menu drawers) are
 // not SSR-inlined; the runtime fetches their chrome on open. The export must
@@ -592,9 +592,9 @@ func TestBuildDumpsWidgetCatalogAndChrome(t *testing.T) {
 
 type textScreen struct{ Text string }
 
-func (s *textScreen) ScreenTitle() string            { return "T" }
-func (s *textScreen) ScreenDescription() string      { return "" }
-func (s *textScreen) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
+func (s *textScreen) ScreenTitle(ctx context.Context) string       { return "T" }
+func (s *textScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (s *textScreen) ScreenType() coreapp.ScreenType               { return coreapp.ScreenPage }
 func (s *textScreen) Render() render.HTML {
 	return html.Heading(html.HeadingConfig{Level: 1}, render.Text(s.Text))
 }

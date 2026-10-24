@@ -147,12 +147,9 @@
   // executable), so they pass strict CSP. Reading happens before
   // first paint of any non-trivial component because runtime.js is
   // injected at the end of <body>, after the JSON blocks in <head>.
-  const _readInlineJSON = (id) => {
-    const el = document.getElementById(id);
-    if (!el) return null;
-    try { return JSON.parse(el.textContent || 'null'); }
-    catch (_) { return null; }
-  };
+  // _json parses server-written JSON text, null for none or garbage.
+  const _json = (t) => { try { return JSON.parse(t || 'null'); } catch (_) { return null; } };
+  const _readInlineJSON = (id) => _json(document.getElementById(id)?.textContent);
   if (!window.__gofastr_routes) {
     const r = _readInlineJSON('gofastr-routes');
     if (r) window.__gofastr_routes = r;
@@ -187,10 +184,11 @@
   // locale) else the English beside the key, with {{name}} filled from
   // p. A Go test holds each say() call to its registered phrase. No
   // Object.prototype member is a string, so a key like "toString" falls
-  // through to the English.
-  let _says;
+  // through to the English. A soft nav replaces the table
+  // (applyDocShell, frag/nav.js).
+  let _says = _readInlineJSON('gofastr-strings') || {};
   const say = (k, en, p) => {
-    const s = (_says ??= _readInlineJSON('gofastr-strings') || {})[k];
+    const s = _says[k];
     return (typeof s == 'string' ? s : en).replace(/\{\{(\w+)\}\}/g, (m, n) => (p && own(p, n) ? p[n] : m));
   };
   const closestAttr = (el, attr) => {
@@ -763,7 +761,7 @@
           // documented optimistic-UI invariant, "a failed delete
           // leaves the row/list unchanged", depends on this no-op.
           // Text-mode nodes below still render a human-readable
-          // "Error: …" string, so failure feedback is not lost.
+          // "Request failed (…)" string, so failure feedback is not lost.
           if (typeof value !== 'string') return;
           // A value seeded from location.search is attacker-supplied by
           // construction, `?x=<img onerror=…>` on any page carrying an
@@ -811,12 +809,11 @@
         } else {
           // Task B: when the value is an error object from dispatchRPC
           // ({ok:false, status, text}), render it as a human-readable
-          // string instead of raw JSON so users see "Error: 500" rather
-          // than {"ok":false,"status":500,"text":"..."}.
+          // string instead of raw JSON so users see "Request failed (500)"
+          // in their language rather than {"ok":false,"status":500,...}.
           if (value != null && typeof value === 'object' && value.ok === false) {
-            const s = value.status ? String(value.status) : 'unknown';
             const t = value.text ? String(value.text).substring(0, 200) : '';
-            node.textContent = 'Error: ' + s + (t ? ' \u2014 ' + t : '');
+            node.textContent = say('runtime.request_failed_status', 'Request failed ({{status}})', { status: value.status || '?' }) + (t ? ' \u2014 ' + t : '');
           } else if (value == null) {
             node.textContent = '';
           } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
@@ -1088,6 +1085,9 @@
     if (lang) carrier.setAttribute('data-cui-lang', lang);
     const skip = source.querySelector('[data-skip-link]');
     if (skip) carrier.setAttribute('data-cui-skip-label', skip.textContent);
+    // The live document's head block is the first page's: after a soft
+    // nav its words are the table applyDocShell last set.
+    carrier.setAttribute('data-cui-strings', JSON.stringify(source == document ? _says : _json(source.getElementById('gofastr-strings')?.textContent)));
     return carrier.outerHTML;
   };
   window.__gofastr._docCarrier = docCarrier;
@@ -1348,6 +1348,8 @@
   const applyDocShell = (root) => {
     syncPageHead(root);
     const fresh = root && root.querySelector('template[data-cui-page-head][data-cui-lang]');
+    // The destination's runtime words; none means English.
+    if (fresh) _says = _json(fresh.getAttribute('data-cui-strings')) || {};
     const c = fresh || root && (root.matches('[data-cui-lang],[data-cui-skip-label]')
       ? root : root.querySelector('[data-cui-lang],[data-cui-skip-label]'));
     if (!c) return;
@@ -1543,7 +1545,9 @@
         const nm = pdoc.querySelector('main');
         await _swapCommit(myEpoch, prevPath, dest, () => {
           const sourceRoot = shellEl(pdoc) || nm;
-          if (sourceRoot) sourceRoot.insertAdjacentHTML("afterbegin", docCarrier(pdoc));
+          // The carrier rides <main>, so the cache entry below (and the
+          // whole-main fallback) keeps the page's language and words.
+          (nm || sourceRoot)?.insertAdjacentHTML("afterbegin", docCarrier(pdoc));
           const el = swapShell(sourceRoot);
           if (!el) {
             // No live shell to replace (layout-less origin), fall back to
@@ -1687,8 +1691,7 @@
     if (!root || !root.querySelector) return;
     const el = root.querySelector('#gofastr-signals-partial');
     if (!el) return;
-    let data = null;
-    try { data = JSON.parse(el.textContent || 'null'); } catch (_) { /* ignore */ }
+    const data = _json(el.textContent);
     el.remove();
     if (!data) return;
     const G = window.__gofastr;

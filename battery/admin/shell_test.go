@@ -172,7 +172,7 @@ func TestScreenRechecksTheGate(t *testing.T) {
 	if got := s.RenderCtx(reader); got != "" {
 		t.Errorf("SECURITY: the screen drew %q for a caller the gate refuses", got)
 	}
-	if s.Load(reader); s.ScreenTitle() != "" {
+	if s.Load(reader); s.ScreenTitle(context.Background()) != "" {
 		t.Error("the screen resolved a title for a caller the gate refuses")
 	}
 	admin := handler.SetUser(context.Background(), theAdmin)

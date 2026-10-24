@@ -247,8 +247,8 @@ func pluginPage(blocks ...render.HTML) render.HTML {
 
 type PluginsScreen struct{}
 
-func (s *PluginsScreen) ScreenTitle() string { return "Plugins" }
-func (s *PluginsScreen) ScreenDescription() string {
+func (s *PluginsScreen) ScreenTitle(ctx context.Context) string { return "Plugins" }
+func (s *PluginsScreen) ScreenDescription(ctx context.Context) string {
 	reg, err := pluginReg()
 	if err != nil {
 		return "Officially maintained heavy-JavaScript plugins for GoFastr."
@@ -310,14 +310,14 @@ type PluginScreen struct{ name string }
 func (s *PluginScreen) SetParams(p map[string]string) { s.name = p["name"] }
 func (s *PluginScreen) ScreenType() app.ScreenType    { return app.ScreenPage }
 
-func (s *PluginScreen) ScreenTitle() string {
+func (s *PluginScreen) ScreenTitle(ctx context.Context) string {
 	if p, ok := pluginByName(s.name); ok {
 		return p.Name + " plugin"
 	}
 	return "Plugin"
 }
 
-func (s *PluginScreen) ScreenDescription() string {
+func (s *PluginScreen) ScreenDescription(ctx context.Context) string {
 	if p, ok := pluginByName(s.name); ok {
 		return p.Description
 	}

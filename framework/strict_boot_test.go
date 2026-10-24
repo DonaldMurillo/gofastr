@@ -17,9 +17,9 @@ import (
 // bootScreen satisfies strict mode's per-screen checks.
 type bootScreen struct{}
 
-func (bootScreen) Render() render.HTML       { return render.HTML("<main>ok</main>") }
-func (bootScreen) ScreenTitle() string       { return "Boot" }
-func (bootScreen) ScreenDescription() string { return "A boot test screen." }
+func (bootScreen) Render() render.HTML                          { return render.HTML("<main>ok</main>") }
+func (bootScreen) ScreenTitle(ctx context.Context) string       { return "Boot" }
+func (bootScreen) ScreenDescription(ctx context.Context) string { return "A boot test screen." }
 
 // backOfficeBattery registers its routes during Init, the admin-battery
 // shape: routes exist only after App.Start has initialized batteries,

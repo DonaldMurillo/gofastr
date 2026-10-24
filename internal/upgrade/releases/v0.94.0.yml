@@ -791,3 +791,59 @@ notes:
         - symbol: gofastr/battery/print.Battery.PrintLink
           type: '^func\(docName string, params map\[string\]string, label string\) render\.HTML$'
     guidance: "Pass the request context: pb.PrintLink(r.Context(), \"invoice\", params, label)."
+  - change: "app.ScreenTitler and app.ScreenDescriber take the request context: ScreenTitle(ctx context.Context) string and ScreenDescription(ctx context.Context) string"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/core-ui/app.ScreenTitler.ScreenTitle
+          type: '^func\(\) string$'
+        - symbol: gofastr/core-ui/app.ScreenDescriber.ScreenDescription
+          type: '^func\(\) string$'
+    guidance: "Add the parameter: func (s *HelpScreen) ScreenTitle(ctx context.Context) string. A screen still declaring ScreenTitle() string or ScreenDescription() string panics when it is registered, naming the type, so the app does not boot until it moves. To translate it, return a phrase: helpTitle.Text(ctx). App.Register reads it once with a bare context, which gives the English, for the route table."
+  - change: "auth BodyTemplate callbacks take the requester's context (func(ctx context.Context, url string) string) and MagicLinkConfig.ConfirmPage is func(ctx context.Context, d ConfirmPageData) []byte"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/battery/auth.PasswordResetConfig.BodyTemplate
+          type: '^func\(url string\) string$'
+        - symbol: gofastr/battery/auth.EmailVerificationConfig.BodyTemplate
+          type: '^func\(url string\) string$'
+        - symbol: gofastr/battery/auth.MagicLinkConfig.BodyTemplate
+          type: '^func\(url string\) string$'
+        - symbol: gofastr/battery/auth.MagicLinkConfig.ConfirmPage
+          type: '^func\(auth\.ConfirmPageData\) \[\]byte$'
+    guidance: "Add ctx as the first parameter. It carries the locale of the request that asked for the mail, so a phrase rendered in it reads in that person's language: resetBody.Text(ctx, map[string]any{\"url\": url})."
+  - change: "desktop.PlanMenuBar, desktop.PlanTrayMenu and Battery.OpenSettings take a context first, and WindowConfig.OnSettings is func(ctx context.Context)"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/battery/desktop.PlanMenuBar
+          type: '^func\(appTitle string, m \*desktop\.Menu, hasSettings bool\) \(plans \[\]desktop\.MenuPlan, actionIDs \[\]string\)$'
+        - symbol: gofastr/battery/desktop.PlanTrayMenu
+          type: '^func\(t \*desktop\.Tray, appTitle string, actionIDs \*\[\]string\) \[\]desktop\.MenuItemPlan$'
+        - symbol: gofastr/battery/desktop.Battery.OpenSettings
+          type: '^func\(\) \(desktop\.Window, error\)$'
+        - symbol: gofastr/battery/desktop.WindowConfig.OnSettings
+          type: '^func\(\)$'
+    guidance: "A shell plans its menus under desktop.ShellContext(ctx, preferredLanguages), which carries the locale the shell's own words speak; pass the same ctx to OnSettings. App code calling OpenSettings passes the request or shell context."
+  - change: "setup.Field.Label and setup.Config.Title are i18n.Phrase; setup.Step gains Title"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/battery/setup.Field.Label
+          type: '^string$'
+        - symbol: gofastr/battery/setup.Config.Title
+          type: '^string$'
+    guidance: "Define the words at package level, var adminEmail = i18n.Define(\"myapp.setup.admin_email\", \"Admin email\"), and set Label: adminEmail. Leave it zero to show the field's Name, or for Config.Title the built-in \"Setup\"."
+  - change: "auth.ErrPasswordEmpty and auth.ErrPasswordTooShort are *i18n.Error; their text loses the auth: prefix"
+    breaking: true
+    hits: review
+    find:
+      uses:
+        - gofastr/battery/auth.ErrPasswordEmpty
+        - gofastr/battery/auth.ErrPasswordTooShort
+    guidance: "errors.Is still matches them. Code that compared err.Error() with \"auth: password is empty\" or \"auth: password too short\" should use errors.Is; render the message with i18n.ErrorText(ctx, err) for the caller's locale."

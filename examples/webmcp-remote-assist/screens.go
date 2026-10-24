@@ -66,7 +66,7 @@ func pillPair(id string, off, on string, state bool) render.HTML {
 // LandingScreen is the public page: no role, no tools, no bridge.
 type LandingScreen struct{}
 
-func (s *LandingScreen) ScreenTitle() string { return "Remote assist" }
+func (s *LandingScreen) ScreenTitle(ctx context.Context) string { return "Remote assist" }
 func (s *LandingScreen) Render() render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		ui.PageHeader(ui.PageHeaderConfig{
@@ -99,7 +99,7 @@ func (s *LandingScreen) Render() render.HTML {
 // the role boundary stays visible and testable.
 type SupportLoginScreen struct{ component.ContextOnly }
 
-func (s *SupportLoginScreen) ScreenTitle() string { return "Support sign in" }
+func (s *SupportLoginScreen) ScreenTitle(ctx context.Context) string { return "Support sign in" }
 
 func (s *SupportLoginScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.AuthCard(ui.AuthCardConfig{
@@ -128,7 +128,7 @@ func (s *SupportLoginScreen) RenderCtx(ctx context.Context) render.HTML {
 // SupportHomeScreen creates sessions.
 type SupportHomeScreen struct{ component.ContextOnly }
 
-func (s *SupportHomeScreen) ScreenTitle() string { return "Assist sessions" }
+func (s *SupportHomeScreen) ScreenTitle(ctx context.Context) string { return "Assist sessions" }
 
 func (s *SupportHomeScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
@@ -156,7 +156,7 @@ type SupportConsoleScreen struct {
 	id string
 }
 
-func (s *SupportConsoleScreen) ScreenTitle() string { return "Support console" }
+func (s *SupportConsoleScreen) ScreenTitle(ctx context.Context) string { return "Support console" }
 
 func (s *SupportConsoleScreen) SetParams(m map[string]string) { s.id = m["id"] }
 
@@ -246,7 +246,7 @@ type OperatorScreen struct {
 	id string
 }
 
-func (s *OperatorScreen) ScreenTitle() string { return "Assist session" }
+func (s *OperatorScreen) ScreenTitle(ctx context.Context) string { return "Assist session" }
 
 func (s *OperatorScreen) SetParams(m map[string]string) { s.id = m["id"] }
 
@@ -333,7 +333,7 @@ type JoinScreen struct {
 	token string
 }
 
-func (s *JoinScreen) ScreenTitle() string { return "Join assist session" }
+func (s *JoinScreen) ScreenTitle(ctx context.Context) string { return "Join assist session" }
 
 func (s *JoinScreen) SetParams(m map[string]string) { s.token = m["token"] }
 
@@ -358,7 +358,7 @@ func (s *JoinScreen) RenderCtx(ctx context.Context) render.HTML {
 // cookie. Callers never learn which one they hit.
 type SessionGoneScreen struct{}
 
-func (s *SessionGoneScreen) ScreenTitle() string { return "Session ended" }
+func (s *SessionGoneScreen) ScreenTitle(ctx context.Context) string { return "Session ended" }
 
 func (s *SessionGoneScreen) Render() render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},

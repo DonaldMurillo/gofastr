@@ -87,8 +87,8 @@ func wsTicketByID(id string) (wsTicket, bool) {
 // Component contract (the Render() shim delegates to RenderCtx).
 type WorkspaceScreen struct{ component.ContextOnly }
 
-func (s *WorkspaceScreen) ScreenTitle() string { return "Workspace example" }
-func (s *WorkspaceScreen) ScreenDescription() string {
+func (s *WorkspaceScreen) ScreenTitle(ctx context.Context) string { return "Workspace example" }
+func (s *WorkspaceScreen) ScreenDescription(ctx context.Context) string {
 	return "A full-page master-detail workspace built on ui.PaneHost. Click a ticket to load its detail into a pane, no navigation."
 }
 func (s *WorkspaceScreen) ScreenType() app.ScreenType { return app.ScreenPage }

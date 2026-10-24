@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/seo"
@@ -13,8 +15,10 @@ import (
 
 type PricingScreen struct{}
 
-func (s *PricingScreen) ScreenTitle() string        { return "Pricing" }
-func (s *PricingScreen) ScreenDescription() string  { return "Plans for teams of every size." }
+func (s *PricingScreen) ScreenTitle(ctx context.Context) string { return "Pricing" }
+func (s *PricingScreen) ScreenDescription(ctx context.Context) string {
+	return "Plans for teams of every size."
+}
 func (s *PricingScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 
 // ScreenSEO bundles this page's whole SEO declaration: canonical (the

@@ -222,3 +222,63 @@ diff --git a/app.go b/app.go
  	site.SetDefaultLayout(appLayout)
  	ui.MountSidebar(routerMounter{fwApp.Router()}, sbCfg)
  	{
+diff --git a/screen_home.go b/screen_home.go
+--- a/screen_home.go
++++ b/screen_home.go
+@@ -1,24 +1,26 @@
+ package main
+ 
+ import (
++	"context"
++
+ 	"database/sql"
+ 	"github.com/DonaldMurillo/gofastr/core-ui/app"
+ 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+ 	"github.com/DonaldMurillo/gofastr/core/render"
+ 	"github.com/DonaldMurillo/gofastr/framework"
+ )
+ 
+ type HomeScreen struct{}
+ 
+-func (s *HomeScreen) ScreenTitle() string        { return "Upgrade Fixture" }
+-func (s *HomeScreen) ScreenDescription() string  { return "Upgrade fixture home" }
++func (s *HomeScreen) ScreenTitle(context.Context) string { return "Upgrade Fixture" }
++func (s *HomeScreen) ScreenDescription(context.Context) string { return "Upgrade fixture home" }
+ func (s *HomeScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+ 
+ func (s *HomeScreen) Render() render.HTML {
+ 	return render.Tag("div", nil,
+ 		html.Heading(html.HeadingConfig{Level: 1, Class: ""}, render.Text("Upgrade Fixture")),
+ 		render.Tag("p", nil, render.Text("A generated app used to prove the upgrade path.")),
+ 	)
+ }
+ 
+ // mountHomeScreen mounts the home screen with site.
+diff --git a/screen_tags_crud.go b/screen_tags_crud.go
+--- a/screen_tags_crud.go
++++ b/screen_tags_crud.go
+@@ -13,8 +13,8 @@
+ 
+ type TagsScreen struct{ component.ContextOnly }
+ 
+-func (s *TagsScreen) ScreenTitle() string        { return "Tags" }
+-func (s *TagsScreen) ScreenDescription() string  { return "All tags" }
++func (s *TagsScreen) ScreenTitle(context.Context) string { return "Tags" }
++func (s *TagsScreen) ScreenDescription(context.Context) string { return "All tags" }
+ func (s *TagsScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+ 
+ func (s *TagsScreen) RenderCtx(ctx context.Context) render.HTML {
+diff --git a/screen_tasks_crud.go b/screen_tasks_crud.go
+--- a/screen_tasks_crud.go
++++ b/screen_tasks_crud.go
+@@ -13,8 +13,8 @@
+ 
+ type TasksScreen struct{ component.ContextOnly }
+ 
+-func (s *TasksScreen) ScreenTitle() string        { return "Tasks" }
+-func (s *TasksScreen) ScreenDescription() string  { return "My tasks" }
++func (s *TasksScreen) ScreenTitle(context.Context) string { return "Tasks" }
++func (s *TasksScreen) ScreenDescription(context.Context) string { return "My tasks" }
+ func (s *TasksScreen) ScreenType() app.ScreenType { return app.ScreenPage }
+ 
+ func (s *TasksScreen) RenderCtx(ctx context.Context) render.HTML {

@@ -263,8 +263,10 @@ type WindowConfig struct {
 	// item (cmd+, on darwin) and route it to OnSettings.
 	Settings *WindowSpec
 	// OnSettings is called by the shell (on a goroutine) when the
-	// app-menu Settings item or a RoleSettings menu item fires.
-	OnSettings func()
+	// app-menu Settings item or a RoleSettings menu item fires. ctx
+	// carries the locale the shell's own words speak ([ShellContext]),
+	// so the window it opens is titled in the same language.
+	OnSettings func(ctx context.Context)
 	// OnMenu is called by the shell when the user activates a menu item
 	// carrying a Navigate path or a Handler. Role items ("quit",
 	// "about", "settings", "show", "separator") are handled by the

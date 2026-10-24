@@ -580,37 +580,6 @@ func TestRuntimeSignalAriaLiveContract(t *testing.T) {
 	}
 }
 
-// TestRuntimeErrorObjectFormatting pins that setSignal renders error
-// objects ({ok:false,...}) as human-readable text, not raw JSON.
-// Without this, users see {"ok":false,"status":500,"text":"..."} instead
-// of "Error: 500". Behavioral verification is in
-// examples/site/TestE2EInteractive_RPCErrorFeedback.
-func TestRuntimeErrorObjectFormatting(t *testing.T) {
-	js, err := RuntimeJS()
-	if err != nil {
-		t.Fatal(err)
-	}
-	// In text mode, when value is an object with ok === false, the
-	// runtime must format it as a human-readable string instead of
-	// JSON.stringify. Look for evidence of the error formatting branch.
-	errorFormattingEvidence := []string{
-		"Error:",
-		"ok === false",
-		"ok===false",
-		"value.ok",
-	}
-	found := false
-	for _, evidence := range errorFormattingEvidence {
-		if contains(js, evidence) {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("setSignal must format error objects (ok:false) as human-readable text, not raw JSON")
-	}
-}
-
 // TestRuntimeLoadingCSSClassDuringRPC pins that dispatchRPC adds a cui-loading
 // class during a request and removes it in finally.
 func TestRuntimeLoadingCSSClassDuringRPC(t *testing.T) {

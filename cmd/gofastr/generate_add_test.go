@@ -900,7 +900,7 @@ import (
 
 type AboutScreen struct{}
 
-func (s *AboutScreen) ScreenTitle() string        { return "About" }
+func (s *AboutScreen) ScreenTitle(ctx context.Context) string        { return "About" }
 func (s *AboutScreen) ScreenType() app.ScreenType { return app.ScreenPage }
 func (s *AboutScreen) Render() render.HTML {
 	return render.Tag("div", nil, nil)

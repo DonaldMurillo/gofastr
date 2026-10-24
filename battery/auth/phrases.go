@@ -2,6 +2,15 @@ package auth
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
+// The words on the magic-link confirmation page.
+var (
+	confirmTitle       = i18n.Define("auth.confirm_title", "Confirm sign-in")
+	confirmAs          = i18n.Define("auth.confirm_as", "Continue to sign in as {{who}}?")
+	confirmThisAccount = i18n.Define("auth.confirm_this_account", "this account")
+	confirmWarning     = i18n.Define("auth.confirm_warning", "If you did not request this link, close this page: someone else may be trying to sign you into their account.")
+	confirmSubmit      = i18n.Define("auth.confirm_submit", "Sign in")
+)
+
 // The refusals this package writes, under their catalog keys.
 var (
 	reasonSessionRequired                = i18n.Define("auth.session_required", "interactive session required, not an API token")
@@ -117,6 +126,7 @@ var (
 	reasonCurrentPasswordRequired        = i18n.Define("auth.current_password_required", "current password required")
 	reasonNewPasswordRequired            = i18n.Define("auth.new_password_required", "new password required")
 	reasonPasswordTooShortField          = i18n.Define("auth.password_too_short", "password too short")
+	reasonPasswordEmpty                  = i18n.Define("auth.password_empty", "password is empty")
 	reasonPasswordsMismatch              = i18n.Define("auth.passwords_mismatch", "passwords do not match")
 	reasonConfirmMismatch                = i18n.Define("auth.confirm_mismatch", "does not match the new password")
 	reasonCurrentPasswordIncorrect       = i18n.Define("auth.current_password_incorrect", "current password is incorrect")

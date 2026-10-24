@@ -32,7 +32,7 @@ func (m *minimalScreenSpec) Render() render.HTML {
 	return render.Text("minimal spec content")
 }
 
-func (m *minimalScreenSpec) ScreenTitle() string { return m.title }
+func (m *minimalScreenSpec) ScreenTitle(ctx context.Context) string { return m.title }
 
 // TestDefaultScreenTypeViaRegister verifies that when a component implements
 // only ScreenTitle (via ScreenTitler), the app still registers it as
@@ -103,9 +103,9 @@ func (n *nestedMainScreen) Render() render.HTML {
 	return render.Raw(`<main class="content"><p>Nested!</p></main>`)
 }
 
-func (n *nestedMainScreen) ScreenTitle() string       { return "Nested" }
-func (n *nestedMainScreen) ScreenDescription() string { return "Test nested main" }
-func (n *nestedMainScreen) ScreenType() ScreenType    { return ScreenPage }
+func (n *nestedMainScreen) ScreenTitle(ctx context.Context) string       { return "Nested" }
+func (n *nestedMainScreen) ScreenDescription(ctx context.Context) string { return "Test nested main" }
+func (n *nestedMainScreen) ScreenType() ScreenType                       { return ScreenPage }
 
 // TestNestedMainWarning verifies that ValidateScreenOutput flags screens
 // whose raw component output contains <main>.

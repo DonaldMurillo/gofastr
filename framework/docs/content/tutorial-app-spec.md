@@ -326,6 +326,8 @@ Add a hand-written screen in a new file at the root: same package, same
 package main
 
 import (
+	"context"
+
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -334,10 +336,10 @@ import (
 // AboutScreen is plain Go, the same interface generated screens implement.
 type AboutScreen struct{}
 
-func (s *AboutScreen) ScreenTitle() string          { return "About" }
-func (s *AboutScreen) ScreenDescription() string    { return "About this app" }
-func (s *AboutScreen) ScreenType() uiapp.ScreenType { return uiapp.ScreenPage }
-func (s *AboutScreen) ComponentID() string          { return "screen-about" }
+func (s *AboutScreen) ScreenTitle(ctx context.Context) string       { return "About" }
+func (s *AboutScreen) ScreenDescription(ctx context.Context) string { return "About this app" }
+func (s *AboutScreen) ScreenType() uiapp.ScreenType                 { return uiapp.ScreenPage }
+func (s *AboutScreen) ComponentID() string                          { return "screen-about" }
 func (s *AboutScreen) Render() render.HTML {
 	return render.Tag("div", map[string]string{"data-component": s.ComponentID()},
 		html.Heading(html.HeadingConfig{Level: 1}, render.Text("About")),

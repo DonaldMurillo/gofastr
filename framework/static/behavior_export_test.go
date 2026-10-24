@@ -17,9 +17,9 @@ import (
 // so the export exercises the marker-bearing page path.
 type behaviorMarkerScreen struct{}
 
-func (behaviorMarkerScreen) ScreenTitle() string            { return "Behavior" }
-func (behaviorMarkerScreen) ScreenDescription() string      { return "" }
-func (behaviorMarkerScreen) ScreenType() coreapp.ScreenType { return coreapp.ScreenPage }
+func (behaviorMarkerScreen) ScreenTitle(ctx context.Context) string       { return "Behavior" }
+func (behaviorMarkerScreen) ScreenDescription(ctx context.Context) string { return "" }
+func (behaviorMarkerScreen) ScreenType() coreapp.ScreenType               { return coreapp.ScreenPage }
 func (behaviorMarkerScreen) Render() render.HTML {
 	return render.HTML(`<p data-static-probe>probe</p>`)
 }

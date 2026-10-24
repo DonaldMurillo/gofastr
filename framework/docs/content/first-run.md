@@ -115,21 +115,41 @@ setup is incomplete. Run a serve/all process to complete setup first.
 
 ## Custom steps
 
-A step is a name, its form fields, and a `Run`:
+A step is a name, its form fields, and a `Run`. The wizard shows
+`Title` and each field's `Label`, phrases that render in the reader's
+language; a zero phrase shows `Name`. A `Validate` error built with
+`i18n.NewError` renders in that language too:
 
 ```go
+var (
+    instanceTitle  = i18n.Define("myapp.setup_instance", "Instance")
+    siteURLLabel   = i18n.Define("myapp.setup_site_url", "Public URL")
+    siteURLMissing = i18n.Define("myapp.setup_site_url_missing", "a public URL is required")
+)
+
 setup.Step{
-    Name: "instance",
+    Name:  "instance",
+    Title: instanceTitle,
     Fields: []setup.Field{{
-        Name: "site_url", Label: "Public URL",
+        Name: "site_url", Label: siteURLLabel,
         EnvVar: "MYAPP_SITE_URL",
-        Validate: func(v string) error { … },
+        Validate: func(v string) error {
+            if v == "" {
+                return i18n.NewError(siteURLMissing)
+            }
+            return nil
+        },
     }},
     Run: func(ctx context.Context, values map[string]string) error {
         return saveInstanceConfig(ctx, values["site_url"])
     },
 }
 ```
+
+The wizard runs in front of the router, and the app negotiates the
+reader's locale ahead of it, so its pages, the built-in steps and the
+page title (`Config.Title`, `setup.title` when zero) follow
+`Accept-Language` and any `WithLocaleResolver` cookie.
 
 Fields with `Secret: true` render as password inputs and are never
 prefilled or logged. `setup.HealthStep(app)` runs the app's registered
