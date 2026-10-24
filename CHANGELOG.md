@@ -600,6 +600,14 @@ for another user's record now gets 404.
   resolver reads `foo`, not `foo/llm.md`. The embed content route
   keeps answering 200 with the not-found body, because the embed loader
   mounts only a 2xx.
+- **`App.NoLLMMD` turns off negotiated markdown.** With
+  `WithMarkdownNegotiation`, a request with `Accept: text/markdown` got
+  the page's doc on an app that set `NoLLMMD`, while every `llm.md`
+  route stayed unmounted. It now gets the HTML page, as a screen's own
+  `NoLLMMD` already did.
+- **An overlay's index link has one slash.** `/llm-pages.md` linked a
+  drawer or sheet registered at `/tools/` to `/tools//llm.md`; it links
+  `/tools/llm.md`, the route uihost mounts, as pages already did.
 - **Postgres text-to-integer retypes apply.** A column whose declared
   type moved from text to an integer rendered
   `ALTER COLUMN ... TYPE INTEGER` with no `USING` clause, which Postgres
