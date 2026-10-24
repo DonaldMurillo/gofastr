@@ -79,8 +79,11 @@ func TestInitGoDirectives(t *testing.T) {
 			if got.Go == nil || got.Go.Version != want.Go.Version {
 				t.Errorf("scaffold must use release go %s:\n%s", want.Go.Version, data)
 			}
-			if got.Toolchain == nil || got.Toolchain.Name != want.Toolchain.Name {
-				t.Errorf("scaffold must use release toolchain %s:\n%s", want.Toolchain.Name, data)
+			// The repo's go.mod has no toolchain line while it would only
+			// repeat the go line; the scaffold must match either way.
+			if (got.Toolchain == nil) != (want.Toolchain == nil) ||
+				(want.Toolchain != nil && got.Toolchain.Name != want.Toolchain.Name) {
+				t.Errorf("scaffold toolchain line must match the release go.mod's:\n%s", data)
 			}
 			if release != "dev" && (len(got.Require) != 1 || got.Require[0].Mod.Path != gofastrModule || got.Require[0].Mod.Version != "v"+release) {
 				t.Errorf("scaffold lost release pin:\n%s", data)
@@ -107,11 +110,11 @@ func TestInitKeepsHigherExistingGoRequirements(t *testing.T) {
 	version = "dev"
 	t.Cleanup(func() { version = oldVersion })
 	t.Setenv("GOTOOLCHAIN", "local")
-	for _, toolchain := range []string{"go1.27.3", "default"} {
+	for _, toolchain := range []string{"go1.27.4", "default"} {
 		t.Run(toolchain, func(t *testing.T) {
 			dir := t.TempDir()
 			covT_chdir(t, dir)
-			initial := "module local/existing\n\ngo 1.27.2\n\ntoolchain " + toolchain + "\n\nrequire example.com/existing v1.0.0\n"
+			initial := "module local/existing\n\ngo 1.27.3\n\ntoolchain " + toolchain + "\n\nrequire example.com/existing v1.0.0\n"
 			if err := os.WriteFile("go.mod", []byte(initial), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -124,13 +127,69 @@ func TestInitKeepsHigherExistingGoRequirements(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if mod.Go.Version != "1.27.2" || mod.Toolchain == nil || mod.Toolchain.Name != toolchain {
+			if mod.Go.Version != "1.27.3" || mod.Toolchain == nil || mod.Toolchain.Name != toolchain {
 				t.Fatalf("init . changed existing Go requirements:\n%s", data)
 			}
 			if len(mod.Require) != 1 || mod.Require[0].Mod.Path != "example.com/existing" {
 				t.Fatalf("init . lost an existing dependency:\n%s", data)
 			}
 		})
+	}
+}
+
+// An existing go line above the framework's floor survives the edit step,
+// with no toolchain line written to repeat it.
+func TestInitKeepsGoAboveFloor(t *testing.T) {
+	oldVersion := version
+	version = "dev"
+	t.Cleanup(func() { version = oldVersion })
+	t.Setenv("GOTOOLCHAIN", "local")
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	if err := os.WriteFile("go.mod", []byte("module local/existing\n\ngo 1.99.0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	covT_capStdout(t, func() { runInit([]string{".", "--module=local/existing", "--no-entity"}) })
+	data, err := os.ReadFile("go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod, err := modfile.Parse("go.mod", data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mod.Go.Version != "1.99.0" || mod.Toolchain != nil {
+		t.Fatalf("go.mod = go %s, toolchain %v; want go 1.99.0 and no toolchain line:\n%s",
+			mod.Go.Version, mod.Toolchain, data)
+	}
+}
+
+// An existing module below the framework's floor is raised to it, and the
+// toolchain line that would only repeat the go line is dropped, as
+// go mod tidy would drop it.
+func TestInitRaisesGoBelowFloor(t *testing.T) {
+	oldVersion := version
+	version = "dev"
+	t.Cleanup(func() { version = oldVersion })
+	t.Setenv("GOTOOLCHAIN", "local")
+	dir := t.TempDir()
+	covT_chdir(t, dir)
+	initial := "module local/existing\n\ngo 1.27.2\n\ntoolchain go1.27.2\n"
+	if err := os.WriteFile("go.mod", []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	covT_capStdout(t, func() { runInit([]string{".", "--module=local/existing", "--no-entity"}) })
+	data, err := os.ReadFile("go.mod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mod, err := modfile.Parse("go.mod", data, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mod.Go.Version != frameworkGoDirective || mod.Toolchain != nil {
+		t.Fatalf("go.mod = go %s, toolchain %v; want go %s and no toolchain line:\n%s",
+			mod.Go.Version, mod.Toolchain, frameworkGoDirective, data)
 	}
 }
 

@@ -1,0 +1,10 @@
+version: v0.94.1
+title: "Go 1.27.3 is the floor"
+notes:
+  - change: "the module requires Go 1.27.3"
+    breaking: true
+    hits: edit
+    guidance: "go.mod names go 1.27.3, up from 1.27.0. Go 1.27.0 to 1.27.2 build crypto/x509 with GO-2026-6809, which the SMTP sender's TLS handshake reaches, and v0.94.0 still let an app build on them. `go get github.com/DonaldMurillo/gofastr@v0.94.1` raises your go directive to 1.27.3, and GOTOOLCHAIN=auto (the default) downloads that toolchain; `go build` without it stops with \"updates to go.mod needed\". With GOTOOLCHAIN=local, install Go 1.27.3 first. A `toolchain go1.27.3` line that now repeats the go line can go: go mod tidy drops it. Nothing in your code changes."
+    find:
+      gomod:
+        go_below: "1.27.3"

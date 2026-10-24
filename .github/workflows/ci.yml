@@ -145,8 +145,8 @@ jobs:
         with:
           # Restored BEFORE Set up Go, here and in the two restore-only
           # steps below. setup-go installs the go.mod `go` version, and its
-          # `go env` then downloads the `toolchain` version into the module
-          # cache as read-only files. A snapshot restored on top of them
+          # `go env` then downloads any newer `toolchain` version into the
+          # module cache as read-only files. A snapshot restored on top of them
           # (it holds the same toolchain) fails tar on every one ("Cannot
           # open: File exists", exit 2). Restored first, the toolchain comes
           # from the snapshot and nothing is downloaded. An exclusion

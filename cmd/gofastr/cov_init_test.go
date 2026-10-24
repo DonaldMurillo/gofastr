@@ -58,8 +58,9 @@ func TestRunInitPinsFrameworkToCLIRelease(t *testing.T) {
 }
 
 // go mod init writes the local toolchain's version, which can sit below
-// the framework's own go directive (go 1.25.5 against 1.27.0). The
-// scaffold states the framework's minimum and toolchain instead.
+// the framework's own go directive (go 1.25.5 against 1.27.3). The
+// scaffold states the framework's minimum instead, and a toolchain line
+// only when it would not repeat the go line.
 func TestInitGoModNamesFrameworkGo(t *testing.T) {
 	dir := t.TempDir()
 	covT_chdir(t, dir)
@@ -68,11 +69,7 @@ func TestInitGoModNamesFrameworkGo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"\ngo " + frameworkGoDirective + "\n", "\ntoolchain " + frameworkToolchain + "\n"} {
-		if !strings.Contains(string(mod), want) {
-			t.Errorf("scaffold go.mod missing %q:\n%s", strings.TrimSpace(want), mod)
-		}
-	}
+	checkGoLines(t, "scaffold go.mod", string(mod))
 }
 
 // A release build with no go.mod to pin (go mod init refused the
@@ -98,10 +95,24 @@ func TestFrameworkGoMatchesGoMod(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"\ngo " + frameworkGoDirective + "\n", "\ntoolchain " + frameworkToolchain + "\n"} {
-		if !strings.Contains(string(mod), want) {
-			t.Errorf("go.mod has no %q line; update the init constants", strings.TrimSpace(want))
+	checkGoLines(t, "go.mod", string(mod))
+}
+
+// checkGoLines holds a go.mod to the init constants: the go line always,
+// and the toolchain line only while it names a newer release than the go
+// line. go mod tidy drops a toolchain line that repeats the go line.
+func checkGoLines(t *testing.T, name, mod string) {
+	t.Helper()
+	if want := "\ngo " + frameworkGoDirective + "\n"; !strings.Contains(mod, want) {
+		t.Errorf("%s has no %q line; update the init constants:\n%s", name, strings.TrimSpace(want), mod)
+	}
+	toolchain := "\ntoolchain " + frameworkToolchain + "\n"
+	if frameworkToolchain == "go"+frameworkGoDirective {
+		if strings.Contains(mod, "\ntoolchain ") {
+			t.Errorf("%s carries a toolchain line that repeats the go line:\n%s", name, mod)
 		}
+	} else if !strings.Contains(mod, toolchain) {
+		t.Errorf("%s has no %q line; update the init constants:\n%s", name, strings.TrimSpace(toolchain), mod)
 	}
 }
 
