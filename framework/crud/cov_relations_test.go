@@ -206,7 +206,7 @@ func TestList_BadProjection(t *testing.T) {
 func TestEagerLoad_ManyToMany(t *testing.T) {
 	ch, db, reg := covRelWorld(t)
 	m2m := entity.ManyToMany("tags", "tags", "post_tags", "post_id", "tag_id")
-	m2m.ForeignKey = "tag_id" // exported EagerLoad validates FK for all rel kinds
+	m2m.ForeignKey = []string{"tag_id"} // exported EagerLoad validates FK for all rel kinds
 	rels := []entity.Relation{m2m}
 	got, err := EagerLoad(context.Background(), db, ch.Entity, rels, []string{"p1", "p2"}, reg)
 	if err != nil {

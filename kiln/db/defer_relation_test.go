@@ -29,7 +29,7 @@ func TestMigrateDefersDanglingBelongsTo(t *testing.T) {
 			{Name: "author_id", Type: schema.String},
 		},
 		Relations: []framework.Relation{
-			{Type: framework.RelManyToOne, Name: "author", Entity: "users", ForeignKey: "author_id"},
+			{Type: framework.RelManyToOne, Name: "author", Entity: "users", ForeignKey: []string{"author_id"}},
 		},
 	})
 

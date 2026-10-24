@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=5fcf5ff813b5753b
+//gofastr:generated generator=app kind=scaffold version=dev sum=12e2ea0b05371660
 
 package entities
 
@@ -272,7 +272,7 @@ func registerCategories(app *framework.App) {
 			{Name: "active", Type: schema.Bool, Default: true},
 		},
 		Relations: []framework.Relation{
-			{Type: framework.RelHasMany, Name: "products", Entity: "products", ForeignKey: "category_id"},
+			{Type: framework.RelHasMany, Name: "products", Entity: "products", ForeignKey: []string{"category_id"}},
 		},
 		Exposure: &framework.ExposureConfig{
 			CRUD:   boolPtr(true),

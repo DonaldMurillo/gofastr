@@ -130,18 +130,28 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err := ch.upsertPreflight(ctx, body); err != nil {
 			return err
 		}
-		// The same belongs_to write-side boundary doCreate and doUpdate
-		// enforce: an FK in the body must resolve under the target's own
-		// owner / tenant / read scopes for this caller. Covers both the
-		// insert arm and the update arm, which share this body.
-		if err := ch.checkBelongsToScope(ctx, body); err != nil {
-			return err
-		}
 		// The state check, as an update of the existing row or a create
 		// (states.go).
 		var err error
 		if ctx, err = ch.checkStateUpsert(ctx, req, body); err != nil {
 			return err
+		}
+		// The same belongs_to write-side boundary doCreate and doUpdate
+		// enforce: an FK in the body must resolve under the target's own
+		// owner / tenant / read scopes for this caller. Covers both the
+		// insert arm and the update arm, which share this body, so a
+		// multi-column FK the upsert writes only part of from the body is
+		// refused: the row would hold a tuple nobody checked.
+		// The row ends as one arm or the other, so both are checked: the
+		// insert writes the body's generated values, as a create does, and
+		// the conflict update keeps the stored ones.
+		for _, w := range []fkWrite{
+			ch.createWrite(ctx, body),
+			{body: body, sets: func(f schema.Field) bool { return ch.upsertSets(ctx, f) }, holds: ch.scopedHeld(ctx)},
+		} {
+			if err := ch.checkBelongsToScope(ctx, w); err != nil {
+				return err
+			}
 		}
 
 		// Build the column + value lists, same shape Create uses: auto-gen
@@ -183,13 +193,8 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				vals = append(vals, body[f.Name])
 				continue
 			}
-			if ch.Entity.Config.Scope.MultiTenant && f.Name == ch.Entity.Config.TenantColumn() {
+			if f.Name != ch.Entity.Config.Scope.OwnerField && !ch.upsertSets(ctx, f) {
 				continue
-			}
-			if (f.ReadOnly || f.Hidden) && f.Name != ch.Entity.Config.Scope.OwnerField {
-				if !serverWrites(ctx) && !ch.stateOverrideColumn(ctx, f.Name) {
-					continue
-				}
 			}
 			val, ok := body[f.Name]
 			sent[f.Name] = ok
@@ -495,4 +500,22 @@ func incrementBindValue(v any) (any, error) {
 		}
 	}
 	return v, nil
+}
+
+// upsertSets reports whether an upsert writes f from the body on both
+// arms. The owner column is stamped from the session and the tenant
+// column from the context; ReadOnly and Hidden fields need
+// WithServerWrites(ctx) or a state override; the conflict arm keeps a
+// generated field's stored value while the insert arm writes the body's.
+func (ch *CrudHandler) upsertSets(ctx context.Context, f schema.Field) bool {
+	if f.AutoGenerate != schema.AutoNone {
+		return false
+	}
+	if owner := ch.Entity.Config.Scope.OwnerField; owner != "" && f.Name == owner {
+		return false
+	}
+	if ch.Entity.Config.Scope.MultiTenant && f.Name == ch.Entity.Config.TenantColumn() {
+		return false
+	}
+	return !(f.ReadOnly || f.Hidden) || serverWrites(ctx) || ch.stateOverrideColumn(ctx, f.Name)
 }

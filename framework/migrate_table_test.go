@@ -158,7 +158,7 @@ func TestReconcile_EntityAndRawTableWithFK(t *testing.T) {
 				{Name: "user_id", Type: schema.String, NotNull: true},
 				{Name: "action", Type: schema.Text},
 			},
-			ForeignKeys: []migrate.ForeignKey{{Column: "user_id", RefTable: "users"}},
+			ForeignKeys: []migrate.ForeignKey{{Columns: []string{"user_id"}, RefTable: "users"}},
 		}
 		_ = reg.Register(audit.ToEntity())
 

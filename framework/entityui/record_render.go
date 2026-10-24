@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -101,7 +102,7 @@ func (b *RecordBuilder) checkRelated(m *meta, name string) error {
 	if err != nil {
 		return fmt.Errorf("entityui: record %q: Related: %v", m.name, err)
 	}
-	if _, fk := relationTo(other, m.name); fk == "" {
+	if _, fks := relationTo(other, m.name); len(fks) == 0 {
 		return fmt.Errorf("entityui: record %q: Related entity %q has no relation pointing at %q", m.name, name, m.name)
 	}
 	return nil
@@ -109,14 +110,30 @@ func (b *RecordBuilder) checkRelated(m *meta, name string) error {
 
 // relationTo finds other's relation that points at target: a BelongsTo
 // on the child side or a HasMany/HasOne declared on the parent, both
-// carry the foreign key column on other's table.
-func relationTo(other *entity.Entity, target string) (rel entity.Relation, fk string) {
+// carry the foreign key columns on other's table. A key of several
+// columns has one foreign-key column per key column, in key order.
+func relationTo(other *entity.Entity, target string) (rel entity.Relation, fks []string) {
 	for _, r := range other.Config.Relations {
-		if r.Entity == target && r.ForeignKey != "" {
+		if r.Entity == target && len(r.ForeignKey) > 0 {
 			return r, r.ForeignKey
 		}
 	}
-	return entity.Relation{}, ""
+	return entity.Relation{}, nil
+}
+
+// relatedPins pairs each foreign-key column with its value from the
+// record's id: the id itself for one column, its JoinKey parts for
+// several. An id that does not split into that many parts pins nothing.
+func relatedPins(fks []string, id string) ([]filter.Predicate, bool) {
+	parts, err := entity.SplitKey(id, len(fks))
+	if err != nil {
+		return nil, false
+	}
+	pins := make([]filter.Predicate, len(fks))
+	for i, fk := range fks {
+		pins[i] = filter.Predicate{Field: fk, Op: filter.OpEq, Value: parts[i]}
+	}
+	return pins, true
 }
 
 // requestBase is the record's default base path: the current request

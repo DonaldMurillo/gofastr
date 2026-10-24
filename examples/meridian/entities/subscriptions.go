@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=b5b187d44200c5d3
+//gofastr:generated generator=app kind=scaffold version=dev sum=71ee999feedab49d
 
 package entities
 
@@ -308,8 +308,8 @@ func registerSubscriptions(app *framework.App) {
 			{Name: "user_id", Type: schema.String, Hidden: true},
 		},
 		Relations: []framework.Relation{
-			{Type: framework.RelManyToOne, Name: "customer", Entity: "customers", ForeignKey: "customer_id"},
-			{Type: framework.RelManyToOne, Name: "plan", Entity: "plans", ForeignKey: "plan_id"},
+			{Type: framework.RelManyToOne, Name: "customer", Entity: "customers", ForeignKey: []string{"customer_id"}},
+			{Type: framework.RelManyToOne, Name: "plan", Entity: "plans", ForeignKey: []string{"plan_id"}},
 		},
 		Scope: &framework.ScopeConfig{
 			OwnerField: "user_id",

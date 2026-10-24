@@ -48,7 +48,7 @@ func TestRelationWarnQuietForVersions(t *testing.T) {
 			Table:  "zzr2_posts",
 			Fields: []schema.Field{{Name: "title", Type: schema.String}},
 			Relations: []entity.Relation{
-				{Name: "author", Type: entity.RelManyToOne, Entity: "zzr2_users", ForeignKey: "author_id"},
+				{Name: "author", Type: entity.RelManyToOne, Entity: "zzr2_users", ForeignKey: []string{"author_id"}},
 			},
 		}.WithTimestamps(false)
 	}

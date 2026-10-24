@@ -37,6 +37,7 @@ import (
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
+	fwmigrate "github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
 	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
@@ -1748,11 +1749,22 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 			}
 		}
 		cascadeWrite := boolValue(m["cascade_write"])
+		// foreign_key is one column, or a list of one column per key
+		// column of a composite key it references.
+		var foreignKey []string
+		if node := m["foreign_key"]; node != nil && node.Kind == coreyaml.List {
+			foreignKey = stringListValue(node)
+			if len(foreignKey) == 0 || slices.Contains(foreignKey, "") {
+				return nil, fmt.Errorf("relations[%d].foreign_key: want a column name or a non-empty list of them", i)
+			}
+		} else if fk := stringValue(m["foreign_key"]); fk != "" {
+			foreignKey = []string{fk}
+		}
 		out = append(out, framework.Relation{
 			Type:             relType,
 			Name:             stringValue(m["name"]),
 			Entity:           stringValue(m["entity"]),
-			ForeignKey:       stringValue(m["foreign_key"]),
+			ForeignKey:       foreignKey,
 			Through:          stringValue(m["through"]),
 			LocalKey:         stringValue(m["local_key"]),
 			ForeignKeyTarget: stringValue(m["foreign_key_target"]),
@@ -2770,6 +2782,8 @@ func validateAppSpec(bp AppSpec) error {
 			}
 			if !entityNames[rel.Entity] {
 				errs.add(fmt.Errorf("app spec: entity %q relation %q targets unknown entity %q: declare an entity named %q under entities: (or fix the relation's entity: value)", decl.Name, rel.Name, rel.Entity, rel.Entity))
+			} else if target, ok := entitiesByName[rel.Entity]; ok {
+				errs.add(appSpecRelationKeys(decl, rel, target))
 			}
 		}
 	}
@@ -6260,6 +6274,92 @@ func humanizeFieldLabel(name string) string {
 	return toDisplayName(s)
 }
 
+// appSpecRelationKeys refuses at load the relation shapes
+// entity.CheckRelationKeys refuses when the generated app boots: a
+// foreign key needs one column per column of the key it references, in
+// key order, and a key of several columns names each one as a declared
+// field of the entity holding it. A many_to_many links two one-column
+// keys; a composite end goes through a join entity instead.
+func appSpecRelationKeys(decl framework.EntityDeclaration, rel framework.Relation, target framework.EntityDeclaration) error {
+	keyOf := func(d framework.EntityDeclaration) []string {
+		if declKeyIsID(d) {
+			return []string{"id"}
+		}
+		return d.PrimaryKey
+	}
+	holder, ref := decl, target
+	switch rel.Type {
+	case fwentity.RelManyToMany:
+		if len(keyOf(decl)) > 1 || len(keyOf(target)) > 1 {
+			return fmt.Errorf("app spec: entity %q relation %q is many_to_many, and a many_to_many links two one-column keys: declare a join entity that belongs to both sides instead", decl.Name, rel.Name)
+		}
+		return nil
+	case fwentity.RelHasOne, fwentity.RelHasMany:
+		holder, ref = target, decl
+	}
+	fks, key := rel.ForeignKey, keyOf(ref)
+	if len(fks) == 0 {
+		return nil
+	}
+	if len(fks) != len(key) {
+		return fmt.Errorf("app spec: entity %q relation %q names foreign key (%s), and %q is keyed on (%s): name one foreign-key column per key column, in key order", decl.Name, rel.Name, strings.Join(fks, ", "), ref.Name, strings.Join(key, ", "))
+	}
+	if len(fks) == 1 {
+		return nil
+	}
+	for i, c := range fks {
+		if slices.ContainsFunc(fks[:i], func(p string) bool { return strings.EqualFold(p, c) }) {
+			return fmt.Errorf("app spec: entity %q relation %q names foreign-key column %q twice", decl.Name, rel.Name, c)
+		}
+		if !slices.ContainsFunc(holder.Fields, func(f framework.FieldDeclaration) bool { return f.Name == c }) {
+			return fmt.Errorf("app spec: entity %q relation %q names foreign-key column %q, which is not a declared field of %q: declare each column of a multi-column foreign key", decl.Name, rel.Name, c, holder.Name)
+		}
+		if st := holder.States; st != nil && (st.Field == c || slices.ContainsFunc(st.Transitions, func(t fwentity.Transition) bool { return t.Stamp == c })) {
+			return fmt.Errorf("app spec: entity %q relation %q names foreign-key column %q, which %q's transitions write: a move would change the reference with no check, so keep state fields out of multi-column foreign keys", decl.Name, rel.Name, c, holder.Name)
+		}
+	}
+	// The migrator refuses an integer column against a text key column
+	// and the reverse; refuse it here, before the app is generated.
+	for i, c := range fks {
+		f, _ := appSpecColumn(holder, c)
+		k, _ := appSpecColumn(ref, key[i])
+		if f == nil || k == nil {
+			continue
+		}
+		if ft, kt := appSpecTypeFamily(f), appSpecTypeFamily(k); ft != "" && kt != "" && ft != kt {
+			return fmt.Errorf("app spec: entity %q relation %q names foreign-key column %q, typed %s, for key column %q of %q, typed %s: type each column like the key column it references", decl.Name, rel.Name, c, f.Type, key[i], ref.Name, k.Type)
+		}
+	}
+	return nil
+}
+
+// appSpecTypeFamily groups a declared field by the Postgres column the
+// migrator gives it, as its foreign-key type check does: every integer
+// width is one family, text of any length (uuid, enum, image and file
+// among it) another, and any other type its own. A relation holds its
+// target's key, and a type the loader refuses elsewhere has no column,
+// so both are "" and the check skips them.
+func appSpecTypeFamily(f *framework.FieldDeclaration) string {
+	if appSpecIntType(f.Type) {
+		return "integer"
+	}
+	sf, err := f.Field()
+	if err != nil || sf.Type == schema.Relation {
+		return ""
+	}
+	t := fwmigrate.SQLType(sf, fwmigrate.DialectPostgres)
+	if i := strings.IndexByte(t, '('); i >= 0 {
+		t = t[:i]
+	}
+	switch strings.ToUpper(t) {
+	case "SMALLINT", "INTEGER", "INT", "BIGINT", "SERIAL", "BIGSERIAL":
+		return "integer"
+	case "TEXT", "VARCHAR", "CHAR", "CHARACTER VARYING":
+		return "text"
+	}
+	return strings.ToLower(t)
+}
+
 // appSpecEntityRelations maps each belongs_to FK column → target entity.
 func appSpecEntityRelations(decl framework.EntityDeclaration) map[string]string {
 	out := map[string]string{}
@@ -6269,8 +6369,10 @@ func appSpecEntityRelations(decl framework.EntityDeclaration) map[string]string 
 		}
 	}
 	for _, r := range decl.Relations {
-		if r.Type == fwentity.RelManyToOne && r.ForeignKey != "" && r.Entity != "" {
-			out[r.ForeignKey] = r.Entity
+		if r.Type == fwentity.RelManyToOne && r.Entity != "" {
+			for _, c := range r.ForeignKey {
+				out[c] = r.Entity
+			}
 		}
 	}
 	return out

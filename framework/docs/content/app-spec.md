@@ -958,6 +958,36 @@ named after a key column; rename it. The generated `e2e_test.go` reads
 every key column out of the create response to address the record, and
 `gofastr pack` folds the expanded route back to `{id}`.
 
+A relation to a composite-keyed entity names one foreign-key column per
+key column, in key order, as a list:
+
+```yaml
+  - name: lines
+    crud: true
+    fields:
+      - {name: order_store, type: string}
+      - {name: order_no, type: int}
+      - {name: sku, type: string}
+    relations:
+      - type: belongs_to
+        name: order
+        entity: orders
+        foreign_key: [order_store, order_no]
+```
+
+Each listed column is a declared field of the entity that holds it (the
+`belongs_to` side here, the child for a `has_many`), typed like the key
+column it references. Loading refuses a list whose length differs from
+the referenced key, a repeated or undeclared column, a column typed
+unlike its key column (an `int` column for a `string` or `uuid` key
+column, say; the text types `string`, `text`, `uuid`, `enum`, `image`
+and `file` all join each other), a column the entity's `states`
+transitions write, and a
+`many_to_many` with a composite end; link the last through a join entity
+that belongs to both sides. A one-element list is the plain
+`foreign_key: order_no` spelling. The rules are those of
+[`Relation.ForeignKey`](entity-declarations.md#relations-and-composite-keys).
+
 #### RBAC for writable APIs
 
 When any entity declares an `access:` block, its auto-CRUD API is permission-gated,

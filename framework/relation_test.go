@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -25,8 +26,8 @@ func TestRelationHasOne(t *testing.T) {
 	if r.Entity != "profiles" {
 		t.Errorf("expected entity profiles, got %s", r.Entity)
 	}
-	if r.ForeignKey != "user_id" {
-		t.Errorf("expected FK user_id, got %s", r.ForeignKey)
+	if !slices.Equal(r.ForeignKey, []string{"user_id"}) {
+		t.Errorf("expected FK user_id, got %v", r.ForeignKey)
 	}
 }
 
@@ -41,8 +42,8 @@ func TestRelationBelongsTo(t *testing.T) {
 	if r.Entity != "users" {
 		t.Errorf("expected entity users, got %s", r.Entity)
 	}
-	if r.ForeignKey != "user_id" {
-		t.Errorf("expected FK user_id, got %s", r.ForeignKey)
+	if !slices.Equal(r.ForeignKey, []string{"user_id"}) {
+		t.Errorf("expected FK user_id, got %v", r.ForeignKey)
 	}
 }
 
@@ -57,8 +58,8 @@ func TestRelationHasMany(t *testing.T) {
 	if r.Entity != "comments" {
 		t.Errorf("expected entity comments, got %s", r.Entity)
 	}
-	if r.ForeignKey != "post_id" {
-		t.Errorf("expected FK post_id, got %s", r.ForeignKey)
+	if !slices.Equal(r.ForeignKey, []string{"post_id"}) {
+		t.Errorf("expected FK post_id, got %v", r.ForeignKey)
 	}
 }
 

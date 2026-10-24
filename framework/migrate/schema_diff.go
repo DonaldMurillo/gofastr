@@ -997,21 +997,18 @@ func entityIndices(ent *entity.Entity) []entity.Index {
 		out = append(out, idx)
 	}
 	for _, rel := range ent.Config.Relations {
-		if rel.Type != entity.RelManyToOne || rel.ForeignKey == "" {
+		fks := rel.ForeignKey
+		if rel.Type != entity.RelManyToOne || len(fks) == 0 {
 			continue
 		}
-		if ent.Config.Scope.OwnerField != "" && strings.EqualFold(rel.ForeignKey, ent.Config.Scope.OwnerField) {
+		if len(fks) == 1 && ent.Config.Scope.OwnerField != "" && strings.EqualFold(fks[0], ent.Config.Scope.OwnerField) {
 			continue
 		}
-		hasIdx := false
-		for _, idx := range ent.Config.Indices {
-			if len(idx.Columns) == 1 && strings.EqualFold(idx.Columns[0], rel.ForeignKey) {
-				hasIdx = true
-				break
-			}
-		}
+		hasIdx := slices.ContainsFunc(ent.Config.Indices, func(idx entity.Index) bool {
+			return slices.EqualFunc(idx.Columns, fks, strings.EqualFold)
+		})
 		if !hasIdx {
-			out = append(out, entity.Index{Columns: []string{rel.ForeignKey}})
+			out = append(out, entity.Index{Columns: fks})
 		}
 	}
 	return out

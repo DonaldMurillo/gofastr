@@ -134,7 +134,7 @@ func TestEagerLoad_SoftDeleteManyToMany(t *testing.T) {
 	postsEnt := entity.Define("smposts", entity.EntityConfig{Name: "smposts", Table: "smposts"}.WithTimestamps(false))
 	reg := stubRegistry{byName: map[string]*entity.Entity{"smtags": tagsEnt, "smposts": postsEnt}}
 	m2m := entity.ManyToMany("tags", "smtags", "smpivot", "post_id", "tag_id")
-	m2m.ForeignKey = "tag_id"
+	m2m.ForeignKey = []string{"tag_id"}
 	got, err := EagerLoad(context.Background(), db, postsEnt, []entity.Relation{m2m}, []string{"p1"}, reg)
 	if err != nil {
 		t.Fatalf("EagerLoad m2m soft-delete: %v", err)

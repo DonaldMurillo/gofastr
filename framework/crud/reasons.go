@@ -69,6 +69,8 @@ var (
 	reasonMoveNoneOpen   = i18n.Define("error.move_none_open", "move {{key}} is not open from {{current}}, and no move is")
 	reasonMoveOthersOpen = i18n.Define("error.move_others_open", "move {{key}} is not open from {{current}}; open: {{moves}}")
 	reasonMissingTarget  = i18n.Define("validation.missing_target", "refers to a record that does not exist")
+	reasonPartialKey     = i18n.Define("validation.partial_foreign_key", "is one column of the reference {{relation}}; set {{columns}} together")
+	reasonKeptKey        = i18n.Define("validation.kept_foreign_key", "is one column of the reference {{relation}}, and this write keeps {{kept}} as stored, so the reference cannot move here")
 	reasonAccessDenied   = i18n.Define("error.access_denied", "access denied")
 
 	reasonNotObject       = i18n.Define("validation.not_object", "must be an object")

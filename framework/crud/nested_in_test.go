@@ -14,12 +14,12 @@ import (
 // single related row.
 func TestNestedIn_BelongsToCoalescesToIN(t *testing.T) {
 	nf := nestedFilter{
-		Relation: entity.Relation{Type: entity.RelManyToOne, Name: "author", Entity: "users", ForeignKey: "author_id"},
+		Relation: entity.Relation{Type: entity.RelManyToOne, Name: "author", Entity: "users", ForeignKey: []string{"author_id"}},
 		Field:    "name",
 		Op:       filter.OpIn,
 		Values:   []string{"alice", "bob"},
 	}
-	sql, args := buildExistsSubquery("posts", "id", nf)
+	sql, args := buildExistsSubquery("posts", []string{"id"}, nf)
 
 	if !strings.Contains(sql, "users.name IN ($1,$2)") {
 		t.Errorf("expected coalesced IN, got: %s", sql)
